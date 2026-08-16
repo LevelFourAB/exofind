@@ -150,11 +150,16 @@ mise run dev         # Quarkus dev mode with hot reload
 mise run build       # mvn package
 mise run test        # mvn test
 mise run verify      # full verification build
+mise run bench       # JMH benchmarks for searching and indexing
 mise run image       # build the container image
 mise run image:amd64 # the same image for an x86-64 host
 mise run storage      # start object storage via docker compose
 mise run storage:stop # stop object storage
 ```
+
+`mise run bench` takes a benchmark pattern and any JMH option after it; with
+neither it runs every benchmark there is, which takes hours. See [Benchmark the
+engine](docs/how-to/benchmark-the-engine.md) for the scenarios it covers.
 
 Both image tasks package the application first and copy the result in, so the
 JDK the image runs on is the one in `mise.toml`. `mise run image` builds for

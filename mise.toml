@@ -33,6 +33,18 @@ run = "mvn test"
 description = "Run the full verification build including integration tests"
 run = "mvn verify"
 
+[tasks.bench]
+description = "Run the JMH benchmarks; arguments are passed on to the JMH runner"
+# JMH forks a JVM per benchmark and hands it the classpath it was started with,
+# so the runner is launched with a real `-classpath` rather than through a Maven
+# plugin that builds one in a class loader. The file it reads is written by the
+# `benchmark` profile.
+usage = 'arg "[jmh]" var=#true help="Passed on to the JMH runner - a benchmark pattern, -p params, -f forks"'
+run = [
+	"mvn -Pbenchmark test-compile",
+	"java -cp \"target/classes:target/test-classes:$(cat target/benchmark-classpath.txt)\" org.openjdk.jmh.Main {{arg(name='jmh', var=true)}}"
+]
+
 [tasks.image]
 description = "Build the container image from a fresh package of the application"
 # Packaged first because the image copies `target/quarkus-app` rather than

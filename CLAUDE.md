@@ -20,6 +20,10 @@ than summarized here:
 Common workflows are mise tasks: `mise run dev`, `build`, `test`, `verify`,
 `storage`, `storage:stop`. The toolchain versions live in `mise.toml`.
 
+`mise run bench` runs the JMH benchmarks under `src/benchmark/java`, which
+compile only under the `benchmark` profile - see
+`docs/how-to/benchmark-the-engine.md`.
+
 Narrower runs go through Maven directly:
 
 ```bash

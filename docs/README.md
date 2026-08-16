@@ -41,6 +41,8 @@ is, and explanation says why it is that way.
   browser with no credential, and narrow what that can cost.
 - [Survive Lucene upgrades](how-to/survive-lucene-upgrades.md) - notice an
   index nearing the end of its readable life and reindex it in time.
+- [Benchmark the engine](how-to/benchmark-the-engine.md) - measure searching
+  and indexing, and compare a change against what came before it.
 
 ## Reference
 
