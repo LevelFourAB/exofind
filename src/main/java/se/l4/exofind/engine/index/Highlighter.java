@@ -21,6 +21,7 @@ import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.map.ImmutableMap;
 import org.eclipse.collections.api.map.MapIterable;
+import org.eclipse.collections.api.map.primitive.IntObjectMap;
 
 import se.l4.exofind.engine.query.SearchRequest;
 
@@ -32,6 +33,12 @@ import se.l4.exofind.engine.query.SearchRequest;
  * declaration forced - the field the query matched holds the offsets, its
  * {@code stored} sibling holds the text, and the offsets of one are offsets
  * into the other because both were written from the same value.
+ *
+ * The text is not read here. Stored fields arrive compressed in blocks, so a
+ * document read for its fragments and read again for its values costs two
+ * decompressions of the same bytes; the caller reads each hit once and hands
+ * the documents over, and {@link #storedField(String)} is what says which
+ * field has to be among them.
  */
 class Highlighter {
 	/**
@@ -50,10 +57,42 @@ class Highlighter {
 	record Target(String field, String luceneField, SearchRequest.Highlight options) {
 	}
 
+	/**
+	 * The Lucene field holding the text the fragments of a highlighted field
+	 * are cut from.
+	 *
+	 * A highlightable field is never stored itself - the declaration that made
+	 * it highlightable stored a sibling written from the same value, which is
+	 * what the offsets in its term vectors point into.
+	 *
+	 * @param luceneField
+	 *   the field the matches are read from, as
+	 *   {@link QueryCompiler#highlightField} resolved it
+	 * @return
+	 *   the field its text is stored under
+	 */
+	static String storedField(String luceneField) {
+		var parsed = FieldNames.parse(luceneField);
+		return FieldNames.name(parsed.field(), parsed.locale(), FieldNames.STORED);
+	}
+
 	private final ListIterable<Target> targets;
 	private final TermVectorHighlighter highlighter;
 
-	Highlighter(IndexSearcher searcher, ListIterable<Target> targets) {
+	/**
+	 * @param searcher
+	 * @param targets
+	 *   the fields to highlight
+	 * @param documents
+	 *   the stored fields of every document that will be highlighted, keyed by
+	 *   Lucene id, each holding at least the {@link #storedField(String)} of
+	 *   every target
+	 */
+	Highlighter(
+		IndexSearcher searcher,
+		ListIterable<Target> targets,
+		IntObjectMap<org.apache.lucene.document.Document> documents
+	) {
 		this.targets = targets;
 
 		var byLuceneField = targets.groupByUniqueKey(Target::luceneField);
@@ -82,7 +121,7 @@ class Highlighter {
 			// rather than with the start of the text as a summary
 			.withMaxNoHighlightPassages(0);
 
-		this.highlighter = new TermVectorHighlighter(builder, byLuceneField);
+		this.highlighter = new TermVectorHighlighter(builder, byLuceneField, documents);
 	}
 
 	/**
@@ -143,13 +182,16 @@ class Highlighter {
 		static final char VALUE_SEPARATOR = MULTIVAL_SEP_CHAR;
 
 		private final MapIterable<String, Target> targets;
+		private final IntObjectMap<org.apache.lucene.document.Document> documents;
 
 		private TermVectorHighlighter(
 			UnifiedHighlighter.Builder builder,
-			MapIterable<String, Target> targets
+			MapIterable<String, Target> targets,
+			IntObjectMap<org.apache.lucene.document.Document> documents
 		) {
 			super(builder);
 			this.targets = targets;
+			this.documents = documents;
 		}
 
 		private Target target(String field) {
@@ -180,18 +222,72 @@ class Highlighter {
 			int cacheCharsThreshold
 		) throws IOException {
 			/*
+			 * The documents were read before highlighting began, so nothing is
+			 * read here and the threshold that would otherwise cap how many are
+			 * held at once has nothing left to cap.
+			 *
 			 * The fields being highlighted are never themselves stored - the
 			 * text lives in their `stored` sibling, written from the same
-			 * value. The lists line up by position, so reading the siblings in
+			 * value. The arrays line up by position, so taking the siblings in
 			 * place of the fields hands every offset the text it points into.
 			 */
 			var stored = new String[fields.length];
 			for(var i = 0; i < fields.length; i++) {
-				var parsed = FieldNames.parse(fields[i]);
-				stored[i] = FieldNames.name(parsed.field(), parsed.locale(), FieldNames.STORED);
+				stored[i] = storedField(fields[i]);
 			}
 
-			return super.loadFieldValues(stored, docIter, cacheCharsThreshold);
+			var values = new ArrayList<CharSequence[]>();
+			for(
+				var docId = docIter.nextDoc();
+				docId != DocIdSetIterator.NO_MORE_DOCS;
+				docId = docIter.nextDoc()
+			) {
+				var document = documents.get(docId);
+				var perField = new CharSequence[stored.length];
+				for(var i = 0; i < stored.length; i++) {
+					perField[i] = text(document, stored[i]);
+				}
+
+				values.add(perField);
+			}
+
+			return values;
+		}
+
+		/**
+		 * Join what one document holds for one field into the text its
+		 * passages are cut from, the way the highlighter would have read it:
+		 * values separated by {@link #VALUE_SEPARATOR}, cut off at
+		 * {@link #getMaxLength()} so that a long field costs a bounded amount
+		 * of work however much of it was stored.
+		 *
+		 * @return
+		 *   the text, or {@code null} if the document holds no value for the
+		 *   field, which is how a field with nothing to highlight is told from
+		 *   one holding an empty value
+		 */
+		private CharSequence text(org.apache.lucene.document.Document document, String field) {
+			var values = document.getValues(field);
+			if(values.length == 0) {
+				return null;
+			}
+
+			var maxLength = getMaxLength();
+			if(values.length == 1) {
+				var value = values[0];
+				return value.length() <= maxLength ? value : value.substring(0, maxLength);
+			}
+
+			var text = new StringBuilder(Math.min(maxLength, values[0].length() + 256));
+			for(var i = 0; i < values.length && text.length() < maxLength; i++) {
+				if(i > 0) {
+					text.append(VALUE_SEPARATOR);
+				}
+
+				text.append(values[i], 0, Math.min(maxLength - text.length(), values[i].length()));
+			}
+
+			return text;
 		}
 
 		@Override

@@ -55,6 +55,11 @@ public class DocumentReader {
 	 * index is set to keep now - a document that has one is read from it, and
 	 * asking for it costs nothing for the documents that do not.
 	 *
+	 * The set is the caller's own, so a caller that needs stored fields of its
+	 * own - the text highlighting is cut from, say - can add them and read
+	 * everything at once. {@link #read(org.apache.lucene.document.Document)}
+	 * hands back the fields that were asked for however much was loaded.
+	 *
 	 * @return
 	 *   the names to load, or {@code null} to load everything that is stored
 	 */
@@ -118,6 +123,10 @@ public class DocumentReader {
 				continue;
 			}
 
+			if(!wanted(parsed.field())) {
+				continue;
+			}
+
 			var field = schema.getField(parsed.field());
 			if(field.isEmpty()) {
 				/*
@@ -145,10 +154,6 @@ public class DocumentReader {
 	/**
 	 * Cut a document down to the fields that were asked for.
 	 *
-	 * Only needed for a document read from its own copy, which holds every
-	 * field whatever was wanted. Asking Lucene for a few stored fields already
-	 * leaves the rest behind.
-	 *
 	 * @param doc
 	 * @return
 	 */
@@ -157,17 +162,31 @@ public class DocumentReader {
 			return doc;
 		}
 
-		var primaryKey = schema.getPrimaryKey()
-			.map(field -> field.getName())
-			.orElse(null);
-
 		var values = Lists.mutable.<Document.Value>empty();
 		for(var value : doc.fields()) {
-			if(fields.contains(value.name()) || value.name().equals(primaryKey)) {
+			if(wanted(value.name())) {
 				values.add(value);
 			}
 		}
 
 		return new Document(values.toArray(new Document.Value[0]));
+	}
+
+	/**
+	 * Whether a field belongs in what is handed back.
+	 *
+	 * A copy of the document holds every field whatever was wanted, and the
+	 * stored fields can hold more than was wanted too, as they are read in one
+	 * go with whatever else the caller needed them for. Asking for a few fields
+	 * never loses the primary key, which is what a result is identified by.
+	 */
+	private boolean wanted(String field) {
+		if(fields.isEmpty() || fields.contains(field)) {
+			return true;
+		}
+
+		return schema.getPrimaryKey()
+			.map(primaryKey -> primaryKey.getName().equals(field))
+			.orElse(false);
 	}
 }

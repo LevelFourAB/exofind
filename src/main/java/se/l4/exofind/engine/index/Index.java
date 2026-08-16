@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -37,6 +38,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
+import org.apache.lucene.index.StoredFields;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -58,12 +60,14 @@ import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.factory.primitive.IntObjectMaps;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.ImmutableMap;
 import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.collections.api.map.MutableMap;
+import org.eclipse.collections.api.map.primitive.IntObjectMap;
 import org.eclipse.collections.api.set.SetIterable;
 import org.eclipse.collections.api.tuple.Pair;
 import org.eclipse.collections.impl.factory.Lists;
@@ -2398,22 +2402,48 @@ public class Index {
 				var storedFields = searcher.storedFields();
 				var primaryKey = schema.getPrimaryKey();
 
-				var highlights = highlight(
-					searcher,
-					compiler,
-					highlightTargets,
-					request,
-					topDocs
-				);
+				/*
+				 * The text a fragment is cut out of is a stored field of the
+				 * same document the hit is built from, and stored fields arrive
+				 * compressed in blocks, so reading the page once for its values
+				 * and again for its text decompresses every block twice. A page
+				 * that is wanted twice is therefore read here and kept - one
+				 * that is not is read hit by hit below and let go again, rather
+				 * than held whole for nothing.
+				 */
+				IntObjectMap<org.apache.lucene.document.Document> page = null;
+				ListIterable<ImmutableMap<String, ImmutableList<String>>> highlights = null;
+				if(!highlightTargets.isEmpty()) {
+					if(names != null) {
+						for(var target : highlightTargets) {
+							names.add(Highlighter.storedField(target.luceneField()));
+						}
+					}
+
+					var docIds = new int[Math.max(0, topDocs.scoreDocs.length - request.offset())];
+					for(var i = 0; i < docIds.length; i++) {
+						docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
+					}
+
+					page = readStored(storedFields, docIds, names);
+					highlights = highlight(
+						searcher,
+						compiler,
+						highlightTargets,
+						request,
+						docIds,
+						page
+					);
+				}
 
 				var hits = Lists.mutable.<SearchResult.Hit>empty();
 				for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
 					var scoreDoc = topDocs.scoreDocs[i];
-					var stored = names == null
-						? storedFields.document(scoreDoc.doc)
-						: storedFields.document(scoreDoc.doc, names);
-
-					var document = reader.read(stored);
+					var document = reader.read(
+						page == null
+							? storedDocument(storedFields, scoreDoc.doc, names)
+							: page.get(scoreDoc.doc)
+					);
 
 					hits.add(
 						new SearchResult.Hit(
@@ -2810,19 +2840,78 @@ public class Index {
 	}
 
 	/**
+	 * Read the stored fields of one document.
+	 *
+	 * @param storedFields
+	 * @param docId
+	 * @param names
+	 *   the stored fields to read, or {@code null} for all of them
+	 * @return
+	 * @throws IOException
+	 */
+	private static org.apache.lucene.document.Document storedDocument(
+		StoredFields storedFields,
+		int docId,
+		Set<String> names
+	) throws IOException {
+		return names == null
+			? storedFields.document(docId)
+			: storedFields.document(docId, names);
+	}
+
+	/**
+	 * Read the stored fields of a whole page of results at once, for a page
+	 * whose documents are needed more than once.
+	 *
+	 * @param storedFields
+	 * @param docIds
+	 *   Lucene ids of the documents of the page, in any order
+	 * @param names
+	 *   the stored fields to read, or {@code null} for all of them
+	 * @return
+	 *   the documents, keyed by Lucene id
+	 * @throws IOException
+	 */
+	private static IntObjectMap<org.apache.lucene.document.Document> readStored(
+		StoredFields storedFields,
+		int[] docIds,
+		Set<String> names
+	) throws IOException {
+		/*
+		 * Read in id order rather than in the order the page shows them, so
+		 * that hits sharing a block are read while it is the block the reader
+		 * has decompressed.
+		 */
+		var ordered = docIds.clone();
+		Arrays.sort(ordered);
+
+		var documents = IntObjectMaps.mutable
+			.<org.apache.lucene.document.Document>ofInitialCapacity(ordered.length);
+		for(var docId : ordered) {
+			documents.put(docId, storedDocument(storedFields, docId, names));
+		}
+
+		return documents;
+	}
+
+	/**
 	 * Highlight the page of results a search brings back.
 	 *
 	 * @param searcher
 	 * @param compiler
 	 *   the compiler that compiled the search, still pointed at its locale
 	 * @param targets
-	 *   the fields the search asked to highlight, already resolved
+	 *   the fields the search asked to highlight, already resolved, never empty
 	 * @param request
-	 * @param topDocs
+	 * @param docIds
+	 *   Lucene ids of the documents of the page, in page order
+	 * @param stored
+	 *   the stored fields of those documents, read by
+	 *   {@link #readStored(StoredFields, int[], Set)}
 	 * @return
-	 *   one map per hit of the page, in page order - or {@code null} when
-	 *   the search asked for no highlighting or holds nothing that ranks,
-	 *   which every hit answers with no fragments
+	 *   one map per hit of the page, in page order - or {@code null} when the
+	 *   search holds nothing that ranks, which every hit answers with no
+	 *   fragments
 	 * @throws IOException
 	 */
 	private ListIterable<ImmutableMap<String, ImmutableList<String>>> highlight(
@@ -2830,24 +2919,15 @@ public class Index {
 		QueryCompiler compiler,
 		ListIterable<Highlighter.Target> targets,
 		SearchRequest request,
-		TopDocs topDocs
+		int[] docIds,
+		IntObjectMap<org.apache.lucene.document.Document> stored
 	) throws IOException {
-		if(targets.isEmpty()) {
-			return null;
-		}
-
 		var scoring = compiler.compileScoring(request.query());
 		if(scoring == null) {
 			return null;
 		}
 
-		var count = Math.max(0, topDocs.scoreDocs.length - request.offset());
-		var docIds = new int[count];
-		for(var i = 0; i < count; i++) {
-			docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
-		}
-
-		return new Highlighter(searcher, targets).highlight(scoring, docIds);
+		return new Highlighter(searcher, targets, stored).highlight(scoring, docIds);
 	}
 
 	/**
