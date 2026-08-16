@@ -80,6 +80,14 @@ final class NestedFacets {
 			var document = -1;
 			var counted = LongSets.mutable.empty();
 
+			/*
+			 * Counted by ordinal rather than by term: reading a term costs a
+			 * walk of the dictionary and a string of its own, and counting by
+			 * term would pay that for every document holding a value rather
+			 * than once for the value itself.
+			 */
+			var byOrdinal = LongLongMaps.mutable.empty();
+
 			for(
 				var doc = iterator.nextDoc();
 				doc != DocIdSetIterator.NO_MORE_DOCS;
@@ -103,9 +111,22 @@ final class NestedFacets {
 					 * long as the set is held.
 					 */
 					if(counted.add(ord)) {
-						counts.addToValue(values.lookupOrd(ord).utf8ToString(), 1);
+						byOrdinal.addToValue(ord, 1);
 					}
 				}
+			}
+
+			/*
+			 * In order, because the dictionary is read forwards - a term after
+			 * the one just read is found by carrying on rather than by seeking
+			 * again.
+			 */
+			var ordinals = byOrdinal.keySet().toSortedArray();
+			for(var ord : ordinals) {
+				counts.addToValue(
+					values.lookupOrd(ord).utf8ToString(),
+					byOrdinal.get(ord)
+				);
 			}
 		}
 

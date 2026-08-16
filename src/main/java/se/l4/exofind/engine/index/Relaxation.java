@@ -71,6 +71,19 @@ final class Relaxation {
 	}
 
 	/**
+	 * Whether a set of clauses matches anything at all.
+	 *
+	 * Asked instead of counting wherever the number itself is not read, which
+	 * is every question relaxing asks of the search as a whole - each of them
+	 * is only ever "is this still an empty page". Answering it takes one
+	 * document rather than all of them.
+	 */
+	@FunctionalInterface
+	interface Matching {
+		boolean any(ImmutableList<Query> clauses) throws IOException;
+	}
+
+	/**
 	 * What relaxing a search arrived at.
 	 *
 	 * @param query
@@ -344,7 +357,7 @@ final class Relaxation {
 	 * Run the search again with words let go of, until something is found.
 	 *
 	 * @param whole
-	 *   counts what the whole search matches, filters and all
+	 *   says whether the whole search matches anything, filters and all
 	 * @param alone
 	 *   counts what clauses match on their own, without the filters of the
 	 *   search
@@ -354,13 +367,13 @@ final class Relaxation {
 	 *   is answered with the empty page it asked for
 	 * @throws IOException
 	 */
-	Outcome run(Counting whole, Counting alone) throws IOException {
+	Outcome run(Matching whole, Counting alone) throws IOException {
 		/*
 		 * Nothing matches even with the text gone, so the filters or the other
 		 * clauses are what emptied the page and letting words go cannot rescue
-		 * it. One count here saves a pass per word.
+		 * it. One pass here saves a pass per word.
 		 */
-		if(whole.count(withoutText()) == 0) {
+		if(!whole.any(withoutText())) {
 			return null;
 		}
 
@@ -426,12 +439,12 @@ final class Relaxation {
 	 * it finds something and {@code null} when it does not.
 	 */
 	private Outcome attempt(
-		Counting whole,
+		Matching whole,
 		SetIterable<String> dropped,
 		long[] held
 	) throws IOException {
 		var narrowed = without(dropped);
-		if(narrowed == null || whole.count(narrowed) == 0) {
+		if(narrowed == null || !whole.any(narrowed)) {
 			return null;
 		}
 

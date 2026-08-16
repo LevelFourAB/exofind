@@ -194,6 +194,88 @@ public class QueryCompiler {
 	}
 
 	/**
+	 * Whether everything the given clauses can match is a document of the
+	 * index, so that a search of them needs nothing to keep the values of
+	 * object fields out of its results.
+	 *
+	 * A clause naming a field of the index answers this on its own: the values
+	 * of an object field are written as Lucene documents holding the fields
+	 * inside the object and nothing else, so no value can satisfy a condition
+	 * on a field of the index. A {@code nested} clause answers it too, having
+	 * joined what it matched back to the documents holding it. What cannot
+	 * answer it is anything that widens - a {@code not}, a boost, a text of
+	 * nothing but exclusions - because what those match is decided by what
+	 * they do not name.
+	 *
+	 * Said of clauses that all have to hold, so one of them answering for the
+	 * whole is enough.
+	 *
+	 * @param clauses
+	 * @return
+	 *   {@code false} whenever it cannot be told, which is always safe - the
+	 *   search then keeps the clause it would otherwise have done without
+	 */
+	public boolean matchesDocumentsOnly(ListIterable<Query> clauses) {
+		return clauses.anySatisfy(this::documentsOnly);
+	}
+
+	/**
+	 * Whether one clause answers {@link #matchesDocumentsOnly} on its own.
+	 */
+	private boolean documentsOnly(Query clause) {
+		return switch(clause) {
+			case FieldQuery q -> namesAField(q.field());
+			case KnnQuery q -> namesAField(q.field());
+			case TextQuery q -> textDocumentsOnly(q);
+
+			// Joined back to the documents holding the values it matched
+			case NestedQuery q -> true;
+
+			case AndQuery q -> matchesDocumentsOnly(q.clauses());
+
+			// Every way of matching has to answer, as any of them may be the one that did
+			case OrQuery q -> q.clauses().notEmpty() && q.clauses().allSatisfy(this::documentsOnly);
+
+			case NotQuery q -> false;
+			case BoostQuery q -> false;
+		};
+	}
+
+	/**
+	 * Whether a text clause can only match documents of the index, which is
+	 * decided by the fields it reads and by whether it asks for anything at
+	 * all - text a person typed that holds nothing but exclusions runs against
+	 * the whole index, values of object fields included.
+	 */
+	private boolean textDocumentsOnly(TextQuery clause) {
+		if(clause.matcher().match() == TextMatcher.Match.USER
+			&& !UserText.parse(clause.matcher().text())
+				.parts()
+				.anySatisfy(part -> !part.exclude()))
+		{
+			return false;
+		}
+
+		/*
+		 * Naming no field reads the fields of the index, which are the ones a
+		 * value of an object field does not have.
+		 */
+		return clause.fields().isEmpty()
+			|| clause.fields().keysView().allSatisfy(this::namesAField);
+	}
+
+	/**
+	 * Whether a name is one of the fields of the index rather than one inside
+	 * an object field. A name that is neither is left to the compiling to
+	 * refuse.
+	 */
+	private boolean namesAField(String name) {
+		return nestedPath == null
+			&& schema.getNestedField(name).isEmpty()
+			&& schema.getField(name).filter(field -> !field.isObject()).isPresent();
+	}
+
+	/**
 	 * Compile only the part of a search that takes part in ranking, which is
 	 * the part highlighting reads its matches from. A document is highlighted
 	 * for what ranked it, never for what only narrowed it - not for the

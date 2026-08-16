@@ -1,7 +1,10 @@
 package se.l4.exofind.engine.index.types;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
@@ -22,9 +25,9 @@ import org.apache.lucene.search.AutomatonQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
-import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.MultiPhraseQuery;
+import org.apache.lucene.search.MultiTermQuery;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
@@ -116,6 +119,73 @@ public class StringFieldType implements FieldType {
 	 * it keeps the walk of nearby terms short.
 	 */
 	private static final int DEFAULT_PREFIX_LENGTH = 1;
+
+	/**
+	 * How the terms a half typed or misspelled word stands for are run.
+	 *
+	 * Both of the rewrites that could serve here score every term the word
+	 * matched the same, so this decides nothing about ranking - only whether
+	 * the terms arrive as one set of documents or as a scorer per term with a
+	 * set for whatever is left over. Lucene's default is the latter, which is
+	 * the better trade for a word that stands for a handful of terms; a word
+	 * cut short or read with mistakes stands for a large part of the
+	 * vocabulary, and each scorer is asked for the best score it could still
+	 * reach once per block of documents the search skips over, whether or not
+	 * it matched anything there.
+	 */
+	private static final MultiTermQuery.RewriteMethod EXPANSION_REWRITE =
+		MultiTermQuery.CONSTANT_SCORE_REWRITE;
+
+	/**
+	 * How many built typo tolerant queries are kept. The words are text
+	 * somebody typed, so what is kept has to have a ceiling; this one holds
+	 * what a search box being typed into produces - a word per keystroke, per
+	 * field it covers - for a good number of people at once, while the
+	 * automata behind them stay a few megabytes rather than a share of the
+	 * heap.
+	 */
+	private static final int FUZZY_CACHE_SIZE = 512;
+
+	/**
+	 * The typo tolerant queries already built, by the field they ask of, the
+	 * word they forgive mistakes in, how many are forgiven, how much of the
+	 * word has to be right and whether the rest of it is still being typed.
+	 *
+	 * Building one turns every reading of the word within those mistakes into
+	 * a table the term dictionary is walked against, which is worth more than
+	 * the walk itself: a search covering several fields builds the same word
+	 * once per field, a search that found nothing builds it again for every
+	 * word it weighs before letting one go, and the next person to type the
+	 * word builds it again after that. What is built depends on the word and
+	 * on nothing of the index, so it is as good later as it was when it was
+	 * built.
+	 *
+	 * The least recently asked for goes when the cache is full. Held through
+	 * {@link Collections#synchronizedMap} rather than a concurrent map because
+	 * that order is what has to be kept, and the lock is held only for the
+	 * lookup - see {@link #withinEdits}.
+	 */
+	private static final Map<FuzzyKey, Query> FUZZY_QUERIES = Collections.synchronizedMap(
+		new LinkedHashMap<FuzzyKey, Query>(FUZZY_CACHE_SIZE, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<FuzzyKey, Query> eldest) {
+				return size() > FUZZY_CACHE_SIZE;
+			}
+		}
+	);
+
+	/**
+	 * What a built typo tolerant query is decided by, and so what one is kept
+	 * under.
+	 */
+	private record FuzzyKey(
+		String field,
+		String text,
+		int edits,
+		int prefixLength,
+		boolean prefix
+	) {
+	}
 
 	/**
 	 * How much a whole-value match adds when the definition names no amount.
@@ -1288,29 +1358,29 @@ public class StringFieldType implements FieldType {
 	) {
 		var edits = typos == null ? 0 : editsAllowed(term.text(), typos, maxEdits);
 
-		if(prefix) {
-			if(edits == 0) {
-				return new PrefixQuery(term);
-			}
+		var exact = prefix
+			? new PrefixQuery(term, EXPANSION_REWRITE)
+			: (Query) new TermQuery(term);
 
-			/*
-			 * One clause per number of mistakes forgiven. A word that starts a
-			 * term with fewer mistakes also starts it within every wider
-			 * allowance, so each mistake a document does without adds a clause
-			 * to its score - which is what keeps the word as typed winning
-			 * over its typos, the way fuzzy() does for a completed word.
-			 */
-			var builder = new BooleanQuery.Builder()
-				.add(new PrefixQuery(term), BooleanClause.Occur.SHOULD);
-
-			for(var d = 1; d <= edits; d++) {
-				builder.add(fuzzyPrefix(term, d, typos), BooleanClause.Occur.SHOULD);
-			}
-
-			return builder.build();
+		if(edits == 0) {
+			return exact;
 		}
 
-		return edits == 0 ? new TermQuery(term) : fuzzy(term, edits, typos);
+		/*
+		 * One clause per number of mistakes forgiven, on top of the word as it
+		 * was typed. A term reached with fewer mistakes is also reached within
+		 * every wider allowance, so each mistake a document does without adds
+		 * a clause to its score, and the word spelled right beats every
+		 * reading of it that is not.
+		 */
+		var builder = new BooleanQuery.Builder()
+			.add(exact, BooleanClause.Occur.SHOULD);
+
+		for(var d = 1; d <= edits; d++) {
+			builder.add(withinEdits(term, d, typos, prefix), BooleanClause.Occur.SHOULD);
+		}
+
+		return builder.build();
 	}
 
 	/**
@@ -1344,14 +1414,12 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
-	 * Match every term that starts with something within the given number of
-	 * edits of the typed word - a typo-tolerant prefix.
+	 * Match every term within the given number of edits of the typed word, or
+	 * every term that such a reading of it starts when the word is still being
+	 * typed.
 	 *
-	 * Built as the Levenshtein automaton of the word with "anything after"
-	 * concatenated onto it, which accepts a term as soon as some prefix of it
-	 * is close enough. The leading characters the definition wants matched
-	 * exactly are kept out of the fuzzy part, the same way {@link #fuzzy}
-	 * hands them to FuzzyQuery.
+	 * Answered from {@link #FUZZY_QUERIES} where the same word has been asked
+	 * for before, because building one costs more than running it.
 	 *
 	 * @param term
 	 *   the word as it came out of analysis
@@ -1359,47 +1427,72 @@ public class StringFieldType implements FieldType {
 	 *   how many mistakes to forgive
 	 * @param typos
 	 *   the tolerance declared by the definition
+	 * @param prefix
+	 *   if the word may still be half typed
 	 * @return
 	 */
-	private static Query fuzzyPrefix(
+	private static Query withinEdits(
 		Term term,
 		int edits,
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos
+		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
+		boolean prefix
 	) {
-		var text = term.text();
 		var prefixLength = typos.hasPrefixLength()
 			? typos.getPrefixLength()
 			: DEFAULT_PREFIX_LENGTH;
 
-		// The exact prefix is measured in code points, as FuzzyQuery does
+		var key = new FuzzyKey(term.field(), term.text(), edits, prefixLength, prefix);
+		var built = FUZZY_QUERIES.get(key);
+		if(built != null) {
+			return built;
+		}
+
+		/*
+		 * Built outside the cache rather than through computeIfAbsent, so that
+		 * one word being built does not hold up the searches looking for
+		 * another. Two threads that want the same one build it twice and keep
+		 * the second, which is two automata rather than a queue behind one.
+		 */
+		var query = buildWithinEdits(term, edits, prefixLength, prefix);
+		FUZZY_QUERIES.put(key, query);
+		return query;
+	}
+
+	/**
+	 * Build what {@link #withinEdits} answers with, for a word not built
+	 * before.
+	 *
+	 * The Levenshtein automaton of the word is what accepts a term close
+	 * enough to it; a half typed word has "anything after" concatenated onto
+	 * that, so a term is accepted as soon as some prefix of it is close
+	 * enough. The leading characters the definition wants matched exactly are
+	 * kept out of the fuzzy part and counted in code points, so a word of
+	 * characters outside the basic plane keeps as much of itself fixed as one
+	 * of ASCII.
+	 */
+	private static Query buildWithinEdits(
+		Term term,
+		int edits,
+		int prefixLength,
+		boolean prefix
+	) {
+		var text = term.text();
+
 		var codePoints = text.codePointCount(0, text.length());
 		var prefixEnd = text.offsetByCodePoints(0, Math.min(prefixLength, codePoints));
 
-		var automaton = Operations.concatenate(
-			new LevenshteinAutomata(text.substring(prefixEnd), true)
-				.toAutomaton(edits, text.substring(0, prefixEnd)),
-			Automata.makeAnyString()
-		);
+		var automaton = new LevenshteinAutomata(text.substring(prefixEnd), true)
+			.toAutomaton(edits, text.substring(0, prefixEnd));
+
+		if(prefix) {
+			automaton = Operations.concatenate(automaton, Automata.makeAnyString());
+		}
 
 		return new AutomatonQuery(
 			term,
-			Operations.determinize(automaton, Operations.DEFAULT_DETERMINIZE_WORK_LIMIT)
-		);
-	}
-
-	private static Query fuzzy(
-		Term term,
-		int edits,
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos
-	) {
-		/*
-		 * FuzzyQuery ranks a nearby term below an exact one by how far away it
-		 * is, which is what keeps the word as typed winning over its typos.
-		 */
-		return new FuzzyQuery(
-			term,
-			edits,
-			typos.hasPrefixLength() ? typos.getPrefixLength() : DEFAULT_PREFIX_LENGTH
+			Operations.determinize(automaton, Operations.DEFAULT_DETERMINIZE_WORK_LIMIT),
+			false,
+			EXPANSION_REWRITE
 		);
 	}
 

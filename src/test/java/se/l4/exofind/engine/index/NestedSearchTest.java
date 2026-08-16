@@ -25,6 +25,7 @@ import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.matchers.Matchers;
+import se.l4.exofind.engine.query.matchers.TextMatcher;
 
 /**
  * Tests for object fields - documents whose values are documents of their own,
@@ -87,6 +88,31 @@ public class NestedSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(ids(result), containsInAnyOrder("2", "3"));
+	}
+
+	@Test
+	public void testTypedExclusionAloneReturnsOnlyDocuments() throws IOException {
+		var index = products();
+
+		var result = search(
+			index,
+			Query.text(TextMatcher.of("-sneaker").withMatch(TextMatcher.Match.USER))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("1", "3"));
+	}
+
+	@Test
+	public void testConditionBesideANestedClauseReturnsOnlyDocuments() throws IOException {
+		var index = products();
+
+		var result = search(
+			index,
+			Query.field("category", Matchers.equalTo("shoes")),
+			Query.nested("variants", Query.field("variants.color", Matchers.equalTo("red")))
+		);
+
+		assertThat(ids(result), contains("1"));
 	}
 
 	@Test

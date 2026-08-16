@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
@@ -32,13 +33,20 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.CollectionTerminatedException;
+import org.apache.lucene.search.Collector;
+import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
+import org.apache.lucene.search.Scorable;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
@@ -2063,7 +2071,7 @@ public class Index {
 			}
 
 			var compiler = new QueryCompiler(schema, locale, nestedParents);
-			var documents = parentsOnly(compiler.compile(clauses));
+			var documents = parentsOnly(compiler.compile(clauses), compiler, clauses);
 
 			int matched;
 			try(var handle = searcherManager.acquire()) {
@@ -2218,9 +2226,8 @@ public class Index {
 				}
 
 				var compiler = new QueryCompiler(schema, request.locale(), nestedParents);
-				var query = parentsOnly(
-					compiler.compile(request.query().newWithAll(request.filters()))
-				);
+				var searched = request.query().newWithAll(request.filters());
+				var query = parentsOnly(compiler.compile(searched), compiler, searched);
 				/*
 				 * Ordering by a value inside an object reads which values a
 				 * document may be ordered by off the clauses of the search, so
@@ -2274,9 +2281,8 @@ public class Index {
 						if(outcome != null) {
 							request = request.withQuery(outcome.query());
 							relaxed = outcome.relaxed();
-							query = parentsOnly(
-								compiler.compile(request.query().newWithAll(request.filters()))
-							);
+							searched = request.query().newWithAll(request.filters());
+							query = parentsOnly(compiler.compile(searched), compiler, searched);
 							count = searcher.count(query);
 						}
 					}
@@ -2359,9 +2365,8 @@ public class Index {
 						request = request.withQuery(outcome.query());
 						relaxed = outcome.relaxed();
 
-						query = parentsOnly(
-							compiler.compile(request.query().newWithAll(request.filters()))
-						);
+						searched = request.query().newWithAll(request.filters());
+						query = parentsOnly(compiler.compile(searched), compiler, searched);
 						ranked = request.sort().isEmpty()
 							? compiler.applySignals(query, request.signals())
 							: query;
@@ -2544,11 +2549,80 @@ public class Index {
 		}
 
 		return relaxation.run(
+			clauses -> {
+				var whole = clauses.newWithAll(request.filters());
+				return anyMatch(searcher, parentsOnly(compiler.compile(whole), compiler, whole));
+			},
 			clauses -> searcher.count(
-				parentsOnly(compiler.compile(clauses.newWithAll(request.filters())))
-			),
-			clauses -> searcher.count(parentsOnly(compiler.compile(clauses)))
+				parentsOnly(compiler.compile(clauses), compiler, clauses)
+			)
 		);
+	}
+
+	/**
+	 * Ask whether a query matches anything, without working out how much.
+	 *
+	 * The search stops at the first document it finds and scores nothing,
+	 * which is what separates this from counting - a query matching most of
+	 * the index answers as quickly as one matching a single document.
+	 *
+	 * @param searcher
+	 * @param query
+	 * @return
+	 * @throws IOException
+	 */
+	private static boolean anyMatch(
+		IndexSearcher searcher,
+		org.apache.lucene.search.Query query
+	) throws IOException {
+		return searcher.search(query, new CollectorManager<AnyMatch, Boolean>() {
+			@Override
+			public AnyMatch newCollector() {
+				return new AnyMatch();
+			}
+
+			@Override
+			public Boolean reduce(Collection<AnyMatch> collectors) {
+				return collectors.stream().anyMatch(AnyMatch::found);
+			}
+		});
+	}
+
+	/**
+	 * Remembers that a document was found and then refuses to look at any
+	 * more, which is how {@link #anyMatch} stops at the first one.
+	 */
+	private static final class AnyMatch implements Collector {
+		private boolean found;
+
+		boolean found() {
+			return found;
+		}
+
+		@Override
+		public LeafCollector getLeafCollector(LeafReaderContext context) {
+			if(found) {
+				// An earlier segment answered, so the rest are not read at all
+				throw new CollectionTerminatedException();
+			}
+
+			return new LeafCollector() {
+				@Override
+				public void setScorer(Scorable scorer) {
+				}
+
+				@Override
+				public void collect(int doc) {
+					found = true;
+					throw new CollectionTerminatedException();
+				}
+			};
+		}
+
+		@Override
+		public ScoreMode scoreMode() {
+			return ScoreMode.COMPLETE_NO_SCORES;
+		}
 	}
 
 	private DocumentReader documentReader(SetIterable<String> fields) {
@@ -2603,7 +2677,7 @@ public class Index {
 		var filtered = request.filters().collect(FieldQuery::field).toSet();
 
 		var clauses = request.query().newWithAll(request.filters());
-		var documents = parentsOnly(compiler.compile(clauses));
+		var documents = parentsOnly(compiler.compile(clauses), compiler, clauses);
 		var whole = searcher.search(documents, new FacetsCollectorManager());
 
 		var collectors = Maps.mutable.<String, FacetMatches>empty();
@@ -2637,7 +2711,7 @@ public class Index {
 
 					scope = FacetMatches.of(
 						searcher.search(
-							parentsOnly(compiler.compile(sideways)),
+							parentsOnly(compiler.compile(sideways), compiler, sideways),
 							new FacetsCollectorManager()
 						)
 					);
@@ -2686,22 +2760,52 @@ public class Index {
 	}
 
 	/**
-	 * Keep a query to the documents of the index. The values of object fields
-	 * are Lucene documents too, and anything that matches broadly - listing
-	 * the index, an exclusion - would otherwise answer with them as hits of
-	 * their own.
+	 * Keep a query to the documents of the index, for a query whose clauses
+	 * are no longer at hand to be read.
 	 *
 	 * @param query
 	 * @return
 	 */
 	private org.apache.lucene.search.Query parentsOnly(org.apache.lucene.search.Query query) {
+		return parentsOnly(query, null, null);
+	}
+
+	/**
+	 * Keep a query to the documents of the index. The values of object fields
+	 * are Lucene documents too, and anything that matches broadly - listing
+	 * the index, an exclusion - would otherwise answer with them as hits of
+	 * their own.
+	 *
+	 * Left off where the clauses say the query already matches nothing else,
+	 * because walking the documents of the index beside a search costs a step
+	 * per hit it never rules out - and a condition on a field of the index is
+	 * something no value of an object field can satisfy.
+	 *
+	 * @param query
+	 * @param compiler
+	 *   the compiler that compiled the query, or {@code null} to keep the
+	 *   query to documents whatever it holds
+	 * @param clauses
+	 *   the clauses the query was compiled from, read to tell whether it can
+	 *   match anything but documents
+	 * @return
+	 */
+	private org.apache.lucene.search.Query parentsOnly(
+		org.apache.lucene.search.Query query,
+		QueryCompiler compiler,
+		ListIterable<se.l4.exofind.engine.query.Query> clauses
+	) {
 		if(!schema.hasNestedFields()) {
+			return query;
+		}
+
+		if(compiler != null && compiler.matchesDocumentsOnly(clauses)) {
 			return query;
 		}
 
 		return new BooleanQuery.Builder()
 			.add(query, BooleanClause.Occur.MUST)
-			.add(NestedDocuments.parentsQuery(), BooleanClause.Occur.FILTER)
+			.add(NestedDocuments.parentsFilter(nestedParents), BooleanClause.Occur.FILTER)
 			.build();
 	}
 

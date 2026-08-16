@@ -6,10 +6,7 @@ import java.util.function.LongFunction;
 
 import org.apache.lucene.facet.FacetResult;
 import org.apache.lucene.facet.LongValueFacetCounts;
-import org.apache.lucene.facet.StringDocValuesReaderState;
 import org.apache.lucene.facet.StringValueFacetCounts;
-import org.apache.lucene.index.DocValuesType;
-import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.IndexReader;
 import org.eclipse.collections.api.factory.Lists;
 
@@ -69,13 +66,7 @@ public interface FacetCounter {
 	 */
 	static FacetCounter overStrings(String field, Function<String, Object> decode) {
 		return (reader, matches, limit, order) -> {
-			/*
-			 * A field no document ever held a value in has no doc values to
-			 * read, which is no counts rather than a problem - the field
-			 * being faceted at all was checked before this runs.
-			 */
-			var info = FieldInfos.getMergedFieldInfos(reader).fieldInfo(field);
-			if(info == null || info.getDocValuesType() == DocValuesType.NONE) {
+			if(!FacetStates.hasValues(reader, field)) {
 				return new SearchResult.Facet(Lists.immutable.empty(), 0);
 			}
 
@@ -84,7 +75,7 @@ public interface FacetCounter {
 			}
 
 			var counts = new StringValueFacetCounts(
-				new StringDocValuesReaderState(reader, field),
+				FacetStates.of(reader, field),
 				matches.hits()
 			);
 

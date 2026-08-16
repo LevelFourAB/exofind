@@ -29,8 +29,10 @@ import se.l4.exofind.engine.query.SearchResult;
  * separator apart to know what is below what.
  *
  * Which levels are in scope is decided once per segment rather than per
- * document, as ordinals are per segment and the tree of a catalogue is far
- * smaller than the documents filed in it.
+ * document, and so is what a level was counted as: the walk itself only ever
+ * raises a number in an array the ordinal indexes. Both hold because ordinals
+ * are per segment and the tree of a catalogue is far smaller than the documents
+ * filed in it.
  *
  * Rolling up works the way {@link NestedFacets} describes: a level is counted
  * the first time one of a document's values passes through it and never again,
@@ -98,10 +100,27 @@ final class HierarchyFacets {
 			 * neither looks a term up nor measures a path per document.
 			 */
 			var counted = new String[(int) values.getValueCount()];
+			var asked = 0;
 			for(var ord = 0; ord < counted.length; ord++) {
 				var value = values.lookupOrd(ord).utf8ToString();
-				counted[ord] = scope.holds(value) ? value : null;
+				if(scope.holds(value)) {
+					counted[ord] = value;
+					asked++;
+				}
 			}
+
+			// A segment holding none of the levels asked about is nothing to walk
+			if(asked == 0) {
+				continue;
+			}
+
+			/*
+			 * Counted per ordinal rather than per path, as an ordinal is an
+			 * index into an array where a path is a key to be hashed - the walk
+			 * below meets one per value of every document, the roll-up below it
+			 * one per level of the tree.
+			 */
+			var perOrdinal = new long[counted.length];
 
 			var document = -1;
 			var seen = LongSets.mutable.empty();
@@ -122,8 +141,7 @@ final class HierarchyFacets {
 
 				for(var i = 0; i < values.docValueCount(); i++) {
 					var ord = values.nextOrd();
-					var value = counted[(int) ord];
-					if(value == null) {
+					if(counted[(int) ord] == null) {
 						continue;
 					}
 
@@ -133,8 +151,19 @@ final class HierarchyFacets {
 					 * twice - once per value of the document holding it.
 					 */
 					if(parents == null || seen.add(ord)) {
-						counts.addToValue(value, 1);
+						perOrdinal[(int) ord]++;
 					}
+				}
+			}
+
+			/*
+			 * Ordinals are per segment, so what carries across is the path -
+			 * added here rather than in the walk, once per level the segment
+			 * held.
+			 */
+			for(var ord = 0; ord < counted.length; ord++) {
+				if(perOrdinal[ord] > 0) {
+					counts.addToValue(counted[ord], perOrdinal[ord]);
 				}
 			}
 		}
