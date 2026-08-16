@@ -24,6 +24,13 @@
 #     -e REMOTE_STORAGE_BUCKET=exofind \
 #     exofind/engine
 #
+# Change what the JVM is given, one flag at a time - see the JAVA_OPTS block
+# below for what it is started with:
+#
+#   docker run --rm -p 8080:8080 \
+#     -e JAVA_OPTS_APPEND=-XX:MaxRAMPercentage=35 \
+#     exofind/engine
+#
 # The JRE is the release the JDK in mise.toml builds for.
 ###
 FROM eclipse-temurin:25-jre-alpine
@@ -59,11 +66,28 @@ ENV EXOFIND_DECOMPOUND_DIRECTORY=/app/decompound-data
 RUN mkdir -p /data && chown exofind:exofind /data
 ENV LOCAL_STORAGE_DIRECTORY=/data
 
-# The container's memory limit is what the heap is sized against, rather than
-# the host's.
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
+# What the JVM is started with. JAVA_OPTS_APPEND is passed after it, and the
+# JVM takes the last value of a flag it is given twice, so one of these is
+# changed without restating the others. Dropping one means replacing JAVA_OPTS.
+#
+# - MaxRAMPercentage sizes the heap against the container's limit rather than
+#   the host's. Half of it and no more, because Lucene reads an index through
+#   memory maps and those pages are cached outside the heap: memory given to
+#   the heap is memory the index is not read from.
+# - jdk.incubator.vector is what Lucene runs vector distances and postings
+#   decoding through, and it falls back to scalar code without it. A module
+#   cannot be removed by a later flag, so leaving it out means replacing
+#   JAVA_OPTS rather than appending to it.
+# - enable-native-access is Lucene telling the kernel how it reads an index
+#   file. Without it every start warns, and a later JVM release refuses the
+#   call rather than warning.
+# - ExitOnOutOfMemoryError stops a node that has run out of heap instead of
+#   leaving it up holding the lock on /data and, as the indexer, renewing the
+#   lease that keeps another node from taking over.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=50 --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_OPTS_APPEND=""
 
 EXPOSE 8080
 USER exofind
 
-ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]
+ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS $JAVA_OPTS_APPEND -jar /app/quarkus-run.jar"]

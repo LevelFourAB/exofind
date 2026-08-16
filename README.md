@@ -175,3 +175,8 @@ docker run --rm -p 8080:8080 \
 
 Unlike dev mode this checks credentials, so requests carry
 `Authorization: Bearer dev-root-key` until you create keys with it.
+
+The image sizes the heap against the container's memory limit and starts the
+JVM with what Lucene wants from it. `JAVA_OPTS_APPEND` changes one of those
+without restating the others - see [The
+JVM](docs/reference/configuration.md#the-jvm).

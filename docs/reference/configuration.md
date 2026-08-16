@@ -148,3 +148,109 @@ bound set says so in its log.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SEARCH_MAX_PAGE_DEPTH` | How deep into the results offset paging may reach - the deepest result a page may end at. Requests past it are refused with `search:page:too_deep`, and numbered pages past it are never offered. Following `next`/`previous` cursors is not capped | `10000` |
+
+## The JVM
+
+Read by the container image rather than by the engine, so a node started from
+`quarkus-run.jar` by hand takes these on the command line instead.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `JAVA_OPTS` | Everything the JVM is started with. Setting it replaces the defaults below rather than adding to them | the flags below |
+| `JAVA_OPTS_APPEND` | Passed after `JAVA_OPTS`. The JVM takes the last value of a flag it is given twice, so one default is changed here without restating the rest | none |
+
+The image starts the JVM with:
+
+```
+-XX:MaxRAMPercentage=50
+--add-modules jdk.incubator.vector
+--enable-native-access=ALL-UNNAMED
+-XX:+ExitOnOutOfMemoryError
+```
+
+Halve the heap on a node that only searches, and leave the rest alone:
+
+```shell
+docker run -e JAVA_OPTS_APPEND=-XX:MaxRAMPercentage=25 exofind/engine
+```
+
+### Heap against page cache
+
+A node reads its indexes through memory maps, so the index is held in the
+kernel's page cache and not in the heap. Memory given to the heap is memory the
+index is not read from, and a node whose index no longer fits in what is left
+reads from disk on every search that misses.
+
+Half the container's limit is a heap that holds the searches themselves - the
+result sets being collected, the facets being counted, the documents being
+loaded - and leaves the other half to the index. A node that only searches can
+go lower; an indexer holds the buffered documents of an uncommitted batch and
+the segments of a running merge, and wants more.
+
+Above roughly 32 GB of heap the JVM stops compressing object pointers, and the
+same objects take more of it. A node that large is better given the memory as
+page cache.
+
+### The Vector API
+
+`--add-modules jdk.incubator.vector` is what Lucene runs vector distances and
+postings decoding through. Without it both fall back to scalar code, and the
+node logs `Java vector incubator module is not readable` at startup. With it
+the JVM warns that an incubator module is in use, which is expected and says
+nothing about the node.
+
+A module cannot be removed by a later flag, so a node that should run without
+it needs `JAVA_OPTS` replaced rather than appended to.
+
+### Native access
+
+`--enable-native-access=ALL-UNNAMED` is Lucene telling the kernel how it will
+read an index file, so pages are read ahead where a read is sequential and not
+where it is random. Without the flag the call still works and the JVM warns
+once per run; a later JVM release refuses it instead of warning, and the node
+loses the advice.
+
+### Memory maps
+
+Every index file a node holds open is at least one mapping, and Linux caps how
+many mappings a process may have with `vm.max_map_count` - 65530 on many
+distributions. A node serving many indexes, each of many segments, reaches that
+cap, and the open that crosses it fails. Raise it on the host:
+
+```shell
+sysctl -w vm.max_map_count=262144
+```
+
+### Garbage collection
+
+The image names no collector. The JVM picks G1 on a node with two processors
+and roughly 2 GB or more, and the serial collector below that.
+
+ZGC and Shenandoah are both built into the JRE the image runs on, and neither
+pays off at the heap a node runs with. What they shorten is the pause, which
+grows with the heap - and half of a container's limit is not a heap that pauses
+long. What they cost is throughput, and headroom in the heap to collect
+concurrently in. That headroom comes out of the memory the index was cached in,
+which is what decides how long a search takes.
+
+ZGC costs more than the headroom. It holds every reference uncompressed, so the
+same live set needs a larger heap - close to twice as much where the data is
+objects rather than arrays - and the page cache pays for the difference.
+
+Both are worth measuring on a node with a heap of tens of gigabytes, where a G1
+pause is long enough to reach the slowest requests. Under 32 GB of heap that is
+generational Shenandoah, which keeps references compressed:
+
+```shell
+docker run -e JAVA_OPTS_APPEND="-XX:+UseShenandoahGC -XX:ShenandoahGCMode=generational" exofind/engine
+```
+
+The mode is asked for by name because the collector still defaults to
+collecting the whole heap every cycle.
+
+### Running out of heap
+
+`-XX:+ExitOnOutOfMemoryError` stops a node that has run out of heap. A node
+left up instead holds the lock on `LOCAL_STORAGE_DIRECTORY` and, if it is the
+indexer, keeps renewing its lease - so nothing takes over from a node that
+cannot do the work. Exiting hands both back.
