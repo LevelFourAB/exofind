@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swedish food search · Exofind</title>
+<meta name="description" content="2 606 Swedish foods searched with Exofind, showing what splitting compound words does to a search.">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<div class="shell">
+
+<header class="bar">
+	<a class="bar__mark" href="../">Exofind</a>
+	<span class="bar__index" id="index-name">livsmedel</span>
+	<span class="bar__spacer"></span>
+	<span class="bar__stat" id="size"></span>
+</header>
+
+<main class="page">
+
+	<section class="ask">
+		<p class="eyebrow">Livsmedelsverkets livsmedelsdatabas</p>
+		<div class="ask__field">
+			<input class="ask__input" type="search" id="query"
+				placeholder="sås" autocomplete="off" spellcheck="false" autofocus
+				aria-label="Search Swedish foods">
+		</div>
+		<div class="ask__row">
+			<ul class="suggestions" id="suggestions">
+				<li><button type="button">sås</button></li>
+				<li><button type="button">bröd</button></li>
+				<li><button type="button">korv</button></li>
+				<li><button type="button">sylt</button></li>
+				<li><button type="button">gryta</button></li>
+				<li><button type="button">blåbär</button></li>
+			</ul>
+			<p class="status" id="status" role="status"></p>
+		</div>
+		<p class="lede">
+			Swedish glues words together, so a sauce is called
+			<strong>gravlaxsås</strong>. Searching for <strong>sås</strong>
+			finds it anyway, and the mark under a hit shows where the word was
+			cut.
+		</p>
+	</section>
+
+	<div class="split">
+		<aside class="filters">
+			<div class="filters__group">
+				<h2 class="eyebrow">Group</h2>
+				<div id="groups"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Energy · kcal per 100 g</h2>
+				<div id="energy"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Protein · g per 100 g</h2>
+				<div id="protein"></div>
+			</div>
+			<button class="clear" type="button" id="clear" hidden>Clear filters</button>
+		</aside>
+
+		<section class="results">
+			<ul class="hits" id="hits"></ul>
+		</section>
+	</div>
+
+
+</main>
+
+<footer class="foot">
+	<p>
+		Values are per 100 grams, as published. Data from Livsmedelsverkets
+		livsmedelsdatabas under
+		<a href="https://creativecommons.org/licenses/by/4.0/deed.en">CC BY 4.0</a>.
+	</p>
+</footer>
+
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

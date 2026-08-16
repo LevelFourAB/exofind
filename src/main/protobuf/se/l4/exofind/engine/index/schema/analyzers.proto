@@ -1,0 +1,272 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.index.schema;
+
+/*
+ * Analysis chains are stored as part of an index definition and follow the
+ * same rules as definitions.proto: capabilities are enabled by the presence of
+ * a message rather than a bool, scalars are `optional` so unset can be told
+ * apart from the zero value, and field numbers are never reused.
+ */
+
+/*
+ * A custom analysis chain for one way of using a field. Presence replaces the
+ * engine-built chain entirely; absence means the engine builds analysis from
+ * the value's locale and the usage. Presets in the REST API are expanded to
+ * one of these before storage, so what a chain means never shifts under an
+ * existing index.
+ *
+ * The chain describes the indexing side. The engine derives the querying side
+ * from it - a component that must not run on both sides, such as an edge
+ * n-gram, is swapped for its querying counterpart.
+ *
+ * A component that takes a locale and has none set uses the locale of the
+ * value being analyzed, which is what makes one chain serve a field whose
+ * values come in several locales.
+ */
+message AnalyzerDef {
+	/*
+	 * Run over the raw text before tokenization, in order.
+	 */
+	repeated CharFilterDef char_filters = 1;
+
+	/*
+	 * How the text is split into tokens. Absent means the engine picks for
+	 * the locale of the value - Unicode segmentation for most locales, the
+	 * locale's own segmentation for those whose words Unicode alone cannot
+	 * find, such as Chinese, Japanese and Korean.
+	 */
+	TokenizerDef tokenizer = 2;
+
+	/*
+	 * Run over the tokens, in order.
+	 */
+	repeated TokenFilterDef filters = 3;
+}
+
+/*
+ * How text is split into tokens. Every tokenizer is a message even when it has
+ * no options yet, so that options can be added without changing what is
+ * already stored.
+ */
+message TokenizerDef {
+	/*
+	 * Segment on the rules of Unicode. What the engine picks for most
+	 * locales when no tokenizer is set; setting it outright pins it, also
+	 * for the locales the engine would segment differently.
+	 */
+	message IcuTokenizer {
+	}
+
+	/*
+	 * Split on whitespace only, keeping punctuation attached to its word.
+	 */
+	message WhitespaceTokenizer {
+	}
+
+	/*
+	 * Keep the whole value as one token.
+	 */
+	message KeywordTokenizer {
+	}
+
+	/*
+	 * Split on anything that is not a letter.
+	 */
+	message LetterTokenizer {
+	}
+
+	oneof tokenizer {
+		IcuTokenizer icu = 1;
+		WhitespaceTokenizer whitespace = 2;
+		KeywordTokenizer keyword = 3;
+		LetterTokenizer letter = 4;
+	}
+}
+
+/*
+ * A transformation of the raw text before it is tokenized.
+ */
+message CharFilterDef {
+	/*
+	 * Strip HTML and XML markup, keeping the text between tags.
+	 */
+	message HtmlStrip {
+	}
+
+	/*
+	 * Replace occurrences of each key with its value. Replacements are applied
+	 * to the raw text, so a key can span what tokenization would split.
+	 */
+	message Mapping {
+		map<string, string> mappings = 1;
+	}
+
+	/*
+	 * Replace everything a regular expression matches.
+	 */
+	message PatternReplace {
+		optional string pattern = 1;
+		optional string replacement = 2;
+	}
+
+	oneof filter {
+		HtmlStrip html_strip = 1;
+		Mapping mapping = 2;
+		PatternReplace pattern_replace = 3;
+	}
+}
+
+/*
+ * A transformation of the token stream.
+ */
+message TokenFilterDef {
+	/*
+	 * Unicode normalization (NFKC), so that the different ways of writing the
+	 * same character compare as one. Folding case as part of it is what makes
+	 * analysis case-insensitive.
+	 */
+	message Normalize {
+		/*
+		 * If case is folded away. Defaults to true, so that `Spring` and
+		 * `spring` become the same term.
+		 */
+		optional bool case_folding = 1;
+	}
+
+	/*
+	 * Drop words that appear too often to tell documents apart, such as `the`
+	 * and `and`.
+	 */
+	message Stopwords {
+		/*
+		 * The stopwords of a locale (BCP-47). Leaving the locale unset means
+		 * the locale of the value being analyzed.
+		 */
+		message LocaleWords {
+			optional string locale = 1;
+		}
+
+		/*
+		 * Exactly these words and no others.
+		 */
+		message CustomWords {
+			repeated string words = 1;
+		}
+
+		/*
+		 * A list shared through the resources of the index, for words that
+		 * repeat across fields.
+		 */
+		message NamedWords {
+			optional string name = 1;
+		}
+
+		/*
+		 * Where the words come from. Unset means the words of the locale of
+		 * the value being analyzed.
+		 */
+		oneof source {
+			LocaleWords locale = 1;
+			CustomWords custom = 2;
+			NamedWords named = 3;
+		}
+	}
+
+	/*
+	 * Reduce words to a shared root, so that a search for one form finds the
+	 * others.
+	 */
+	message Stemming {
+		/*
+		 * The locale whose rules to stem by (BCP-47). Unset means the locale
+		 * of the value being analyzed.
+		 */
+		optional string locale = 1;
+	}
+
+	/*
+	 * Fold characters outside ASCII to their closest ASCII equivalent, so that
+	 * `é` matches `e`.
+	 */
+	message AsciiFolding {
+		/*
+		 * If the unfolded token is kept alongside the folded one. Defaults to
+		 * false.
+		 */
+		optional bool preserve_original = 1;
+	}
+
+	/*
+	 * Index every prefix of a token, which is what lets a partially typed word
+	 * be looked up as a term. At query time the token is kept whole and cut to
+	 * the longest prefix that was indexed, so both sides meet at the same
+	 * terms.
+	 */
+	message EdgeNgram {
+		/*
+		 * The shortest prefix to index. Defaults to 1.
+		 */
+		optional int32 min_gram = 1;
+
+		/*
+		 * The longest prefix to index. Defaults to 20.
+		 */
+		optional int32 max_gram = 2;
+	}
+
+	/*
+	 * Index every substring of a token between the given lengths.
+	 */
+	message Ngram {
+		optional int32 min_gram = 1;
+		optional int32 max_gram = 2;
+	}
+
+	/*
+	 * Widen tokens with the words that mean the same thing, taken from a
+	 * synonym set shared through the resources of the index.
+	 *
+	 * Synonyms are applied when a value is indexed and not when it is
+	 * searched, so a set that changes only affects documents indexed from
+	 * there on - the same way every other analysis change behaves.
+	 */
+	message Synonyms {
+		/*
+		 * The name of the synonym set in the resources.
+		 */
+		optional string name = 1;
+	}
+
+	/*
+	 * Split compound words into their parts, so that a search for a part
+	 * finds the compounds built from it. The whole token is kept and the
+	 * parts are added alongside it.
+	 *
+	 * Splitting happens when a value is indexed and not when it is searched,
+	 * so a compound query matches through the whole token and a changed
+	 * dictionary only affects documents indexed from there on.
+	 */
+	message Decompound {
+		/*
+		 * The locale whose rules and dictionary split the words (BCP-47).
+		 * Unset means the locale of the value being analyzed; a value in a
+		 * locale the engine has no decompounding data for passes through
+		 * unsplit.
+		 */
+		optional string locale = 1;
+	}
+
+	oneof filter {
+		Normalize normalize = 1;
+		Stopwords stopwords = 2;
+		Stemming stemming = 3;
+		AsciiFolding ascii_folding = 4;
+		EdgeNgram edge_ngram = 5;
+		Ngram ngram = 6;
+		Synonyms synonyms = 7;
+		Decompound decompound = 8;
+	}
+}

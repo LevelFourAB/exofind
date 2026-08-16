@@ -1,0 +1,423 @@
+/*
+ * The look every example page shares: the tokens, the shell around the
+ * content, and the controls that show a search - the field, the facets and the
+ * hits. What one example alone needs lives beside that example instead.
+ */
+@import '@fontsource-variable/archivo/standard.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-ext-400.css';
+@import '@fontsource/ibm-plex-mono/latin-ext-500.css';
+
+:root {
+	color-scheme: light dark;
+
+	/*
+	 * A pale mineral ground rather than a white one, so the hairlines that
+	 * carry the layout stay visible without having to be dark.
+	 */
+	--ground: #e7eae6;
+	--paper: #f7f8f6;
+	--ink: #12171b;
+	--ink-soft: #3e474e;
+	--ink-2: #5c666e;
+	--rule: #ccd2cd;
+	--rule-strong: #a9b2ac;
+	--signal: #1d3fd6;
+	--signal-ground: #dfe3fa;
+
+	--display: 'Archivo Variable', system-ui, sans-serif;
+	--data: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+	--gap: 1.5rem;
+	--measure: 78rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ground: #0f1417;
+		--paper: #161c20;
+		--ink: #e4e8e4;
+		--ink-soft: #a6b0b5;
+		--ink-2: #8b969c;
+		--rule: #293237;
+		--rule-strong: #414c52;
+		--signal: #8fa8ff;
+		--signal-ground: #1b2440;
+	}
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--ink);
+	font-family: var(--display);
+	font-stretch: 100%;
+	font-size: 15px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--signal); text-underline-offset: 0.2em; }
+
+:focus-visible {
+	outline: 2px solid var(--signal);
+	outline-offset: 2px;
+	border-radius: 1px;
+}
+
+/* --- shell ------------------------------------------------------------- */
+
+.shell {
+	min-height: 100dvh;
+	display: grid;
+	grid-template-rows: auto 1fr auto;
+}
+
+.bar {
+	display: flex;
+	align-items: baseline;
+	gap: 0.9rem;
+	flex-wrap: wrap;
+	padding: 0.85rem var(--gap);
+	border-bottom: 1px solid var(--rule-strong);
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+}
+
+.bar__mark {
+	font-family: var(--display);
+	font-stretch: 122%;
+	font-weight: 800;
+	font-size: 0.85rem;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	color: var(--ink);
+	text-decoration: none;
+}
+
+.bar__index::before { content: '/ '; color: var(--rule-strong); }
+.bar__spacer { flex: 1 1 3rem; }
+.bar__stat { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.page {
+	width: 100%;
+	max-width: var(--measure);
+	margin: 0 auto;
+	padding: 2.5rem var(--gap) 3rem;
+	display: grid;
+	gap: 2.75rem;
+	align-content: start;
+}
+
+/*
+ * The rule under the page runs the whole way across, so it reads as the edge
+ * of the page rather than of the sentence; what is written under it keeps the
+ * column the content above it is in.
+ */
+.foot {
+	border-top: 1px solid var(--rule);
+	color: var(--ink-2);
+	font-size: 0.82rem;
+}
+
+.foot p {
+	width: 100%;
+	max-width: var(--measure);
+	margin: 0 auto;
+	padding: 1.25rem var(--gap) 2.5rem;
+}
+
+/* --- headings and labels ----------------------------------------------- */
+
+.eyebrow {
+	font-family: var(--data);
+	font-size: 0.68rem;
+	font-weight: 500;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--ink-2);
+	margin: 0;
+}
+
+.lede {
+	margin: 0;
+	max-width: 58ch;
+	color: var(--ink-2);
+	font-size: 0.95rem;
+}
+
+.lede strong { color: var(--ink); font-weight: 600; }
+
+/* --- the query --------------------------------------------------------- */
+
+.ask { display: grid; gap: 1rem; }
+
+.ask__field {
+	position: relative;
+	border-bottom: 2px solid var(--rule-strong);
+	transition: border-color 120ms ease;
+}
+
+.ask__field:focus-within { border-bottom-color: var(--signal); }
+
+.ask__input {
+	width: 100%;
+	border: 0;
+	background: none;
+	color: inherit;
+	font-family: var(--display);
+	font-stretch: 112%;
+	font-weight: 700;
+	font-size: clamp(2rem, 6vw, 3.25rem);
+	letter-spacing: -0.02em;
+	line-height: 1.1;
+	padding: 0 0 0.35rem;
+	outline: 0;
+}
+
+.ask__input::placeholder {
+	color: var(--rule-strong);
+	font-weight: 500;
+}
+
+.ask__input::-webkit-search-cancel-button { display: none; }
+
+/*
+ * What can be searched for and what the last search cost, on one line under
+ * the field: the suggestions read from the left, the timing from the right.
+ */
+.ask__row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem 1.5rem;
+	flex-wrap: wrap;
+}
+
+.suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem 0.5rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	flex: 1 1 auto;
+}
+
+.suggestions button {
+	font-family: var(--data);
+	font-size: 0.78rem;
+	color: var(--ink-2);
+	background: none;
+	border: 1px solid var(--rule);
+	border-radius: 0;
+	padding: 0.15rem 0.5rem;
+	cursor: pointer;
+	transition: color 120ms ease, border-color 120ms ease;
+}
+
+.suggestions button:hover {
+	color: var(--signal);
+	border-color: var(--signal);
+}
+
+/* --- results ----------------------------------------------------------- */
+
+.split {
+	display: grid;
+	grid-template-columns: 15rem minmax(0, 1fr);
+	gap: 3rem;
+	align-items: start;
+}
+
+@media (max-width: 820px) {
+	.split { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+}
+
+.filters { display: grid; gap: 1.6rem; }
+.filters__group { display: grid; gap: 0.4rem; }
+
+.choice {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.55rem;
+	font-size: 0.88rem;
+	padding: 0.12rem 0;
+	cursor: pointer;
+}
+
+.choice__count {
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	font-variant-numeric: tabular-nums;
+}
+
+.choice:hover .choice__label { color: var(--signal); }
+.choice--empty { color: var(--ink-2); opacity: 0.5; }
+
+.choice input {
+	appearance: none;
+	width: 0.85rem;
+	height: 0.85rem;
+	margin: 0;
+	border: 1px solid var(--rule-strong);
+	background: none;
+	cursor: pointer;
+}
+
+.choice input:checked {
+	background: var(--signal);
+	border-color: var(--signal);
+}
+
+/*
+ * A square ticks and unticks; a circle is one of a set. Drawing the two apart
+ * is what says, before anything is clicked, that a group of ranges answers
+ * with one of them and a list of values with as many as are wanted.
+ */
+.choice input[type='radio'] {
+	border-radius: 50%;
+	background: none;
+}
+
+/*
+ * The dot is drawn rather than inset, so a facet keeps its look wherever a
+ * page puts it - a ring cut out of the fill would have to be painted in
+ * whatever colour happened to be behind the control.
+ */
+.choice input[type='radio']:checked {
+	background: radial-gradient(var(--signal) 0 42%, transparent 44%);
+}
+
+/* The row that stands for no range: apart from the buckets, and never dimmed */
+.choice--any { margin-bottom: 0.15rem; }
+.choice--any .choice__label { color: var(--ink-2); }
+.choice--any input:checked + .choice__label { color: inherit; }
+.choice--any:hover .choice__label { color: var(--signal); }
+
+.clear {
+	justify-self: start;
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	background: none;
+	border: 0;
+	border-bottom: 1px solid var(--rule-strong);
+	padding: 0 0 0.1rem;
+	cursor: pointer;
+}
+
+.clear:hover { color: var(--signal); border-bottom-color: var(--signal); }
+.clear[hidden] { display: none; }
+
+.results { display: grid; gap: 1.1rem; min-width: 0; }
+
+.status {
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	font-variant-numeric: tabular-nums;
+	margin: 0;
+	flex: 0 1 auto;
+	text-align: right;
+	max-width: 44ch;
+}
+
+/*
+ * A search that failed says so where its timing would have been, and takes
+ * the whole line, because what went wrong is longer than a number.
+ */
+.status--error {
+	color: var(--signal);
+	flex: 1 0 100%;
+	max-width: none;
+	text-align: left;
+}
+
+.hits { margin: 0; padding: 0; list-style: none; }
+
+.hit {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 0.15rem 1.5rem;
+	padding: 0.85rem 0;
+	border-top: 1px solid var(--rule);
+	align-items: baseline;
+}
+
+.hit:last-child { border-bottom: 1px solid var(--rule); }
+
+.hit__name {
+	margin: 0;
+	font-size: 1.1rem;
+	font-weight: 500;
+	font-stretch: 104%;
+	letter-spacing: -0.005em;
+}
+
+.hit__meta {
+	grid-column: 1;
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+}
+
+.hit__figures {
+	grid-row: 1 / span 2;
+	grid-column: 2;
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+	.hit { grid-template-columns: minmax(0, 1fr); }
+	.hit__figures {
+		grid-row: auto;
+		grid-column: 1;
+		text-align: left;
+		white-space: normal;
+	}
+}
+
+/*
+ * A matched word, and where inside it what was searched for sits.
+ *
+ * The whole word keeps the ink of the text around it - it matched, and dimming
+ * most of it would say the opposite - and a rule sits under the letters that
+ * were actually typed. So a word completed from three letters is underlined
+ * for three and a word matched whole for all of it, and where the rule stops
+ * is where the index found a seam: `gravlax|sås`.
+ */
+.mark { white-space: nowrap; }
+
+.mark__part {
+	font-weight: 600;
+	/* Inset, so marking a word never moves the line it sits on. */
+	box-shadow: inset 0 -2px 0 var(--signal);
+}
+
+.mark__rest { font-weight: 400; }
+
+.empty {
+	padding: 2.5rem 0;
+	border-top: 1px solid var(--rule);
+	color: var(--ink-2);
+	font-size: 0.95rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
+}

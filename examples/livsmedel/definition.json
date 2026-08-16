@@ -1,0 +1,48 @@
+{
+  "fields": {
+    "id": {
+      "type": "string",
+      "primaryKey": true,
+      "required": true
+    },
+    "name": {
+      "type": "string",
+      "stored": true,
+      "locales": { "defaultLocale": "sv" },
+      "matching": {
+        "highlight": {},
+        "typoTolerance": {}
+      },
+      "sort": {}
+    },
+    "nameWhole": {
+      "type": "string",
+      "locales": { "defaultLocale": "sv" },
+      "matching": {
+        "highlight": {},
+        "typoTolerance": {},
+        "decompound": "none"
+      }
+    },
+    "group": {
+      "type": "string",
+      "stored": true,
+      "filter": {},
+      "facet": {},
+      "sort": {}
+    },
+    "energy": {
+      "type": "double",
+      "stored": true,
+      "filter": {},
+      "facet": {},
+      "sort": {}
+    },
+    "fat": { "type": "double", "stored": true, "filter": {}, "sort": {} },
+    "protein": { "type": "double", "stored": true, "filter": {}, "facet": {}, "sort": {} },
+    "carbohydrates": { "type": "double", "stored": true, "filter": {}, "sort": {} },
+    "fiber": { "type": "double", "stored": true, "filter": {}, "sort": {} },
+    "sugars": { "type": "double", "stored": true, "filter": {}, "sort": {} },
+    "salt": { "type": "double", "stored": true, "filter": {}, "sort": {} }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "fields": {
+    "id": {
+      "type": "string",
+      "primaryKey": true,
+      "required": true
+    },
+    "title": {
+      "type": "string",
+      "matching": {
+        "weight": 3,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "artist": {
+      "type": "string",
+      "filter": {},
+      "facet": {},
+      "matching": {
+        "weight": 2,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "artistLine": { "type": "string" },
+    "department": {
+      "type": "string",
+      "filter": {},
+      "facet": {}
+    },
+    "type": {
+      "type": "string",
+      "filter": {},
+      "facet": {},
+      "matching": { "weight": 1 }
+    },
+    "place": {
+      "type": "string",
+      "filter": {},
+      "facet": {}
+    },
+    "culture": {
+      "type": "string",
+      "matching": { "weight": 1 }
+    },
+    "technique": {
+      "type": "string",
+      "matching": {
+        "weight": 1,
+        "highlight": {}
+      }
+    },
+    "date": { "type": "string" },
+    "creditLine": { "type": "string" },
+    "gallery": { "type": "string" },
+    "image": { "type": "string" },
+    "url": { "type": "string" },
+    "year": {
+      "type": "int32",
+      "filter": {},
+      "facet": {},
+      "sort": {}
+    },
+    "yearEnd": { "type": "int32" },
+    "onView": {
+      "type": "boolean",
+      "filter": {},
+      "facet": {}
+    }
+  },
+  "ranking": {
+    "tieBreakers": [
+      { "field": "year", "direction": "descending" }
+    ]
+  }
+}

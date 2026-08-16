@@ -1,0 +1,69 @@
+####
+# Runs the engine on the JVM.
+#
+# The application is packaged on the host rather than in the image, so
+# `target/quarkus-app` has to exist and has to be current - `mise run image`
+# does both steps:
+#
+#   ./mvnw package -DskipTests
+#   docker build -f src/main/docker/Dockerfile.jvm -t exofind/engine .
+#
+# Run it on its own, keeping everything in a volume:
+#
+#   docker run --rm -p 8080:8080 \
+#     -v exofind-data:/data \
+#     exofind/engine
+#
+# Run it against object storage, which is what more than one node needs:
+#
+#   docker run --rm -p 8080:8080 \
+#     -e EXOFIND_STORAGE_MODE=object \
+#     -e REMOTE_STORAGE_URL=http://host.docker.internal:9000 \
+#     -e REMOTE_STORAGE_ACCESS_KEY=exofind \
+#     -e REMOTE_STORAGE_SECRET_KEY=exofind123 \
+#     -e REMOTE_STORAGE_BUCKET=exofind \
+#     exofind/engine
+#
+# The JRE is the release the JDK in mise.toml builds for.
+###
+FROM eclipse-temurin:25-jre-alpine
+
+# The id is pinned rather than allocated, because a bind mount keeps the host's
+# ownership and masks the chown below - the directory on the host has to be
+# owned by this exact id, and an id that moved when the base image changed
+# would break every existing deployment. 1001 is what Dockerfile.native runs
+# as, so one number covers both images.
+RUN addgroup -S -g 1001 exofind && adduser -S -u 1001 -G exofind exofind
+
+WORKDIR /app
+
+# The four parts of a Quarkus fast-jar in their own layers, least likely to
+# change first, so a code change only replaces the last of them.
+COPY --chown=exofind:exofind target/quarkus-app/lib/ lib/
+COPY --chown=exofind:exofind target/quarkus-app/*.jar ./
+COPY --chown=exofind:exofind target/quarkus-app/app/ app/
+COPY --chown=exofind:exofind target/quarkus-app/quarkus/ quarkus/
+
+# The decompounding data, read from disk rather than the jar. The directory
+# carries its own attribution file, so the licensing travels with the data.
+COPY --chown=exofind:exofind decompound-data/ decompound-data/
+ENV EXOFIND_DECOMPOUND_DIRECTORY=/app/decompound-data
+
+# Where the node writes: copies of the indexes in object mode, and the indexes,
+# the registry and the keys themselves in local mode. Mount a volume here, or a
+# local node loses everything with the container.
+#
+# Created and owned here because the node cannot do it itself: it runs as
+# exofind, and neither the directory nor a volume mounted over it would be
+# writable by that user otherwise.
+RUN mkdir -p /data && chown exofind:exofind /data
+ENV LOCAL_STORAGE_DIRECTORY=/data
+
+# The container's memory limit is what the heap is sized against, rather than
+# the host's.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
+
+EXPOSE 8080
+USER exofind
+
+ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

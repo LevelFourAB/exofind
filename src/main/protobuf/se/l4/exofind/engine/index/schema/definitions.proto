@@ -1,0 +1,905 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.index.schema;
+
+import "se/l4/exofind/engine/index/schema/analyzers.proto";
+
+/*
+ * This file is the on-disk format of an index definition and has to stay
+ * readable for as long as an index exists. Three rules keep it that way:
+ *
+ * 1. A capability is turned on by the presence of a message, never by a bool.
+ *    A bool can never grow options, a message can. `matching` being set at all
+ *    means matching is enabled, whatever the message contains.
+ * 2. Scalars are `optional` so that unset can be told apart from the zero
+ *    value. The engine, not the caller, decides what a default is.
+ * 3. Field numbers are never reused. A number that changes meaning is marked
+ *    `reserved` and the new meaning gets a new number.
+ *
+ * Ways of using a field come in two kinds. The ones that depend on how the
+ * value is analyzed, such as full text matching, live on the type. The ones
+ * that work the same whatever the value is - filtering, sorting, faceting -
+ * live on FieldDef, so they read the same across every type.
+ */
+
+/*
+ * Config that enables filtering documents by the value of a field.
+ *
+ * Filtering is exact and does not score, which is what separates it from the
+ * matching of a string field. How a string is normalized before it is compared
+ * exactly lives on the string type, so this reads the same for every type.
+ */
+message FilterConfig {
+}
+
+/*
+ * Config that enables ordering results by the value of a field.
+ */
+message SortConfig {
+	/*
+	 * How two values are ordered relative to each other.
+	 */
+	enum Collation {
+		COLLATION_UNSPECIFIED = 0;
+		/*
+		 * Order by the bytes of the value. Fast, but only gives an order a
+		 * reader expects for plain ASCII.
+		 */
+		COLLATION_BINARY = 1;
+		/*
+		 * Order by the rules of the locale, so that for example `å` sorts
+		 * where a reader of that locale expects it rather than after `z`.
+		 */
+		COLLATION_LOCALE = 2;
+	}
+
+	/*
+	 * The collation to use. Only meaningful for strings, which default to
+	 * COLLATION_LOCALE.
+	 */
+	optional Collation collation = 1;
+
+	/*
+	 * Where documents that have no value for the field end up.
+	 */
+	enum Missing {
+		MISSING_UNSPECIFIED = 0;
+		MISSING_FIRST = 1;
+		MISSING_LAST = 2;
+	}
+
+	/*
+	 * Where documents without a value are placed when ordering ascending.
+	 * Defaults to MISSING_LAST.
+	 */
+	optional Missing missing = 2;
+}
+
+/*
+ * Config that enables counting how many documents share each value of a
+ * field, for building the filters a user picks from.
+ */
+message FacetConfig {
+}
+
+message StringFieldTypeDef {
+	message ValidationConfig {
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+
+	/*
+	 * How values are normalized for the exact usages - filtering. Absent
+	 * means the engine defaults. Sorting is separate, it orders by collation,
+	 * and facets count the value as it was given.
+	 */
+	message KeywordConfig {
+		/*
+		 * If case is folded away before values are compared exactly.
+		 *
+		 * Defaults to true, so that filtering on `Fiction` also finds
+		 * `fiction`.
+		 */
+		optional bool case_folding = 1;
+	}
+
+	/*
+	 * How values are normalized before they are compared exactly.
+	 */
+	KeywordConfig keyword = 2;
+
+	/*
+	 * One shape for every text usage. Which slot it sits in decides the
+	 * engine-built default chain and the Lucene fields it writes.
+	 */
+	message TextUsageConfig {
+		/*
+		 * How the text is analyzed. Presence replaces the engine-built chain
+		 * entirely; absence means the engine builds the chain from the locale
+		 * of the value and the usage.
+		 */
+		AnalyzerDef analyzer = 1;
+
+		/*
+		 * How much a hit in this field counts relative to hits in other fields
+		 * when text is searched across several.
+		 *
+		 * Defaults to 1.
+		 */
+		optional float weight = 2;
+
+		/*
+		 * Config that enables highlighting where in the text the matches were,
+		 * which requires the text to be kept.
+		 */
+		message HighlightConfig {
+		}
+
+		/* Config that enables highlighting. */
+		HighlightConfig highlight = 3;
+
+		/*
+		 * Config that enables matching words despite typing mistakes. Fuzzy
+		 * matching costs a walk of the terms near each word, so where it is
+		 * allowed is declared here rather than decided per query.
+		 */
+		message TypoToleranceConfig {
+			/*
+			 * The shortest word that may contain one typo. Defaults to 5.
+			 */
+			optional int32 min_length_one_typo = 1;
+			/*
+			 * The shortest word that may contain two typos. Defaults to 9.
+			 */
+			optional int32 min_length_two_typos = 2;
+			/*
+			 * How many leading characters have to match exactly. Defaults
+			 * to 1.
+			 */
+			optional int32 prefix_length = 3;
+		}
+
+		/* Config that enables matching words despite typing mistakes. */
+		TypoToleranceConfig typo_tolerance = 4;
+
+		/*
+		 * The name of an analysis chain shared through the resources of the
+		 * index, used instead of an inline chain. At most one of this and
+		 * `analyzer` is set.
+		 */
+		optional string analyzer_ref = 5;
+
+		/*
+		 * Whether the engine-built chain splits compound words. On unless
+		 * turned off, so absence has to stay tellable apart from off - which
+		 * is why this is an enum rather than a message.
+		 */
+		enum DecompoundMode {
+			/*
+			 * The engine decides by the locale of the value: values in a
+			 * locale the engine has decompounding data for are split, others
+			 * pass through unsplit.
+			 */
+			DECOMPOUND_MODE_UNSPECIFIED = 0;
+
+			/*
+			 * Never split, whatever the locale.
+			 */
+			DECOMPOUND_MODE_NONE = 1;
+		}
+
+		/*
+		 * Whether compound words are split into their parts. Only consulted
+		 * when the engine builds the chain - a chain given through `analyzer`
+		 * or `analyzer_ref` says itself whether it splits, so this is never
+		 * stored alongside one.
+		 */
+		optional DecompoundMode decompound = 6;
+
+		/*
+		 * Config that enables a value the search matched whole counting for
+		 * more than one that merely contains the same words, so that a
+		 * document named what was typed comes first.
+		 *
+		 * The value is written a second time as a single term, normalized the
+		 * way this usage normalizes one - the char filters of its chain, its
+		 * case folding and its Unicode normalization, but nothing that splits,
+		 * joins or drops a word - and the text searched for is normalized the
+		 * same way before it is looked up. Only ranking is affected: the term
+		 * lifts a document the words already found and never brings in one
+		 * they did not, so what a search matched and what the facets beside it
+		 * count stay as they were.
+		 */
+		message ExactConfig {
+			/*
+			 * How much a whole-value match adds, on the scale of what a hit in
+			 * this field counts. Defaults to 2.
+			 */
+			optional float boost = 1;
+		}
+
+		/* Config that enables ranking a whole-value match above a mention. */
+		ExactConfig exact = 7;
+
+		/*
+		 * How much the length of a value counts against it, which is what
+		 * ranks the same words covering a short value above them sitting
+		 * inside a long one. Counted unless turned off, so absence has to stay
+		 * tellable apart from off - which is why this is an enum rather than a
+		 * message.
+		 *
+		 * Read where the search runs rather than where the value was indexed,
+		 * so changing it reorders results without anything being reindexed.
+		 */
+		enum LengthNormalization {
+			/*
+			 * The engine decides, which is MODERATE.
+			 */
+			LENGTH_NORMALIZATION_UNSPECIFIED = 0;
+
+			/*
+			 * Length is not counted at all, so a value ranks by its words
+			 * however much else it holds. For a field where a longer value is
+			 * not a worse answer, only a fuller one.
+			 */
+			LENGTH_NORMALIZATION_NONE = 1;
+
+			/*
+			 * Length counts the way it does for prose, where a longer text
+			 * holding a word says a little less about it than a shorter one.
+			 */
+			LENGTH_NORMALIZATION_MODERATE = 2;
+
+			/*
+			 * Length counts fully, for a field holding names rather than
+			 * prose, where the words left over are the difference between the
+			 * thing that was asked for and one merely related to it.
+			 */
+			LENGTH_NORMALIZATION_STRONG = 3;
+		}
+
+		/*
+		 * How much the length of a value counts against it.
+		 */
+		optional LengthNormalization length_normalization = 8;
+	}
+
+	/* Config that enables searching for partial matches. */
+	TextUsageConfig matching = 3;
+
+	/* Config that enables autocomplete. */
+	TextUsageConfig autocomplete = 4;
+
+	/*
+	 * Config that reads values as paths through a tree, such as
+	 * `Men/Shoes/Running`, rather than as values standing on their own.
+	 *
+	 * Lives on the type rather than on FieldDef because it is about how a
+	 * value is read: what makes a path a path is the separator inside it.
+	 * Each value is written once per level it passes through, which is what
+	 * lets a facet count a level at a time and the `under` matcher narrow to
+	 * a subtree.
+	 */
+	message HierarchyConfig {
+		/*
+		 * What separates one level of a path from the next. Absent means `/`.
+		 *
+		 * Part of how values were written, so changing it on an index that
+		 * holds documents needs those documents indexed again.
+		 */
+		optional string separator = 1;
+	}
+
+	/*
+	 * Config that reads values as paths through a tree.
+	 */
+	HierarchyConfig hierarchy = 5;
+}
+
+/*
+ * Int32FieldTypeDef is a definition of an int32 field.
+ */
+message Int32FieldTypeDef {
+	message ValidationConfig {
+		/*
+		 * The minimum value of the field.
+		 */
+		optional int32 min = 1;
+		/*
+		 * The maximum value of the field.
+		 */
+		optional int32 max = 2;
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * Int64FieldTypeDef is a definition of an int64 field.
+ */
+message Int64FieldTypeDef {
+	message ValidationConfig {
+		optional int64 min = 1;
+		optional int64 max = 2;
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * FloatFieldTypeDef is a definition of a float field.
+ */
+message FloatFieldTypeDef {
+	message ValidationConfig {
+		optional float min = 1;
+		optional float max = 2;
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * DoubleFieldTypeDef is a definition of a double field.
+ */
+message DoubleFieldTypeDef {
+	message ValidationConfig {
+		optional double min = 1;
+		optional double max = 2;
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * TimestampFieldTypeDef is a definition of a field holding a point in time.
+ *
+ * A value is an ISO 8601 date and time with an offset - `Z` or `+02:00` - and
+ * is compared, filtered and ordered as the instant it names, at millisecond
+ * precision. The offset only says where the clock was read; two values naming
+ * the same instant are the same value. What was given is what results return.
+ */
+message TimestampFieldTypeDef {
+	message ValidationConfig {
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * GeoPointFieldTypeDef is a definition of a field holding a point on the
+ * earth, as a WGS 84 latitude and longitude. It is searched by distance from
+ * an origin, and ordered by that distance, rather than filtered on as a value.
+ */
+message GeoPointFieldTypeDef {
+	message ValidationConfig {
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * BooleanFieldTypeDef is a definition of a boolean field.
+ */
+message BooleanFieldTypeDef {
+	message ValidationConfig {
+	}
+
+	/**
+	 * Defines the validation rules for the field.
+	 */
+	ValidationConfig validation = 1;
+}
+
+/*
+ * VectorFieldTypeDef is a definition of a vector field. Vectors are used for
+ * similarity search, such as semantic search.
+ */
+message VectorFieldTypeDef {
+	optional int32 dimensions = 1;
+
+	/**
+	 * Different types of similarity metrics to use for the vector.
+	 */
+	enum SimilarityMetric {
+		SIMILARITY_METRIC_UNSPECIFIED = 0;
+		SIMILARITY_METRIC_COSINE = 1;
+		/**
+		 * Ranks by the dot product of the vectors, which only orders sensibly
+		 * when every vector is unit length. That is a promise the caller makes
+		 * about the model the vectors come from, not something checked per
+		 * value.
+		 */
+		SIMILARITY_METRIC_DOT_PRODUCT = 2;
+		SIMILARITY_METRIC_EUCLIDEAN = 3;
+	}
+
+	/**
+	 * The similarity metric to use for the vector. Defaults to COSINE.
+	 */
+	optional SimilarityMetric similarity = 2;
+
+	message HNSWConfig {
+		/**
+		 * The number of neighbors to consider for the vector.
+		 */
+		optional int32 m = 1;
+		/**
+		 * The number of ef construction to use for the vector.
+		 */
+		optional int32 ef_construction = 2;
+	}
+
+	/**
+	 * The HNSW configuration to use for the vector.
+	 */
+	HNSWConfig hnsw = 3;
+
+	/**
+	 * How much precision a stored vector gives up for space. A choice among
+	 * modes that is off unless asked for, so an enum with an unspecified zero
+	 * rather than a message - absence means full precision.
+	 */
+	enum Quantization {
+		QUANTIZATION_UNSPECIFIED = 0;
+		QUANTIZATION_NONE = 1;
+		/**
+		 * Scalar quantization to 7 bits per component, the "int8" of vector
+		 * stores. What a value means here is written to disk, so a future
+		 * true 8-bit mode is a new value, never a change to this one.
+		 */
+		QUANTIZATION_INT8 = 2;
+		/**
+		 * Scalar quantization to 4 bits per component, packed two to a byte.
+		 */
+		QUANTIZATION_INT4 = 3;
+	}
+
+	/**
+	 * How stored vectors are quantized. Defaults to NONE.
+	 */
+	optional Quantization quantization = 4;
+}
+
+/*
+ * ObjectFieldTypeDef is a definition of a field whose values are documents of
+ * their own, described by the fields here the same way the index describes its
+ * documents.
+ *
+ * Every value is kept as its own unit: a search can ask that several
+ * conditions hold inside the same value, rather than one value satisfying one
+ * condition and another value the rest. A field declared `multiple` holds a
+ * list of such values.
+ */
+message ObjectFieldTypeDef {
+	/*
+	 * The fields a value holds. Keys are the names inside the value; outside,
+	 * a field is referred to by the dotted path through the object.
+	 */
+	map<string, FieldDef> fields = 1;
+}
+
+/*
+ * FieldType represents the types of data that can be indexed and queried.
+ */
+message FieldTypeDef {
+	oneof type {
+		StringFieldTypeDef string = 1;
+		Int32FieldTypeDef int32 = 2;
+		Int64FieldTypeDef int64 = 3;
+		FloatFieldTypeDef float = 4;
+		DoubleFieldTypeDef double = 5;
+		BooleanFieldTypeDef boolean = 6;
+		VectorFieldTypeDef vector = 7;
+		TimestampFieldTypeDef timestamp = 8;
+		GeoPointFieldTypeDef geo_point = 9;
+		ObjectFieldTypeDef object = 10;
+	}
+}
+
+/*
+ * FieldDef is a definition of a field that is available to be used in an
+ * index.
+ */
+message FieldDef {
+	/*
+	 * If the field is the primary key.
+	 */
+	optional bool primary_key = 1;
+
+	/*
+	 * The type of the field.
+	 */
+	FieldTypeDef type = 2;
+
+	/*
+	 * If the field is required to be present when a document is added.
+	 * Can not be set to true if the name contains a wildcard.
+	 */
+	optional bool required = 3;
+
+	/*
+	 * If the field can have multiple values.
+	 */
+	optional bool multiple = 4;
+
+	/*
+	 * If the field is stored, meaning it can be retrieved in the search results.
+	 */
+	optional bool stored = 5;
+
+	/*
+	 * Present when values of the field differ per locale. Analysis and
+	 * collation follow the locale each value carries.
+	 */
+	message LocaleConfig {
+		/*
+		 * The locale assumed for a value that does not carry one (BCP-47).
+		 */
+		optional string default_locale = 1;
+
+		/*
+		 * The locales the field holds values in, besides the default. Listing
+		 * them is what lets the schema know every variant a field can have -
+		 * which stored variants to load when only some fields are wanted, and
+		 * which locales a search can ask for. A value carrying a locale that
+		 * is not listed here (or the default) is refused.
+		 */
+		repeated string locales = 2;
+
+		/*
+		 * Whether the field takes part in IndexDef.locale_fallback. Unset
+		 * means it does, so the index turning fallback on is what fills every
+		 * field that has not said otherwise.
+		 */
+		enum Fallback {
+			FALLBACK_UNSPECIFIED = 0;
+			/*
+			 * Fill the locales this field holds no value in, the way the
+			 * index says to. The same as unset, written out.
+			 */
+			FALLBACK_ENABLED = 1;
+			/*
+			 * Leave the locales this field holds no value in empty, even
+			 * where the index fills them.
+			 */
+			FALLBACK_DISABLED = 2;
+		}
+
+		/*
+		 * Whether the field takes part in the locale fallback of the index.
+		 * Only read for an index that declares one.
+		 */
+		Fallback fallback = 3;
+	}
+
+	/*
+	 * Config that makes values of this field locale specific.
+	 */
+	LocaleConfig locales = 6;
+
+	/*
+	 * Config that enables filtering documents by this field.
+	 */
+	FilterConfig filter = 7;
+
+	/*
+	 * Config that enables ordering results by this field.
+	 */
+	SortConfig sort = 8;
+
+	/*
+	 * Config that enables counting documents per value of this field.
+	 */
+	FacetConfig facet = 9;
+}
+
+/*
+ * Things shared between the fields of an index rather than owned by one -
+ * analysis chains, stopword lists and synonym sets, each named and referred to
+ * by that name from the fields.
+ *
+ * Resources are part of the definition, so they sync with it and never with a
+ * Lucene commit. Changing one changes what is written from there on; documents
+ * indexed before keep the terms they were given, the same way every other
+ * analysis change behaves.
+ */
+message ResourcesDef {
+	/*
+	 * Analysis chains by name, referred to by `analyzer_ref` on a text usage.
+	 */
+	map<string, AnalyzerDef> analyzers = 1;
+
+	/*
+	 * A list of stopwords, referred to by name from the stopwords component of
+	 * a chain.
+	 */
+	message StopwordsResource {
+		repeated string words = 1;
+	}
+
+	/*
+	 * Stopword lists by name.
+	 */
+	map<string, StopwordsResource> stopwords = 2;
+
+	/*
+	 * Words that mean the same thing, referred to by name from the synonyms
+	 * component of a chain.
+	 */
+	message SynonymsResource {
+		message Rule {
+			/*
+			 * Terms that all mean the same thing - each of them matches every
+			 * other.
+			 */
+			message Equivalent {
+				repeated string terms = 1;
+			}
+
+			/*
+			 * One way: a value containing one of `from` also answers searches
+			 * for any of `to`, but not the other way around.
+			 */
+			message Mapping {
+				repeated string from = 1;
+				repeated string to = 2;
+			}
+
+			oneof rule {
+				Equivalent equivalent = 1;
+				Mapping mapping = 2;
+			}
+		}
+
+		repeated Rule rules = 1;
+	}
+
+	/*
+	 * Synonym sets by name.
+	 */
+	map<string, SynonymsResource> synonyms = 3;
+}
+
+/*
+ * Config that gives an index a standing opinion about the order of results.
+ *
+ * The tie breakers are appended after whatever primary ordering a search asked
+ * for - its own sort, or relevance when it gave none - so they decide the
+ * order within ties, where the search expressed no preference, and can never
+ * disturb the order it did ask for.
+ *
+ * The signals are the graded part of the same opinion: a value the documents
+ * carry, read at query time and multiplied into their relevance, so a popular
+ * or a recent document ranks above an equally good match that is neither.
+ * Unlike a tie breaker they only mean something where relevance is the
+ * ordering, so a search sorting by a field of its own is left alone.
+ */
+message RankingConfig {
+	message TieBreaker {
+		/*
+		 * The field to break ties by. Has to be defined for sorting.
+		 */
+		optional string field = 1;
+
+		enum Direction {
+			DIRECTION_UNSPECIFIED = 0;
+			DIRECTION_ASCENDING = 1;
+			DIRECTION_DESCENDING = 2;
+		}
+
+		/*
+		 * Which end of the field wins the tie. Defaults to DESCENDING, the way
+		 * recency and popularity read.
+		 */
+		optional Direction direction = 2;
+	}
+
+	/*
+	 * The tie breakers, applied in order until one of them tells two documents
+	 * apart.
+	 */
+	repeated TieBreaker tie_breakers = 1;
+
+	/*
+	 * A value of the documents themselves taken into their relevance.
+	 *
+	 * The value is read from the doc values the field already wrote for
+	 * sorting, shaped into a number between zero and one, and multiplied into
+	 * the score as `1 + weight * shape`. Two properties follow from that and
+	 * are the point of the shaping: a weight of zero changes nothing, and a
+	 * document holding no value contributes nothing rather than being
+	 * multiplied away.
+	 *
+	 * Every shape is bounded, so however far a value runs it can lift a
+	 * document by at most its weight and never drown out how well the document
+	 * matched. Shaping happens where the search runs rather than where the
+	 * document was indexed, which is what lets a ranking be changed, or two of
+	 * them compared, without touching the documents.
+	 */
+	message Signal {
+		/*
+		 * The field to read the value from. Has to be a number or a timestamp
+		 * defined for sorting, as that is the value being read.
+		 */
+		optional string field = 1;
+
+		/*
+		 * How much a value is worth relative to how far it is above the pivot,
+		 * as `value / (value + pivot)` - half at the pivot, approaching but
+		 * never reaching one above it. The shape for a count that has no
+		 * ceiling, such as how often something was bought.
+		 *
+		 * Values below zero are read as zero, since the shape has no meaning
+		 * where the count is negative.
+		 */
+		message Saturation {
+			/*
+			 * The value that counts for half of what the signal can give. Has
+			 * to be given, and to be above zero - there is no pivot that is
+			 * right for every catalogue, and guessing one would rank quietly
+			 * wrong rather than refuse.
+			 */
+			optional double pivot = 1;
+		}
+
+		/*
+		 * How much a value is worth relative to how long ago it was, halving
+		 * every half life. The shape for a timestamp, where what matters is
+		 * age rather than the instant itself; a value in the future is worth
+		 * as much as one from this moment.
+		 */
+		message Decay {
+			/*
+			 * How long it takes for the signal to be worth half as much. Has to
+			 * be given, and to be above zero.
+			 */
+			optional int64 half_life_seconds = 1;
+		}
+
+		/*
+		 * How the value is shaped into what it contributes. Presence is what
+		 * picks the shape, so a signal naming none is refused rather than
+		 * quietly counting for nothing.
+		 */
+		oneof shape {
+			Saturation saturation = 2;
+			Decay decay = 3;
+		}
+
+		/*
+		 * How much the signal can lift a document at most, as a share of its
+		 * score. Defaults to 1, which lets a document at the top of the signal
+		 * reach twice the score of one holding no value at all.
+		 */
+		optional float weight = 4;
+	}
+
+	/*
+	 * The signals, each multiplied into the score in turn.
+	 */
+	repeated Signal signals = 2;
+}
+
+message IndexDef {
+	/*
+	 * How much of a document is kept alongside the index it was written to.
+	 */
+	enum SourceMode {
+		SOURCE_MODE_UNSPECIFIED = 0;
+		/*
+		 * Keep the document as it was given. Retrieval returns the values that
+		 * arrived, whatever they were declared as, and a document can be
+		 * indexed again from the index itself after its definition changes.
+		 */
+		SOURCE_MODE_FULL = 1;
+		/*
+		 * Keep nothing beyond the fields that ask to be stored. Cheaper on
+		 * disk, and on everything an index is pushed and pulled across, at the
+		 * cost of a document only coming back as far as it was stored.
+		 */
+		SOURCE_MODE_NONE = 2;
+	}
+
+	/*
+	 * How much of a document to keep. Defaults to SOURCE_MODE_FULL, and is
+	 * written out when an index is created so that a later version changing
+	 * what the default means can not quietly change an index that already
+	 * exists.
+	 */
+	optional SourceMode source = 4;
+
+	/**
+	 * User supplied metadata for the index.
+	 */
+	map<string, string> metadata = 1;
+
+	/*
+	 * The fields that the index contains.
+	 */
+	map<string, FieldDef> fields = 2;
+
+	/*
+	 * How the index breaks ties in the order of results.
+	 */
+	RankingConfig ranking = 5;
+
+	/*
+	 * Things shared between fields, named here and referred to by name.
+	 */
+	ResourcesDef resources = 6;
+
+	/*
+	 * Present when a document holding no value for one of a field's locales is
+	 * given one from another, so a search in that locale still finds, orders
+	 * and counts it.
+	 *
+	 * The copy is written when the document is indexed, analyzed and collated
+	 * as the locale it fills rather than as the one it came from. It is
+	 * written to the Lucene fields alone, so a document read back still holds
+	 * only the locales it was given in.
+	 *
+	 * Writing the copy is what keeps a variant answerable at all, which
+	 * reading around the gap at query time would not. Collation keys from two
+	 * locales are not comparable, so a sort that read a different variant per
+	 * document would order by nothing, and term statistics are per field, so
+	 * a search across variants would rank by whichever of them had the
+	 * sparser corpus. One filled variant means one field, one collator and
+	 * one set of statistics, and every reader below stays as it was.
+	 *
+	 * Applies to every locale specific field except those setting
+	 * LocaleConfig.Fallback to FALLBACK_DISABLED. Only decides what is written
+	 * from here on: documents indexed before the chain changed keep the
+	 * variants they were given until they are indexed again.
+	 */
+	message LocaleFallbackConfig {
+		/*
+		 * The locales to take a value from, in the order they are tried, for
+		 * a locale a document holds no value in (BCP-47).
+		 *
+		 * A field skips the entries it holds no values in, so one chain
+		 * serves fields declaring different locales. Empty means every field
+		 * falls back to its own default locale.
+		 */
+		repeated string chain = 1;
+	}
+
+	/*
+	 * Config that fills the locales a document holds no value in.
+	 */
+	LocaleFallbackConfig locale_fallback = 7;
+
+	/*
+	 * Names of the engine features this definition needs, written by whichever
+	 * version of the engine last stored it.
+	 *
+	 * Unknown fields survive being parsed, so a node reading a definition from
+	 * a newer version sees a field it has no code for and would quietly index
+	 * without it. Listing what a definition needs turns that into something a
+	 * node can check: one that does not know a name here refuses the index
+	 * instead of getting it subtly wrong.
+	 */
+	repeated string required_features = 3;
+}

@@ -1,0 +1,8 @@
+# Parts the test grammar may split a compound into. `Vinter` is capitalized
+# on purpose - entries are folded when loaded, so it has to meet a lowercase
+# token anyway.
+regn
+jakke
+Vinter
+hus
+bil

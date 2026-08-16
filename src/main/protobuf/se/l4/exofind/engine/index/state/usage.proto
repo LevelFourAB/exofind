@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.index.state;
+
+/*
+ * This file is the format a node records the use of a local index copy in.
+ * The record is written next to the copy and never uploaded, but it outlives
+ * restarts and upgrades of the node that wrote it, so the same rules as for
+ * the other stored formats apply: scalars are `optional` so unset can be told
+ * apart from the zero value, and a field number is never reused.
+ */
+
+/**
+ * IndexUsage records when and how often the local copy of an index has been
+ * used, which decides the order local copies are given up in when their disk
+ * space is bounded.
+ */
+message IndexUsage {
+	/*
+	 * When the copy was last in use, as milliseconds since the Unix epoch.
+	 * Set when the index is opened and again when it closes, so the value
+	 * covers the whole span the index was open rather than the moment it was
+	 * opened.
+	 */
+	optional int64 last_used_ms = 1;
+
+	/*
+	 * How often the index has been opened, halved for every half-life that
+	 * had passed between opens. The value is only meaningful together with
+	 * decayed_at_ms - reading it later means decaying it further first. The
+	 * half-life itself is not stored; the value is read under whichever one
+	 * the node is configured with.
+	 */
+	optional double decayed_opens = 2;
+
+	/*
+	 * When decayed_opens was last brought up to date, as milliseconds since
+	 * the Unix epoch.
+	 */
+	optional int64 decayed_at_ms = 3;
+}

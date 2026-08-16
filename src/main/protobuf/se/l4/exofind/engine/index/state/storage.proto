@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.index.state;
+
+/*
+ * This file is the format a synchronized index is described in, both in the
+ * remote and on the disk of every node holding a copy, so it has to stay
+ * readable for as long as an index exists. The same rules as for an index
+ * definition apply: scalars are `optional` so unset can be told apart from
+ * the zero value, and a field number is never reused.
+ */
+
+/**
+ * ManifestFile represents a file in the index storage.
+ */
+message ManifestFile {
+	/**
+	 * The name of the file.
+	 */
+	string name = 1;
+	/**
+	 * The size of the file.
+	 */
+	int64 size = 2;
+	/**
+	 * CRC-32C of the contents, used to tell two versions of a file apart when
+	 * they happen to be the same length.
+	 *
+	 * Unset in a manifest written before checksums were recorded, where the
+	 * size is all there is to compare. A different algorithm would have to be
+	 * a new field, as an old node has no way of telling which one produced a
+	 * value it finds here.
+	 */
+	optional fixed32 checksum = 3;
+	/**
+	 * Key the file is stored under in the remote, relative to the index's
+	 * prefix. Files are written under a prefix named for the epoch of the
+	 * writer that uploaded them, and keep that key for as long as their
+	 * contents stay the same, so a file is never uploaded again just because
+	 * the epoch moved on.
+	 *
+	 * Unset in a manifest written before keys were recorded, where the name
+	 * is also the key.
+	 */
+	optional string key = 4;
+}
+
+/**
+ * Manifest is a list of files in the index storage.
+ */
+message Manifest {
+	/**
+	 * The latest segment number, as named by Lucene. Kept for describing what
+	 * a manifest holds rather than for deciding whether it is current, as it
+	 * only moves when Lucene commits and the manifest covers more than that.
+	 */
+	int64 latest_segment = 1;
+	/**
+	 * The list of files in the index storage, ordered by name.
+	 */
+	repeated ManifestFile files = 2;
+	/**
+	 * Incremented every time a manifest is pushed, so that two manifests can
+	 * be ordered relative to each other.
+	 *
+	 * Unset in a manifest written before versions were recorded, which orders
+	 * before every version a node writes.
+	 */
+	optional int64 version = 3;
+	/**
+	 * Epoch of the writer that produced this manifest. A writer session
+	 * claims an epoch by rewriting the manifest with the next one before it
+	 * uploads anything, and writes its files under a key prefix named for it,
+	 * so the uploads of two sessions can never overwrite each other even when
+	 * Lucene names their files the same.
+	 *
+	 * Unset in a manifest written before epochs were recorded, which reads as
+	 * epoch zero.
+	 */
+	optional int64 epoch = 4;
+	/**
+	 * Major Lucene version the index was created with, which never changes for
+	 * as long as the index exists. Lucene reads an index created by the
+	 * current major and the one before it, and refuses anything older, so this
+	 * is what says whether a build can still open the files - and, being in
+	 * the manifest, says it before any of them are downloaded.
+	 *
+	 * Unset in a manifest written before the version was recorded, where the
+	 * only way to find out is to read the segments after pulling them.
+	 */
+	optional int32 lucene_created_major = 5;
+	/**
+	 * Lucene version that wrote the newest commit, as it names itself. Kept
+	 * for describing what produced the files rather than for deciding whether
+	 * they can be read, which only the creating major has a say in.
+	 *
+	 * Unset in a manifest written before the version was recorded, or for an
+	 * index that has no commit yet.
+	 */
+	optional string lucene_written_version = 6;
+}
+
+/**
+ * IndexerLease is the claim a node holds on being the one that indexes.
+ * Stored next to the indexes rather than inside one, and replaced with a
+ * conditional write like the manifests are, which is what turns acquiring it
+ * into a race exactly one node can win.
+ *
+ * Holding the lease is a liveness matter - it decides who tries to write.
+ * The conditional writes of the manifests are what keep a node that wrongly
+ * still believes it is the indexer from doing damage, so a reader of this
+ * message must never treat it as proof.
+ */
+message IndexerLease {
+	/**
+	 * Node holding the lease.
+	 */
+	optional string node = 1;
+	/**
+	 * When the claim lapses unless renewed, as milliseconds since the Unix
+	 * epoch. Compared against the clock of whoever reads it, so skew between
+	 * nodes stretches or shrinks the wait - renewal happens well inside the
+	 * duration to absorb that.
+	 */
+	optional int64 expires_at = 2;
+	/**
+	 * Address the node serves writes on, for pointing callers at it. Unset
+	 * when the node has none to offer.
+	 */
+	optional string address = 3;
+}

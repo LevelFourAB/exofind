@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+/*
+ * Named so that the descriptor holder does not take the name of the engine
+ * class that reads these messages.
+ */
+option java_outer_classname = "KeysProto";
+
+package se.l4.exofind.engine.auth;
+
+/*
+ * This file is the format the API keys of a deployment are stored in - one
+ * object in the same storage the indexes live in, read by every node - so it
+ * has to stay readable for as long as a key does. The same rules as for an
+ * index definition apply: scalars are `optional` so unset can be told apart
+ * from the zero value, and a field number is never reused.
+ *
+ * A grant only ever adds to what a key may do, so a permission name a node has
+ * no code for is ignored: it can grant nothing. Anything that narrows a key
+ * has to be named in `required_features` as well, because a node that dropped
+ * it would read the key as the wider one and allow more than was granted.
+ */
+
+/*
+ * KeyStore is every key a deployment knows.
+ *
+ * Written whole and replaced conditionally on the version the writer read, so
+ * two nodes changing keys at the same time can not lose one another's change.
+ * The keys live together in one object because revoking one has to take effect
+ * from a single read.
+ */
+message KeyStore {
+	/*
+	 * The keys, ordered by id so that the same set of keys always produces the
+	 * same bytes.
+	 */
+	repeated KeyDef keys = 1;
+}
+
+/*
+ * KeyDef is one credential and what it may do.
+ */
+message KeyDef {
+	/*
+	 * What the credential names, and what a log records instead of the secret.
+	 * Never reused: an id that was deleted stays deleted, so an id in a log
+	 * always names the same key.
+	 */
+	optional string id = 1;
+
+	/*
+	 * How `secret_hash` was produced. An unknown value refuses the key, as
+	 * there is no way to check a secret against a hash of unknown origin.
+	 */
+	optional HashAlgorithm hash_algorithm = 2;
+
+	/*
+	 * The secret part of the credential, hashed. The secret itself is 256 bits
+	 * of randomness and is never stored, so a key that is lost is replaced
+	 * rather than recovered.
+	 */
+	optional bytes secret_hash = 3;
+
+	/*
+	 * What the key is for, in whatever words its creator chose. Carried so an
+	 * operator listing the keys can tell them apart; the engine reads nothing
+	 * from it.
+	 */
+	optional string description = 4;
+
+	/*
+	 * What the key may do, evaluated as a union - a request is allowed when any
+	 * one grant allows it. A key with no grants can do nothing.
+	 */
+	repeated GrantDef grants = 5;
+
+	/*
+	 * When the key was created, as milliseconds since the Unix epoch.
+	 */
+	optional int64 created_at = 6;
+
+	/*
+	 * When the key stops being accepted, as milliseconds since the Unix epoch.
+	 * Absent means it never does. Compared against the clock of whichever node
+	 * reads it, so skew between nodes moves the moment it lapses.
+	 */
+	optional int64 expires_at = 7;
+
+	/*
+	 * Names of what this key's meaning depends on. A node that does not know
+	 * one of them refuses the key outright rather than reading it as something
+	 * weaker.
+	 *
+	 * Only needed for what narrows a key. A grant is additive, so a node that
+	 * drops part of one allows less than was written, which is safe; a node
+	 * that drops a restriction would allow more.
+	 */
+	repeated string required_features = 8;
+}
+
+/*
+ * GrantDef is a set of permissions over a set of indexes.
+ *
+ * Permissions and index patterns are crossed: every permission listed applies
+ * to every index matched. A key needing different permissions on different
+ * indexes carries a grant for each.
+ */
+message GrantDef {
+	/*
+	 * Permission names, as the engine writes them - `search`,
+	 * `documents.write` and so on. A name this node has no code for is ignored,
+	 * which grants nothing.
+	 */
+	repeated string permissions = 1;
+
+	/*
+	 * Which indexes the permissions that name one apply to. An entry is either
+	 * the name of an index or a prefix followed by `*`; `*` alone is every
+	 * index. Empty grants no index, so a grant of only index-scoped permissions
+	 * with no pattern allows nothing.
+	 *
+	 * Permissions that name no index, such as managing keys, are granted by
+	 * this message whatever it holds here.
+	 */
+	repeated string indexes = 2;
+}
+
+/*
+ * How the secret of a key is hashed.
+ *
+ * The secret is full-entropy randomness rather than a password, so the hash
+ * only has to be one way - it is never asked to survive being guessed at.
+ */
+enum HashAlgorithm {
+	/*
+	 * Written by no version. A key carrying it is refused, because a hash whose
+	 * origin is unknown can not be compared against anything.
+	 */
+	HASH_ALGORITHM_UNSPECIFIED = 0;
+
+	/*
+	 * SHA-256 over the raw bytes of the secret as it appears in the credential.
+	 */
+	HASH_ALGORITHM_SHA256 = 1;
+}

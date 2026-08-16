@@ -1,0 +1,5 @@
+# A hand-made grammar for exercising the decompounding machinery: just
+# enough patterns to put a break where the test words join.
+n1j
+r1j
+s1b

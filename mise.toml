@@ -1,0 +1,86 @@
+[tools]
+java = "temurin-25"
+maven = "3.9.16"
+# Only the example pages need it - the engine itself builds without node
+node = "26"
+
+[tasks.dev]
+description = "Run Quarkus in dev mode with hot reload"
+run = "mvn compile quarkus:dev"
+
+[tasks.build]
+description = "Build the application"
+run = "mvn package"
+
+[tasks.run]
+description = "Build the application and run the packaged server"
+# The node this starts is the only one running, so it is the one that has to
+# take the indexer role - without it every write is answered with a 409 saying
+# the index is readonly, and loading an example gets no further than its
+# definition.
+#
+# It checks no credentials either, the way dev mode does. The packaged jar runs
+# under the prod profile, where a node would otherwise want a key on every
+# request and the examples carry none.
+env = { INDEXER = "true", EXOFIND_AUTH_MODE = "none" }
+run = ["mvn package -DskipTests", "java -jar target/quarkus-app/quarkus-run.jar"]
+
+[tasks.test]
+description = "Run the tests"
+run = "mvn test"
+
+[tasks.verify]
+description = "Run the full verification build including integration tests"
+run = "mvn verify"
+
+[tasks.image]
+description = "Build the container image from a fresh package of the application"
+# Packaged first because the image copies `target/quarkus-app` rather than
+# building it, and a stale one is copied just as happily as a current one.
+run = [
+	"mvn package -DskipTests",
+	"docker build -f src/main/docker/Dockerfile.jvm -t exofind/engine:dev ."
+]
+
+[tasks."image:amd64"]
+description = "Build the container image for x86-64, to run on a host that is not this machine"
+# Tagged apart from `image` so both can sit in the image store at once - on an
+# arm64 machine the two builds are not interchangeable, and a shared tag would
+# leave which one is loaded depending on which task ran last.
+#
+# Only the base image differs from `image`; the jars copied over it are the
+# same ones, so nothing here runs under emulation.
+run = [
+	"mvn package -DskipTests",
+	"docker buildx build --platform linux/amd64 --load -f src/main/docker/Dockerfile.jvm -t exofind/engine:dev-amd64 ."
+]
+
+[tasks.storage]
+description = "Start object storage (SeaweedFS) in the background"
+run = "docker compose up -d"
+
+[tasks."storage:stop"]
+description = "Stop object storage"
+run = "docker compose down"
+
+[tasks."example:livsmedel"]
+description = "Load the Swedish food example into a running node"
+run = "examples/livsmedel/load.sh"
+
+[tasks."example:airports"]
+description = "Load the airport example into a running node"
+run = "examples/airports/load.sh"
+
+[tasks."example:cleveland"]
+description = "Load the Cleveland Museum example into a running node"
+run = "examples/cleveland/load.sh"
+
+[tasks.examples]
+description = "Serve the example pages against a node on localhost:8080"
+dir = "examples"
+run = ["npm install", "npm run dev"]
+
+[tasks."examples:build"]
+description = "Build the example pages into examples/dist"
+dir = "examples"
+run = ["npm install", "npm run build"]

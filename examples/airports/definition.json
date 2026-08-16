@@ -1,0 +1,78 @@
+{
+  "fields": {
+    "id": {
+      "type": "string",
+      "primaryKey": true,
+      "required": true
+    },
+    "name": {
+      "type": "string",
+      "matching": {
+        "weight": 3,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "nameAhead": {
+      "type": "string",
+      "autocomplete": {
+        "weight": 3,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "municipality": {
+      "type": "string",
+      "matching": {
+        "weight": 2,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "municipalityAhead": {
+      "type": "string",
+      "autocomplete": {
+        "weight": 2,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "iata": {
+      "type": "string",
+      "required": true,
+      "filter": {},
+      "sort": {},
+      "matching": {
+        "weight": 8,
+        "highlight": {}
+      }
+    },
+    "country": {
+      "type": "string",
+      "matching": { "weight": 1 }
+    },
+    "size": {
+      "type": "string",
+      "filter": {},
+      "facet": {}
+    },
+    "scheduled": {
+      "type": "boolean",
+      "filter": {},
+      "facet": {}
+    },
+    "elevation": {
+      "type": "int32"
+    },
+    "location": {
+      "type": "geo_point",
+      "filter": {},
+      "sort": {}
+    }
+  },
+  "ranking": {
+    "tieBreakers": [
+      { "field": "iata", "direction": "ascending" }
+    ]
+  }
+}

@@ -1,0 +1,140 @@
+/*
+ * What this example alone needs: the wall of thumbnails, the controls above
+ * it and the pager under it.
+ */
+
+/*
+ * A wall rather than a list. The columns are as many as fit, so the same page
+ * is a contact sheet on a wide screen and two objects across on a phone.
+ */
+.grid {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+	gap: 1.75rem 1.25rem;
+	align-items: start;
+}
+
+.piece {
+	display: grid;
+	gap: 0.3rem;
+	min-width: 0;
+}
+
+/*
+ * The image is shown whole rather than cropped to a square - a collection is
+ * full of objects that are much taller or much wider than anything else, and
+ * cutting them to fit would be the one thing a picture of an object must not
+ * do. The frame keeps its height so the rows stay level.
+ */
+.piece__frame {
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	height: 12rem;
+	background: var(--paper);
+	border: 1px solid var(--rule);
+	padding: 0.5rem;
+}
+
+.piece__frame:hover { border-color: var(--signal); }
+
+.piece__image {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+}
+
+.piece__title {
+	margin: 0.2rem 0 0;
+	font-size: 0.92rem;
+	font-weight: 500;
+	font-stretch: 104%;
+	line-height: 1.3;
+}
+
+.piece__artist {
+	margin: 0;
+	font-size: 0.85rem;
+	color: var(--ink-soft);
+}
+
+.piece__meta, .piece__technique {
+	margin: 0;
+	font-family: var(--data);
+	font-size: 0.68rem;
+	line-height: 1.5;
+	color: var(--ink-2);
+}
+
+.piece__technique { color: var(--ink-soft); }
+
+.grid .empty { grid-column: 1 / -1; }
+
+/* --- what to show and in which order ------------------------------------ */
+
+.controls {
+	display: flex;
+	align-items: baseline;
+	gap: 0.6rem 2rem;
+	flex-wrap: wrap;
+	padding-bottom: 0.2rem;
+	border-bottom: 1px solid var(--rule);
+}
+
+.control {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+	flex-wrap: wrap;
+}
+
+.control .eyebrow { margin-right: 0.2rem; }
+
+.pick, .page-number, .more {
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	background: none;
+	border: 1px solid var(--rule);
+	padding: 0.15rem 0.5rem;
+	cursor: pointer;
+	transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.pick:hover, .page-number:hover, .more:hover {
+	color: var(--signal);
+	border-color: var(--signal);
+}
+
+.pick[aria-pressed="true"], .page-number[aria-pressed="true"] {
+	color: var(--ink);
+	background: var(--signal-ground);
+	border-color: var(--signal);
+}
+
+/* --- getting to the rest ------------------------------------------------ */
+
+.pager {
+	display: flex;
+	align-items: center;
+	gap: 0.3rem;
+	flex-wrap: wrap;
+	padding-top: 0.5rem;
+}
+
+.page-number {
+	min-width: 2rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.page-gap {
+	font-family: var(--data);
+	font-size: 0.75rem;
+	color: var(--ink-2);
+	padding: 0 0.2rem;
+}
+
+.more { padding: 0.35rem 0.9rem; }

@@ -1,0 +1,11 @@
+{
+	"identities": [
+		{
+			"name": "dev",
+			"credentials": [
+				{"accessKey": "exofind", "secretKey": "exofind123"}
+			],
+			"actions": ["Admin", "Read", "Write", "List", "Tagging"]
+		}
+	]
+}

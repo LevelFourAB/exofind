@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airport type-ahead · Exofind</title>
+<meta name="description" content="Every airport with an IATA code, completed as you type with Exofind - and the milliseconds each keystroke cost.">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<div class="shell">
+
+<header class="bar">
+	<a class="bar__mark" href="../">Exofind</a>
+	<span class="bar__index" id="index-name">airports</span>
+	<span class="bar__spacer"></span>
+	<span class="bar__stat" id="size"></span>
+</header>
+
+<main class="page">
+
+	<section class="ask">
+		<p class="eyebrow">OurAirports · every airport with an IATA code</p>
+		<div class="ask__field">
+			<input class="ask__input" type="search" id="query"
+				placeholder="sto" autocomplete="off" spellcheck="false" autofocus
+				aria-label="Search airports by name, city or code">
+		</div>
+		<div class="ask__row">
+			<ul class="suggestions" id="suggestions">
+				<li><button type="button">sto</button></li>
+				<li><button type="button">ord</button></li>
+				<li><button type="button">bom</button></li>
+				<li><button type="button">stockhlm</button></li>
+				<li><button type="button">heathro</button></li>
+				<li><button type="button">ES</button></li>
+			</ul>
+			<p class="status" id="status" role="status"></p>
+		</div>
+
+		<p class="lede">
+			A keystroke is a search. <strong>sto</strong> completes into
+			Stockholm, <strong>stockhlm</strong> is forgiven, and
+			<strong>ES</strong> lists every code that starts with it.
+		</p>
+	</section>
+
+	<div class="split">
+		<aside class="filters">
+			<div class="filters__group">
+				<h2 class="eyebrow">Size</h2>
+				<div id="sizes"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Service</h2>
+				<div id="scheduled"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Near</h2>
+				<div class="origins" id="origins"></div>
+				<div id="radius"></div>
+				<p class="origins__note" id="origin-note"></p>
+			</div>
+			<button class="clear" type="button" id="clear" hidden>Clear filters</button>
+		</aside>
+
+		<section class="results">
+			<div class="controls">
+				<div class="weighing" role="group" aria-label="How much a hit in each field counts">
+					<h2 class="eyebrow">Weighting</h2>
+					<button class="weigh" type="button" id="weigh-declared" aria-pressed="true">
+						as the index declares
+					</button>
+					<button class="weigh" type="button" id="weigh-flat" aria-pressed="false">
+						every field equal
+					</button>
+				</div>
+			</div>
+			<ul class="hits" id="hits"></ul>
+		</section>
+	</div>
+
+</main>
+
+<footer class="foot">
+	<p>
+		Elevations are in feet and distances are as the crow flies. Data from
+		<a href="https://ourairports.com/data/">OurAirports</a>, dedicated to
+		the public domain.
+	</p>
+</footer>
+
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

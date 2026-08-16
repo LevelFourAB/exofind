@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+/*
+ * Named so that the descriptor holder does not take the name of the engine
+ * class that reads these messages.
+ */
+option java_outer_classname = "RegistryProto";
+
+package se.l4.exofind.engine.index.registry;
+
+/*
+ * This file is the format the indexes of a deployment are registered in - one
+ * object in the same storage the indexes live in, read by every node - so it
+ * has to stay readable for as long as an index does. The same rules as for an
+ * index definition apply: scalars are `optional` so unset can be told apart
+ * from the zero value, and a field number is never reused.
+ */
+
+/*
+ * IndexRegistryStore is every index a deployment holds.
+ *
+ * Written whole and replaced conditionally on the version the writer read, so
+ * two nodes changing the registry at the same time can not lose one another's
+ * change. Whether an index exists is read from here rather than from a listing
+ * of the storage, because one object is read at a single version while a
+ * listing arrives in pages and can be incomplete without saying so.
+ */
+message IndexRegistryStore {
+	/*
+	 * The indexes, ordered by name so that the same set of indexes always
+	 * produces the same bytes.
+	 */
+	repeated IndexEntry indexes = 1;
+}
+
+/*
+ * IndexEntry is one index: the generations of it that exist, and which of them
+ * its name currently answers for.
+ */
+message IndexEntry {
+	/*
+	 * Name of the index, which is the name callers use and the name grants are
+	 * written against. It outlives every generation under it.
+	 */
+	optional string name = 1;
+
+	/*
+	 * The generations that exist, each holding documents and a definition of
+	 * its own. Ordered by name so that the same set produces the same bytes.
+	 */
+	repeated GenerationEntry generations = 2;
+
+	/*
+	 * Name of the generation the index answers for, which is what makes a
+	 * rebuilt generation take over without a caller changing anything.
+	 *
+	 * Unset means the index has generations but answers for none of them,
+	 * which is refused rather than answered from an arbitrary one.
+	 */
+	optional string live = 3;
+
+	/*
+	 * When the index was created, as milliseconds since the Unix epoch.
+	 */
+	optional int64 created_at = 4;
+
+	/*
+	 * Names of what this entry's meaning depends on. A node that does not know
+	 * one of them refuses the index outright rather than reading it as
+	 * something it is not.
+	 *
+	 * Needed because resolution is what a caller never sees: an entry naming
+	 * more than one generation for a purpose this build has no field for would
+	 * otherwise be read as naming only `live`, and the node would quietly do
+	 * less than the entry says.
+	 */
+	repeated string required_features = 5;
+}
+
+/*
+ * GenerationEntry is one generation of an index - one set of Lucene files with
+ * one definition over them.
+ *
+ * A generation is addressed as `index@generation`, and the documents in it are
+ * whatever was indexed into it. Rolling out a definition that existing
+ * documents were not indexed under therefore means filling a new generation
+ * and making it the live one, rather than changing an index in place.
+ */
+message GenerationEntry {
+	/*
+	 * Name of the generation, unique within its index. Part of the key the
+	 * generation is stored under, so it is never renamed.
+	 */
+	optional string name = 1;
+
+	/*
+	 * When the generation was created, as milliseconds since the Unix epoch.
+	 */
+	optional int64 created_at = 2;
+}

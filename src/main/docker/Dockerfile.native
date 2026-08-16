@@ -1,0 +1,37 @@
+####
+# Runs a native executable of the engine.
+#
+# The executable has to exist, and it has to be a Linux one, which the
+# container build produces whatever the host is:
+#
+#   ./mvnw package -Dnative -Dquarkus.native.container-build=true
+#
+# Then:
+#
+#   docker build -f src/main/docker/Dockerfile.native -t exofind/engine:native .
+#
+# Note that a native image of the engine is not part of the verified build -
+# Lucene reaches for the JDK's foreign memory API, which the JVM image avoids
+# having an opinion about. Dockerfile.jvm is what the project builds.
+###
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6
+
+# Created and owned here because the node cannot do it itself: it runs as
+# 1001, and neither the directory nor a volume mounted over it would be
+# writable by that user otherwise.
+RUN mkdir -p /data && chown 1001:root /data
+ENV LOCAL_STORAGE_DIRECTORY=/data
+
+WORKDIR /work/
+COPY --chown=1001:root target/*-runner /work/application
+
+# The decompounding data, read from disk rather than the executable. The
+# directory carries its own attribution file, so the licensing travels with
+# the data.
+COPY --chown=1001:root decompound-data/ decompound-data/
+ENV EXOFIND_DECOMPOUND_DIRECTORY=/work/decompound-data
+
+EXPOSE 8080
+USER 1001
+
+ENTRYPOINT ["./application", "-Dquarkus.http.host=0.0.0.0"]

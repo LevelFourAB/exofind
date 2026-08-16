@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.index.source;
+
+/*
+ * This file is how a document is kept alongside the index it was written to,
+ * so it has to stay readable for as long as that index exists. The same rules
+ * as for an index definition apply: scalars are `optional` so unset can be
+ * told apart from the zero value, and a field number is never reused.
+ *
+ * What is here describes itself. Reading a document back needs no definition,
+ * which is what lets one be indexed again after its definition has changed and
+ * the values are no longer available from wherever they first came from.
+ */
+
+/*
+ * SourceField is one value of a document, as it was given.
+ *
+ * A field holding several values is several of these sharing a name, in the
+ * order they arrived, so that reading a document back gives the same values in
+ * the same order rather than only the first of them.
+ */
+message SourceField {
+	/*
+	 * The name of the field in the definition the document was written
+	 * against.
+	 */
+	string name = 1;
+
+	/*
+	 * The locale the value is in, unset when it is the same in every
+	 * language.
+	 */
+	optional string locale = 2;
+
+	/*
+	 * The value, in the shape it was given.
+	 *
+	 * A version that can index a type adds a case here, so a document written
+	 * by a newer version can hold a value this one has no case for. That is
+	 * not checked when reading, because the definition naming the type is
+	 * refused first - see IndexFeatures.
+	 */
+	oneof value {
+		string string = 3;
+		bool boolean = 4;
+		FloatVector vector = 5;
+		int32 int32 = 6;
+		int64 int64 = 7;
+		float float = 8;
+		double double = 9;
+		GeoPointValue geo_point = 10;
+		/*
+		 * A document of its own, for a field whose values are objects. Its
+		 * fields carry the names inside the object, not the dotted paths they
+		 * go by outside it.
+		 */
+		SourceDocument document = 11;
+	}
+}
+
+/*
+ * GeoPointValue is a point on the earth, as a WGS 84 latitude and longitude.
+ */
+message GeoPointValue {
+	double latitude = 1;
+	double longitude = 2;
+}
+
+/*
+ * FloatVector is a vector of floats, wrapped in a message because a repeated
+ * scalar can not sit in a oneof directly.
+ */
+message FloatVector {
+	repeated float values = 1;
+}
+
+/*
+ * SourceDocument is a whole document as it was given to be indexed.
+ */
+message SourceDocument {
+	/*
+	 * The values of the document, in the order they were given.
+	 */
+	repeated SourceField fields = 1;
+}

@@ -1,0 +1,10 @@
+# The image is assembled from what a build on the host produced, so the
+# packaged application and the data that ships beside it are what has to reach
+# the build context - not the sources it was built from.
+*
+
+!target/quarkus-app
+!decompound-data
+
+# The native executable, which Dockerfile.native takes from the same build.
+!target/*-runner

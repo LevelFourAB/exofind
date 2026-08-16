@@ -1,0 +1,24 @@
+services:
+  exofind:
+    # Built by `mise run image`. Point this at a published tag to run without
+    # building anything.
+    image: exofind/engine:dev
+    container_name: exofind
+    ports:
+      - "8080:8080"
+    environment:
+      # Everything - the indexes, the registry naming them and the keys that
+      # reach them - lives in the volume below. Nothing else has to be running.
+      EXOFIND_STORAGE_MODE: local
+      LOCAL_STORAGE_DIRECTORY: /data
+
+      # The credential that creates the first key. Replace it before this
+      # reaches anything but your own machine, or pass `sha256:` and a hash so
+      # the key itself is not in the file.
+      EXOFIND_AUTH_ROOT_KEY: exok_change_me
+    volumes:
+      - exofind-data:/data
+    restart: unless-stopped
+
+volumes:
+  exofind-data:
