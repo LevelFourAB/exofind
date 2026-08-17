@@ -168,6 +168,10 @@ same.
 
 - [Define an index](../how-to/define-an-index.md) walks the definition
   itself: field types, wildcards, document source, tie breakers.
+- [Index documents](../how-to/index-documents.md) turns two curl calls into
+  a dataset load and a feed that keeps it current.
+- [Search an index](../how-to/search-an-index.md) turns one query into a
+  search page: filters, facets, ordering and highlighting.
 - [Run more than one node](../how-to/run-multiple-nodes.md) turns this into
   a cluster.
 - [Architecture](../explanation/architecture.md) explains the shape you just

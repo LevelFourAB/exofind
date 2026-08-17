@@ -86,7 +86,8 @@ nearness rather than by value: `filter` enables the `distance` matcher, and
 A vector of floats, searched by similarity with the `knn` clause rather than
 by value - so `filter`, `sort` and `facet` mean nothing for it and are
 refused, as is `locales`. The vectors arrive with the documents; the engine
-never produces them.
+never produces them. [Search by vector](../how-to/search-by-vector.md) walks
+defining one and searching it.
 
 | Property | Meaning |
 |----------|---------|
@@ -99,7 +100,8 @@ never produces them.
 
 A field whose values are documents of their own, described by `fields` the
 same way the index describes its documents. Declared `multiple`, it holds a
-list of such values:
+list of such values - [Use sub-documents](../how-to/use-sub-documents.md)
+walks defining one, indexing values and searching them:
 
 ```json
 {
@@ -165,6 +167,9 @@ setting does not rewrite the documents already indexed - it decides what is
 written from there on, and both kinds keep reading.
 
 ## Ranking
+
+How these fit together with the text scoring and with a search's own clauses
+is in [Relevance](../explanation/relevance.md).
 
 An index can declare how ties in the order of results are broken:
 

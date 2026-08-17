@@ -127,7 +127,9 @@ means one variant that is both. Give the fields inside `sort`, `facet` and
 `matching` as well, and the variant that matched can order the product,
 count it and rank it - "the cheapest red variant, cheapest first" is a
 `nested` clause and a sort on `variants.price`. What the fields inside may
-declare is listed in [Field types](../reference/field-types.md#object).
+declare is listed in [Field types](../reference/field-types.md#object), and
+[Use sub-documents](use-sub-documents.md) walks indexing, searching and
+changing the values.
 
 ## Cover many names with one field
 

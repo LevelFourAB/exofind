@@ -163,9 +163,6 @@ quietly answering part searches with nothing.
 A locale hands analysis what Lucene ships for the language - stopwords, a
 stemmer, a tokenizer for languages whose words Unicode segmentation cannot
 find, and normalization for what Unicode case folding alone gets wrong, such
-as the Turkish dotless ı or Greek accents. The supported tags are `ar`,
-`bg`, `bn`, `ca`, `cs`, `da`, `de`, `el`, `en`, `es`, `et`, `eu`, `fa`,
-`fi`, `fr`, `ga`, `gl`, `hi`, `hu`, `hy`, `id`, `it`, `ja`, `ko`, `lt`,
-`lv`, `nb`, `nl`, `nn`, `no`, `pl`, `pt`, `ro`, `ru`, `sr`, `sv`, `ta`,
-`te`, `th`, `tr`, `uk` and `zh`. A definition naming any other tag is
-refused at validation.
+as the Turkish dotless ı or Greek accents. The tags there are rules for, and
+what each one gets, are in the [locale reference](locales.md); a definition
+naming any other tag is refused at validation.

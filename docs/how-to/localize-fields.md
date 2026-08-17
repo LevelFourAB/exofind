@@ -20,9 +20,9 @@ Listing the locales is what tells the engine which variants of the field
 exist - a value carrying a locale that was never listed is refused with
 `index:update:locale_not_declared`.
 
-Every named locale has to be one the engine has rules for; the supported
-tags are listed in the [analysis reference](../reference/analysis.md#locales),
-and a definition naming any other tag is refused at validation.
+Every named locale has to be one the engine has rules for; the tags are
+listed in the [locale reference](../reference/locales.md), and a definition
+naming any other tag is refused at validation.
 
 ## Search in a locale
 

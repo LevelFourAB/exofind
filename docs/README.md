@@ -22,6 +22,16 @@ is, and explanation says why it is that way.
 - [Define an index](how-to/define-an-index.md) - create and update an index
   as desired state, pick what each field is for, avoid overwriting concurrent
   changes.
+- [Index documents](how-to/index-documents.md) - send documents, load a
+  dataset, keep it current with feeds and deletes, recover from a refused
+  request.
+- [Search an index](how-to/search-an-index.md) - the search box, the scope it
+  runs in, the filters a user ticks, facets, ordering and highlighting.
+- [Search by vector](how-to/search-by-vector.md) - index the vectors a model
+  produces, find the nearest of them, and combine that with a text search.
+- [Use sub-documents](how-to/use-sub-documents.md) - hold a list of values
+  that are documents of their own, ask several things of one of them, and
+  order, count and change them.
 - [Roll out a definition change](how-to/roll-out-a-definition-change.md) -
   change what an index holds for documents already in it, without callers
   noticing.
@@ -35,6 +45,9 @@ is, and explanation says why it is that way.
   nothing else running, and what that costs.
 - [Run more than one node](how-to/run-multiple-nodes.md) - indexer candidacy,
   failover and how writes find the indexer.
+- [Operate a deployment](how-to/operate-a-deployment.md) - see what each node
+  is serving, tell a node that is behind from one that is broken, keep disk
+  and upgrades in hand.
 - [Secure a deployment](how-to/secure-a-deployment.md) - bootstrap the first
   key, hand out one per thing that holds one, rotate them.
 - [Run a public demo node](how-to/run-a-demo-node.md) - answer searches from a
@@ -59,6 +72,8 @@ is, and explanation says why it is that way.
   the ways each can be used.
 - [Analysis](reference/analysis.md) - presets, tokenizers, char filters and
   token filters.
+- [Locales](reference/locales.md) - the languages there are rules for, and
+  what each one gets.
 - [Errors](reference/errors.md) - the error body and the code vocabulary.
 
 ## Explanation
@@ -71,3 +86,6 @@ is, and explanation says why it is that way.
   the indexer lease; what keeps two writers from corrupting an index.
 - [Lucene compatibility](explanation/lucene-compatibility.md) - why an index
   can outlive the code that can read it, and what the engine does about it.
+- [Relevance](explanation/relevance.md) - the layers results are ordered by,
+  what each one is for, and which of them a change reaches without
+  reindexing.
