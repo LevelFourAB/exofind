@@ -131,8 +131,10 @@ public class ObjectFieldTest {
 										.build()
 								)
 								.putFields("material", matching().build())
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 						)
 					)
+					.setMultiple(true)
 			).build()
 		);
 
@@ -159,8 +161,10 @@ public class ObjectFieldTest {
 									"color",
 									string().setFacet(FacetConfig.getDefaultInstance()).build()
 								)
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 						)
 					)
+					.setMultiple(true)
 			).build()
 		);
 
@@ -250,6 +254,137 @@ public class ObjectFieldTest {
 		assertThat(features.toList(), hasItem(IndexFeatures.FIELD_FILTER));
 	}
 
+	@Test
+	public void testListOfObjectsNeedsAMode() {
+		var withoutMode = FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setObject(
+					ObjectFieldTypeDef.newBuilder()
+						.putFields("color", string().build())
+				)
+			)
+			.setMultiple(true);
+
+		assertRefused(definition(withoutMode), "index:field:object:mode_required");
+	}
+
+	@Test
+	public void testSingleObjectRefusesAMode() {
+		var withMode = FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setObject(
+					ObjectFieldTypeDef.newBuilder()
+						.putFields("width", string().build())
+						.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+				)
+			);
+
+		assertRefused(definition(withMode), "index:field:object:mode_without_multiple");
+	}
+
+	@Test
+	public void testFlattenedListRefusesInnerSort() {
+		var flattened = FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setObject(
+					ObjectFieldTypeDef.newBuilder()
+						.putFields(
+							"price",
+							string().setSort(SortConfig.getDefaultInstance()).build()
+						)
+						.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+				)
+			)
+			.setMultiple(true);
+
+		assertRefused(definition(flattened), "index:field:object:flattened_sort");
+	}
+
+	@Test
+	public void testSingleObjectFlattensIntoRootFields() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			IndexDef.newBuilder()
+				.putFields("dimensions", dimensions().build())
+				.build()
+		);
+
+		assertThat(schema.hasNestedFields(), is(false));
+		assertThat(schema.getNestedField("dimensions.width").isPresent(), is(false));
+
+		var width = schema.getField("dimensions.width");
+		assertThat(width.isPresent(), is(true));
+		assertThat(width.get().isFiltered(), is(true));
+
+		assertThat(
+			schema.getFlattenedObjectOf("dimensions.width").orElseThrow(),
+			is("dimensions")
+		);
+		assertThat(schema.getFlattenedObjectOf("dimensions").isPresent(), is(false));
+	}
+
+	@Test
+	public void testSingleObjectCanSortInside() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.putFields(
+									"price",
+									string().setSort(SortConfig.getDefaultInstance()).build()
+								)
+						)
+					)
+			).build()
+		);
+
+		assertThat(schema.getField("variants.price").orElseThrow().isSorted(), is(true));
+	}
+
+	@Test
+	public void testFlattenedListOfObjectsFlattensIntoRootFields() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.putFields(
+									"color",
+									string().setFilter(FilterConfig.getDefaultInstance()).build()
+								)
+								.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+						)
+					)
+					.setMultiple(true)
+			).build()
+		);
+
+		assertThat(schema.hasNestedFields(), is(false));
+		assertThat(schema.getField("variants.color").isPresent(), is(true));
+		assertThat(
+			schema.getFlattenedObjectOf("variants.color").orElseThrow(),
+			is("variants")
+		);
+	}
+
+	@Test
+	public void testFlattenedObjectRequiresItsOwnFeature() {
+		var features = IndexFeatures.requiredBy(
+			IndexDef.newBuilder()
+				.putFields("dimensions", dimensions().build())
+				.build()
+		);
+
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_FLATTENED));
+		assertThat(features.toList(), not(hasItem(IndexFeatures.TYPE_OBJECT)));
+		assertThat(features.toList(), not(hasItem(IndexFeatures.TYPE_OBJECT_USAGES)));
+	}
+
 	private static void assertInnerRefused(FieldDef.Builder inner, String code) {
 		assertRefused(
 			definition(
@@ -292,9 +427,23 @@ public class ObjectFieldTest {
 							"color",
 							string().setFilter(FilterConfig.getDefaultInstance()).build()
 						)
+						.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 				)
 			)
 			.setMultiple(true);
+	}
+
+	private static FieldDef.Builder dimensions() {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setObject(
+					ObjectFieldTypeDef.newBuilder()
+						.putFields(
+							"width",
+							string().setFilter(FilterConfig.getDefaultInstance()).build()
+						)
+				)
+			);
 	}
 
 	private static FieldDef.Builder string() {

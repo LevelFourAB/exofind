@@ -98,15 +98,16 @@ defining one and searching it.
 
 ## `object`
 
-A field whose values are documents of their own, described by `fields` the
-same way the index describes its documents. Declared `multiple`, it holds a
-list of such values - [Use sub-documents](../how-to/use-sub-documents.md)
-walks defining one, indexing values and searching them:
+A field whose values are objects, described by `fields` the same way the
+index describes its documents. The fields inside go by the dotted path
+through the object, such as `variants.price`, and can hold any non-object
+type. Declared `multiple`, the field holds a list of values:
 
 ```json
 {
   "type": "object",
   "multiple": true,
+  "mode": "nested",
   "fields": {
     "color": { "type": "string", "filter": {}, "required": true },
     "price": { "type": "double", "filter": {} }
@@ -114,28 +115,47 @@ walks defining one, indexing values and searching them:
 }
 ```
 
-Every value is matched as one unit through the [`nested`
-clause](search-api.md#nested) of the search API, so a search can ask that
-several conditions hold inside the same value - a variant that is both red
-and under 20, not a product that is red in one variant and cheap in another.
-The fields inside go by the dotted path through the object, such as
-`variants.price`. A clause names one only inside a `nested` clause for its
-path; a [sort](search-api.md#sorts) and a [facet](search-api.md#facets) name
-one directly, because what they say is about the document rather than about
-a single value.
+How the values relate to the document is `mode`:
 
-The fields inside can hold any non-object type and use `filter`, `matching`,
-`autocomplete`, `sort`, `facet`, `validation`, `required` and `multiple`.
-`required` means required in every value. Refused inside an object are the
-usages that only mean something for a document of the index - `primaryKey`
-and `highlight`, which reads the text back out of the document a fragment is
-shown for - as are `locales`, `stored`, wildcard names and objects inside
-objects. The object itself takes no `filter`, `sort`, `facet`, `locales` or
-`stored` either, and its name cannot contain a wildcard.
+- `flattened` folds the fields of every value into the document itself. They
+  are ordinary fields of the index under their dotted path - filtered,
+  matched, counted and covered by a text search that names no fields - and
+  which value a field came from is not kept, so conditions on two fields may
+  be satisfied by two different values.
+- `nested` keeps every value as one unit, matched through the [`nested`
+  clause](search-api.md#nested) of the search API, so a search can ask that
+  several conditions hold inside the same value - a variant that is both red
+  and under 20, not a product that is red in one variant and cheap in
+  another. [Use sub-documents](../how-to/use-sub-documents.md) walks
+  defining one, indexing values and searching them.
 
-An index whose object fields use anything beyond `filter` inside them needs
-the `type.object.usages` feature, so a node without it refuses the index
-rather than indexing the values with none of what those usages write.
+A field holding a single value is one unit whichever way it is kept, so the
+mode is required exactly when the field is `multiple`: a list leaving it out
+is refused with `index:field:object:mode_required`, and a single object
+naming one with `index:field:object:mode_without_multiple`. A single object
+is always flattened - the shape for a group of fields that belong together,
+such as a `dimensions` holding a width and a height.
+
+The fields inside may use `filter`, `matching`, `autocomplete`, `facet`,
+`validation`, `required` and `multiple` in either mode. `required` means
+required in every value. `sort` works where a value can stand for the
+document - inside a single object, or inside a `nested` list where [the
+ordering reads the values the search
+matched](search-api.md#ordering-by-a-value-inside-an-object); inside a
+`flattened` list it is refused with `index:field:object:flattened_sort`,
+because the values are independent and no one of them stands for the
+document. Refused in both modes are the usages that only mean something for
+a document of the index - `primaryKey` and `highlight`, which reads the text
+back out of the document a fragment is shown for - as are `locales`,
+`stored`, wildcard names and objects inside objects. The object itself takes
+no `filter`, `sort`, `facet`, `locales` or `stored` either, and its name
+cannot contain a wildcard.
+
+An index with `nested` objects needs the `type.object` feature, and
+`type.object.usages` besides when anything beyond `filter` is used inside
+one; an index with flattened objects needs `type.object.flattened`. A node
+without the feature refuses the index rather than writing the values in a
+shape the definition does not mean.
 
 Values come back in results through the [document source](#document-source),
 so an index with `"source": "none"` does not return them.

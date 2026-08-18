@@ -14,29 +14,36 @@ import se.l4.exofind.engine.index.IndexInvalidQueryTypeException;
 import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
 import se.l4.exofind.engine.query.matchers.Matcher;
 
 /**
- * Field type whose values are documents of their own, described by the fields
- * of an {@code ObjectFieldTypeDef}.
+ * Field type whose values are objects, described by the fields of an
+ * {@code ObjectFieldTypeDef}.
  *
  * The type is a container rather than a value: it can not be filtered, sorted
- * or matched on itself, and its values never become Lucene fields of the
- * document that holds them - each one is indexed as a document of its own,
- * which is what lets a search ask that several conditions hold inside the same
- * value. That indexing lives in {@code Index}, so the two field-producing
- * methods here are never reached; what this class owns is judging the
- * definition.
+ * or matched on itself, only through the fields inside it. How those fields
+ * are kept is the {@code mode} of the definition. Flattened folds them into
+ * the document itself, so they behave as fields of the index named by the
+ * dotted path; nested keeps every value as a document of its own, which is
+ * what lets a search ask that several conditions hold inside the same value.
+ * A single value is one unit either way, so the mode is required exactly when
+ * the field is {@code multiple} and refused when it is not - flattened is
+ * what a single value always is. The indexing of both modes lives in
+ * {@code Index}, so the two field-producing methods here are never reached;
+ * what this class owns is judging the definition.
  *
- * The fields inside an object are held to the usages that work across a join to
- * the document a value belongs to. Filtering, matching, sorting and faceting
- * all do: a value says whether its document matches, how well, where it is
- * ordered and what it is counted under, and which values answer is what the
- * {@code nested} clauses of a search decide. Refused are the usages that only
- * mean something for a document of the index - being its primary key, being
- * highlighted, which reads the fields of the document rather than of a value -
- * as are locale variants, stored values and objects inside objects.
+ * In the nested mode the fields inside are held to the usages that work
+ * across a join to the document a value belongs to. Filtering, matching,
+ * sorting and faceting all do: a value says whether its document matches, how
+ * well, where it is ordered and what it is counted under, and which values
+ * answer is what the {@code nested} clauses of a search decide. Refused are
+ * the usages that only mean something for a document of the index - being its
+ * primary key, being highlighted, which reads the fields of the document
+ * rather than of a value - as are locale variants, stored values and objects
+ * inside objects. A flattened list refuses sorting besides, because its
+ * values are independent and no one of them stands for the document.
  */
 public class ObjectFieldType implements FieldType {
 	private static final ErrorType NO_FIELDS = ErrorType
@@ -69,6 +76,29 @@ public class ObjectFieldType implements FieldType {
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is inside an object, where names with wildcards are not supported"
+		);
+
+	private static final ErrorType MODE_REQUIRED = ErrorType
+		.withCode("index:field:object:mode_required")
+		.withMessage(
+			"A list of objects needs a `mode`: `nested` when a search must be able to "
+			+ "ask that several conditions hold inside the same value, `flattened` when "
+			+ "the values are only structure and their fields match independently"
+		);
+
+	private static final ErrorType MODE_WITHOUT_MULTIPLE = ErrorType
+		.withCode("index:field:object:mode_without_multiple")
+		.withMessage(
+			"A single object is always flattened, so `mode` only applies together with `multiple`"
+		);
+
+	private static final ErrorType FLATTENED_SORT = ErrorType
+		.withCode("index:field:object:flattened_sort")
+		.withArguments("name")
+		.withMessage(
+			"Field `{{name}}` is inside a flattened list of objects, where no single "
+			+ "value stands for the document, so it can not be defined for `sort` - "
+			+ "keeping the values apart is the `nested` mode"
 		);
 
 	@Override
@@ -106,11 +136,28 @@ public class ObjectFieldType implements FieldType {
 			errors.add(NO_FIELDS.toMessage(location));
 		}
 
+		/*
+		 * The mode is asked for exactly where the two modes answer searches
+		 * differently. A single value is one unit whichever way it is kept, so
+		 * a mode on it can only be a leftover from a `multiple` that was
+		 * dropped - refused so the definition never says something it does not
+		 * mean.
+		 */
+		if(def.getMultiple() && !objectType.hasMode()) {
+			errors.add(MODE_REQUIRED.toMessage(location.forField("mode")));
+		} else if(!def.getMultiple() && objectType.hasMode()) {
+			errors.add(MODE_WITHOUT_MULTIPLE.toMessage(location.forField("mode")));
+		}
+
+		var flattenedList = def.getMultiple()
+			&& objectType.getMode() != ObjectFieldTypeDef.Mode.MODE_NESTED;
+
 		for(var entry : objectType.getFieldsMap().entrySet()) {
 			validateInner(
 				location.forField("fields").forField(entry.getKey()),
 				entry.getKey(),
 				entry.getValue(),
+				flattenedList,
 				resources,
 				errors
 			);
@@ -123,6 +170,7 @@ public class ObjectFieldType implements FieldType {
 		ObjectLocation location,
 		String name,
 		FieldDef def,
+		boolean flattenedList,
 		ResourcesDef resources,
 		MutableCollection<ErrorMessage> errors
 	) {
@@ -157,6 +205,10 @@ public class ObjectFieldType implements FieldType {
 			));
 		}
 
+		if(flattenedList && def.hasSort()) {
+			errors.add(FLATTENED_SORT.toMessage(location, "name", name));
+		}
+
 		/*
 		 * Highlighting reads the text a search matched back out of the document
 		 * it is shown for, and a value is not that document. Refused rather
@@ -177,12 +229,12 @@ public class ObjectFieldType implements FieldType {
 	@Override
 	public Iterable<? extends IndexableField> createFields(IndexEncounter encounter, Object value) {
 		/*
-		 * Object values never turn into fields of the document that holds them;
-		 * Index writes each one as a document of its own before this could be
-		 * reached.
+		 * An object value is taken apart before any type is asked for fields:
+		 * Index writes it as a document of its own or folds its fields into the
+		 * document, per the mode, before this could be reached.
 		 */
 		throw new UnsupportedOperationException(
-			"Object values are indexed as documents of their own"
+			"Object values are indexed through the fields inside them"
 		);
 	}
 

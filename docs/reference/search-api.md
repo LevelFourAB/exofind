@@ -222,9 +222,12 @@ clauses have to be satisfied.
 
 ### `nested`
 
-Match documents where a single value of an [`object`
+Match documents where a single value of a `nested` [`object`
 field](field-types.md#object) satisfies all of the clauses - a condition on
 several fields of the same value, rather than on the document as a whole.
+The fields of a flattened object are ordinary fields of the index named by
+their dotted path and need no clause here; a `nested` clause on one is
+refused with `index:query:nested:flattened`.
 
 ```json
 { "type": "nested", "path": "variants", "clauses": [
@@ -316,8 +319,10 @@ search asks for, so they decide the order within ties without disturbing it.
 
 ### Ordering by a value inside an object
 
-A field sort naming a field inside an [`object`](field-types.md#object) by
-its dotted path orders documents by one of the values they hold there:
+A field sort naming a field inside a `nested`
+[`object`](field-types.md#object) by its dotted path orders documents by one
+of the values they hold there - inside a flattened object the dotted path is
+an ordinary field, and a sort on it is an ordinary field sort:
 
 ```json
 "query": [
@@ -535,8 +540,10 @@ answers no values rather than an error.
 
 ### Counting a value inside an object
 
-A facet naming a field inside an [`object`](field-types.md#object) by its
-dotted path counts how many documents hold each value there:
+A facet naming a field inside a `nested`
+[`object`](field-types.md#object) by its dotted path counts how many
+documents hold each value there - inside a flattened object the dotted path
+is an ordinary field, and a facet on it is an ordinary facet:
 
 ```json
 "facets": [ { "field": "variants.color" } ]

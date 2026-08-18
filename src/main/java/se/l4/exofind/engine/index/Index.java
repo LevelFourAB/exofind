@@ -155,6 +155,13 @@ public class Index {
 				"Field `{{name}}` does not hold documents, but the value given is one"
 			);
 
+	private static final ErrorType ERROR_FIELD_INSIDE_OBJECT =
+		ErrorType.withCode("index:update:field_inside_object")
+			.withArguments("name", "path")
+			.withMessage(
+				"Field `{{name}}` is inside the object `{{path}}`, which is where the document gives its value"
+			);
+
 	private static final ErrorType ERROR_PRIMARY_KEY_REQUIRED =
 		ErrorType.withCode("index:update:primary_key_required")
 			.withArguments("name")
@@ -1192,9 +1199,11 @@ public class Index {
 				: null;
 
 			/*
-			 * The values of object fields become Lucene documents of their own,
-			 * collected here and written in one block with the document at the
-			 * end - which is what lets a search ask about one value at a time.
+			 * The values of nested object fields become Lucene documents of
+			 * their own, collected here and written in one block with the
+			 * document at the end - which is what lets a search ask about one
+			 * value at a time. Flattened objects write into the document
+			 * itself and never land here.
 			 */
 			var childDocs = Lists.mutable.<org.apache.lucene.document.Document>empty();
 			var childCounts = Maps.mutable.<String, Integer>empty();
@@ -1207,6 +1216,24 @@ public class Index {
 							ObjectLocation.root().forField(value.name()),
 							"name",
 							value.name()
+						)
+					);
+					continue;
+				}
+
+				/*
+				 * A flattened path resolves to a field, but a document gives
+				 * its value inside the object - refused so there is one way to
+				 * write a thing, and so the counting of values per field never
+				 * has to reconcile two spellings of the same one.
+				 */
+				var enclosingObject = schema.getFlattenedObjectOf(value.name());
+				if(enclosingObject.isPresent()) {
+					errors.add(
+						ERROR_FIELD_INSIDE_OBJECT.toMessage(
+							ObjectLocation.root().forField(value.name()),
+							"name", value.name(),
+							"path", enclosingObject.get()
 						)
 					);
 					continue;
@@ -1250,15 +1277,26 @@ public class Index {
 						continue;
 					}
 
-					childDocs.add(
-						childDocument(
+					if(field0.isNestedObject()) {
+						childDocs.add(
+							childDocument(
+								field0,
+								subDocument,
+								ObjectLocation.root().forField(value.name()).forIndex(position),
+								encounter,
+								errors
+							)
+						);
+					} else {
+						flattenFields(
 							field0,
 							subDocument,
 							ObjectLocation.root().forField(value.name()).forIndex(position),
 							encounter,
+							luceneDoc,
 							errors
-						)
-					);
+						);
+					}
 
 					fieldsFound.add(value.name());
 					continue;
@@ -1668,6 +1706,121 @@ public class Index {
 		}
 
 		return child;
+	}
+
+	/**
+	 * Fold one value of a flattened object field into the document that holds
+	 * it, checking its fields the way {@link #childDocument} checks a nested
+	 * value's.
+	 *
+	 * The names inside the value are the ones the object declares; what they
+	 * are written under is the dotted path through the object, which is the
+	 * root field the schema registered for each of them. A field allowed once
+	 * per value may still be written by every value of the object, so being
+	 * given more than once is judged within the value alone.
+	 *
+	 * @param objectField
+	 *   the object field the value was given to
+	 * @param value
+	 *   the value, an object of its own
+	 * @param location
+	 *   where the value sits in the document, used to point at errors
+	 * @param encounter
+	 * @param luceneDoc
+	 *   the document being built, which the fields are added to
+	 * @param errors
+	 *   where problems with the value are collected
+	 */
+	private void flattenFields(
+		Field objectField,
+		Document value,
+		ObjectLocation location,
+		IndexEncounterImpl encounter,
+		org.apache.lucene.document.Document luceneDoc,
+		MutableList<ErrorMessage> errors
+	) {
+		var valuesSeen = Sets.mutable.<String>empty();
+		var fieldsFound = Sets.mutable.<String>empty();
+
+		for(var inner : value.fields()) {
+			var path = objectField.getName() + '.' + inner.name();
+
+			/*
+			 * Only the declared fields of the object, which are the paths the
+			 * schema folded out of it - a root pattern that happens to match
+			 * the path was never part of this object.
+			 */
+			if(schema.getFlattenedObjectOf(path).isEmpty()) {
+				errors.add(
+					ERROR_FIELD_NOT_FOUND.toMessage(
+						location.forField(inner.name()),
+						"name", inner.name()
+					)
+				);
+				continue;
+			}
+
+			var innerField = schema.getField(path).orElseThrow();
+
+			// Fields inside an object are never locale specific
+			if(inner.locale() != null) {
+				errors.add(
+					ERROR_LOCALE_NOT_ALLOWED.toMessage(
+						location.forField(inner.name()),
+						"name", inner.name(),
+						"locale", inner.locale()
+					)
+				);
+				continue;
+			}
+
+			if(inner.value() instanceof Document) {
+				errors.add(
+					ERROR_UNEXPECTED_DOCUMENT.toMessage(
+						location.forField(inner.name()),
+						"name", inner.name()
+					)
+				);
+				continue;
+			}
+
+			if(!valuesSeen.add(inner.name()) && !innerField.isMultiple()) {
+				errors.add(
+					ERROR_NOT_MULTIPLE.toMessage(
+						location.forField(inner.name()),
+						"name", inner.name()
+					)
+				);
+				continue;
+			}
+
+			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+			encounter.updateValue(innerField.getName(), innerField.getDef());
+
+			try {
+				for(var indexableField : innerField.getType().createFields(encounter, inner.value())) {
+					luceneDoc.add(indexableField);
+				}
+			} catch(ValidationException e) {
+				errors.addAllIterable(e.getErrors());
+				continue;
+			}
+
+			fieldsFound.add(inner.name());
+		}
+
+		// Being required means required in every value, not once per document
+		var objectDef = objectField.getDef().getType().getObject();
+		for(var entry : objectDef.getFieldsMap().entrySet()) {
+			if(entry.getValue().getRequired() && !fieldsFound.contains(entry.getKey())) {
+				errors.add(
+					ERROR_REQUIRED_FIELD_MISSING.toMessage(
+						location.forField(entry.getKey()),
+						"name", entry.getKey()
+					)
+				);
+			}
+		}
 	}
 
 	/**

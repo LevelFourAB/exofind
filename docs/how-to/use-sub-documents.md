@@ -12,12 +12,20 @@ cannot say which value goes with which - `colors: [red, blue]` next to
 over sub-documents asks for a variant that is *both* red and under 20 rather
 than a product that is red in one variant and cheap in another.
 
-The field is called `object` where the index is defined and reached through
-the `nested` clause where it is searched. Below both, every value is indexed
-as a document of its own and joined back to the document holding it, and three
-things the rest of this guide keeps running into follow from that: values are
-matched a value at a time, results are always documents, and a document is
-written and deleted along with its values.
+The field is called `object` where the index is defined, holds sub-documents
+when its `mode` is `nested`, and is reached through the `nested` clause where
+it is searched. Below all three, every value is indexed as a document of its
+own and joined back to the document holding it, and three things the rest of
+this guide keeps running into follow from that: values are matched a value at
+a time, results are always documents, and a document is written and deleted
+along with its values.
+
+Matching one value at a time is also the only reason to pay for any of it. An
+object that is only structure - values whose fields never have to hold
+together - takes `"mode": "flattened"` instead, which folds its fields into
+the document as ordinary fields under the dotted path, searched with no
+`nested` clause and no join. What each mode allows is listed in [`object`
+fields](../reference/field-types.md#object); this guide is about `nested`.
 
 ## Define the field
 
@@ -25,6 +33,7 @@ written and deleted along with its values.
 "variants": {
   "type": "object",
   "multiple": true,
+  "mode": "nested",
   "fields": {
     "color": { "type": "string", "filter": {}, "facet": {}, "required": true },
     "size": { "type": "string", "filter": {}, "multiple": true },
@@ -34,10 +43,14 @@ written and deleted along with its values.
 }
 ```
 
-`multiple` on the object is what makes it a list. Without it the field holds
-one value and a document giving it several is refused with
-`index:update:not_multiple` - the shape for a group of fields that belong
-together, such as a `dimensions` holding a width and a height.
+`multiple` on the object is what makes it a list, and a list has to say its
+`mode` - flattened, `color = red` and `price < 20` could be satisfied by two
+different variants, so which way a list answers is never defaulted. A field
+without `multiple` holds one value, refuses a document giving it several with
+`index:update:not_multiple`, and is never a sub-document: a single value is
+one unit whichever way it is kept, so it always flattens and takes no `mode` -
+the shape for a group of fields that belong together, such as a `dimensions`
+holding a width and a height.
 
 The fields inside are defined the way the index's own are, and may use
 `filter`, `matching`, `autocomplete`, `sort`, `facet`, `validation`,
@@ -48,9 +61,10 @@ fragment is shown for - as are `locales`, `stored`, objects inside objects and
 wildcard names. The object itself holds no value of its own, so `filter`,
 `sort`, `facet`, `locales` and `stored` on it are refused too.
 
-An index using anything beyond `filter` inside an object needs the
-`type.object.usages` feature, so a node without it refuses the index rather
-than indexing the values with none of what those usages write.
+An index with `nested` objects needs the `type.object` feature, and
+`type.object.usages` besides when anything beyond `filter` is used inside one,
+so a node without them refuses the index rather than indexing the values with
+none of what those usages write.
 
 Giving an inner field a usage it did not have reaches only values indexed from
 then on, the same as anywhere else - on an index already holding documents,

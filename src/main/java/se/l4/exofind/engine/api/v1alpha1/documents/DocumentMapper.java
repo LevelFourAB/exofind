@@ -247,9 +247,15 @@ public class DocumentMapper {
 			var name = String.valueOf(entry.getKey());
 			var nestedPath = path + '.' + name;
 
+			/*
+			 * The fields of a nested object resolve through the path; the
+			 * fields of a flattened one are fields of the index under it.
+			 */
 			appendValues(
 				index,
-				index.getNestedField(nestedPath).map(nested -> nested.field()),
+				index.getNestedField(nestedPath)
+					.map(nested -> nested.field())
+					.or(() -> index.getField(nestedPath)),
 				name,
 				entry.getValue(),
 				values

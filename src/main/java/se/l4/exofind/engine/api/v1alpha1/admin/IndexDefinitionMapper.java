@@ -385,6 +385,15 @@ public class IndexDefinitionMapper {
 			}
 		}
 
+		if(field.mode() != null) {
+			builder.setMode(
+				switch(field.mode()) {
+					case NESTED -> ObjectFieldTypeDef.Mode.MODE_NESTED;
+					case FLATTENED -> ObjectFieldTypeDef.Mode.MODE_FLATTENED;
+				}
+			);
+		}
+
 		return builder.build();
 	}
 
@@ -1430,6 +1439,15 @@ public class IndexDefinitionMapper {
 					fields.put(entry.getKey(), toApi(entry.getKey(), entry.getValue()));
 				}
 
+				ObjectFieldDefinition.Mode mode = null;
+				if(type.getObject().hasMode()) {
+					mode = switch(type.getObject().getMode()) {
+						case MODE_NESTED -> ObjectFieldDefinition.Mode.NESTED;
+						case MODE_FLATTENED -> ObjectFieldDefinition.Mode.FLATTENED;
+						default -> null;
+					};
+				}
+
 				yield new ObjectFieldDefinition(
 					primaryKey,
 					required,
@@ -1439,6 +1457,7 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
+					mode,
 					fields
 				);
 			}

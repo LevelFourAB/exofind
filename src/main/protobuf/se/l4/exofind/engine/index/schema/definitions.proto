@@ -484,14 +484,14 @@ message VectorFieldTypeDef {
 }
 
 /*
- * ObjectFieldTypeDef is a definition of a field whose values are documents of
- * their own, described by the fields here the same way the index describes its
- * documents.
+ * ObjectFieldTypeDef is a definition of a field whose values are objects,
+ * described by the fields here the same way the index describes its documents.
  *
- * Every value is kept as its own unit: a search can ask that several
- * conditions hold inside the same value, rather than one value satisfying one
- * condition and another value the rest. A field declared `multiple` holds a
- * list of such values.
+ * How the values are kept is `mode`. Nested keeps every value as its own
+ * unit: a search can ask that several conditions hold inside the same value,
+ * rather than one value satisfying one condition and another value the rest.
+ * Flattened folds the fields of the values into the document itself, matched
+ * independently of which value they came from.
  */
 message ObjectFieldTypeDef {
 	/*
@@ -499,6 +499,30 @@ message ObjectFieldTypeDef {
 	 * a field is referred to by the dotted path through the object.
 	 */
 	map<string, FieldDef> fields = 1;
+
+	/*
+	 * How the values are kept relative to the document.
+	 */
+	enum Mode {
+		MODE_UNSPECIFIED = 0;
+		/*
+		 * Every value is a unit of its own, so a search can ask that several
+		 * conditions hold inside the same value.
+		 */
+		MODE_NESTED = 1;
+		/*
+		 * The fields of every value belong to the document itself, matched
+		 * independently of which value they sit in.
+		 */
+		MODE_FLATTENED = 2;
+	}
+
+	/*
+	 * How the values are kept. Required when the field is `multiple`, where
+	 * the two modes answer searches differently; refused when it is not,
+	 * where a single value is always flattened.
+	 */
+	optional Mode mode = 2;
 }
 
 /*

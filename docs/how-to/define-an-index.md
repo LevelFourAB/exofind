@@ -105,15 +105,35 @@ within the same locale.
 
 ## Group fields that belong together
 
-A product with a list of variants, each holding a color and a price, is not
-well served by two multi-valued fields - `colors: [red, blue]` next to
-`prices: [30, 10]` cannot say that red is the expensive one. Declare an
-`object` field instead, holding the fields each variant has:
+An `object` field holds fields inside another, described the way the index
+describes its own. A group that is only structure - a `dimensions` holding a
+width and a height - is a single object, and its fields are ordinary fields
+of the index under the dotted path, `dimensions.width`, with nothing more to
+declare:
+
+```json
+"dimensions": {
+  "type": "object",
+  "fields": {
+    "width": { "type": "double", "filter": {} },
+    "height": { "type": "double", "filter": {} }
+  }
+}
+```
+
+A *list* of objects has to say what its values mean. A product with a list of
+variants, each holding a color and a price, is not well served by fields that
+match independently - flattened, "red and under 20" is satisfied by a product
+that is red in one variant and cheap in another. Declare the list
+`"mode": "nested"` and a search matches one variant at a time through the
+`nested` clause of the [search API](../reference/search-api.md#nested), so
+"red and under 20" means one variant that is both:
 
 ```json
 "variants": {
   "type": "object",
   "multiple": true,
+  "mode": "nested",
   "fields": {
     "color": { "type": "string", "filter": {} },
     "price": { "type": "double", "filter": {} }
@@ -121,15 +141,14 @@ well served by two multi-valued fields - `colors: [red, blue]` next to
 }
 ```
 
-A search then matches one variant at a time through the `nested` clause of
-the [search API](../reference/search-api.md#nested), so "red and under 20"
-means one variant that is both. Give the fields inside `sort`, `facet` and
-`matching` as well, and the variant that matched can order the product,
-count it and rank it - "the cheapest red variant, cheapest first" is a
-`nested` clause and a sort on `variants.price`. What the fields inside may
-declare is listed in [Field types](../reference/field-types.md#object), and
-[Use sub-documents](use-sub-documents.md) walks indexing, searching and
-changing the values.
+Give the fields inside `sort`, `facet` and `matching` as well, and the
+variant that matched can order the product, count it and rank it - "the
+cheapest red variant, cheapest first" is a `nested` clause and a sort on
+`variants.price`. A list whose values really are independent takes
+`"mode": "flattened"` instead and costs nothing beyond its fields. What each
+mode allows is listed in [Field types](../reference/field-types.md#object),
+and [Use sub-documents](use-sub-documents.md) walks indexing, searching and
+changing nested values.
 
 ## Cover many names with one field
 

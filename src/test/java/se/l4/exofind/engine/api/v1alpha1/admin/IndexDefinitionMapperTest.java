@@ -31,6 +31,7 @@ import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
@@ -436,6 +437,7 @@ public class IndexDefinitionMapperTest {
 		var field = new ObjectFieldDefinition(
 			null, null, true, null, null,
 			null, null, null,
+			ObjectFieldDefinition.Mode.NESTED,
 			Map.of(
 				"color", new StringFieldDefinition(
 					null, true, null, null, null,
@@ -456,6 +458,10 @@ public class IndexDefinitionMapperTest {
 		var storedField = stored.getFieldsOrThrow("variants");
 		assertThat(storedField.getMultiple(), is(true));
 		assertThat(storedField.getType().hasObject(), is(true));
+		assertThat(
+			storedField.getType().getObject().getMode(),
+			is(ObjectFieldTypeDef.Mode.MODE_NESTED)
+		);
 
 		var inner = storedField.getType().getObject().getFieldsMap();
 		assertThat(inner.get("color").getType().hasString(), is(true));
@@ -464,6 +470,58 @@ public class IndexDefinitionMapperTest {
 
 		var api = IndexDefinitionMapper.toApi(stored);
 		assertThat(api.fields().get("variants"), is(field));
+	}
+
+	@Test
+	public void testFlattenedObjectFieldRoundTrip() {
+		var field = new ObjectFieldDefinition(
+			null, null, true, null, null,
+			null, null, null,
+			ObjectFieldDefinition.Mode.FLATTENED,
+			Map.of(
+				"color", new StringFieldDefinition(
+					null, null, null, null, null,
+					new FieldDefinition.Filter(), null, null,
+					null, null, null,
+					null
+				)
+			)
+		);
+
+		var stored = IndexDefinitionMapper.toStored(withFields(Map.of("variants", field)));
+
+		var storedField = stored.getFieldsOrThrow("variants");
+		assertThat(
+			storedField.getType().getObject().getMode(),
+			is(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+		);
+
+		var api = IndexDefinitionMapper.toApi(stored);
+		assertThat(api.fields().get("variants"), is(field));
+	}
+
+	@Test
+	public void testObjectFieldWithoutModeRoundTrip() {
+		var field = new ObjectFieldDefinition(
+			null, null, null, null, null,
+			null, null, null,
+			null,
+			Map.of(
+				"width", new DoubleFieldDefinition(
+					null, null, null, null, null,
+					new FieldDefinition.Filter(), null, null,
+					null
+				)
+			)
+		);
+
+		var stored = IndexDefinitionMapper.toStored(withFields(Map.of("dimensions", field)));
+
+		var storedField = stored.getFieldsOrThrow("dimensions");
+		assertThat(storedField.getType().getObject().hasMode(), is(false));
+
+		var api = IndexDefinitionMapper.toApi(stored);
+		assertThat(api.fields().get("dimensions"), is(field));
 	}
 
 	@Test
@@ -1376,6 +1434,7 @@ public class IndexDefinitionMapperTest {
 				"author",
 				new ObjectFieldDefinition(
 					null, null, null, null, null, null, null, null,
+					null,
 					Map.of("name", string(null, null, null))
 				)
 			),

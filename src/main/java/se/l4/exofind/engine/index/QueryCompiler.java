@@ -103,6 +103,15 @@ public class QueryCompiler {
 			"Field `{{name}}` is inside an object and can be ordered by its value, but not in this way"
 		);
 
+	private static final ErrorType NESTED_ON_FLATTENED = ErrorType
+		.withCode("index:query:nested:flattened")
+		.withArguments("path")
+		.withMessage(
+			"The values of `{{path}}` are flattened, so their fields are matched directly "
+			+ "and independently of which value they sit in; asking that conditions hold "
+			+ "inside the same value takes the `nested` mode on the field"
+		);
+
 	/**
 	 * The kinds of ordering that can read a value out of the objects of one
 	 * document and order the document by it. Anything else - a distance from an
@@ -636,6 +645,10 @@ public class QueryCompiler {
 				field.getDef().getType().getTypeCase().name().toLowerCase(Locale.ROOT),
 				"nested"
 			);
+		}
+
+		if(!field.isNestedObject()) {
+			throw new IndexException(NESTED_ON_FLATTENED, "path", clause.path());
 		}
 
 		requireNestedSupported(clause.clauses());

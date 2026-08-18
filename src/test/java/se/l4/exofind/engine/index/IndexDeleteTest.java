@@ -409,6 +409,7 @@ public class IndexDeleteTest extends AbstractIndexTest {
 											.setFilter(FilterConfig.getDefaultInstance())
 											.build()
 									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 							)
 						)
 						.setMultiple(true)

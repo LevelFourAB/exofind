@@ -36,6 +36,14 @@ public class IndexSchema {
 	private ImmutableMap<String, NestedField> nestedFields;
 
 	/**
+	 * The object field each flattened path folds out of, keyed by the path.
+	 * The fields themselves live in {@link #fields} and answer searches as any
+	 * root field does; this is what remembers that a document gives their
+	 * values inside the object rather than under the path.
+	 */
+	private ImmutableMap<String, String> flattenedPaths;
+
+	/**
 	 * The fields inside each object field, keyed by the name of the object -
 	 * what a search naming no fields covers while it is inside a {@code nested}
 	 * clause.
@@ -214,6 +222,7 @@ public class IndexSchema {
 		this.wildcardFields = Lists.immutable.empty();
 		this.nestedFields = Maps.immutable.empty();
 		this.nestedFieldsByPath = Maps.immutable.empty();
+		this.flattenedPaths = Maps.immutable.empty();
 		this.primaryKey = null;
 		this.requiredFields = Sets.immutable.empty();
 		this.fieldList = Lists.immutable.empty();
@@ -656,6 +665,7 @@ public class IndexSchema {
 			var wildcardFields = Lists.mutable.<Field>empty();
 			var nestedFields = Maps.mutable.<String, NestedField>empty();
 			var nestedFieldsByPath = Maps.mutable.<String, MutableList<Field>>empty();
+			var flattenedPaths = Maps.mutable.<String, String>empty();
 			var requiredFields = Sets.mutable.<String>empty();
 			Field primaryKey = null;
 
@@ -669,7 +679,7 @@ public class IndexSchema {
 					wildcardFields.add(field);
 				}
 
-				if(field.isObject()) {
+				if(field.isNestedObject()) {
 					var inside = Lists.mutable.<Field>empty();
 
 					for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
@@ -682,6 +692,20 @@ public class IndexSchema {
 
 					inside.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
 					nestedFieldsByPath.put(field.getName(), inside);
+				} else if(field.isObject()) {
+					/*
+					 * A flattened object folds into the document, so the fields
+					 * inside it are fields of the index like any other -
+					 * resolved, searched across and counted with no join in
+					 * between. Only how documents give their values differs,
+					 * which is what flattenedPaths remembers.
+					 */
+					for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
+						var path = field.getName() + '.' + inner.getKey();
+
+						fields.put(path, new Field(path, inner.getValue()));
+						flattenedPaths.put(path, field.getName());
+					}
 				}
 
 				if(field.getDef().getPrimaryKey()) {
@@ -697,6 +721,7 @@ public class IndexSchema {
 
 			this.fields = fields.toImmutable();
 			this.nestedFields = nestedFields.toImmutable();
+			this.flattenedPaths = flattenedPaths.toImmutable();
 			this.nestedFieldsByPath = nestedFieldsByPath
 				.collectValues((path, inside) -> inside.toImmutable())
 				.toImmutable();
@@ -805,9 +830,29 @@ public class IndexSchema {
 	}
 
 	/**
-	 * Get whether any field of the index is an object, meaning documents write
-	 * Lucene documents beyond their own and searching has to keep those out of
-	 * the results.
+	 * Get the object field a flattened path folds out of. The field itself is
+	 * found through {@link #getField(String)} and behaves as any root field
+	 * does; what this answers is where a document gives its values - inside
+	 * the object, never under the path directly.
+	 *
+	 * @param name
+	 * @return
+	 *   name of the object field, or empty when the name is not a flattened
+	 *   path
+	 */
+	public Optional<String> getFlattenedObjectOf(String name) {
+		this.lock.readLock().lock();
+		try {
+			return Optional.ofNullable(flattenedPaths.get(name));
+		} finally {
+			this.lock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Get whether any field of the index is a nested object, meaning documents
+	 * write Lucene documents beyond their own and searching has to keep those
+	 * out of the results.
 	 *
 	 * @return
 	 */

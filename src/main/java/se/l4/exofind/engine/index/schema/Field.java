@@ -398,14 +398,27 @@ public class Field {
 	}
 
 	/**
-	 * Get if values of this field are documents of their own. Such a field is
-	 * a container rather than a value: what can be asked of it is asked of the
-	 * fields inside it, addressed by the dotted path through this one.
+	 * Get if values of this field are objects. Such a field is a container
+	 * rather than a value: what can be asked of it is asked of the fields
+	 * inside it, addressed by the dotted path through this one.
 	 *
 	 * @return
 	 */
 	public boolean isObject() {
 		return def.getType().getTypeCase() == TypeCase.OBJECT;
+	}
+
+	/**
+	 * Get if values of this field are kept as documents of their own, so that
+	 * a search can ask that several conditions hold inside the same value.
+	 * Only meaningful for an object field; every other object field is
+	 * flattened, its values' fields belonging to the document itself.
+	 *
+	 * @return
+	 */
+	public boolean isNestedObject() {
+		return isObject()
+			&& def.getType().getObject().getMode() == ObjectFieldTypeDef.Mode.MODE_NESTED;
 	}
 
 	/**

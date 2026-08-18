@@ -96,6 +96,12 @@ the definition is what decides - which is why the same object is a locale map
 for one field and a point for another. A locale specific field given a value
 without any locale keeps it in the field's default locale.
 
+An object field is written the same way whichever mode it declares - a
+document gives the value inside the object, never under the dotted path a
+search names. A field written as `"dimensions.width"` directly is refused
+with `index:update:field_inside_object`, so there is one way to write a
+value.
+
 A field written as `null` is a field that was not given, so a document can be
 built with a key for every field the caller knows about. A field the
 definition marks `required` is still missing, and reported as missing.

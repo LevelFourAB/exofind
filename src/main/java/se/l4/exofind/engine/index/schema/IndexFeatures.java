@@ -82,6 +82,15 @@ public final class IndexFeatures {
 	public static final String TYPE_OBJECT_USAGES = "type.object.usages";
 
 	/**
+	 * A field holds objects whose fields fold into the document itself,
+	 * addressed by the dotted path. Named because a node without it would keep
+	 * the values as documents of their own and demand {@code nested} clauses
+	 * for fields the definition promises answer directly - the same index
+	 * written two ways depending on who indexed it.
+	 */
+	public static final String TYPE_OBJECT_FLATTENED = "type.object.flattened";
+
+	/**
 	 * The index keeps documents as they were given.
 	 *
 	 * Named because a node without it would store only the fields that ask to
@@ -291,6 +300,7 @@ public final class IndexFeatures {
 			TYPE_VECTOR,
 			TYPE_OBJECT,
 			TYPE_OBJECT_USAGES,
+			TYPE_OBJECT_FLATTENED,
 			TYPE_INT32,
 			TYPE_INT64,
 			TYPE_FLOAT,
@@ -497,7 +507,10 @@ public final class IndexFeatures {
 			case TIMESTAMP -> features.add(TYPE_TIMESTAMP);
 			case GEO_POINT -> features.add(TYPE_GEO_POINT);
 			case OBJECT -> {
-				features.add(TYPE_OBJECT);
+				var nested = field.getType().getObject().getMode()
+					== ObjectFieldTypeDef.Mode.MODE_NESTED;
+
+				features.add(nested ? TYPE_OBJECT : TYPE_OBJECT_FLATTENED);
 
 				// The fields inside need their own features besides this one
 				for(var inner : field.getType().getObject().getFieldsMap().values()) {
@@ -506,10 +519,11 @@ public final class IndexFeatures {
 					/*
 					 * Named besides the usages themselves, which say nothing
 					 * about where they sit: a node knowing how to sort by a
-					 * field of the index may not know how to sort by one inside
-					 * an object.
+					 * field of the index may not know how to sort by one that
+					 * answers across a join. A flattened field is a field of
+					 * the index, so its usages carry no name beyond their own.
 					 */
-					if(usesMoreThanFiltering(inner)) {
+					if(nested && usesMoreThanFiltering(inner)) {
 						features.add(TYPE_OBJECT_USAGES);
 					}
 				}

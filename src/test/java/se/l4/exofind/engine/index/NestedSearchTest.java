@@ -496,6 +496,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 											.setMultiple(true)
 											.build()
 									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 							)
 						)
 						.setMultiple(true)

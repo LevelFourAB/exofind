@@ -462,6 +462,7 @@ public class NestedValueSearchTest extends AbstractIndexTest {
 											.setSort(SortConfig.getDefaultInstance())
 											.build()
 									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 							)
 						)
 						.setMultiple(true)

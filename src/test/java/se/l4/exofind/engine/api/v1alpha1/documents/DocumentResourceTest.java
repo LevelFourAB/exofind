@@ -273,6 +273,7 @@ public class DocumentResourceTest {
 								.setObject(
 									ObjectFieldTypeDef.newBuilder()
 										.putFields("size", string().build())
+										.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 								)
 						)
 						.setMultiple(true)
@@ -302,6 +303,48 @@ public class DocumentResourceTest {
 			.toList();
 
 		assertThat(sizes, contains("S", "M"));
+	}
+
+	@Test
+	public void testTheValueOfAFlattenedObjectFieldReadsItsInnerTypes() throws IOException {
+		var index = indexes.create(
+			"products",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"dimensions",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setObject(
+									ObjectFieldTypeDef.newBuilder()
+										.putFields("label", string().setMultiple(true).build())
+								)
+						)
+						.build()
+				)
+				.build()
+		);
+
+		resource.add(
+			"products",
+			new DocumentsRequest(
+				List.of(
+					document(
+						"id", "1",
+						"dimensions", Map.of("label", List.of("wide", "tall"))
+					)
+				)
+			)
+		);
+
+		index.commit();
+
+		var labels = ((se.l4.exofind.engine.index.Document) index.getDocument("1")
+			.get("dimensions"))
+			.getAll("label");
+
+		assertThat(labels, contains("wide", "tall"));
 	}
 
 	@Test
