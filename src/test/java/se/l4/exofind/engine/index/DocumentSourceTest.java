@@ -237,6 +237,45 @@ public class DocumentSourceTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testDecodingSomeFieldsLeavesTheRestUnread() {
+		var doc = new Document(
+			new Document.Value("name", "Silent Spring"),
+			new Document.Value("published", true),
+			new Document.Value("tags", "nature"),
+			new Document.Value("tags", "science"),
+			new Document.Value("summary", "Vår tysta vår", "sv"),
+			new Document.Value(
+				"dimensions",
+				new Document(new Document.Value("width", 12.5d))
+			)
+		);
+
+		var read = DocumentSource.decode(
+			new BytesRef(DocumentSource.encode(doc)),
+			name -> name.equals("tags") || name.equals("summary") || name.equals("dimensions")
+		);
+
+		assertThat(read.fields().length, is(4));
+		assertThat(read.fields()[0], is(new Document.Value("tags", "nature", null)));
+		assertThat(read.fields()[1], is(new Document.Value("tags", "science", null)));
+		assertThat(read.fields()[2], is(new Document.Value("summary", "Vår tysta vår", "sv")));
+		assertThat(read.fields()[3].name(), is("dimensions"));
+		assertThat(((Document) read.fields()[3].value()).get("width"), is(12.5d));
+	}
+
+	@Test
+	public void testDecodingNoFieldsReadsNothing() {
+		var doc = new Document(
+			new Document.Value("name", "Silent Spring"),
+			new Document.Value("published", true)
+		);
+
+		var read = DocumentSource.decode(new BytesRef(DocumentSource.encode(doc)), name -> false);
+
+		assertThat(read.fields().length, is(0));
+	}
+
+	@Test
 	public void testGeoPointReadsBackTheSame() {
 		var doc = new Document(
 			new Document.Value("location", new GeoPoint(59.325, 18.070))

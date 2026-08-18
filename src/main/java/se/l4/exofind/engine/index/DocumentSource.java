@@ -1,11 +1,16 @@
 package se.l4.exofind.engine.index;
 
+import java.io.IOException;
+import java.util.function.Predicate;
+
 import org.apache.lucene.util.BytesRef;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.WireFormat;
 
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.index.source.FloatVector;
@@ -127,6 +132,96 @@ public final class DocumentSource {
 		}
 
 		return decodeDocument(source);
+	}
+
+	/**
+	 * Get the fields of the document the given bytes were written from that
+	 * are wanted, in the order they were given in.
+	 *
+	 * A field that is not wanted is stepped over rather than read, so this
+	 * costs what the fields that were wanted hold rather than what the whole
+	 * document does.
+	 *
+	 * @param bytes
+	 * @param wanted
+	 *   answers for the name of a field, which is read before the value it
+	 *   carries is
+	 * @return
+	 */
+	public static Document decode(BytesRef bytes, Predicate<String> wanted) {
+		var values = Lists.mutable.<Document.Value>empty();
+
+		try {
+			var in = CodedInputStream.newInstance(bytes.bytes, bytes.offset, bytes.length);
+
+			while(true) {
+				var tag = in.readTag();
+				if(tag == 0) {
+					break;
+				}
+
+				if(WireFormat.getTagFieldNumber(tag) != SourceDocument.FIELDS_FIELD_NUMBER
+					|| WireFormat.getTagWireType(tag) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+					/*
+					 * Written by a version that keeps something else about a
+					 * document. Stepping over it is what leaves the fields
+					 * readable.
+					 */
+					in.skipField(tag);
+					continue;
+				}
+
+				var length = in.readRawVarint32();
+				var start = bytes.offset + in.getTotalBytesRead();
+				in.skipRawBytes(length);
+
+				var name = nameOf(bytes.bytes, start, length);
+				if(name == null || !wanted.test(name)) {
+					continue;
+				}
+
+				var field = SourceField.parser().parseFrom(bytes.bytes, start, length);
+
+				var value = decode(field);
+				if(value == null) {
+					continue;
+				}
+
+				values.add(
+					new Document.Value(
+						field.getName(),
+						value,
+						field.hasLocale() ? field.getLocale() : null
+					)
+				);
+			}
+		} catch(IOException e) {
+			throw new IndexException(UNREADABLE, Maps.immutable.<String, Object>empty(), e);
+		}
+
+		return new Document(values.toArray(new Document.Value[0]));
+	}
+
+	/**
+	 * Read the name out of one encoded field without reading the value it
+	 * carries. {@code null} for a field that carries no name, which is a field
+	 * of a document written by a version that has something this one does not.
+	 */
+	private static String nameOf(byte[] bytes, int offset, int length) throws IOException {
+		var in = CodedInputStream.newInstance(bytes, offset, length);
+
+		while(true) {
+			var tag = in.readTag();
+			if(tag == 0) {
+				return null;
+			}
+
+			if(WireFormat.getTagFieldNumber(tag) == SourceField.NAME_FIELD_NUMBER) {
+				return in.readStringRequireUtf8();
+			}
+
+			in.skipField(tag);
+		}
 	}
 
 	private static Document decodeDocument(SourceDocument source) {

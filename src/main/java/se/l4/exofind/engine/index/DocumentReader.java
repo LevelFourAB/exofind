@@ -222,7 +222,17 @@ public class DocumentReader {
 	public Document read(org.apache.lucene.document.Document doc) {
 		var source = doc.getBinaryValue(FieldNames.SOURCE);
 		if(source != null) {
-			return select(DocumentSource.decode(source));
+			if(fields.isEmpty()) {
+				return DocumentSource.decode(source);
+			}
+
+			/*
+			 * The copy holds every field of the document however few a search
+			 * asks back, so reading all of it to hand back a handful would be
+			 * what a page of results ordinarily costs. What was not asked for
+			 * is stepped over instead.
+			 */
+			return cutObjects(DocumentSource.decode(source, this::wanted));
 		}
 
 		var values = Lists.mutable.<Document.Value>empty();
@@ -262,21 +272,21 @@ public class DocumentReader {
 	}
 
 	/**
-	 * Cut a document down to the fields that were asked for.
+	 * Cut the objects of a document down to the fields that were asked for
+	 * inside them. Which fields of the document itself are there was decided
+	 * as it was read.
 	 *
 	 * @param doc
 	 * @return
 	 */
-	private Document select(Document doc) {
-		if(fields.isEmpty()) {
+	private Document cutObjects(Document doc) {
+		if(inside.isEmpty()) {
 			return doc;
 		}
 
 		var values = Lists.mutable.<Document.Value>empty();
 		for(var value : doc.fields()) {
-			if(wanted(value.name())) {
-				values.add(cut(value));
-			}
+			values.add(cut(value));
 		}
 
 		return new Document(values.toArray(new Document.Value[0]));
@@ -310,10 +320,11 @@ public class DocumentReader {
 	/**
 	 * Whether a field belongs in what is handed back.
 	 *
-	 * A copy of the document holds every field whatever was wanted, and the
+	 * The copy of a document holds every field however few were wanted, and the
 	 * stored fields can hold more than was wanted too, as they are read in one
-	 * go with whatever else the caller needed them for. Asking for a few fields
-	 * never loses the primary key, which is what a result is identified by.
+	 * go with whatever else the caller needed them for - so both are read
+	 * through this. Asking for a few fields never loses the primary key, which
+	 * is what a result is identified by.
 	 */
 	private boolean wanted(String field) {
 		if(fields.isEmpty() || whole.containsKey(field) || inside.containsKey(field)) {
