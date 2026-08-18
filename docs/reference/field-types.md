@@ -186,6 +186,14 @@ comes back is then whatever the fields ask to be `stored`. Changing the
 setting does not rewrite the documents already indexed - it decides what is
 written from there on, and both kinds keep reading.
 
+A search naming a field the definition has left no way to answer for is
+refused rather than answered with the field missing: `stored` was never asked
+for (`index:query:usage_not_enabled`), or the field is an object, which holds
+no value of its own to store (`index:query:source_not_kept`). Objects are
+therefore filtered, sorted and counted but never returned by an index keeping
+no copy. A search naming no fields at all is not refused - it brings back
+whatever each document happens to hold.
+
 ## Ranking
 
 How these fit together with the text scoring and with a search's own clauses

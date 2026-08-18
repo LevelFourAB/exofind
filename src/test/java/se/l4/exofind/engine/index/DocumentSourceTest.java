@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -14,11 +15,16 @@ import org.apache.lucene.util.BytesRef;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
+import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.query.Query;
+import se.l4.exofind.engine.query.SearchRequest;
+import se.l4.exofind.engine.query.matchers.Matchers;
 
 /**
  * Tests for the copy of a document that is kept alongside the index - what
@@ -130,6 +136,68 @@ public class DocumentSourceTest extends AbstractIndexTest {
 		assertThat(after.get("category"), is(nullValue()));
 	}
 
+	@Test
+	public void testAskingForAFieldNothingCanAnswerForIsRefused() throws IOException {
+		var index = books(IndexDef.newBuilder().setSource(IndexDef.SourceMode.SOURCE_MODE_NONE));
+
+		var e = assertThrows(
+			IndexFieldUsageException.class,
+			() -> index.search(SearchRequest.create().withFields("category").build())
+		);
+
+		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+	}
+
+	@Test
+	public void testAskingForAStoredFieldIsAnswered() throws IOException {
+		var index = books(IndexDef.newBuilder().setSource(IndexDef.SourceMode.SOURCE_MODE_NONE));
+
+		var result = index.search(
+			SearchRequest.create().withFields("name", "id").build()
+		);
+
+		assertThat(result.hits().get(0).document().get("name"), is(notNullValue()));
+	}
+
+	/**
+	 * An object holds no value of its own to store, so the copy of the document
+	 * is the only thing that could ever answer for one.
+	 */
+	@Test
+	public void testAskingForAnObjectWithoutTheKeptDocumentIsRefused() throws IOException {
+		var index = books(IndexDef.newBuilder().setSource(IndexDef.SourceMode.SOURCE_MODE_NONE));
+
+		var e = assertThrows(
+			IndexSourceRequiredException.class,
+			() -> index.search(SearchRequest.create().withFields("dimensions").build())
+		);
+
+		assertThat(e.getCode(), is("index:query:source_not_kept"));
+
+		var inside = assertThrows(
+			IndexSourceRequiredException.class,
+			() -> index.search(SearchRequest.create().withFields("dimensions.width").build())
+		);
+
+		assertThat(inside.getCode(), is("index:query:source_not_kept"));
+	}
+
+	@Test
+	public void testEveryFieldCanBeAskedForWhileTheDocumentIsKept() throws IOException {
+		var index = books(IndexDef.newBuilder());
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("non-fiction")))
+				.withFields("category", "dimensions.width")
+				.build()
+		);
+
+		var document = result.hits().get(0).document();
+		assertThat(document.get("category"), is("non-fiction"));
+		assertThat(((Document) document.get("dimensions")).get("width"), is(12.5d));
+	}
+
 	/**
 	 * Arrays compare by identity in a record, so the vector is checked element
 	 * by element rather than through the value as a whole.
@@ -203,8 +271,9 @@ public class DocumentSourceTest extends AbstractIndexTest {
 	}
 
 	/**
-	 * An index of two books where only `name` asks to be stored, so that what a
-	 * document comes back as says which of the two ways it was read.
+	 * An index of two books where only `name` asks to be stored - and an object
+	 * field, which can not ask at all - so that what a document comes back as
+	 * says which of the two ways it was read.
 	 *
 	 * @param def
 	 *   the definition to build on, which is where the source mode under test
@@ -222,7 +291,11 @@ public class DocumentSourceTest extends AbstractIndexTest {
 				new Document.Value("category", "non-fiction"),
 				new Document.Value("tags", "nature"),
 				new Document.Value("tags", "science"),
-				new Document.Value("published", true)
+				new Document.Value("published", true),
+				new Document.Value(
+					"dimensions",
+					new Document(new Document.Value("width", 12.5d))
+				)
 			)
 		);
 
@@ -243,6 +316,26 @@ public class DocumentSourceTest extends AbstractIndexTest {
 		return def
 			.putFields("id", string().setPrimaryKey(true).build())
 			.putFields("name", string().setStored(true).build())
+			.putFields(
+				"dimensions",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder().putFields(
+								"width",
+								FieldDef.newBuilder()
+									.setType(
+										FieldTypeDef.newBuilder().setDouble(
+											DoubleFieldTypeDef.getDefaultInstance()
+										)
+									)
+									.setFilter(FilterConfig.getDefaultInstance())
+									.build()
+							)
+						)
+					)
+					.build()
+			)
 			.putFields(
 				"category",
 				string().setFilter(FilterConfig.getDefaultInstance()).build()

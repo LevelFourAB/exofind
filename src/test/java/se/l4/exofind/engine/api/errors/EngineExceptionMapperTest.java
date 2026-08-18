@@ -22,6 +22,7 @@ import se.l4.exofind.engine.index.IndexNoLiveGenerationException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexOutOfDateException;
 import se.l4.exofind.engine.index.IndexReadonlyException;
+import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
@@ -230,6 +231,10 @@ public class EngineExceptionMapperTest {
 		);
 		assertThat(
 			mapper.toResponse(new IndexFieldUsageException("name", "sort")).getStatus(),
+			is(400)
+		);
+		assertThat(
+			mapper.toResponse(new IndexSourceRequiredException("variants.price")).getStatus(),
 			is(400)
 		);
 		assertThat(

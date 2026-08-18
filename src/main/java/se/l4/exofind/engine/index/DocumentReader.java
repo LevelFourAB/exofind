@@ -32,6 +32,10 @@ import se.l4.exofind.engine.index.schema.IndexSchema;
  * the fields that were not asked for left out of it. Asking for the object
  * itself asks for everything inside it.
  *
+ * Asking for a field the definition leaves no way to return is refused rather
+ * than answered with it missing from every hit, which reads as documents that
+ * never held it.
+ *
  * An instance reads one document at a time and is not safe to share between
  * threads, as it carries the encounter that field types are handed.
  */
@@ -60,6 +64,11 @@ public class DocumentReader {
 	 *   a field inside an object by its dotted path - or empty for all of them
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by one of the names
+	 * @throws IndexFieldUsageException
+	 *   if the definition leaves the index no way to return one of them
+	 * @throws IndexSourceRequiredException
+	 *   if only the copy of the document could return one of them and the
+	 *   index keeps none
 	 */
 	public DocumentReader(IndexSchema schema, SetIterable<String> fields) {
 		this.schema = schema;
@@ -84,6 +93,14 @@ public class DocumentReader {
 	 * object, and is read as the latter here: values are given inside the
 	 * object whichever mode it is kept in, so that is where they can be handed
 	 * back from.
+	 *
+	 * @throws IndexFieldNotFoundException
+	 *   if the index has no field by the name
+	 * @throws IndexFieldUsageException
+	 *   if nothing the index keeps could hold the field
+	 * @throws IndexSourceRequiredException
+	 *   if only the copy of the document could hold the field and the index
+	 *   keeps none
 	 */
 	private void want(String name) {
 		var flattened = schema.getFlattenedObjectOf(name);
@@ -101,6 +118,22 @@ public class DocumentReader {
 		var field = schema.getField(name)
 			.orElseThrow(() -> new IndexFieldNotFoundException(name));
 
+		/*
+		 * Only what the definition says now is judged. A document indexed while
+		 * the index kept its copies still holds every value it was given, and a
+		 * search naming no fields brings those back - what is refused here is
+		 * naming a field the definition has left no way to answer for, which
+		 * would otherwise come back missing from every hit and read as documents
+		 * that never held it.
+		 */
+		if(!schema.isSourceStored() && !field.isStored() && !field.getDef().getPrimaryKey()) {
+			if(field.isObject()) {
+				throw new IndexSourceRequiredException(name);
+			}
+
+			throw new IndexFieldUsageException(name, "stored");
+		}
+
 		whole.put(name, field);
 
 		/*
@@ -111,6 +144,10 @@ public class DocumentReader {
 	}
 
 	private void wantInside(String object, String path) {
+		if(!schema.isSourceStored()) {
+			throw new IndexSourceRequiredException(path);
+		}
+
 		if(whole.containsKey(object)) {
 			return;
 		}

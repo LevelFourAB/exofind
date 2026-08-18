@@ -232,6 +232,12 @@ such as `variants.price` for one of them - the values still come back as
 values, cut down to what was asked for inside them. Finding the document by
 its key this way needs the key defined for `filter`.
 
+An index whose [`source`](../reference/field-types.md#document-source) is
+`none` has no copy to read: it can filter, sort and count the values but not
+return them, and asking for them is refused with
+`index:query:source_not_kept`. Keep the copy on an index whose values have to
+be shown or updated.
+
 ## What the values cost
 
 Each value is a Lucene document in the same block as the document holding it,
