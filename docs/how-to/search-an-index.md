@@ -129,7 +129,9 @@ at all, or `[ { "type": "score" } ]`.
 ```
 
 `fields` keeps the response to what is drawn; left out, every stored field
-comes back. `highlight` answers each hit with fragments showing what the text
+comes back. A field inside an object is named by its dotted path -
+`"fields": ["variants.price"]` answers with the variants holding their price
+and nothing else. `highlight` answers each hit with fragments showing what the text
 matched, wrapped in `<em>` unless `pre` and `post` say otherwise. The
 fragments are the stored text with the markers spliced in and nothing is HTML
 escaped, so escape the text around the markers when rendering.

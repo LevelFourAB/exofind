@@ -37,8 +37,9 @@ import org.eclipse.collections.api.set.ImmutableSet;
  *   the order to return results in, empty for the best matches first
  * @param fields
  *   the fields to bring back with each result, empty for every stored field.
- *   The primary key is always included, as it is what a result is identified
- *   by
+ *   A field inside an object is named by its dotted path and comes back inside
+ *   the object, which then holds only the fields that were asked for. The
+ *   primary key is always included, as it is what a result is identified by
  * @param highlight
  *   the fields to return highlighted fragments for, each with how to build
  *   them, empty for none. A field that was not defined for highlighting is

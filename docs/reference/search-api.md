@@ -40,7 +40,7 @@ back the first few of them.
 | `sort` | The order results come back in. Left out for the best matches first. |
 | `signals` | Values of the documents themselves to take into their relevance, see [Signals](#signals). Left out to rank by the ones the index declares. |
 | `locale` | Locale the search reads locale specific fields in (BCP-47). Matched as closely as each field's declared locales tell apart, so `sv-SE` reads a field holding `sv`; a field holding no variant the tag names reads its default. Left out to leave every field to its own default locale. |
-| `fields` | Fields to bring back with each result. Left out for every stored field. The primary key is always included. |
+| `fields` | Fields to bring back with each result. A field inside an [`object`](field-types.md#object) is named by its dotted path and comes back inside the object, which then holds only the fields that were asked for. Left out for every stored field. The primary key is always included. |
 | `highlight` | Fields to return highlighted fragments for, see [Highlighting](#highlighting). Left out for none. |
 | `limit` | How many results to return. Defaults to 10. `0` answers only how many there are. |
 | `offset` | How many results to skip. At most one of `offset`, `after` and `before` is given. |

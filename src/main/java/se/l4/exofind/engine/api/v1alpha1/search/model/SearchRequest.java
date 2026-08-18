@@ -74,7 +74,9 @@ public record SearchRequest(
 
 	/**
 	 * The fields to bring back with each result, left out for every stored
-	 * field. The primary key is always included.
+	 * field. The primary key is always included. A field inside an object is
+	 * named by its dotted path and comes back inside the object, which then
+	 * holds only the fields that were asked for.
 	 */
 	List<String> fields,
 

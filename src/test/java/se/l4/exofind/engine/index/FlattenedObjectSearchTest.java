@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -146,6 +147,44 @@ public class FlattenedObjectSearchTest extends AbstractIndexTest {
 		var document = index.getDocument("1");
 		var dimensions = document.get("dimensions");
 		assertThat(((Document) dimensions).get("width"), is(10d));
+	}
+
+	@Test
+	public void testOnlyTheFieldsAskedForInsideASingleObjectAreReturned() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("dimensions.width", Matchers.lessThan(15d)))
+				.withFields("dimensions.width")
+				.build()
+		);
+
+		var hit = result.hits().get(0);
+		assertThat(hit.id(), is("1"));
+		assertThat(hit.document().get("name"), is(nullValue()));
+
+		var dimensions = (Document) hit.document().get("dimensions");
+		assertThat(dimensions.get("width"), is(10d));
+		assertThat(dimensions.get("note"), is(nullValue()));
+	}
+
+	@Test
+	public void testOnlyTheFieldsAskedForInsideAFlattenedListAreReturned() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("attributes.color", Matchers.equalTo("brown")))
+				.withFields("attributes.material")
+				.build()
+		);
+
+		var attributes = result.hits().get(0).document().getAll("attributes");
+		assertThat(attributes.size(), is(2));
+		assertThat(((Document) attributes.get(0)).get("material"), is("canvas"));
+		assertThat(((Document) attributes.get(0)).get("color"), is(nullValue()));
+		assertThat(((Document) attributes.get(1)).get("material"), is("leather"));
 	}
 
 	@Test

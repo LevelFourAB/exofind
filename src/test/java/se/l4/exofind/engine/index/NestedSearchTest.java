@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -231,6 +232,45 @@ public class NestedSearchTest extends AbstractIndexTest {
 		var variants = result.hits().get(0).document().getAll("variants");
 		assertThat(variants.size(), is(2));
 		assertThat(((Document) variants.get(0)).get("color"), is("red"));
+	}
+
+	@Test
+	public void testOnlyTheFieldsAskedForInsideAValueAreReturned() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("shoes")))
+				.withFields("variants.price")
+				.build()
+		);
+
+		var hit = result.hits().get(0);
+		assertThat(hit.id(), is("1"));
+		assertThat(hit.document().get("name"), is(nullValue()));
+
+		// Every value is still there, cut down to what was asked for inside it
+		var variants = hit.document().getAll("variants");
+		assertThat(variants.size(), is(2));
+		assertThat(((Document) variants.get(0)).get("price"), is(15d));
+		assertThat(((Document) variants.get(0)).get("color"), is(nullValue()));
+		assertThat(((Document) variants.get(1)).get("price"), is(25d));
+	}
+
+	@Test
+	public void testAskingForTheObjectItselfReturnsEverythingInsideIt() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("shoes")))
+				.withFields("variants.price", "variants")
+				.build()
+		);
+
+		var variants = result.hits().get(0).document().getAll("variants");
+		assertThat(((Document) variants.get(0)).get("color"), is("red"));
+		assertThat(((Document) variants.get(0)).get("price"), is(15d));
 	}
 
 	@Test

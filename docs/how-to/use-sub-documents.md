@@ -227,10 +227,10 @@ the field back:
 }
 ```
 
-`fields` names fields of the index, so it takes `variants` and not
-`variants.price` - a dotted path there is refused as a field the index does
-not have. Finding the document by its key this way needs the key defined for
-`filter`.
+`fields` takes `variants` for every field inside each value, or a dotted path
+such as `variants.price` for one of them - the values still come back as
+values, cut down to what was asked for inside them. Finding the document by
+its key this way needs the key defined for `filter`.
 
 ## What the values cost
 

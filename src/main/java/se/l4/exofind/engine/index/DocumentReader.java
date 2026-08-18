@@ -3,11 +3,14 @@ package se.l4.exofind.engine.index;
 import java.util.Set;
 
 import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.set.MutableSet;
 import org.eclipse.collections.api.set.SetIterable;
 
 import se.l4.exofind.engine.index.locales.Locales;
+import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.IndexSchema;
 
 /**
@@ -24,6 +27,11 @@ import se.l4.exofind.engine.index.schema.IndexSchema;
  * Both are needed whichever way the index is set, because changing the setting
  * does not rewrite the documents already indexed.
  *
+ * A field inside an object is asked for by its dotted path, whichever mode the
+ * object is kept in, and comes back where it was given: inside the object, with
+ * the fields that were not asked for left out of it. Asking for the object
+ * itself asks for everything inside it.
+ *
  * An instance reads one document at a time and is not safe to share between
  * threads, as it carries the encounter that field types are handed.
  */
@@ -33,17 +41,82 @@ public class DocumentReader {
 	private final SetIterable<String> fields;
 
 	/**
+	 * The fields of the document that were asked for whole, by the name they
+	 * were asked for - which is the name of a wildcard field's value rather
+	 * than the pattern it matched.
+	 */
+	private final MutableMap<String, Field> whole;
+
+	/**
+	 * The fields asked for inside an object field, keyed by the name of that
+	 * object and held by their name inside it.
+	 */
+	private final MutableMap<String, MutableSet<String>> inside;
+
+	/**
 	 * @param schema
 	 * @param fields
-	 *   the fields wanted, as they are called in the definition of the index,
-	 *   or empty for all of them
+	 *   the fields wanted, as they are called in the definition of the index -
+	 *   a field inside an object by its dotted path - or empty for all of them
+	 * @throws IndexFieldNotFoundException
+	 *   if the index has no field by one of the names
 	 */
 	public DocumentReader(IndexSchema schema, SetIterable<String> fields) {
 		this.schema = schema;
 		this.fields = fields;
 
+		this.whole = Maps.mutable.empty();
+		this.inside = Maps.mutable.empty();
+
+		for(var name : fields) {
+			want(name);
+		}
+
 		this.encounter = new IndexEncounterImpl(schema.getResources());
 		this.encounter.updateLocale(Locales.getDefault());
+	}
+
+	/**
+	 * Take one name that was asked for, as either a field of the document or a
+	 * field inside one of its objects.
+	 *
+	 * A flattened path names a field of the index as well as a field inside an
+	 * object, and is read as the latter here: values are given inside the
+	 * object whichever mode it is kept in, so that is where they can be handed
+	 * back from.
+	 */
+	private void want(String name) {
+		var flattened = schema.getFlattenedObjectOf(name);
+		if(flattened.isPresent()) {
+			wantInside(flattened.get(), name);
+			return;
+		}
+
+		var nested = schema.getNestedField(name);
+		if(nested.isPresent()) {
+			wantInside(nested.get().path(), name);
+			return;
+		}
+
+		var field = schema.getField(name)
+			.orElseThrow(() -> new IndexFieldNotFoundException(name));
+
+		whole.put(name, field);
+
+		/*
+		 * Asking for an object as well as for something inside it is asking for
+		 * the object, so what was gathered for it stops meaning anything.
+		 */
+		inside.remove(name);
+	}
+
+	private void wantInside(String object, String path) {
+		if(whole.containsKey(object)) {
+			return;
+		}
+
+		inside.getIfAbsentPut(object, Sets.mutable::empty)
+			.add(path.substring(object.length() + 1));
 	}
 
 	/**
@@ -71,13 +144,16 @@ public class DocumentReader {
 		var names = Sets.mutable.<String>empty();
 		names.add(FieldNames.SOURCE);
 
-		for(var name : fields) {
-			addStoredNames(names, name);
-		}
+		/*
+		 * Only the fields of the document itself are named: a field inside an
+		 * object is never stored on its own, so the copy of the document is the
+		 * only thing that can answer for one and it is already being loaded.
+		 */
+		whole.forEachKeyValue((name, field) -> addStoredNames(names, name, field));
 
 		var primaryKey = schema.getPrimaryKey();
 		if(primaryKey.isPresent()) {
-			addStoredNames(names, primaryKey.get().getName());
+			addStoredNames(names, primaryKey.get().getName(), primaryKey.get());
 		}
 
 		return names;
@@ -89,10 +165,7 @@ public class DocumentReader {
 	 * means asking for all of them - which variants exist is exactly what the
 	 * declared locales of the field say.
 	 */
-	private void addStoredNames(MutableSet<String> names, String name) {
-		var field = schema.getField(name)
-			.orElseThrow(() -> new IndexFieldNotFoundException(name));
-
+	private void addStoredNames(MutableSet<String> names, String name, Field field) {
 		if(field.isLocaleSpecific()) {
 			for(var locale : field.getLocales()) {
 				names.add(FieldNames.name(name, locale, FieldNames.STORED));
@@ -165,11 +238,36 @@ public class DocumentReader {
 		var values = Lists.mutable.<Document.Value>empty();
 		for(var value : doc.fields()) {
 			if(wanted(value.name())) {
-				values.add(value);
+				values.add(cut(value));
 			}
 		}
 
 		return new Document(values.toArray(new Document.Value[0]));
+	}
+
+	/**
+	 * Cut one value down to the fields that were asked for inside it, which is
+	 * a value of an object field that was named by the paths through it rather
+	 * than whole. Every other value is handed back as it was given.
+	 */
+	private Document.Value cut(Document.Value value) {
+		var names = inside.get(value.name());
+		if(names == null || !(value.value() instanceof Document object)) {
+			return value;
+		}
+
+		var values = Lists.mutable.<Document.Value>empty();
+		for(var field : object.fields()) {
+			if(names.contains(field.name())) {
+				values.add(field);
+			}
+		}
+
+		return new Document.Value(
+			value.name(),
+			new Document(values.toArray(new Document.Value[0])),
+			value.locale()
+		);
 	}
 
 	/**
@@ -181,7 +279,7 @@ public class DocumentReader {
 	 * never loses the primary key, which is what a result is identified by.
 	 */
 	private boolean wanted(String field) {
-		if(fields.isEmpty() || fields.contains(field)) {
+		if(fields.isEmpty() || whole.containsKey(field) || inside.containsKey(field)) {
 			return true;
 		}
 
