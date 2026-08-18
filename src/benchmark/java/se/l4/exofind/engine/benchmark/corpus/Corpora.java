@@ -215,7 +215,8 @@ public final class Corpora {
 			var variant = ObjectFieldTypeDef.newBuilder()
 				.putFields("color", faceted(filtered(string())).build())
 				.putFields("size", filtered(string()).setMultiple(true).build())
-				.putFields("price", sorted(filtered(float64())).build());
+				.putFields("price", sorted(filtered(float64())).build())
+				.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED);
 
 			return IndexDef.newBuilder()
 				.putFields("id", string().setPrimaryKey(true).setRequired(true).build())

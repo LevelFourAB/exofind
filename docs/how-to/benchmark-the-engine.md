@@ -52,6 +52,41 @@ The first run of a size builds the index and keeps it in
 documents takes minutes, so leave the directory alone between runs and delete
 it when the change being measured is one that alters what gets written.
 
+## Comparing ways of holding variants
+
+`GroupingBenchmark` is not about the engine as it is but about how a catalogue
+of products and their variants could be held. It lays a catalogue out four ways
+- variants as sub-documents in the product's block, a document per variant,
+every variant's values rolled up onto the product, and products and variants in
+separate indexes - and puts the same eight questions to each. The index of one
+document per variant is searched three ways over, differing only in what the
+grouping is allowed to assume about where a product's variants are, so there are
+six shapes over the four indexes.
+
+```shell
+mise run bench GroupingBenchmark
+mise run bench GroupingBenchmark -p shape=NESTED,COLLAPSED -p selectivity=wide,narrow
+```
+
+It writes its own indexes rather than using a corpus, so `-p size=` counts
+products rather than documents. `-p selectivity=` says how much of the catalogue
+the colour a search narrows by covers, and `-p cache=off` stops the searcher
+keeping what a narrowing clause matched - which is what tells a layout's own
+cost from the cost of a condition it has answered before.
+
+A layout that cannot answer a question fails rather than being left out, so a
+run reports failures for the questions a layout has no answer to - which is part
+of the comparison.
+
+Timings alone would say the layout that keeps the least wins, so read them
+beside `ShapeReport`, which prints what each layout costs to keep, what changing
+one variant costs, and how far each layout's answers are from the others:
+
+```shell
+java -cp "target/classes:target/test-classes:$(cat target/benchmark-classpath.txt)" \
+  se.l4.exofind.engine.benchmark.grouping.ShapeReport 100000
+```
+
 ## The indexing benchmarks
 
 `IndexingBenchmark` writes a batch into an empty index, and
