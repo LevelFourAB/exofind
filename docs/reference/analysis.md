@@ -145,6 +145,12 @@ not flood with every document holding a part. A changed data set therefore
 only affects documents indexed from there on, like every other analysis
 change.
 
+Japanese and Korean reach the same end through their segmentation rather
+than through this data: their tokenizers know the parts a compound is built
+from and emit them alongside the whole word, so a part search works there
+without a data set installed. `"decompound": "none"` does not reach that -
+it turns off the splitting described here, not the locale's segmentation.
+
 `"decompound": "none"` on the usage turns it off where the parts would
 mislead - fields matched on names and brands, or where a synonym set
 already maps compounds to their parts. A custom chain is never split unless

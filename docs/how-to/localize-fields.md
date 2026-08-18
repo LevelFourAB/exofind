@@ -135,7 +135,8 @@ More than stopwords and stemming:
   Turkish dotless ı, Greek accents, elided articles.
 - The languages that glue compounds into one word - Danish, Dutch, German,
   Norwegian, Swedish - index the parts alongside the whole, so `jakke`
-  finds `regnjakke`. See
+  finds `regnjakke`. Japanese and Korean do the same through their
+  segmentation. See
   [compound words](../reference/analysis.md#compound-words), including how
   to turn it off per field.
 - Sorting with `collation: "locale"` (the default) orders by the rules of

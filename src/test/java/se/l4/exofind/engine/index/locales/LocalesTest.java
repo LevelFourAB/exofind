@@ -397,6 +397,16 @@ public class LocalesTest {
 	}
 
 	/**
+	 * A Korean compound noun is indexed whole as well as in parts, so that a
+	 * search for the compound as written finds it and a search for a part
+	 * finds the compounds built from it.
+	 */
+	@Test
+	public void testKoreanKeepsCompoundsBesideTheirParts() {
+		assertThat(terms("ko", "가곡역"), is(contains("가곡역", "가곡", "역")));
+	}
+
+	/**
 	 * Thai writes no spaces but needs no tokenizer of its own - the Unicode
 	 * segmentation the engine already uses finds Thai words by dictionary.
 	 */

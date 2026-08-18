@@ -330,9 +330,19 @@ public final class Locales {
 		 * particles onto what they follow. The tokenizer takes both apart;
 		 * dropping the particle parts of speech is what a stopword list is
 		 * for languages that write their grammar as words.
+		 *
+		 * A compound noun is kept whole beside the parts it is built from, the
+		 * way a decompounded language keeps its whole word - Lucene otherwise
+		 * emits only the parts, and a search for the compound as written would
+		 * miss the documents holding it.
 		 */
 		register(locales, StandardLocaleSupport.of("ko")
-			.withTokenizer(KoreanTokenizer::new)
+			.withTokenizer(() -> new KoreanTokenizer(
+				KoreanTokenizer.DEFAULT_TOKEN_ATTRIBUTE_FACTORY,
+				null,
+				KoreanTokenizer.DecompoundMode.MIXED,
+				false
+			))
 			.withNormalizer(KoreanPartOfSpeechStopFilter::new));
 
 		register(locales, StandardLocaleSupport.of("lt")
