@@ -6,8 +6,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.collections.api.map.MapIterable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.KeyNotFoundException;
@@ -32,6 +30,7 @@ import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
+import se.l4.exofind.engine.logging.Log;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
@@ -50,7 +49,7 @@ import jakarta.ws.rs.ext.Provider;
  */
 @Provider
 public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
-	private static final Logger logger = LoggerFactory.getLogger(EngineExceptionMapper.class);
+	private static final Log logger = Log.of(EngineExceptionMapper.class);
 
 	private final IndexerOwnership ownership;
 

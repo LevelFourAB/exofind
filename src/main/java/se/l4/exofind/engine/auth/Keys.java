@@ -14,9 +14,8 @@ import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import se.l4.exofind.engine.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.event.Observes;
@@ -46,7 +45,7 @@ import jakarta.inject.Singleton;
  */
 @Singleton
 public class Keys {
-	private static final Logger logger = LoggerFactory.getLogger(Keys.class);
+	private static final Log logger = Log.of(Keys.class);
 
 	/**
 	 * What a root key configured as a hash rather than as the key itself starts

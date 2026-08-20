@@ -72,8 +72,6 @@ import org.eclipse.collections.api.set.SetIterable;
 import org.eclipse.collections.api.tuple.Pair;
 import org.eclipse.collections.impl.factory.Lists;
 import org.eclipse.collections.impl.tuple.Tuples;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.protobuf.CodedOutputStream;
 
@@ -91,6 +89,7 @@ import se.l4.exofind.engine.index.schema.IndexSchema;
 import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.index.state.SyncIncompatibleException;
+import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
@@ -176,7 +175,7 @@ public class Index {
 				"The search asks for locale `{{locale}}` which this version of the engine does not support"
 			);
 
-	private static final Logger logger = LoggerFactory.getLogger(Index.class);
+	private static final Log logger = Log.of(Index.class);
 
 	private static final LocaleSupport DEFAULT_LOCALE_SUPPORT = Locales.getDefault();
 

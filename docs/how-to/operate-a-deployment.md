@@ -8,6 +8,33 @@ than one node](run-multiple-nodes.md); this is the day after.
 There is no separate metrics or health endpoint. What a node will tell you is
 the status of the indexes it holds, and its log.
 
+## Check what a node came up as
+
+A node names its own configuration before it answers anything, so what it is
+never has to be reconstructed from the environment it was started with:
+
+```
+INFO  storage=object auth=keys indexer=true bucket=exofind directory=/var/lib/exofind Starting node, which may take the indexer role
+INFO  node=node-a-7f21 address=http://node-a:8080 Competing for the indexer role
+INFO  exofind 1.0.0-SNAPSHOT on JVM … started in 1.4s. Listening on: http://0.0.0.0:8080
+```
+
+The last line is the node ready to answer, and the address in it is the one
+to reach it on. Ahead of it are the settings that decide what the node does -
+`storage`, `auth`, `indexer` and where the indexes live - and the name it
+holds the lease under, which every later line about the indexer role is keyed
+by. A node that may not write says `only answers searches` instead and
+competes for nothing. A node storing locally names no bucket and takes the
+role uncontested.
+
+Anything worth a second look arrives as a `WARN` of its own among those
+lines: `local` mode, authentication turned off, or settings the named mode
+never reads.
+
+Stopping closes the open indexes, and an index this node has changed is pushed
+as it closes. `Closing the open indexes` is what a stop that takes its time is
+waiting on.
+
 ## See what a node is serving
 
 ```http
@@ -73,8 +100,8 @@ node that holds the role says so once, and the log is where a failover is
 visible:
 
 ```
-INFO  Acquired the indexer role                node=node-a-7f21
-ERROR Giving up the indexer role, <reason>     node=node-a-7f21
+INFO  node=node-a-7f21 Acquired the indexer role
+ERROR node=node-a-7f21 Giving up the indexer role, <reason>
 ```
 
 `Giving up the indexer role` is worth alerting on. Losing it is not itself a
@@ -159,9 +186,12 @@ data directory, with the node stopped.
 
 ## Read the log
 
-Log lines carry structured key/values rather than only prose - `index`,
-`generation`, `node`, `bucket`, `object` - so they can be filtered on the
-index rather than grepped. The lines worth routing somewhere:
+A line names the thing it is about as `key=value` after the message -
+`index`, `generation`, `node`, `bucket`, `object` - so it is matched on the
+index it concerns rather than on the wording of the message. [JSON
+output](../reference/configuration.md#json-output) makes each of them a field
+of its own instead, and leaves the message the sentence alone. The lines worth
+routing somewhere:
 
 | Line | Means |
 |------|-------|

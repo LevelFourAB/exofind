@@ -6,10 +6,10 @@ import java.util.Optional;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.protobuf.ByteString;
+
+import se.l4.exofind.engine.logging.Log;
 
 import java.util.HexFormat;
 
@@ -23,7 +23,7 @@ import java.util.HexFormat;
  * not have - takes the whole key out of the store on this node.
  */
 public final class KeyStoreCodec {
-	private static final Logger logger = LoggerFactory.getLogger(KeyStoreCodec.class);
+	private static final Log logger = Log.of(KeyStoreCodec.class);
 
 	private KeyStoreCodec() {
 	}

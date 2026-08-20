@@ -7,8 +7,6 @@ import java.util.Locale;
 import java.util.Optional;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.auth.KeyStorage;
@@ -24,6 +22,7 @@ import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.index.state.ObjectStorageIndexerOwnership;
 import se.l4.exofind.engine.index.state.ObjectStorageSyncProvider;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
+import se.l4.exofind.engine.logging.Log;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
@@ -42,7 +41,7 @@ import jakarta.inject.Singleton;
  */
 @ApplicationScoped
 public class StorageProviders {
-	private static final Logger logger = LoggerFactory.getLogger(StorageProviders.class);
+	private static final Log logger = Log.of(StorageProviders.class);
 
 	/**
 	 * Name the registry of a node storing locally is kept under, next to the

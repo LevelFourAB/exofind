@@ -6,10 +6,9 @@ import java.util.Optional;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.logging.Log;
 
 /**
  * Reading and writing the stored form of the index registry.
@@ -22,7 +21,7 @@ import se.l4.exofind.engine.index.IndexName;
  * it that could be reported usefully.
  */
 public final class RegistryCodec {
-	private static final Logger logger = LoggerFactory.getLogger(RegistryCodec.class);
+	private static final Log logger = Log.of(RegistryCodec.class);
 
 	private RegistryCodec() {
 	}

@@ -75,6 +75,19 @@
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-smallrye-openapi</artifactId>
 		</dependency>
+		<!--
+			Lets the console write each line as a JSON object, so that a log being
+			shipped somewhere carries its level, logger and thread as fields and a
+			stack trace as one value rather than as the lines after it. Also what
+			se.l4.exofind.engine.logging writes the key/values of a line through,
+			which is what makes them fields rather than prose. Off unless a
+			deployment asks - see the logging section of
+			docs/reference/configuration.md.
+		-->
+		<dependency>
+			<groupId>io.quarkus</groupId>
+			<artifactId>quarkus-logging-json</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>io.quarkus</groupId>

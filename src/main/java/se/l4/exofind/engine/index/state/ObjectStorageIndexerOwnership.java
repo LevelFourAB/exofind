@@ -10,9 +10,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -33,8 +31,8 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * covers the moment where it has lost the role but not yet noticed.
  */
 public class ObjectStorageIndexerOwnership implements IndexerOwnership {
-	private static final Logger logger =
-		LoggerFactory.getLogger(ObjectStorageIndexerOwnership.class);
+	private static final Log logger =
+		Log.of(ObjectStorageIndexerOwnership.class);
 
 	/**
 	 * Object the lease is stored in, directly under the prefix next to the
@@ -130,6 +128,21 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	@Override
 	public void start(Listener listener) {
 		this.listener = listener;
+
+		/*
+		 * The name this node competes under is what every other line about the
+		 * role is keyed by, and it is generated rather than configured unless
+		 * NODE_ID says otherwise. Said here rather than only on acquiring the
+		 * role, so that a candidate which never wins the lease still gives the
+		 * name its lines will carry.
+		 */
+		var line = logger.atInfo().addKeyValue("node", node);
+
+		// Without one, writes reaching another node are refused rather than sent here
+		address.ifPresent(value -> line.addKeyValue("address", value));
+
+		line.log("Competing for the indexer role");
+
 		executor.execute(this::tick);
 	}
 

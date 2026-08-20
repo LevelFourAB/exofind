@@ -9,10 +9,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import se.l4.exofind.engine.index.state.SyncConflictException;
+import se.l4.exofind.engine.logging.Log;
 
 /**
  * Commits an index on its own, so that what has been indexed becomes
@@ -36,7 +34,7 @@ import se.l4.exofind.engine.index.state.SyncConflictException;
  * commit, so it can be called while the index is being written.
  */
 public class IndexCommitManager {
-	private static final Logger logger = LoggerFactory.getLogger(IndexCommitManager.class);
+	private static final Log logger = Log.of(IndexCommitManager.class);
 
 	/**
 	 * How long to wait before trying a failed commit again, doubled for every

@@ -24,10 +24,9 @@ import java.util.zip.CRC32C;
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import se.l4.exofind.engine.index.LuceneCompatibility;
+import se.l4.exofind.engine.logging.Log;
 
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -46,7 +45,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * the state of a directory with an S3 compatible object storage.
  */
 public class ObjectStorageSync implements StateSync {
-	private static final Logger logger = LoggerFactory.getLogger(ObjectStorageSync.class);
+	private static final Log logger = Log.of(ObjectStorageSync.class);
 
 	private static final String MANIFEST_NAME = LocalCopy.MANIFEST_FILE;
 

@@ -94,6 +94,10 @@ Everything else is caught by the compiler, a test or validation. These are not:
   by `IndexDefinitionMapper`. Its `checkRepresentable` holds only while one API
   definition always maps to one stored definition, so a mapping with two ways
   to store the same thing breaks the check rather than the round trip.
+- **A logger comes from `Log.of`, never from `LoggerFactory`**. Both compile
+  and both log; only the first keeps `addKeyValue` pairs as fields, because
+  SLF4J flattens them into the message for every backend Quarkus can bind. The
+  argument is on `Log`.
 
 ## Where a new thing goes
 

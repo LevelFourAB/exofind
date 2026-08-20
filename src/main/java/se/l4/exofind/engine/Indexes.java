@@ -26,8 +26,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
@@ -46,6 +44,7 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.IndexUsageFile;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
+import se.l4.exofind.engine.logging.Log;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -61,7 +60,7 @@ import jakarta.enterprise.context.ApplicationScoped;
  */
 @ApplicationScoped
 public class Indexes {
-	private static final Logger logger = LoggerFactory.getLogger(Indexes.class);
+	private static final Log logger = Log.of(Indexes.class);
 
 	private static final ErrorType GENERATION_NOT_CREATABLE =
 		ErrorType.withCode("index:generation:not_creatable")
@@ -412,6 +411,16 @@ public class Indexes {
 
 	@PreDestroy
 	public void close() {
+		/*
+		 * Closing an index the node has changed pushes it, so shutting down is
+		 * not always quick. Said before the work starts, so that the wait has
+		 * something behind it in the log rather than looking like a node that
+		 * stopped answering.
+		 */
+		logger.atInfo()
+			.addKeyValue("open", indexes.asMap().size())
+			.log("Closing the open indexes");
+
 		nodeState.removeListener(nodeStateListener);
 		refreshExecutor.shutdownNow();
 		pullExecutor.shutdownNow();

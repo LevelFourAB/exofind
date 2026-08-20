@@ -10,8 +10,8 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.lucene.search.IndexSearcher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import se.l4.exofind.engine.logging.Log;
 
 /**
  * IndexSearcherManager manages the lifecycle of {@link IndexSearcher}
@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * commit from being freed.
  */
 public class IndexSearcherManager {
-	private static final Logger logger = LoggerFactory.getLogger(IndexSearcherManager.class);
+	private static final Log logger = Log.of(IndexSearcherManager.class);
 
 	private final Duration retiredSearcherTimeout;
 	private final ReadWriteLock lock;

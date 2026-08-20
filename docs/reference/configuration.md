@@ -149,6 +149,49 @@ bound set says so in its log.
 |----------|-------------|---------|
 | `SEARCH_MAX_PAGE_DEPTH` | How deep into the results offset paging may reach - the deepest result a page may end at. Requests past it are refused with `search:page:too_deep`, and numbered pages past it are never offered. Following `next`/`previous` cursors is not capped | `10000` |
 
+## Logging
+
+A node writes what it does to standard output. What each line means is [Read
+the log](../how-to/operate-a-deployment.md#read-the-log); these decide how
+much of it there is and what it looks like.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QUARKUS_LOG_LEVEL` | Lowest level written. `INFO` covers what a node does to indexes, keys and the indexer role; `DEBUG` adds every commit, pull and push | `INFO` |
+| `QUARKUS_LOG_CATEGORY__SE_L4_EXOFIND__LEVEL` | Level for the engine alone, so it can be raised without the frameworks under it following | `QUARKUS_LOG_LEVEL` |
+| `QUARKUS_HTTP_ACCESS_LOG_ENABLED` | Write a line per request. Off by default: a searching node answers enough requests for this to be the bulk of its output | `false` |
+| `QUARKUS_LOG_CONSOLE_JSON_ENABLED` | Write one JSON object per line instead of text | `false` |
+
+The narrower category is the one to reach for while looking into something -
+`DEBUG` across everything includes the S3 client logging every request it
+makes.
+
+```shell
+docker run -e QUARKUS_LOG_CATEGORY__SE_L4_EXOFIND__LEVEL=DEBUG exofind/engine
+```
+
+`TRACE` needs a rebuild as well as the variable, because the lowest level a
+build keeps is fixed at `DEBUG`.
+
+### JSON output
+
+Text is the default so that a node being read by a person reads as one. A
+deployment shipping its log somewhere asks for JSON instead:
+
+```shell
+docker run -e QUARKUS_LOG_CONSOLE_JSON_ENABLED=true exofind/engine
+```
+
+Each line becomes an object carrying the timestamp, level, logger, thread and
+host as fields, and a thrown exception as a nested object rather than as the
+lines following it - which is the part that makes a stack trace survive a
+collector intact.
+
+The key/values the engine attaches to a line become fields of the object too,
+so `index` is filtered on rather than matched for inside `message` - which
+holds the sentence alone. Whole numbers are written as JSON numbers; every
+other value is written as a string, `true` and `false` included.
+
 ## The JVM
 
 Read by the container image rather than by the engine, so a node started from

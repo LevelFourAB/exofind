@@ -13,8 +13,6 @@ import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
@@ -23,6 +21,7 @@ import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNoLiveGenerationException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
+import se.l4.exofind.engine.logging.Log;
 import jakarta.inject.Singleton;
 
 /**
@@ -51,7 +50,7 @@ import jakarta.inject.Singleton;
  */
 @Singleton
 public class IndexRegistry {
-	private static final Logger logger = LoggerFactory.getLogger(IndexRegistry.class);
+	private static final Log logger = Log.of(IndexRegistry.class);
 
 	/**
 	 * How many times a change is rebuilt on top of a concurrent one before
