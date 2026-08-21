@@ -40,7 +40,7 @@ consequences worth knowing:
   waiting.
 - Managing keys does not need the indexer role, so a leaked key can be revoked
   while the indexer is down. Requests to `/v1alpha1/admin/keys` are served by
-  whichever node receives them and never redirect.
+  whichever node receives them and are never passed to the indexer.
 
 In `local` mode there is one node, so the first two say nothing new; the key
 file is written readable by the user running the node alone, since a file gets

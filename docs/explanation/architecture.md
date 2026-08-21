@@ -62,11 +62,11 @@ with its complexity.
 ## How requests flow
 
 Searches (`POST /v1alpha1/indexes/{name}/search`) are answered locally by any
-node. Writes - index definitions, the commit and pull actions - only succeed
-on the indexer. Another node answers a write with `307 Temporary Redirect`
-pointing at the indexer when the lease says where it is, so a client that
-follows redirects can send any request to any node. When there is no indexer
-to point at, the write is refused with `409 Conflict`.
+node. Writes - index definitions, documents, the commit action - run on the
+indexer. Another node forwards a write there when the lease says where it is,
+and answers with whatever the indexer answered, so a client can send any
+request to any node without doing anything for it. When there is no indexer
+to forward to, the write is refused with `409 Conflict`.
 
 ## The life of an index on a node
 

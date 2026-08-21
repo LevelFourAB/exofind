@@ -33,10 +33,10 @@ import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
  * returns. Tests share the bucket and keep to a prefix of their own within
  * it.
  */
-final class TestObjectStorage {
-	static final String BUCKET = "automated-tests";
-	static final String ACCESS_KEY = "exofind";
-	static final String SECRET_KEY = "exofind123";
+public final class TestObjectStorage {
+	public static final String BUCKET = "automated-tests";
+	public static final String ACCESS_KEY = "exofind";
+	public static final String SECRET_KEY = "exofind123";
 
 	private static final int S3_PORT = 8333;
 
@@ -73,24 +73,32 @@ final class TestObjectStorage {
 				.forStatusCode(403)
 		);
 
+	/**
+	 * Where the URL of the running storage is published, so that every
+	 * classloader in the JVM talks to the same container. A Quarkus test
+	 * loads this class once more in the classloader the application is built
+	 * in, and a plain static would have each copy start a container of its
+	 * own - with the node writing into one storage and the test reading
+	 * another.
+	 */
+	private static final String URL_PROPERTY = "exofind.test.object-storage.url";
+
 	private static S3Client client;
 
 	private TestObjectStorage() {
 	}
 
 	/**
-	 * Client for the storage, starting the container if it is not running.
-	 * The returned client is shared; it is safe for concurrent use and is
-	 * never closed. Built the way {@link ObjectStorageSyncProvider} builds
-	 * its client, so the tests exercise the storage the way the engine talks
-	 * to it.
+	 * Client for the storage, starting the container if none is running in
+	 * this JVM. The returned client is shared; it is safe for concurrent use
+	 * and is never closed. Built the way {@link ObjectStorageSyncProvider}
+	 * builds its client, so the tests exercise the storage the way the engine
+	 * talks to it.
 	 */
-	static synchronized S3Client client() {
+	public static synchronized S3Client client() {
 		if(client == null) {
-			container.start();
-
 			var created = S3Client.builder()
-				.endpointOverride(URI.create(endpoint()))
+				.endpointOverride(URI.create(url()))
 				.credentialsProvider(
 					StaticCredentialsProvider.create(
 						AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY)
@@ -121,16 +129,20 @@ final class TestObjectStorage {
 	}
 
 	/**
-	 * URL the storage is reachable on, starting the container if it is not
-	 * running. The port is picked by Docker, so the value differs between
-	 * runs.
+	 * URL the storage is reachable on, starting the container if none is
+	 * running in this JVM. The port is picked by Docker, so the value differs
+	 * between runs.
 	 */
-	static String url() {
-		client();
-		return endpoint();
-	}
+	public static synchronized String url() {
+		var existing = System.getProperty(URL_PROPERTY);
+		if(existing != null) {
+			return existing;
+		}
 
-	private static String endpoint() {
-		return "http://" + container.getHost() + ":" + container.getMappedPort(S3_PORT);
+		container.start();
+
+		var endpoint = "http://" + container.getHost() + ":" + container.getMappedPort(S3_PORT);
+		System.setProperty(URL_PROPERTY, endpoint);
+		return endpoint;
 	}
 }

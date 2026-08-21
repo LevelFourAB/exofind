@@ -31,10 +31,10 @@ different pods:
 - **Different rollout.** Indexers restart one at a time and want long enough
   to push what they hold; searchers can be replaced as fast as the pulls
   allow.
-- **Somewhere to send writes.** A separate `Service` in front of the
-  candidates is what lets writes reach the indexer directly instead of being
-  redirected to a pod address the caller may not be able to reach - see [Send
-  writes to the indexer](#send-writes-to-the-indexer).
+- **Somewhere to send writes.** Writes reach the indexer from any pod - a
+  searcher forwards them over the pod network - but a `Service` in front of
+  the candidates lets a bulk load skip that extra hop - see [Send writes to
+  the indexer](#send-writes-to-the-indexer).
 
 Collapsing the two into one pool later is turning `INDEXER` on in the search
 pool and deleting the `StatefulSet`. Splitting a single pool afterwards means
@@ -263,18 +263,22 @@ the JVM a larger share of it.
 
 ## Send writes to the indexer
 
-A write that reaches a node which is not the indexer is answered with `307`
-and the address from the lease. That address is a pod IP, so a caller outside
-the cluster cannot follow the redirect - and a `NODE_ADDRESS` that never
-expanded cannot be turned into one at all, which shows up as the write being
-refused with `409` and this in the log of the node that answered:
+Writes can be sent to any pod: a node that is not the indexer forwards them
+to the address in the lease and answers with what the indexer answered. That
+address is a pod IP, which only has to resolve where the forwarding happens -
+inside the cluster - so callers outside never deal with it. What it does have
+to be is an address: a `NODE_ADDRESS` that never expanded cannot be forwarded
+to, which shows up as writes refused with `409` and this in the log of the
+node that answered:
 
 ```
-WARN  address=http://$(POD_IP):8080 Indexer address cannot be turned into a redirect; …
+WARN  address=http://$(POD_IP):8080 Indexer address cannot be forwarded to; …
 ```
 
-Give each pool a `Service` and route writes to the indexer one, so the
-redirect is a fallback rather than the write path:
+Forwarding costs a second trip through the pod that happened to receive the
+write, which is noise for a definition change and real bandwidth for a bulk
+load. Give each pool a `Service` and point heavy indexing at the indexer one,
+so most writes skip the hop:
 
 ```yaml
 apiVersion: v1
@@ -297,9 +301,9 @@ spec:
 ```
 
 The indexer `Service` picks either candidate, and the one that is not holding
-the lease redirects to the one that is - inside the cluster, where the pod
-address resolves. Point definition changes, document writes and commit actions
-at it, and searches at `exofind-search`.
+the lease forwards to the one that is - one hop, inside the cluster. Point
+document writes and commit actions at it, and searches at `exofind-search`,
+which has no writes to pass along.
 
 ## Spread the indexes across the search pool
 

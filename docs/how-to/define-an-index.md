@@ -264,7 +264,7 @@ If-Match: "9f2c1a0b3d4e5f60"
 
 ## Where the request has to go
 
-Definitions can only be changed on the node holding the indexer role. Any
-other node redirects the request there with a `307`, so send it anywhere and
-follow redirects - the details are in the
+Anywhere. Definitions are changed on the node holding the indexer role, and
+any other node forwards the request there itself and answers with what the
+indexer answered - the details are in the
 [admin API reference](../reference/admin-api.md).

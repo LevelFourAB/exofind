@@ -7,6 +7,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.auth.AuthContext;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.UnrepresentableStateException;
+import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.GenerationSummary;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
@@ -53,6 +54,13 @@ import jakarta.ws.rs.core.UriInfo;
  * indexed under is rolled out by creating a generation, filling it and
  * promoting it, rather than by changing an index in place: the name callers use
  * never changes, so nothing they hold has to be updated when it happens.
+ *
+ * Everything here that changes an index - its definition, its generations,
+ * which one it answers from - runs on the indexer, and a request that reaches
+ * another node is passed along to it. The registry itself could be written
+ * from anywhere, being one object replaced conditionally, but routing every
+ * change about a name through the node that writes the name keeps "one writer
+ * per index" true for all of it rather than only for the documents.
  *
  * Indexing and searching documents are not part of this API.
  */
@@ -141,6 +149,7 @@ public class IndexResource {
 	@Path("/{name}")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.INDEXES_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public Response put(
 		@PathParam("name") String name,
 		@HeaderParam("If-Match") String ifMatch,
@@ -205,6 +214,7 @@ public class IndexResource {
 	@DELETE
 	@Path("/{name}")
 	@RequiresPermission(Permission.INDEXES_DELETE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public Response delete(@PathParam("name") String name) {
 		try {
 			indexes.delete(name);
@@ -231,6 +241,7 @@ public class IndexResource {
 	@POST
 	@Path("/{name}/actions/promote")
 	@RequiresPermission(Permission.INDEXES_PROMOTE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public Response promote(@PathParam("name") String name) {
 		indexes.promote(name);
 		return toResponse(Response.ok(), indexes.getOrThrow(name)).build();
@@ -245,6 +256,7 @@ public class IndexResource {
 	@POST
 	@Path("/{name}/actions/commit")
 	@RequiresPermission(Permission.INDEXES_COMMIT)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public IndexStatus commit(@PathParam("name") String name) {
 		var index = indexes.getOrThrow(name);
 
@@ -260,12 +272,17 @@ public class IndexResource {
 	/**
 	 * Pull the latest state of an index from the remote.
 	 *
+	 * <p>A pull updates the copy on the node serving it, so it runs wherever
+	 * it lands - sending it to the indexer would refresh the one node that is
+	 * already current.
+	 *
 	 * @param name
 	 * @return
 	 */
 	@POST
 	@Path("/{name}/actions/pull")
 	@RequiresPermission(Permission.INDEXES_PULL)
+	@ServedBy(ServedBy.Node.ANY_NODE)
 	public IndexStatus pull(@PathParam("name") String name) {
 		var index = indexes.getOrThrow(name);
 		index.pull();

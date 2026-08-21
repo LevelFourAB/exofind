@@ -22,12 +22,13 @@ POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
 POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state now
 ```
 
-Requests that modify an index - `PUT` and `commit` - only succeed on the
-node holding the indexer role. Another node answers with `307 Temporary
-Redirect` pointing at the indexer when it knows one - the redirect repeats
-the request as it was, so a client that follows redirects needs to do
-nothing special. When there is no indexer to point at, or the indexer set no
-`NODE_ADDRESS`, the request is refused with `409 Conflict`.
+Requests that modify an index - everything here except the reads and `pull` -
+run on the node holding the indexer role. Another node forwards the request
+there itself - as it arrived, credential included - and answers with what the
+indexer answered, so a client needs to do nothing special. When there is no
+indexer to forward to, or the indexer set no `NODE_ADDRESS`, the request is
+refused with `409 Conflict`; an indexer that does not answer is reported
+with `502 Bad Gateway`.
 
 ## Names and generations
 
@@ -186,7 +187,7 @@ the interval set by `INDEXES_REFRESH_INTERVAL`.
 | `401 Unauthorized` | No credential this node accepts - see [Authentication](auth.md). |
 | `403 Forbidden` | The key was not granted this on this index. |
 | `404 Not Found` | No index or generation by that name, including a `PUT` with `If-Match` on one that does not exist, and an index outside every pattern of the key. |
-| `307 Temporary Redirect` | This node is not the indexer and the request modifies the index; `Location` points at the indexer. |
-| `409 Conflict` | The index cannot be modified right now - this node is not the indexer and no indexer is known, or the index is synchronizing. Also a definition holding settings this version of the API cannot describe, an index needing engine features this node does not have, and a registry that could not be written. |
+| `409 Conflict` | The index cannot be modified right now - there is no indexer to forward the request to, or the index is synchronizing. Also a definition holding settings this version of the API cannot describe, an index needing engine features this node does not have, and a registry that could not be written. |
 | `412 Precondition Failed` | The version in `If-Match` is no longer the one in effect. |
+| `502 Bad Gateway` | The request was forwarded to the indexer and it did not answer. |
 | `503 Service Unavailable` | The request raced the index being closed to make room on this node. Retrying opens it again. |

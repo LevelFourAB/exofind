@@ -19,10 +19,10 @@ Removing a document says the same kind of thing, which is why a key nothing
 was indexed under is not an error - the index holds no document under that
 key either way.
 
-Only the indexer writes. A request that reaches another node is answered
-with a `307` pointing at the indexer when one is known, and refused with
-`index:readonly` when it is not - the same as the write endpoints of the
-[admin API](admin-api.md).
+Only the indexer writes. A request that reaches another node is forwarded to
+the indexer and answered with what it answered, and refused with
+`indexer:unavailable` when there is no indexer to forward to - the same as
+the write endpoints of the [admin API](admin-api.md).
 
 Changes become searchable when the index is committed, which is also what
 pushes them to the remote. The indexer commits on its own once enough has been
@@ -267,6 +267,6 @@ sat under its key.
 | `204` | A document was removed by the key in the path |
 | `400` | A document or a key was refused, or the body could not be read |
 | `404` | No index of that name on this node |
-| `307` | This node is not the indexer, and the indexer is known |
-| `409` | This node is not the indexer, or the index is being synchronized |
+| `409` | There is no indexer to forward the request to, or the index is being synchronized |
+| `502` | The request was forwarded to the indexer and it did not answer |
 | `503` | The index was closed to make room; repeating the request opens it again |

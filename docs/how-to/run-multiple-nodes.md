@@ -31,9 +31,10 @@ There is no benefit to many candidates beyond surviving the loss of a few.
 - `NODE_ID` names the node in the lease; the default of hostname plus a
   random suffix is usually right.
 - Set `NODE_ADDRESS` on every candidate to the address it serves writes on.
-  It is recorded in the lease, and is what lets other nodes redirect writes
+  It is recorded in the lease, and is what lets other nodes forward writes
   to the current indexer - without it, writes sent to other nodes are
-  refused with `409` instead of redirected with `307`.
+  refused with `409`. The address only has to be reachable from the other
+  nodes, not from clients.
 
 The lease only decides who tries to write. What keeps a stale writer from
 corrupting anything is the storage refusing its pushes - see
@@ -43,10 +44,13 @@ startup and refuses to run as an indexer against storage that does not.
 
 ## Send writes anywhere
 
-Clients do not need to know which node is the indexer. Send definition
-changes and commit actions to any node and follow redirects - the redirect
-repeats the request as it was. Only when no indexer is running (or the
-indexer set no `NODE_ADDRESS`) does a write fail, with `409 Conflict`.
+Clients do not need to know which node is the indexer. A write that reaches
+another node is forwarded to the indexer by the node itself - same request,
+same credential - and answered with whatever the indexer answered, so the
+client never sees which node did the work. Only when no indexer is running
+(or the indexer set no `NODE_ADDRESS`) does a write fail, with
+`409 Conflict` and the code `indexer:unavailable`; an indexer that cannot be
+reached answers `502` with `indexer:unreachable`.
 
 ## Bound what a node holds
 

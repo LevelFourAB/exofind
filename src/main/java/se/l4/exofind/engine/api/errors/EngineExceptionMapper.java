@@ -1,6 +1,5 @@
 package se.l4.exofind.engine.api.errors;
 
-import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,14 +28,12 @@ import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegistryException;
-import se.l4.exofind.engine.index.state.IndexerOwnership;
+import se.l4.exofind.engine.index.state.IndexerUnavailableException;
+import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 import se.l4.exofind.engine.logging.Log;
-import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
-import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 
@@ -51,31 +48,8 @@ import jakarta.ws.rs.ext.Provider;
 public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 	private static final Log logger = Log.of(EngineExceptionMapper.class);
 
-	private final IndexerOwnership ownership;
-
-	@Context
-	UriInfo uriInfo;
-
-	public EngineExceptionMapper(IndexerOwnership ownership) {
-		this.ownership = ownership;
-	}
-
 	@Override
 	public Response toResponse(EngineException e) {
-		if(e instanceof IndexReadonlyException) {
-			/*
-			 * The request itself is fine, it just reached a node that cannot
-			 * serve it. When the indexer is known, the caller is sent there
-			 * instead of being refused - a 307 repeats the request as it was,
-			 * method and body included. Without one to point at, the refusal
-			 * below is all there is to say.
-			 */
-			var redirect = redirectToIndexer(e);
-			if(redirect != null) {
-				return redirect;
-			}
-		}
-
 		var status = statusOf(e);
 
 		if(status.getStatusCode() >= 500) {
@@ -98,64 +72,6 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 		}
 
 		return response.build();
-	}
-
-	/**
-	 * Build the redirect pointing at the indexer, or {@code null} when there
-	 * is no indexer to point at or its address cannot be used.
-	 */
-	private Response redirectToIndexer(EngineException e) {
-		var target = ownership.indexerAddress()
-			.map(this::resolveAgainstRequest)
-			.orElse(null);
-
-		if(target == null) {
-			return null;
-		}
-
-		return Response.status(Response.Status.TEMPORARY_REDIRECT)
-			.location(target)
-			.type(MediaType.APPLICATION_JSON)
-			.entity(toBody(e))
-			.build();
-	}
-
-	/**
-	 * Point the request that is being answered at another node: same path and
-	 * query, with the scheme, host and port the address carries. An address
-	 * without a port means the default port of its scheme.
-	 *
-	 * @return
-	 *   the target, or {@code null} when the address cannot be resolved into
-	 *   one
-	 */
-	private URI resolveAgainstRequest(String address) {
-		if(uriInfo == null) {
-			return null;
-		}
-
-		try {
-			var addressUri = URI.create(address);
-			if(addressUri.getHost() == null) {
-				return null;
-			}
-
-			var builder = UriBuilder.fromUri(uriInfo.getRequestUri())
-				.host(addressUri.getHost())
-				.port(addressUri.getPort());
-
-			if(addressUri.getScheme() != null) {
-				builder.scheme(addressUri.getScheme());
-			}
-
-			return builder.build();
-		} catch(IllegalArgumentException e) {
-			logger.atWarn()
-				.addKeyValue("address", address)
-				.log("Indexer address cannot be turned into a redirect; " + e.getMessage());
-
-			return null;
-		}
 	}
 
 	private static Response.Status statusOf(EngineException e) {
@@ -215,6 +131,16 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			 * because the index is being synchronized.
 			 */
 			return Response.Status.CONFLICT;
+		} else if(e instanceof IndexerUnavailableException) {
+			/*
+			 * The request needed the indexer and there was none to pass it to.
+			 * Sent again once one is up it is served, so the deployment is
+			 * what has to change rather than the request.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof IndexerUnreachableException) {
+			// This node relayed the request and the node behind it did not answer
+			return Response.Status.BAD_GATEWAY;
 		} else if(e instanceof UnrepresentableStateException) {
 			/*
 			 * The index holds state that belongs to another version of the API.

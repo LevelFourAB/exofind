@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
+import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
@@ -48,8 +49,7 @@ import jakarta.ws.rs.core.Response;
  * the way a definition is: the same request can be sent again and leaves the
  * index holding what it says, replacing whatever was indexed under that key
  * before. Removing one is the same kind of statement, which is why a key
- * nothing was indexed under is not an error. Only the indexer writes, so a
- * request that reaches another node is pointed at the one that does.
+ * nothing was indexed under is not an error.
  *
  * A change to some of the fields of a document says something else, which is
  * why it has an endpoint of its own: it describes what to change about a
@@ -68,6 +68,9 @@ import jakarta.ws.rs.core.Response;
  * index and are committed with everything else. Which document failed is said
  * by the path of the errors, so sending the same request again after fixing
  * it is safe.
+ *
+ * Only the indexer writes, so a request that reaches another node is passed
+ * along to the one that does - see {@code IndexerForwardFilter}.
  */
 @Path("/v1alpha1/indexes/{name}/documents")
 @Produces(MediaType.APPLICATION_JSON)
@@ -141,6 +144,7 @@ public class DocumentResource {
 	@POST
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.DOCUMENTS_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public DocumentsResponse add(@PathParam("name") String name, DocumentsRequest body) {
 		if(body == null || body.documents() == null) {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
@@ -168,6 +172,7 @@ public class DocumentResource {
 	@POST
 	@Consumes(NDJSON)
 	@RequiresPermission(Permission.DOCUMENTS_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public DocumentsResponse addStream(@PathParam("name") String name, InputStream body) {
 		if(body == null) {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
@@ -206,6 +211,7 @@ public class DocumentResource {
 	@Path("/actions/update")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.DOCUMENTS_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public UpdateResponse update(
 		@PathParam("name") String name,
 		@QueryParam("missing") String missing,
@@ -243,6 +249,7 @@ public class DocumentResource {
 	@Path("/actions/update")
 	@Consumes(NDJSON)
 	@RequiresPermission(Permission.DOCUMENTS_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public UpdateResponse updateStream(
 		@PathParam("name") String name,
 		@QueryParam("missing") String missing,
@@ -371,6 +378,7 @@ public class DocumentResource {
 	@DELETE
 	@Path("/{key}")
 	@RequiresPermission(Permission.DOCUMENTS_DELETE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public Response delete(@PathParam("name") String name, @PathParam("key") String key) {
 		var index = indexes.getOrThrow(name);
 
@@ -395,6 +403,7 @@ public class DocumentResource {
 	@Path("/actions/delete")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.DOCUMENTS_DELETE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public DeleteResponse delete(@PathParam("name") String name, DeleteRequest body) {
 		if(body == null || body.keys() == null && body.query() == null) {
 			throw new ValidationException(DELETE_TARGET_REQUIRED.toMessage(Location.create("")));

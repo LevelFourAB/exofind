@@ -42,9 +42,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 	/**
 	 * How long an answer about the indexer's address is reused before the
-	 * lease is read again. Long enough that redirecting every write does not
+	 * lease is read again. Long enough that forwarding every write does not
 	 * mean reading the lease for every write, short enough that a failover
-	 * stops pointing callers at the old node quickly.
+	 * stops sending writes to the old node quickly.
 	 */
 	private static final Duration ADDRESS_CACHE_TTL = Duration.ofSeconds(3);
 
@@ -180,8 +180,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 			/*
 			 * Only a live lease held by someone else names a node worth
-			 * sending a caller to. Pointing at this node itself would loop -
-			 * a caller only asks after this node could not serve the write.
+			 * forwarding to. Naming this node itself would loop - this is
+			 * only asked after this node could not serve the write.
 			 */
 			if(
 				current != null

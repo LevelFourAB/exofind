@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import se.l4.exofind.engine.api.auth.RequiresPermission;
+import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.CreatedKey;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyListResponse;
@@ -28,8 +29,9 @@ import jakarta.ws.rs.core.Response;
  * {@code EXOFIND_AUTH_REFRESH_INTERVAL} on each node.
  *
  * <p>Managing keys does not need the indexer role - the store is one object
- * replaced conditionally on the version it was read at - so these requests are
- * served by whichever node receives them and never redirect.
+ * replaced conditionally on the version it was read at, and a key is about the
+ * deployment rather than about any index - so these requests are served by
+ * whichever node receives them and are never passed to the indexer.
  *
  * <p>A key is created and revoked, never edited. Changing what something is
  * allowed to do means creating the key it should have, moving whatever uses it
@@ -78,6 +80,7 @@ public class KeyResource {
 	@POST
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.KEYS_WRITE)
+	@ServedBy(ServedBy.Node.ANY_NODE)
 	public Response create(KeyDefinition definition) {
 		if(definition == null) {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
@@ -108,6 +111,7 @@ public class KeyResource {
 	@DELETE
 	@Path("/{id}")
 	@RequiresPermission(Permission.KEYS_WRITE)
+	@ServedBy(ServedBy.Node.ANY_NODE)
 	public Response delete(@PathParam("id") String id) {
 		keys.delete(id);
 		return Response.noContent().build();

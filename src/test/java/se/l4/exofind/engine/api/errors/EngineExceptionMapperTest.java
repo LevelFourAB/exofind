@@ -3,11 +3,6 @@ package se.l4.exofind.engine.api.errors;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
-import java.net.URI;
-import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,48 +22,11 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegistryException;
-import se.l4.exofind.engine.index.state.IndexerOwnership;
-import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
-import jakarta.ws.rs.core.UriInfo;
+import se.l4.exofind.engine.index.state.IndexerUnavailableException;
+import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 
 public class EngineExceptionMapperTest {
-	private final EngineExceptionMapper mapper =
-		new EngineExceptionMapper(new LocalIndexerOwnership());
-
-	/**
-	 * Ownership as it looks on a read-only node that knows where the indexer
-	 * is.
-	 */
-	private static IndexerOwnership indexerAt(String address) {
-		return new IndexerOwnership() {
-			@Override
-			public void start(Listener listener) {
-			}
-
-			@Override
-			public void stop() {
-			}
-
-			@Override
-			public Optional<String> indexerAddress() {
-				return Optional.ofNullable(address);
-			}
-		};
-	}
-
-	/**
-	 * A mapper answering a request for the given URI, on a node that knows
-	 * the indexer under the given address.
-	 */
-	private static EngineExceptionMapper mapperFor(String requestUri, String indexerAddress) {
-		var mapper = new EngineExceptionMapper(indexerAt(indexerAddress));
-
-		var uriInfo = mock(UriInfo.class);
-		when(uriInfo.getRequestUri()).thenReturn(URI.create(requestUri));
-		mapper.uriInfo = uriInfo;
-
-		return mapper;
-	}
+	private final EngineExceptionMapper mapper = new EngineExceptionMapper();
 
 	private static final ErrorType INVALID = ErrorType.withCode("test:invalid")
 		.withArguments("name")
@@ -146,59 +104,37 @@ public class EngineExceptionMapperTest {
 	}
 
 	/**
-	 * A write reaching a node that cannot serve it is pointed at the node
-	 * that can: same request, on the indexer's scheme, host and port.
+	 * A request that needed the indexer with none to pass it to is a
+	 * conflict, the same family as an index that cannot be modified right
+	 * now - sent again once an indexer is up, it is served.
 	 */
 	@Test
-	public void testReadonlyRedirectsToKnownIndexer() {
-		var mapper = mapperFor(
-			"http://localhost:8080/v1alpha1/admin/indexes/books/documents?wait=true",
-			"http://indexer-node:9042"
-		);
-
-		var response = mapper.toResponse(new IndexReadonlyException("books"));
-
-		assertThat(response.getStatus(), is(307));
-		assertThat(
-			response.getLocation(),
-			is(URI.create("http://indexer-node:9042/v1alpha1/admin/indexes/books/documents?wait=true"))
-		);
-	}
-
-	/**
-	 * An address without a port sends the caller to the default port of its
-	 * scheme, not to the port this node happens to serve on.
-	 */
-	@Test
-	public void testRedirectDropsPortWhenAddressHasNone() {
-		var mapper = mapperFor(
-			"http://localhost:8080/v1alpha1/admin/indexes/books",
-			"https://indexer.example.com"
-		);
-
-		var response = mapper.toResponse(new IndexReadonlyException("books"));
-
-		assertThat(response.getStatus(), is(307));
-		assertThat(
-			response.getLocation(),
-			is(URI.create("https://indexer.example.com/v1alpha1/admin/indexes/books"))
-		);
-	}
-
-	/**
-	 * An address that cannot be turned into a redirect leaves the refusal as
-	 * it was, rather than sending the caller somewhere broken.
-	 */
-	@Test
-	public void testReadonlyWithUnusableIndexerAddressIsConflict() {
-		var mapper = mapperFor(
-			"http://localhost:8080/v1alpha1/admin/indexes/books",
-			"not a usable address"
-		);
-
-		var response = mapper.toResponse(new IndexReadonlyException("books"));
+	public void testNoIndexerToForwardToIsAConflict() {
+		var response = mapper.toResponse(new IndexerUnavailableException());
 
 		assertThat(response.getStatus(), is(409));
+		assertThat(
+			((ErrorResponse) response.getEntity()).code(),
+			is("indexer:unavailable")
+		);
+	}
+
+	/**
+	 * A forward that could not be delivered is this node reporting on the
+	 * node behind it, which is what 502 says - not on the request, and not on
+	 * itself.
+	 */
+	@Test
+	public void testIndexerThatDidNotAnswerIsABadGateway() {
+		var response = mapper.toResponse(
+			new IndexerUnreachableException(new java.io.IOException("Connection refused"))
+		);
+
+		assertThat(response.getStatus(), is(502));
+		assertThat(
+			((ErrorResponse) response.getEntity()).code(),
+			is("indexer:unreachable")
+		);
 	}
 
 	@Test

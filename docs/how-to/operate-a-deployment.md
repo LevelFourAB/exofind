@@ -159,8 +159,9 @@ fault - a candidate that stops renewing hands over, which is the design - but
 a node giving it up while it is still running is saying the storage stopped
 answering, or that another node took the lease from under it.
 
-A write sent to a node that is not the indexer answers `307` with the indexer
-in `Location`, so `curl -i` against any node names the current writer.
+A write sent to a node that is not the indexer is forwarded to it, so which
+node answered a write does not say which node served it - the log lines
+above, on the candidates, are what name the current writer.
 
 ## Keep the disk in hand
 

@@ -11,6 +11,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
+import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.auth.Permission;
@@ -31,7 +32,8 @@ import jakarta.ws.rs.core.MediaType;
  *
  * A search runs on whichever node receives it, against the state that node
  * has - which for a node that is not the indexer is whatever it last pulled.
- * There is nothing here that has to reach the indexer, so nothing redirects.
+ * There is nothing here that has to reach the indexer, so nothing is
+ * forwarded there.
  *
  * How deep offset paging may reach is capped, because skipping results costs
  * as much as ranking them - a request past the cap is refused with its own
@@ -68,6 +70,7 @@ public class SearchResource {
 	@POST
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.SEARCH)
+	@ServedBy(ServedBy.Node.ANY_NODE)
 	public SearchResponse search(@PathParam("name") String name, SearchRequest body) {
 		var started = System.nanoTime();
 

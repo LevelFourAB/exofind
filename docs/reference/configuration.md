@@ -60,7 +60,7 @@ Read in `object` mode, and ignored in `local`.
 | `INDEXER` | Whether this node may act as the indexer. Any number of candidates may run; they coordinate through a lease in the object storage and exactly one holds the role at a time, with another taking over when the holder stops or stalls | `false`, and `true` in `local` mode |
 | `INDEXER_LEASE_DURATION` | How long the indexer role is held before it lapses without renewal, which is roughly how long a failover takes. Renewal happens at a third of this | `30s` |
 | `NODE_ID` | Name this node holds the indexer lease under | hostname plus a random suffix |
-| `NODE_ADDRESS` | Address this node serves writes on, recorded in the lease so other nodes can redirect writes to the indexer. Without it, writes to other nodes are refused instead of redirected | none |
+| `NODE_ADDRESS` | Address this node serves writes on, recorded in the lease so other nodes can forward writes to the indexer. It only has to be reachable from the other nodes. Without it, writes to other nodes are refused instead of forwarded | none |
 
 An indexer relies on the storage enforcing conditional writes (`If-Match` on
 `PUT`) to refuse a second writer instead of being corrupted by it. Amazon S3

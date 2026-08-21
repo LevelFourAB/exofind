@@ -34,11 +34,12 @@ needs to ask for nothing.
 
 ## Write to the indexer
 
-Only the indexer writes. A write that reaches another node is answered with
-a `307` to the indexer when one is known, so a client that follows redirects
-works against any node. Where none is known the write is refused with
-`index:readonly`, which is what a cluster with no indexer looks like -
-[Run more than one node](run-multiple-nodes.md) covers keeping one elected.
+Only the indexer writes, but nothing has to aim at it: a write that reaches
+another node is forwarded to the indexer by the node itself and answered with
+what the indexer answered, so any node works. Where no indexer is known the
+write is refused with `indexer:unavailable`, which is what a cluster with no
+indexer looks like - [Run more than one node](run-multiple-nodes.md) covers
+keeping one elected.
 
 Searches have no such rule and are answered by the node that receives them.
 

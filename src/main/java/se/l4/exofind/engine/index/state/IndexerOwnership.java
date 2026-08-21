@@ -32,14 +32,14 @@ public interface IndexerOwnership {
 	void stop();
 
 	/**
-	 * The address the current indexer serves writes on, used to point a
-	 * caller that reached the wrong node at the right one. Empty when there
-	 * is no indexer right now, when it offered no address, or when the
-	 * indexer is this node - a node never points a caller back at itself.
+	 * The address the current indexer serves writes on, used to pass a
+	 * request that reached the wrong node along to the right one. Empty when
+	 * there is no indexer right now, when it offered no address, or when the
+	 * indexer is this node - a node never forwards to itself.
 	 *
-	 * Answers may lag reality by a short while, so a caller can be sent to a
-	 * node that just lost the role - it answers the same way this one did,
-	 * with whatever it knows.
+	 * Answers may lag reality by a short while, so a request can be passed to
+	 * a node that just lost the role - which refuses it rather than passing
+	 * it along again, and the caller retries against fresher answers.
 	 *
 	 * @return
 	 */

@@ -67,9 +67,18 @@ The codes worth handling specially in a client:
   granted; the `permission` argument names what was missing. An index the
   caller was granted nothing at all on answers `index:not-found` instead,
   so a refusal never confirms that an index exists.
-- `index:readonly` - the request modifies an index on a node that is not
-  the indexer. Comes with a `307` redirect when the indexer is known and a
-  `409` when it is not.
+- `indexer:unavailable` - the request needs the indexer and there is none to
+  forward it to: none is running, the one running set no `NODE_ADDRESS`, or
+  the request was already forwarded once and leadership has moved since.
+  Answered as `409`; retrying reaches the indexer once one is up.
+- `indexer:unreachable` - the request was forwarded to the indexer and it
+  did not answer. Answered as `502`. Whether the indexer served the request
+  before the connection died cannot be known, so retry the way any failed
+  write is retried.
+- `index:readonly` - the request modifies an index on a node that cannot
+  right now, answered as `409`. Reached only in the moment where a node
+  loses the indexer role while serving the request; retrying is forwarded to
+  wherever the role went.
 - `search:page:too_deep` - the offset asked for is past
   `SEARCH_MAX_PAGE_DEPTH`. Follow `next`/`previous` cursors instead.
 - `search:cursor:sort_mismatch` - a cursor was used under a different sort

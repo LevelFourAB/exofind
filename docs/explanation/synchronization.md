@@ -55,7 +55,7 @@ partitioned - the lease lapses and another candidate claims it, which is
 roughly how long a failover takes.
 
 The lease exists so that at most one node *spends effort* writing, and so
-readers know where to redirect writes. It is not what protects the data: a
+the other nodes know where to forward writes. It is not what protects the data: a
 clock can drift, a paused process can wake up convinced it still holds a
 lease that lapsed. When that happens, the conditional manifest write and the
 epoch scoping above are what stand between the stale writer and corruption.
