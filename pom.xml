@@ -75,15 +75,6 @@
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-smallrye-openapi</artifactId>
 		</dependency>
-		<!--
-			Lets the console write each line as a JSON object, so that a log being
-			shipped somewhere carries its level, logger and thread as fields and a
-			stack trace as one value rather than as the lines after it. Also what
-			se.l4.exofind.engine.logging writes the key/values of a line through,
-			which is what makes them fields rather than prose. Off unless a
-			deployment asks - see the logging section of
-			docs/reference/configuration.md.
-		-->
 		<dependency>
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-logging-json</artifactId>
@@ -151,11 +142,6 @@
 			<version>3.1.8</version>
 		</dependency>
 
-		<!--
-			The extension rather than the plain AWS SDK, for the native image
-			configuration it carries. The clients are still built by hand from
-			the remote.storage properties.
-		-->
 		<dependency>
 			<groupId>io.quarkiverse.amazonservices</groupId>
 			<artifactId>quarkus-amazon-s3</artifactId>
@@ -175,67 +161,51 @@
 			<artifactId>lucene-analysis-icu</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Span queries, which phrases with a half-typed last word compile to -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-queries</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Highlighted snippets in search results, read from term vectors -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-highlighter</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Block joins, which `nested` clauses on object fields compile to -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-join</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!--
-			Facet counts, read from the doc values faceted fields already write -
-			the facet module's own index formats are not used.
-		-->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-facet</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!--
-			Stopword lists, per-language stemmers and the Snowball stemmers that
-			se.l4.exofind.engine.index.locales builds its locale support from.
-		-->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-common</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Polish stemming, which lucene-analysis-common does not cover -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-stempel</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Ukrainian stemming, dictionary based; pulls in its dictionary -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-morfologik</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Chinese segmentation, which has no spaces to segment on -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-smartcn</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Japanese segmentation and lemmatization -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-kuromoji</artifactId>
 			<version>${lucene.version}</version>
 		</dependency>
-		<!-- Korean segmentation and particle handling -->
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-nori</artifactId>
