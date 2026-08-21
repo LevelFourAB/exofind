@@ -57,11 +57,35 @@ duration (`INDEXER_LEASE_DURATION`): it renews its own entries, takes claims
 whose holder stopped renewing - crashed, hung, partitioned - and divides the
 indexes up, claiming free ones while it holds fewer than its fair share and
 handing one over per round while it holds more and another candidate holds
-less. A claim lapsing is roughly how long a failover takes.
+less. The one handed over is the index the node's own recent writes say is
+the most idle - counted per name and halved every few minutes - so a busy
+index stays with the writer whose Lucene state is warm for it, and only the
+quiet ones pay the pull and reopen a handover costs. A claim lapsing is
+roughly how long a failover takes.
 
-Handing an index over is deliberate, so the node commits and pushes what it
-still holds before reopening it read-only - documents that were acknowledged
-but not yet committed survive a rebalance. Losing an index the uncertain way
+Even counts can still carry uneven load - one node holding every busy index,
+another every quiet one - so each claim also carries a coarse figure of how
+heavily its index is written: the bit length of that same decaying count,
+which only moves when the load roughly doubles. A node whose total sits well
+above the least loaded candidate marks one claim as *offered*; an
+under-loaded candidate answers by writing itself into the claim as taker,
+and the holder then hands the claim over. Only the holder ever moves a
+claim, so an index never changes hands without its writer choosing to, and
+the count balancing above finishes the exchange by moving an idle index
+back the other way. An index is only offered when its figure
+fits twice in the gap between the two totals - moving it has to narrow the
+gap, not hand it over - which is what keeps a single hot index from being
+traded back and forth between two otherwise idle nodes.
+
+Handing an index over is deliberate, and the order protects what was
+acknowledged: the claim is released only after everything the index still
+holds has been committed and pushed. The index first stops taking writes -
+a write arriving during that window is refused and retried by the caller -
+and once the flush has landed, a later round moves the claim: to the taker,
+or dropped for a candidate below its share to pick up. A successor that
+sees the index as its to write therefore always pulls a manifest that
+already carries the flush, so documents that were acknowledged but not yet
+committed survive a rebalance. Losing an index the uncertain way
 - claims lapsing before they could be renewed - pushes nothing, because a
 successor may already be writing; whatever was never pushed is dropped, and
 the conditional writes below are what keep even that from corrupting

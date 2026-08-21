@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.auth.KeyStorage;
 import se.l4.exofind.engine.auth.LocalKeyStorage;
@@ -202,6 +203,8 @@ public class StorageProviders {
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
 		IndexRegistry registry,
+		NodeState nodeState,
+		Instance<Indexes> indexes,
 		@ConfigProperty(name = "node.id") Optional<String> nodeId,
 		@ConfigProperty(name = "node.address") Optional<String> address,
 		@ConfigProperty(name = "indexer.lease.duration", defaultValue = "30s") Duration leaseDuration
@@ -218,7 +221,10 @@ public class StorageProviders {
 				 * a deployment holding nothing both look empty, and only the
 				 * second is a reason to drop claims.
 				 */
-				() -> registry.hasBeenRead() ? registry.names() : null
+				() -> registry.hasBeenRead() ? registry.names() : null,
+				nodeState::writeLoad,
+				nodeState::recordWrite,
+				name -> indexes.get().flushForHandover(name)
 			);
 		};
 	}

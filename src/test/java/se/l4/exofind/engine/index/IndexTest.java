@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
@@ -145,6 +146,42 @@ public class IndexTest {
 		var doc2 = index.getDocument("123");
 		assertThat(doc2, is(notNullValue()));
 		assertThat(doc2.get("id"), is("123"));
+	}
+
+	/**
+	 * Writes count toward the node's write load under the bare index name,
+	 * whichever generation they land in - that figure is what decides which
+	 * index a node over its fair share hands over.
+	 */
+	@Test
+	public void testWritesCountTowardTheNodeWriteLoad() throws IOException {
+		var nodeState = nodeState(true);
+
+		var path = indexRoot.resolve("books@1");
+		Files.createDirectories(path);
+		var index = new Index(nodeState, "books@1", path, new NoopSync());
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(
+			IndexDef.newBuilder()
+				.putFields(
+					"id",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(StringFieldTypeDef.newBuilder().build()).build()
+						)
+						.setPrimaryKey(true)
+						.build()
+				)
+				.build()
+		);
+
+		index.addDocument(new Document(new Document.Value("id", "1")));
+		index.addDocument(new Document(new Document.Value("id", "2")));
+
+		assertThat(nodeState.writeLoad("books"), closeTo(2d, 0.01));
+		assertThat(nodeState.writeLoad("games"), is(0d));
 	}
 
 	@Test

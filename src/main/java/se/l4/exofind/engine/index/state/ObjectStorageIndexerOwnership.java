@@ -20,7 +20,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
+import java.util.function.ObjLongConsumer;
 import java.util.function.Supplier;
+import java.util.function.ToDoubleFunction;
 
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.set.ImmutableSet;
@@ -46,11 +49,31 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * its next round. Every candidate runs a round at a third of the claim
  * duration: it renews its own entries, takes claims that have lapsed, and
  * divides the indexes up - claiming free ones while it holds fewer than its
- * fair share of the count, and handing one over per round while it holds
- * more and another candidate holds less. A candidate that cannot renew
+ * fair share of the count, and handing its most write-idle one over per
+ * round while it holds more and another candidate holds less, so a busy
+ * index stays with the writer that is warm for it. A candidate that cannot renew
  * before its claims lapse gives every index up on its own rather than assume
  * it still holds them, and the manifest CAS covers the moment where it has
  * lost an index but not yet noticed.
+ *
+ * Even counts can still carry uneven load, so every claim also carries a
+ * coarse figure of how heavily its index is written. A node whose total sits
+ * well above the least loaded candidate marks one busy claim as offered; an
+ * under-loaded candidate answers by writing itself into the claim as taker,
+ * and the holder then hands the claim over. Only the holder ever moves a
+ * claim, so an index never changes hands without its writer choosing to, and
+ * the ordinary count balancing finishes the exchange by moving an idle index
+ * back the other way.
+ *
+ * A handover this node chooses - answering a taker, or shedding toward a
+ * candidate with room - releases the claim in two steps. The index is first
+ * only marked as draining: the claim stays in the table, writes stop being
+ * served here, and everything the index still holds is flushed to the
+ * remote. Only a round after the flush has finished moves the claim - to
+ * the taker, or dropped so a candidate below its share picks the index up.
+ * A successor that sees the claim naming it can therefore never pull a
+ * manifest the flush had not written yet, which is what makes documents
+ * acknowledged here survive the handover.
  *
  * An index nothing holds - just created, or its holder just died - is taken
  * by whichever candidate is asked to write it, through {@link #tryClaim},
@@ -83,6 +106,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private static final int SHED_PER_ROUND = 1;
 
 	/**
+	 * How far apart two candidates' load totals must be, in buckets of
+	 * {@link #loadBucket}, before the busier one offers an index up. Buckets
+	 * move when a load roughly doubles, so close calls move nothing - which
+	 * is what keeps two similarly loaded nodes from trading indexes back and
+	 * forth as their figures wander.
+	 */
+	private static final int OFFER_MARGIN = 2;
+
+	/**
 	 * How long a write may wait on {@link #tryClaim} before it is answered
 	 * without the index instead. Bounded by the caller holding a request
 	 * open, not by how long claiming could conceivably take.
@@ -107,6 +139,28 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private final Supplier<? extends SetIterable<String>> indexNames;
 
 	/**
+	 * How heavily each index has recently been written here, asked to pick
+	 * the index a node over its fair share hands over and to compare load
+	 * between candidates.
+	 */
+	private final ToDoubleFunction<String> writeLoad;
+
+	/**
+	 * Fed the figure an index arrives with when it is handed over, so a busy
+	 * index this node has not written yet reads as busy rather than idle.
+	 */
+	private final ObjLongConsumer<String> writeLoadSeed;
+
+	/**
+	 * Asked to push everything this node still holds for an index once a
+	 * handover of it has been decided, answering a future that completes when
+	 * nothing here can reach the remote anymore. The claim is released only
+	 * once that future is done, which is what keeps the successor from
+	 * pulling a manifest the flush had not written yet.
+	 */
+	private final Function<String, ? extends CompletableFuture<?>> handoverFlush;
+
+	/**
 	 * The claim each index currently being claimed through {@link #tryClaim}
 	 * will resolve to, so a burst of writes for one index costs one claim
 	 * rather than queueing one each.
@@ -128,6 +182,21 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private volatile ImmutableSet<String> held = Sets.immutable.empty();
 
 	/**
+	 * The indexes on their way out of this node: their claims are still in
+	 * the table so nothing else takes them, but writes are no longer served
+	 * and what they hold is being flushed. Only replaced on the executor
+	 * thread, volatile so {@link #tryClaim} can refuse one without
+	 * coordinating.
+	 */
+	private volatile ImmutableSet<String> draining = Sets.immutable.empty();
+
+	/**
+	 * The flush each draining index is waiting on before its claim may be
+	 * released. Only touched on the executor thread.
+	 */
+	private final HashMap<String, CompletableFuture<?>> drainFlushes = new HashMap<>();
+
+	/**
 	 * When the claims this node holds lapse, according to its own clock.
 	 * Failing to renew past this point means holding them is no longer
 	 * certain and they are given up. Only touched on the executor thread.
@@ -146,9 +215,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 	/**
 	 * The table as one round rewrote it, together with the indexes this node
-	 * holds in it.
+	 * holds in it and the ones it only keeps claimed while they drain.
 	 */
-	private record Rebuilt(IndexerLeadership table, ImmutableSet<String> held) {
+	private record Rebuilt(
+		IndexerLeadership table,
+		ImmutableSet<String> held,
+		ImmutableSet<String> draining
+	) {
 	}
 
 	/**
@@ -163,7 +236,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		Optional<String> nodeId,
 		Optional<String> address,
 		Duration leaseDuration,
-		Supplier<? extends SetIterable<String>> indexNames
+		Supplier<? extends SetIterable<String>> indexNames,
+		ToDoubleFunction<String> writeLoad,
+		ObjLongConsumer<String> writeLoadSeed,
+		Function<String, ? extends CompletableFuture<?>> handoverFlush
 	) {
 		this.client = storage.client();
 		this.bucket = storage.bucket();
@@ -173,6 +249,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		this.address = address;
 		this.leaseDuration = leaseDuration;
 		this.indexNames = indexNames;
+		this.writeLoad = writeLoad;
+		this.writeLoadSeed = writeLoadSeed;
+		this.handoverFlush = handoverFlush;
 
 		this.executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
 			var thread = new Thread(runnable, "indexer-ownership");
@@ -249,6 +328,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		if(held.contains(index)) {
 			return true;
+		}
+
+		if(draining.contains(index)) {
+			/*
+			 * On its way to a successor: writes are no longer served here, and
+			 * taking the index back would undo the flush the successor is
+			 * waiting on.
+			 */
+			return false;
 		}
 
 		/*
@@ -450,6 +538,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return true;
 		}
 
+		if(draining.contains(index)) {
+			// Being handed over; see tryClaim
+			return false;
+		}
+
 		for(var attempt = 0; attempt < 3; attempt++) {
 			FetchedTable fetched;
 			try {
@@ -531,9 +624,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		// The candidates that are alive, with this node's entry renewed
 		var otherCandidates = new ArrayList<IndexerLeadership.Candidate>();
+		var candidatesByNode = new HashMap<String, IndexerLeadership.Candidate>();
 		for(var candidate : current.getCandidatesList()) {
 			if(!node.equals(candidate.getNode()) && candidate.getExpiresAt() > now) {
 				otherCandidates.add(candidate);
+				candidatesByNode.put(candidate.getNode(), candidate);
 			}
 		}
 
@@ -552,22 +647,147 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * claim of another node is dropped, which is what frees the index.
 		 */
 		var mine = new TreeSet<String>();
+		var myClaims = new HashMap<String, IndexerLeadership.Claim>();
 		var claimedByOthers = new HashSet<String>();
 		var othersClaims = new ArrayList<IndexerLeadership.Claim>();
 		var claimsPerNode = new HashMap<String, Integer>();
+		var loadPerNode = new HashMap<String, Integer>();
 
 		for(var claim : current.getClaimsList()) {
 			if(node.equals(claim.getNode())) {
 				mine.add(claim.getIndex());
+				myClaims.put(claim.getIndex(), claim);
 			} else if(claim.getExpiresAt() > now && claimedByOthers.add(claim.getIndex())) {
 				othersClaims.add(claim);
 				claimsPerNode.merge(claim.getNode(), 1, Integer::sum);
+				loadPerNode.merge(claim.getNode(), claim.getLoadBucket(), Integer::sum);
 			}
 		}
 
 		if(forcedClaim != null) {
 			mine.add(forcedClaim);
 		}
+
+		/*
+		 * An index that arrives with a claim this node never held - handed
+		 * over by its last writer - is fed into the local figures before
+		 * anything below reads them, so it does not read as idle and get
+		 * shed or offered right back before its writes have caught up with
+		 * their new destination. Seeded up to the floor of the figure the
+		 * claim carries, so a round that has to be retried seeds nothing
+		 * twice.
+		 */
+		for(var name : mine) {
+			if(held.contains(name) || draining.contains(name)) {
+				continue;
+			}
+
+			var adopted = myClaims.get(name);
+			if(adopted == null || adopted.getLoadBucket() == 0) {
+				continue;
+			}
+
+			var arrived = 1L << (adopted.getLoadBucket() - 1);
+			var known = (long) writeLoad.applyAsDouble(name);
+			if(known < arrived) {
+				writeLoadSeed.accept(name, arrived - known);
+			}
+		}
+
+		/*
+		 * The drains in progress come before anything else, even on a round
+		 * whose registry read failed - a handover already under way is not
+		 * called off by a hiccup. One whose flush is still running is
+		 * carried; one whose flush is done releases the claim: handed
+		 * straight to the taker that answered the offer, so nothing else can
+		 * take it in between and the taker alone starts writing it, or
+		 * dropped when there is none, which is what frees a shed index. A
+		 * claim on an index the registry no longer holds is neither - it is
+		 * left for the drop below, there is nothing to hand over anymore.
+		 */
+		var moved = false;
+		var nowDraining = new TreeSet<String>();
+
+		for(var name : draining) {
+			if(!mine.contains(name) || name.equals(forcedClaim)) {
+				continue;
+			}
+
+			if(names != null && !names.contains(name)) {
+				continue;
+			}
+
+			var flush = drainFlushes.get(name);
+			if(flush != null && !flush.isDone()) {
+				nowDraining.add(name);
+				continue;
+			}
+
+			var claim = myClaims.get(name);
+			var taker = claim != null && claim.hasTaker()
+				? candidatesByNode.get(claim.getTaker())
+				: null;
+
+			if(taker != null) {
+				/*
+				 * The handed claim keeps the load figure it was offered
+				 * under, so the other candidates read the index as busy until
+				 * the taker has figures of its own.
+				 */
+				var handed = IndexerLeadership.Claim.newBuilder()
+					.setIndex(name)
+					.setNode(taker.getNode())
+					.setExpiresAt(taker.getExpiresAt())
+					.setLoadBucket(claim.getLoadBucket());
+				if(taker.hasAddress()) {
+					handed.setAddress(taker.getAddress());
+				}
+
+				othersClaims.add(handed.build());
+				claimedByOthers.add(name);
+				claimsPerNode.merge(taker.getNode(), 1, Integer::sum);
+				loadPerNode.merge(taker.getNode(), claim.getLoadBucket(), Integer::sum);
+
+				mine.remove(name);
+				moved = true;
+			} else if(claim == null || !claim.hasTaker()) {
+				mine.remove(name);
+				moved = true;
+			}
+			// A taker that lapsed mid-drain cancels the handover; the index is served here again
+		}
+
+		/*
+		 * An offer somebody answered starts a drain rather than moving the
+		 * claim here and now - the claim is not the taker's until the flush
+		 * has finished. Not started for an index the registry dropped: a
+		 * deleted index is dropped below, never handed over. One handover at
+		 * a time, so rebalancing stays as gradual as shedding.
+		 */
+		if(!moved && nowDraining.isEmpty()) {
+			for(var name : mine) {
+				var claim = myClaims.get(name);
+				if(
+					claim == null
+						|| !claim.hasTaker()
+						|| name.equals(forcedClaim)
+						|| (names != null && !names.contains(name))
+				) {
+					continue;
+				}
+
+				if(!candidatesByNode.containsKey(claim.getTaker())) {
+					// The taker lapsed before the handover; the claim is rebuilt without it
+					continue;
+				}
+
+				nowDraining.add(name);
+				moved = true;
+				break;
+			}
+		}
+
+		String offering = null;
 
 		/*
 		 * A registry that has never been read claims and drops nothing - a
@@ -593,21 +813,43 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			/*
 			 * Handing an index over only helps when somebody with room picks
 			 * it up - shed toward a candidate below its share, never into the
-			 * void. The forced claim is what this round is for and is never
-			 * the one handed over.
+			 * void. Shedding starts a drain: the claim is released once the
+			 * flush is done, not here. The forced claim is what this round is
+			 * for and is never the one handed over.
 			 */
 			if(
-				mine.size() > fairShare
+				!moved && nowDraining.isEmpty()
+					&& mine.size() > fairShare
 					&& anyCandidateBelow(otherCandidates, claimsPerNode, fairShare)
 			) {
 				var toShed = SHED_PER_ROUND;
-				var iterator = mine.descendingIterator();
-				while(iterator.hasNext() && toShed > 0 && mine.size() > fairShare) {
-					if(!iterator.next().equals(forcedClaim)) {
-						iterator.remove();
-						toShed--;
+				while(toShed > 0 && mine.size() - nowDraining.size() > fairShare) {
+					var shed = mostWriteIdle(mine, nowDraining, forcedClaim);
+					if(shed == null) {
+						break;
 					}
+
+					nowDraining.add(shed);
+					toShed--;
 				}
+			}
+
+			/*
+			 * Balancing by load only starts where balancing by count ends: on
+			 * a round that already moved or started moving an index nothing
+			 * more is offered, so handovers stay as gradual as shedding.
+			 */
+			var ownLoad = localLoadTotal(mine);
+			if(!moved && nowDraining.isEmpty() && mine.size() <= fairShare) {
+				offering = indexToOffer(
+					mine,
+					forcedClaim,
+					ownLoad - lowestLoad(otherCandidates, loadPerNode)
+				);
+			}
+
+			if(mine.size() <= fairShare) {
+				volunteer(othersClaims, candidatesByNode, loadPerNode, ownLoad);
 			}
 		}
 
@@ -620,10 +862,51 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				.setExpiresAt(expiresAt);
 			address.ifPresent(claim::setAddress);
 
+			var previous = myClaims.get(name);
+
+			/*
+			 * A draining index stopped taking writes, so its local figure only
+			 * decays; the claim keeps the figure the handover was decided
+			 * under until the taker carries it onward.
+			 */
+			var bucket = nowDraining.contains(name) && previous != null
+				? previous.getLoadBucket()
+				: loadBucket(writeLoad.applyAsDouble(name));
+			if(bucket > 0) {
+				claim.setLoadBucket(bucket);
+			}
+
+			if(name.equals(offering)) {
+				claim.setOffered(true);
+			}
+
+			/*
+			 * A taker that answered is kept until its handover completes -
+			 * rebuilding the claim without it would silently call the
+			 * handshake off.
+			 */
+			if(
+				previous != null
+					&& previous.hasTaker()
+					&& candidatesByNode.containsKey(previous.getTaker())
+			) {
+				claim.setTaker(previous.getTaker());
+				if(previous.getOffered()) {
+					claim.setOffered(true);
+				}
+			}
+
 			builder.addClaims(claim);
 		}
 
-		return new Rebuilt(builder.build(), Sets.immutable.ofAll(mine));
+		var heldNow = new TreeSet<>(mine);
+		heldNow.removeAll(nowDraining);
+
+		return new Rebuilt(
+			builder.build(),
+			Sets.immutable.ofAll(heldNow),
+			Sets.immutable.ofAll(nowDraining)
+		);
 	}
 
 	/**
@@ -632,6 +915,37 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 */
 	private static int fairShare(int indexes, int candidates) {
 		return (indexes + candidates - 1) / candidates;
+	}
+
+	/**
+	 * The index a node over its fair share hands over: the one its recent
+	 * writes say is the most idle, so a busy index stays with the writer that
+	 * is warm for it. Ties - which is every index when no writes have been
+	 * seen - go to the highest-sorted name, so two nodes with nothing to
+	 * compare shed in a stable order. Never the forced claim or an index
+	 * already draining, and {@code null} when that leaves nothing to pick.
+	 */
+	private String mostWriteIdle(
+		TreeSet<String> mine,
+		TreeSet<String> nowDraining,
+		String forcedClaim
+	) {
+		String picked = null;
+		var pickedLoad = 0d;
+
+		for(var name : mine.descendingSet()) {
+			if(name.equals(forcedClaim) || nowDraining.contains(name)) {
+				continue;
+			}
+
+			var load = writeLoad.applyAsDouble(name);
+			if(picked == null || load < pickedLoad) {
+				picked = name;
+				pickedLoad = load;
+			}
+		}
+
+		return picked;
 	}
 
 	/**
@@ -653,6 +967,133 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	}
 
 	/**
+	 * The index to offer up when this node carries more write load than the
+	 * least loaded candidate: the busiest one whose figure still fits twice
+	 * in the gap, so the move narrows it rather than handing the imbalance
+	 * over - a single hot index is never traded between two otherwise idle
+	 * nodes. {@code null} when the gap is under {@link #OFFER_MARGIN} or
+	 * nothing fits.
+	 */
+	private String indexToOffer(TreeSet<String> mine, String forcedClaim, int gap) {
+		if(gap < OFFER_MARGIN) {
+			return null;
+		}
+
+		String picked = null;
+		var pickedBucket = 0;
+
+		for(var name : mine) {
+			if(name.equals(forcedClaim)) {
+				continue;
+			}
+
+			var bucket = loadBucket(writeLoad.applyAsDouble(name));
+			if(bucket == 0 || bucket * 2 > gap) {
+				continue;
+			}
+
+			if(bucket > pickedBucket) {
+				picked = name;
+				pickedBucket = bucket;
+			}
+		}
+
+		return picked;
+	}
+
+	/**
+	 * Answer another node's offer when this node has room for it, by marking
+	 * the claim with this node as taker - the holder hands the claim over on
+	 * its own next round. At most one take is in flight at a time, an offer
+	 * somebody live already answered is left alone, and an offer is only
+	 * taken when its figure fits twice in the gap between the holder's total
+	 * and this node's, judged the same way the holder judged offering it.
+	 */
+	private void volunteer(
+		ArrayList<IndexerLeadership.Claim> othersClaims,
+		HashMap<String, IndexerLeadership.Candidate> candidatesByNode,
+		HashMap<String, Integer> loadPerNode,
+		int ownLoad
+	) {
+		var picked = -1;
+		var pickedBucket = 0;
+
+		for(var i = 0; i < othersClaims.size(); i++) {
+			var claim = othersClaims.get(i);
+			if(claim.hasTaker() && node.equals(claim.getTaker())) {
+				// A handover is already on its way here; one at a time
+				return;
+			}
+
+			if(!claim.getOffered()) {
+				continue;
+			}
+
+			if(claim.hasTaker() && candidatesByNode.containsKey(claim.getTaker())) {
+				// Somebody alive answered first
+				continue;
+			}
+
+			var bucket = claim.getLoadBucket();
+			var gap = loadPerNode.getOrDefault(claim.getNode(), 0) - ownLoad;
+			if(bucket == 0 || gap < OFFER_MARGIN || bucket * 2 > gap) {
+				continue;
+			}
+
+			if(bucket > pickedBucket) {
+				picked = i;
+				pickedBucket = bucket;
+			}
+		}
+
+		if(picked >= 0) {
+			othersClaims.set(
+				picked,
+				othersClaims.get(picked).toBuilder().setTaker(node).build()
+			);
+		}
+	}
+
+	/**
+	 * The lowest load total any other live candidate carries, or
+	 * {@code Integer.MAX_VALUE} when there are none - which makes every gap
+	 * negative, so a lone node offers nothing.
+	 */
+	private static int lowestLoad(
+		Iterable<IndexerLeadership.Candidate> otherCandidates,
+		HashMap<String, Integer> loadPerNode
+	) {
+		var lowest = Integer.MAX_VALUE;
+		for(var candidate : otherCandidates) {
+			lowest = Math.min(lowest, loadPerNode.getOrDefault(candidate.getNode(), 0));
+		}
+
+		return lowest;
+	}
+
+	/**
+	 * The load this node carries across the given indexes, as a sum of
+	 * buckets comparable with a total read from the table.
+	 */
+	private int localLoadTotal(Iterable<String> names) {
+		var total = 0;
+		for(var name : names) {
+			total += loadBucket(writeLoad.applyAsDouble(name));
+		}
+
+		return total;
+	}
+
+	/**
+	 * The coarse figure a load is carried in the table as: the bit length of
+	 * the count, zero when idle. Coarse so the figure only moves when a load
+	 * roughly doubles or halves, not on every write.
+	 */
+	static int loadBucket(double load) {
+		return 64 - Long.numberOfLeadingZeros((long) load);
+	}
+
+	/**
 	 * Take a written round into effect: what it holds, for how long, and the
 	 * listener told about every index that changed hands.
 	 */
@@ -662,6 +1103,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		var before = held;
 		this.held = rebuilt.held();
+
+		var drainingBefore = draining;
+		this.draining = rebuilt.draining();
 
 		for(var name : rebuilt.held()) {
 			if(!before.contains(name)) {
@@ -679,9 +1123,46 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				logger.atInfo()
 					.addKeyValue("node", node)
 					.addKeyValue("index", name)
-					.log("Handed over writing the index");
+					.log("Handing over writing the index");
 
 				listener.onOwnershipChanged(name, false);
+			}
+		}
+
+		/*
+		 * A drain that just started is given its flush - after the listener
+		 * heard about the loss, because the flush pushes per what the
+		 * listener updated and would push nothing before it. A flush that
+		 * cannot be asked for reads as done, which hands the index over
+		 * without it the way a failing flush would.
+		 */
+		for(var name : rebuilt.draining()) {
+			if(drainingBefore.contains(name)) {
+				continue;
+			}
+
+			CompletableFuture<?> flush;
+			try {
+				flush = handoverFlush.apply(name);
+			} catch(RuntimeException e) {
+				logger.atWarn()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.setCause(e)
+					.log("Could not flush before handing the index over; " + e.getMessage());
+
+				flush = null;
+			}
+
+			drainFlushes.put(
+				name,
+				flush == null ? CompletableFuture.completedFuture(null) : flush
+			);
+		}
+
+		for(var name : drainingBefore) {
+			if(!rebuilt.draining().contains(name)) {
+				drainFlushes.remove(name);
 			}
 		}
 	}
@@ -693,6 +1174,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private void lostAll(String reason) {
 		var before = held;
 		this.held = Sets.immutable.empty();
+
+		/*
+		 * The drains lapse with everything else: their claims are no longer
+		 * certain, and what they were flushing was already given up on being
+		 * pushed or has been. A successor treats the stale claims like any
+		 * lapsed ones.
+		 */
+		this.draining = Sets.immutable.empty();
+		drainFlushes.clear();
 
 		for(var name : before) {
 			logger.atError()

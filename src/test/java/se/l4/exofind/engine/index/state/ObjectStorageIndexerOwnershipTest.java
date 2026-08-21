@@ -10,9 +10,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.eclipse.collections.api.factory.Sets;
@@ -46,6 +48,19 @@ public class ObjectStorageIndexerOwnershipTest {
 	 */
 	AtomicReference<ImmutableSet<String>> names;
 
+	/**
+	 * The write load per index name, one map per node the way the production
+	 * figures are - a node knows nothing about the writes of another. A name
+	 * not in a node's map is idle there.
+	 */
+	ConcurrentHashMap<String, ConcurrentHashMap<String, Double>> loads;
+
+	/**
+	 * The flush a handover waits on before the claim is released, asked per
+	 * index name. Done at once unless a test slows it down.
+	 */
+	Function<String, CompletableFuture<Void>> flush;
+
 	List<ObjectStorageIndexerOwnership> running = new ArrayList<>();
 
 	@BeforeEach
@@ -64,6 +79,8 @@ public class ObjectStorageIndexerOwnershipTest {
 		);
 
 		names = new AtomicReference<>(Sets.immutable.empty());
+		loads = new ConcurrentHashMap<>();
+		flush = name -> CompletableFuture.completedFuture(null);
 	}
 
 	@AfterEach
@@ -91,13 +108,24 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	private ObjectStorageIndexerOwnership newOwnership(String node, String address) {
+		var nodeLoads = loads(node);
 		return new ObjectStorageIndexerOwnership(
 			storage,
 			Optional.of(node),
 			Optional.ofNullable(address),
 			LEASE,
-			names::get
+			names::get,
+			name -> nodeLoads.getOrDefault(name, 0d),
+			(name, count) -> nodeLoads.merge(name, (double) count, Double::sum),
+			name -> flush.apply(name)
 		);
+	}
+
+	/**
+	 * The write load figures of one node.
+	 */
+	private ConcurrentHashMap<String, Double> loads(String node) {
+		return loads.computeIfAbsent(node, n -> new ConcurrentHashMap<>());
 	}
 
 	/**
@@ -341,6 +369,54 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	/**
+	 * A node over its fair share hands over the indexes it has not been
+	 * writing, so the busy ones stay where their writer is warm.
+	 */
+	@Test
+	void testShedPrefersTheWriteIdleIndexes() throws Exception {
+		names.set(Sets.immutable.of("a", "b", "c", "d"));
+
+		var first = start(newOwnership("node-1"));
+		await(() -> first.size() == 4, "the first candidate to take every index");
+
+		loads("node-1").put("b", 100d);
+		loads("node-1").put("c", 100d);
+
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 2 && second.size() == 2,
+			"the indexes to be divided evenly"
+		);
+
+		assertThat(first, containsInAnyOrder("b", "c"));
+		assertThat(second, containsInAnyOrder("a", "d"));
+	}
+
+	/**
+	 * With no writes seen every index is equally idle, and shedding falls
+	 * back to name order - the highest name goes first - so which indexes
+	 * move stays stable.
+	 */
+	@Test
+	void testShedWithoutLoadFallsBackToNameOrder() throws Exception {
+		names.set(Sets.immutable.of("a", "b", "c", "d"));
+
+		var first = start(newOwnership("node-1"));
+		await(() -> first.size() == 4, "the first candidate to take every index");
+
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 2 && second.size() == 2,
+			"the indexes to be divided evenly"
+		);
+
+		assertThat(first, containsInAnyOrder("a", "b"));
+		assertThat(second, containsInAnyOrder("c", "d"));
+	}
+
+	/**
 	 * A write that found no holder appoints one there and then, without
 	 * waiting for a round - including for an index the registry does not
 	 * hold yet, which is every index while it is being created.
@@ -550,5 +626,252 @@ public class ObjectStorageIndexerOwnershipTest {
 			.filter(c -> c.getNode().equals("a"))
 			.toList();
 		assertThat(remaining, is(List.of()));
+	}
+
+	/**
+	 * With counts even but load not - one node holding every busy index -
+	 * a busy index is offered up, taken by the idle node, and an idle one
+	 * comes back the other way, so both nodes end up with one busy index
+	 * each and the counts stay even.
+	 */
+	@Test
+	void testBusyIndexesSpreadWhenCountsAreEven() throws Exception {
+		names.set(Sets.immutable.of("a", "b", "c", "d"));
+
+		var first = start(newOwnership("node-1"));
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 2 && second.size() == 2,
+			"the indexes to be divided evenly"
+		);
+
+		var busy = List.copyOf(first);
+		for(var name : busy) {
+			loads("node-1").put(name, 5_000d);
+		}
+
+		await(
+			() -> first.size() == 2 && second.size() == 2
+				&& first.stream().filter(busy::contains).count() == 1
+				&& second.stream().filter(busy::contains).count() == 1,
+			"one busy index to move to the idle node"
+		);
+	}
+
+	/**
+	 * A single hot index is never offered - moving it would hand the
+	 * imbalance over rather than narrow it - so it stays where its writer
+	 * is warm however lopsided the load looks.
+	 */
+	@Test
+	void testSingleHotIndexStaysPut() throws Exception {
+		names.set(Sets.immutable.of("a", "b"));
+
+		var first = start(newOwnership("node-1"));
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 1 && second.size() == 1,
+			"the indexes to be divided evenly"
+		);
+
+		var hot = first.iterator().next();
+		loads("node-1").put(hot, 100_000d);
+
+		Thread.sleep(LEASE.toMillis() * 2);
+
+		assertThat(first, containsInAnyOrder(hot));
+	}
+
+	/**
+	 * A claim whose offer was answered is handed to the taker: rewritten to
+	 * name it, address and all, keeping the load figure it was offered
+	 * under, while the holder gives the index up.
+	 */
+	@Test
+	void testAnsweredOfferIsHandedToTheTaker() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, null).toBuilder()
+					.setLoadBucket(7)
+					.setOffered(true)
+					.setTaker("b")
+					.build(),
+				claim("games", "a", alive, null)
+			),
+			List.of(candidate("b", alive, "http://b:8080"))
+		);
+
+		var owned = start(newOwnership("a"));
+
+		await(() -> {
+			try {
+				return readTable().getClaimsList().stream()
+					.anyMatch(c -> c.getIndex().equals("books") && c.getNode().equals("b"));
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the answered offer to be handed over");
+
+		assertThat(owned.contains("games"), is(true));
+		assertThat(owned.contains("books"), is(false));
+
+		var handed = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(handed.getNode(), is("b"));
+		assertThat(handed.getAddress(), is("http://b:8080"));
+		assertThat(handed.getLoadBucket(), is(7));
+	}
+
+	/**
+	 * A handover releases the claim only after the flush of what the index
+	 * holds here has finished, so the taker can never pull a manifest the
+	 * flush had not written yet. Until then the claim stays with the holder,
+	 * taker and all, and the index is not writable here.
+	 */
+	@Test
+	void testAnsweredOfferWaitsForTheFlush() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var pending = new CompletableFuture<Void>();
+		flush = name -> "books".equals(name)
+			? pending
+			: CompletableFuture.completedFuture(null);
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, null).toBuilder()
+					.setLoadBucket(7)
+					.setOffered(true)
+					.setTaker("b")
+					.build(),
+				claim("games", "a", alive, null)
+			),
+			List.of(candidate("b", alive, "http://b:8080"))
+		);
+
+		var ownership = newOwnership("a");
+		var owned = start(ownership);
+
+		await(() -> owned.contains("games"), "the other index to be kept");
+
+		Thread.sleep(LEASE.toMillis() * 2);
+
+		var held = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(held.getNode(), is("a"));
+		assertThat(held.getTaker(), is("b"));
+
+		assertThat(owned.contains("books"), is(false));
+		assertThat(ownership.tryClaim("books"), is(false));
+
+		pending.complete(null);
+
+		await(() -> {
+			try {
+				var books = readTable().getClaimsList().stream()
+					.filter(c -> c.getIndex().equals("books"))
+					.findFirst()
+					.orElseThrow();
+				return "b".equals(books.getNode());
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the finished flush to hand the claim to the taker");
+	}
+
+	/**
+	 * A claim whose offer was answered but whose index was deleted from the
+	 * registry is dropped rather than handed to the taker.
+	 */
+	@Test
+	void testDeletedIndexIsNotHandedToTheTaker() throws Exception {
+		names.set(Sets.immutable.of("games"));
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, null).toBuilder()
+					.setLoadBucket(7)
+					.setOffered(true)
+					.setTaker("b")
+					.build(),
+				claim("games", "a", alive, null)
+			),
+			List.of(candidate("b", alive, "http://b:8080"))
+		);
+
+		var owned = start(newOwnership("a"));
+		await(() -> owned.contains("games"), "the remaining index to be kept");
+
+		await(() -> {
+			try {
+				return readTable().getClaimsList().stream()
+					.noneMatch(c -> c.getIndex().equals("books"));
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the claim on the deleted index to be dropped");
+	}
+
+	/**
+	 * An under-loaded candidate answers an offer by naming itself as taker,
+	 * and does not move the claim itself - only the holder does that.
+	 */
+	@Test
+	void testIdleCandidateAnswersAnOffer() throws Exception {
+		names.set(Sets.immutable.of("books", "films", "games", "music"));
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "other", alive, null).toBuilder()
+					.setLoadBucket(9)
+					.setOffered(true)
+					.build(),
+				claim("games", "other", alive, null).toBuilder()
+					.setLoadBucket(9)
+					.build()
+			),
+			List.of(candidate("other", alive, null))
+		);
+
+		var owned = start(newOwnership("a"));
+		await(() -> owned.size() == 2, "the free indexes to be claimed");
+
+		await(() -> {
+			try {
+				var books = readTable().getClaimsList().stream()
+					.filter(c -> c.getIndex().equals("books"))
+					.findFirst()
+					.orElseThrow();
+				return "a".equals(books.getTaker()) && "other".equals(books.getNode());
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the idle candidate to answer the offer");
+	}
+
+	/**
+	 * The bucket a load is carried in the table as is its bit length, so it
+	 * only moves when the load roughly doubles or halves.
+	 */
+	@Test
+	void testLoadBuckets() {
+		assertThat(ObjectStorageIndexerOwnership.loadBucket(0), is(0));
+		assertThat(ObjectStorageIndexerOwnership.loadBucket(0.5), is(0));
+		assertThat(ObjectStorageIndexerOwnership.loadBucket(1), is(1));
+		assertThat(ObjectStorageIndexerOwnership.loadBucket(3), is(2));
+		assertThat(ObjectStorageIndexerOwnership.loadBucket(4), is(3));
+		assertThat(ObjectStorageIndexerOwnership.loadBucket(1024), is(11));
 	}
 }

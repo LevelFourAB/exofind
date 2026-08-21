@@ -164,6 +164,26 @@ message IndexerLeadership {
 		 * inside the duration to absorb that.
 		 */
 		optional int64 expires_at = 4;
+		/**
+		 * How heavily the index has recently been written where it is held:
+		 * the bit length of a changed-document count that halves as it ages,
+		 * so the value only moves when the load roughly doubles or halves.
+		 * Absent or zero means idle. What candidates compare when they move
+		 * indexes by write load rather than by count.
+		 */
+		optional uint32 load_bucket = 5;
+		/**
+		 * Set when the holder carries more write load than another candidate
+		 * and offers this index up. Withdrawn by the holder writing the claim
+		 * without it once the imbalance is gone.
+		 */
+		optional bool offered = 6;
+		/**
+		 * Candidate that answered the offer. Written into the holder's claim
+		 * by the taker; the holder alone moves the claim, by rewriting it to
+		 * name the taker, so setting this never takes an index by force.
+		 */
+		optional string taker = 7;
 	}
 
 	/**

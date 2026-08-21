@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -338,6 +339,54 @@ public class Indexes {
 	 */
 	public void reopenForWriting(String index) {
 		reopenOwned(index, false);
+	}
+
+	/**
+	 * Push everything this node still holds for an index, for a handover
+	 * this node chose. The open generations of the index are committed,
+	 * pushed and reopened read-only, and evicted instances that are still
+	 * closing are waited out - so when the returned future completes,
+	 * nothing held here can reach the remote anymore. The claim on the index
+	 * is released only then, which is what keeps the successor from pulling
+	 * a manifest the flush had not written yet.
+	 *
+	 * <p>Meaningful only after the ownership change that took the index away
+	 * from this node has reached {@link NodeState} - reopening reads it, and
+	 * flushes nothing for an index the node still writes.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @return
+	 *   completes when nothing more can be pushed from here; a flush that
+	 *   failed completes too, having given the changes up
+	 */
+	public CompletableFuture<Void> flushForHandover(String index) {
+		var flushed = new CompletableFuture<Void>();
+
+		try {
+			refreshExecutor.execute(() -> {
+				try {
+					reopenOwned(index, true);
+
+					// An evicted generation that is still closing may push while it does
+					for(var name : retiring.keySet()) {
+						var parsed = IndexName.tryParse(name).orElse(null);
+						if(parsed != null && parsed.index().equals(index)) {
+							drainRetiring(name, true);
+						}
+					}
+
+					flushed.complete(null);
+				} catch(Throwable t) {
+					flushed.completeExceptionally(t);
+				}
+			});
+		} catch(RejectedExecutionException e) {
+			// Shutting down; the close path flushes everything that is still open
+			flushed.complete(null);
+		}
+
+		return flushed;
 	}
 
 	/**

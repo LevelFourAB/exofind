@@ -8,13 +8,15 @@ import org.eclipse.collections.api.set.ImmutableSet;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.index.state.IndexWriteLoad;
 import se.l4.exofind.engine.storage.StorageMode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
  * NodeState represents the state of this node: whether it may write at all,
- * and which indexes it currently writes.
+ * which indexes it currently writes, and how heavily each of them has
+ * recently been written.
  */
 @ApplicationScoped
 public class NodeState {
@@ -37,6 +39,13 @@ public class NodeState {
 	 * The indexes held by name, for a node granted them one at a time.
 	 */
 	private volatile ImmutableSet<String> owned;
+
+	/**
+	 * How heavily each index has recently been written here, fed by the
+	 * indexes as they serve writes and read when the candidates divide the
+	 * indexes up.
+	 */
+	private final IndexWriteLoad writeLoad;
 
 	private volatile Listener[] listeners;
 	private final ReentrantLock listenerLock;
@@ -65,6 +74,7 @@ public class NodeState {
 		this.indexerCandidate = indexer;
 		this.everything = false;
 		this.owned = Sets.immutable.empty();
+		this.writeLoad = new IndexWriteLoad();
 
 		this.listeners = new Listener[0];
 		this.listenerLock = new ReentrantLock();
@@ -89,6 +99,31 @@ public class NodeState {
 	 */
 	public boolean isIndexer(String index) {
 		return indexerCandidate && (everything || owned.contains(index));
+	}
+
+	/**
+	 * Record that {@code changes} documents of an index changed here, toward
+	 * what {@link #writeLoad(String)} answers.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @param changes
+	 *   how many documents the change covered
+	 */
+	public void recordWrite(String index, long changes) {
+		writeLoad.record(index, changes, System.currentTimeMillis());
+	}
+
+	/**
+	 * How heavily the index has recently been written on this node: changed
+	 * documents, halved for every {@link IndexWriteLoad} half-life that has
+	 * passed. Zero for an index this node never wrote.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 */
+	public double writeLoad(String index) {
+		return writeLoad.get(index, System.currentTimeMillis());
 	}
 
 	/**

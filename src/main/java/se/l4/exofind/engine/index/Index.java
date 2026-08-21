@@ -1221,8 +1221,9 @@ public class Index {
 
 	/**
 	 * Record that the contents of the index have changed: the index holds
-	 * something the remote does not until the next push, and the change counts
-	 * towards the next commit this index makes on its own.
+	 * something the remote does not until the next push, the change counts
+	 * towards the next commit this index makes on its own, and towards the
+	 * write load the node sheds indexes by.
 	 *
 	 * @param changes
 	 *   how many documents the change covered
@@ -1234,6 +1235,7 @@ public class Index {
 		}
 
 		commitManager.recordChange(changes);
+		nodeState.recordWrite(indexName, changes);
 	}
 
 	/**
