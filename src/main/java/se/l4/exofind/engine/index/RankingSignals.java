@@ -45,12 +45,33 @@ public final class RankingSignals extends DoubleValuesSource {
 	 * @param signals
 	 * @return
 	 */
-	public static DoubleValuesSource of(ListIterable<Applied> signals) {
+	public static RankingSignals of(ListIterable<Applied> signals) {
 		if(signals.isEmpty()) {
 			return null;
 		}
 
 		return new RankingSignals(Lists.immutable.ofAll(signals));
+	}
+
+	/**
+	 * Get a value no multiplier these signals produce exceeds.
+	 *
+	 * <p>Every shape answers at most one, so a signal contributes at most
+	 * {@code 1 + weight} and the product of those is a ceiling on what
+	 * {@link #getValues} can say for any document. Rounded upward past any
+	 * floating point error, so the bound holds rather than merely almost
+	 * holds - it is what lets a search skip documents whose score cannot
+	 * compete even lifted this far.
+	 *
+	 * @return
+	 */
+	public double maxMultiplier() {
+		var product = 1d;
+		for(var signal : signals) {
+			product *= 1 + signal.weight();
+		}
+
+		return Math.nextUp(product);
 	}
 
 	@Override
@@ -107,7 +128,7 @@ public final class RankingSignals extends DoubleValuesSource {
 	}
 
 	@Override
-	public DoubleValuesSource rewrite(IndexSearcher searcher) throws IOException {
+	public RankingSignals rewrite(IndexSearcher searcher) throws IOException {
 		var rewritten = Lists.mutable.<Applied>ofInitialCapacity(signals.size());
 		var changed = false;
 
@@ -209,7 +230,47 @@ public final class RankingSignals extends DoubleValuesSource {
 				return 1;
 			}
 
-			return Math.pow(0.5, age / halfLifeMillis);
+			return halving(age / (double) halfLifeMillis);
+		}
+
+		private static final double LN2 = Math.log(2);
+
+		/*
+		 * Coefficients of the Taylor series of e^t, for the fraction left
+		 * after the halvings below are taken out whole.
+		 */
+		private static final double C2 = 1 / 2d;
+		private static final double C3 = 1 / 6d;
+		private static final double C4 = 1 / 24d;
+		private static final double C5 = 1 / 120d;
+		private static final double C6 = 1 / 720d;
+		private static final double C7 = 1 / 5040d;
+
+		/**
+		 * Get what is left after halving something {@code x} times, {@code x}
+		 * at least zero.
+		 *
+		 * <p>Computed here rather than asked of {@link Math#pow}, which
+		 * answers to the full width of a double and costs the better part of
+		 * ranking a document to do it - this runs once per document scored.
+		 * The whole halvings are taken out through the exponent of the result,
+		 * and what a fraction of one leaves is a series that stops when the
+		 * terms fall below what a score can hold: the answer is within
+		 * {@code 1e-8} of the true value, an order under the ulp of the float
+		 * the score becomes.
+		 */
+		private static double halving(double x) {
+			if(x > 1100) {
+				// Closer to nothing than any width of number can tell apart
+				return 0;
+			}
+
+			var whole = Math.rint(x);
+			var t = (whole - x) * LN2;
+			var fraction = 1 + t * (1 + t * (C2 + t * (C3 + t * (C4
+				+ t * (C5 + t * (C6 + t * C7))))));
+
+			return Math.scalb(fraction, -(int) whole);
 		}
 	}
 }

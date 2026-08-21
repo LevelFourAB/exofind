@@ -2,7 +2,6 @@ package se.l4.exofind.engine.index;
 
 import java.util.Locale;
 
-import org.apache.lucene.queries.function.FunctionScoreQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DisjunctionMaxQuery;
@@ -586,7 +585,7 @@ public class QueryCompiler {
 			);
 		}
 
-		return FunctionScoreQuery.boostByValue(query, RankingSignals.of(applied));
+		return new SignalScoreQuery(query, RankingSignals.of(applied));
 	}
 
 	/**
