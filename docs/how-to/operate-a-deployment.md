@@ -259,5 +259,7 @@ routing somewhere:
   named here.
 - [Run more than one node](run-multiple-nodes.md) - candidacy, failover and
   where writes go.
+- [Deploy on Kubernetes](deploy-on-kubernetes.md) - the same deployment as
+  manifests, split into a pool that searches and a pool that writes.
 - [Architecture](../explanation/architecture.md) - why a node holds nothing
   worth backing up.

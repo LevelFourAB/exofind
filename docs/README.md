@@ -45,6 +45,9 @@ is, and explanation says why it is that way.
   nothing else running, and what that costs.
 - [Run more than one node](how-to/run-multiple-nodes.md) - indexer candidacy,
   failover and how writes find the indexer.
+- [Deploy on Kubernetes](how-to/deploy-on-kubernetes.md) - a pool that
+  searches and a pool that writes, where the writes go, and what many indexes
+  need from the host.
 - [Operate a deployment](how-to/operate-a-deployment.md) - see what each node
   is serving, tell a node that is behind from one that is broken, keep disk
   and upgrades in hand.

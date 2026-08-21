@@ -54,3 +54,10 @@ A node opens every index it is asked for and keeps it synchronized. On a
 node that serves many indexes, `INDEXES_MAX_OPEN` bounds how many are kept
 open at once - the least recently used are closed to make room, and open
 again when next asked for.
+
+## Related
+
+- [Deploy on Kubernetes](deploy-on-kubernetes.md) - this deployment as
+  manifests, with the candidates in a pool of their own.
+- [Operate a deployment](operate-a-deployment.md) - what to check once it is
+  running.
