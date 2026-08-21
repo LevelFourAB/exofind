@@ -43,7 +43,7 @@ to 100 000 documents.
 | ---------------------- | ---------------------------------------------------------------------------------------------- |
 | `FilterBenchmark`      | Narrowing without ranking - equality, ranges, prefixes, negation, a subtree, a distance, and what an exact total costs. |
 | `TextSearchBenchmark`  | Text from a search box - one word, several, half-typed, misspelled, quoted, highlighted, and the second pass a search that found nothing makes. |
-| `FacetBenchmark`       | Counting the matches per value, per bucket and down a tree, one facet and a page's worth.       |
+| `FacetBenchmark`       | Counting the matches per value, per bucket and down a tree - one facet, a page's worth, beside a filter on the facet's own field, and refreshing counts alone with nothing fetched. |
 | `SortAndPageBenchmark` | Ordering by a field rather than by relevance, ranking signals, and a deep page reached by offset against the same page reached by cursor. |
 | `NestedBenchmark`      | Conditions on the values inside an object field, and counting them.                             |
 

@@ -26,6 +26,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.StoredField;
+import org.apache.lucene.facet.FacetsCollector;
 import org.apache.lucene.facet.FacetsCollectorManager;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
@@ -2470,10 +2471,7 @@ public class Index {
 				 * document may be ordered by off the clauses of the search, so
 				 * the order is decided by the same values the search matched.
 				 */
-				var sort = compiler.compileSort(
-					request.sort(),
-					request.query().newWithAll(request.filters())
-				);
+				var sort = compiler.compileSort(request.sort(), searched);
 
 				/*
 				 * Resolved before anything runs, so a field that can not be
@@ -2508,11 +2506,25 @@ public class Index {
 				);
 				if(wanted == 0) {
 					/*
-					 * Nothing to rank and nothing to read, which is the cheapest
-					 * way to answer how many documents match - and the count is
-					 * also what says whether anything was found at all.
+					 * Nothing to rank and nothing to read. A search with a limit
+					 * of zero and facets is how a filtering UI refreshes its
+					 * counts without fetching hits, and counting those collects
+					 * every match anyway - so that collection is made here and
+					 * doubles as the exact total. Without facets, counting alone
+					 * is the cheapest way to answer. Either number is also what
+					 * says whether anything was found at all.
 					 */
-					var count = searcher.count(query);
+					var withFacets = !request.facets().isEmpty();
+					FacetsCollector matches = null;
+
+					long count;
+					if(withFacets) {
+						matches = searcher.search(query, new FacetsCollectorManager());
+						count = matchCount(matches);
+					} else {
+						count = searcher.count(query);
+					}
+
 					if(count == 0) {
 						var outcome = relax(searcher, compiler, request);
 						if(outcome != null) {
@@ -2520,19 +2532,19 @@ public class Index {
 							relaxed = outcome.relaxed();
 							searched = request.query().newWithAll(request.filters());
 							query = parentsOnly(compiler.compile(searched), compiler, searched);
-							count = searcher.count(query);
+
+							if(withFacets) {
+								matches = searcher.search(query, new FacetsCollectorManager());
+								count = matchCount(matches);
+							} else {
+								count = searcher.count(query);
+							}
 						}
 					}
 
-					/*
-					 * A search with a limit of zero and facets is how a
-					 * filtering UI refreshes its counts without fetching hits.
-					 * Counting collects every match, so it also knows the exact
-					 * total.
-					 */
-					var counted = request.facets().isEmpty()
-						? null
-						: countFacets(searcher, compiler, request);
+					var counted = withFacets
+						? countFacets(searcher, compiler, request, searched, query, matches)
+						: null;
 
 					return new SearchResult(
 						Lists.immutable.empty(),
@@ -2624,11 +2636,15 @@ public class Index {
 				 * Counted from the query the hits came from, so a relaxed search
 				 * does not offer filters for a set of documents it is not
 				 * showing. Counting collects every match, so it also knows the
-				 * exact total.
+				 * exact total. Collected on a pass of its own rather than while
+				 * the page was ranked: a collector that has to see every match
+				 * would keep the ranking from ending early and force a score for
+				 * every document, which measures slower than the extra pass -
+				 * see FacetBenchmark before reshaping this.
 				 */
 				var faceted = request.facets().isEmpty()
 					? null
-					: countFacets(searcher, compiler, request);
+					: countFacets(searcher, compiler, request, searched, query, null);
 
 				var reader = documentReader(request.fields());
 				var names = reader.namesOf();
@@ -2930,18 +2946,30 @@ public class Index {
 	 * way, which is what keeps the sideways rule true down a tree: the filter
 	 * that drilled into a level is a filter on the facet's own field, so it is
 	 * left out and the levels beside the chosen one stay countable.
+	 *
+	 * @param clauses
+	 *   the clauses the search ran with, query and filters together
+	 * @param documents
+	 *   those clauses compiled, matching the documents of the search
+	 * @param whole
+	 *   the matches of {@code documents} where the caller already collected
+	 *   them, or {@code null} to collect them here - either way the scope of
+	 *   every facet no filter names
 	 */
 	private Faceted countFacets(
 		IndexSearcher searcher,
 		QueryCompiler compiler,
-		SearchRequest request
+		SearchRequest request,
+		ListIterable<Query> clauses,
+		org.apache.lucene.search.Query documents,
+		FacetsCollector whole
 	) throws IOException {
 		var reader = searcher.getIndexReader();
 		var filtered = request.filters().collect(FieldQuery::field).toSet();
 
-		var clauses = request.query().newWithAll(request.filters());
-		var documents = parentsOnly(compiler.compile(clauses), compiler, clauses);
-		var whole = searcher.search(documents, new FacetsCollectorManager());
+		if(whole == null) {
+			whole = searcher.search(documents, new FacetsCollectorManager());
+		}
 
 		var collectors = Maps.mutable.<String, FacetMatches>empty();
 		var values = Maps.mutable.<String, FacetMatches>empty();
@@ -3014,12 +3042,20 @@ public class Index {
 			}
 		}
 
+		return new Faceted(counts.toImmutable(), matchCount(whole));
+	}
+
+	/**
+	 * Get how many documents a collection of matches holds, which for matches
+	 * collected over a whole search is its exact total.
+	 */
+	private static long matchCount(FacetsCollector matches) {
 		var total = 0L;
-		for(var docs : whole.getMatchingDocs()) {
+		for(var docs : matches.getMatchingDocs()) {
 			total += docs.totalHits();
 		}
 
-		return new Faceted(counts.toImmutable(), total);
+		return total;
 	}
 
 	/**

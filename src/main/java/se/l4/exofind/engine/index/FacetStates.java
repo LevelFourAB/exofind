@@ -7,6 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.lucene.facet.StringDocValuesReaderState;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.SortedSetDocValues;
 
 /**
  * What counting a string facet has to know about a reader before it can count,
@@ -27,6 +29,18 @@ import org.apache.lucene.index.IndexReader;
  */
 final class FacetStates {
 	private static final Map<IndexReader.CacheKey, Map<String, StringDocValuesReaderState>> states =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * The distinct values of one segment of a field counted a level at a time,
+	 * decoded once per segment rather than once per search - reading them walks
+	 * the term dictionary of the segment, which costs the same however few
+	 * documents matched. Small because such a field holds a tree of levels
+	 * rather than one value per document. Keyed by the core of the segment,
+	 * which survives the reader being reopened, and dropped when the core goes
+	 * away.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, String[]>> values =
 		new ConcurrentHashMap<>();
 
 	private FacetStates() {
@@ -96,5 +110,63 @@ final class FacetStates {
 		}
 
 		return state;
+	}
+
+	/**
+	 * Get every value one segment holds for a field, by ordinal, decoding them
+	 * the first time the segment is asked for.
+	 *
+	 * A segment that cannot say when its core goes away is not kept, as an
+	 * entry for it could never be dropped; its values are decoded and handed
+	 * back without being remembered.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param docValues
+	 *   the doc values of that field in that segment, not advanced by this
+	 * @return
+	 * @throws IOException
+	 */
+	static String[] valuesOf(
+		LeafReaderContext context,
+		String field,
+		SortedSetDocValues docValues
+	) throws IOException {
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return decode(docValues);
+		}
+
+		var key = helper.getKey();
+		var fields = values.get(key);
+		if(fields == null) {
+			fields = values.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+
+			/*
+			 * Registered against the key rather than against the map, so a
+			 * segment that went away while this was being built drops what was
+			 * put under it instead of leaving it behind.
+			 */
+			helper.addClosedListener(values::remove);
+		}
+
+		var decoded = fields.get(field);
+		if(decoded == null) {
+			decoded = decode(docValues);
+			fields.put(field, decoded);
+		}
+
+		return decoded;
+	}
+
+	private static String[] decode(SortedSetDocValues docValues) throws IOException {
+		var decoded = new String[(int) docValues.getValueCount()];
+		for(var ord = 0; ord < decoded.length; ord++) {
+			decoded[ord] = docValues.lookupOrd(ord).utf8ToString();
+		}
+
+		return decoded;
 	}
 }

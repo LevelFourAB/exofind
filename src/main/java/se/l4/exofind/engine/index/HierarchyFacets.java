@@ -96,13 +96,16 @@ final class HierarchyFacets {
 
 			/*
 			 * The path each ordinal stands for when it is one the facet asked
-			 * about, and null when it is not. Read once here, so the walk below
-			 * neither looks a term up nor measures a path per document.
+			 * about, and null when it is not. Decided once here over the values
+			 * of the segment - decoded once per segment, not per search - so
+			 * the walk below neither looks a term up nor measures a path per
+			 * document.
 			 */
-			var counted = new String[(int) values.getValueCount()];
+			var paths = FacetStates.valuesOf(context, field, values);
+			var counted = new String[paths.length];
 			var asked = 0;
 			for(var ord = 0; ord < counted.length; ord++) {
-				var value = values.lookupOrd(ord).utf8ToString();
+				var value = paths[ord];
 				if(scope.holds(value)) {
 					counted[ord] = value;
 					asked++;
@@ -263,11 +266,13 @@ final class HierarchyFacets {
 	 * Which levels of the tree one facet asked about, and how a path is taken
 	 * apart to tell.
 	 *
-	 * Whether a level is in scope is judged on the normalized path, the same
-	 * reading that decides which documents narrowing to a subtree finds, so a
-	 * path answered by one is a path the other takes. What is counted and
-	 * answered is the level as it was given, which is what a reader
-	 * recognises.
+	 * Whether a path sits under the level being counted from is judged on the
+	 * normalized path, the same reading that decides which documents narrowing
+	 * to a subtree finds, so a path answered by one is a path the other takes.
+	 * How deep it reaches is read off its separators, which normalizing never
+	 * touches, so counting from the top - which asks nothing about a prefix -
+	 * normalizes nothing. What is counted and answered is the level as it was
+	 * given, which is what a reader recognises.
 	 */
 	private static final class Scope {
 		private final String separator;
@@ -295,12 +300,11 @@ final class HierarchyFacets {
 		 * Get whether the facet asked about the given path.
 		 */
 		boolean holds(String value) {
-			var normalized = normalize.apply(value);
-			if(prefix != null && !normalized.startsWith(prefix)) {
+			if(prefix != null && !normalize.apply(value).startsWith(prefix)) {
 				return false;
 			}
 
-			var below = levels(normalized) - base;
+			var below = levels(value) - base;
 			return below >= 1 && below <= depth;
 		}
 

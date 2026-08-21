@@ -20,6 +20,7 @@ import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
+import se.l4.exofind.engine.query.matchers.Matchers;
 
 /**
  * What counting the matches per value costs on top of finding them.
@@ -44,6 +45,8 @@ public class FacetBenchmark {
 	private SearchRequest hierarchyFacetThreeLevels;
 	private SearchRequest everyFacet;
 	private SearchRequest everyFacetOnText;
+	private SearchRequest everyFacetCountsOnly;
+	private SearchRequest sidewaysFacet;
 
 	@Setup(Level.Trial)
 	public void requests(LoadedIndex state) {
@@ -102,6 +105,22 @@ public class FacetBenchmark {
 		everyFacetOnText = roles.text().isEmpty()
 			? null
 			: all.withQuery(Query.text(state.commonTerm())).build();
+
+		/*
+		 * How a filtering page refreshes its counts without fetching hits - the
+		 * same facets with nothing to rank or read.
+		 */
+		everyFacetCountsOnly = all.withLimit(0).build();
+
+		/*
+		 * A ticked refinement beside a facet on the same field, which is the
+		 * one facet that can not share the matches of the search - it counts
+		 * sideways of the filter, so its scope is collected on its own.
+		 */
+		sidewaysFacet = SearchRequest.create()
+			.addFacet(Facet.of(keyword))
+			.addFilter(Query.field(keyword, Matchers.equalTo(state.spec.keywordValue(0))))
+			.build();
 	}
 
 	@Benchmark
@@ -142,6 +161,16 @@ public class FacetBenchmark {
 	@Benchmark
 	public SearchResult everyFacetOnText(LoadedIndex state) throws IOException {
 		return state.index.search(required(state, everyFacetOnText, "text"));
+	}
+
+	@Benchmark
+	public SearchResult everyFacetCountsOnly(LoadedIndex state) throws IOException {
+		return state.index.search(everyFacetCountsOnly);
+	}
+
+	@Benchmark
+	public SearchResult sidewaysFacet(LoadedIndex state) throws IOException {
+		return state.index.search(sidewaysFacet);
 	}
 
 	private static SearchRequest required(LoadedIndex state, SearchRequest request, String part) {
