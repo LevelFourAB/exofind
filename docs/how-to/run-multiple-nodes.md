@@ -8,7 +8,10 @@ other. Adding a node is starting another process against the same bucket.
 Start any number of nodes with the same remote storage configuration and
 `INDEXER` left off. Each finds the indexes in the bucket on its own, pulls
 them, and answers searches from its local copy - a search runs on whichever
-node receives it, so put the nodes behind any load balancer.
+node receives it, so put the nodes behind any load balancer. Point its check
+at `/q/health/ready`, which a node answers without a key and only once it has
+read the registry - see [Ask whether a node is
+up](operate-a-deployment.md#ask-whether-a-node-is-up).
 
 A reader is as current as its last pull, on the interval set by
 `INDEXES_REFRESH_INTERVAL` (30s by default). Lower it for fresher reads at

@@ -5,8 +5,9 @@ serving, whether it is current, which node is writing, and what to do when
 disk, an upgrade or a lost node gets in the way. Setting one up is [Run more
 than one node](run-multiple-nodes.md); this is the day after.
 
-There is no separate metrics or health endpoint. What a node will tell you is
-the status of the indexes it holds, and its log.
+A node answers health endpoints for whatever decides where requests go.
+Everything past that is the status of the indexes it holds and its log; there
+is no metrics endpoint.
 
 ## Check what a node came up as
 
@@ -34,6 +35,55 @@ never reads.
 Stopping closes the open indexes, and an index this node has changed is pushed
 as it closes. `Closing the open indexes` is what a stop that takes its time is
 waiting on.
+
+## Ask whether a node is up
+
+Three endpoints, answered without a key:
+
+| Endpoint | Answers |
+|----------|---------|
+| `GET /q/health/ready` | Whether to send this node requests |
+| `GET /q/health/live` | Whether restarting this node would help |
+| `GET /q/health` | Both together |
+
+`200` is up and `503` is down. The body names the checks behind the answer:
+
+```json
+{
+  "status": "UP",
+  "checks": [
+    { "name": "index-registry", "status": "UP" },
+    {
+      "name": "index-refresh",
+      "status": "UP",
+      "data": { "secondsSinceRefresh": 12 }
+    }
+  ]
+}
+```
+
+`index-registry` is the readiness one. A node is ready once it has read the
+registry - the object saying which indexes exist and which generation each
+name answers for - which is the first thing it does, so readiness follows
+`Listening on` by a moment. A node that stays unready is one that never
+reached its storage, whatever it holds on disk. Failing to read the registry
+later does not take readiness away again: the node goes on serving the copy it
+has, which is worth more to the deployment than losing a node over a storage
+that will be back.
+
+`index-refresh` is the liveness one, and it reports only whether the refresh
+loop is still running. That loop is what keeps a node in step with the
+deployment, and a node whose loop has stopped answers searches from what it
+held when it stopped for as long as it is left running - which is the state
+worth restarting for. A pass that fails is still a pass: an unreachable bucket
+is a `WARN` in the log and leaves this up, because restarting the node would
+not mend it. `secondsSinceRefresh` has to grow past four
+`INDEXES_REFRESH_INTERVAL`s, and never less than a minute, before the answer
+turns.
+
+Neither says anything about the indexer role. Taking it and giving it up is a
+healthy node doing its job - [which node is writing](#know-which-node-is-writing)
+is asked in another way.
 
 ## See what a node is serving
 

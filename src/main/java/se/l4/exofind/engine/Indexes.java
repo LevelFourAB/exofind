@@ -151,6 +151,24 @@ public class Indexes {
 	private volatile boolean registryRead;
 
 	/**
+	 * How often {@link #refresh()} is scheduled to run.
+	 */
+	private final Duration refreshInterval;
+
+	/**
+	 * When the refresh loop last finished a pass, as {@link System#nanoTime()}.
+	 * Set before the first pass is scheduled, so that the time since a refresh
+	 * is measured from the node starting rather than from zero.
+	 */
+	private volatile long lastRefreshNanos;
+
+	/**
+	 * Whether a pass is running right now, which is what keeps a long pull from
+	 * looking like a loop that has stopped.
+	 */
+	private volatile boolean refreshing;
+
+	/**
 	 * Reacts to this node gaining or losing the indexer role by reopening
 	 * the open indexes in the right mode. Kept so it can be unregistered.
 	 */
@@ -243,6 +261,8 @@ public class Indexes {
 		 * remote that is slow to answer should delay indexes showing up and
 		 * not the node starting.
 		 */
+		this.refreshInterval = refreshInterval;
+		this.lastRefreshNanos = System.nanoTime();
 		this.refreshExecutor = Executors.newSingleThreadScheduledExecutor();
 		this.refreshExecutor.scheduleWithFixedDelay(
 			this::refresh,
@@ -466,6 +486,7 @@ public class Indexes {
 	 * one that does needs this to pick up an index whose pull failed earlier.
 	 */
 	void refresh() {
+		refreshing = true;
 		try {
 			if(registry.refresh()) {
 				registryRead = true;
@@ -500,6 +521,14 @@ public class Indexes {
 			logger.atWarn()
 				.setCause(e)
 				.log("Could not refresh indexes; " + e.getMessage());
+		} finally {
+			/*
+			 * A pass that failed is still a pass. What the time since one says
+			 * is whether the loop is running, and a remote that will not answer
+			 * is not something restarting the node would mend.
+			 */
+			lastRefreshNanos = System.nanoTime();
+			refreshing = false;
 		}
 	}
 
@@ -970,6 +999,51 @@ public class Indexes {
 	 */
 	public ImmutableSet<String> getIndexNames() {
 		return registry.names();
+	}
+
+	/**
+	 * Get whether this node has read the registry since it started.
+	 *
+	 * <p>Until it has, this node knows nothing of what the deployment holds:
+	 * {@link #getIndexNames()} is empty whatever lies in its directory, and a
+	 * name it is asked for has to be looked up before it can be answered at
+	 * all. It stays {@code true} once a read has succeeded - a later one that
+	 * fails leaves the node on the copy it has rather than on nothing.
+	 *
+	 * @return
+	 */
+	public boolean hasReadRegistry() {
+		return registryRead;
+	}
+
+	/**
+	 * Get how long it has been since the refresh loop finished a pass, which
+	 * is at most {@link #getRefreshInterval()} on a node that is keeping up.
+	 *
+	 * <p>A pass that is running counts as none of it: pulling a large index
+	 * takes as long as it takes, and a node fetching what it was asked for has
+	 * not fallen behind. A pass that failed still counts as one, so this grows
+	 * without bound only while the loop is not running at all - which is a
+	 * state the node does not leave on its own.
+	 *
+	 * @return
+	 */
+	public Duration getTimeSinceRefresh() {
+		if(refreshing) {
+			return Duration.ZERO;
+		}
+
+		return Duration.ofNanos(System.nanoTime() - lastRefreshNanos);
+	}
+
+	/**
+	 * Get how long the refresh loop waits between passes, as
+	 * {@code INDEXES_REFRESH_INTERVAL} names it.
+	 *
+	 * @return
+	 */
+	public Duration getRefreshInterval() {
+		return refreshInterval;
 	}
 
 	/**
