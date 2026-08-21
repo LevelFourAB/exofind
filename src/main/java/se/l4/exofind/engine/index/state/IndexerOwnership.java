@@ -30,9 +30,11 @@ public interface IndexerOwnership {
 	void start(Listener listener);
 
 	/**
-	 * Stop competing, giving up every held index for successors. The listener
-	 * is not called for that - this runs on shutdown, where there is nothing
-	 * left to react.
+	 * Stop competing, giving up every held index for successors. Handled
+	 * like a handover this node chose: the listener hears about every loss,
+	 * and an index is given up only once what it still held here has been
+	 * pushed - so a successor that takes it at once never pulls a manifest
+	 * the shutdown flush had not written yet.
 	 */
 	void stop();
 

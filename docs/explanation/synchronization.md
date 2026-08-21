@@ -85,11 +85,14 @@ and once the flush has landed, a later round moves the claim: to the taker,
 or dropped for a candidate below its share to pick up. A successor that
 sees the index as its to write therefore always pulls a manifest that
 already carries the flush, so documents that were acknowledged but not yet
-committed survive a rebalance. Losing an index the uncertain way
-- claims lapsing before they could be renewed - pushes nothing, because a
-successor may already be writing; whatever was never pushed is dropped, and
-the conditional writes below are what keep even that from corrupting
-anything.
+committed survive a rebalance. A node shutting down keeps the same order
+for everything it holds: flush first, step out of the table after - and a
+flush that outlives the lease leaves the claims to lapse the way a crashed
+node's would, rather than free them mid-flush. Losing an index the
+uncertain way - claims lapsing before they could be renewed - pushes
+nothing, because a successor may already be writing; whatever was never
+pushed is dropped, and the conditional writes below are what keep even
+that from corrupting anything.
 
 An index nothing holds does not wait for a round: the first write to reach a
 candidate claims it there and then, which is how a just-created index gets a

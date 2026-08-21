@@ -350,6 +350,45 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	/**
+	 * Shutting down is a handover too: the claims stay in the table until the
+	 * flush of what was held here has finished, so a successor that takes an
+	 * index the moment the claim goes can never pull a manifest the shutdown
+	 * flush had not written yet.
+	 */
+	@Test
+	void testStopReleasesTheClaimsOnlyAfterTheFlush() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var pending = new CompletableFuture<Void>();
+		flush = name -> pending;
+
+		var ownership = newOwnership("a");
+		var owned = start(ownership);
+		await(() -> owned.contains("books"), "the candidate to take the index");
+
+		var stopping = new Thread(ownership::stop);
+		stopping.start();
+
+		await(owned::isEmpty, "the index to stop being written here");
+
+		// The flush is still running, so the claim has to stay in the table
+		Thread.sleep(300);
+		var claim = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(claim.getNode(), is("a"));
+
+		pending.complete(null);
+		stopping.join(15_000);
+		assertThat(stopping.isAlive(), is(false));
+
+		var table = readTable();
+		assertThat(table.getClaimsList(), is(List.of()));
+		assertThat(table.getCandidatesList(), is(List.of()));
+	}
+
+	/**
 	 * A candidate that joins a running deployment is handed indexes one round
 	 * at a time, until both hold a fair share.
 	 */

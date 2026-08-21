@@ -73,7 +73,10 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * the taker, or dropped so a candidate below its share picks the index up.
  * A successor that sees the claim naming it can therefore never pull a
  * manifest the flush had not written yet, which is what makes documents
- * acknowledged here survive the handover.
+ * acknowledged here survive the handover. Shutting down hands everything
+ * held over in the same order - flushed first, stepped out of the table
+ * after - and a flush that outlives the lease leaves the claims to lapse
+ * the way a crashed node's would.
  *
  * An index nothing holds - just created, or its holder just died - is taken
  * by whichever candidate is asked to write it, through {@link #tryClaim},
@@ -302,6 +305,16 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	public void stop() {
 		started = false;
 
+		/*
+		 * Shutting down is a handover this node chose, so it keeps the order
+		 * of one: the listener hears about every loss, what the indexes still
+		 * hold is flushed, and only then are the claims stepped out of. The
+		 * other way around frees the claims while the flush is still writing,
+		 * and a successor that takes one at once could pull a manifest the
+		 * flush had not written yet.
+		 */
+		var flushed = flushOnShutdown();
+
 		executor.shutdown();
 		try {
 			if(!executor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -313,11 +326,80 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 
 		/*
+		 * Waiting is bounded by the lease: past it the claims have lapsed on
+		 * their own, and there is nothing left to step out of but the
+		 * candidacy. A flush still running then is left behind the way a
+		 * crashed node's would be - successors wait the claims out, and the
+		 * conditional manifest writes keep a push that loses that race from
+		 * doing damage.
+		 */
+		var flushDone = false;
+		try {
+			flushed.get(leaseDuration.toMillis(), TimeUnit.MILLISECONDS);
+			flushDone = true;
+		} catch(InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} catch(ExecutionException | TimeoutException e) {
+			// Still flushing; the claims stay so the successor keeps waiting
+		}
+
+		/*
 		 * Even a node that holds nothing has a live candidate entry in the
 		 * table, which free-index writes are otherwise forwarded to until it
 		 * lapses.
 		 */
-		release();
+		release(flushDone);
+	}
+
+	/**
+	 * Give every held index up for shutdown, the way a chosen handover does:
+	 * the listener hears about the loss first, so the flush asked for after
+	 * it pushes what the index still holds. Flushes already running for
+	 * draining indexes are waited on the same way - their claims are about
+	 * to be stepped out of too.
+	 *
+	 * @return
+	 *   completes when nothing here can be pushed anymore; a flush that
+	 *   failed counts, having given its changes up
+	 */
+	private CompletableFuture<Void> flushOnShutdown() {
+		var flushed = new CompletableFuture<Void>();
+
+		try {
+			executor.execute(() -> {
+				var pending = new ArrayList<CompletableFuture<?>>(drainFlushes.values());
+
+				for(var name : held) {
+					logger.atInfo()
+						.addKeyValue("node", node)
+						.addKeyValue("index", name)
+						.log("Handing over writing the index");
+
+					try {
+						listener.onOwnershipChanged(name, false);
+						pending.add(handoverFlush.apply(name));
+					} catch(RuntimeException e) {
+						logger.atWarn()
+							.addKeyValue("node", node)
+							.addKeyValue("index", name)
+							.setCause(e)
+							.log("Could not flush before handing the index over; " + e.getMessage());
+					}
+				}
+
+				held = Sets.immutable.empty();
+				draining = Sets.immutable.empty();
+				drainFlushes.clear();
+
+				CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
+					.whenComplete((result, e) -> flushed.complete(null));
+			});
+		} catch(RejectedExecutionException e) {
+			// Never started, so nothing is held and there is nothing to flush
+			flushed.complete(null);
+		}
+
+		return flushed;
 	}
 
 	@Override
@@ -470,6 +552,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * indexes.
 	 */
 	private void tick() {
+		if(!started) {
+			// Stopping; what happens to the claims is the shutdown flush's now
+			return;
+		}
+
 		try {
 			coordinate();
 		} catch(Exception e) {
@@ -534,6 +621,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * to hold the index alive.
 	 */
 	private boolean claimTarget(String index) {
+		if(!started) {
+			// Queued before the stop; taking an index now would never release it
+			return false;
+		}
+
 		if(held.contains(index)) {
 			return true;
 		}
@@ -1201,8 +1293,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * every candidate rewrites the table all the time and there is no next
 	 * round to try again on. Best effort - failing means successors wait
 	 * like for a crashed node.
+	 *
+	 * @param includeClaims
+	 *   whether the claims are stepped out of too, which is only safe once
+	 *   nothing here can be pushed anymore; {@code false} leaves them to
+	 *   lapse, keeping successors waiting on a flush still running
 	 */
-	private void release() {
+	private void release(boolean includeClaims) {
 		try {
 			for(var attempt = 0; attempt < 3; attempt++) {
 				var fetched = fetchTable();
@@ -1218,7 +1315,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				}
 
 				for(var claim : fetched.table().getClaimsList()) {
-					if(!node.equals(claim.getNode())) {
+					if(!includeClaims || !node.equals(claim.getNode())) {
 						builder.addClaims(claim);
 					}
 				}
