@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.index.state;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -83,6 +85,63 @@ public interface IndexerOwnership {
 	 * @return
 	 */
 	Optional<String> indexerAddress(String index);
+
+	/**
+	 * How the indexes are divided up right now: the candidates that are
+	 * alive, and per index some node writes, who writes it. Answers from
+	 * what this node knows rather than by coordinating, so the answer may
+	 * lag reality the way {@link #indexerAddress(String)} does - and any
+	 * node can ask, a candidate or not.
+	 *
+	 * @return
+	 *   the division as this node knows it, or empty when it knows nothing -
+	 *   the shared state could not be read. A deployment where nothing
+	 *   competes is not empty: it is an {@link Overview} with nothing in it.
+	 */
+	Optional<Overview> overview();
+
+	/**
+	 * The division of the indexes as one moment knew it. Lapsed entries are
+	 * left out: an index whose claim lapsed has no writer until something
+	 * takes it, so it is answered the way an unclaimed index is - by not
+	 * appearing.
+	 *
+	 * @param candidates
+	 *   the nodes competing for indexes, ordered by node
+	 * @param claims
+	 *   one entry per index some node writes, ordered by index
+	 */
+	record Overview(List<Candidate> candidates, List<Claim> claims) {
+	}
+
+	/**
+	 * A node competing for indexes.
+	 *
+	 * @param node
+	 *   the name the node competes under
+	 * @param address
+	 *   where writes can be sent, empty when the node offered none
+	 * @param expiresAt
+	 *   when the candidacy lapses unless the node renews it
+	 */
+	record Candidate(String node, Optional<String> address, Instant expiresAt) {
+	}
+
+	/**
+	 * One index and the node writing it.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @param node
+	 *   the node writing the index
+	 * @param address
+	 *   where writes for the index can be sent, empty when the node offered
+	 *   none
+	 * @param expiresAt
+	 *   when the claim lapses unless the node renews it
+	 */
+	record Claim(String index, String node, Optional<String> address, Instant expiresAt) {
+	}
 
 	@FunctionalInterface
 	interface Listener {

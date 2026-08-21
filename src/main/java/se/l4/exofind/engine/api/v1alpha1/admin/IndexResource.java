@@ -13,6 +13,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexListResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexStatus;
+import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexerInfo;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
@@ -22,6 +23,7 @@ import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
+import se.l4.exofind.engine.index.state.IndexerOwnership;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -76,10 +78,12 @@ public class IndexResource {
 
 	private final Indexes indexes;
 	private final AuthContext auth;
+	private final IndexerOwnership ownership;
 
-	public IndexResource(Indexes indexes, AuthContext auth) {
+	public IndexResource(Indexes indexes, AuthContext auth, IndexerOwnership ownership) {
 		this.indexes = indexes;
 		this.auth = auth;
+		this.ownership = ownership;
 	}
 
 	/**
@@ -363,14 +367,32 @@ public class IndexResource {
 			.toList();
 	}
 
-	private static IndexStatus toStatus(Index index) {
+	private IndexStatus toStatus(Index index) {
 		var createdMajor = index.getLuceneCreatedMajor();
 
 		return new IndexStatus(
 			index.getState(),
 			index.isReadOnly(),
+			indexerOf(IndexName.parse(index.getId()).index()),
 			index.getLuceneCompatibility(),
 			createdMajor.isPresent() ? createdMajor.getAsInt() : null
 		);
+	}
+
+	/**
+	 * The node currently writing the index, or {@code null} when no node
+	 * holds it, when who does could not be read, or when there is no shared
+	 * state to name one in - a node storing locally, where {@code readOnly}
+	 * already answers.
+	 */
+	private IndexerInfo indexerOf(String index) {
+		return ownership.overview()
+			.flatMap(overview -> overview.claims()
+				.stream()
+				.filter(claim -> claim.index().equals(index))
+				.findFirst()
+			)
+			.map(claim -> new IndexerInfo(claim.node(), claim.address().orElse(null)))
+			.orElse(null);
 	}
 }

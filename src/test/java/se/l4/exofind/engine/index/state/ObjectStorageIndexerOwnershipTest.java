@@ -576,6 +576,74 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	/**
+	 * The overview reads the table the way it is: every live candidate and
+	 * every live claim, whoever asks - the asking node does not have to
+	 * compete, or even appear in the table.
+	 */
+	@Test
+	void testOverviewListsCandidatesAndClaims() throws Exception {
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("games", "b", alive, null),
+				claim("books", "a", alive, "http://a:8080")
+			),
+			List.of(
+				candidate("b", alive, null),
+				candidate("a", alive, "http://a:8080")
+			)
+		);
+
+		var overview = newOwnership("c").overview();
+		assertThat(overview.isPresent(), is(true));
+
+		var candidates = overview.get().candidates();
+		assertThat(candidates.size(), is(2));
+		assertThat(candidates.get(0).node(), is("a"));
+		assertThat(candidates.get(0).address(), is(Optional.of("http://a:8080")));
+		assertThat(candidates.get(0).expiresAt().toEpochMilli(), is(alive));
+		assertThat(candidates.get(1).node(), is("b"));
+		assertThat(candidates.get(1).address(), is(Optional.empty()));
+
+		var claims = overview.get().claims();
+		assertThat(claims.size(), is(2));
+		assertThat(claims.get(0).index(), is("books"));
+		assertThat(claims.get(0).node(), is("a"));
+		assertThat(claims.get(0).address(), is(Optional.of("http://a:8080")));
+		assertThat(claims.get(1).index(), is("games"));
+		assertThat(claims.get(1).node(), is("b"));
+		assertThat(claims.get(1).address(), is(Optional.empty()));
+	}
+
+	/**
+	 * A lapsed entry names nobody - its holder may be gone - so the overview
+	 * answers it the way it answers an index nothing holds: by leaving it out.
+	 */
+	@Test
+	void testOverviewLeavesLapsedEntriesOut() throws Exception {
+		var now = System.currentTimeMillis();
+		writeTable(
+			List.of(
+				claim("books", "a", now + 60_000, "http://a:8080"),
+				claim("games", "dead", now - 10_000, null)
+			),
+			List.of(
+				candidate("a", now + 60_000, "http://a:8080"),
+				candidate("dead", now - 10_000, null)
+			)
+		);
+
+		var overview = newOwnership("b").overview();
+		assertThat(overview.isPresent(), is(true));
+
+		assertThat(overview.get().candidates().size(), is(1));
+		assertThat(overview.get().candidates().get(0).node(), is("a"));
+
+		assertThat(overview.get().claims().size(), is(1));
+		assertThat(overview.get().claims().get(0).index(), is("books"));
+	}
+
+	/**
 	 * A claim on an index the registry no longer holds is dropped by its own
 	 * holder, so a deleted index does not stay claimed forever.
 	 */

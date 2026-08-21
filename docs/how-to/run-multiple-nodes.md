@@ -63,6 +63,10 @@ the write reaches. Only when no candidate is running (or none set a
 `indexer:unavailable`; a holder that cannot be reached answers `502` with
 `indexer:unreachable`.
 
+An operator who does want to know asks any node:
+`GET /v1alpha1/admin/indexers` lists which node writes which index - see
+[Operate a deployment](operate-a-deployment.md#know-which-node-is-writing).
+
 ## Bound what a node holds
 
 A node opens every index it is asked for and keeps it synchronized. On a

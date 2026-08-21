@@ -102,6 +102,7 @@ GET /v1alpha1/admin/indexes/products
 "status": {
   "state": "USABLE",
   "readOnly": true,
+  "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
   "luceneCompatibility": "CURRENT"
 }
 ```
@@ -146,9 +147,21 @@ The log says which request failed, keyed by `index` and `bucket`.
 ## Know which node is writing
 
 Each index is written by one node at a time, and different indexes may be
-written by different nodes. `status.readOnly` is `false` on the node holding
-that index and `true` everywhere else, and the log is where an index
-changing hands is visible, keyed by `index`:
+written by different nodes. Any node answers who writes what, a node that
+only searches included:
+
+```http
+GET /v1alpha1/admin/indexers
+```
+
+The [claims](../reference/admin-api.md#indexers) name the writer of each
+index, next to the candidates that are alive; an index in no claim has no
+writer until a write for it appoints one. The same answer sits on each index
+as `status.indexer`, and `status.readOnly` is `false` on the node holding the
+index and `true` everywhere else. Both can lag a handover by a few seconds -
+the same read of the shared state that write forwarding runs on.
+
+The log is where an index changing hands is visible, keyed by `index`:
 
 ```
 INFO  node=node-a-7f21 index=products Took over writing the index

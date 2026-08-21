@@ -28,6 +28,7 @@ import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegistryException;
+import se.l4.exofind.engine.index.state.IndexerLeadershipUnreadableException;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 import se.l4.exofind.engine.logging.Log;
@@ -141,6 +142,13 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 		} else if(e instanceof IndexerUnreachableException) {
 			// This node relayed the request and the node behind it did not answer
 			return Response.Status.BAD_GATEWAY;
+		} else if(e instanceof IndexerLeadershipUnreadableException) {
+			/*
+			 * Who writes which index is kept in the storage and could not be
+			 * read. Asking again once it can be reached is answered, so the
+			 * caller is told to retry rather than that something is wrong.
+			 */
+			return Response.Status.SERVICE_UNAVAILABLE;
 		} else if(e instanceof UnrepresentableStateException) {
 			/*
 			 * The index holds state that belongs to another version of the API.

@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeSet;
@@ -544,6 +546,49 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		candidates.sort(Comparator.comparing(IndexerLeadership.Candidate::getNode));
 		var picked = candidates.get(Math.floorMod(index.hashCode(), candidates.size()));
 		return Optional.of(picked.getAddress());
+	}
+
+	@Override
+	public Optional<Overview> overview() {
+		var table = cachedTable();
+		if(table == null) {
+			return Optional.empty();
+		}
+
+		var now = System.currentTimeMillis();
+
+		var candidates = new ArrayList<Candidate>();
+		for(var candidate : table.getCandidatesList()) {
+			if(candidate.getExpiresAt() <= now) {
+				continue;
+			}
+
+			candidates.add(new Candidate(
+				candidate.getNode(),
+				candidate.hasAddress() ? Optional.of(candidate.getAddress()) : Optional.empty(),
+				Instant.ofEpochMilli(candidate.getExpiresAt())
+			));
+		}
+
+		var claims = new ArrayList<Claim>();
+		for(var claim : table.getClaimsList()) {
+			if(claim.getExpiresAt() <= now) {
+				// Free to be taken, answered the way an unclaimed index is
+				continue;
+			}
+
+			claims.add(new Claim(
+				claim.getIndex(),
+				claim.getNode(),
+				claim.hasAddress() ? Optional.of(claim.getAddress()) : Optional.empty(),
+				Instant.ofEpochMilli(claim.getExpiresAt())
+			));
+		}
+
+		candidates.sort(Comparator.comparing(Candidate::node));
+		claims.sort(Comparator.comparing(Claim::index));
+
+		return Optional.of(new Overview(List.copyOf(candidates), List.copyOf(claims)));
 	}
 
 	/**

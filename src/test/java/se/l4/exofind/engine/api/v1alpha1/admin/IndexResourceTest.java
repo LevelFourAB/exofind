@@ -4,6 +4,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -12,6 +14,8 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -40,6 +44,8 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.state.IndexerOwnership;
+import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import jakarta.ws.rs.core.UriInfo;
 
@@ -48,6 +54,7 @@ public class IndexResourceTest {
 	Path storageDirectory;
 
 	Indexes indexes;
+	AuthContext auth;
 	IndexResource resource;
 	UriInfo uriInfo;
 
@@ -76,10 +83,10 @@ public class IndexResourceTest {
 			Duration.ofHours(1)
 		);
 
-		var auth = new AuthContext();
+		auth = new AuthContext();
 		auth.set(Principal.unchecked());
 
-		resource = new IndexResource(indexes, auth);
+		resource = new IndexResource(indexes, auth, new LocalIndexerOwnership());
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())
@@ -130,6 +137,36 @@ public class IndexResourceTest {
 		assertThat(info.definition().fields().keySet(), contains("id"));
 		assertThat(info.status().state(), is(IndexState.USABLE));
 		assertThat(info.status().readOnly(), is(false));
+
+		// Storing locally names no writer - readOnly already answers
+		assertThat(info.status().indexer(), is(nullValue()));
+	}
+
+	/**
+	 * The status names the node writing the index when the shared state holds
+	 * a claim for it - on the node holding it and on every other alike.
+	 */
+	@Test
+	public void testStatusNamesTheIndexer() {
+		create("books", definition());
+
+		var ownership = mock(IndexerOwnership.class);
+		when(ownership.overview()).thenReturn(Optional.of(new IndexerOwnership.Overview(
+			List.of(),
+			List.of(new IndexerOwnership.Claim(
+				"books",
+				"node-1",
+				Optional.of("http://node-1:8080"),
+				Instant.now().plusSeconds(30)
+			))
+		)));
+
+		var withOwnership = new IndexResource(indexes, auth, ownership);
+		var info = (IndexInfo) withOwnership.get("books").getEntity();
+
+		assertThat(info.status().indexer(), is(notNullValue()));
+		assertThat(info.status().indexer().node(), is("node-1"));
+		assertThat(info.status().indexer().address(), is("http://node-1:8080"));
 	}
 
 	/**

@@ -14,6 +14,10 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
  * @param readOnly
  *   if this node can modify the index. Only the node running as the indexer
  *   can, other nodes serve searches from their local copy
+ * @param indexer
+ *   the node currently writing the index, whichever node answers. {@code null}
+ *   when no node holds it, when who does could not be read, or when the node
+ *   stores locally - where {@code readOnly} already answers
  * @param luceneCompatibility
  *   how much longer the index can be read. An index reported as {@code ENDING}
  *   is readable now but is dropped by the next Lucene major, so it has to be
@@ -26,6 +30,7 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
 public record IndexStatus(
 	IndexState state,
 	boolean readOnly,
+	IndexerInfo indexer,
 	LuceneCompatibility luceneCompatibility,
 	Integer luceneCreatedMajor
 ) {

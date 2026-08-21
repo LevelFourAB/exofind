@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.index.state;
 
+import java.util.List;
 import java.util.Optional;
 
 import se.l4.exofind.engine.logging.Log;
@@ -47,5 +48,16 @@ public class LocalIndexerOwnership implements IndexerOwnership {
 	public Optional<String> indexerAddress(String index) {
 		// Without a remote there is no other node to send a write to
 		return Optional.empty();
+	}
+
+	@Override
+	public Optional<Overview> overview() {
+		/*
+		 * There is no table and no node identity to put in one - this node is
+		 * the only node there is and writes everything, which readOnly in the
+		 * admin API already answers. An empty overview rather than an unknown
+		 * one: nothing failed to be read.
+		 */
+		return Optional.of(new Overview(List.of(), List.of()));
 	}
 }

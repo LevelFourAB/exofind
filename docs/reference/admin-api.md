@@ -20,6 +20,8 @@ DELETE /v1alpha1/admin/indexes/{name}                   # remove an index or a g
 POST   /v1alpha1/admin/indexes/{name}/actions/promote   # answer for this generation
 POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
 POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state now
+
+GET    /v1alpha1/admin/indexers                         # which node writes which index
 ```
 
 Requests that modify an index - everything here except the reads and `pull` -
@@ -84,6 +86,7 @@ rollout: promote the generation that was answering before.
   "status": {
     "state": "USABLE",
     "readOnly": false,
+    "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
     "luceneCompatibility": "CURRENT",
     "luceneCreatedMajor": 10
   },
@@ -150,6 +153,13 @@ remote, as seen by the answering node:
 `status.readOnly` is whether this node can modify the index - only the node
 holding it can, and which node that is differs per index.
 
+`status.indexer` names that node, whichever node answers, with the address
+writes are forwarded to - absent when the node offered none. The field is
+absent when no node holds the index, when who does could not be read, or on a
+node storing locally, where `readOnly` already answers. The answer can lag a
+handover by a few seconds, the same way write forwarding does - see
+[Indexers](#indexers).
+
 ## Lucene compatibility
 
 `status.luceneCompatibility` says how much longer the index can be read.
@@ -181,6 +191,40 @@ is refused with `index:generation:name_required`.
 Nodes otherwise find indexes, generations and their changes on their own, on
 the interval set by `INDEXES_REFRESH_INTERVAL`.
 
+## Indexers
+
+`GET /v1alpha1/admin/indexers` lists the nodes competing to write indexes and,
+per index some node writes, which node that is:
+
+```json
+{
+  "candidates": [
+    { "node": "node-a-7f21", "address": "http://node-a:8080", "expiresAt": "2026-08-21T10:15:30Z" },
+    { "node": "node-b-90c4", "address": "http://node-b:8080", "expiresAt": "2026-08-21T10:15:32Z" }
+  ],
+  "claims": [
+    { "index": "events", "node": "node-b-90c4", "address": "http://node-b:8080", "expiresAt": "2026-08-21T10:15:32Z" },
+    { "index": "products", "node": "node-a-7f21", "address": "http://node-a:8080", "expiresAt": "2026-08-21T10:15:30Z" }
+  ]
+}
+```
+
+Any node answers, from its own read of the state the deployment shares - a
+node that only searches included. The answer therefore lags reality by a few
+seconds, the same way write forwarding does: a claim that just moved may still
+name the old node for a moment. Requires `indexes.read`, and a claim on an
+index the key was granted nothing on is left out, the same way listing the
+indexes leaves the index out.
+
+An index without a claim has no writer until a write for it appoints one, so
+it appears in no list rather than as an empty entry. `address` is where writes
+are forwarded and is absent when the node set no `NODE_ADDRESS`; `expiresAt`
+is when the entry lapses unless the node renews it, which is how a dead node's
+entries disappear. A node storing locally answers with both lists empty: it is
+the only node there is and writes everything, which `readOnly` already says.
+A node that cannot read the shared state answers `503` rather than pretending
+nothing writes.
+
 ## Status codes
 
 | Status | When |
@@ -192,4 +236,4 @@ the interval set by `INDEXES_REFRESH_INTERVAL`.
 | `409 Conflict` | The index cannot be modified right now - there is no node to forward the request to, or the index is synchronizing. Also a definition holding settings this version of the API cannot describe, an index needing engine features this node does not have, and a registry that could not be written. |
 | `412 Precondition Failed` | The version in `If-Match` is no longer the one in effect. |
 | `502 Bad Gateway` | The request was forwarded to the node writing the index and it did not answer. |
-| `503 Service Unavailable` | The request raced the index being closed to make room on this node. Retrying opens it again. |
+| `503 Service Unavailable` | The request raced the index being closed to make room on this node - retrying opens it again. Also the indexers listing on a node that could not read who writes what; retrying once the storage answers is served. |

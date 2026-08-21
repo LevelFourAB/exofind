@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.routing;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -280,5 +281,35 @@ public class IndexerNodeTest {
 			.then().statusCode(404);
 
 		assertThat(holderOf("nowhere"), is(nullValue()));
+	}
+
+	/**
+	 * The admin API names the writer of each index: the index status carries
+	 * the holder, and the indexers listing shows the table whole - the claim
+	 * planted for another node in the earlier test included.
+	 */
+	@Test
+	@Order(5)
+	void theAdminApiNamesWhoWritesWhat() {
+		asRoot()
+			.when().get("/v1alpha1/admin/indexes/books")
+			.then()
+			.statusCode(200)
+			.body("status.indexer.node", is(CandidateNode.NODE))
+			.body("status.indexer.address", is("http://localhost:8081"));
+
+		asRoot()
+			.when().get("/v1alpha1/admin/indexers")
+			.then()
+			.statusCode(200)
+			.body("candidates.node", hasItem(CandidateNode.NODE))
+			.body(
+				"claims.find { it.index == 'books' }.node",
+				is(CandidateNode.NODE)
+			)
+			.body(
+				"claims.find { it.index == 'foreign' }.node",
+				is("someone-else")
+			);
 	}
 }

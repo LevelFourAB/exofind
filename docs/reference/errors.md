@@ -76,6 +76,9 @@ The codes worth handling specially in a client:
   index and it did not answer. Answered as `502`. Whether it served the
   request before the connection died cannot be known, so retry the way any
   failed write is retried.
+- `indexer:leadership_unreadable` - who writes which index was asked for and
+  the shared state saying so could not be read. Answered as `503` rather than
+  as nobody writing anything; retrying once the storage answers is served.
 - `index:readonly` - the request modifies an index on a node that cannot
   right now, answered as `409`. Reached only in the moment where a node
   loses the index while serving the request; retrying is forwarded to

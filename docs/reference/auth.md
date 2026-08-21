@@ -60,7 +60,7 @@ patterns: every permission applies to every index matched.
 | `search` | index | `POST /v1alpha1/indexes/{name}/search` |
 | `documents.write` | index | Putting documents into an index |
 | `documents.delete` | index | Taking documents out, by key or by query |
-| `indexes.read` | index | Listing indexes, reading a definition and status |
+| `indexes.read` | index | Listing indexes, reading a definition and status, and which node writes which index |
 | `indexes.write` | index | Creating an index or a generation, or replacing a definition |
 | `indexes.delete` | index | Removing an index or a generation |
 | `indexes.promote` | index | Making an index answer from a generation |

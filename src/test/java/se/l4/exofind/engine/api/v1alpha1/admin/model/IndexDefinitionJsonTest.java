@@ -651,7 +651,13 @@ public class IndexDefinitionJsonTest {
 			true,
 			"abc123",
 			new IndexDefinition(null, null, Map.of(), null, null, null),
-			new IndexStatus(IndexState.USABLE, false, LuceneCompatibility.CURRENT, 10),
+			new IndexStatus(
+				IndexState.USABLE,
+				false,
+				new IndexerInfo("node-1", "http://node-1:8080"),
+				LuceneCompatibility.CURRENT,
+				10
+			),
 			List.of(new GenerationSummary("2", true, "2026-08-16T10:00:00Z"))
 		);
 
@@ -661,6 +667,7 @@ public class IndexDefinitionJsonTest {
 				"{\"name\":\"books\",\"generation\":\"2\",\"live\":true,"
 					+ "\"version\":\"abc123\",\"definition\":{\"fields\":{}},"
 					+ "\"status\":{\"state\":\"USABLE\",\"readOnly\":false,"
+					+ "\"indexer\":{\"node\":\"node-1\",\"address\":\"http://node-1:8080\"},"
 					+ "\"luceneCompatibility\":\"CURRENT\",\"luceneCreatedMajor\":10},"
 					+ "\"generations\":[{\"name\":\"2\",\"live\":true,"
 					+ "\"createdAt\":\"2026-08-16T10:00:00Z\"}]}"
@@ -671,7 +678,7 @@ public class IndexDefinitionJsonTest {
 	@Test
 	public void testWriteIndexStatusWithoutLuceneVersion() throws Exception {
 		var status = new IndexStatus(
-			IndexState.NEEDS_PULL, true, LuceneCompatibility.UNKNOWN, null
+			IndexState.NEEDS_PULL, true, null, LuceneCompatibility.UNKNOWN, null
 		);
 
 		assertThat(
