@@ -25,7 +25,9 @@ import se.l4.exofind.engine.index.schema.IndexSchema;
  * turns it back into a value.
  *
  * Both are needed whichever way the index is set, because changing the setting
- * does not rewrite the documents already indexed.
+ * does not rewrite the documents already indexed. When everything a search
+ * asks for is stored on its own, the copy is not read at all - see
+ * {@link #namesOf()} for what that trades away.
  *
  * A field inside an object is asked for by its dotted path, whichever mode the
  * object is kept in, and comes back where it was given: inside the object, with
@@ -161,9 +163,10 @@ public class DocumentReader {
 	 *
 	 * The primary key is always included, as it is what a result is identified
 	 * by and asking for a few fields is not a reason to lose track of which
-	 * document they came from. So is the copy of the document, whatever the
-	 * index is set to keep now - a document that has one is read from it, and
-	 * asking for it costs nothing for the documents that do not.
+	 * document they came from. The copy of the document is included only when
+	 * something wanted needs it - it holds the whole document, and dragging it
+	 * through decompression per hit to answer for a handful of stored fields
+	 * is most of what a page of results would otherwise cost.
 	 *
 	 * The set is the caller's own, so a caller that needs stored fields of its
 	 * own - the text highlighting is cut from, say - can add them and read
@@ -179,7 +182,10 @@ public class DocumentReader {
 		}
 
 		var names = Sets.mutable.<String>empty();
-		names.add(FieldNames.SOURCE);
+
+		if(sourceNeeded()) {
+			names.add(FieldNames.SOURCE);
+		}
 
 		/*
 		 * Only the fields of the document itself are named: a field inside an
@@ -194,6 +200,33 @@ public class DocumentReader {
 		}
 
 		return names;
+	}
+
+	/**
+	 * Whether the copy of the document is needed to answer what was asked for.
+	 *
+	 * A field asked for inside an object, or an object asked for whole, only
+	 * exists in the copy, as an object holds no value of its own to store. So
+	 * does a field that does not ask to be stored, which {@link #want} let
+	 * through because the index keeps its copies.
+	 *
+	 * What answering from the stored fields alone trades away is documents
+	 * older than their field: one indexed before the field asked to be stored
+	 * holds it only in its copy, and the copy is no longer read, so the value
+	 * stays behind until the document is written again. A document indexed
+	 * before the field asked to be filtered misses searches on it the same
+	 * way, which is why changing a definition is expected to come with the
+	 * documents being indexed again.
+	 */
+	private boolean sourceNeeded() {
+		if(inside.notEmpty()) {
+			return true;
+		}
+
+		return whole.anySatisfy(
+			field -> field.isObject()
+				|| !(field.isStored() || field.getDef().getPrimaryKey())
+		);
 	}
 
 	/**

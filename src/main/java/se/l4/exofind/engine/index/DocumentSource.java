@@ -1,13 +1,13 @@
 package se.l4.exofind.engine.index;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.function.Predicate;
 
 import org.apache.lucene.util.BytesRef;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.WireFormat;
@@ -122,16 +122,7 @@ public final class DocumentSource {
 	 * @return
 	 */
 	public static Document decode(BytesRef bytes) {
-		SourceDocument source;
-		try {
-			source = SourceDocument.parseFrom(
-				ByteString.copyFrom(bytes.bytes, bytes.offset, bytes.length)
-			);
-		} catch(InvalidProtocolBufferException e) {
-			throw new IndexException(UNREADABLE, Maps.immutable.<String, Object>empty(), e);
-		}
-
-		return decodeDocument(source);
+		return decode(bytes, null);
 	}
 
 	/**
@@ -145,132 +136,264 @@ public final class DocumentSource {
 	 * @param bytes
 	 * @param wanted
 	 *   answers for the name of a field, which is read before the value it
-	 *   carries is
+	 *   carries is - {@code null} to want every field
 	 * @return
 	 */
 	public static Document decode(BytesRef bytes, Predicate<String> wanted) {
-		var values = Lists.mutable.<Document.Value>empty();
-
 		try {
 			var in = CodedInputStream.newInstance(bytes.bytes, bytes.offset, bytes.length);
-
-			while(true) {
-				var tag = in.readTag();
-				if(tag == 0) {
-					break;
-				}
-
-				if(WireFormat.getTagFieldNumber(tag) != SourceDocument.FIELDS_FIELD_NUMBER
-					|| WireFormat.getTagWireType(tag) != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-					/*
-					 * Written by a version that keeps something else about a
-					 * document. Stepping over it is what leaves the fields
-					 * readable.
-					 */
-					in.skipField(tag);
-					continue;
-				}
-
-				var length = in.readRawVarint32();
-				var start = bytes.offset + in.getTotalBytesRead();
-				in.skipRawBytes(length);
-
-				var name = nameOf(bytes.bytes, start, length);
-				if(name == null || !wanted.test(name)) {
-					continue;
-				}
-
-				var field = SourceField.parser().parseFrom(bytes.bytes, start, length);
-
-				var value = decode(field);
-				if(value == null) {
-					continue;
-				}
-
-				values.add(
-					new Document.Value(
-						field.getName(),
-						value,
-						field.hasLocale() ? field.getLocale() : null
-					)
-				);
-			}
+			return decodeDocument(in, wanted, 0);
 		} catch(IOException e) {
 			throw new IndexException(UNREADABLE, Maps.immutable.<String, Object>empty(), e);
+		}
+	}
+
+	/*
+	 * Decoding reads the wire format itself rather than parsing into the
+	 * generated messages. A search decodes one source per hit, and the message
+	 * tree - a SourceField object, its strings and its lists for every value -
+	 * costs several times the document in allocations only to be copied into
+	 * Document.Value and dropped. The tags below are spelled from the same
+	 * generated constants the encoder writes, so the two sides read and write
+	 * one format.
+	 *
+	 * A tag is the field number shifted past the three bits that carry the
+	 * wire type.
+	 */
+
+	private static final int FIELDS_TAG =
+		SourceDocument.FIELDS_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+
+	private static final int NAME_TAG =
+		SourceField.NAME_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+	private static final int LOCALE_TAG =
+		SourceField.LOCALE_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+	private static final int STRING_TAG =
+		SourceField.STRING_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+	private static final int BOOLEAN_TAG =
+		SourceField.BOOLEAN_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_VARINT;
+	private static final int VECTOR_TAG =
+		SourceField.VECTOR_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+	private static final int INT32_TAG =
+		SourceField.INT32_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_VARINT;
+	private static final int INT64_TAG =
+		SourceField.INT64_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_VARINT;
+	private static final int FLOAT_TAG =
+		SourceField.FLOAT_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_FIXED32;
+	private static final int DOUBLE_TAG =
+		SourceField.DOUBLE_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_FIXED64;
+	private static final int GEO_POINT_TAG =
+		SourceField.GEO_POINT_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+	private static final int DOCUMENT_TAG =
+		SourceField.DOCUMENT_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+
+	private static final int LATITUDE_TAG =
+		GeoPointValue.LATITUDE_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_FIXED64;
+	private static final int LONGITUDE_TAG =
+		GeoPointValue.LONGITUDE_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_FIXED64;
+
+	private static final int VECTOR_VALUES_PACKED_TAG =
+		FloatVector.VALUES_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_LENGTH_DELIMITED;
+	private static final int VECTOR_VALUES_TAG =
+		FloatVector.VALUES_FIELD_NUMBER << 3 | WireFormat.WIRETYPE_FIXED32;
+
+	/**
+	 * How deep documents inside documents may nest before the bytes are judged
+	 * corrupt rather than followed, matching what the generated parser allows.
+	 */
+	private static final int MAX_DEPTH = 100;
+
+	private static final float[] EMPTY_VECTOR = new float[0];
+
+	private static Document decodeDocument(
+		CodedInputStream in,
+		Predicate<String> wanted,
+		int depth
+	) throws IOException {
+		if(depth >= MAX_DEPTH) {
+			throw new InvalidProtocolBufferException(
+				"Documents nest deeper than " + MAX_DEPTH + " levels"
+			);
+		}
+
+		var values = Lists.mutable.<Document.Value>empty();
+
+		while(true) {
+			var tag = in.readTag();
+			if(tag == 0) {
+				break;
+			}
+
+			if(tag != FIELDS_TAG) {
+				/*
+				 * Written by a version that keeps something else about a
+				 * document. Stepping over it is what leaves the fields
+				 * readable.
+				 */
+				in.skipField(tag);
+				continue;
+			}
+
+			var limit = in.pushLimit(in.readRawVarint32());
+			var value = decodeField(in, wanted, depth);
+			requireConsumed(in);
+			in.popLimit(limit);
+
+			if(value != null) {
+				values.add(value);
+			}
 		}
 
 		return new Document(values.toArray(new Document.Value[0]));
 	}
 
 	/**
-	 * Read the name out of one encoded field without reading the value it
-	 * carries. {@code null} for a field that carries no name, which is a field
-	 * of a document written by a version that has something this one does not.
+	 * Read one field of a document into the value the document holds for it.
+	 * {@code null} when the field is not wanted, or when it was written by a
+	 * version that has a name or a type this one does not - nothing here can
+	 * say what such a value was, so it is left out rather than guessed at.
 	 */
-	private static String nameOf(byte[] bytes, int offset, int length) throws IOException {
-		var in = CodedInputStream.newInstance(bytes, offset, length);
+	private static Document.Value decodeField(
+		CodedInputStream in,
+		Predicate<String> wanted,
+		int depth
+	) throws IOException {
+		String name = null;
+		String locale = null;
+		Object value = null;
 
 		while(true) {
 			var tag = in.readTag();
 			if(tag == 0) {
-				return null;
+				break;
 			}
 
-			if(WireFormat.getTagFieldNumber(tag) == SourceField.NAME_FIELD_NUMBER) {
-				return in.readStringRequireUtf8();
-			}
-
-			in.skipField(tag);
-		}
-	}
-
-	private static Document decodeDocument(SourceDocument source) {
-		var values = Lists.mutable.<Document.Value>empty();
-		for(var field : source.getFieldsList()) {
-			var value = decode(field);
-			if(value == null) {
-				/*
-				 * The value was written by a version that has a type this one
-				 * does not. Nothing here can say what it was, so it is left out
-				 * rather than guessed at.
-				 */
-				continue;
-			}
-
-			values.add(
-				new Document.Value(
-					field.getName(),
-					value,
-					field.hasLocale() ? field.getLocale() : null
-				)
-			);
-		}
-
-		return new Document(values.toArray(new Document.Value[0]));
-	}
-
-	private static Object decode(SourceField field) {
-		return switch(field.getValueCase()) {
-			case STRING -> field.getString();
-			case BOOLEAN -> field.getBoolean();
-			case INT32 -> field.getInt32();
-			case INT64 -> field.getInt64();
-			case FLOAT -> field.getFloat();
-			case DOUBLE -> field.getDouble();
-			case GEO_POINT -> new GeoPoint(
-				field.getGeoPoint().getLatitude(),
-				field.getGeoPoint().getLongitude()
-			);
-			case VECTOR -> {
-				var values = field.getVector();
-				var vector = new float[values.getValuesCount()];
-				for(var i = 0; i < vector.length; i++) {
-					vector[i] = values.getValues(i);
+			switch(tag) {
+				case NAME_TAG -> {
+					name = in.readStringRequireUtf8();
+					if(wanted != null && !wanted.test(name)) {
+						/*
+						 * What is left of the field - its value, as the name
+						 * is written first - is stepped over rather than read.
+						 */
+						in.skipRawBytes(in.getBytesUntilLimit());
+						return null;
+					}
 				}
-				yield vector;
+				case LOCALE_TAG -> locale = in.readStringRequireUtf8();
+				case STRING_TAG -> value = in.readStringRequireUtf8();
+				case BOOLEAN_TAG -> value = in.readBool();
+				case INT32_TAG -> value = in.readInt32();
+				case INT64_TAG -> value = in.readInt64();
+				case FLOAT_TAG -> value = in.readFloat();
+				case DOUBLE_TAG -> value = in.readDouble();
+				case GEO_POINT_TAG -> {
+					var limit = in.pushLimit(in.readRawVarint32());
+					value = decodeGeoPoint(in);
+					requireConsumed(in);
+					in.popLimit(limit);
+				}
+				case VECTOR_TAG -> {
+					var limit = in.pushLimit(in.readRawVarint32());
+					value = decodeVector(in);
+					requireConsumed(in);
+					in.popLimit(limit);
+				}
+				case DOCUMENT_TAG -> {
+					/*
+					 * The names inside an object are not what `wanted` answers
+					 * for, so a wanted object comes back whole - cutting it
+					 * down to the paths that were asked for is its caller's
+					 * job.
+					 */
+					var limit = in.pushLimit(in.readRawVarint32());
+					value = decodeDocument(in, null, depth + 1);
+					requireConsumed(in);
+					in.popLimit(limit);
+				}
+				default -> in.skipField(tag);
 			}
-			case DOCUMENT -> decodeDocument(field.getDocument());
-			default -> null;
-		};
+		}
+
+		if(name == null || value == null) {
+			return null;
+		}
+
+		return new Document.Value(name, value, locale);
+	}
+
+	private static GeoPoint decodeGeoPoint(CodedInputStream in) throws IOException {
+		var latitude = 0d;
+		var longitude = 0d;
+
+		while(true) {
+			var tag = in.readTag();
+			if(tag == 0) {
+				break;
+			}
+
+			switch(tag) {
+				case LATITUDE_TAG -> latitude = in.readDouble();
+				case LONGITUDE_TAG -> longitude = in.readDouble();
+				default -> in.skipField(tag);
+			}
+		}
+
+		return new GeoPoint(latitude, longitude);
+	}
+
+	private static float[] decodeVector(CodedInputStream in) throws IOException {
+		var values = EMPTY_VECTOR;
+		var count = 0;
+
+		while(true) {
+			var tag = in.readTag();
+			if(tag == 0) {
+				break;
+			}
+
+			switch(tag) {
+				case VECTOR_VALUES_PACKED_TAG -> {
+					/*
+					 * A packed run says how many bytes it holds, which is what
+					 * sizes the array once instead of growing it per value.
+					 */
+					var length = in.readRawVarint32();
+					var limit = in.pushLimit(length);
+					if(count + length / 4 > values.length) {
+						values = Arrays.copyOf(values, count + length / 4);
+					}
+					while(in.getBytesUntilLimit() > 0) {
+						if(count == values.length) {
+							values = Arrays.copyOf(values, count + 1);
+						}
+						values[count++] = in.readFloat();
+					}
+					in.popLimit(limit);
+				}
+				case VECTOR_VALUES_TAG -> {
+					if(count == values.length) {
+						values = Arrays.copyOf(values, Math.max(4, count * 2));
+					}
+					values[count++] = in.readFloat();
+				}
+				default -> in.skipField(tag);
+			}
+		}
+
+		return count == values.length ? values : Arrays.copyOf(values, count);
+	}
+
+	/**
+	 * Require that a message was read to its end. Reading stops at a zero tag,
+	 * and inside a message whose length says there is more, a zero is
+	 * corruption rather than the end.
+	 */
+	private static void requireConsumed(CodedInputStream in) throws InvalidProtocolBufferException {
+		if(in.getBytesUntilLimit() != 0) {
+			throw new InvalidProtocolBufferException(
+				"The message ended before its declared length"
+			);
+		}
 	}
 }

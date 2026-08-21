@@ -7,12 +7,18 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.lucene.util.BytesRef;
 import org.junit.jupiter.api.Test;
+
+import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedOutputStream;
+
+import se.l4.exofind.engine.index.source.SourceField;
 
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
@@ -182,6 +188,94 @@ public class DocumentSourceTest extends AbstractIndexTest {
 		assertThat(inside.getCode(), is("index:query:source_not_kept"));
 	}
 
+	/**
+	 * Asking only for fields stored on their own is answered without reading
+	 * the copy of the document, so the values - all of them, in order - have
+	 * to come back the same as they would have from the copy.
+	 */
+	@Test
+	public void testAskingForOnlyStoredFieldsIsAnsweredWithoutTheCopy() throws IOException {
+		var index = create(
+			"albums",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", string().setStored(true).build())
+				.putFields(
+					"artists",
+					string().setMultiple(true).setStored(true).build()
+				)
+				.putFields(
+					"category",
+					string().setFilter(FilterConfig.getDefaultInstance()).build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Getz/Gilberto"),
+				new Document.Value("artists", "Stan Getz"),
+				new Document.Value("artists", "João Gilberto"),
+				new Document.Value("category", "jazz")
+			)
+		);
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("jazz")))
+				.withFields("name", "artists")
+				.build()
+		);
+
+		var document = result.hits().get(0).document();
+		assertThat(document.get("name"), is("Getz/Gilberto"));
+		assertThat(valuesOf(document, "artists"), contains("Stan Getz", "João Gilberto"));
+		// The primary key always comes back, it is what a result is identified by
+		assertThat(document.get("id"), is("1"));
+	}
+
+	/**
+	 * A field that asked to be stored after a document was indexed is only in
+	 * that document's copy, which asking for stored fields alone does not
+	 * read - the value stays behind until the document is indexed again.
+	 * Asking for no fields in particular still reads the copy and brings it
+	 * back.
+	 */
+	@Test
+	public void testFieldStoredAfterADocumentWasIndexedStaysInItsCopy() throws IOException {
+		var index = books(IndexDef.newBuilder());
+
+		index.updateDefinition(
+			definition(IndexDef.newBuilder())
+				.putFields(
+					"category",
+					string()
+						.setStored(true)
+						.setFilter(FilterConfig.getDefaultInstance())
+						.build()
+				)
+				.build()
+		);
+
+		var some = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("non-fiction")))
+				.withFields("category")
+				.build()
+		);
+
+		assertThat(some.hits().get(0).document().get("category"), is(nullValue()));
+
+		var everything = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("non-fiction")))
+				.build()
+		);
+
+		assertThat(everything.hits().get(0).document().get("category"), is("non-fiction"));
+	}
+
 	@Test
 	public void testEveryFieldCanBeAskedForWhileTheDocumentIsKept() throws IOException {
 		var index = books(IndexDef.newBuilder());
@@ -307,6 +401,166 @@ public class DocumentSourceTest extends AbstractIndexTest {
 		assertThat(read.fields()[2], is(new Document.Value("tags", "nature", null)));
 		assertThat(read.fields()[3], is(new Document.Value("tags", "science", null)));
 		assertThat(read.fields()[4], is(new Document.Value("summary", "Vår tysta vår", "sv")));
+	}
+
+	/*
+	 * The tests below hand the decoder bytes the encoder of this version never
+	 * writes but a document on disk can hold: what a newer version keeps, what
+	 * another protobuf writer lays out differently, and what corruption leaves
+	 * behind. They build the bytes by hand because that is the only way to get
+	 * them.
+	 */
+
+	/**
+	 * A newer version can hold a value of a type this one has no case for.
+	 * Nothing can say what it was, so the field is left out rather than
+	 * guessed at - and the rest of the document stays readable.
+	 */
+	@Test
+	public void testValueOfAnUnknownTypeIsLeftOut() throws IOException {
+		var mystery = concat(
+			SourceField.newBuilder().setName("mystery").build().toByteArray(),
+			encoded(out -> out.writeBytes(15, ByteString.copyFromUtf8("later")))
+		);
+
+		var doc = encoded(out -> {
+			out.writeBytes(1, ByteString.copyFrom(mystery));
+			out.writeBytes(
+				1,
+				SourceField.newBuilder().setName("name").setString("Silent Spring").build()
+					.toByteString()
+			);
+		});
+
+		var read = DocumentSource.decode(new BytesRef(doc));
+
+		assertThat(read.fields().length, is(1));
+		assertThat(read.fields()[0], is(new Document.Value("name", "Silent Spring", null)));
+	}
+
+	/**
+	 * A newer version can keep something else about a document beside its
+	 * fields, and a field it keeps something else about may carry no name this
+	 * version knows. Both are stepped over, and the fields stay readable.
+	 */
+	@Test
+	public void testWhatANewerVersionKeepsIsSteppedOver() throws IOException {
+		var doc = encoded(out -> {
+			// Something else about the document
+			out.writeInt32(2, 42);
+			// A field that carries no name
+			out.writeBytes(1, SourceField.newBuilder().setString("nameless").build().toByteString());
+			out.writeBytes(
+				1,
+				SourceField.newBuilder().setName("name").setString("Silent Spring").build()
+					.toByteString()
+			);
+		});
+
+		var read = DocumentSource.decode(new BytesRef(doc));
+
+		assertThat(read.fields().length, is(1));
+		assertThat(read.fields()[0], is(new Document.Value("name", "Silent Spring", null)));
+	}
+
+	/**
+	 * Protobuf lets a writer lay a repeated float out one tagged value at a
+	 * time instead of as one packed run, and lets the parts of a message come
+	 * in any order. This version's encoder does neither, but the bytes are
+	 * legal, so reading them is part of keeping the format readable.
+	 */
+	@Test
+	public void testUnpackedVectorAndReorderedFieldReadBack() throws IOException {
+		var vector = encoded(out -> {
+			out.writeFloat(1, 1.5f);
+			out.writeFloat(1, -2f);
+		});
+
+		// The value ahead of the name
+		var embedding = encoded(out -> {
+			out.writeBytes(5, ByteString.copyFrom(vector));
+			out.writeString(1, "embedding");
+		});
+
+		var doc = encoded(out -> out.writeBytes(1, ByteString.copyFrom(embedding)));
+
+		var read = DocumentSource.decode(new BytesRef(doc));
+
+		assertThat(read.fields().length, is(1));
+		assertThat(read.fields()[0].name(), is("embedding"));
+		assertThat(read.fields()[0].value(), is(new float[] { 1.5f, -2f }));
+
+		var unwanted = DocumentSource.decode(new BytesRef(doc), name -> false);
+		assertThat(unwanted.fields().length, is(0));
+	}
+
+	/**
+	 * Bytes that stop before the length they declare, or hold no readable
+	 * message at all, are refused as unreadable rather than answered with
+	 * whatever part of them was read.
+	 */
+	@Test
+	public void testCorruptBytesAreRefused() throws IOException {
+		// A field whose declared length runs past the end of the bytes
+		var truncated = encoded(out -> {
+			out.writeTag(1, 2);
+			out.writeUInt32NoTag(100);
+		});
+
+		var e = assertThrows(
+			IndexException.class,
+			() -> DocumentSource.decode(new BytesRef(truncated))
+		);
+		assertThat(e.getCode(), is("index:source:unreadable"));
+	}
+
+	/**
+	 * Documents inside documents nest as far as a definition does, which is
+	 * nowhere near this - bytes that go deeper are corrupt, and are refused
+	 * before they can exhaust the stack.
+	 */
+	@Test
+	public void testDocumentsNestedTooDeeplyAreRefused() throws IOException {
+		var doc = encoded(out -> out.writeBytes(
+			1,
+			SourceField.newBuilder().setName("leaf").setString("x").build().toByteString()
+		));
+
+		for(var i = 0; i < 105; i++) {
+			var inner = doc;
+			var field = encoded(out -> {
+				out.writeString(1, "child");
+				out.writeBytes(11, ByteString.copyFrom(inner));
+			});
+			doc = encoded(out -> out.writeBytes(1, ByteString.copyFrom(field)));
+		}
+
+		var bytes = new BytesRef(doc);
+		var e = assertThrows(
+			IndexException.class,
+			() -> DocumentSource.decode(bytes)
+		);
+		assertThat(e.getCode(), is("index:source:unreadable"));
+	}
+
+	private static byte[] encoded(Writer writer) throws IOException {
+		var bytes = new ByteArrayOutputStream();
+		var out = CodedOutputStream.newInstance(bytes);
+		writer.write(out);
+		out.flush();
+		return bytes.toByteArray();
+	}
+
+	private static byte[] concat(byte[] a, byte[] b) {
+		var result = new byte[a.length + b.length];
+		System.arraycopy(a, 0, result, 0, a.length);
+		System.arraycopy(b, 0, result, a.length, b.length);
+		return result;
+	}
+
+	@FunctionalInterface
+	private interface Writer {
+		void write(CodedOutputStream out) throws IOException;
 	}
 
 	/**
