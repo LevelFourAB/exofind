@@ -27,19 +27,19 @@ sending it again replaces what sat under that key. There is no separate
 create and update: indexing is desired state, and a feed can send everything
 it has without knowing what the index already holds.
 
-Documents become searchable when the index is committed. The indexer commits
+Documents become searchable when the index is committed. Its writer commits
 on its own once enough has been indexed or enough time has passed - see
 [committing](../reference/configuration.md#committing) - so a steady feed
 needs to ask for nothing.
 
-## Write to the indexer
+## Write to the index's writer
 
-Only the indexer writes, but nothing has to aim at it: a write that reaches
-another node is forwarded to the indexer by the node itself and answered with
-what the indexer answered, so any node works. Where no indexer is known the
-write is refused with `indexer:unavailable`, which is what a cluster with no
-indexer looks like - [Run more than one node](run-multiple-nodes.md) covers
-keeping one elected.
+Each index is written by one node at a time, but nothing has to aim at it: a
+write that reaches another node is forwarded to the node holding the index
+and answered with what it answered, so any node works. Where there is no
+candidate to hold it the write is refused with `indexer:unavailable`, which
+is what a cluster with no writers looks like - [Run more than one
+node](run-multiple-nodes.md) covers keeping candidates running.
 
 Searches have no such rule and are answered by the node that receives them.
 
@@ -143,8 +143,8 @@ every document replaces whatever sat under its key, so the ones that went
 through the first time land the same way the second time.
 
 A `503` means the index was closed to make room on disk; repeating the
-request opens it again. A `409` means this node is not the indexer, or the
-index is being synchronized - both are worth a retry.
+request opens it again. A `409` means the index has no writer right now, or
+is being synchronized - both are worth a retry.
 
 ## See what is in the index
 

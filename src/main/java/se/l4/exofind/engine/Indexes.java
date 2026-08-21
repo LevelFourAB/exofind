@@ -144,13 +144,6 @@ public class Indexes {
 	private final ConcurrentHashMap<String, RetiringIndex> retiring;
 
 	/**
-	 * Whether the registry has been read at least once, which is what a local
-	 * copy may be removed for not appearing in. Until then this node knows
-	 * nothing about what the deployment holds, and everything on disk stays.
-	 */
-	private volatile boolean registryRead;
-
-	/**
 	 * How often {@link #refresh()} is scheduled to run.
 	 */
 	private final Duration refreshInterval;
@@ -169,8 +162,8 @@ public class Indexes {
 	private volatile boolean refreshing;
 
 	/**
-	 * Reacts to this node gaining or losing the indexer role by reopening
-	 * the open indexes in the right mode. Kept so it can be unregistered.
+	 * Reacts to this node gaining or losing an index by reopening its open
+	 * generations in the right mode. Kept so it can be unregistered.
 	 */
 	private final NodeState.Listener nodeStateListener;
 
@@ -285,30 +278,66 @@ public class Indexes {
 		}
 
 		/*
-		 * Gaining or losing the indexer role changes which mode every open
-		 * index has to be open in. The actual reopening happens on the
-		 * refresh thread - the notification arrives on whatever thread
-		 * coordinates ownership, which should not be busy doing Lucene work.
+		 * Gaining or losing an index changes which mode its open generations
+		 * have to be open in. The actual reopening happens on the refresh
+		 * thread - the notification arrives on whatever thread coordinates
+		 * ownership, which should not be busy doing Lucene work.
 		 */
-		this.nodeStateListener = state -> refreshExecutor.execute(this::reopenAll);
+		this.nodeStateListener = new NodeState.Listener() {
+			@Override
+			public void onOwnershipChanged(NodeState state, String index) {
+				refreshExecutor.execute(() -> reopenOwned(index, true));
+			}
+
+			@Override
+			public void onOwnershipRevoked(NodeState state, String index) {
+				refreshExecutor.execute(() -> reopenOwned(index, false));
+			}
+		};
 		nodeState.addListener(nodeStateListener);
 	}
 
 	/**
-	 * Reopen every open index to match whether this node may write, used when
-	 * the node gains or loses the indexer role.
+	 * Reopen open indexes to match whether this node may write them, used
+	 * when the node gains or loses an index.
+	 *
+	 * @param name
+	 *   name of the index whose ownership changed, reopening its open
+	 *   generations, or {@code null} to reopen everything
+	 * @param flush
+	 *   whether a generation being handed over may still push what it holds,
+	 *   {@code false} when another node may already write the index
 	 */
-	private void reopenAll() {
-		for(var index : indexes.asMap().values()) {
+	private void reopenOwned(String name, boolean flush) {
+		for(var entry : indexes.asMap().entrySet()) {
+			if(name != null && !IndexName.parse(entry.getKey()).index().equals(name)) {
+				continue;
+			}
+
 			try {
-				index.reopen();
+				entry.getValue().reopen(flush);
 			} catch(RuntimeException e) {
 				logger.atWarn()
-					.addKeyValue("index", index.getId())
+					.addKeyValue("index", entry.getValue().getId())
 					.setCause(e)
 					.log("Could not reopen index; " + e.getMessage());
 			}
 		}
+	}
+
+	/**
+	 * Bring the open generations of an index into the mode this node holds
+	 * it in, here and now. The reopening an ownership change queues runs on
+	 * the refresh thread a moment later; a request that was admitted by
+	 * claiming the index calls this first, so the writer it needs exists by
+	 * the time it is served. A generation already open in the right mode is
+	 * left as it is.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 */
+	public void reopenForWriting(String index) {
+		reopenOwned(index, false);
 	}
 
 	/**
@@ -489,7 +518,6 @@ public class Indexes {
 		refreshing = true;
 		try {
 			if(registry.refresh()) {
-				registryRead = true;
 				removeUnregisteredCopies();
 			}
 
@@ -545,7 +573,7 @@ public class Indexes {
 	 * sweeping away everything it holds.
 	 */
 	private void removeUnregisteredCopies() {
-		if(!registryRead) {
+		if(!registry.hasBeenRead()) {
 			return;
 		}
 
@@ -1013,7 +1041,7 @@ public class Indexes {
 	 * @return
 	 */
 	public boolean hasReadRegistry() {
-		return registryRead;
+		return registry.hasBeenRead();
 	}
 
 	/**

@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.api.ApiEndpoints;
+import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.auth.Permission;
 import jakarta.ws.rs.PathParam;
 
@@ -24,13 +25,6 @@ import jakarta.ws.rs.PathParam;
  * a list somebody has to remember to add to.
  */
 public class AuthCoverageTest {
-	/**
-	 * Path parameter the filter reads the index from. An endpoint about one
-	 * index that named it something else would be checked against no index at
-	 * all.
-	 */
-	private static final String INDEX_PARAMETER = "name";
-
 	@Test
 	void everyEndpointSaysWhatItRequires() throws Exception {
 		var missing = new ArrayList<String>();
@@ -79,7 +73,7 @@ public class AuthCoverageTest {
 			for(var annotation : annotations) {
 				if(
 					annotation instanceof PathParam parameter
-						&& INDEX_PARAMETER.equals(parameter.value())
+						&& ServedBy.INDEX_PARAMETER.equals(parameter.value())
 				) {
 					return true;
 				}

@@ -13,6 +13,7 @@ import se.l4.exofind.engine.auth.KeyStorage;
 import se.l4.exofind.engine.auth.LocalKeyStorage;
 import se.l4.exofind.engine.auth.NoKeyStorage;
 import se.l4.exofind.engine.auth.ObjectStorageKeyStorage;
+import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.ObjectStorageRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryStorage;
@@ -191,15 +192,16 @@ public class StorageProviders {
 	}
 
 	/**
-	 * Who holds the indexer role. Candidates compete for it through a lease in
-	 * the object storage; a node storing locally is the only node there is, so
-	 * a candidate simply holds it.
+	 * Which node writes which index. Candidates divide the indexes up through
+	 * a leadership table in the object storage; a node storing locally is the
+	 * only node there is, so a candidate simply holds them all.
 	 */
 	@Produces
 	@Singleton
 	public IndexerOwnership indexerOwnership(
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
+		IndexRegistry registry,
 		@ConfigProperty(name = "node.id") Optional<String> nodeId,
 		@ConfigProperty(name = "node.address") Optional<String> address,
 		@ConfigProperty(name = "indexer.lease.duration", defaultValue = "30s") Duration leaseDuration
@@ -210,7 +212,13 @@ public class StorageProviders {
 				storage.get(),
 				nodeId,
 				address,
-				leaseDuration
+				leaseDuration,
+				/*
+				 * Null until the registry has been read: an unread registry and
+				 * a deployment holding nothing both look empty, and only the
+				 * second is a reason to drop claims.
+				 */
+				() -> registry.hasBeenRead() ? registry.names() : null
 			);
 		};
 	}

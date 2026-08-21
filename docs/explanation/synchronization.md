@@ -1,9 +1,9 @@
 # Synchronization
 
 Two mechanisms keep an index in object storage consistent while nodes come
-and go: a lease that decides who *tries* to write, and conditional writes
-that stop anyone else from *succeeding*. They answer different questions and
-neither replaces the other.
+and go: a leadership table that decides who *tries* to write each index, and
+conditional writes that stop anyone else from *succeeding*. They answer
+different questions and neither replaces the other.
 
 ## The manifest is what a synchronized index is
 
@@ -18,8 +18,8 @@ Replacing the remote manifest is conditional: `If-Match` on the ETag of the
 manifest the writer last saw, or `If-None-Match: *` for the first write ever.
 A push built on a manifest the remote no longer holds fails instead of
 overwriting what another writer pushed. This is the safety mechanism - a
-node that wrongly still believes it is the indexer can attempt a push, but
-storage refuses it. An indexer checks at startup that the storage actually
+node that wrongly still believes it writes an index can attempt a push, but
+storage refuses it. A candidate checks at startup that the storage actually
 enforces conditional writes, and refuses to run as one against storage that
 does not.
 
@@ -46,18 +46,36 @@ and new manifests on push. When that cleanup is interrupted, a listing sweep
 catches what is left - touching only objects older than a grace period, so
 it can never race an upload that has not made it into a manifest yet.
 
-## The lease is liveness, not safety
+## Leadership is liveness, not safety
 
-Indexer candidates compete for the role through a lease object in the bucket,
-renewed by conditional writes at a third of its duration
-(`INDEXER_LEASE_DURATION`). When the holder stops renewing - crashed, hung,
-partitioned - the lease lapses and another candidate claims it, which is
-roughly how long a failover takes.
+Which node writes which index is kept in one *leadership table* in the
+bucket: a claim per index naming its holder, next to an entry per candidate
+saying it is alive. The table is replaced whole, conditionally on its
+version like everything else, so two candidates changing it race for one
+write exactly one wins. Every candidate runs a round at a third of the claim
+duration (`INDEXER_LEASE_DURATION`): it renews its own entries, takes claims
+whose holder stopped renewing - crashed, hung, partitioned - and divides the
+indexes up, claiming free ones while it holds fewer than its fair share and
+handing one over per round while it holds more and another candidate holds
+less. A claim lapsing is roughly how long a failover takes.
 
-The lease exists so that at most one node *spends effort* writing, and so
-the other nodes know where to forward writes. It is not what protects the data: a
-clock can drift, a paused process can wake up convinced it still holds a
-lease that lapsed. When that happens, the conditional manifest write and the
-epoch scoping above are what stand between the stale writer and corruption.
-The lease keeps the system live; the conditional writes keep it safe. Keep
-both: neither alone is enough.
+Handing an index over is deliberate, so the node commits and pushes what it
+still holds before reopening it read-only - documents that were acknowledged
+but not yet committed survive a rebalance. Losing an index the uncertain way
+- claims lapsing before they could be renewed - pushes nothing, because a
+successor may already be writing; whatever was never pushed is dropped, and
+the conditional writes below are what keep even that from corrupting
+anything.
+
+An index nothing holds does not wait for a round: the first write to reach a
+candidate claims it there and then, which is how a just-created index gets a
+writer and how a write lands somewhere useful the moment after a holder
+died.
+
+The table exists so that at most one node *spends effort* writing each
+index, and so the other nodes know where to forward its writes. It is not
+what protects the data: a clock can drift, a paused process can wake up
+convinced it still holds claims that lapsed. When that happens, the
+conditional manifest write and the epoch scoping above are what stand
+between the stale writer and corruption. The table keeps the system live;
+the conditional writes keep it safe. Keep both: neither alone is enough.

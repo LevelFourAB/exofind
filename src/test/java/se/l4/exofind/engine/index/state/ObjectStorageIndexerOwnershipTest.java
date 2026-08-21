@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.state;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -8,10 +9,14 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import org.apache.commons.lang3.RandomStringUtils;
+import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.set.ImmutableSet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,18 +25,26 @@ import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 public class ObjectStorageIndexerOwnershipTest {
 	/**
-	 * Lease used by the tests. Ticks run at a third of this, which is what
-	 * keeps the tests fast.
+	 * Claim duration used by the tests. Rounds run at a third of this, which
+	 * is what keeps the tests fast.
 	 */
 	private static final Duration LEASE = Duration.ofMillis(1500);
 
 	S3Client s3Client;
 	ObjectStorage storage;
 	String storagePrefix;
+
+	/**
+	 * The names the registry is pretended to hold, handed to every candidate
+	 * as its view of what exists.
+	 */
+	AtomicReference<ImmutableSet<String>> names;
 
 	List<ObjectStorageIndexerOwnership> running = new ArrayList<>();
 
@@ -49,6 +62,8 @@ public class ObjectStorageIndexerOwnershipTest {
 			Optional.of(storagePrefix),
 			false
 		);
+
+		names = new AtomicReference<>(Sets.immutable.empty());
 	}
 
 	@AfterEach
@@ -72,33 +87,43 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	private ObjectStorageIndexerOwnership newOwnership(String node) {
+		return newOwnership(node, null);
+	}
+
+	private ObjectStorageIndexerOwnership newOwnership(String node, String address) {
 		return new ObjectStorageIndexerOwnership(
 			storage,
 			Optional.of(node),
-			Optional.empty(),
-			LEASE
+			Optional.ofNullable(address),
+			LEASE,
+			names::get
 		);
 	}
 
 	/**
-	 * Start competing for the role, recording whether it is currently held.
+	 * Start competing, recording which indexes are currently held.
 	 */
-	private AtomicBoolean start(ObjectStorageIndexerOwnership ownership) {
-		var owner = new AtomicBoolean();
-		ownership.start(owner::set);
+	private Set<String> start(ObjectStorageIndexerOwnership ownership) {
+		Set<String> owned = ConcurrentHashMap.newKeySet();
+		ownership.start((index, owner) -> {
+			if(owner) {
+				owned.add(index);
+			} else {
+				owned.remove(index);
+			}
+		});
 		running.add(ownership);
-		return owner;
+		return owned;
 	}
 
-	/**
-	 * Write a lease directly, standing in for a node this test does not run.
-	 */
-	private void writeLease(String node, long expiresAt) throws Exception {
-		writeLease(node, expiresAt, null);
-	}
-
-	private void writeLease(String node, long expiresAt, String address) throws Exception {
-		var builder = IndexerLease.newBuilder()
+	private static IndexerLeadership.Claim claim(
+		String index,
+		String node,
+		long expiresAt,
+		String address
+	) {
+		var builder = IndexerLeadership.Claim.newBuilder()
+			.setIndex(index)
 			.setNode(node)
 			.setExpiresAt(expiresAt);
 
@@ -106,20 +131,71 @@ public class ObjectStorageIndexerOwnershipTest {
 			builder.setAddress(address);
 		}
 
-		var bytes = builder.build()
-			.toByteArray();
+		return builder.build();
+	}
+
+	private static IndexerLeadership.Candidate candidate(
+		String node,
+		long expiresAt,
+		String address
+	) {
+		var builder = IndexerLeadership.Candidate.newBuilder()
+			.setNode(node)
+			.setExpiresAt(expiresAt);
+
+		if(address != null) {
+			builder.setAddress(address);
+		}
+
+		return builder.build();
+	}
+
+	/**
+	 * Write a table directly, standing in for nodes this test does not run.
+	 */
+	private void writeTable(
+		List<IndexerLeadership.Claim> claims,
+		List<IndexerLeadership.Candidate> candidates
+	) {
+		var table = IndexerLeadership.newBuilder()
+			.addAllClaims(claims)
+			.addAllCandidates(candidates)
+			.build();
 
 		s3Client.putObject(
 			PutObjectRequest.builder()
 				.bucket(TestObjectStorage.BUCKET)
-				.key(storagePrefix + "/indexer-lease.ef.bin")
+				.key(storagePrefix + "/indexer-leadership.ef.bin")
 				.build(),
-			RequestBody.fromBytes(bytes)
+			RequestBody.fromBytes(table.toByteArray())
 		);
 	}
 
+	/**
+	 * The table as the storage holds it right now, empty when nothing has
+	 * written one.
+	 */
+	private IndexerLeadership readTable() throws Exception {
+		try(
+			var response = s3Client.getObject(
+				GetObjectRequest.builder()
+					.bucket(TestObjectStorage.BUCKET)
+					.key(storagePrefix + "/indexer-leadership.ef.bin")
+					.build()
+			)
+		) {
+			return IndexerLeadership.parseFrom(response.readAllBytes());
+		} catch(S3Exception e) {
+			if(e.statusCode() == 404) {
+				return IndexerLeadership.getDefaultInstance();
+			}
+
+			throw e;
+		}
+	}
+
 	private void await(BooleanSupplier condition, String description) throws InterruptedException {
-		var deadline = System.currentTimeMillis() + 10_000;
+		var deadline = System.currentTimeMillis() + 15_000;
 		while(System.currentTimeMillis() < deadline) {
 			if(condition.getAsBoolean()) {
 				return;
@@ -132,112 +208,347 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	@Test
-	void testCandidateAcquiresFreeRole() throws Exception {
-		var owner = start(newOwnership("a"));
+	void testSoleCandidateTakesEveryIndex() throws Exception {
+		names.set(Sets.immutable.of("books", "games", "music"));
 
-		await(owner::get, "the node to acquire the role");
+		var owned = start(newOwnership("a"));
+
+		await(
+			() -> owned.containsAll(Set.of("books", "games", "music")),
+			"the only candidate to take every index"
+		);
 	}
 
 	/**
-	 * While one node holds a live lease, another candidate keeps waiting
-	 * rather than taking the role from it.
+	 * Two candidates end up with a fair share each - however the indexes were
+	 * distributed when the second one arrived.
 	 */
 	@Test
-	void testSecondCandidateWaitsWhileRoleIsHeld() throws Exception {
-		var a = start(newOwnership("a"));
-		await(a::get, "the first node to acquire the role");
+	void testTwoCandidatesDivideTheIndexes() throws Exception {
+		names.set(Sets.immutable.of("a", "b", "c", "d"));
 
-		var b = start(newOwnership("b"));
+		var first = start(newOwnership("node-1"));
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 2 && second.size() == 2,
+			"the indexes to be divided evenly"
+		);
+
+		var all = new ArrayList<String>();
+		all.addAll(first);
+		all.addAll(second);
+		assertThat(all, containsInAnyOrder("a", "b", "c", "d"));
+	}
+
+	/**
+	 * Claims whose holder died stop being renewed and lapse, after which a
+	 * candidate takes them over.
+	 */
+	@Test
+	void testLapsedClaimsAreTakenOver() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var lapsed = System.currentTimeMillis() - 10_000;
+		writeTable(
+			List.of(
+				claim("books", "dead", lapsed, null),
+				claim("games", "dead", lapsed, null)
+			),
+			List.of()
+		);
+
+		var owned = start(newOwnership("a"));
+
+		await(
+			() -> owned.containsAll(Set.of("books", "games")),
+			"the lapsed claims to be taken over"
+		);
+	}
+
+	/**
+	 * An index whose holder is alive is never taken from it, however unevenly
+	 * that leaves things.
+	 */
+	@Test
+	void testLiveClaimsAreNotTaken() throws Exception {
+		names.set(Sets.immutable.of("held", "free"));
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(claim("held", "other", alive, null)),
+			List.of(candidate("other", alive, null))
+		);
+
+		var owned = start(newOwnership("a"));
+		await(() -> owned.contains("free"), "the free index to be taken");
+
 		Thread.sleep(LEASE.toMillis());
 
-		assertThat(b.get(), is(false));
-		assertThat(a.get(), is(true));
+		assertThat(owned.contains("held"), is(false));
+
+		var table = readTable();
+		var heldBy = table.getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("held"))
+			.findFirst()
+			.orElseThrow()
+			.getNode();
+		assertThat(heldBy, is("other"));
 	}
 
 	/**
-	 * A node that shuts down hands the role over instead of making its
-	 * successor wait the lease out.
+	 * A candidate that shuts down hands its indexes over instead of making
+	 * its successors wait the claims out.
 	 */
 	@Test
-	void testRoleMovesWhenHolderStops() throws Exception {
-		var holder = newOwnership("a");
-		var a = start(holder);
-		await(a::get, "the first node to acquire the role");
+	void testStoppedCandidateHandsItsIndexesOver() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
 
-		var b = start(newOwnership("b"));
+		var holder = newOwnership("a");
+		var first = start(holder);
+		await(
+			() -> first.containsAll(Set.of("books", "games")),
+			"the first candidate to take every index"
+		);
+
+		var second = start(newOwnership("b"));
 
 		holder.stop();
-		await(b::get, "the second node to take the role over");
+
+		await(
+			() -> second.containsAll(Set.of("books", "games")),
+			"the second candidate to take everything over"
+		);
 	}
 
 	/**
-	 * A lease whose holder died stops being renewed and lapses, after which
-	 * a candidate takes it over.
+	 * A candidate that joins a running deployment is handed indexes one round
+	 * at a time, until both hold a fair share.
 	 */
 	@Test
-	void testExpiredLeaseIsTakenOver() throws Exception {
-		writeLease("dead", System.currentTimeMillis() - 10_000);
+	void testNewCandidateIsHandedIndexes() throws Exception {
+		names.set(Sets.immutable.of("a", "b", "c", "d"));
 
-		var owner = start(newOwnership("a"));
-		await(owner::get, "the node to take over the lapsed lease");
+		var first = start(newOwnership("node-1"));
+		await(() -> first.size() == 4, "the first candidate to take every index");
+
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 2 && second.size() == 2,
+			"the indexes to be divided evenly"
+		);
 	}
 
 	/**
-	 * A holder whose lease is replaced under it notices on renewal and gives
-	 * the role up, rather than continue as a second writer.
+	 * A write that found no holder appoints one there and then, without
+	 * waiting for a round - including for an index the registry does not
+	 * hold yet, which is every index while it is being created.
 	 */
 	@Test
-	void testHolderGivesUpWhenLeaseIsTakenOver() throws Exception {
-		var owner = start(newOwnership("a"));
-		await(owner::get, "the node to acquire the role");
+	void testTryClaimTakesAFreeIndex() throws Exception {
+		names.set(Sets.immutable.of("books"));
 
-		writeLease("thief", System.currentTimeMillis() + 60_000);
+		var ownership = newOwnership("a");
+		var owned = start(ownership);
+		await(() -> owned.contains("books"), "the candidate to take the known index");
 
-		await(() -> !owner.get(), "the node to give the role up");
+		assertThat(ownership.tryClaim("brand-new"), is(true));
+		assertThat(owned.contains("brand-new"), is(true));
+
+		var table = readTable();
+		var heldBy = table.getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("brand-new"))
+			.findFirst()
+			.orElseThrow()
+			.getNode();
+		assertThat(heldBy, is("a"));
+	}
+
+	@Test
+	void testTryClaimRefusesAnIndexHeldAlive() throws Exception {
+		names.set(Sets.immutable.of("held"));
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(claim("held", "other", alive, null)),
+			List.of(candidate("other", alive, null))
+		);
+
+		var ownership = newOwnership("a");
+		start(ownership);
+
+		assertThat(ownership.tryClaim("held"), is(false));
 	}
 
 	/**
-	 * The address in a live lease is what other nodes send their callers to.
+	 * A node that never started competing takes nothing, however free the
+	 * index is - claiming is only for candidates.
 	 */
 	@Test
-	void testIndexerAddressIsReadFromLease() throws Exception {
-		writeLease("a", System.currentTimeMillis() + 60_000, "http://a:8080");
+	void testTryClaimWithoutCompetingTakesNothing() {
+		assertThat(newOwnership("a").tryClaim("books"), is(false));
+	}
+
+	/**
+	 * The address in a live claim is where writes to that index are sent.
+	 */
+	@Test
+	void testIndexerAddressNamesTheHolder() throws Exception {
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, "http://a:8080"),
+				claim("games", "b", alive, "http://b:8080")
+			),
+			List.of()
+		);
+
+		var ownership = newOwnership("c");
+		assertThat(ownership.indexerAddress("books"), is(Optional.of("http://a:8080")));
+		assertThat(ownership.indexerAddress("games"), is(Optional.of("http://b:8080")));
+	}
+
+	/**
+	 * An index nothing holds is answered with a live candidate, which takes
+	 * the index by serving the write sent to it.
+	 */
+	@Test
+	void testFreeIndexIsAnsweredWithACandidate() throws Exception {
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(),
+			List.of(candidate("a", alive, "http://a:8080"))
+		);
 
 		assertThat(
-			newOwnership("b").indexerAddress(),
+			newOwnership("b").indexerAddress("books"),
 			is(Optional.of("http://a:8080"))
 		);
 	}
 
 	/**
-	 * A lapsed lease names nobody - its holder may be gone, and sending
-	 * callers to it helps no one.
+	 * A lapsed claim names nobody - its holder may be gone - so the index is
+	 * answered like one nothing holds.
 	 */
 	@Test
-	void testExpiredLeaseNamesNoIndexer() throws Exception {
-		writeLease("a", System.currentTimeMillis() - 10_000, "http://a:8080");
+	void testLapsedClaimFallsBackToTheCandidates() throws Exception {
+		var now = System.currentTimeMillis();
+		writeTable(
+			List.of(claim("books", "dead", now - 10_000, "http://dead:8080")),
+			List.of(candidate("a", now + 60_000, "http://a:8080"))
+		);
 
-		assertThat(newOwnership("b").indexerAddress(), is(Optional.empty()));
+		assertThat(
+			newOwnership("b").indexerAddress("books"),
+			is(Optional.of("http://a:8080"))
+		);
 	}
 
 	/**
-	 * A node never points a caller back at itself - the caller only asks
-	 * after this node could not serve the write.
+	 * A node never names itself - the question is only asked after this node
+	 * could not serve the write.
 	 */
 	@Test
-	void testOwnLeaseNamesNoIndexer() throws Exception {
-		writeLease("a", System.currentTimeMillis() + 60_000, "http://a:8080");
+	void testOwnClaimNamesNoAddress() throws Exception {
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(claim("books", "a", alive, "http://a:8080")),
+			List.of(candidate("a", alive, "http://a:8080"))
+		);
 
-		assertThat(newOwnership("a").indexerAddress(), is(Optional.empty()));
+		assertThat(newOwnership("a").indexerAddress("books"), is(Optional.empty()));
 	}
 
 	/**
-	 * A holder that offered no address cannot be pointed at.
+	 * A claim on an index the registry no longer holds is dropped by its own
+	 * holder, so a deleted index does not stay claimed forever.
 	 */
 	@Test
-	void testLeaseWithoutAddressNamesNoIndexer() throws Exception {
-		writeLease("a", System.currentTimeMillis() + 60_000);
+	void testDeletedIndexIsDropped() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
 
-		assertThat(newOwnership("b").indexerAddress(), is(Optional.empty()));
+		var owned = start(newOwnership("a"));
+		await(
+			() -> owned.containsAll(Set.of("books", "games")),
+			"the candidate to take every index"
+		);
+
+		names.set(Sets.immutable.of("books"));
+
+		await(
+			() -> !owned.contains("games"),
+			"the claim on the deleted index to be dropped"
+		);
+		assertThat(owned.contains("books"), is(true));
+	}
+
+	/**
+	 * Deleting the last index empties the registry, and the claims on what
+	 * was deleted are dropped the same way as when other indexes remain.
+	 */
+	@Test
+	void testEmptiedRegistryDropsEveryClaim() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var owned = start(newOwnership("a"));
+		await(
+			() -> owned.containsAll(Set.of("books", "games")),
+			"the candidate to take every index"
+		);
+
+		names.set(Sets.immutable.empty());
+
+		await(owned::isEmpty, "the claims on the deleted indexes to be dropped");
+	}
+
+	/**
+	 * A registry that has never been read answers {@code null} and is not an
+	 * empty deployment: claims this node already holds are kept, and nothing
+	 * new is claimed, until what exists is known.
+	 */
+	@Test
+	void testUnreadRegistryKeepsHeldClaims() throws Exception {
+		names.set(null);
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(claim("books", "a", alive, null)),
+			List.of(candidate("a", alive, null))
+		);
+
+		var owned = start(newOwnership("a"));
+
+		await(() -> owned.contains("books"), "the candidate to keep its own claim");
+
+		Thread.sleep(LEASE.toMillis());
+		assertThat(owned, is(Set.of("books")));
+	}
+
+	/**
+	 * A candidate that stops while holding nothing still takes its candidate
+	 * entry out of the table, so free-index writes stop being sent its way at
+	 * once instead of when the entry lapses.
+	 */
+	@Test
+	void testStoppedCandidateWithoutIndexesLeavesTheTable() throws Exception {
+		var candidate = newOwnership("a");
+		start(candidate);
+
+		await(() -> {
+			try {
+				return readTable().getCandidatesList().stream()
+					.anyMatch(c -> c.getNode().equals("a"));
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the candidate to appear in the table");
+
+		candidate.stop();
+
+		var remaining = readTable().getCandidatesList().stream()
+			.filter(c -> c.getNode().equals("a"))
+			.toList();
+		assertThat(remaining, is(List.of()));
 	}
 }

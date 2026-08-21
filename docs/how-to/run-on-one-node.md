@@ -20,8 +20,8 @@ That runs the node on port 8080 with a volume behind it. Everything below
 assumes the root key from the compose file; replace it with one of your own
 before the node is reachable by anything but you.
 
-Define an index, put a document in and search for it - the node holds the
-indexer role on its own, so writes work without asking:
+Define an index, put a document in and search for it - the node holds every
+index on its own, so writes work without asking:
 
 ```shell
 curl -X PUT localhost:8080/v1alpha1/admin/indexes/books \

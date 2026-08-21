@@ -70,7 +70,7 @@ public class NodeSummary {
 		line.addKeyValue("directory", storageDirectory)
 			.log(
 				nodeState.isIndexerCandidate()
-					? "Starting node, which may take the indexer role"
+					? "Starting node, which competes to write indexes"
 					: "Starting node, which only answers searches"
 			);
 	}

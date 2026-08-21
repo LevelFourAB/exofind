@@ -57,10 +57,10 @@ Read in `object` mode, and ignored in `local`.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXER` | Whether this node may act as the indexer. Any number of candidates may run; they coordinate through a lease in the object storage and exactly one holds the role at a time, with another taking over when the holder stops or stalls | `false`, and `true` in `local` mode |
-| `INDEXER_LEASE_DURATION` | How long the indexer role is held before it lapses without renewal, which is roughly how long a failover takes. Renewal happens at a third of this | `30s` |
-| `NODE_ID` | Name this node holds the indexer lease under | hostname plus a random suffix |
-| `NODE_ADDRESS` | Address this node serves writes on, recorded in the lease so other nodes can forward writes to the indexer. It only has to be reachable from the other nodes. Without it, writes to other nodes are refused instead of forwarded | none |
+| `INDEXER` | Whether this node may write indexes. Any number of candidates may run; they divide the indexes among themselves through a leadership table in the object storage, each index written by exactly one of them at a time, with the others taking an index over when its holder stops or stalls | `false`, and `true` in `local` mode |
+| `INDEXER_LEASE_DURATION` | How long an index is held before the claim lapses without renewal, which is roughly how long a failover takes. Renewal happens at a third of this | `30s` |
+| `NODE_ID` | Name this node competes under in the leadership table | hostname plus a random suffix |
+| `NODE_ADDRESS` | Address this node serves writes on, recorded in the table so other nodes can forward each write to the node holding its index. It only has to be reachable from the other nodes. Without it, writes to other nodes are refused instead of forwarded | none |
 
 An indexer relies on the storage enforcing conditional writes (`If-Match` on
 `PUT`) to refuse a second writer instead of being corrupted by it. Amazon S3
@@ -294,6 +294,6 @@ collecting the whole heap every cycle.
 ### Running out of heap
 
 `-XX:+ExitOnOutOfMemoryError` stops a node that has run out of heap. A node
-left up instead holds the lock on `LOCAL_STORAGE_DIRECTORY` and, if it is the
-indexer, keeps renewing its lease - so nothing takes over from a node that
-cannot do the work. Exiting hands both back.
+left up instead holds the lock on `LOCAL_STORAGE_DIRECTORY` and keeps
+renewing its claims on the indexes it writes - so nothing takes over from a
+node that cannot do the work. Exiting hands both back.

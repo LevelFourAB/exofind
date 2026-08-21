@@ -103,8 +103,8 @@ every other node within its `EXOFIND_AUTH_REFRESH_INTERVAL` (10s by default) -
 so a key leaked into a public repository stops working in seconds, not at the
 next deploy.
 
-Managing keys does not need the indexer role, so this works while the indexer is
-down.
+Managing keys does not need to reach any particular node, so this works while
+no candidate is up to take writes.
 
 Setting `expiresAt` on a key makes it stop working on its own, which is worth
 doing for anything short-lived - a contractor's key, a one-off migration.

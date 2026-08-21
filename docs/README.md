@@ -44,7 +44,7 @@ is, and explanation says why it is that way.
 - [Run on one node](how-to/run-on-one-node.md) - keep everything on disk with
   nothing else running, and what that costs.
 - [Run more than one node](how-to/run-multiple-nodes.md) - indexer candidacy,
-  failover and how writes find the indexer.
+  failover and how writes find the node that serves them.
 - [Deploy on Kubernetes](how-to/deploy-on-kubernetes.md) - a pool that
   searches and a pool that writes, where the writes go, and what many indexes
   need from the host.
@@ -86,7 +86,7 @@ is, and explanation says why it is that way.
 - [Generations](explanation/generations.md) - why an index is a name with
   generations under it, and why the name is what callers hold.
 - [Synchronization](explanation/synchronization.md) - manifests, epochs and
-  the indexer lease; what keeps two writers from corrupting an index.
+  the leadership table; what keeps two writers from corrupting an index.
 - [Lucene compatibility](explanation/lucene-compatibility.md) - why an index
   can outlive the code that can read it, and what the engine does about it.
 - [Relevance](explanation/relevance.md) - the layers results are ordered by,

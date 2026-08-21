@@ -25,9 +25,28 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 public @interface ServedBy {
 	/**
+	 * Path parameter every endpoint about one index names it with. Both the
+	 * forwarding filter and {@code AuthFilter} read which index a request is
+	 * about from it, so it is defined once here rather than in each -
+	 * {@code RoutingCoverageTest} and {@code AuthCoverageTest} check that
+	 * every endpoint spells it this way.
+	 */
+	String INDEX_PARAMETER = "name";
+
+	/**
 	 * The node the request runs on.
 	 */
 	Node value();
+
+	/**
+	 * Whether the request may create the index it names. A request that may
+	 * appoints a writer for a name the deployment does not hold yet - which
+	 * is every index while it is being created. One that may not is served
+	 * where it lands when the index does not exist, so the answer is the
+	 * endpoint's own rather than a writer being appointed for a name that
+	 * does not exist.
+	 */
+	boolean creates() default false;
 
 	enum Node {
 		/**

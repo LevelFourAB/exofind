@@ -149,7 +149,7 @@ public class IndexResource {
 	@Path("/{name}")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.INDEXES_WRITE)
-	@ServedBy(ServedBy.Node.INDEXER)
+	@ServedBy(value = ServedBy.Node.INDEXER, creates = true)
 	public Response put(
 		@PathParam("name") String name,
 		@HeaderParam("If-Match") String ifMatch,

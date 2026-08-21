@@ -38,8 +38,8 @@ consequences worth knowing:
   until its next read, at most `EXOFIND_AUTH_REFRESH_INTERVAL`. A key the node
   has never seen is looked up right away, so a newly created key works without
   waiting.
-- Managing keys does not need the indexer role, so a leaked key can be revoked
-  while the indexer is down. Requests to `/v1alpha1/admin/keys` are served by
+- Managing keys does not need any particular node, so a leaked key can be
+  revoked while no candidate is up. Requests to `/v1alpha1/admin/keys` are served by
   whichever node receives them and are never passed to the indexer.
 
 In `local` mode there is one node, so the first two say nothing new; the key

@@ -103,15 +103,10 @@ message Manifest {
 }
 
 /**
- * IndexerLease is the claim a node holds on being the one that indexes.
- * Stored next to the indexes rather than inside one, and replaced with a
- * conditional write like the manifests are, which is what turns acquiring it
- * into a race exactly one node can win.
- *
- * Holding the lease is a liveness matter - it decides who tries to write.
- * The conditional writes of the manifests are what keep a node that wrongly
- * still believes it is the indexer from doing damage, so a reader of this
- * message must never treat it as proof.
+ * IndexerLease was the claim a node held on being the one that indexes,
+ * before leadership became per index. No longer written or read; the object
+ * it was stored in may still exist in deployments that ran those versions,
+ * and the message stays readable so the object can be understood if found.
  */
 message IndexerLease {
 	/**
@@ -130,4 +125,78 @@ message IndexerLease {
 	 * when the node has none to offer.
 	 */
 	optional string address = 3;
+}
+
+/**
+ * IndexerLeadership is which node writes each index, next to which nodes
+ * could. One object next to the indexes, replaced whole with a conditional
+ * write like the manifests are, so two nodes changing it race for one write
+ * exactly one of them wins.
+ *
+ * Holding a claim is a liveness matter - it decides who tries to write that
+ * index. The conditional writes of the manifests are what keep a node that
+ * wrongly still believes it holds a claim from doing damage, so a reader of
+ * this message must never treat it as proof.
+ */
+message IndexerLeadership {
+	/**
+	 * One node's hold on writing one index.
+	 */
+	message Claim {
+		/**
+		 * Name of the index, without a generation - every generation of a
+		 * name is written by the same node.
+		 */
+		optional string index = 1;
+		/**
+		 * Node holding the claim.
+		 */
+		optional string node = 2;
+		/**
+		 * Address the node serves writes to this index on. Unset when the
+		 * node has none to offer.
+		 */
+		optional string address = 3;
+		/**
+		 * When the claim lapses unless renewed, as milliseconds since the
+		 * Unix epoch. Compared against the clock of whoever reads it, so skew
+		 * between nodes stretches or shrinks the wait - renewal happens well
+		 * inside the duration to absorb that.
+		 */
+		optional int64 expires_at = 4;
+	}
+
+	/**
+	 * A node that competes for claims, kept current by the same renewals that
+	 * keep its claims. Being listed is what lets the other candidates count
+	 * heads when they divide the indexes up, and what gives an index with no
+	 * claim somewhere to send a write.
+	 */
+	message Candidate {
+		/**
+		 * Node competing.
+		 */
+		optional string node = 1;
+		/**
+		 * Address the node serves writes on. Unset when the node has none to
+		 * offer.
+		 */
+		optional string address = 2;
+		/**
+		 * When this entry lapses unless renewed, as milliseconds since the
+		 * Unix epoch, read like the expiry of a claim.
+		 */
+		optional int64 expires_at = 3;
+	}
+
+	/**
+	 * At most one claim per index. A claim past its expiry is free to be
+	 * taken, not merely stale.
+	 */
+	repeated Claim claims = 1;
+
+	/**
+	 * The candidates that have renewed recently, one entry per node.
+	 */
+	repeated Candidate candidates = 2;
 }

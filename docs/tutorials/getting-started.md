@@ -57,9 +57,9 @@ it keeps everything on its own disk instead and the settings above go unread -
 which is a fine way to run one node, and is what [Run on one
 node](../how-to/run-on-one-node.md) is about.
 
-`INDEXER=true` makes this node a candidate for the indexer role. Being the
-only candidate, it claims the role through a lease it writes into the
-bucket - you now have a one node cluster.
+`INDEXER=true` makes this node a candidate for writing indexes. Being the
+only candidate, it claims every index through a leadership table it writes
+into the bucket - you now have a one node cluster.
 
 Dev mode checks no credentials, which is why nothing below carries one.
 Anywhere else a node wants `Authorization: Bearer <key>` on every request -

@@ -7,9 +7,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 
 /**
- * IndexerCoordinator connects ownership of the indexer role to the state of
- * this node. A candidate starts competing for the role when the application
- * starts; the open indexes follow the node into and out of it through the
+ * IndexerCoordinator connects ownership of the indexes to the state of this
+ * node. A candidate starts competing for them when the application starts;
+ * the open indexes follow the node into and out of writing them through the
  * listeners on {@link NodeState}.
  */
 @ApplicationScoped
@@ -30,7 +30,17 @@ public class IndexerCoordinator {
 			return;
 		}
 
-		ownership.start(nodeState::updateOwnership);
+		ownership.start(new IndexerOwnership.Listener() {
+			@Override
+			public void onOwnershipChanged(String index, boolean owner) {
+				nodeState.updateOwnership(index, owner);
+			}
+
+			@Override
+			public void onOwnershipRevoked(String index) {
+				nodeState.revokeOwnership(index);
+			}
+		});
 		started = true;
 	}
 

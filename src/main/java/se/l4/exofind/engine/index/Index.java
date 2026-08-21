@@ -202,6 +202,12 @@ public class Index {
 	private final NodeState nodeState;
 
 	private final String id;
+
+	/**
+	 * Name of the index this is a generation of, which is what ownership is
+	 * held by - every generation of a name is written by the same node.
+	 */
+	private final String indexName;
 	private final Path localPath;
 	private final StateSync sync;
 
@@ -372,6 +378,7 @@ public class Index {
 	) {
 		this.nodeState = nodeState;
 		this.id = name;
+		this.indexName = IndexName.parse(name).index();
 		this.localPath = localPath;
 		this.sync = sync;
 
@@ -409,12 +416,13 @@ public class Index {
 	}
 
 	/**
-	 * Get if this index is read-only.
+	 * Get if this index is read-only, which is decided per name - this node
+	 * may write some indexes and only read others.
 	 *
 	 * @return
 	 */
 	public boolean isReadOnly() {
-		return !nodeState.isIndexer();
+		return !nodeState.isIndexer(indexName);
 	}
 
 	/**
@@ -658,9 +666,27 @@ public class Index {
 	 * Reopen this index to match whether this node may write to it, dropping
 	 * anything uncommitted and taking the remote state as what to continue
 	 * from. Called when the node gains or loses the indexer role, which
-	 * changes which mode the Lucene directory has to be open in.
+	 * changes which mode the Lucene directory has to be open in. An index
+	 * already open in the mode the node holds it in is left as it is.
 	 */
 	public void reopen() {
+		reopen(false);
+	}
+
+	/**
+	 * Reopen this index to match whether this node may write to it, taking
+	 * the remote state as what to continue from. An index already open in the
+	 * mode the node holds it in is left as it is.
+	 *
+	 * @param flushFirst
+	 *   whether an index being reopened out of writing commits and pushes
+	 *   what it holds before the reopen, instead of it being dropped - for a
+	 *   handover this node chose, where the remote is still its to write. A
+	 *   flush that fails gives the changes up and the reopen continues.
+	 */
+	public void reopen(boolean flushFirst) {
+		boolean flush;
+
 		syncLock.writeLock().lock();
 		try {
 			if(state == IndexState.PULLING) {
@@ -673,6 +699,49 @@ public class Index {
 
 			if(state == IndexState.CLOSED) {
 				// A closed instance is not brought back
+				return;
+			}
+
+			var shouldWrite = !isReadOnly();
+			if(state != IndexState.NEEDS_PULL && shouldWrite == (writer != null)) {
+				/*
+				 * Already open the way the node holds it. Skipped rather than
+				 * reopened so that an ownership change about other indexes -
+				 * or one already applied - does not roll a writer back.
+				 */
+				return;
+			}
+
+			flush = flushFirst
+				&& writer != null
+				&& !shouldWrite
+				&& state != IndexState.USABLE;
+		} finally {
+			syncLock.writeLock().unlock();
+		}
+
+		if(flush) {
+			/*
+			 * Documents answered but not yet committed would otherwise be
+			 * dropped by the pull below - a handover is deliberate, so they
+			 * are put where the successor will pull them from.
+			 */
+			try {
+				commitChanges();
+			} catch(IOException | RuntimeException e) {
+				logger.atWarn()
+					.addKeyValue("index", id)
+					.setCause(e)
+					.log(
+						"Could not push before handing the index over, giving up"
+							+ " its unpushed changes; " + e.getMessage()
+					);
+			}
+		}
+
+		syncLock.writeLock().lock();
+		try {
+			if(state == IndexState.PULLING || state == IndexState.CLOSED) {
 				return;
 			}
 
@@ -1136,6 +1205,16 @@ public class Index {
 		}
 
 		if(!state.canModifyContents()) {
+			throw new IndexOutOfDateException(id, state);
+		}
+
+		if(writer == null) {
+			/*
+			 * The node may write the index but the directory is still open the
+			 * read-only way - the node took the index moments ago and the
+			 * reopen has not finished. Refused as out of date so the caller
+			 * retries, rather than reaching the writer that is not there.
+			 */
 			throw new IndexOutOfDateException(id, state);
 		}
 	}

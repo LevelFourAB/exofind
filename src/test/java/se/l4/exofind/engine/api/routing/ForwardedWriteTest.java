@@ -28,7 +28,10 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import com.sun.net.httpserver.HttpServer;
 
-import se.l4.exofind.engine.index.state.IndexerLease;
+import se.l4.exofind.engine.index.registry.GenerationEntry;
+import se.l4.exofind.engine.index.registry.IndexEntry;
+import se.l4.exofind.engine.index.registry.IndexRegistryStore;
+import se.l4.exofind.engine.index.state.IndexerLeadership;
 import se.l4.exofind.engine.index.state.TestObjectStorage;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -50,10 +53,10 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  * that stops a second hop - and exactly what a caller gets back. A second
  * real node would serve the requests instead of showing them.
  *
- * <p>Who the indexer is comes from the lease object, written here the way a
- * real indexer writes it. Answers about the lease are cached for a few
- * seconds on the node, so the tests that change it wait for the node to
- * notice rather than expecting it at once.
+ * <p>Which node writes which index comes from the leadership table, written
+ * here the way real candidates write it. Answers about the table are cached
+ * for a few seconds on the node, so the tests that change it wait for the
+ * node to notice rather than expecting it at once.
  */
 @QuarkusTest
 @TestProfile(ForwardedWriteTest.NonIndexingNode.class)
@@ -138,6 +141,34 @@ public class ForwardedWriteTest {
 	private static final ConcurrentLinkedQueue<Received> received = new ConcurrentLinkedQueue<>();
 	private static volatile Answer answer = Answer.json(200, "{}");
 
+	/**
+	 * Register the indexes the tests write to. A write for an index the
+	 * deployment does not hold is served where it lands for its 404 rather
+	 * than forwarded, so forwarding is only observable for indexes that
+	 * exist.
+	 */
+	@BeforeAll
+	static void registerIndexes() {
+		var registry = IndexRegistryStore.newBuilder();
+		for(var name : List.of("books", "games", "fresh")) {
+			registry.addIndexes(
+				IndexEntry.newBuilder()
+					.setName(name)
+					.setLive("1")
+					.addGenerations(GenerationEntry.newBuilder().setName("1"))
+			);
+		}
+
+		TestObjectStorage.client().putObject(
+			PutObjectRequest.builder()
+				.bucket(TestObjectStorage.BUCKET)
+				.key(NonIndexingNode.PREFIX + "/registry/indexes.ef.bin")
+				.contentType("application/octet-stream")
+				.build(),
+			RequestBody.fromBytes(registry.build().toByteArray())
+		);
+	}
+
 	@BeforeAll
 	static void startIndexerStandIn() throws IOException {
 		indexer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -182,24 +213,51 @@ public class ForwardedWriteTest {
 	}
 
 	/**
-	 * Write the lease the way an indexer holding the role writes it, naming
-	 * the given address as where writes are served.
+	 * Write the leadership table the way real candidates write it. Claims are
+	 * given as pairs of index name and address, each held by a node named for
+	 * its address, alive for long enough that the tests never race an expiry.
 	 */
-	private static void writeLease(String address) {
-		var lease = IndexerLease.newBuilder()
-			.setNode("stand-in")
-			.setAddress(address)
-			.setExpiresAt(System.currentTimeMillis() + Duration.ofMinutes(10).toMillis())
-			.build();
+	private static void writeLeadership(
+		Map<String, String> claims,
+		Map<String, String> candidates
+	) {
+		var alive = System.currentTimeMillis() + Duration.ofMinutes(10).toMillis();
+		var table = IndexerLeadership.newBuilder();
+
+		for(var claim : claims.entrySet()) {
+			table.addClaims(
+				IndexerLeadership.Claim.newBuilder()
+					.setIndex(claim.getKey())
+					.setNode("stand-in-" + claim.getValue())
+					.setAddress(claim.getValue())
+					.setExpiresAt(alive)
+			);
+		}
+
+		for(var candidate : candidates.entrySet()) {
+			table.addCandidates(
+				IndexerLeadership.Candidate.newBuilder()
+					.setNode(candidate.getKey())
+					.setAddress(candidate.getValue())
+					.setExpiresAt(alive)
+			);
+		}
 
 		TestObjectStorage.client().putObject(
 			PutObjectRequest.builder()
 				.bucket(TestObjectStorage.BUCKET)
-				.key(NonIndexingNode.PREFIX + "/indexer-lease.ef.bin")
+				.key(NonIndexingNode.PREFIX + "/indexer-leadership.ef.bin")
 				.contentType("application/octet-stream")
 				.build(),
-			RequestBody.fromBytes(lease.toByteArray())
+			RequestBody.fromBytes(table.build().toByteArray())
 		);
+	}
+
+	/**
+	 * The common case of the tests: the stand-in holds {@code books}.
+	 */
+	private static void claimBooksAt(String address) {
+		writeLeadership(Map.of("books", address), Map.of());
 	}
 
 	private static io.restassured.specification.RequestSpecification asRoot() {
@@ -208,7 +266,7 @@ public class ForwardedWriteTest {
 
 	/**
 	 * Repeat a request until the node answers something other than the given
-	 * status, for the tests that change the lease and have to wait out the
+	 * status, for the tests that change the table and have to wait out the
 	 * node's cached answer about it.
 	 */
 	private static Response awaitOtherThan(int status, Supplier<Response> request) {
@@ -217,6 +275,28 @@ public class ForwardedWriteTest {
 		while(true) {
 			var response = request.get();
 			if(response.statusCode() != status || System.nanoTime() > deadline) {
+				return response;
+			}
+
+			try {
+				Thread.sleep(250);
+			} catch(InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return response;
+			}
+		}
+	}
+
+	/**
+	 * Repeat a request until the node answers with the given status, for the
+	 * tests where the stale answer could be more than one thing.
+	 */
+	private static Response awaitStatus(int status, Supplier<Response> request) {
+		var deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+
+		while(true) {
+			var response = request.get();
+			if(response.statusCode() == status || System.nanoTime() > deadline) {
 				return response;
 			}
 
@@ -254,14 +334,14 @@ public class ForwardedWriteTest {
 		asRoot()
 			.contentType("application/json")
 			.body("{}")
-			.when().post("/v1alpha1/indexes/books/search")
+			.when().post("/v1alpha1/indexes/missing/search")
 			.then().statusCode(404);
 	}
 
 	@Test
 	@Order(3)
 	void aWriteIsPassedAlongWholeAndAnsweredWithWhatTheIndexerSaid() {
-		writeLease(indexerAddress());
+		claimBooksAt(indexerAddress());
 		answer = Answer.json(200, "{\"indexed\": 1}");
 
 		var body = "{\"documents\": [{\"id\": \"1\", \"title\": \"Silent Spring\"}]}";
@@ -432,17 +512,122 @@ public class ForwardedWriteTest {
 		assertThat(received.poll(), is(nullValue()));
 	}
 
+	/**
+	 * Leadership is per index: writes to two indexes held by two different
+	 * nodes each reach their own holder.
+	 */
 	@Test
 	@Order(10)
+	void writesToDifferentIndexesReachDifferentHolders() throws Exception {
+		var second = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		var secondReceived = new ConcurrentLinkedQueue<Received>();
+		second.createContext("/", exchange -> {
+			secondReceived.add(new Received(
+				exchange.getRequestMethod(),
+				exchange.getRequestURI(),
+				Map.copyOf(exchange.getRequestHeaders()),
+				exchange.getRequestBody().readAllBytes()
+			));
+
+			var body = "{}".getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().add("Content-Type", "application/json");
+			exchange.sendResponseHeaders(200, body.length);
+			exchange.getResponseBody().write(body);
+			exchange.close();
+		});
+		second.start();
+
+		try {
+			var secondAddress = "http://127.0.0.1:" + second.getAddress().getPort();
+			writeLeadership(
+				Map.of(
+					"books", indexerAddress(),
+					"games", secondAddress
+				),
+				Map.of()
+			);
+
+			awaitOtherThan(409, () ->
+				asRoot()
+					.contentType("application/json")
+					.body("{\"documents\": []}")
+					.when().post("/v1alpha1/indexes/games/documents")
+			).then().statusCode(200);
+
+			var toSecond = secondReceived.poll();
+			assertThat(toSecond, is(notNullValue()));
+			assertThat(toSecond.uri().getPath(), is("/v1alpha1/indexes/games/documents"));
+			assertThat(received.poll(), is(nullValue()));
+
+			asRoot()
+				.contentType("application/json")
+				.body("{\"documents\": []}")
+				.when().post("/v1alpha1/indexes/books/documents")
+				.then().statusCode(200);
+
+			var toFirst = received.poll();
+			assertThat(toFirst, is(notNullValue()));
+			assertThat(toFirst.uri().getPath(), is("/v1alpha1/indexes/books/documents"));
+			assertThat(secondReceived.poll(), is(nullValue()));
+		} finally {
+			second.stop(0);
+		}
+	}
+
+	/**
+	 * An index nothing holds is sent to a live candidate, which is what makes
+	 * the first write to a brand-new index find a node to appoint - this node
+	 * does not compete, so someone that does has to be found.
+	 */
+	@Test
+	@Order(11)
+	void aWriteToAnIndexNothingHoldsIsSentToACandidate() {
+		writeLeadership(Map.of(), Map.of("stand-in", indexerAddress()));
+
+		awaitOtherThan(409, () ->
+			asRoot()
+				.contentType("application/json")
+				.body("{\"documents\": []}")
+				.when().post("/v1alpha1/indexes/fresh/documents")
+		).then().statusCode(200);
+
+		var forwarded = received.poll();
+		assertThat(forwarded, is(notNullValue()));
+		assertThat(forwarded.uri().getPath(), is("/v1alpha1/indexes/fresh/documents"));
+	}
+
+	/**
+	 * A write naming an index the deployment does not hold is served where it
+	 * lands for its 404, rather than being forwarded toward a writer that
+	 * would answer the same - existence is answered by the registry, not by
+	 * finding out the long way.
+	 */
+	@Test
+	@Order(12)
+	void aWriteToAnIndexTheDeploymentDoesNotHoldIsAnsweredWhereItLands() {
+		writeLeadership(Map.of(), Map.of("stand-in", indexerAddress()));
+
+		awaitStatus(404, () ->
+			asRoot()
+				.contentType("application/json")
+				.body("{\"documents\": []}")
+				.when().post("/v1alpha1/indexes/unregistered/documents")
+		).then().statusCode(404);
+
+		assertThat(received.poll(), is(nullValue()));
+	}
+
+	@Test
+	@Order(13)
 	void anIndexerThatDoesNotAnswerIsABadGateway() throws IOException {
 		int deadPort;
 		try(var socket = new ServerSocket(0)) {
 			deadPort = socket.getLocalPort();
 		}
 
-		writeLease("http://127.0.0.1:" + deadPort);
+		claimBooksAt("http://127.0.0.1:" + deadPort);
 
-		var response = awaitOtherThan(200, () ->
+		var response = awaitStatus(502, () ->
 			asRoot()
 				.contentType("application/json")
 				.body("{\"documents\": []}")

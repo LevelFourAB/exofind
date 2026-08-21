@@ -534,6 +534,130 @@ public class IndexTest {
 		index.commit();
 	}
 
+	/**
+	 * The definition a handover test writes: one boolean field, enough for a
+	 * document to be indexed and counted.
+	 */
+	private static IndexDef oneBooleanField() {
+		return IndexDef.newBuilder()
+			.putFields(
+				"field1",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setBoolean(BooleanFieldTypeDef.getDefaultInstance())
+					)
+					.build()
+			)
+			.build();
+	}
+
+	/**
+	 * A handover the node chose flushes first: documents that were answered
+	 * but not yet committed are committed and pushed for the successor,
+	 * rather than dropped by the reopen.
+	 */
+	@Test
+	public void testHandingOverFlushesUncommittedDocuments() throws IOException {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var index = new Index(state, "test", path, new NoopSync());
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+
+		index.addDocument(new Document(new Document.Value("field1", true)));
+
+		state.updateOwnership(false);
+		index.reopen(true);
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+	}
+
+	/**
+	 * Losing an index without the chance to hand it over may not push - the
+	 * successor may already be writing - so the reopen drops what was never
+	 * committed.
+	 */
+	@Test
+	public void testReopeningWithoutFlushDropsUncommittedDocuments() throws IOException {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var index = new Index(state, "test", path, new NoopSync());
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+
+		index.addDocument(new Document(new Document.Value("field1", true)));
+
+		state.updateOwnership(false);
+		index.reopen();
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(0L));
+	}
+
+	/**
+	 * Reopening an index that is already open the way the node holds it
+	 * changes nothing - an ownership change about other indexes must not roll
+	 * back what this one has answered but not yet committed.
+	 */
+	@Test
+	public void testReopeningInTheSameModeKeepsUncommittedDocuments() throws IOException {
+		var index = create(
+			IndexDef.newBuilder()
+				.putFields(
+					"field1",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setBoolean(BooleanFieldTypeDef.getDefaultInstance())
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(new Document(new Document.Value("field1", true)));
+		index.reopen();
+		index.commit();
+
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+	}
+
+	/**
+	 * Between gaining an index and the reopen that gives it a writer, a write
+	 * is refused as out of date rather than reaching the writer that is not
+	 * there - the caller retries and finds the index writable.
+	 */
+	@Test
+	public void testGainedIndexRefusesWritesUntilReopened() throws IOException {
+		var state = new NodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var index = new Index(state, "test", path, new NoopSync());
+		indexes.add(index);
+		index.pull();
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+
+		state.updateOwnership("test", true);
+		assertThrows(
+			IndexOutOfDateException.class,
+			() -> index.addDocument(new Document(new Document.Value("field1", true)))
+		);
+
+		index.reopen();
+		index.updateDefinition(oneBooleanField());
+		index.addDocument(new Document(new Document.Value("field1", true)));
+		index.commit();
+	}
+
 	@Test
 	public void testMultipleFieldValues() throws IOException {
 		var index = create(

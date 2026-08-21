@@ -18,39 +18,50 @@ A reader is as current as its last pull, on the interval set by
 the cost of more storage traffic, or hit the `pull` action to take the
 latest state of an index right away.
 
-## Make the writer survive failures
+## Share the writing, and make it survive failures
 
 Set `INDEXER=true` on two or three nodes. That makes them *candidates*: they
-compete for the indexer role through a lease in the bucket, exactly one
-holds it at a time, and when the holder stops renewing another takes over.
-There is no benefit to many candidates beyond surviving the loss of a few.
+divide the indexes among themselves through a leadership table in the
+bucket, each index held by exactly one of them at a time. A candidate that
+stops renewing hands its indexes to the others, so a second candidate is how
+writing survives a node dying - and each candidate writes its own share, so
+more candidates also spread the write work. Writes to a single index never
+spread: one node writes an index however many candidates run, so past two or
+three the benefit thins out unless the deployment holds many busy indexes.
 
-- `INDEXER_LEASE_DURATION` (30s) is how long the role is held without
+- `INDEXER_LEASE_DURATION` (30s) is how long an index is held without
   renewal - roughly how long a failover takes. Renewal happens at a third
   of it.
-- `NODE_ID` names the node in the lease; the default of hostname plus a
+- `NODE_ID` names the node in the table; the default of hostname plus a
   random suffix is usually right.
 - Set `NODE_ADDRESS` on every candidate to the address it serves writes on.
-  It is recorded in the lease, and is what lets other nodes forward writes
-  to the current indexer - without it, writes sent to other nodes are
-  refused with `409`. The address only has to be reachable from the other
-  nodes, not from clients.
+  It is recorded in the table, and is what lets other nodes forward writes
+  to whichever candidate holds an index - without it, writes sent to other
+  nodes are refused with `409`. The address only has to be reachable from
+  the other nodes, not from clients.
 
-The lease only decides who tries to write. What keeps a stale writer from
+The table only decides who tries to write. What keeps a stale writer from
 corrupting anything is the storage refusing its pushes - see
 [Synchronization](../explanation/synchronization.md). That protection
 requires the storage to enforce conditional writes; the node checks at
-startup and refuses to run as an indexer against storage that does not.
+startup and refuses to run as a candidate against storage that does not.
+
+Upgrade every candidate together when a release changes how they
+coordinate: candidates on different versions do not corrupt anything - the
+conditional writes hold regardless - but they can contest each other's
+indexes and churn instead of settling.
 
 ## Send writes anywhere
 
-Clients do not need to know which node is the indexer. A write that reaches
-another node is forwarded to the indexer by the node itself - same request,
-same credential - and answered with whatever the indexer answered, so the
-client never sees which node did the work. Only when no indexer is running
-(or the indexer set no `NODE_ADDRESS`) does a write fail, with
-`409 Conflict` and the code `indexer:unavailable`; an indexer that cannot be
-reached answers `502` with `indexer:unreachable`.
+Clients do not need to know which node writes which index. A write that
+reaches another node is forwarded to the holder - same request, same
+credential - and answered with whatever the holder answered, so the client
+never sees which node did the work. An index nothing holds yet - just
+created, or its holder just died - is claimed on the spot by the candidate
+the write reaches. Only when no candidate is running (or none set a
+`NODE_ADDRESS`) does a write fail, with `409 Conflict` and the code
+`indexer:unavailable`; a holder that cannot be reached answers `502` with
+`indexer:unreachable`.
 
 ## Bound what a node holds
 

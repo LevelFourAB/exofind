@@ -57,18 +57,22 @@ Code lives under `se.l4.exofind.engine`.
   coldest closed directories when `indexes.disk.maxSize` is set, and
   `LocalCopy` is what refuses to remove anything the remote does not fully
   hold.
-- **`NodeState` says whether this node is the indexer.** The `indexer` property
-  is candidacy, `IndexerOwnership` is the role; gaining or losing it reopens
-  every open index through `NodeState`'s listeners.
+- **`NodeState` says which indexes this node writes.** The `indexer` property
+  is candidacy, `IndexerOwnership` divides the index names among the
+  candidates through a leadership table; gaining or losing a name reopens its
+  open generations through `NodeState`'s listeners. Writes for an index a node
+  does not hold are forwarded by `IndexerForwardFilter`, per what the endpoint
+  declares with `@ServedBy` - and a write for an index nothing holds is what
+  appoints its writer, via `tryClaim`.
 - **`se.l4.exofind.engine.auth` decides who a request is from.** `Keys` turns a
   bearer token into a `Principal`, and `AuthFilter` checks that principal
   against the `@RequiresPermission` the endpoint declares.
 
-Only one node writes at a time, and that takes both halves: the lease decides
-who *tries* (liveness), while the conditional manifest writes and the
-epoch-scoped object keys are what stop a node that wrongly believes it is the
-indexer from corrupting anything (safety). Neither alone is enough - see
-`docs/explanation/synchronization.md`.
+Only one node writes an index at a time, and that takes both halves: the
+leadership table decides who *tries* (liveness), while the conditional
+manifest writes and the epoch-scoped object keys are what stop a node that
+wrongly believes it holds an index from corrupting anything (safety). Neither
+alone is enough - see `docs/explanation/synchronization.md`.
 
 Storing locally has neither half, so `StorageDirectoryLock` supplies what they
 were protecting: a file lock held on the storage directory for as long as the

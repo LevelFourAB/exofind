@@ -5,7 +5,7 @@ full vocabulary is in the [search API](../reference/search-api.md); this guide
 puts the pieces together in the order a search page needs them.
 
 Every node answers searches from its own copy of the index, so a search goes
-to whichever node is nearest and never has to reach the indexer.
+to whichever node is nearest and never has to reach a writer.
 
 ## Ask for everything
 

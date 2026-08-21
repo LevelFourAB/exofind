@@ -90,6 +90,12 @@ public class IndexRegistry {
 	private boolean forcedReadEver;
 
 	/**
+	 * Whether a read has ever succeeded, which is what makes an empty copy an
+	 * answer rather than a gap.
+	 */
+	private volatile boolean readEver;
+
+	/**
 	 * The indexes as of one read of the registry, together with the version they
 	 * were read at.
 	 */
@@ -147,6 +153,7 @@ public class IndexRegistry {
 				);
 			}
 
+			readEver = true;
 			return true;
 		} catch(IOException e) {
 			logger.atWarn()
@@ -158,6 +165,16 @@ public class IndexRegistry {
 
 			return false;
 		}
+	}
+
+	/**
+	 * Get whether this node has read the registry since it started. Until it
+	 * has, an empty copy means nothing is known rather than that the
+	 * deployment holds nothing. Stays {@code true} once a read has succeeded -
+	 * a later one that fails leaves the node on the copy it has.
+	 */
+	public boolean hasBeenRead() {
+		return readEver;
 	}
 
 	/**

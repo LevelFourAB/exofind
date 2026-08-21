@@ -19,13 +19,14 @@ Removing a document says the same kind of thing, which is why a key nothing
 was indexed under is not an error - the index holds no document under that
 key either way.
 
-Only the indexer writes. A request that reaches another node is forwarded to
-the indexer and answered with what it answered, and refused with
-`indexer:unavailable` when there is no indexer to forward to - the same as
-the write endpoints of the [admin API](admin-api.md).
+Each index is written by one node at a time. A request that reaches another
+node is forwarded to the node holding the index and answered with what it
+answered, and refused with `indexer:unavailable` when there is nobody to
+forward to - the same as the write endpoints of the
+[admin API](admin-api.md).
 
 Changes become searchable when the index is committed, which is also what
-pushes them to the remote. The indexer commits on its own once enough has been
+pushes them to the remote. The writer commits on its own once enough has been
 indexed or enough time has passed - see
 [Committing](configuration.md#committing) for how long that is and how to
 change it - so nothing has to ask for a change to show up.
@@ -267,6 +268,6 @@ sat under its key.
 | `204` | A document was removed by the key in the path |
 | `400` | A document or a key was refused, or the body could not be read |
 | `404` | No index of that name on this node |
-| `409` | There is no indexer to forward the request to, or the index is being synchronized |
-| `502` | The request was forwarded to the indexer and it did not answer |
+| `409` | There is no node to forward the request to, or the index is being synchronized |
+| `502` | The request was forwarded to the node writing the index and it did not answer |
 | `503` | The index was closed to make room; repeating the request opens it again |

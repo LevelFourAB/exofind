@@ -10,7 +10,9 @@ import java.time.Duration;
 import java.util.Locale;
 import java.util.Set;
 
+import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
@@ -28,23 +30,34 @@ import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.ext.Provider;
 
 /**
- * Passes requests only the indexer serves along to it, so a caller can send
- * every request to any node without knowing which one that is.
+ * Passes requests only an index's writer serves along to it, so a caller can
+ * send every request to any node without knowing which node writes which
+ * index.
  *
  * <p>Where a request runs is declared on the endpoint with {@link ServedBy},
  * checked here in one place for the same reason permissions are: a mutating
  * endpoint that does not say is refused rather than served, because one that
  * forgot would quietly write on a node that should have passed the request
- * along. The request is forwarded as it arrived - method, body and headers,
- * the caller's own credential included, so the indexer decides for itself
- * whether the caller may make it and forwarding grants nothing.
+ * along. Which index a request is about is read from the {@code name} path
+ * parameter, the way {@code AuthFilter} reads it. The request is forwarded
+ * as it arrived - method, body and headers, the caller's own credential
+ * included, so the node serving it decides for itself whether the caller may
+ * make it and forwarding grants nothing.
+ *
+ * <p>An index nothing writes - just created, or its writer just died - is
+ * claimed by this node on the spot when it competes for indexes, so the
+ * write that found no writer is what appoints one. A node that does not
+ * compete forwards such a write to a candidate that does. Only an index the
+ * deployment holds appoints a writer this way; a write naming one it does
+ * not - unless the endpoint says it may create it - is served where it
+ * lands, so the answer is the endpoint's 404 rather than a claim on a name
+ * that does not exist.
  *
  * <p>A forwarded request is marked, and one that arrives marked at a node
- * that is still not the indexer is refused instead of forwarded again.
- * Answers about who the indexer is lag reality by a short while, so two nodes
- * could otherwise pass a request between each other until one of them
- * noticed. One hop spends the lag; the caller retries against fresher
- * answers.
+ * that still cannot serve it is refused instead of forwarded again. Answers
+ * about who writes an index lag reality by a short while, so two nodes could
+ * otherwise pass a request between each other until one of them noticed. One
+ * hop spends the lag; the caller retries against fresher answers.
  *
  * <p>Runs after {@code AuthFilter}, so nothing is forwarded for a caller this
  * node would not even let in.
@@ -111,11 +124,17 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 
 	private final NodeState nodeState;
 	private final IndexerOwnership ownership;
+	private final Indexes indexes;
 	private final HttpClient client;
 
-	public IndexerForwardFilter(NodeState nodeState, IndexerOwnership ownership) {
+	public IndexerForwardFilter(
+		NodeState nodeState,
+		IndexerOwnership ownership,
+		Indexes indexes
+	) {
 		this.nodeState = nodeState;
 		this.ownership = ownership;
+		this.indexes = indexes;
 
 		/*
 		 * Pinned to HTTP/1.1 rather than negotiating: the JDK client would
@@ -155,20 +174,64 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 			return;
 		}
 
-		if(nodeState.isIndexer()) {
+		var parameter = request.getUriInfo().getPathParameters()
+			.getFirst(ServedBy.INDEX_PARAMETER);
+		if(parameter == null) {
+			throw new IllegalStateException(
+				"Endpoint " + method.getDeclaringClass().getName() + "#" + method.getName()
+					+ " is served by the node writing an index but has no `"
+					+ ServedBy.INDEX_PARAMETER + "` path parameter naming which"
+			);
+		}
+
+		// Ownership is held by name; every generation of it is written together
+		var index = IndexName.parse(parameter).index();
+
+		if(nodeState.isIndexer(index)) {
+			return;
+		}
+
+		/*
+		 * Only an index the deployment holds is worth appointing a writer
+		 * for. Without this, a retried write to a name that does not exist
+		 * would claim and drop the name over and over, contending with the
+		 * real coordination - the 404 the endpoint answers costs nothing.
+		 */
+		var exists = servedBy.creates() || indexes.getRegistered(index).isPresent();
+
+		if(exists && ownership.tryClaim(index)) {
+			/*
+			 * Nothing wrote the index and now this node does - which is how
+			 * the first write to a created index, and the first write after
+			 * its writer died, appoints one instead of failing. The reopen
+			 * the claim queued runs on another thread, so the writer this
+			 * request needs is opened before the request goes on to use it.
+			 */
+			indexes.reopenForWriting(index);
+			return;
+		}
+
+		if(!exists && !ownership.hasHolder(index)) {
+			/*
+			 * The deployment does not hold the index and nothing writes it,
+			 * so it is served here for the endpoint's 404. An index created
+			 * elsewhere a moment ago is not this case: its creation claimed
+			 * it, so it has a holder even while this node's registry lags.
+			 */
 			return;
 		}
 
 		if(request.getHeaderString(FORWARDED_HEADER) != null) {
 			/*
-			 * Already forwarded once and still not at the indexer, so whoever
-			 * sent it here was working from an answer that has since gone
-			 * stale. Refused rather than forwarded again - see the class doc.
+			 * Already forwarded once and still nowhere it can be served, so
+			 * whoever sent it here was working from an answer that has since
+			 * gone stale. Refused rather than forwarded again - see the class
+			 * doc.
 			 */
 			throw new IndexerUnavailableException();
 		}
 
-		var target = ownership.indexerAddress()
+		var target = ownership.indexerAddress(index)
 			.map(address -> resolve(address, request.getUriInfo().getRequestUri()))
 			.orElse(null);
 

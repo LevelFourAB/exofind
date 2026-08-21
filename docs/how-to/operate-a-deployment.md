@@ -15,7 +15,7 @@ A node names its own configuration before it answers anything, so what it is
 never has to be reconstructed from the environment it was started with:
 
 ```
-INFO  storage=object auth=keys indexer=true bucket=exofind directory=/var/lib/exofind Starting node, which may take the indexer role
+INFO  storage=object auth=keys indexer=true bucket=exofind directory=/var/lib/exofind Starting node, which competes to write indexes
 INFO  node=node-a-7f21 address=http://node-a:8080 Competing for the indexer role
 INFO  exofind 1.0.0-SNAPSHOT on JVM … started in 1.4s. Listening on: http://0.0.0.0:8080
 ```
@@ -23,10 +23,10 @@ INFO  exofind 1.0.0-SNAPSHOT on JVM … started in 1.4s. Listening on: http://0.
 The last line is the node ready to answer, and the address in it is the one
 to reach it on. Ahead of it are the settings that decide what the node does -
 `storage`, `auth`, `indexer` and where the indexes live - and the name it
-holds the lease under, which every later line about the indexer role is keyed
-by. A node that may not write says `only answers searches` instead and
-competes for nothing. A node storing locally names no bucket and takes the
-role uncontested.
+competes under, which every later line about writing an index is keyed by. A
+node that may not write says `only answers searches` instead and competes
+for nothing. A node storing locally names no bucket and holds every index
+uncontested.
 
 Anything worth a second look arrives as a `WARN` of its own among those
 lines: `local` mode, authentication turned off, or settings the named mode
@@ -81,9 +81,9 @@ not mend it. `secondsSinceRefresh` has to grow past four
 `INDEXES_REFRESH_INTERVAL`s, and never less than a minute, before the answer
 turns.
 
-Neither says anything about the indexer role. Taking it and giving it up is a
-healthy node doing its job - [which node is writing](#know-which-node-is-writing)
-is asked in another way.
+Neither says anything about which indexes a node writes. Taking one and
+handing it over is a healthy node doing its job - [which node is
+writing](#know-which-node-is-writing) is asked in another way.
 
 ## See what a node is serving
 
@@ -110,8 +110,8 @@ Ask each node in turn to see the deployment as its nodes see it - a load
 balancer answers for whichever it picks, which is not what you want here.
 
 Four [states](../reference/admin-api.md#index-states) are steps a healthy
-index moves through: `NEEDS_PULL`, `PULLING`, `USABLE`, and on the indexer
-`MODIFIED` and `PUSHING`. Two are refusals and want a decision:
+index moves through: `NEEDS_PULL`, `PULLING`, `USABLE`, and on the node
+writing it `MODIFIED` and `PUSHING`. Two are refusals and want a decision:
 
 - `UNSUPPORTED` - the definition uses something this build does not have. The
   node is older than whatever wrote the definition; upgrade it.
@@ -145,23 +145,26 @@ The log says which request failed, keyed by `index` and `bucket`.
 
 ## Know which node is writing
 
-`status.readOnly` is `false` on the indexer and `true` everywhere else. The
-node that holds the role says so once, and the log is where a failover is
-visible:
+Each index is written by one node at a time, and different indexes may be
+written by different nodes. `status.readOnly` is `false` on the node holding
+that index and `true` everywhere else, and the log is where an index
+changing hands is visible, keyed by `index`:
 
 ```
-INFO  node=node-a-7f21 Acquired the indexer role
-ERROR node=node-a-7f21 Giving up the indexer role, <reason>
+INFO  node=node-a-7f21 index=products Took over writing the index
+INFO  node=node-a-7f21 index=products Handed over writing the index
+ERROR node=node-a-7f21 index=products Giving up writing the index, <reason>
 ```
 
-`Giving up the indexer role` is worth alerting on. Losing it is not itself a
-fault - a candidate that stops renewing hands over, which is the design - but
-a node giving it up while it is still running is saying the storage stopped
-answering, or that another node took the lease from under it.
+The first two are candidates dividing the work - an index is taken when it
+is free and handed over when another candidate has more room - and are
+routine. `Giving up writing the index` is worth alerting on: a node giving
+indexes up while it is still running is saying the storage stopped
+answering, or that its claims were past renewing.
 
-A write sent to a node that is not the indexer is forwarded to it, so which
-node answered a write does not say which node served it - the log lines
-above, on the candidates, are what name the current writer.
+A write sent to a node that does not hold the index is forwarded to the one
+that does, so which node answered a write does not say which node served
+it - the log lines above, on the candidates, are what name the writers.
 
 ## Keep the disk in hand
 
@@ -192,9 +195,9 @@ start a new one with the same configuration, and it pulls back what it is
 asked for - there is no volume to migrate and nothing to restore. A wiped node
 is slow rather than broken while it refills.
 
-Stopping a node cleanly matters for one thing only: an indexer hands its lease
-back on shutdown, so another candidate takes over at once instead of after
-`INDEXER_LEASE_DURATION`.
+Stopping a node cleanly matters for one thing only: an indexer hands its
+claims back on shutdown, so the other candidates take its indexes over at
+once instead of after `INDEXER_LEASE_DURATION`.
 
 A node in `local` mode is the opposite in every respect - its directory is the
 deployment, not a copy of it. See [Run on one node](run-on-one-node.md).
@@ -246,7 +249,7 @@ routing somewhere:
 
 | Line | Means |
 |------|-------|
-| `Giving up the indexer role` | This node stopped writing; something took the lease or the storage stopped answering |
+| `Giving up writing the index` | This node stopped writing an index without handing it over; the storage stopped answering or its claims were past renewing |
 | `Index holds changes the remote never got` | A push failed and the local copy is now the only copy |
 | `Local copies exceed the disk budget` | The bound cannot be met by sweeping |
 | `Index was created with Lucene …` | Compatibility is `ENDING` or already `UNREADABLE` |

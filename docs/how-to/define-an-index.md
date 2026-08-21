@@ -264,7 +264,7 @@ If-Match: "9f2c1a0b3d4e5f60"
 
 ## Where the request has to go
 
-Anywhere. Definitions are changed on the node holding the indexer role, and
-any other node forwards the request there itself and answers with what the
-indexer answered - the details are in the
+Anywhere. Definitions are changed on the node holding the index, and any
+other node forwards the request there itself and answers with what the
+holder answered - the details are in the
 [admin API reference](../reference/admin-api.md).

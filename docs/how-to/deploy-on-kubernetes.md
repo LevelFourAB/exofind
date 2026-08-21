@@ -24,17 +24,17 @@ different pods:
 - **Different scaling signal.** Search capacity scales with query load and
   belongs behind an autoscaler. The number of indexer candidates is a fixed
   small number, and an autoscaler that removes pods when CPU drops will
-  eventually remove the one holding the lease.
+  eventually remove one holding indexes and force a failover.
 - **Different disk.** A searching node's disk is a cache that a bound may
   sweep. An indexer's disk holds commits the bucket has not got yet, which
   nothing may remove.
 - **Different rollout.** Indexers restart one at a time and want long enough
   to push what they hold; searchers can be replaced as fast as the pulls
   allow.
-- **Somewhere to send writes.** Writes reach the indexer from any pod - a
-  searcher forwards them over the pod network - but a `Service` in front of
-  the candidates lets a bulk load skip that extra hop - see [Send writes to
-  the indexer](#send-writes-to-the-indexer).
+- **Somewhere to send writes.** Writes reach whichever candidate holds their
+  index from any pod - a searcher forwards them over the pod network - but a
+  `Service` in front of the candidates lets a bulk load skip that extra
+  hop - see [Send writes to the indexer](#send-writes-to-the-indexer).
 
 Collapsing the two into one pool later is turning `INDEXER` on in the search
 pool and deleting the `StatefulSet`. Splitting a single pool afterwards means
@@ -125,8 +125,10 @@ what the indexes are read out of.
 
 ## Run the indexer pool
 
-Two candidates. They compete for the lease, one holds it, and the other exists
-so that losing a node does not stop writes - a third buys almost nothing.
+Two candidates. They divide the indexes between themselves and take over each
+other's on failure, so losing a node does not stop writes. Each index is
+written by exactly one of them however many run, so a third earns its keep
+only when the deployment holds many busy indexes to spread.
 
 The volume is a claim rather than an `emptyDir` because an index this node has
 changed holds commits the bucket has not got yet until the next push lands.
@@ -156,7 +158,7 @@ spec:
             # POD_IP and NODE_ID come first: Kubernetes expands $(...) against
             # the variables declared before it and leaves the rest as written,
             # so NODE_ADDRESS declared above POD_IP reaches the node as the
-            # literal text and the lease records an address nothing can use.
+            # literal text and the table records an address nothing can use.
             - name: POD_IP
               valueFrom:
                 fieldRef: { fieldPath: status.podIP }
@@ -193,9 +195,9 @@ spec:
           requests: { storage: <indexer-volume> }
 ```
 
-`NODE_ID` from the pod name is what the lease is held under and what every
-later log line about the role is keyed by, which makes a failover readable
-without mapping random suffixes back to pods.
+`NODE_ID` from the pod name is what the claims are held under and what every
+later log line about writing an index is keyed by, which makes a failover
+readable without mapping random suffixes back to pods.
 
 Leave `INDEXES_DISK_MAX_SIZE` off here. The sweep refuses to remove a copy the
 bucket does not fully hold, so on the pod doing the writing it frees the least
@@ -263,10 +265,11 @@ the JVM a larger share of it.
 
 ## Send writes to the indexer
 
-Writes can be sent to any pod: a node that is not the indexer forwards them
-to the address in the lease and answers with what the indexer answered. That
-address is a pod IP, which only has to resolve where the forwarding happens -
-inside the cluster - so callers outside never deal with it. What it does have
+Writes can be sent to any pod: a node that does not hold the index forwards
+them to the address in the table and answers with what the holder answered.
+That address is a pod IP, which only has to resolve where the forwarding
+happens - inside the cluster - so callers outside never deal with it. What
+it does have
 to be is an address: a `NODE_ADDRESS` that never expanded cannot be forwarded
 to, which shows up as writes refused with `409` and this in the log of the
 node that answered:
@@ -300,10 +303,10 @@ spec:
     - { name: http, port: 8080 }
 ```
 
-The indexer `Service` picks either candidate, and the one that is not holding
-the lease forwards to the one that is - one hop, inside the cluster. Point
-document writes and commit actions at it, and searches at `exofind-search`,
-which has no writes to pass along.
+The indexer `Service` picks either candidate, and one that does not hold the
+index a write is about forwards to the one that does - one hop, inside the
+cluster. Point document writes and commit actions at it, and searches at
+`exofind-search`, which has no writes to pass along.
 
 ## Spread the indexes across the search pool
 
@@ -350,12 +353,13 @@ livenessProbe:
 ```
 
 Keep the liveness probe slack. A node under a heavy pull or a large merge is
-working, and restarting it throws away the work and the lease with it.
+working, and restarting it throws away the work and forces a failover of the
+indexes it holds.
 
 ## Roll out and shut down
 
 Stopping a node closes its open indexes, and an index it has changed is pushed
-as it closes. An indexer also hands its lease back, so a successor takes over
+as it closes. An indexer also hands its claims back, so successors take over
 at once instead of after `INDEXER_LEASE_DURATION`. Both want time:
 `terminationGracePeriodSeconds` has to cover the push, or the pod is killed
 holding commits the bucket never got.
@@ -404,14 +408,16 @@ side first, because one node writes all of them.
   open index. `INDEXES_REFRESH_CONCURRENCY` is what to raise if a pass stops
   fitting in the interval - the default of 4 is thin once a node holds
   hundreds.
-- **Write throughput does not scale by adding pods.** Every write in the
-  deployment goes through the one node holding the lease. Adding candidates
-  buys failover, not capacity. This is the number a test deployment is for.
+- **Write throughput scales per index, not per pod.** The candidates divide
+  the indexes among themselves, so more of them spreads the writes of many
+  indexes - but every write to a single index goes through the one node
+  holding it, and a deployment whose load is one busy index gains nothing
+  from a third candidate. This is the number a test deployment is for.
 
 ## Related
 
 - [Run more than one node](run-multiple-nodes.md) - candidacy, failover and
-  how writes find the indexer.
+  how writes find the node that serves them.
 - [Operate a deployment](operate-a-deployment.md) - what to check once it is
   running, and what the log lines mean.
 - [Configuration](../reference/configuration.md) - every variable named here,

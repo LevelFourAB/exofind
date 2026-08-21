@@ -5,11 +5,14 @@ import java.util.Optional;
 import se.l4.exofind.engine.logging.Log;
 
 /**
- * IndexerOwnership for a node keeping everything on its own disk, where nothing
- * can contest the role - a candidate simply holds it.
+ * IndexerOwnership for a node keeping everything on its own disk, where
+ * nothing can contest any index - a candidate simply holds them all, the ones
+ * that do not exist yet included.
  */
 public class LocalIndexerOwnership implements IndexerOwnership {
 	private static final Log logger = Log.of(LocalIndexerOwnership.class);
+
+	private volatile boolean started;
 
 	@Override
 	public void start(Listener listener) {
@@ -20,7 +23,8 @@ public class LocalIndexerOwnership implements IndexerOwnership {
 		 */
 		logger.atInfo().log("Acquired the indexer role");
 
-		listener.onOwnershipChanged(true);
+		started = true;
+		listener.onOwnershipChanged(null, true);
 	}
 
 	@Override
@@ -28,8 +32,20 @@ public class LocalIndexerOwnership implements IndexerOwnership {
 	}
 
 	@Override
-	public Optional<String> indexerAddress() {
-		// Without a remote there is no other node to point a caller at
+	public boolean tryClaim(String index) {
+		// Everything is already held, so a claim only says whether this node competes
+		return started;
+	}
+
+	@Override
+	public boolean hasHolder(String index) {
+		// This node holds everything there is, existing or not
+		return started;
+	}
+
+	@Override
+	public Optional<String> indexerAddress(String index) {
+		// Without a remote there is no other node to send a write to
 		return Optional.empty();
 	}
 }

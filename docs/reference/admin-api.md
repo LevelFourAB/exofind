@@ -23,12 +23,14 @@ POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state
 ```
 
 Requests that modify an index - everything here except the reads and `pull` -
-run on the node holding the indexer role. Another node forwards the request
-there itself - as it arrived, credential included - and answers with what the
-indexer answered, so a client needs to do nothing special. When there is no
-indexer to forward to, or the indexer set no `NODE_ADDRESS`, the request is
-refused with `409 Conflict`; an indexer that does not answer is reported
-with `502 Bad Gateway`.
+run on the node holding that index; which node that is differs per index.
+Another node forwards the request there itself - as it arrived, credential
+included - and answers with what the holder answered, so a client needs to
+do nothing special. An index nothing holds is claimed by the first candidate
+its writes reach, which is how a create appoints a writer. When there is no
+candidate to forward to, or none set a `NODE_ADDRESS`, the request is
+refused with `409 Conflict`; a holder that does not answer is reported with
+`502 Bad Gateway`.
 
 ## Names and generations
 
@@ -139,14 +141,14 @@ remote, as seen by the answering node:
 | `NEEDS_PULL` | A newer remote state exists and has not been pulled yet. |
 | `PULLING` | The remote state is being fetched. Becomes `USABLE` when done. |
 | `USABLE` | Serving searches. On a read only node this means likely up to date - as current as the last pull. |
-| `MODIFIED` | Has local changes not yet pushed. Only the indexer reaches this. |
+| `MODIFIED` | Has local changes not yet pushed. Only the node writing the index reaches this. |
 | `PUSHING` | Local changes are being pushed. Becomes `USABLE` when done. |
 | `UNSUPPORTED` | The definition needs something this version of the engine does not have. Written by a newer node; fixed by upgrading this one. |
 | `INCOMPATIBLE` | The Lucene files are too old for this build to open. Not fixed by upgrading - reindexing into a new generation is the only way back. |
 | `CLOSED` | Closed on this node. Asking for the index anew opens a fresh instance. |
 
 `status.readOnly` is whether this node can modify the index - only the node
-holding the indexer role can.
+holding it can, and which node that is differs per index.
 
 ## Lucene compatibility
 
@@ -187,7 +189,7 @@ the interval set by `INDEXES_REFRESH_INTERVAL`.
 | `401 Unauthorized` | No credential this node accepts - see [Authentication](auth.md). |
 | `403 Forbidden` | The key was not granted this on this index. |
 | `404 Not Found` | No index or generation by that name, including a `PUT` with `If-Match` on one that does not exist, and an index outside every pattern of the key. |
-| `409 Conflict` | The index cannot be modified right now - there is no indexer to forward the request to, or the index is synchronizing. Also a definition holding settings this version of the API cannot describe, an index needing engine features this node does not have, and a registry that could not be written. |
+| `409 Conflict` | The index cannot be modified right now - there is no node to forward the request to, or the index is synchronizing. Also a definition holding settings this version of the API cannot describe, an index needing engine features this node does not have, and a registry that could not be written. |
 | `412 Precondition Failed` | The version in `If-Match` is no longer the one in effect. |
-| `502 Bad Gateway` | The request was forwarded to the indexer and it did not answer. |
+| `502 Bad Gateway` | The request was forwarded to the node writing the index and it did not answer. |
 | `503 Service Unavailable` | The request raced the index being closed to make room on this node. Retrying opens it again. |

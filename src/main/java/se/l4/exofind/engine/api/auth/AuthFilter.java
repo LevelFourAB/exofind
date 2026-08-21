@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.api.auth;
 
+import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
@@ -30,11 +31,6 @@ import jakarta.ws.rs.ext.Provider;
 @Provider
 @Priority(Priorities.AUTHENTICATION)
 public class AuthFilter implements ContainerRequestFilter {
-	/**
-	 * Path parameter every endpoint about one index names it with.
-	 */
-	private static final String INDEX_PARAMETER = "name";
-
 	@Context
 	ResourceInfo resourceInfo;
 
@@ -69,7 +65,7 @@ public class AuthFilter implements ContainerRequestFilter {
 		check(
 			principal,
 			required,
-			request.getUriInfo().getPathParameters().getFirst(INDEX_PARAMETER)
+			request.getUriInfo().getPathParameters().getFirst(ServedBy.INDEX_PARAMETER)
 		);
 	}
 
@@ -98,7 +94,8 @@ public class AuthFilter implements ContainerRequestFilter {
 
 		if(index == null) {
 			throw new IllegalStateException(
-				"An endpoint requiring " + permission.id() + " has no `" + INDEX_PARAMETER
+				"An endpoint requiring " + permission.id() + " has no `"
+					+ ServedBy.INDEX_PARAMETER
 					+ "` path parameter to check it against, and did not declare anyIndex"
 			);
 		}
