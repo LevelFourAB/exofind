@@ -1388,6 +1388,11 @@ public class StringFieldType implements FieldType {
 	 * usage affords. A short word is mostly other words, so how much mistake it
 	 * can absorb grows with its length.
 	 *
+	 * A word of digits alone carries none however long it is, unless the usage
+	 * asked for them through {@code numbers}: a number one digit off is a
+	 * different number rather than a misspelling, so forgiving the difference
+	 * answers with what was not asked for.
+	 *
 	 * @param token
 	 * @param typos
 	 * @param maxEdits
@@ -1398,6 +1403,10 @@ public class StringFieldType implements FieldType {
 		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
 		int maxEdits
 	) {
+		if(!typos.hasNumbers() && isAllDigits(token)) {
+			return 0;
+		}
+
 		var length = token.codePointCount(0, token.length());
 
 		var two = typos.hasMinLengthTwoTypos()
@@ -1411,6 +1420,16 @@ public class StringFieldType implements FieldType {
 			? typos.getMinLengthOneTypo()
 			: DEFAULT_MIN_LENGTH_ONE_TYPO;
 		return length >= one ? 1 : 0;
+	}
+
+	/**
+	 * Get whether a word is digits alone - in any script, the way the token
+	 * came out of analysis. A word that mixes digits with anything else is a
+	 * word like any other.
+	 */
+	private static boolean isAllDigits(String token) {
+		return !token.isEmpty()
+			&& token.codePoints().allMatch(Character::isDigit);
 	}
 
 	/**

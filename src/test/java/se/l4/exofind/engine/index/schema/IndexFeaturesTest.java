@@ -222,7 +222,12 @@ public class IndexFeaturesTest {
 
 		assertThat(
 			IndexFeatures.requiredBy(definition).toList(),
-			containsInAnyOrder("type.string", "field.matching", "field.typo_tolerance")
+			containsInAnyOrder(
+				"type.string",
+				"field.matching",
+				"field.typo_tolerance",
+				"field.typo_tolerance.numbers"
+			)
 		);
 	}
 
@@ -255,7 +260,8 @@ public class IndexFeaturesTest {
 				"type.string",
 				"field.autocomplete",
 				"field.typo_tolerance",
-				"field.autocomplete.typo_tolerance"
+				"field.autocomplete.typo_tolerance",
+				"field.typo_tolerance.numbers"
 			)
 		);
 	}

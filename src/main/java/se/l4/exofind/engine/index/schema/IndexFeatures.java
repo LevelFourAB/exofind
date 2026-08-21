@@ -224,6 +224,20 @@ public final class IndexFeatures {
 		"field.autocomplete.typo_tolerance";
 
 	/**
+	 * A typo tolerant field matches words of digits alone exactly, unless its
+	 * definition asks for them to be fuzzed too.
+	 *
+	 * Carried by every definition that declares typo tolerance, not only the
+	 * ones setting {@code numbers}, because what changed is what declaring typo
+	 * tolerance means: digits used to fuzz like any word. The names above were
+	 * given under that meaning and cannot be re-scoped, so without this one a
+	 * node knowing only them would read an aware definition and answer a search
+	 * for one number with its neighbours.
+	 */
+	public static final String FIELD_TYPO_TOLERANCE_NUMBERS =
+		"field.typo_tolerance.numbers";
+
+	/**
 	 * A field answers searches with highlighted fragments of its text.
 	 *
 	 * Unlike the two above this one changes how documents are indexed - the
@@ -341,6 +355,7 @@ public final class IndexFeatures {
 			FIELD_WEIGHT,
 			FIELD_TYPO_TOLERANCE,
 			FIELD_AUTOCOMPLETE_TYPO_TOLERANCE,
+			FIELD_TYPO_TOLERANCE_NUMBERS,
 			FIELD_HIGHLIGHT,
 			FIELD_EXACT,
 			FIELD_LENGTH_NORMALIZATION
@@ -584,6 +599,7 @@ public final class IndexFeatures {
 
 		if(usage.hasTypoTolerance()) {
 			features.add(FIELD_TYPO_TOLERANCE);
+			features.add(FIELD_TYPO_TOLERANCE_NUMBERS);
 		}
 
 		if(usage.hasHighlight()) {

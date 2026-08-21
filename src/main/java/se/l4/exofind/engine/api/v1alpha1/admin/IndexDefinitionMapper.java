@@ -595,6 +595,12 @@ public class IndexDefinitionMapper {
 			if(usage.typoTolerance().prefixLength() != null) {
 				typoTolerance.setPrefixLength(usage.typoTolerance().prefixLength());
 			}
+			if(usage.typoTolerance().numbers() != null) {
+				typoTolerance.setNumbers(
+					StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig.NumbersConfig
+						.getDefaultInstance()
+				);
+			}
 			builder.setTypoTolerance(typoTolerance);
 		}
 
@@ -1478,7 +1484,10 @@ public class IndexDefinitionMapper {
 			typoTolerance = new StringFieldDefinition.TextUsage.TypoTolerance(
 				typos.hasMinLengthOneTypo() ? typos.getMinLengthOneTypo() : null,
 				typos.hasMinLengthTwoTypos() ? typos.getMinLengthTwoTypos() : null,
-				typos.hasPrefixLength() ? typos.getPrefixLength() : null
+				typos.hasPrefixLength() ? typos.getPrefixLength() : null,
+				typos.hasNumbers()
+					? new StringFieldDefinition.TextUsage.TypoTolerance.Numbers()
+					: null
 			);
 		}
 

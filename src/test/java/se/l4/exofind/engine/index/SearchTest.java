@@ -788,6 +788,88 @@ public class SearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testNumbersGetNoTypos() throws IOException {
+		var index = numbered(
+			"typos-numbers",
+			StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig.getDefaultInstance()
+		);
+
+		// A number one digit off is a different number, not a misspelling
+		assertThat(ids(search(index, Query.text("12346"))), is(empty()));
+
+		// The number itself, and the misspelled word beside it, still match
+		assertThat(ids(search(index, Query.text("12345"))), contains("1"));
+		assertThat(ids(search(index, Query.text("reprot"))), contains("1"));
+	}
+
+	@Test
+	public void testNumbersCanBeFuzzedWhenAskedFor() throws IOException {
+		var index = numbered(
+			"typos-numbers-fuzzed",
+			StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig.newBuilder()
+				.setNumbers(
+					StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig.NumbersConfig
+						.getDefaultInstance()
+				)
+				.build()
+		);
+
+		var result = search(index, Query.text("12346"));
+
+		assertThat(ids(result), contains("1"));
+	}
+
+	@Test
+	public void testWordsMixingDigitsAndLettersKeepTheirTypos() throws IOException {
+		var index = numbered(
+			"typos-numbers-mixed",
+			StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig.getDefaultInstance()
+		);
+
+		// The last two letters of `spring2024` swapped - digits inside a word
+		// do not make it a number
+		var result = search(index, Query.text("sprign2024"));
+
+		assertThat(ids(result), contains("2"));
+	}
+
+	@Test
+	public void testNumbersGetNoTyposWhileCompleting() throws IOException {
+		var index = create(
+			"completing-numbers",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setAutocomplete(
+								StringFieldTypeDef.TextUsageConfig.newBuilder()
+									.setTypoTolerance(
+										StringFieldTypeDef.TextUsageConfig
+											.TypoToleranceConfig.getDefaultInstance()
+									)
+							)
+					).build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Report 12345")
+			)
+		);
+		index.commit();
+
+		// A digit off on the way to `12345` is another number, not a typo
+		assertThat(ids(search(index, Query.text("12245"))), is(empty()));
+
+		// The number typed as it stands still completes
+		assertThat(ids(search(index, Query.text("1234"))), contains("1"));
+	}
+
+	@Test
 	public void testTypoThresholdsComeFromTheDefinition() throws IOException {
 		// Two mistakes in a six letter word, more than the defaults allow
 		var strict = typos(
@@ -1702,6 +1784,54 @@ public class SearchTest extends AbstractIndexTest {
 			new Document(
 				new Document.Value("id", "2"),
 				new Document.Value("name", "Cat")
+			)
+		);
+
+		index.commit();
+		return index;
+	}
+
+	/**
+	 * An index holding a name with a number long enough that the length rules
+	 * alone would fuzz it, and one where the digits sit inside a word, with
+	 * the given typo tolerance.
+	 *
+	 * @param name
+	 * @param config
+	 * @return
+	 * @throws IOException
+	 */
+	private Index numbered(
+		String name,
+		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig config
+	) throws IOException {
+		var index = create(
+			name,
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(
+								StringFieldTypeDef.TextUsageConfig.newBuilder()
+									.setTypoTolerance(config)
+							)
+					).build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Report 12345")
+			)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "spring2024")
 			)
 		);
 

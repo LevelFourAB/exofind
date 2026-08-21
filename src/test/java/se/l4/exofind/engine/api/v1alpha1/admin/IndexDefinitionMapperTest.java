@@ -635,7 +635,7 @@ public class IndexDefinitionMapperTest {
 				null,
 				3f,
 				null,
-				new StringFieldDefinition.TextUsage.TypoTolerance(4, null, 2),
+				new StringFieldDefinition.TextUsage.TypoTolerance(4, null, 2, null),
 				null,
 				null,
 				null
@@ -651,6 +651,7 @@ public class IndexDefinitionMapperTest {
 		assertThat(matching.getTypoTolerance().getMinLengthOneTypo(), is(4));
 		assertThat(matching.getTypoTolerance().hasMinLengthTwoTypos(), is(false));
 		assertThat(matching.getTypoTolerance().getPrefixLength(), is(2));
+		assertThat(matching.getTypoTolerance().hasNumbers(), is(false));
 
 		var autocomplete = stored.getFieldsOrThrow("title").getType().getString()
 			.getAutocomplete();
@@ -1371,7 +1372,10 @@ public class IndexDefinitionMapperTest {
 						new AnalyzerDefinition(AnalyzerDefinition.Preset.FULL_TEXT, null, null),
 						2.0f,
 						new StringFieldDefinition.TextUsage.Highlight(),
-						new StringFieldDefinition.TextUsage.TypoTolerance(4, 8, 1),
+						new StringFieldDefinition.TextUsage.TypoTolerance(
+							4, 8, 1,
+							new StringFieldDefinition.TextUsage.TypoTolerance.Numbers()
+						),
 						null,
 						new StringFieldDefinition.TextUsage.Exact(1.5f),
 						StringFieldDefinition.TextUsage.LengthNormalization.MODERATE

@@ -497,7 +497,7 @@ public class IndexDefinitionJsonTest {
 						"type": "string",
 						"matching": {
 							"weight": 3,
-							"typoTolerance": { "minLengthOneTypo": 4 }
+							"typoTolerance": { "minLengthOneTypo": 4, "numbers": {} }
 						}
 					}
 				},
@@ -520,7 +520,12 @@ public class IndexDefinitionJsonTest {
 					null,
 					3f,
 					null,
-					new StringFieldDefinition.TextUsage.TypoTolerance(4, null, null),
+					new StringFieldDefinition.TextUsage.TypoTolerance(
+						4,
+						null,
+						null,
+						new StringFieldDefinition.TextUsage.TypoTolerance.Numbers()
+					),
 					null,
 					null,
 					null

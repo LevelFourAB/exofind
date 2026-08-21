@@ -162,6 +162,20 @@ message StringFieldTypeDef {
 			 * to 1.
 			 */
 			optional int32 prefix_length = 3;
+
+			/*
+			 * Config that lets a word of digits alone be read fuzzily too.
+			 * Absent means such a word is matched exactly however long it
+			 * is: a number one digit off is a different number rather than
+			 * a misspelling, so `2024` finding `2025` answers with what was
+			 * not asked for. A word that mixes digits with anything else
+			 * follows the length rules like any other word.
+			 */
+			message NumbersConfig {
+			}
+
+			/* Config that lets a word of digits alone be read fuzzily too. */
+			NumbersConfig numbers = 4;
 		}
 
 		/* Config that enables matching words despite typing mistakes. */

@@ -215,8 +215,21 @@ public record StringFieldDefinition(
 			 * How many leading characters have to match exactly. Defaults
 			 * to 1.
 			 */
-			Integer prefixLength
+			Integer prefixLength,
+
+			/**
+			 * Enables typos in words of digits alone, which are otherwise
+			 * matched exactly however long they are - a number one digit off
+			 * is a different number rather than a misspelling.
+			 */
+			Numbers numbers
 		) {
+			/**
+			 * How words of digits alone are matched.
+			 */
+			@JsonInclude(JsonInclude.Include.NON_NULL)
+			public record Numbers() {
+			}
 		}
 	}
 }
