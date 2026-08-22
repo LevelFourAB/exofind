@@ -25,6 +25,7 @@ import org.apache.lucene.search.AutomatonQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.MultiPhraseQuery;
@@ -134,6 +135,10 @@ public class StringFieldType implements FieldType {
 	 * vocabulary, and each scorer is asked for the best score it could still
 	 * reach once per block of documents the search skips over, whether or not
 	 * it matched anything there.
+	 *
+	 * That every term scores the same is also what makes an expansion's
+	 * matches worth caching as a set - {@link #cacheable} rests on it, so a
+	 * rewrite that scored terms apart could not just be swapped in here.
 	 */
 	private static final MultiTermQuery.RewriteMethod EXPANSION_REWRITE =
 		MultiTermQuery.CONSTANT_SCORE_REWRITE;
@@ -1363,7 +1368,7 @@ public class StringFieldType implements FieldType {
 		var edits = typos == null ? 0 : editsAllowed(term.text(), typos, maxEdits);
 
 		var exact = prefix
-			? new PrefixQuery(term, EXPANSION_REWRITE)
+			? cacheable(new PrefixQuery(term, EXPANSION_REWRITE))
 			: (Query) new TermQuery(term);
 
 		if(edits == 0) {
@@ -1569,12 +1574,30 @@ public class StringFieldType implements FieldType {
 			);
 		}
 
-		return new AutomatonQuery(
+		return cacheable(new AutomatonQuery(
 			term,
 			Operations.determinize(automaton, Operations.DEFAULT_DETERMINIZE_WORK_LIMIT),
 			false,
 			EXPANSION_REWRITE
-		);
+		));
+	}
+
+	/**
+	 * Put an expansion where the searcher's query cache can see it, so a word
+	 * asked for again answers from the documents it matched last time instead
+	 * of walking the term dictionary of every segment again.
+	 *
+	 * The searcher only offers a query to its cache when it is asked for
+	 * without scores, and a clause of a ranked search never is - wrapping in
+	 * {@link ConstantScoreQuery} is what asks for the documents scorelessly
+	 * while handing a score onward. That loses nothing only because of what
+	 * {@link #EXPANSION_REWRITE} guarantees: every document an expansion
+	 * matches scores the same, so the set alone is the whole answer. A rewrite
+	 * that scored the matched terms apart would be flattened by this wrap, not
+	 * heard through it.
+	 */
+	private static Query cacheable(Query expansion) {
+		return new ConstantScoreQuery(expansion);
 	}
 
 	/**

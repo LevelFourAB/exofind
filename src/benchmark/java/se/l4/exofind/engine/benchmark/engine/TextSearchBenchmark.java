@@ -46,6 +46,8 @@ public class TextSearchBenchmark {
 	private SearchRequest fourWordsRelaxed;
 	private SearchRequest asYouType;
 	private SearchRequest withTypos;
+	private SearchRequest[] withTyposCold;
+	private int nextCold;
 	private SearchRequest withoutTypos;
 	private SearchRequest phrase;
 	private SearchRequest userSyntax;
@@ -100,6 +102,7 @@ public class TextSearchBenchmark {
 
 		asYouType = query(Query.text(common + " " + medium.substring(0, 3)));
 		withTypos = query(Query.text(TextMatcher.of(typo(medium)).withPrefix(TextMatcher.Prefix.OFF)));
+		withTyposCold = coldTypoRequests(state);
 		withoutTypos = query(
 			Query.text(
 				TextMatcher.of(typo(medium))
@@ -166,6 +169,19 @@ public class TextSearchBenchmark {
 		return state.index.search(withTypos);
 	}
 
+	/**
+	 * The same mistake in a different word every time, so nothing kept from
+	 * one search - a built automaton, an expansion - is there for the next.
+	 * This is what a misspelled word nobody typed lately costs, where
+	 * {@link #withTypos(LoadedIndex)} is what a word everyone is typing costs.
+	 */
+	@Benchmark
+	public SearchResult withTyposCold(LoadedIndex state) throws IOException {
+		var request = withTyposCold[nextCold];
+		nextCold = (nextCold + 1) % withTyposCold.length;
+		return state.index.search(request);
+	}
+
 	@Benchmark
 	public SearchResult withoutTypos(LoadedIndex state) throws IOException {
 		return state.index.search(withoutTypos);
@@ -205,6 +221,38 @@ public class TextSearchBenchmark {
 
 	private static SearchRequest query(TextQuery text) {
 		return SearchRequest.create().withQuery(text).build();
+	}
+
+	/**
+	 * Build one misspelled request per word for enough distinct words that
+	 * cycling through them keeps every word out of anything sized to hold what
+	 * people are typing right now. The words sit in the same rank zone as
+	 * {@link LoadedIndex#mediumTerm()}, so each is what {@code withTypos}
+	 * searches for, just never the same one twice in a row.
+	 */
+	private static SearchRequest[] coldTypoRequests(LoadedIndex state) {
+		var requests = new SearchRequest[512];
+		var found = 0;
+
+		for(var rank = 300; found < requests.length; rank++) {
+			if(rank >= state.words.size()) {
+				throw new IllegalStateException(
+					"The " + state.spec.name() + " corpus has fewer than " + requests.length
+						+ " words long enough to carry a typo"
+				);
+			}
+
+			var word = state.words.byRank(rank);
+			if(word.length() < 6) {
+				continue;
+			}
+
+			requests[found++] = query(
+				Query.text(TextMatcher.of(typo(word)).withPrefix(TextMatcher.Prefix.OFF))
+			);
+		}
+
+		return requests;
 	}
 
 	/**
