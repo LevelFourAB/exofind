@@ -102,6 +102,16 @@ Everything else is caught by the compiler, a test or validation. These are not:
   and both log; only the first keeps `addKeyValue` pairs as fields, because
   SLF4J flattens them into the message for every backend Quarkus can bind. The
   argument is on `Log`.
+- **A benchmark run after a source change needs a clean build.** The
+  incremental recompile leaves the classes JMH generated from the old sources
+  stale, every fork dies, and the runner still exits zero - the failure shows
+  only as benchmarks missing from the results. How to build clean without
+  losing the built indexes is in `docs/how-to/benchmark-the-engine.md`.
+- **The default matching chain rewrites words** - stemmed, decompounded, by
+  locale - so a test that hand-picks words to sit a certain number of letters
+  or typos apart is measuring the distance between what analysis leaves of
+  them. Declare a normalize-only analyzer in the test's definition when the
+  letters have to mean what they say.
 
 ## Where a new thing goes
 

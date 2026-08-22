@@ -136,6 +136,19 @@ mise run bench FilterBenchmark -rf json -rff before.json
 mise run bench FilterBenchmark -rf json -rff after.json
 ```
 
+The change between the runs is where the rebuild bites. `mise run bench`
+recompiles incrementally, which leaves the benchmark classes JMH generated
+from the previous sources stale: every fork then dies with
+`NoClassDefFoundError: InfraControl`, and the runner still exits zero, so the
+failure shows only as benchmarks missing from the results. After any source
+change, build clean - keeping the built indexes out of the way of the clean:
+
+```shell
+mv target/benchmark-indexes /tmp/
+./mvnw -Pbenchmark clean test-compile
+mv /tmp/benchmark-indexes target/
+```
+
 Then read the two side by side. What a comparison needs to be worth anything:
 
 - **The same corpus, size and batch.** They are printed with every result.
