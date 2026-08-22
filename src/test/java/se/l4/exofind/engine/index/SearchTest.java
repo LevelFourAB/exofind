@@ -14,6 +14,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import se.l4.exofind.engine.index.schema.AnalyzerDef;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -22,6 +23,7 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.index.schema.TokenFilterDef;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
@@ -985,6 +987,103 @@ public class SearchTest extends AbstractIndexTest {
 		var result = search(index, Query.text("claen"));
 
 		assertThat(ids(result), contains("exact", "typo"));
+	}
+
+	@Test
+	public void testOneMistakeRanksAboveTwo() throws IOException {
+		var index = mistakes("typos-band-ranking");
+
+		// One letter from `wonderfull`, and two
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "one"),
+				new Document.Value("name", "Wonderful")
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "two"),
+				new Document.Value("name", "Wonderfus")
+			)
+		);
+		index.commit();
+
+		var result = search(
+			index,
+			Query.text(TextMatcher.of("wonderfull").withPrefix(TextMatcher.Prefix.OFF))
+		);
+
+		assertThat(ids(result), contains("one", "two"));
+	}
+
+	/**
+	 * A document is as close to the word as the closest reading it holds:
+	 * also holding a worse reading must not add to its score, or a document
+	 * full of misspellings would climb past one that got closer.
+	 */
+	@Test
+	public void testWorseReadingAddsNothingToACloserOne() throws IOException {
+		var index = mistakes("typos-best-reading");
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "close"),
+				new Document.Value("name", "Wonderful")
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "both"),
+				new Document.Value("name", "Wonderful Wonderfus")
+			)
+		);
+		index.commit();
+
+		var result = search(
+			index,
+			Query.text(TextMatcher.of("wonderfull").withPrefix(TextMatcher.Prefix.OFF))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("close", "both"));
+		assertThat(
+			result.hits().get(0).score(),
+			is(result.hits().get(1).score())
+		);
+	}
+
+	/**
+	 * An empty index whose name forgives typos over a chain that only
+	 * normalizes, so the words of a test stand in the index as typed and the
+	 * mistakes counted between them can be read off the letters.
+	 */
+	private Index mistakes(String name) throws IOException {
+		return create(
+			name,
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(
+								StringFieldTypeDef.TextUsageConfig.newBuilder()
+									.setAnalyzer(
+										AnalyzerDef.newBuilder()
+											.addFilters(
+												TokenFilterDef.newBuilder()
+													.setNormalize(
+														TokenFilterDef.Normalize.getDefaultInstance()
+													)
+											)
+									)
+									.setTypoTolerance(
+										StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig
+											.getDefaultInstance()
+									)
+							)
+					).build()
+				)
+		);
 	}
 
 	@Test

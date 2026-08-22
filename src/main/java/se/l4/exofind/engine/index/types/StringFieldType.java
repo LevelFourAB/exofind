@@ -25,6 +25,7 @@ import org.apache.lucene.search.AutomatonQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
+import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.MultiPhraseQuery;
 import org.apache.lucene.search.MultiTermQuery;
@@ -37,6 +38,7 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.automaton.Automata;
+import org.apache.lucene.util.automaton.Automaton;
 import org.apache.lucene.util.automaton.LevenshteinAutomata;
 import org.apache.lucene.util.automaton.Operations;
 import org.eclipse.collections.api.collection.MutableCollection;
@@ -148,8 +150,9 @@ public class StringFieldType implements FieldType {
 
 	/**
 	 * The typo tolerant queries already built, by the field they ask of, the
-	 * word they forgive mistakes in, how many are forgiven, how much of the
-	 * word has to be right and whether the rest of it is still being typed.
+	 * word they forgive mistakes in, how many are forgiven and whether fewer
+	 * are kept out, how much of the word has to be right and whether the rest
+	 * of it is still being typed.
 	 *
 	 * Building one turns every reading of the word within those mistakes into
 	 * a table the term dictionary is walked against, which is worth more than
@@ -182,6 +185,7 @@ public class StringFieldType implements FieldType {
 		String field,
 		String text,
 		int edits,
+		boolean exactly,
 		int prefixLength,
 		boolean prefix
 	) {
@@ -1367,20 +1371,65 @@ public class StringFieldType implements FieldType {
 		}
 
 		/*
-		 * One clause per number of mistakes forgiven, on top of the word as it
-		 * was typed. A term reached with fewer mistakes is also reached within
-		 * every wider allowance, so each mistake a document does without adds
-		 * a clause to its score, and the word spelled right beats every
-		 * reading of it that is not.
+		 * The word as it was typed next to its misreadings: only a document
+		 * holding what was actually typed matches both clauses, which is what
+		 * keeps the word spelled right ahead.
 		 */
-		var builder = new BooleanQuery.Builder()
-			.add(exact, BooleanClause.Occur.SHOULD);
+		return new BooleanQuery.Builder()
+			.add(exact, BooleanClause.Occur.SHOULD)
+			.add(typoLadder(term, edits, typos, prefix), BooleanClause.Occur.SHOULD)
+			.build();
+	}
 
-		for(var d = 1; d <= edits; d++) {
-			builder.add(withinEdits(term, d, typos, prefix), BooleanClause.Occur.SHOULD);
+	/**
+	 * Match every reading of a word within the mistakes forgiven, scored by
+	 * how many the reading needs.
+	 *
+	 * Each number of mistakes past the first is a band holding only the
+	 * terms that many mistakes reach and fewer do not, so no term - and no
+	 * postings of the documents holding it - is walked by more than one
+	 * band. The correctly spelled term is the common one, so it is the walk
+	 * this shape saves most: bands holding every narrower one would read its
+	 * postings again per band, for a score the first band already decides.
+	 * The first band alone keeps the word itself, because sitting in both
+	 * clauses of {@link #tokenQuery} is what puts a document spelling the
+	 * word right above every band.
+	 *
+	 * A band needing fewer mistakes is boosted above one needing more, and a
+	 * document holding readings from several bands takes the best of them
+	 * rather than their sum: a document is as close to the word as the
+	 * closest reading it holds, and also holding a worse one says nothing
+	 * more about it.
+	 *
+	 * @param term
+	 *   the word as it came out of analysis
+	 * @param edits
+	 *   how many mistakes to forgive, at least one
+	 * @param typos
+	 *   the tolerance declared by the definition
+	 * @param prefix
+	 *   if the word may still be half typed
+	 */
+	private static Query typoLadder(
+		Term term,
+		int edits,
+		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
+		boolean prefix
+	) {
+		if(edits == 1) {
+			return editBand(term, 1, false, typos, prefix);
 		}
 
-		return builder.build();
+		var bands = Lists.mutable.<Query>empty();
+		bands.add(new BoostQuery(editBand(term, 1, false, typos, prefix), edits));
+
+		for(var d = 2; d <= edits; d++) {
+			var band = editBand(term, d, true, typos, prefix);
+			var boost = edits - d + 1;
+			bands.add(boost == 1 ? band : new BoostQuery(band, boost));
+		}
+
+		return new DisjunctionMaxQuery(bands, 0f);
 	}
 
 	/**
@@ -1433,9 +1482,10 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
-	 * Match every term within the given number of edits of the typed word, or
-	 * every term that such a reading of it starts when the word is still being
-	 * typed.
+	 * Match every term within the given number of edits of the typed word -
+	 * or, when only the terms the last edit reaches are wanted, every term
+	 * within that number and no fewer. A word still being typed matches every
+	 * term such a reading of it starts.
 	 *
 	 * Answered from {@link #FUZZY_QUERIES} where the same word has been asked
 	 * for before, because building one costs more than running it.
@@ -1444,15 +1494,18 @@ public class StringFieldType implements FieldType {
 	 *   the word as it came out of analysis
 	 * @param edits
 	 *   how many mistakes to forgive
+	 * @param exactly
+	 *   if terms reached with fewer mistakes are kept out
 	 * @param typos
 	 *   the tolerance declared by the definition
 	 * @param prefix
 	 *   if the word may still be half typed
 	 * @return
 	 */
-	private static Query withinEdits(
+	private static Query editBand(
 		Term term,
 		int edits,
+		boolean exactly,
 		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
 		boolean prefix
 	) {
@@ -1460,7 +1513,7 @@ public class StringFieldType implements FieldType {
 			? typos.getPrefixLength()
 			: DEFAULT_PREFIX_LENGTH;
 
-		var key = new FuzzyKey(term.field(), term.text(), edits, prefixLength, prefix);
+		var key = new FuzzyKey(term.field(), term.text(), edits, exactly, prefixLength, prefix);
 		var built = FUZZY_QUERIES.get(key);
 		if(built != null) {
 			return built;
@@ -1472,26 +1525,31 @@ public class StringFieldType implements FieldType {
 		 * another. Two threads that want the same one build it twice and keep
 		 * the second, which is two automata rather than a queue behind one.
 		 */
-		var query = buildWithinEdits(term, edits, prefixLength, prefix);
+		var query = buildEditBand(term, edits, exactly, prefixLength, prefix);
 		FUZZY_QUERIES.put(key, query);
 		return query;
 	}
 
 	/**
-	 * Build what {@link #withinEdits} answers with, for a word not built
+	 * Build what {@link #editBand} answers with, for a word not built
 	 * before.
 	 *
 	 * The Levenshtein automaton of the word is what accepts a term close
 	 * enough to it; a half typed word has "anything after" concatenated onto
 	 * that, so a term is accepted as soon as some prefix of it is close
-	 * enough. The leading characters the definition wants matched exactly are
-	 * kept out of the fuzzy part and counted in code points, so a word of
+	 * enough. A band that keeps narrower readings out subtracts the automaton
+	 * of one mistake fewer, leaving only the terms the last mistake buys -
+	 * with the states that can no longer reach an accept removed, so the walk
+	 * of the term dictionary does not descend into what the subtraction
+	 * emptied. The leading characters the definition wants matched exactly
+	 * are kept out of the fuzzy part and counted in code points, so a word of
 	 * characters outside the basic plane keeps as much of itself fixed as one
 	 * of ASCII.
 	 */
-	private static Query buildWithinEdits(
+	private static Query buildEditBand(
 		Term term,
 		int edits,
+		boolean exactly,
 		int prefixLength,
 		boolean prefix
 	) {
@@ -1500,11 +1558,15 @@ public class StringFieldType implements FieldType {
 		var codePoints = text.codePointCount(0, text.length());
 		var prefixEnd = text.offsetByCodePoints(0, Math.min(prefixLength, codePoints));
 
-		var automaton = new LevenshteinAutomata(text.substring(prefixEnd), true)
-			.toAutomaton(edits, text.substring(0, prefixEnd));
-
-		if(prefix) {
-			automaton = Operations.concatenate(automaton, Automata.makeAnyString());
+		var automaton = levenshtein(text, prefixEnd, edits, prefix);
+		if(exactly) {
+			automaton = Operations.removeDeadStates(
+				Operations.minus(
+					automaton,
+					levenshtein(text, prefixEnd, edits - 1, prefix),
+					Operations.DEFAULT_DETERMINIZE_WORK_LIMIT
+				)
+			);
 		}
 
 		return new AutomatonQuery(
@@ -1513,6 +1575,27 @@ public class StringFieldType implements FieldType {
 			false,
 			EXPANSION_REWRITE
 		);
+	}
+
+	/**
+	 * The automaton accepting every term within the given number of edits of
+	 * the word - or, when the word may still be half typed, every term some
+	 * such reading of it starts.
+	 */
+	private static Automaton levenshtein(
+		String text,
+		int prefixEnd,
+		int edits,
+		boolean prefix
+	) {
+		var automaton = new LevenshteinAutomata(text.substring(prefixEnd), true)
+			.toAutomaton(edits, text.substring(0, prefixEnd));
+
+		if(prefix) {
+			automaton = Operations.concatenate(automaton, Automata.makeAnyString());
+		}
+
+		return automaton;
 	}
 
 	/**
