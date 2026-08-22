@@ -95,35 +95,32 @@ final class HierarchyFacets {
 			}
 
 			/*
-			 * The path each ordinal stands for when it is one the facet asked
-			 * about, and null when it is not. Decided once here over the values
-			 * of the segment - decoded once per segment, not per search - so
-			 * the walk below neither looks a term up nor measures a path per
-			 * document.
+			 * The slot each ordinal counts into when it is one the facet asked
+			 * about, and -1 when it is not. Decided once here over the values
+			 * of the segment - decoded and parsed once per segment, not per
+			 * search - so the walk below neither looks a term up nor measures
+			 * a path per document, and counts into an array no larger than
+			 * what was asked about rather than one per value the field holds.
 			 */
-			var paths = FacetStates.valuesOf(context, field, values);
-			var counted = new String[paths.length];
-			var asked = 0;
-			for(var ord = 0; ord < counted.length; ord++) {
-				var value = paths[ord];
-				if(scope.holds(value)) {
-					counted[ord] = value;
-					asked++;
-				}
+			var hierarchy = FacetStates.hierarchyOf(context, field, values, separator, normalize);
+			var slotOfOrd = new int[hierarchy.paths().length];
+			var slots = 0;
+			for(var ord = 0; ord < slotOfOrd.length; ord++) {
+				slotOfOrd[ord] = scope.holds(hierarchy, ord) ? slots++ : -1;
 			}
 
 			// A segment holding none of the levels asked about is nothing to walk
-			if(asked == 0) {
+			if(slots == 0) {
 				continue;
 			}
 
 			/*
-			 * Counted per ordinal rather than per path, as an ordinal is an
-			 * index into an array where a path is a key to be hashed - the walk
-			 * below meets one per value of every document, the roll-up below it
-			 * one per level of the tree.
+			 * Counted per slot rather than per path, as a slot is an index
+			 * into an array where a path is a key to be hashed - the walk
+			 * below meets one per value of every document, the roll-up below
+			 * it one per level of the tree.
 			 */
-			var perOrdinal = new long[counted.length];
+			var perSlot = new long[slots];
 
 			var document = -1;
 			var seen = LongSets.mutable.empty();
@@ -144,7 +141,8 @@ final class HierarchyFacets {
 
 				for(var i = 0; i < values.docValueCount(); i++) {
 					var ord = values.nextOrd();
-					if(counted[(int) ord] == null) {
+					var slot = slotOfOrd[(int) ord];
+					if(slot < 0) {
 						continue;
 					}
 
@@ -154,7 +152,7 @@ final class HierarchyFacets {
 					 * twice - once per value of the document holding it.
 					 */
 					if(parents == null || seen.add(ord)) {
-						perOrdinal[(int) ord]++;
+						perSlot[slot]++;
 					}
 				}
 			}
@@ -164,9 +162,10 @@ final class HierarchyFacets {
 			 * added here rather than in the walk, once per level the segment
 			 * held.
 			 */
-			for(var ord = 0; ord < counted.length; ord++) {
-				if(perOrdinal[ord] > 0) {
-					counts.addToValue(counted[ord], perOrdinal[ord]);
+			for(var ord = 0; ord < slotOfOrd.length; ord++) {
+				var slot = slotOfOrd[ord];
+				if(slot >= 0 && perSlot[slot] > 0) {
+					counts.addToValue(hierarchy.paths()[ord], perSlot[slot]);
 				}
 			}
 		}
@@ -270,20 +269,17 @@ final class HierarchyFacets {
 	 * normalized path, the same reading that decides which documents narrowing
 	 * to a subtree finds, so a path answered by one is a path the other takes.
 	 * How deep it reaches is read off its separators, which normalizing never
-	 * touches, so counting from the top - which asks nothing about a prefix -
-	 * normalizes nothing. What is counted and answered is the level as it was
-	 * given, which is what a reader recognises.
+	 * touches. What is counted and answered is the level as it was given,
+	 * which is what a reader recognises.
 	 */
 	private static final class Scope {
 		private final String separator;
-		private final UnaryOperator<String> normalize;
 		private final String prefix;
 		private final int base;
 		private final int depth;
 
 		Scope(String separator, UnaryOperator<String> normalize, String path, int depth) {
 			this.separator = separator;
-			this.normalize = normalize;
 			this.depth = depth;
 
 			if(path == null) {
@@ -292,19 +288,19 @@ final class HierarchyFacets {
 			} else {
 				var normalized = normalize.apply(path);
 				this.prefix = normalized + separator;
-				this.base = levels(normalized);
+				this.base = FacetStates.Hierarchy.levelsOf(normalized, separator);
 			}
 		}
 
 		/**
-		 * Get whether the facet asked about the given path.
+		 * Get whether the facet asked about the path behind the given ordinal.
 		 */
-		boolean holds(String value) {
-			if(prefix != null && !normalize.apply(value).startsWith(prefix)) {
+		boolean holds(FacetStates.Hierarchy hierarchy, int ord) {
+			if(prefix != null && !hierarchy.normalized()[ord].startsWith(prefix)) {
 				return false;
 			}
 
-			var below = levels(value) - base;
+			var below = hierarchy.levels()[ord] - base;
 			return below >= 1 && below <= depth;
 		}
 
@@ -324,22 +320,6 @@ final class HierarchyFacets {
 		String parentOf(String value) {
 			var last = value.lastIndexOf(separator);
 			return last < 0 ? null : value.substring(0, last);
-		}
-
-		/**
-		 * Get how many levels deep a path reaches, counting from one.
-		 */
-		private int levels(String value) {
-			var count = 1;
-			for(
-				var at = value.indexOf(separator);
-				at >= 0;
-				at = value.indexOf(separator, at + separator.length())
-			) {
-				count++;
-			}
-
-			return count;
 		}
 	}
 }
