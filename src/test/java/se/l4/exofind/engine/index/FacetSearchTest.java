@@ -57,6 +57,37 @@ public class FacetSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testCountsWithoutAQueryFollowACommit() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.addFacet(Facet.of("category"))
+			.build();
+
+		// The first search is what a later one may be answered from
+		index.search(request);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "5"),
+				new Document.Value("name", "Sandal"),
+				new Document.Value("category", "shoes")
+			)
+		);
+		index.commit();
+
+		var result = index.search(request);
+		assertThat(result.total().count(), is(5L));
+		assertThat(
+			result.facets().get("category").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value("shoes", 3),
+				new SearchResult.Facet.Value("clothes", 2)
+			)
+		);
+	}
+
+	@Test
 	public void testOrderByValueIsAscending() throws IOException {
 		var index = products();
 

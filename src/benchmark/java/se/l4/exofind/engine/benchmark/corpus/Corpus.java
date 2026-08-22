@@ -54,6 +54,16 @@ public interface Corpus {
 	String keywordValue(int rank);
 
 	/**
+	 * Get a top level the {@link Roles#hierarchy()} field files documents
+	 * under, by how common it is - rank zero being the most common, which is
+	 * the category a user is likeliest to open. {@code null} for a corpus
+	 * without a hierarchy.
+	 */
+	default String hierarchyPath(int rank) {
+		return null;
+	}
+
+	/**
 	 * The field a benchmark reaches for when it wants to measure a usage rather
 	 * than a particular field, so that the same benchmark runs over any corpus
 	 * holding a field defined that way.

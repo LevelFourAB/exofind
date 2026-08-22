@@ -211,6 +211,11 @@ public final class Corpora {
 		}
 
 		@Override
+		public String hierarchyPath(int rank) {
+			return "cat-" + rank;
+		}
+
+		@Override
 		public IndexDef definition() {
 			var variant = ObjectFieldTypeDef.newBuilder()
 				.putFields("color", faceted(filtered(string())).build())

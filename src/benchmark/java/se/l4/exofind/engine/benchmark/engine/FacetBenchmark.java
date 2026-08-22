@@ -43,6 +43,8 @@ public class FacetBenchmark {
 	private SearchRequest rangeFacet;
 	private SearchRequest hierarchyFacet;
 	private SearchRequest hierarchyFacetThreeLevels;
+	private SearchRequest hierarchyFacetDrilled;
+	private SearchRequest everyFacetDrilled;
 	private SearchRequest everyFacet;
 	private SearchRequest everyFacetOnText;
 	private SearchRequest everyFacetCountsOnly;
@@ -87,24 +89,48 @@ public class FacetBenchmark {
 			: SearchRequest.create().addFacet(Facet.of(hierarchy).withDepth(3)).build();
 
 		/*
+		 * A category page - the search narrowed to the most common subtree and
+		 * the facet counting the levels below it. The filter is on the facet's
+		 * own field, so the facet counts sideways of it.
+		 */
+		var hierarchyPath = state.spec.hierarchyPath(0);
+		hierarchyFacetDrilled = hierarchy == null
+			? null
+			: SearchRequest.create()
+				.addFacet(Facet.of(hierarchy).withPath(hierarchyPath))
+				.addFilter(Query.field(hierarchy, Matchers.under(hierarchyPath)))
+				.build();
+
+		/*
 		 * What a filtering page actually sends - every facet the corpus can
 		 * offer at once, which is where the cost of counting shows.
 		 */
-		var all = SearchRequest.create().addFacet(Facet.of(keyword));
+		var page = SearchRequest.create().addFacet(Facet.of(keyword));
 		if(tags != null) {
-			all = all.addFacet(Facet.of(tags));
+			page = page.addFacet(Facet.of(tags));
 		}
 		if(number != null) {
-			all = all.addFacet(Facet.of(number).withRanges(new Facet.Range(null, 250d), new Facet.Range(250d, null)));
+			page = page.addFacet(Facet.of(number).withRanges(new Facet.Range(null, 250d), new Facet.Range(250d, null)));
 		}
-		if(hierarchy != null) {
-			all = all.addFacet(Facet.of(hierarchy));
-		}
+
+		var all = hierarchy == null ? page : page.addFacet(Facet.of(hierarchy));
 
 		everyFacet = all.build();
 		everyFacetOnText = roles.text().isEmpty()
 			? null
 			: all.withQuery(Query.text(state.commonTerm())).build();
+
+		/*
+		 * The same filtering page after opening a category - every facet, the
+		 * hierarchy counting below the opened level instead of from the top,
+		 * and the subtree filter narrowing everything but its own facet.
+		 */
+		everyFacetDrilled = hierarchy == null
+			? null
+			: page
+				.addFacet(Facet.of(hierarchy).withPath(hierarchyPath))
+				.addFilter(Query.field(hierarchy, Matchers.under(hierarchyPath)))
+				.build();
 
 		/*
 		 * How a filtering page refreshes its counts without fetching hits - the
@@ -151,6 +177,16 @@ public class FacetBenchmark {
 	@Benchmark
 	public SearchResult hierarchyFacetThreeLevels(LoadedIndex state) throws IOException {
 		return state.index.search(required(state, hierarchyFacetThreeLevels, "hierarchy"));
+	}
+
+	@Benchmark
+	public SearchResult hierarchyFacetDrilled(LoadedIndex state) throws IOException {
+		return state.index.search(required(state, hierarchyFacetDrilled, "hierarchy"));
+	}
+
+	@Benchmark
+	public SearchResult everyFacetDrilled(LoadedIndex state) throws IOException {
+		return state.index.search(required(state, everyFacetDrilled, "hierarchy"));
 	}
 
 	@Benchmark

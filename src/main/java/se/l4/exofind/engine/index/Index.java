@@ -91,6 +91,7 @@ import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.index.state.SyncIncompatibleException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
@@ -2516,9 +2517,19 @@ public class Index {
 					 */
 					var withFacets = !request.facets().isEmpty();
 					FacetsCollector matches = null;
+					Faceted counted = null;
 
 					long count;
-					if(withFacets) {
+					if(withFacets && searched.isEmpty()) {
+						/*
+						 * Nothing narrows the search, so its facets and total
+						 * are the ones counting keeps per reader - collecting
+						 * the matches here would pay for what those answers
+						 * exist to avoid.
+						 */
+						counted = countFacets(searcher, compiler, request, searched, query, null);
+						count = counted.total();
+					} else if(withFacets) {
 						matches = searcher.search(query, new FacetsCollectorManager());
 						count = matchCount(matches);
 					} else {
@@ -2542,9 +2553,9 @@ public class Index {
 						}
 					}
 
-					var counted = withFacets
-						? countFacets(searcher, compiler, request, searched, query, matches)
-						: null;
+					if(withFacets && counted == null) {
+						counted = countFacets(searcher, compiler, request, searched, query, matches);
+					}
 
 					return new SearchResult(
 						Lists.immutable.empty(),
@@ -2947,14 +2958,22 @@ public class Index {
 	 * that drilled into a level is a filter on the facet's own field, so it is
 	 * left out and the levels beside the chosen one stay countable.
 	 *
+	 * A scope with no clauses left in it is everything the index holds, whose
+	 * counts change only when the reader does - a search with facets but
+	 * nothing narrowing it, and the facet counting sideways of the only filter
+	 * of the search, both ask for them. Those are answered per reader through
+	 * {@link FacetStates}, and the matches of the search are only collected
+	 * when something still needs them - a search every facet of which is
+	 * answered that way pays a count for its total instead of a collection.
+	 *
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
 	 * @param documents
 	 *   those clauses compiled, matching the documents of the search
 	 * @param whole
 	 *   the matches of {@code documents} where the caller already collected
-	 *   them, or {@code null} to collect them here - either way the scope of
-	 *   every facet no filter names
+	 *   them, or {@code null} to collect them here if a facet or the total
+	 *   needs them - either way the scope of every facet no filter names
 	 */
 	private Faceted countFacets(
 		IndexSearcher searcher,
@@ -2967,9 +2986,12 @@ public class Index {
 		var reader = searcher.getIndexReader();
 		var filtered = request.filters().collect(FieldQuery::field).toSet();
 
-		if(whole == null) {
-			whole = searcher.search(documents, new FacetsCollectorManager());
-		}
+		/*
+		 * The matches of everything the index holds, collected the first time
+		 * a whole-index scope is not already answered per reader. The whole
+		 * search is that collection when nothing narrows it.
+		 */
+		var everything = clauses.isEmpty() ? whole : null;
 
 		var collectors = Maps.mutable.<String, FacetMatches>empty();
 		var values = Maps.mutable.<String, FacetMatches>empty();
@@ -2993,56 +3015,126 @@ public class Index {
 					);
 					values.put(path, scope);
 				}
-			} else if(filtered.contains(facet.field())) {
-				scope = collectors.get(facet.field());
-				if(scope == null) {
-					var sideways = request.query().newWithAll(
-						request.filters().reject(f -> f.field().equals(facet.field()))
-					);
-
-					scope = FacetMatches.of(
-						searcher.search(
-							parentsOnly(compiler.compile(sideways), compiler, sideways),
-							new FacetsCollectorManager()
-						)
-					);
-					collectors.put(facet.field(), scope);
-				}
 			} else {
-				scope = FacetMatches.of(whole);
+				var sideways = filtered.contains(facet.field())
+					? request.query().newWithAll(
+						request.filters().reject(f -> f.field().equals(facet.field()))
+					)
+					: null;
+
+				if(sideways == null ? clauses.isEmpty() : sideways.isEmpty()) {
+					var kept = FacetStates.wholeCountsOf(reader, request.locale(), facet);
+					if(kept == null) {
+						if(everything == null) {
+							everything = collectEverything(searcher, compiler);
+						}
+
+						kept = countFacet(reader, compiler, facet, FacetMatches.of(everything));
+						FacetStates.keepWholeCounts(reader, request.locale(), facet, kept);
+					}
+
+					counts.put(facet.name(), kept);
+					continue;
+				}
+
+				if(sideways != null) {
+					scope = collectors.get(facet.field());
+					if(scope == null) {
+						scope = FacetMatches.of(
+							searcher.search(
+								parentsOnly(compiler.compile(sideways), compiler, sideways),
+								new FacetsCollectorManager()
+							)
+						);
+						collectors.put(facet.field(), scope);
+					}
+				} else {
+					if(whole == null) {
+						whole = searcher.search(documents, new FacetsCollectorManager());
+					}
+
+					scope = FacetMatches.of(whole);
+				}
 			}
 
-			if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
-				counts.put(
-					facet.name(),
-					compiler.hierarchyFacetCounter(facet.field())
-						.count(scope, facet.path(), facet.depth(), facet.limit(), facet.order())
-				);
-			} else if(facet.ranges().isEmpty()) {
-				/*
-				 * Counting a level of a tree is what a field holding paths
-				 * answers and no other field can, so asking any other for it is
-				 * refused rather than answered with the whole values.
-				 */
-				if(facet.asksForATree()) {
-					throw new IndexFieldUsageException(facet.field(), "hierarchy");
-				}
+			counts.put(facet.name(), countFacet(reader, compiler, facet, scope));
+		}
 
-				counts.put(
-					facet.name(),
-					compiler.facetCounter(facet.field())
-						.count(reader, scope, facet.limit(), facet.order())
-				);
+		long total;
+		if(whole != null) {
+			total = matchCount(whole);
+		} else if(!clauses.isEmpty()) {
+			/*
+			 * Every facet found its scope without the matches of the search,
+			 * so the exact total the caller is promised is counted on its own
+			 * - counting skips the collection a facet would have needed.
+			 */
+			total = searcher.count(documents);
+		} else if(everything != null) {
+			total = matchCount(everything);
+			FacetStates.keepWholeTotal(reader, total);
+		} else {
+			var kept = FacetStates.wholeTotalOf(reader);
+			if(kept == null) {
+				total = searcher.count(documents);
+				FacetStates.keepWholeTotal(reader, total);
 			} else {
-				counts.put(
-					facet.name(),
-					compiler.rangeFacetCounter(facet.field(), facet.ranges())
-						.count(reader, scope)
-				);
+				total = kept;
 			}
 		}
 
-		return new Faceted(counts.toImmutable(), matchCount(whole));
+		return new Faceted(counts.toImmutable(), total);
+	}
+
+	/**
+	 * Count one facet of a search over the given scope.
+	 *
+	 * @throws IndexFieldUsageException
+	 *   if the facet asks for a level of a tree from a field whose values are
+	 *   not paths
+	 */
+	private SearchResult.Facet countFacet(
+		IndexReader reader,
+		QueryCompiler compiler,
+		Facet facet,
+		FacetMatches scope
+	) throws IOException {
+		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
+			return compiler.hierarchyFacetCounter(facet.field())
+				.count(scope, facet.path(), facet.depth(), facet.limit(), facet.order());
+		}
+
+		if(facet.ranges().isEmpty()) {
+			/*
+			 * Counting a level of a tree is what a field holding paths answers
+			 * and no other field can, so asking any other for it is refused
+			 * rather than answered with the whole values.
+			 */
+			if(facet.asksForATree()) {
+				throw new IndexFieldUsageException(facet.field(), "hierarchy");
+			}
+
+			return compiler.facetCounter(facet.field())
+				.count(reader, scope, facet.limit(), facet.order());
+		}
+
+		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
+			.count(reader, scope);
+	}
+
+	/**
+	 * Collect the matches of everything the index holds, which is the scope of
+	 * a facet the clauses of the search leave alone.
+	 */
+	private FacetsCollector collectEverything(
+		IndexSearcher searcher,
+		QueryCompiler compiler
+	) throws IOException {
+		var none = Lists.immutable.<Query>empty();
+		return searcher.search(
+			parentsOnly(compiler.compile(none), compiler, none),
+			new FacetsCollectorManager()
+		);
 	}
 
 	/**

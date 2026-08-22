@@ -11,9 +11,13 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.SortedSetDocValues;
 
+import se.l4.exofind.engine.query.Facet;
+import se.l4.exofind.engine.query.SearchResult;
+
 /**
- * What counting a string facet has to know about a reader before it can count,
- * kept for as long as the reader is open.
+ * What counting a facet has to know about a reader before it can count, and
+ * what counting everything a reader holds has already answered, kept for as
+ * long as the reader is open.
  *
  * Counting the values of a field across segments needs the ordinals of each
  * segment lined up against one another, which is read out of the term
@@ -23,13 +27,41 @@ import org.apache.lucene.index.SortedSetDocValues;
  * over a handful of documents would otherwise spend most of its time preparing
  * to count them.
  *
+ * The counts of a facet whose scope is everything say just as little about any
+ * one search: a search nothing narrows counts the same matches every time, and
+ * so does a facet counting sideways of the only filter of the search, so those
+ * counts are kept here too and a walk of every document is paid once per
+ * reader rather than once per search.
+ *
  * A reader is only ever replaced, never changed, so an entry stays true for as
  * long as the reader it was built from is open and is dropped when it closes.
  * That is the same lifetime the reader's own caches have and is why the key is
  * the one Lucene hands out for exactly this.
  */
 final class FacetStates {
+	/**
+	 * How many facets one reader keeps whole-index counts for. The shape of a
+	 * facet is the caller's to choose, so the entries under one reader are
+	 * capped rather than trusted to be few; a facet arriving after the cap is
+	 * counted as if there were no cache.
+	 */
+	private static final int WHOLE_LIMIT = 256;
+
 	private static final Map<IndexReader.CacheKey, Map<String, StringDocValuesReaderState>> states =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * The counts of one facet over everything the reader holds, keyed by the
+	 * facet asked for and the locale it was asked under.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<WholeKey, SearchResult.Facet>> wholeCounts =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * How many documents the reader holds, counted the way a search with
+	 * nothing narrowing it counts them.
+	 */
+	private static final Map<IndexReader.CacheKey, Long> wholeTotals =
 		new ConcurrentHashMap<>();
 
 	/**
@@ -111,6 +143,107 @@ final class FacetStates {
 		}
 
 		return state;
+	}
+
+	/**
+	 * Get what the given facet counted over everything the reader holds, or
+	 * {@code null} where nothing was kept - see
+	 * {@link #keepWholeCounts(IndexReader, String, Facet, SearchResult.Facet)}.
+	 *
+	 * @param reader
+	 * @param locale
+	 *   the locale of the search, or {@code null} where it named none
+	 * @param facet
+	 * @return
+	 */
+	static SearchResult.Facet wholeCountsOf(IndexReader reader, String locale, Facet facet) {
+		var helper = reader.getReaderCacheHelper();
+		if(helper == null) {
+			return null;
+		}
+
+		var facets = wholeCounts.get(helper.getKey());
+		return facets == null ? null : facets.get(new WholeKey(locale, facet));
+	}
+
+	/**
+	 * Keep what a facet counted over everything the reader holds, for as long
+	 * as the reader is open. Not kept for a reader that cannot say when it
+	 * closes, or one already holding counts for {@code WHOLE_LIMIT} facets.
+	 *
+	 * @param reader
+	 * @param locale
+	 *   the locale of the search, or {@code null} where it named none
+	 * @param facet
+	 * @param counts
+	 */
+	static void keepWholeCounts(
+		IndexReader reader,
+		String locale,
+		Facet facet,
+		SearchResult.Facet counts
+	) {
+		var helper = reader.getReaderCacheHelper();
+		if(helper == null) {
+			return;
+		}
+
+		var key = helper.getKey();
+		var facets = wholeCounts.get(key);
+		if(facets == null) {
+			facets = wholeCounts.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+
+			/*
+			 * Registered against the key rather than against the map, so a
+			 * reader that closed while this was being built drops what was put
+			 * under it instead of leaving it behind.
+			 */
+			helper.addClosedListener(wholeCounts::remove);
+		}
+
+		if(facets.size() >= WHOLE_LIMIT) {
+			return;
+		}
+
+		facets.put(new WholeKey(locale, facet), counts);
+	}
+
+	/**
+	 * One ask for whole-index counts: the facet and the locale it was asked
+	 * under, which is what decides the values a localized field counts.
+	 */
+	private record WholeKey(String locale, Facet facet) {
+	}
+
+	/**
+	 * Get how many documents the reader holds, as a search with nothing
+	 * narrowing it counts them, or {@code null} where nothing was kept - see
+	 * {@link #keepWholeTotal(IndexReader, long)}.
+	 *
+	 * @param reader
+	 * @return
+	 */
+	static Long wholeTotalOf(IndexReader reader) {
+		var helper = reader.getReaderCacheHelper();
+		return helper == null ? null : wholeTotals.get(helper.getKey());
+	}
+
+	/**
+	 * Keep how many documents the reader holds, for as long as it is open. Not
+	 * kept for a reader that cannot say when it closes.
+	 *
+	 * @param reader
+	 * @param total
+	 */
+	static void keepWholeTotal(IndexReader reader, long total) {
+		var helper = reader.getReaderCacheHelper();
+		if(helper == null) {
+			return;
+		}
+
+		if(wholeTotals.putIfAbsent(helper.getKey(), total) == null) {
+			helper.addClosedListener(wholeTotals::remove);
+		}
 	}
 
 	/**
