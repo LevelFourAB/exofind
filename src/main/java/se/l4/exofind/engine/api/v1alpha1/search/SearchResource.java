@@ -16,7 +16,6 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
-import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchResult;
@@ -112,7 +111,7 @@ public class SearchResource {
 				new SearchResponse.Hit(
 					hit.id(),
 					scores ? hit.score() : null,
-					toDocumentJson(hit.document()),
+					hit.document(),
 					/*
 					 * Present whenever highlighting was asked for, so a caller
 					 * can count on the key - possibly empty, when nothing in
@@ -232,54 +231,6 @@ public class SearchResource {
 		);
 
 		return result;
-	}
-
-	/**
-	 * Shape a document the way it was given: a scalar when a field holds one
-	 * value, an array when it holds several, an object keyed by locale tag
-	 * when it is locale specific and a JSON object when the value is a
-	 * document of its own.
-	 */
-	private static Map<String, Object> toDocumentJson(Document document) {
-		var result = new LinkedHashMap<String, Object>();
-
-		for(var value : document.fields()) {
-			var json = value.value() instanceof Document nested
-				? toDocumentJson(nested)
-				: value.value();
-
-			if(value.locale() == null) {
-				merge(result, value.name(), json);
-			} else {
-				@SuppressWarnings("unchecked")
-				var localized = (Map<String, Object>) result.computeIfAbsent(
-					value.name(),
-					key -> new LinkedHashMap<String, Object>()
-				);
-
-				merge(localized, value.locale(), json);
-			}
-		}
-
-		return result;
-	}
-
-	@SuppressWarnings("unchecked")
-	private static void merge(Map<String, Object> into, String key, Object value) {
-		if(!into.containsKey(key)) {
-			into.put(key, value);
-			return;
-		}
-
-		var existing = into.get(key);
-		if(existing instanceof List<?> values) {
-			((List<Object>) values).add(value);
-		} else {
-			var values = new ArrayList<Object>();
-			values.add(existing);
-			values.add(value);
-			into.put(key, values);
-		}
 	}
 
 	private SearchResponse.Page toPage(

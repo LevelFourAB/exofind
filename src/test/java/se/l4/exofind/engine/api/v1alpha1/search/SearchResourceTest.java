@@ -14,8 +14,12 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -591,7 +595,7 @@ public class SearchResourceTest {
 			request(List.of(new Clause.Field("category", new Matcher.Equals("non-fiction"))))
 		);
 
-		var document = response.hits().get(0).document();
+		var document = documentJson(response.hits().get(0));
 		assertThat(document.get("name"), is("Silent Spring"));
 		assertThat(document.get("published"), is(true));
 
@@ -613,12 +617,24 @@ public class SearchResourceTest {
 			)
 		);
 
-		var document = response.hits().get(0).document();
+		var document = documentJson(response.hits().get(0));
 		assertThat(document.get("category"), is("non-fiction"));
 		assertThat(document.containsKey("name"), is(false));
 
 		// The primary key is always included, as it identifies the result
 		assertThat(document.get("id"), is("1"));
+	}
+
+	/**
+	 * The document of a hit as it goes over the wire, since the response
+	 * carries the engine's own type and shapes it only as it is written.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> documentJson(SearchResponse.Hit hit) {
+		var json = new ObjectMapper()
+			.convertValue(hit, new TypeReference<Map<String, Object>>() {});
+
+		return (Map<String, Object>) json.get("document");
 	}
 
 	@Test

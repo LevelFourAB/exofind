@@ -5,6 +5,9 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+
+import se.l4.exofind.engine.index.Document;
 
 /**
  * What a search found, as it is answered over the API.
@@ -68,7 +71,8 @@ public record SearchResponse(
 		 * several values is an array, and a locale specific field is an
 		 * object keyed by locale tag.
 		 */
-		Map<String, Object> document,
+		@JsonSerialize(using = DocumentSerializer.class)
+		Document document,
 
 		/**
 		 * The highlighted fragments of the fields the search asked to
