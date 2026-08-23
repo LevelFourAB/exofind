@@ -91,6 +91,17 @@ class Highlighter {
 	private final PinnedOffsetsHighlighter highlighter;
 
 	/**
+	 * The analyzer mirrors what the writer is configured with. It is never
+	 * asked to analyze anything - offsets come from where the index keeps
+	 * them - but the highlighter derives its defaults, such as the gap between
+	 * the values of a multi-valued field, from it. One instance serves every
+	 * search: an {@link org.apache.lucene.analysis.Analyzer} carries a
+	 * {@code ThreadLocal} for reuse, so building one per search litters every
+	 * searching thread's ThreadLocal map with entries to clean up.
+	 */
+	private static final StandardAnalyzer GAP_ANALYZER = new StandardAnalyzer();
+
+	/**
 	 * @param searcher
 	 * @param targets
 	 *   the fields to highlight
@@ -112,13 +123,7 @@ class Highlighter {
 
 		var byLuceneField = targets.groupByUniqueKey(Target::luceneField);
 
-		/*
-		 * The analyzer mirrors what the writer is configured with. It is never
-		 * asked to analyze anything - offsets come from the term vectors - but
-		 * the highlighter derives its defaults, such as the gap between the
-		 * values of a multi-valued field, from it.
-		 */
-		var builder = UnifiedHighlighter.builder(searcher, new StandardAnalyzer())
+		var builder = UnifiedHighlighter.builder(searcher, GAP_ANALYZER)
 			/*
 			 * A word that was matched while half typed sits in the index as a
 			 * prefix or an automaton rather than as a term, and lighting the
