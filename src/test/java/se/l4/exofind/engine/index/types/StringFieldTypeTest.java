@@ -30,7 +30,18 @@ public class StringFieldTypeTest {
 	private final StringFieldType type = new StringFieldType();
 
 	private Map<String, IndexableField> index(FieldDef.Builder def, String value) {
-		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance());
+		return index(def, value, false);
+	}
+
+	private Map<String, IndexableField> index(
+		FieldDef.Builder def,
+		String value,
+		boolean highlightsInPostings
+	) {
+		var encounter = new IndexEncounterImpl(
+			ResourcesDef.getDefaultInstance(),
+			highlightsInPostings
+		);
 		encounter.updateLocale(Locales.getDefault());
 		encounter.updateValue("title", def.build());
 
@@ -187,6 +198,73 @@ public class StringFieldTypeTest {
 				FieldTypeDef.newBuilder()
 					.setString(StringFieldTypeDef.newBuilder().setMatching(usage))
 			);
+	}
+
+	private FieldDef.Builder highlightedMatching() {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setString(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(
+								StringFieldTypeDef.TextUsageConfig.newBuilder()
+									.setHighlight(
+										StringFieldTypeDef.TextUsageConfig
+											.HighlightConfig.getDefaultInstance()
+									)
+							)
+					)
+			);
+	}
+
+	/**
+	 * An index laying highlighting out in term vectors writes them per
+	 * document, with the positions and payloads that were always written
+	 * beside them, and keeps offsets out of the postings.
+	 */
+	@Test
+	public void testHighlightedMatchingWritesTermVectorsUnderTheVectorLayout() {
+		var field = index(highlightedMatching(), "The Silent Spring", false)
+			.get("title:_:matching");
+
+		assertThat(field.fieldType().storeTermVectors(), is(true));
+		assertThat(field.fieldType().storeTermVectorOffsets(), is(true));
+		assertThat(
+			field.fieldType().indexOptions(),
+			is(org.apache.lucene.index.IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
+		);
+	}
+
+	/**
+	 * An index laying highlighting out in postings writes the offsets into
+	 * the postings of the field itself and no term vectors at all.
+	 */
+	@Test
+	public void testHighlightedMatchingWritesOffsetsUnderThePostingsLayout() {
+		var field = index(highlightedMatching(), "The Silent Spring", true)
+			.get("title:_:matching");
+
+		assertThat(field.fieldType().storeTermVectors(), is(false));
+		assertThat(
+			field.fieldType().indexOptions(),
+			is(org.apache.lucene.index.IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS)
+		);
+	}
+
+	/**
+	 * The layout only reaches fields that highlight - one that does not stays
+	 * bare whichever layout the index uses.
+	 */
+	@Test
+	public void testPlainMatchingIgnoresTheLayout() {
+		var field = index(matching(false), "The Silent Spring", true)
+			.get("title:_:matching");
+
+		assertThat(field.fieldType().storeTermVectors(), is(false));
+		assertThat(
+			field.fieldType().indexOptions(),
+			is(org.apache.lucene.index.IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
+		);
 	}
 
 	private BytesRef sortValue(SortConfig.Builder sort, String value) {

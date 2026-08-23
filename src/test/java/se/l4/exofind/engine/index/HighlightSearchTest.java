@@ -429,6 +429,80 @@ public class HighlightSearchTest extends AbstractIndexTest {
 	 * An index of a few books, with one field per way highlighting can be
 	 * declared - matching, autocomplete-only, both, and not at all.
 	 */
+	/**
+	 * An index whose definition pins the offsets to term vectors - the layout
+	 * of every index created before offsets moved into postings - highlights
+	 * from them, matched words and half typed ones alike.
+	 */
+	@Test
+	public void testTermVectorLayoutStillHighlights() throws IOException {
+		var index = create(
+			"vectors",
+			IndexDef.newBuilder()
+				.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_TERM_VECTORS)
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", string(highlightedMatching()).build())
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "The Silent Patient")
+			)
+		);
+		index.commit();
+
+		var matched = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("silent"))
+				.addHighlight("name")
+				.build()
+		);
+		assertThat(
+			highlightsOf(matched, "1", "name"),
+			contains("The <em>Silent</em> Patient")
+		);
+
+		var halfTyped = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("sil"))
+				.addHighlight("name")
+				.build()
+		);
+		assertThat(
+			highlightsOf(halfTyped, "1", "name"),
+			contains("The <em>Silent</em> Patient")
+		);
+	}
+
+	/**
+	 * The layout is decided when an index is created and carried through
+	 * every update, so a definition sent without one never moves an index
+	 * off the layout its documents are written in.
+	 */
+	@Test
+	public void testHighlightLayoutSticksAcrossDefinitionUpdates() throws IOException {
+		var definition = IndexDef.newBuilder()
+			.putFields("id", string().setPrimaryKey(true).build())
+			.putFields("name", string(highlightedMatching()).build());
+
+		var index = create("layout", definition);
+		assertThat(
+			index.getDefinition().getHighlightLayout(),
+			is(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS)
+		);
+
+		index.updateDefinition(
+			definition
+				.putFields("extra", string().build())
+				.build()
+		);
+		assertThat(
+			index.getDefinition().getHighlightLayout(),
+			is(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS)
+		);
+	}
+
 	private Index library() throws IOException {
 		var index = create(
 			"library",

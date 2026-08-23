@@ -159,7 +159,10 @@ public class QueryCompiler {
 		this.locale = locale;
 		this.nestedParents = nestedParents;
 
-		this.encounter = new IndexEncounterImpl(schema.getResources());
+		this.encounter = new IndexEncounterImpl(
+			schema.getResources(),
+			schema.isHighlightingInPostings()
+		);
 	}
 
 	/**

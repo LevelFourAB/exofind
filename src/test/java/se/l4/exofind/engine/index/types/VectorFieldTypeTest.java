@@ -40,7 +40,7 @@ public class VectorFieldTypeTest {
 	private final VectorFieldType type = new VectorFieldType();
 
 	private IndexEncounterImpl encounter(FieldDef.Builder def) {
-		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance());
+		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance(), false);
 		encounter.updateLocale(Locales.getDefault());
 		encounter.updateValue("embedding", def.build());
 		return encounter;
@@ -362,7 +362,7 @@ public class VectorFieldTypeTest {
 	 */
 	@Test
 	public void testOtherTypesRefuseKnn() {
-		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance());
+		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance(), false);
 		encounter.updateLocale(Locales.getDefault());
 		encounter.updateValue(
 			"title",

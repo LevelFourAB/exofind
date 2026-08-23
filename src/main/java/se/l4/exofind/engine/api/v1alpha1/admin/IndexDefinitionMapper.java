@@ -171,20 +171,27 @@ public class IndexDefinitionMapper {
 		}
 
 		/*
-		 * The features are worked out from the rest of the definition every time
-		 * one is stored, so they are the engine's to write rather than the
-		 * caller's to lose - they are carried over instead of compared. A
-		 * definition needing a feature this build does not have never reaches
-		 * here, as the index carrying it is refused when it is opened.
+		 * The features and the highlight layout are the engine's to write
+		 * rather than the caller's to lose - the features are worked out from
+		 * the rest of the definition every time one is stored, and the layout
+		 * is carried from the definition being replaced - so both are carried
+		 * over instead of compared. A definition needing a feature this build
+		 * does not have never reaches here, as the index carrying it is
+		 * refused when it is opened.
 		 *
 		 * Built up from the definition this version can describe rather than
 		 * taken apart from the stored one, because a builder made from a message
 		 * holding a value only a newer version has a name for is refused by
 		 * protobuf itself.
 		 */
-		var comparable = roundTripped.toBuilder()
-			.addAllRequiredFeatures(stored.getRequiredFeaturesList())
-			.build();
+		var comparableBuilder = roundTripped.toBuilder()
+			.addAllRequiredFeatures(stored.getRequiredFeaturesList());
+
+		if(stored.hasHighlightLayout()) {
+			comparableBuilder.setHighlightLayout(stored.getHighlightLayout());
+		}
+
+		var comparable = comparableBuilder.build();
 
 		if(!comparable.equals(stored)) {
 			throw new UnrepresentableStateException(UNREPRESENTABLE_DEFINITION);

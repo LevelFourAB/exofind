@@ -241,12 +241,25 @@ public final class IndexFeatures {
 	 * A field answers searches with highlighted fragments of its text.
 	 *
 	 * Unlike the two above this one changes how documents are indexed - the
-	 * term vectors and the stored copy fragments are built from only exist
-	 * because the field was indexed with them. A node without it would index
-	 * the field bare, and a node asked to highlight what such a node indexed
+	 * offsets and the stored copy fragments are built from only exist because
+	 * the field was indexed with them. A node without it would index the
+	 * field bare, and a node asked to highlight what such a node indexed
 	 * would find nothing to read.
 	 */
 	public static final String FIELD_HIGHLIGHT = "field.highlight";
+
+	/**
+	 * The offsets highlighting reads sit in the postings of the field, rather
+	 * than in term vectors - {@code HIGHLIGHT_LAYOUT_POSTINGS} in the stored
+	 * definition.
+	 *
+	 * Named besides the highlighting itself because a node knowing only that
+	 * would go wrong twice over: it would look for term vectors the index
+	 * does not hold and answer every highlight empty, and it would write new
+	 * documents with the vector layout, which Lucene refuses once a field
+	 * carries offsets in its postings.
+	 */
+	public static final String FIELD_HIGHLIGHT_POSTINGS = "field.highlight.postings";
 
 	/**
 	 * A field ranks a value a search matched whole above one that merely holds
@@ -357,6 +370,7 @@ public final class IndexFeatures {
 			FIELD_AUTOCOMPLETE_TYPO_TOLERANCE,
 			FIELD_TYPO_TOLERANCE_NUMBERS,
 			FIELD_HIGHLIGHT,
+			FIELD_HIGHLIGHT_POSTINGS,
 			FIELD_EXACT,
 			FIELD_LENGTH_NORMALIZATION
 		)
@@ -463,6 +477,17 @@ public final class IndexFeatures {
 
 		for(var field : definition.getFieldsMap().values()) {
 			collectField(field, features);
+		}
+
+		/*
+		 * Where the offsets sit only matters once something highlights, so an
+		 * index that highlights nothing stays openable by a node that knows
+		 * neither layout - there is nothing in it to read or write wrongly.
+		 */
+		if(features.contains(FIELD_HIGHLIGHT)
+			&& definition.getHighlightLayout() == IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS)
+		{
+			features.add(FIELD_HIGHLIGHT_POSTINGS);
 		}
 
 		return features.toSortedList().toImmutable();

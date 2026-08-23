@@ -292,6 +292,75 @@ public class IndexFeaturesTest {
 	}
 
 	/**
+	 * Named because a node knowing only highlighting would look for term
+	 * vectors a postings-layout index does not hold and answer every
+	 * highlight empty - and would write new documents with a layout Lucene
+	 * refuses to mix into the index.
+	 */
+	@Test
+	public void testHighlightingInPostingsIsListed() {
+		var definition = withField(highlightedString())
+			.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS)
+			.build();
+
+		assertThat(
+			IndexFeatures.requiredBy(definition).toList(),
+			containsInAnyOrder(
+				"type.string",
+				"field.matching",
+				"field.highlight",
+				"field.highlight.postings"
+			)
+		);
+	}
+
+	/**
+	 * The layout only matters once something highlights, so an index that
+	 * highlights nothing carries no layout name and stays openable by a node
+	 * that knows neither layout.
+	 */
+	@Test
+	public void testPostingsLayoutWithoutHighlightingNeedsNoName() {
+		var definition = withField(string())
+			.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS)
+			.build();
+
+		assertThat(
+			IndexFeatures.requiredBy(definition).toList(),
+			not(hasItem("field.highlight.postings"))
+		);
+	}
+
+	@Test
+	public void testTermVectorLayoutNeedsNoName() {
+		var definition = withField(highlightedString())
+			.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_TERM_VECTORS)
+			.build();
+
+		assertThat(
+			IndexFeatures.requiredBy(definition).toList(),
+			not(hasItem("field.highlight.postings"))
+		);
+	}
+
+	private static FieldDef.Builder highlightedString() {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setString(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(
+								StringFieldTypeDef.TextUsageConfig.newBuilder()
+									.setHighlight(
+										StringFieldTypeDef.TextUsageConfig
+											.HighlightConfig.getDefaultInstance()
+									)
+							)
+					)
+			);
+	}
+
+	/**
 	 * Named because the whole-value term only exists because the field was
 	 * written with it, so a node without it would index the field bare and
 	 * quietly go back to ranking a mention as highly as a name.

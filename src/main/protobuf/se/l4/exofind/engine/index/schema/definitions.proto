@@ -940,4 +940,32 @@ message IndexDef {
 	 * instead of getting it subtly wrong.
 	 */
 	repeated string required_features = 3;
+
+	/*
+	 * Where the offsets highlighting reads come from, for every field whose
+	 * text usage sets `highlight`.
+	 */
+	enum HighlightLayout {
+		HIGHLIGHT_LAYOUT_UNSPECIFIED = 0;
+		/*
+		 * Offsets sit in term vectors written per document, alongside the
+		 * positions and payloads that were always written with them.
+		 */
+		HIGHLIGHT_LAYOUT_TERM_VECTORS = 1;
+		/*
+		 * Offsets sit in the postings of the field itself, and no term
+		 * vectors are written.
+		 */
+		HIGHLIGHT_LAYOUT_POSTINGS = 2;
+	}
+
+	/*
+	 * Where highlighting offsets are kept. Decided when an index is created
+	 * and carried unchanged through every update of its definition, because
+	 * Lucene refuses a field whose layout changes once it is written - an
+	 * index moves to another layout by filling a new generation. Absent means
+	 * term vectors, which is what every index created before layouts had a
+	 * name holds.
+	 */
+	optional HighlightLayout highlight_layout = 8;
 }

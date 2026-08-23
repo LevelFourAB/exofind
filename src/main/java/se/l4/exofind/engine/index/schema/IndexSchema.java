@@ -57,6 +57,8 @@ public class IndexSchema {
 
 	private boolean sourceStored;
 
+	private boolean highlightsInPostings;
+
 	private ImmutableList<RankingConfig.TieBreaker> tieBreakers;
 
 	private ImmutableList<RankingSignal> signals;
@@ -252,6 +254,94 @@ public class IndexSchema {
 	 */
 	public static boolean storesSource(IndexDef definition) {
 		return definition.getSource() != IndexDef.SourceMode.SOURCE_MODE_NONE;
+	}
+
+	/**
+	 * Get whether the offsets highlighting reads sit in the postings of the
+	 * highlightable fields. When they do not they sit in term vectors, which
+	 * is where every index whose definition says nothing keeps them.
+	 *
+	 * @return
+	 */
+	public boolean isHighlightingInPostings() {
+		this.lock.readLock().lock();
+		try {
+			return highlightsInPostings;
+		} finally {
+			this.lock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Decide the highlight layout a definition is stored with, keeping
+	 * whatever layout the index already writes.
+	 *
+	 * The layout never changes in place - Lucene refuses a field whose layout
+	 * changes once it is written, so moving an index is filling a new
+	 * generation. A definition stored before layouts had a name says nothing,
+	 * and stays that way as long as replacing it could meet fields written
+	 * the old way; only an index that never declared highlighting has written
+	 * nothing that pins it.
+	 *
+	 * @param incoming
+	 *   the definition about to be stored
+	 * @param current
+	 *   the definition the index holds now
+	 * @return
+	 *   the layout to store, or {@code HIGHLIGHT_LAYOUT_UNSPECIFIED} when the
+	 *   definition should keep saying nothing
+	 */
+	public static IndexDef.HighlightLayout resolveHighlightLayout(
+		IndexDef incoming,
+		IndexDef current
+	) {
+		if(incoming.hasHighlightLayout()) {
+			return incoming.getHighlightLayout();
+		}
+
+		if(current.hasHighlightLayout()) {
+			return current.getHighlightLayout();
+		}
+
+		return usesHighlighting(current)
+			? IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_UNSPECIFIED
+			: IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS;
+	}
+
+	/**
+	 * Get whether any field of a definition highlights, counting the fields
+	 * inside objects.
+	 */
+	private static boolean usesHighlighting(IndexDef definition) {
+		for(var field : definition.getFieldsMap().values()) {
+			if(usesHighlighting(field)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static boolean usesHighlighting(FieldDef field) {
+		if(field.getType().hasString()) {
+			var string = field.getType().getString();
+			if(string.hasMatching() && string.getMatching().hasHighlight()) {
+				return true;
+			}
+			if(string.hasAutocomplete() && string.getAutocomplete().hasHighlight()) {
+				return true;
+			}
+		}
+
+		if(field.getType().hasObject()) {
+			for(var inner : field.getType().getObject().getFieldsMap().values()) {
+				if(usesHighlighting(inner)) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -732,6 +822,8 @@ public class IndexSchema {
 			this.primaryKey = primaryKey;
 			this.requiredFields = requiredFields.toImmutable();
 			this.sourceStored = storesSource(definition);
+			this.highlightsInPostings = definition.getHighlightLayout()
+				== IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS;
 			this.tieBreakers = Lists.immutable.ofAll(
 				definition.getRanking().getTieBreakersList()
 			);

@@ -1087,6 +1087,16 @@ public class Index {
 			}
 
 			/*
+			 * The highlight layout is the index's to keep rather than the
+			 * caller's to send, so it is carried over from the definition being
+			 * replaced - see IndexSchema.resolveHighlightLayout.
+			 */
+			var layout = IndexSchema.resolveHighlightLayout(def, this.definition);
+			if(layout != IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_UNSPECIFIED) {
+				def = def.toBuilder().setHighlightLayout(layout).build();
+			}
+
+			/*
 			 * Record what the definition needs, so that a node without one of
 			 * those features can tell rather than indexing without it.
 			 */
@@ -1254,7 +1264,7 @@ public class Index {
 			var luceneDoc = new org.apache.lucene.document.Document();
 
 			var errors = Lists.mutable.<ErrorMessage>empty();
-			var encounter = new IndexEncounterImpl(schema.getResources());
+			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
 
 			// Keep track of fields found so that all required fields are present
 			var fieldsFound = Sets.mutable.<String>empty();
@@ -1958,7 +1968,7 @@ public class Index {
 				);
 			}
 
-			var encounter = new IndexEncounterImpl(schema.getResources());
+			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
 			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
 			encounter.updateValue(field.getName(), field.getDef());
 
@@ -2235,7 +2245,7 @@ public class Index {
 			}
 
 			var field = primaryKeyField();
-			var encounter = new IndexEncounterImpl(schema.getResources());
+			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
 			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
 			encounter.updateValue(field.getName(), field.getDef());
 
@@ -2399,7 +2409,7 @@ public class Index {
 
 				var primaryKeyField = primaryKeyField();
 
-				var encounter = new IndexEncounterImpl(schema.getResources());
+				var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
 				encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
 				encounter.updateValue(primaryKeyField.getName(), primaryKeyField.getDef());
 
@@ -3288,7 +3298,12 @@ public class Index {
 			return null;
 		}
 
-		return new Highlighter(searcher, targets, stored).highlight(scoring, docIds);
+		return new Highlighter(
+			searcher,
+			targets,
+			stored,
+			schema.isHighlightingInPostings()
+		).highlight(scoring, docIds);
 	}
 
 	/**

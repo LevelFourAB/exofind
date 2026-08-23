@@ -11,6 +11,7 @@ import se.l4.exofind.engine.index.schema.SortConfig;
 
 public class IndexEncounterImpl implements IndexEncounter {
 	private final ResourcesDef resources;
+	private final boolean highlightsInPostings;
 
 	private Optional<Locale> locale;
 	private LocaleSupport localeSupport;
@@ -20,9 +21,15 @@ public class IndexEncounterImpl implements IndexEncounter {
 
 	private boolean forHighlighting;
 
-	public IndexEncounterImpl(ResourcesDef resources) {
+	public IndexEncounterImpl(ResourcesDef resources, boolean highlightsInPostings) {
 		this.resources = resources;
+		this.highlightsInPostings = highlightsInPostings;
 		this.locale = Optional.empty();
+	}
+
+	@Override
+	public boolean isHighlightingInPostings() {
+		return highlightsInPostings;
 	}
 
 	public void updateLocale(LocaleSupport localeSupport) {

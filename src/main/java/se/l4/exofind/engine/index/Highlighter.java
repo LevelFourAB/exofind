@@ -1,20 +1,30 @@
 package se.l4.exofind.engine.index;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.text.BreakIterator;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Supplier;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.MultiTermQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.QueryVisitor;
 import org.apache.lucene.search.uhighlight.LengthGoalBreakIterator;
 import org.apache.lucene.search.uhighlight.Passage;
 import org.apache.lucene.search.uhighlight.PassageFormatter;
+import org.apache.lucene.search.uhighlight.PassageScorer;
+import org.apache.lucene.search.uhighlight.UHComponents;
 import org.apache.lucene.search.uhighlight.UnifiedHighlighter;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.list.ImmutableList;
@@ -28,9 +38,10 @@ import se.l4.exofind.engine.query.SearchRequest;
 /**
  * Builds the highlighted fragments of the hits of one search.
  *
- * Matches are found by reading the term vectors highlightable fields were
- * indexed with, and the text they are cut from is the stored copy the same
- * declaration forced - the field the query matched holds the offsets, its
+ * Matches are found by reading the offsets highlightable fields were indexed
+ * with - in the field's own postings, or in term vectors, per the layout of
+ * the index - and the text they are cut from is the stored copy the same
+ * declaration forced. The field the query matched holds the offsets, its
  * {@code stored} sibling holds the text, and the offsets of one are offsets
  * into the other because both were written from the same value.
  *
@@ -77,7 +88,7 @@ class Highlighter {
 	}
 
 	private final ListIterable<Target> targets;
-	private final TermVectorHighlighter highlighter;
+	private final PinnedOffsetsHighlighter highlighter;
 
 	/**
 	 * @param searcher
@@ -87,11 +98,15 @@ class Highlighter {
 	 *   the stored fields of every document that will be highlighted, keyed by
 	 *   Lucene id, each holding at least the {@link #storedField(String)} of
 	 *   every target
+	 * @param offsetsInPostings
+	 *   whether the index keeps the offsets in the postings of the fields,
+	 *   rather than in term vectors
 	 */
 	Highlighter(
 		IndexSearcher searcher,
 		ListIterable<Target> targets,
-		IntObjectMap<org.apache.lucene.document.Document> documents
+		IntObjectMap<org.apache.lucene.document.Document> documents,
+		boolean offsetsInPostings
 	) {
 		this.targets = targets;
 
@@ -106,11 +121,16 @@ class Highlighter {
 		var builder = UnifiedHighlighter.builder(searcher, new StandardAnalyzer())
 			/*
 			 * A word that was matched while half typed sits in the index as a
-			 * prefix or an automaton rather than as a term. Walking those is
-			 * what makes the whole word light up when `spr` matched `Spring`,
-			 * which is the point of showing it.
+			 * prefix or an automaton rather than as a term, and lighting the
+			 * whole word up when `spr` matched `Spring` is the point of
+			 * showing it. With offsets in term vectors the highlighter walks
+			 * those itself, against the handful of terms each document holds.
+			 * With offsets in postings its own handling walks away from the
+			 * postings into re-analysis, so the automata are kept out of its
+			 * hands and the terms they match are handed to it outright - see
+			 * PinnedOffsetsHighlighter#getHighlightComponents.
 			 */
-			.withHandleMultiTermQuery(true)
+			.withHandleMultiTermQuery(!offsetsInPostings)
 			/*
 			 * The compiler builds queries out of terms, never positions, so
 			 * matching by weight has nothing extra to say here - and it is the
@@ -121,7 +141,14 @@ class Highlighter {
 			// rather than with the start of the text as a summary
 			.withMaxNoHighlightPassages(0);
 
-		this.highlighter = new TermVectorHighlighter(builder, byLuceneField, documents);
+		this.highlighter = new PinnedOffsetsHighlighter(
+			builder,
+			byLuceneField,
+			documents,
+			offsetsInPostings
+				? UnifiedHighlighter.OffsetSource.POSTINGS
+				: UnifiedHighlighter.OffsetSource.TERM_VECTORS
+		);
 	}
 
 	/**
@@ -148,7 +175,13 @@ class Highlighter {
 			maxPassages[i] = target.options().fragments();
 		});
 
-		var byField = highlighter.highlight(fields, scoringQuery, docIds, maxPassages);
+		Map<String, Object[]> byField;
+		try {
+			byField = highlighter.highlight(fields, scoringQuery, docIds, maxPassages);
+		} catch(UncheckedIOException e) {
+			// Expanding multi-term queries reads the index where no IOException fits
+			throw e.getCause();
+		}
 
 		var results = Lists.mutable.<ImmutableMap<String, ImmutableList<String>>>empty();
 		for(var doc = 0; doc < docIds.length; doc++) {
@@ -171,10 +204,11 @@ class Highlighter {
 
 	/**
 	 * The {@link UnifiedHighlighter} pointed at what this index writes:
-	 * offsets always from term vectors, text from the {@code stored} sibling
-	 * of the field carrying them, fragments cut and wrapped per target.
+	 * offsets always from where the index's layout keeps them, text from the
+	 * {@code stored} sibling of the field carrying them, fragments cut and
+	 * wrapped per target.
 	 */
-	private static final class TermVectorHighlighter extends UnifiedHighlighter {
+	private static final class PinnedOffsetsHighlighter extends UnifiedHighlighter {
 		/**
 		 * What the values of a multi-valued field are joined by in the text
 		 * passages are cut from.
@@ -183,15 +217,18 @@ class Highlighter {
 
 		private final MapIterable<String, Target> targets;
 		private final IntObjectMap<org.apache.lucene.document.Document> documents;
+		private final OffsetSource offsetSource;
 
-		private TermVectorHighlighter(
+		private PinnedOffsetsHighlighter(
 			UnifiedHighlighter.Builder builder,
 			MapIterable<String, Target> targets,
-			IntObjectMap<org.apache.lucene.document.Document> documents
+			IntObjectMap<org.apache.lucene.document.Document> documents,
+			OffsetSource offsetSource
 		) {
 			super(builder);
 			this.targets = targets;
 			this.documents = documents;
+			this.offsetSource = offsetSource;
 		}
 
 		private Target target(String field) {
@@ -207,12 +244,119 @@ class Highlighter {
 		protected OffsetSource getOffsetSource(String field) {
 			/*
 			 * Pinned rather than sniffed from the field infos: a highlightable
-			 * field always carries vectors with offsets, and a segment that
-			 * happens to hold no value for it must come out empty instead of
-			 * falling back to re-analyzing text the index never analyzes this
-			 * way.
+			 * field always carries offsets where the index's layout says, and
+			 * a segment that happens to hold no value for it must come out
+			 * empty instead of falling back to re-analyzing text the index
+			 * never analyzes this way.
 			 */
-			return OffsetSource.TERM_VECTORS;
+			return offsetSource;
+		}
+
+		@Override
+		protected OffsetSource getOptimizedOffsetSource(UHComponents components) {
+			var optimized = super.getOptimizedOffsetSource(components);
+
+			/*
+			 * The stock optimization answers ANALYSIS for whatever it cannot
+			 * read from the source alone - an automaton, a query type it does
+			 * not recognize. Re-analysis is never right here: the analyzer
+			 * this was built with is not the chain the field was indexed by,
+			 * so it would highlight different terms than the search matched.
+			 * What the source cannot answer comes out unhighlighted instead.
+			 */
+			return optimized == OffsetSource.ANALYSIS ? offsetSource : optimized;
+		}
+
+		@Override
+		protected UHComponents getHighlightComponents(
+			String field,
+			Query query,
+			Set<org.apache.lucene.index.Term> allTerms
+		) {
+			if(offsetSource == OffsetSource.POSTINGS) {
+				allTerms = withExpandedQueries(field, query, allTerms);
+			}
+
+			return super.getHighlightComponents(field, query, allTerms);
+		}
+
+		/**
+		 * How many index terms one multi-term query hands the highlighter,
+		 * per segment. A page of hits holds at most tens of matched variants,
+		 * so the cap sits far above what highlighting can use - it is there
+		 * so a short prefix over a large index cannot make every page of
+		 * results enumerate the dictionary. A variant past the cap goes
+		 * unhighlighted.
+		 */
+		private static final int MAX_EXPANSIONS = 1024;
+
+		/**
+		 * The terms of the query, together with the index terms its
+		 * multi-term queries match - each asked for the enumeration it runs
+		 * on, so a word matched as a prefix or through its misreadings
+		 * highlights exactly what the search matched. Expanding here is what
+		 * lets the offsets stay read from postings: handed concrete terms,
+		 * the highlighter has nothing left it would re-analyze for.
+		 */
+		private Set<org.apache.lucene.index.Term> withExpandedQueries(
+			String field,
+			Query query,
+			Set<org.apache.lucene.index.Term> allTerms
+		) {
+			var multiTermQueries = new ArrayList<MultiTermQuery>();
+			query.visit(new QueryVisitor() {
+				@Override
+				public boolean acceptField(String queried) {
+					return field.equals(queried);
+				}
+
+				@Override
+				public void visitLeaf(Query leaf) {
+					if(leaf instanceof MultiTermQuery mtq && field.equals(mtq.getField())) {
+						multiTermQueries.add(mtq);
+					}
+				}
+
+				@Override
+				public void consumeTermsMatching(
+					Query leaf,
+					String queried,
+					Supplier<ByteRunAutomaton> automaton
+				) {
+					if(leaf instanceof MultiTermQuery mtq && field.equals(queried)) {
+						multiTermQueries.add(mtq);
+					}
+				}
+			});
+
+			if(multiTermQueries.isEmpty()) {
+				return allTerms;
+			}
+
+			var expanded = new HashSet<>(allTerms);
+			try {
+				for(var leaf : getIndexSearcher().getIndexReader().leaves()) {
+					var terms = leaf.reader().terms(field);
+					if(terms == null) {
+						continue;
+					}
+
+					for(var multiTermQuery : multiTermQueries) {
+						var termsEnum = multiTermQuery.getTermsEnum(terms);
+						BytesRef term;
+						var budget = MAX_EXPANSIONS;
+						while(budget-- > 0 && (term = termsEnum.next()) != null) {
+							expanded.add(
+								new org.apache.lucene.index.Term(field, BytesRef.deepCopyOf(term))
+							);
+						}
+					}
+				}
+			} catch(IOException e) {
+				throw new UncheckedIOException(e);
+			}
+
+			return expanded;
 		}
 
 		@Override
@@ -309,6 +453,11 @@ class Highlighter {
 			return new FragmentsFormatter(options.pre(), options.post());
 		}
 
+		@Override
+		protected PassageScorer getScorer(String field) {
+			return SCORER;
+		}
+
 		private Map<String, Object[]> highlight(
 			String[] fields,
 			Query query,
@@ -318,6 +467,49 @@ class Highlighter {
 			return highlightFieldsAsObjects(fields, query, docIds, maxPassages);
 		}
 	}
+
+	/**
+	 * Scores a passage the way {@link PassageScorer} does, unique term by
+	 * unique term in the order they were matched. The stock {@code score}
+	 * deduplicates the terms through a fresh
+	 * {@link org.apache.lucene.util.BytesRefHash} per passage, whose block
+	 * pool opens at 32 KB - kilobytes allocated to tell apart the handful of
+	 * matches a passage holds. Comparing the matches against each other is
+	 * quadratic in that handful and allocates nothing.
+	 */
+	private static final PassageScorer SCORER = new PassageScorer() {
+		@Override
+		public float score(Passage passage, int contentLength) {
+			var terms = passage.getMatchTerms();
+			var freqsInDoc = passage.getMatchTermFreqsInDoc();
+			var count = passage.getNumMatches();
+
+			var score = 0d;
+
+			matches:
+			for(var i = 0; i < count; i++) {
+				var term = terms[i];
+
+				for(var j = 0; j < i; j++) {
+					if(terms[j].bytesEquals(term)) {
+						continue matches;
+					}
+				}
+
+				var freqInPassage = 1;
+				for(var j = i + 1; j < count; j++) {
+					if(terms[j].bytesEquals(term)) {
+						freqInPassage++;
+					}
+				}
+
+				score += tf(freqInPassage, passage.getLength())
+					* weight(contentLength, freqsInDoc[i]);
+			}
+
+			return (float) (score * norm(passage.getStartOffset()));
+		}
+	};
 
 	/**
 	 * Cuts each passage into its own fragment, with every match wrapped in
@@ -377,7 +569,7 @@ class Highlighter {
 			 * never as the edge of a fragment.
 			 */
 			return sb.toString()
-				.replace(TermVectorHighlighter.VALUE_SEPARATOR, ' ')
+				.replace(PinnedOffsetsHighlighter.VALUE_SEPARATOR, ' ')
 				.strip();
 		}
 	}

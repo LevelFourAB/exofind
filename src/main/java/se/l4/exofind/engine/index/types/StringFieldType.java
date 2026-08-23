@@ -566,7 +566,7 @@ public class StringFieldType implements FieldType {
 			var field = new AnalyzingTextField(
 				encounter.name(FieldNames.MATCHING),
 				value,
-				matchConfig.hasHighlight(),
+				textShape(encounter, matchConfig.hasHighlight()),
 				analyzer
 			);
 			results.add(field);
@@ -591,7 +591,7 @@ public class StringFieldType implements FieldType {
 			var field = new AnalyzingTextField(
 				encounter.name(FieldNames.AUTOCOMPLETE),
 				value,
-				autocompleteConfig.hasHighlight(),
+				textShape(encounter, autocompleteConfig.hasHighlight()),
 				analyzer
 			);
 			results.add(field);
@@ -681,6 +681,24 @@ public class StringFieldType implements FieldType {
 	) {
 		var name = encounter.name(suffix);
 		return new StringField(name, analyzer.normalize(name, value), Field.Store.NO);
+	}
+
+	/**
+	 * Get the shape a text usage's terms are written in: bare unless the
+	 * usage highlights, and then carrying offsets where the index's layout
+	 * keeps them.
+	 */
+	private static AnalyzingTextField.Shape textShape(
+		IndexEncounter encounter,
+		boolean highlighted
+	) {
+		if(!highlighted) {
+			return AnalyzingTextField.Shape.PLAIN;
+		}
+
+		return encounter.isHighlightingInPostings()
+			? AnalyzingTextField.Shape.HIGHLIGHTABLE_POSTINGS
+			: AnalyzingTextField.Shape.HIGHLIGHTABLE_TERM_VECTORS;
 	}
 
 	/**
@@ -893,9 +911,9 @@ public class StringFieldType implements FieldType {
 		 * The same choice textTermQueries makes: a field that can match is
 		 * searched on matching, and only a field that cannot falls back to
 		 * autocomplete. Highlighting the usage the search never targets would
-		 * read term vectors no query term ever lands in, so a highlight that
-		 * was declared on the other usage is refused rather than answered
-		 * with nothing.
+		 * read offsets no query term ever lands in, so a highlight that was
+		 * declared on the other usage is refused rather than answered with
+		 * nothing.
 		 */
 		if(stringType.hasMatching()) {
 			if(stringType.getMatching().hasHighlight()) {
@@ -1234,8 +1252,8 @@ public class StringFieldType implements FieldType {
 	 * term - every word the typed one starts - is the longer one.
 	 *
 	 * A query compiled for highlighting never asks it either: the terms of a
-	 * highlight query have to land in the field whose term vectors carry the
-	 * offsets, which is the matching field - see
+	 * highlight query have to land in the field that carries the offsets,
+	 * which is the matching field - see
 	 * {@link IndexEncounter#isForHighlighting()}.
 	 *
 	 * Mistakes in the word are forgiven as the autocomplete usage declares,

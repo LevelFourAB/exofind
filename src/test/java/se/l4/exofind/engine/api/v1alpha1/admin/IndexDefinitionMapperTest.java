@@ -1495,6 +1495,22 @@ public class IndexDefinitionMapperTest {
 	}
 
 	/**
+	 * The highlight layout is decided by the engine when the index is created
+	 * and carried through every update, so it is not something an update
+	 * drops either.
+	 */
+	@Test
+	public void testHighlightLayoutIsNotState() {
+		var stored = IndexDefinitionMapper
+			.toStored(withFields(Map.of("title", string(null, null, null))))
+			.toBuilder()
+			.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS)
+			.build();
+
+		IndexDefinitionMapper.checkRepresentable(stored);
+	}
+
+	/**
 	 * A field type only a newer version has a name for. The type is what carries
 	 * the values, so there is nothing to describe the field as at all.
 	 */

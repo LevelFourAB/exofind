@@ -42,7 +42,7 @@ import se.l4.exofind.engine.query.matchers.Matchers;
  */
 public class NumberFieldTypeTest {
 	private IndexEncounterImpl encounter(FieldDef.Builder def) {
-		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance());
+		var encounter = new IndexEncounterImpl(ResourcesDef.getDefaultInstance(), false);
 		encounter.updateLocale(Locales.getDefault());
 		encounter.updateValue("price", def.build());
 		return encounter;

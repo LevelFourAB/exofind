@@ -83,7 +83,7 @@ public class DocumentReader {
 			want(name);
 		}
 
-		this.encounter = new IndexEncounterImpl(schema.getResources());
+		this.encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
 		this.encounter.updateLocale(Locales.getDefault());
 	}
 

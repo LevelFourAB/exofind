@@ -1281,4 +1281,73 @@ public class IndexSchemaTest {
 
 		assertThat(schema.hasLocaleFallback(), is(false));
 	}
+
+	@Test
+	public void testExplicitHighlightLayoutIsKept() {
+		var resolved = IndexSchema.resolveHighlightLayout(
+			IndexDef.newBuilder()
+				.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_TERM_VECTORS)
+				.build(),
+			IndexDef.getDefaultInstance()
+		);
+
+		assertThat(resolved, is(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_TERM_VECTORS));
+	}
+
+	@Test
+	public void testHighlightLayoutIsCarriedFromTheCurrentDefinition() {
+		var resolved = IndexSchema.resolveHighlightLayout(
+			IndexDef.getDefaultInstance(),
+			IndexDef.newBuilder()
+				.setHighlightLayout(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_TERM_VECTORS)
+				.build()
+		);
+
+		assertThat(resolved, is(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_TERM_VECTORS));
+	}
+
+	@Test
+	public void testFreshIndexResolvesToPostings() {
+		var resolved = IndexSchema.resolveHighlightLayout(
+			IndexDef.getDefaultInstance(),
+			IndexDef.getDefaultInstance()
+		);
+
+		assertThat(resolved, is(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS));
+	}
+
+	/**
+	 * A definition that highlights but names no layout was stored before
+	 * layouts had a name, and its documents hold term vectors - so it keeps
+	 * saying nothing rather than being flipped onto fields Lucene would
+	 * refuse to write.
+	 */
+	@Test
+	public void testDefinitionStoredBeforeLayoutsStaysUnset() {
+		var resolved = IndexSchema.resolveHighlightLayout(
+			IndexDef.getDefaultInstance(),
+			IndexDef.newBuilder()
+				.putFields(
+					"name",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(
+									StringFieldTypeDef.newBuilder()
+										.setMatching(
+											StringFieldTypeDef.TextUsageConfig.newBuilder()
+												.setHighlight(
+													StringFieldTypeDef.TextUsageConfig
+														.HighlightConfig.getDefaultInstance()
+												)
+										)
+								)
+						)
+						.build()
+				)
+				.build()
+		);
+
+		assertThat(resolved, is(IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_UNSPECIFIED));
+	}
 }

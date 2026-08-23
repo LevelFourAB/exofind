@@ -112,4 +112,16 @@ public interface IndexEncounter {
 	default boolean isForHighlighting() {
 		return false;
 	}
+
+	/**
+	 * Get whether the offsets highlighting reads sit in the postings of the
+	 * highlightable fields, rather than in term vectors. Decided per index
+	 * when it is created, never per field - see
+	 * {@link se.l4.exofind.engine.index.schema.IndexSchema#isHighlightingInPostings()}.
+	 *
+	 * @return
+	 */
+	default boolean isHighlightingInPostings() {
+		return false;
+	}
 }
