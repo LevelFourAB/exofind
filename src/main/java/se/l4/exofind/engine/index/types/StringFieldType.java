@@ -16,12 +16,13 @@ import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
+import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.queries.spans.SpanMultiTermQueryWrapper;
 import org.apache.lucene.queries.spans.SpanNearQuery;
 import org.apache.lucene.queries.spans.SpanOrQuery;
 import org.apache.lucene.queries.spans.SpanQuery;
 import org.apache.lucene.queries.spans.SpanTermQuery;
-import org.apache.lucene.search.AutomatonQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
@@ -33,13 +34,16 @@ import org.apache.lucene.search.MultiTermQuery;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.QueryVisitor;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
+import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.automaton.Automata;
 import org.apache.lucene.util.automaton.Automaton;
+import org.apache.lucene.util.automaton.CompiledAutomaton;
 import org.apache.lucene.util.automaton.LevenshteinAutomata;
 import org.apache.lucene.util.automaton.Operations;
 import org.eclipse.collections.api.collection.MutableCollection;
@@ -144,56 +148,130 @@ public class StringFieldType implements FieldType {
 		MultiTermQuery.CONSTANT_SCORE_REWRITE;
 
 	/**
-	 * How many built typo tolerant queries are kept. The words are text
+	 * How many compiled typo tolerant automata are kept. The words are text
 	 * somebody typed, so what is kept has to have a ceiling; this one holds
-	 * what a search box being typed into produces - a word per keystroke, per
-	 * field it covers - for a good number of people at once, while the
-	 * automata behind them stay a few megabytes rather than a share of the
-	 * heap.
+	 * what a search box being typed into produces - a word per keystroke - for
+	 * a good number of people at once, while the automata stay a few megabytes
+	 * rather than a share of the heap.
 	 */
 	private static final int FUZZY_CACHE_SIZE = 512;
 
 	/**
-	 * The typo tolerant queries already built, by the field they ask of, the
-	 * word they forgive mistakes in, how many are forgiven and whether fewer
-	 * are kept out, how much of the word has to be right and whether the rest
-	 * of it is still being typed.
+	 * The typo tolerant automata already compiled, by the word they forgive
+	 * mistakes in, how many are forgiven and whether fewer are kept out, how
+	 * much of the word has to be right and whether the rest of it is still
+	 * being typed.
 	 *
-	 * Building one turns every reading of the word within those mistakes into
+	 * Compiling one turns every reading of the word within those mistakes into
 	 * a table the term dictionary is walked against, which is worth more than
-	 * the walk itself: a search covering several fields builds the same word
-	 * once per field, a search that found nothing builds it again for every
-	 * word it weighs before letting one go, and the next person to type the
-	 * word builds it again after that. What is built depends on the word and
-	 * on nothing of the index, so it is as good later as it was when it was
-	 * built.
+	 * the walk itself: a search that found nothing compiles the same word again
+	 * for every word it weighs before letting one go, and the next person to
+	 * type it compiles it again after that. What is compiled depends on the
+	 * word and on nothing of the index, so it is as good later as it was when
+	 * it was compiled.
+	 *
+	 * The field a word is asked of is not part of what decides one, because an
+	 * automaton accepts terms and every field's terms are read the same way -
+	 * so a search covering several fields compiles the word once and asks each
+	 * field with it. {@link EditBandQuery} is what holds the two apart.
 	 *
 	 * The least recently asked for goes when the cache is full. Held through
 	 * {@link Collections#synchronizedMap} rather than a concurrent map because
 	 * that order is what has to be kept, and the lock is held only for the
-	 * lookup - see {@link #withinEdits}.
+	 * lookup - see {@link #editBand}.
 	 */
-	private static final Map<FuzzyKey, Query> FUZZY_QUERIES = Collections.synchronizedMap(
-		new LinkedHashMap<FuzzyKey, Query>(FUZZY_CACHE_SIZE, 0.75f, true) {
-			@Override
-			protected boolean removeEldestEntry(Map.Entry<FuzzyKey, Query> eldest) {
-				return size() > FUZZY_CACHE_SIZE;
+	private static final Map<FuzzyKey, CompiledAutomaton> FUZZY_AUTOMATA =
+		Collections.synchronizedMap(
+			new LinkedHashMap<FuzzyKey, CompiledAutomaton>(FUZZY_CACHE_SIZE, 0.75f, true) {
+				@Override
+				protected boolean removeEldestEntry(
+					Map.Entry<FuzzyKey, CompiledAutomaton> eldest
+				) {
+					return size() > FUZZY_CACHE_SIZE;
+				}
 			}
-		}
-	);
+		);
 
 	/**
-	 * What a built typo tolerant query is decided by, and so what one is kept
-	 * under.
+	 * What a compiled typo tolerant automaton is decided by, and so what one is
+	 * kept under.
 	 */
 	private record FuzzyKey(
-		String field,
 		String text,
 		int edits,
 		boolean exactly,
 		int prefixLength,
 		boolean prefix
 	) {
+	}
+
+	/**
+	 * The terms one band of {@link #typoLadder} reaches in one field, matched
+	 * against an automaton compiled before the field was known.
+	 *
+	 * Lucene's own {@link org.apache.lucene.search.AutomatonQuery} compiles the
+	 * automaton it is handed, and compiling costs several times what building
+	 * the automaton did, so a word asked of several fields would pay for the
+	 * same table once per field. What the automaton accepts depends on the word
+	 * alone, so the compiled table is kept in {@link #FUZZY_AUTOMATA} and the
+	 * field lives here.
+	 *
+	 * Two of these are the same query when they ask the same field for the same
+	 * band, which is what lets the searcher's own cache answer one from the
+	 * documents another matched.
+	 */
+	private static final class EditBandQuery extends MultiTermQuery {
+		private final FuzzyKey band;
+		private final CompiledAutomaton compiled;
+
+		EditBandQuery(String field, FuzzyKey band, CompiledAutomaton compiled) {
+			super(field, EXPANSION_REWRITE);
+
+			this.band = band;
+			this.compiled = compiled;
+		}
+
+		@Override
+		protected TermsEnum getTermsEnum(Terms terms, AttributeSource atts)
+			throws IOException
+		{
+			return compiled.getTermsEnum(terms);
+		}
+
+		@Override
+		public void visit(QueryVisitor visitor) {
+			compiled.visit(visitor, this, getField());
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * super.hashCode() + band.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			return super.equals(obj) && band.equals(((EditBandQuery) obj).band);
+		}
+
+		@Override
+		public String toString(String field) {
+			var builder = new StringBuilder();
+			if(!getField().equals(field)) {
+				builder.append(getField()).append(':');
+			}
+
+			builder.append(band.text()).append('~').append(band.edits());
+
+			if(band.exactly()) {
+				builder.append(" exactly");
+			}
+
+			if(band.prefix()) {
+				builder.append('*');
+			}
+
+			return builder.toString();
+		}
 	}
 
 	/**
@@ -1574,8 +1652,9 @@ public class StringFieldType implements FieldType {
 	 * within that number and no fewer. A word still being typed matches every
 	 * term such a reading of it starts.
 	 *
-	 * Answered from {@link #FUZZY_QUERIES} where the same word has been asked
-	 * for before, because building one costs more than running it.
+	 * The automaton comes from {@link #FUZZY_AUTOMATA} where the same word has
+	 * been asked for before, whatever field it was asked of, because compiling
+	 * one costs more than running it.
 	 *
 	 * @param term
 	 *   the word as it came out of analysis
@@ -1600,26 +1679,27 @@ public class StringFieldType implements FieldType {
 			? typos.getPrefixLength()
 			: DEFAULT_PREFIX_LENGTH;
 
-		var key = new FuzzyKey(term.field(), term.text(), edits, exactly, prefixLength, prefix);
-		var built = FUZZY_QUERIES.get(key);
-		if(built != null) {
-			return built;
+		var key = new FuzzyKey(term.text(), edits, exactly, prefixLength, prefix);
+
+		var compiled = FUZZY_AUTOMATA.get(key);
+		if(compiled == null) {
+			/*
+			 * Compiled outside the cache rather than through computeIfAbsent,
+			 * so that one word being compiled does not hold up the searches
+			 * looking for another. Two threads that want the same one compile
+			 * it twice and keep the second, which is two automata rather than a
+			 * queue behind one.
+			 */
+			compiled = compileEditBand(key);
+			FUZZY_AUTOMATA.put(key, compiled);
 		}
 
-		/*
-		 * Built outside the cache rather than through computeIfAbsent, so that
-		 * one word being built does not hold up the searches looking for
-		 * another. Two threads that want the same one build it twice and keep
-		 * the second, which is two automata rather than a queue behind one.
-		 */
-		var query = buildEditBand(term, edits, exactly, prefixLength, prefix);
-		FUZZY_QUERIES.put(key, query);
-		return query;
+		return cacheable(new EditBandQuery(term.field(), key, compiled));
 	}
 
 	/**
-	 * Build what {@link #editBand} answers with, for a word not built
-	 * before.
+	 * Compile the table {@link #editBand} walks a field's terms against, for a
+	 * band not compiled before.
 	 *
 	 * The Levenshtein automaton of the word is what accepts a term close
 	 * enough to it; a half typed word has "anything after" concatenated onto
@@ -1632,36 +1712,37 @@ public class StringFieldType implements FieldType {
 	 * are kept out of the fuzzy part and counted in code points, so a word of
 	 * characters outside the basic plane keeps as much of itself fixed as one
 	 * of ASCII.
+	 *
+	 * Whether the automaton accepts finitely many terms is told rather than
+	 * left to be found out. A word with an end is near finitely many others
+	 * however many mistakes are forgiven, and a word still being typed stands
+	 * for every term some reading of it starts, which is endless - both follow
+	 * from the shape asked for, while Lucene would walk the automaton again to
+	 * learn what this already knows.
 	 */
-	private static Query buildEditBand(
-		Term term,
-		int edits,
-		boolean exactly,
-		int prefixLength,
-		boolean prefix
-	) {
-		var text = term.text();
+	private static CompiledAutomaton compileEditBand(FuzzyKey band) {
+		var text = band.text();
 
 		var codePoints = text.codePointCount(0, text.length());
-		var prefixEnd = text.offsetByCodePoints(0, Math.min(prefixLength, codePoints));
+		var prefixEnd = text.offsetByCodePoints(0, Math.min(band.prefixLength(), codePoints));
 
-		var automaton = levenshtein(text, prefixEnd, edits, prefix);
-		if(exactly) {
+		var automaton = levenshtein(text, prefixEnd, band.edits(), band.prefix());
+		if(band.exactly()) {
 			automaton = Operations.removeDeadStates(
 				Operations.minus(
 					automaton,
-					levenshtein(text, prefixEnd, edits - 1, prefix),
+					levenshtein(text, prefixEnd, band.edits() - 1, band.prefix()),
 					Operations.DEFAULT_DETERMINIZE_WORK_LIMIT
 				)
 			);
 		}
 
-		return cacheable(new AutomatonQuery(
-			term,
+		return new CompiledAutomaton(
 			Operations.determinize(automaton, Operations.DEFAULT_DETERMINIZE_WORK_LIMIT),
-			false,
-			EXPANSION_REWRITE
-		));
+			!band.prefix(),
+			true,
+			false
+		);
 	}
 
 	/**
