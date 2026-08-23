@@ -43,6 +43,24 @@ const PROTEIN_RANGES = [
 /** The field the names are searched in, and the one hits are marked from. */
 const NAME = 'name';
 
+/** The locale the names are written in, and the one they are searched in. */
+const LOCALE = 'sv';
+
+/**
+ * Read a name out of a returned document.
+ *
+ * `name` is locale specific, so it comes back as its variants keyed by locale
+ * tag rather than as a string - the same shape it was indexed as. A highlight
+ * is already the one variant that was searched, but a hit that has none falls
+ * back to the document, and that is where the locale has to be picked.
+ */
+function nameOf(document) {
+	const name = document[NAME];
+	if(name === undefined || name === null) return '';
+
+	return typeof name === 'string' ? name : (name[LOCALE] ?? '');
+}
+
 const client = createClient(resolveConfig({ index: 'livsmedel' }));
 
 /*
@@ -101,7 +119,7 @@ function buildRequest() {
 	}
 
 	const request = {
-		locale: 'sv',
+		locale: LOCALE,
 		filters,
 		facets: [
 			{ field: 'group', limit: 12 },
@@ -227,7 +245,7 @@ function renderHit(hit, terms) {
 	if(highlighted && highlighted.length > 0) {
 		name.append(markFragment(highlighted[0], terms));
 	} else {
-		name.textContent = hit.document.name;
+		name.textContent = nameOf(hit.document);
 	}
 
 	const group = document.createElement('p');
