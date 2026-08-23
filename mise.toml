@@ -43,9 +43,12 @@ description = "Run the JMH benchmarks; arguments are passed on to the JMH runner
 # plugin that builds one in a class loader. The file it reads is written by the
 # `benchmark` profile.
 usage = 'arg "[jmh]" var=#true help="Passed on to the JMH runner - a benchmark pattern, -p params, -f forks"'
+# `$usage_jmh` holds the arguments already quoted for a shell, so an `eval` is
+# what turns them back into the words that were typed - expanded directly, an
+# argument containing a space arrives at JMH with its quotes still attached.
 run = [
 	"mvn -Pbenchmark test-compile",
-	"java -cp \"target/classes:target/test-classes:$(cat target/benchmark-classpath.txt)\" org.openjdk.jmh.Main {{arg(name='jmh', var=true)}}"
+	'''classpath="target/classes:target/test-classes:$(cat target/benchmark-classpath.txt)" && eval "java -cp \"\$classpath\" org.openjdk.jmh.Main $usage_jmh"'''
 ]
 
 [tasks.image]
