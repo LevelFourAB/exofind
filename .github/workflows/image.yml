@@ -1,0 +1,75 @@
+name: Image
+
+# Building and pushing the container image, called by the workflows that decide
+# *when* an image is published - CI for merges to main, Release for a release.
+# The tags are the caller's to choose; everything else about the image is the
+# same whichever one asked for it.
+on:
+  workflow_call:
+    inputs:
+      tags:
+        description: What to tag the image, one docker/metadata-action tag per line
+        required: true
+        type: string
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The JDK the application is packaged with is the one in mise.toml, which
+      # is the release the image's JRE is too.
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: java maven
+
+      - name: Cache the Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('pom.xml') }}
+          restore-keys: maven-
+
+      # Dockerfile.jvm copies `target/quarkus-app` rather than building it, so
+      # the application is packaged here first. The tests are skipped because
+      # this commit only reaches a caller of this workflow after they have run.
+      - name: Package the application
+        env:
+          MAVEN_ARGS: --batch-mode --no-transfer-progress
+        run: mvn package -DskipTests
+
+      # The fast-jar the image is built around is the same bytes on either
+      # architecture, but the image creates its user and its data directory
+      # while building, and those few commands run under emulation for the
+      # architecture that is not the runner's.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The repository name is lowercased here, which a registry requires and
+      # `LevelFourAB/exofind` is not. The labels this writes are also what makes
+      # GitHub show the package on the repository rather than on its own.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: ${{ inputs.tags }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/main/docker/Dockerfile.jvm
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}

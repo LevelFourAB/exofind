@@ -1,0 +1,62 @@
+name: CI
+
+# Every branch is built, so that a branch is known to compile and pass its
+# tests before anyone opens a pull request for it.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A branch that is pushed to again abandons the run for the commit it replaced;
+# main does not, because its runs publish an image and the one for the older
+# commit may already have pushed it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    # A pull request from a branch in this repository is already covered by the
+    # push that created it, and building both would build every commit twice.
+    # One from a fork has no such push, so it is built here.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # mise.toml is where the toolchain is decided, so CI reads it rather than
+      # naming a JDK of its own that could drift from the one developers build
+      # with. Only what the engine builds with is installed; node is there for
+      # the example pages, which nothing here touches.
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: java maven
+
+      - name: Cache the Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('pom.xml') }}
+          restore-keys: maven-
+
+      # Tests that need object storage start their own container through
+      # Testcontainers, which the runner's Docker serves.
+      - name: Build and test
+        env:
+          MAVEN_ARGS: --batch-mode --no-transfer-progress
+        run: mise run verify
+
+  # Merges to main are published so that a deployment can follow main without
+  # waiting for a release. `main-latest` moves, `main-<rev>` does not, so a
+  # deployment that has to be reproducible pins the second.
+  image:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      tags: |
+        type=raw,value=main-latest
+        type=raw,value=main-{{sha}}

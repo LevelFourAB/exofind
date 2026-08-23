@@ -68,7 +68,9 @@ wiped pod is slow rather than broken while it refills.
 
 Everything in angle brackets is sized against the deployment rather than
 copied - [Size the pools](#size-the-pools) says what each one is measured
-from.
+from. `<version>` is the exception: it is a released version such as `0.1.0`,
+written out rather than left as `latest` so that a pod replaced tomorrow comes
+back as the one running today.
 
 ```yaml
 apiVersion: apps/v1
@@ -86,7 +88,7 @@ spec:
       terminationGracePeriodSeconds: <search-grace>
       containers:
         - name: exofind
-          image: exofind/engine:dev
+          image: ghcr.io/levelfourab/exofind:<version>
           ports:
             - { name: http, containerPort: 8080 }
           env:
@@ -151,7 +153,7 @@ spec:
       terminationGracePeriodSeconds: <indexer-grace>
       containers:
         - name: exofind
-          image: exofind/engine:dev
+          image: ghcr.io/levelfourab/exofind:<version>
           ports:
             - { name: http, containerPort: 8080 }
           env:

@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Only ever one release run at a time: two of them would each open a release
+# pull request against the same branch.
+concurrency:
+  group: release
+
+jobs:
+  # Release Please keeps a pull request open that holds the next version and
+  # the changelog entries the commits since the last release add up to. Merging
+  # it is what makes the release: the tag, the GitHub release and the image
+  # below all come from that merge.
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+    steps:
+      # The token is the workflow's own, so the pull request it opens is not
+      # built by CI - GitHub does not start workflows for what GITHUB_TOKEN
+      # pushes. The commits in it were built on the branches they came from,
+      # and the merge is built like any other push to main. Giving this a
+      # personal access token instead is what would build the pull request
+      # itself.
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # The version tags an image keeps for good, plus the two that move: `1.2`
+  # follows the newest patch of that minor, `latest` the newest release there
+  # is.
+  image:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      tags: |
+        type=raw,value=${{ needs.release.outputs.version }}
+        type=raw,value=${{ needs.release.outputs.major }}.${{ needs.release.outputs.minor }}
+        type=raw,value=${{ needs.release.outputs.major }}
+        type=raw,value=latest

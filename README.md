@@ -185,3 +185,35 @@ The image sizes the heap against the container's memory limit and starts the
 JVM with what Lucene wants from it. `JAVA_OPTS_APPEND` changes one of those
 without restating the others - see [The
 JVM](docs/reference/configuration.md#the-jvm).
+
+## Published images
+
+The same image, for x86-64 and arm64, is published to
+`ghcr.io/levelfourab/exofind` on every merge to `main` and on every release:
+
+| Tag            | What it is                                              |
+| -------------- | ------------------------------------------------------- |
+| `0.1.0`        | One release, and the same image for as long as it exists |
+| `0.1`          | The newest patch of that minor version                   |
+| `0`            | The newest release that has not broken compatibility     |
+| `latest`       | The newest release there is                             |
+| `main-latest`  | The tip of `main`, ahead of any release                 |
+| `main-a1b2c3d` | One commit on `main`                                    |
+
+A deployment that has to come back up as the same version pins `0.1.0` or a
+`main-<rev>`; the rest move under it.
+
+## Releases
+
+Commit messages are [Conventional
+Commits](https://www.conventionalcommits.org/), and Release Please turns them
+into releases: it keeps a pull request open holding the next version number and
+the changelog entries the commits since the last release add up to. Merging
+that pull request is the release - it writes `CHANGELOG.md`, tags the commit,
+publishes the GitHub release and the images above.
+
+Which part of the version moves is the commit types deciding: `fix` a patch,
+`feat` a minor, and a `!` or a `BREAKING CHANGE:` footer a minor as well for as
+long as the major is 0. The version in `pom.xml` is written by the same pull
+request and carries `-SNAPSHOT` between releases, so the version a build
+reports is the release it came after.

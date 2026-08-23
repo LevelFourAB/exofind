@@ -1,0 +1,24 @@
+{
+	"$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+	"packages": {
+		".": {
+			"release-type": "maven",
+			"package-name": "exofind",
+			"include-component-in-tag": false,
+			"bump-minor-pre-major": true,
+			"changelog-sections": [
+				{ "type": "feat", "section": "Features" },
+				{ "type": "fix", "section": "Bug fixes" },
+				{ "type": "perf", "section": "Performance" },
+				{ "type": "docs", "section": "Documentation" },
+				{ "type": "deps", "section": "Dependencies" },
+				{ "type": "revert", "section": "Reverts" },
+				{ "type": "refactor", "section": "Internal", "hidden": true },
+				{ "type": "test", "section": "Internal", "hidden": true },
+				{ "type": "build", "section": "Internal", "hidden": true },
+				{ "type": "ci", "section": "Internal", "hidden": true },
+				{ "type": "chore", "section": "Internal", "hidden": true }
+			]
+		}
+	}
+}
