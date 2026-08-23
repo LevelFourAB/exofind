@@ -578,6 +578,49 @@ public class HighlightSearchTest extends AbstractIndexTest {
 		return index;
 	}
 
+	/**
+	 * A half typed last word answered from the autocomplete usage of the field
+	 * still lights up whole: the query highlighting reads is compiled for the
+	 * field whose term vectors hold the offsets, not the shape the search ran.
+	 */
+	@Test
+	public void testWordAnsweredFromAutocompleteIsStillHighlighted() throws IOException {
+		var index = create(
+			"matched-and-completed",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						highlightedMatching()
+							.setAutocomplete(
+								StringFieldTypeDef.TextUsageConfig.getDefaultInstance()
+							)
+					).build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Spring Cleaning")
+			)
+		);
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("cleaning spr"))
+				.addHighlight("name")
+				.build()
+		);
+
+		assertThat(
+			highlightsOf(result, "1", "name"),
+			contains("<em>Spring</em> <em>Cleaning</em>")
+		);
+	}
+
 	private static StringFieldTypeDef.Builder highlightedMatching() {
 		return StringFieldTypeDef.newBuilder().setMatching(highlighted());
 	}

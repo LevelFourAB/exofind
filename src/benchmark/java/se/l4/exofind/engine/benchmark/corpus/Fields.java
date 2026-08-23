@@ -101,6 +101,17 @@ final class Fields {
 	}
 
 	/**
+	 * Text searched both ways a search box asks: matched as whole words, and
+	 * completed while the last of them is still being typed.
+	 */
+	static StringFieldTypeDef.Builder matchedAndCompleted(float weight) {
+		return matched(weight)
+			.setAutocomplete(
+				StringFieldTypeDef.TextUsageConfig.newBuilder().setWeight(weight)
+			);
+	}
+
+	/**
 	 * Text as it is completed while it is being typed.
 	 */
 	static StringFieldTypeDef.Builder completed(float weight) {

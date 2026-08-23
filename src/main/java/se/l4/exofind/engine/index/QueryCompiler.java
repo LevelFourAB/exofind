@@ -290,6 +290,11 @@ public class QueryCompiler {
 	 * for what ranked it, never for what only narrowed it - not for the
 	 * category it happens to be in.
 	 *
+	 * The result is read for the terms it would match, never run, and is
+	 * compiled under {@link IndexEncounter#isForHighlighting()} so a type
+	 * whose running shape puts terms where no term vectors are answers with
+	 * the shape highlighting can read.
+	 *
 	 * @param clauses
 	 * @return
 	 *   the ranking part, or {@code null} when nothing in the search ranks
@@ -301,7 +306,12 @@ public class QueryCompiler {
 			return null;
 		}
 
-		return compileAll(scoring);
+		encounter.updateForHighlighting(true);
+		try {
+			return compileAll(scoring);
+		} finally {
+			encounter.updateForHighlighting(false);
+		}
 	}
 
 	/**

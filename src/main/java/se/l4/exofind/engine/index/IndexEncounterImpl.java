@@ -18,6 +18,8 @@ public class IndexEncounterImpl implements IndexEncounter {
 	private String fieldName;
 	private FieldDef fieldDef;
 
+	private boolean forHighlighting;
+
 	public IndexEncounterImpl(ResourcesDef resources) {
 		this.resources = resources;
 		this.locale = Optional.empty();
@@ -26,6 +28,15 @@ public class IndexEncounterImpl implements IndexEncounter {
 	public void updateLocale(LocaleSupport localeSupport) {
 		this.locale = Optional.of(localeSupport.getJavaLocale());
 		this.localeSupport = localeSupport;
+	}
+
+	public void updateForHighlighting(boolean forHighlighting) {
+		this.forHighlighting = forHighlighting;
+	}
+
+	@Override
+	public boolean isForHighlighting() {
+		return forHighlighting;
 	}
 
 	public void updateValue(String fieldName, FieldDef field) {

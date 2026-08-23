@@ -350,6 +350,116 @@ public class SearchTest extends AbstractIndexTest {
 		assertThat(ids(result), contains("1"));
 	}
 
+	/**
+	 * A field defined for both matching and autocomplete answers the half
+	 * typed last word of a text of several from the prefixes autocomplete
+	 * indexed. The words here lean on analysis deliberately: matching stems
+	 * {@code running} to {@code run}, so no matching term starts with
+	 * {@code runni} - only the autocomplete terms, which hold every prefix of
+	 * the word as it was written, can find it.
+	 */
+	@Test
+	public void testTextCompletesLastWordThroughAutocompleteBesideMatching() throws IOException {
+		var index = matchedAndCompleted();
+
+		var result = search(
+			index,
+			Query.text(TextMatcher.of("shoes runni").withRelax(TextMatcher.Relax.OFF))
+		);
+
+		assertThat(ids(result), contains("1"));
+	}
+
+	/**
+	 * A half typed word on its own is answered by the matching usage alone,
+	 * even when the field also autocompletes: with no other word narrowing the
+	 * search, the terms autocomplete indexed offer nothing over the matching
+	 * ones and cost a longer walk. The same stemming as above is what shows
+	 * which usage answered - {@code runni} starts no stemmed matching term, so
+	 * matching alone finds nothing.
+	 */
+	@Test
+	public void testTextOfOneHalfTypedWordIsAnsweredByMatchingAlone() throws IOException {
+		var index = matchedAndCompleted();
+
+		var result = search(
+			index,
+			Query.text(TextMatcher.of("runni").withRelax(TextMatcher.Relax.OFF))
+		);
+
+		assertThat(ids(result), is(empty()));
+	}
+
+	@Test
+	public void testTextWithAutocompleteBesideMatchingNeedsEveryWord() throws IOException {
+		var index = matchedAndCompleted();
+
+		var found = search(index, Query.text("running sho"));
+		assertThat(ids(found), contains("1"));
+
+		var mixed = search(
+			index,
+			Query.text(TextMatcher.of("sandal sho").withRelax(TextMatcher.Relax.OFF))
+		);
+		assertThat(ids(mixed), is(empty()));
+	}
+
+	/**
+	 * When the matching and autocomplete chains disagree on how many words the
+	 * text holds - here the matching chain drops the stopword {@code the} -
+	 * which of their words is which cannot be told, and the half typed word is
+	 * matched among the matching terms as it is on a field without
+	 * autocomplete.
+	 */
+	@Test
+	public void testTextEndingInAStopwordStillMatches() throws IOException {
+		var index = matchedAndCompleted();
+
+		var result = search(index, Query.text("running the"));
+
+		assertThat(ids(result), contains("1"));
+	}
+
+	/**
+	 * An index whose name is defined for both matching and autocomplete, the
+	 * shape a search box searching and completing over one field uses.
+	 */
+	private Index matchedAndCompleted() throws IOException {
+		var index = create(
+			"matched-and-completed",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(
+								StringFieldTypeDef.TextUsageConfig.getDefaultInstance()
+							)
+							.setAutocomplete(
+								StringFieldTypeDef.TextUsageConfig.getDefaultInstance()
+							)
+					).build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Running Shoes")
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "Sandals")
+			)
+		);
+		index.commit();
+
+		return index;
+	}
+
 	@Test
 	public void testPhraseNeedsWordsInOrder() throws IOException {
 		var index = books();

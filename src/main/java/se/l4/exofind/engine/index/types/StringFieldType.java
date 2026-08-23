@@ -1042,6 +1042,10 @@ public class StringFieldType implements FieldType {
 	 * that indexed every prefix of a value must not cut the query into
 	 * prefixes again.
 	 *
+	 * The last word of a text of several, when it may still be half typed, is
+	 * asked of the autocomplete usage when the definition holds one beside
+	 * matching - see {@link #completedLastWord} for when that holds and why.
+	 *
 	 * @param encounter
 	 * @param matcher
 	 * @return
@@ -1111,15 +1115,93 @@ public class StringFieldType implements FieldType {
 
 		var tokens = analyze(encounter, analyzer, name, matcher.text());
 
+		var completedLast = prefixLast && tokens.size() > 1 && !encounter.isForHighlighting()
+			? completedLastWord(encounter, matcher, tokens.size())
+			: null;
+
 		var words = Lists.mutable.<Query>empty();
 		for(var i = 0; i < tokens.size(); i++) {
 			var term = new Term(name, tokens.get(i));
 			var isLast = i == tokens.size() - 1;
 
-			words.add(tokenQuery(term, prefixLast && isLast, typos, maxEdits));
+			words.add(
+				isLast && completedLast != null
+					? completedLast
+					: tokenQuery(term, prefixLast && isLast, typos, maxEdits)
+			);
 		}
 
 		return words.toImmutable();
+	}
+
+	/**
+	 * Build the query a half typed last word asks of the autocomplete usage of
+	 * a field defined for both matching and autocomplete.
+	 *
+	 * An autocomplete usage holds every prefix of its words as terms of their
+	 * own, so the word as typed so far is one term looked up whole, carrying
+	 * frequencies and per-block score bounds like any term. A prefix over the
+	 * matching terms - what answers for a field without autocomplete - stands
+	 * for a set in which every document scores the same, and a set that says
+	 * as much about one block as the next lets a search skip nothing.
+	 *
+	 * The word is what the autocomplete chain leaves of the text, which keeps
+	 * words the matching chain rewrites or drops. When the two chains disagree
+	 * on how many words the text holds, which of their words is which cannot
+	 * be told, and the matching usage answers alone.
+	 *
+	 * Only a text of several words asks this. A half typed word on its own has
+	 * no other word to be narrowed by, so there is nothing for the score
+	 * bounds to cut; what remains is the walk itself, and the autocomplete
+	 * term - every word the typed one starts - is the longer one.
+	 *
+	 * A query compiled for highlighting never asks it either: the terms of a
+	 * highlight query have to land in the field whose term vectors carry the
+	 * offsets, which is the matching field - see
+	 * {@link IndexEncounter#isForHighlighting()}.
+	 *
+	 * Mistakes in the word are forgiven as the autocomplete usage declares,
+	 * with the forgiveness a word still being typed gets - see
+	 * {@link #MAX_EDITS_WHILE_TYPING}.
+	 *
+	 * @param matchingWordCount
+	 *   how many words the matching chain cut the text into
+	 * @return
+	 *   the query for the last word, or {@code null} when the field has no
+	 *   autocomplete usage or the chains disagree on the words of the text
+	 */
+	private static Query completedLastWord(
+		IndexEncounter encounter,
+		TextMatcher matcher,
+		int matchingWordCount
+	) {
+		var stringType = encounter.getFieldType().getString();
+		if(!stringType.hasAutocomplete()) {
+			return null;
+		}
+
+		var usage = stringType.getAutocomplete();
+		var name = encounter.name(FieldNames.AUTOCOMPLETE);
+		var analyzer = Analyzers.autocomplete(
+			usage,
+			encounter.getResources(),
+			encounter.getLocaleSupport(),
+			AnalyzerMode.QUERYING
+		);
+
+		var tokens = analyze(encounter, analyzer, name, matcher.text());
+		if(tokens.size() != matchingWordCount) {
+			return null;
+		}
+
+		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos = null;
+		var maxEdits = MAX_EDITS;
+		if(usage.hasTypoTolerance() && matcher.typos() != TextMatcher.Typos.OFF) {
+			typos = usage.getTypoTolerance();
+			maxEdits = typos.hasMinLengthTwoTypos() ? MAX_EDITS : MAX_EDITS_WHILE_TYPING;
+		}
+
+		return tokenQuery(new Term(name, tokens.getLast()), false, typos, maxEdits);
 	}
 
 	/**

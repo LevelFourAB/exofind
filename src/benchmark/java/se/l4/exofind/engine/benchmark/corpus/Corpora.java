@@ -10,6 +10,7 @@ import static se.l4.exofind.engine.benchmark.corpus.Fields.geoPoint;
 import static se.l4.exofind.engine.benchmark.corpus.Fields.hierarchy;
 import static se.l4.exofind.engine.benchmark.corpus.Fields.int32;
 import static se.l4.exofind.engine.benchmark.corpus.Fields.matched;
+import static se.l4.exofind.engine.benchmark.corpus.Fields.matchedAndCompleted;
 import static se.l4.exofind.engine.benchmark.corpus.Fields.object;
 import static se.l4.exofind.engine.benchmark.corpus.Fields.sorted;
 import static se.l4.exofind.engine.benchmark.corpus.Fields.string;
@@ -225,9 +226,9 @@ public final class Corpora {
 
 			return IndexDef.newBuilder()
 				.putFields("id", string().setPrimaryKey(true).setRequired(true).build())
-				.putFields("title", string(matched(3f)).build())
+				.putFields("title", string(matchedAndCompleted(3f)).build())
 				.putFields("titleAhead", string(completed(3f)).build())
-				.putFields("description", string(matched(1f)).build())
+				.putFields("description", string(matchedAndCompleted(1f)).build())
 				.putFields("brand", faceted(sorted(filtered(string()))).build())
 				.putFields("category", faceted(filtered(string(hierarchy()))).build())
 				.putFields("tags", faceted(filtered(string())).setMultiple(true).build())

@@ -99,4 +99,17 @@ public interface IndexEncounter {
 	 * @return
 	 */
 	String name(String suffix);
+
+	/**
+	 * Get if the query being compiled is only read for the terms it matches -
+	 * compiled for highlighting rather than to run. A type with more than one
+	 * shape for the same question then prefers the one whose terms land in the
+	 * fields whose term vectors highlighting reads, over the one that runs
+	 * fastest.
+	 *
+	 * @return
+	 */
+	default boolean isForHighlighting() {
+		return false;
+	}
 }
