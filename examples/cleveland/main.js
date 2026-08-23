@@ -261,7 +261,7 @@ function narrowed() {
 function render(result) {
 	elements.status.classList.remove('status--error');
 	elements.status.textContent =
-		`${result.total.count} objects · ${result.tookMs} ms`;
+		`${result.total.count} objects · ${result.tookMs.toFixed(2)} ms`;
 
 	state.shown = state.shown.concat(result.hits);
 	renderHits();

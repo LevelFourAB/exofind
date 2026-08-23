@@ -494,6 +494,20 @@ public class SearchResourceTest {
 	}
 
 	@Test
+	public void testTimeSpentIsReported() throws IOException {
+		books();
+
+		var response = resource.search("books", null);
+
+		/*
+		 * Whatever the search spent is what comes back, down to fractions of a
+		 * millisecond - one that answers faster than a millisecond reports
+		 * what it took rather than nothing at all.
+		 */
+		assertThat(response.tookMs(), is(greaterThan(0d)));
+	}
+
+	@Test
 	public void testFilterOnValue() throws IOException {
 		books();
 

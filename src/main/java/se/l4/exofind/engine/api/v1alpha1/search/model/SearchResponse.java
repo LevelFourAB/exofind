@@ -41,9 +41,10 @@ public record SearchResponse(
 
 	/**
 	 * How long answering took, measured around the whole call, in
-	 * milliseconds.
+	 * milliseconds and fractions of one - a search that answers faster than a
+	 * millisecond still reports what it spent.
 	 */
-	long tookMs
+	double tookMs
 ) {
 	/**
 	 * A single document that matched.

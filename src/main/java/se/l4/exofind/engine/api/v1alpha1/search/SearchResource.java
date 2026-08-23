@@ -84,14 +84,19 @@ public class SearchResource {
 			throw new IndexException(IO_ERROR, e, "index", name);
 		}
 
-		var tookMs = (System.nanoTime() - started) / 1_000_000;
+		/*
+		 * Kept to microseconds rather than the nanoseconds measured, so that
+		 * the number reads as a time and not as the last digits of how a
+		 * double divides.
+		 */
+		var tookMs = Math.round((System.nanoTime() - started) / 1_000d) / 1_000d;
 		return toResponse(mapped, result, tookMs);
 	}
 
 	private SearchResponse toResponse(
 		SearchRequestMapper.Mapped mapped,
 		SearchResult result,
-		long tookMs
+		double tookMs
 	) {
 		/*
 		 * A search made only of filters computes no scores, and a score is

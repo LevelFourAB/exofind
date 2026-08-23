@@ -618,7 +618,7 @@ of a value is not searched for matches.
   ],
   "total": { "count": 128, "exact": false },
   "page": { "limit": 20, "offset": 0, "next": "AW8..." },
-  "tookMs": 7
+  "tookMs": 7.412
 }
 ```
 
@@ -643,7 +643,8 @@ of a value is not searched for matches.
 - `relaxed` - what the search let go of to find anything, see [Finding
   something rather than nothing](#finding-something-rather-than-nothing).
   Left out entirely when it found what was asked for.
-- `tookMs` - how long answering took, measured around the whole call.
+- `tookMs` - how long answering took, measured around the whole call, in
+  milliseconds and fractions of one.
 
 ### Numbered pages
 

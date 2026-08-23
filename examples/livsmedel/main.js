@@ -188,7 +188,7 @@ async function run() {
 
 function render(result) {
 	elements.status.classList.remove('status--error');
-	elements.status.textContent = `${result.total.count} foods · ${result.tookMs} ms`;
+	elements.status.textContent = `${result.total.count} foods · ${result.tookMs.toFixed(2)} ms`;
 
 	renderHits(result);
 
