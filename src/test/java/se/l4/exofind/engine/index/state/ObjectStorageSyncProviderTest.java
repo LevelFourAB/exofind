@@ -16,6 +16,7 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
@@ -24,6 +25,7 @@ import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
+@ExtendWith(QuietLuceneVersionWarnings.class)
 public class ObjectStorageSyncProviderTest {
 	S3Client s3Client;
 
