@@ -2,8 +2,6 @@ package se.l4.exofind.engine.index.schema;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
@@ -27,51 +25,98 @@ import se.l4.exofind.engine.query.SaturationSignal;
 
 /**
  * IndexSchema contains the schema for an index, such as the fields and facets.
+ *
+ * <p>Everything the schema answers with is read from one immutable
+ * {@link State}, published through a volatile field and replaced whole by
+ * {@link #setDefinition}. The getters take no lock: searching asks the schema
+ * per clause it compiles and per field of every document it reads back, and a
+ * read-write lock on that path costs more in lock bookkeeping - the shared
+ * CAS, and the per-thread hold count {@link java.util.concurrent.locks.ReentrantReadWriteLock}
+ * keeps in a {@code ThreadLocal} - than the reads it would protect.
  */
 public class IndexSchema {
-	private final ReadWriteLock lock;
-
-	private ImmutableMap<String, Field> fields;
-	private ImmutableList<Field> wildcardFields;
-	private ImmutableMap<String, NestedField> nestedFields;
-
 	/**
-	 * The object field each flattened path folds out of, keyed by the path.
-	 * The fields themselves live in {@link #fields} and answer searches as any
-	 * root field does; this is what remembers that a document gives their
-	 * values inside the object rather than under the path.
+	 * Everything a definition tells the schema, immutable and replaced as one.
+	 * A getter that touches more than one part reads them off the same
+	 * instance, so it never mixes two definitions.
 	 */
-	private ImmutableMap<String, String> flattenedPaths;
+	private static final class State {
+		final ImmutableMap<String, Field> fields;
+		final ImmutableList<Field> wildcardFields;
+		final ImmutableMap<String, NestedField> nestedFields;
 
-	/**
-	 * The fields inside each object field, keyed by the name of the object -
-	 * what a search naming no fields covers while it is inside a {@code nested}
-	 * clause.
-	 */
-	private ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath;
+		/**
+		 * The object field each flattened path folds out of, keyed by the path.
+		 * The fields themselves live in {@link #fields} and answer searches as
+		 * any root field does; this is what remembers that a document gives
+		 * their values inside the object rather than under the path.
+		 */
+		final ImmutableMap<String, String> flattenedPaths;
 
-	private Field primaryKey;
-	private ImmutableSet<String> requiredFields;
+		/**
+		 * The fields inside each object field, keyed by the name of the
+		 * object - what a search naming no fields covers while it is inside a
+		 * {@code nested} clause.
+		 */
+		final ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath;
 
-	private ImmutableList<Field> fieldList;
+		final Field primaryKey;
+		final ImmutableSet<String> requiredFields;
 
-	private boolean sourceStored;
+		final ImmutableList<Field> fieldList;
 
-	private boolean highlightsInPostings;
+		final boolean sourceStored;
 
-	private ImmutableList<RankingConfig.TieBreaker> tieBreakers;
+		final boolean highlightsInPostings;
 
-	private ImmutableList<RankingSignal> signals;
+		final ImmutableList<RankingConfig.TieBreaker> tieBreakers;
 
-	/**
-	 * The locales a field takes a value from for a locale it holds none in,
-	 * or {@code null} when the index leaves those locales empty. Empty when
-	 * the index falls back but named no chain, which means each field's own
-	 * default locale.
-	 */
-	private ImmutableList<String> localeFallback;
+		final ImmutableList<RankingSignal> signals;
 
-	private ResourcesDef resources;
+		/**
+		 * The locales a field takes a value from for a locale it holds none
+		 * in, or {@code null} when the index leaves those locales empty. Empty
+		 * when the index falls back but named no chain, which means each
+		 * field's own default locale.
+		 */
+		final ImmutableList<String> localeFallback;
+
+		final ResourcesDef resources;
+
+		State(
+			ImmutableMap<String, Field> fields,
+			ImmutableList<Field> wildcardFields,
+			ImmutableMap<String, NestedField> nestedFields,
+			ImmutableMap<String, String> flattenedPaths,
+			ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath,
+			Field primaryKey,
+			ImmutableSet<String> requiredFields,
+			ImmutableList<Field> fieldList,
+			boolean sourceStored,
+			boolean highlightsInPostings,
+			ImmutableList<RankingConfig.TieBreaker> tieBreakers,
+			ImmutableList<RankingSignal> signals,
+			ImmutableList<String> localeFallback,
+			ResourcesDef resources
+		) {
+			this.fields = fields;
+			this.wildcardFields = wildcardFields;
+			this.nestedFields = nestedFields;
+			this.flattenedPaths = flattenedPaths;
+			this.nestedFieldsByPath = nestedFieldsByPath;
+			this.primaryKey = primaryKey;
+			this.requiredFields = requiredFields;
+			this.fieldList = fieldList;
+			this.sourceStored = sourceStored;
+			this.highlightsInPostings = highlightsInPostings;
+			this.tieBreakers = tieBreakers;
+			this.signals = signals;
+			this.localeFallback = localeFallback;
+			this.resources = resources;
+		}
+	}
+
+	private volatile State state;
 
 	private static ErrorType MULTIPLE_PRIMARY_KEYS =
 		ErrorType.withCode("index:schema:multiple_primary_keys")
@@ -219,20 +264,22 @@ public class IndexSchema {
 	}
 
 	public IndexSchema() {
-		this.lock = new ReentrantReadWriteLock();
-		this.fields = Maps.immutable.empty();
-		this.wildcardFields = Lists.immutable.empty();
-		this.nestedFields = Maps.immutable.empty();
-		this.nestedFieldsByPath = Maps.immutable.empty();
-		this.flattenedPaths = Maps.immutable.empty();
-		this.primaryKey = null;
-		this.requiredFields = Sets.immutable.empty();
-		this.fieldList = Lists.immutable.empty();
-		this.sourceStored = true;
-		this.tieBreakers = Lists.immutable.empty();
-		this.signals = Lists.immutable.empty();
-		this.localeFallback = null;
-		this.resources = ResourcesDef.getDefaultInstance();
+		this.state = new State(
+			Maps.immutable.empty(),
+			Lists.immutable.empty(),
+			Maps.immutable.empty(),
+			Maps.immutable.empty(),
+			Maps.immutable.empty(),
+			null,
+			Sets.immutable.empty(),
+			Lists.immutable.empty(),
+			true,
+			false,
+			Lists.immutable.empty(),
+			Lists.immutable.empty(),
+			null,
+			ResourcesDef.getDefaultInstance()
+		);
 	}
 
 	/**
@@ -264,12 +311,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public boolean isHighlightingInPostings() {
-		this.lock.readLock().lock();
-		try {
-			return highlightsInPostings;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.highlightsInPostings;
 	}
 
 	/**
@@ -746,97 +788,92 @@ public class IndexSchema {
 	 *
 	 * @param definition
 	 */
-	public void setDefinition(IndexDef definition) {
+	public synchronized void setDefinition(IndexDef definition) {
 		this.validate(definition);
 
-		this.lock.writeLock().lock();
-		try {
-			var fields = Maps.mutable.<String, Field>empty();
-			var wildcardFields = Lists.mutable.<Field>empty();
-			var nestedFields = Maps.mutable.<String, NestedField>empty();
-			var nestedFieldsByPath = Maps.mutable.<String, MutableList<Field>>empty();
-			var flattenedPaths = Maps.mutable.<String, String>empty();
-			var requiredFields = Sets.mutable.<String>empty();
-			Field primaryKey = null;
+		var fields = Maps.mutable.<String, Field>empty();
+		var wildcardFields = Lists.mutable.<Field>empty();
+		var nestedFields = Maps.mutable.<String, NestedField>empty();
+		var nestedFieldsByPath = Maps.mutable.<String, MutableList<Field>>empty();
+		var flattenedPaths = Maps.mutable.<String, String>empty();
+		var requiredFields = Sets.mutable.<String>empty();
+		Field primaryKey = null;
 
-			var fieldDefs = definition.getFieldsMap();
-			for(var entry : fieldDefs.entrySet()) {
-				var fieldDef = entry.getValue();
-				var field = new Field(entry.getKey(), fieldDef);
+		var fieldDefs = definition.getFieldsMap();
+		for(var entry : fieldDefs.entrySet()) {
+			var fieldDef = entry.getValue();
+			var field = new Field(entry.getKey(), fieldDef);
 
-				fields.put(field.getName(), field);
-				if(field.nameHasWildcard()) {
-					wildcardFields.add(field);
+			fields.put(field.getName(), field);
+			if(field.nameHasWildcard()) {
+				wildcardFields.add(field);
+			}
+
+			if(field.isNestedObject()) {
+				var inside = Lists.mutable.<Field>empty();
+
+				for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
+					var path = field.getName() + '.' + inner.getKey();
+					var innerField = new Field(path, inner.getValue());
+
+					nestedFields.put(path, new NestedField(field.getName(), innerField));
+					inside.add(innerField);
 				}
 
-				if(field.isNestedObject()) {
-					var inside = Lists.mutable.<Field>empty();
+				inside.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
+				nestedFieldsByPath.put(field.getName(), inside);
+			} else if(field.isObject()) {
+				/*
+				 * A flattened object folds into the document, so the fields
+				 * inside it are fields of the index like any other -
+				 * resolved, searched across and counted with no join in
+				 * between. Only how documents give their values differs,
+				 * which is what flattenedPaths remembers.
+				 */
+				for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
+					var path = field.getName() + '.' + inner.getKey();
 
-					for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
-						var path = field.getName() + '.' + inner.getKey();
-						var innerField = new Field(path, inner.getValue());
-
-						nestedFields.put(path, new NestedField(field.getName(), innerField));
-						inside.add(innerField);
-					}
-
-					inside.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
-					nestedFieldsByPath.put(field.getName(), inside);
-				} else if(field.isObject()) {
-					/*
-					 * A flattened object folds into the document, so the fields
-					 * inside it are fields of the index like any other -
-					 * resolved, searched across and counted with no join in
-					 * between. Only how documents give their values differs,
-					 * which is what flattenedPaths remembers.
-					 */
-					for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
-						var path = field.getName() + '.' + inner.getKey();
-
-						fields.put(path, new Field(path, inner.getValue()));
-						flattenedPaths.put(path, field.getName());
-					}
-				}
-
-				if(field.getDef().getPrimaryKey()) {
-					primaryKey = field;
-					requiredFields.add(field.getName());
-				} else if(field.getDef().getRequired()) {
-					requiredFields.add(field.getName());
+					fields.put(path, new Field(path, inner.getValue()));
+					flattenedPaths.put(path, field.getName());
 				}
 			}
 
-			// Sort wildcard fields by name to maintain consistent ordering
-			wildcardFields.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
-
-			this.fields = fields.toImmutable();
-			this.nestedFields = nestedFields.toImmutable();
-			this.flattenedPaths = flattenedPaths.toImmutable();
-			this.nestedFieldsByPath = nestedFieldsByPath
-				.collectValues((path, inside) -> inside.toImmutable())
-				.toImmutable();
-			this.fieldList = fields.valuesView()
-				.toSortedList((a, b) -> compareFieldNames(a.getName(), b.getName()))
-				.toImmutable();
-			this.wildcardFields = wildcardFields.toImmutable();
-			this.primaryKey = primaryKey;
-			this.requiredFields = requiredFields.toImmutable();
-			this.sourceStored = storesSource(definition);
-			this.highlightsInPostings = definition.getHighlightLayout()
-				== IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS;
-			this.tieBreakers = Lists.immutable.ofAll(
-				definition.getRanking().getTieBreakersList()
-			);
-			this.signals = Lists.immutable.ofAll(
-				definition.getRanking().getSignalsList()
-			).collect(IndexSchema::toSignal);
-			this.localeFallback = definition.hasLocaleFallback()
-				? Lists.immutable.ofAll(definition.getLocaleFallback().getChainList())
-				: null;
-			this.resources = definition.getResources();
-		} finally {
-			this.lock.writeLock().unlock();
+			if(field.getDef().getPrimaryKey()) {
+				primaryKey = field;
+				requiredFields.add(field.getName());
+			} else if(field.getDef().getRequired()) {
+				requiredFields.add(field.getName());
+			}
 		}
+
+		// Sort wildcard fields by name to maintain consistent ordering
+		wildcardFields.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
+
+		this.state = new State(
+			fields.toImmutable(),
+			wildcardFields.toImmutable(),
+			nestedFields.toImmutable(),
+			flattenedPaths.toImmutable(),
+			nestedFieldsByPath
+				.collectValues((path, inside) -> inside.toImmutable())
+				.toImmutable(),
+			primaryKey,
+			requiredFields.toImmutable(),
+			fields.valuesView()
+				.toSortedList((a, b) -> compareFieldNames(a.getName(), b.getName()))
+				.toImmutable(),
+			storesSource(definition),
+			definition.getHighlightLayout()
+				== IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS,
+			Lists.immutable.ofAll(definition.getRanking().getTieBreakersList()),
+			Lists.immutable.ofAll(
+				definition.getRanking().getSignalsList()
+			).collect(IndexSchema::toSignal),
+			definition.hasLocaleFallback()
+				? Lists.immutable.ofAll(definition.getLocaleFallback().getChainList())
+				: null,
+			definition.getResources()
+		);
 	}
 
 	/**
@@ -845,12 +882,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public ImmutableList<Field> getFields() {
-		this.lock.readLock().lock();
-		try {
-			return fieldList;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.fieldList;
 	}
 
 	/**
@@ -864,25 +896,22 @@ public class IndexSchema {
 	 * @return
 	 */
 	public Optional<Field> getField(String name) {
-		this.lock.readLock().lock();
-		try {
-			// First try exact match for better performance
-			Field exactMatch = fields.get(name);
-			if(exactMatch != null) {
-				return Optional.of(exactMatch);
-			}
+		var state = this.state;
 
-			// If no exact match, check wildcard patterns
-			for(var field : wildcardFields) {
-				if(field.nameMatches(name)) {
-					return Optional.of(field);
-				}
-			}
-
-			return Optional.empty();
-		} finally {
-			this.lock.readLock().unlock();
+		// First try exact match for better performance
+		Field exactMatch = state.fields.get(name);
+		if(exactMatch != null) {
+			return Optional.of(exactMatch);
 		}
+
+		// If no exact match, check wildcard patterns
+		for(var field : state.wildcardFields) {
+			if(field.nameMatches(name)) {
+				return Optional.of(field);
+			}
+		}
+
+		return Optional.empty();
 	}
 
 	/**
@@ -895,12 +924,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public Optional<NestedField> getNestedField(String name) {
-		this.lock.readLock().lock();
-		try {
-			return Optional.ofNullable(nestedFields.get(name));
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return Optional.ofNullable(state.nestedFields.get(name));
 	}
 
 	/**
@@ -912,13 +936,8 @@ public class IndexSchema {
 	 * @return
 	 */
 	public ImmutableList<Field> getNestedFields(String path) {
-		this.lock.readLock().lock();
-		try {
-			var inside = nestedFieldsByPath.get(path);
-			return inside == null ? Lists.immutable.empty() : inside;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		var inside = state.nestedFieldsByPath.get(path);
+		return inside == null ? Lists.immutable.empty() : inside;
 	}
 
 	/**
@@ -933,12 +952,7 @@ public class IndexSchema {
 	 *   path
 	 */
 	public Optional<String> getFlattenedObjectOf(String name) {
-		this.lock.readLock().lock();
-		try {
-			return Optional.ofNullable(flattenedPaths.get(name));
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return Optional.ofNullable(state.flattenedPaths.get(name));
 	}
 
 	/**
@@ -949,12 +963,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public boolean hasNestedFields() {
-		this.lock.readLock().lock();
-		try {
-			return nestedFields.notEmpty();
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.nestedFields.notEmpty();
 	}
 
 	/**
@@ -963,12 +972,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public Optional<Field> getPrimaryKey() {
-		this.lock.readLock().lock();
-		try {
-			return Optional.ofNullable(primaryKey);
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return Optional.ofNullable(state.primaryKey);
 	}
 
 	/**
@@ -983,12 +987,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public boolean isSourceStored() {
-		this.lock.readLock().lock();
-		try {
-			return sourceStored;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.sourceStored;
 	}
 
 	/**
@@ -1001,12 +1000,7 @@ public class IndexSchema {
 	 *   opinion
 	 */
 	public ImmutableList<RankingConfig.TieBreaker> getTieBreakers() {
-		this.lock.readLock().lock();
-		try {
-			return tieBreakers;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.tieBreakers;
 	}
 
 	/**
@@ -1019,12 +1013,7 @@ public class IndexSchema {
 	 *   alone
 	 */
 	public ImmutableList<RankingSignal> getSignals() {
-		this.lock.readLock().lock();
-		try {
-			return signals;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.signals;
 	}
 
 	/**
@@ -1035,12 +1024,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public boolean hasLocaleFallback() {
-		this.lock.readLock().lock();
-		try {
-			return localeFallback != null;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.localeFallback != null;
 	}
 
 	/**
@@ -1057,20 +1041,16 @@ public class IndexSchema {
 	 *   the locales to try, empty when this field is left with its gaps
 	 */
 	public ListIterable<String> getLocaleFallbackChain(Field field) {
-		this.lock.readLock().lock();
-		try {
-			if(localeFallback == null
-				|| !field.isLocaleSpecific()
-				|| !field.isLocaleFallbackEnabled()) {
-				return Lists.immutable.empty();
-			}
-
-			return localeFallback.isEmpty()
-				? Lists.immutable.of(field.getDefaultLocale())
-				: localeFallback;
-		} finally {
-			this.lock.readLock().unlock();
+		var localeFallback = state.localeFallback;
+		if(localeFallback == null
+			|| !field.isLocaleSpecific()
+			|| !field.isLocaleFallbackEnabled()) {
+			return Lists.immutable.empty();
 		}
+
+		return localeFallback.isEmpty()
+			? Lists.immutable.of(field.getDefaultLocale())
+			: localeFallback;
 	}
 
 	/**
@@ -1081,12 +1061,7 @@ public class IndexSchema {
 	 *   never {@code null}, empty when the index shares nothing
 	 */
 	public ResourcesDef getResources() {
-		this.lock.readLock().lock();
-		try {
-			return resources;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.resources;
 	}
 
 	/**
@@ -1095,12 +1070,7 @@ public class IndexSchema {
 	 * @return
 	 */
 	public ImmutableSet<String> getRequiredFields() {
-		this.lock.readLock().lock();
-		try {
-			return requiredFields;
-		} finally {
-			this.lock.readLock().unlock();
-		}
+		return state.requiredFields;
 	}
 
 	/**
