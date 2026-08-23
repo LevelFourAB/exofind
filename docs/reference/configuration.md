@@ -143,6 +143,27 @@ bound set says so in its log.
 | `INDEXES_DISK_HALF_LIFE` | How long an index has to go unopened for its opens to count half | `168h` |
 | `INDEXES_DISK_SWEEP_INTERVAL` | How often disk use is checked against the bound | `1h` |
 
+## Document cache
+
+Stored fields are kept compressed, so returning a page of results decompresses
+the documents of its hits every time the page is asked for. With
+`INDEXES_DOCUMENT_CACHE_MAX_SIZE` set, those reads go through one cache shared
+by every index of the node. Which indexes hold the space is not configured:
+the budget is one, and the indexes being read are the ones that fill it.
+
+Entries follow the segments they were read from - a commit keeps the entries
+of the segments it did not change, and a segment merged away or closed takes
+its entries with it. Nothing needs invalidating by hand, and turning the cache
+on changes no answer, only what a repeated read costs.
+
+The cache lives on the heap, so the heap has to hold it next to the searches
+themselves - see [heap against page cache](#heap-against-page-cache) before
+giving it a large share.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INDEXES_DOCUMENT_CACHE_MAX_SIZE` | How much memory the cached documents may take together, as bytes with an optional `K`, `M`, `G` or `T` suffix (binary multiples) | off |
+
 ## Search
 
 | Variable | Description | Default |

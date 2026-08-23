@@ -35,6 +35,7 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.CommitPolicy;
+import se.l4.exofind.engine.index.DocumentCache;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
@@ -196,6 +197,14 @@ public class Indexes {
 	 */
 	private final CommitPolicy commitPolicy;
 
+	/**
+	 * Cache the stored fields of documents are read through, one for the node
+	 * so that every index draws on the same budget - see {@link DocumentCache}
+	 * for the argument. Disabled unless {@code indexes.document-cache.max-size}
+	 * says what it may hold.
+	 */
+	private final DocumentCache documentCache;
+
 	public Indexes(
 		NodeState nodeState,
 		StateSyncProvider syncProvider,
@@ -208,6 +217,7 @@ public class Indexes {
 		@ConfigProperty(name = "indexes.commit.maxChanges", defaultValue = "10000") int commitMaxChanges,
 		@ConfigProperty(name = "indexes.commit.maxInterval", defaultValue = "5s") Duration commitMaxInterval,
 		@ConfigProperty(name = "indexes.disk.maxSize") Optional<String> diskMaxSize,
+		@ConfigProperty(name = "indexes.document-cache.max-size") Optional<String> documentCacheMaxSize,
 		@ConfigProperty(name = "indexes.disk.minIdle", defaultValue = "24h") Duration diskMinIdle,
 		@ConfigProperty(name = "indexes.disk.halfLife", defaultValue = "168h") Duration diskHalfLife,
 		@ConfigProperty(name = "indexes.disk.sweepInterval", defaultValue = "1h") Duration diskSweepInterval
@@ -225,6 +235,15 @@ public class Indexes {
 		this.diskMinIdle = diskMinIdle;
 		this.diskHalfLife = diskHalfLife;
 		this.commitPolicy = new CommitPolicy(commitMaxChanges, commitMaxInterval);
+		this.documentCache = documentCacheMaxSize.isPresent()
+			? DocumentCache.sized(parseSize(documentCacheMaxSize.get()))
+			: DocumentCache.disabled();
+
+		if(documentCacheMaxSize.isPresent()) {
+			logger.atInfo()
+				.addKeyValue("maxSize", documentCacheMaxSize.get())
+				.log("Caching the documents of search results in memory");
+		}
 
 		/*
 		 * Which indexes exist is read from the registry rather than from what
@@ -977,7 +996,8 @@ public class Indexes {
 				index,
 				dataPath,
 				syncProvider.createSync(IndexName.parse(index), dataPath),
-				commitPolicy
+				commitPolicy,
+				documentCache
 			);
 
 			/*

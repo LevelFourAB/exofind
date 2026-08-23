@@ -291,6 +291,7 @@ public class IndexesDiskSweepTest {
 			0,
 			Duration.ZERO,
 			Optional.ofNullable(maxSize),
+			Optional.empty(),
 			minIdle,
 			Duration.ofHours(168),
 			Duration.ofHours(1)

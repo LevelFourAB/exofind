@@ -79,6 +79,7 @@ public class DocumentResourceTest {
 			0,
 			Duration.ZERO,
 			Optional.empty(),
+			Optional.empty(),
 			Duration.ofHours(24),
 			Duration.ofHours(168),
 			Duration.ofHours(1)

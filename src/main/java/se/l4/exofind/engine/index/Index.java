@@ -39,7 +39,6 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
-import org.apache.lucene.index.StoredFields;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -213,6 +212,13 @@ public class Index {
 	private final Path localPath;
 	private final StateSync sync;
 
+	/**
+	 * Cache the stored fields of documents are read through, shared with every
+	 * other index of the node - see {@link DocumentCache} for why it is one
+	 * cache and what it holds.
+	 */
+	private final DocumentCache documentCache;
+
 	private final ReadWriteLock syncLock;
 
 	private final IndexSchema schema;
@@ -371,6 +377,10 @@ public class Index {
 		this(nodeState, name, localPath, sync, CommitPolicy.disabled());
 	}
 
+	/**
+	 * Open an index that reads stored fields straight from Lucene, without a
+	 * document cache.
+	 */
 	public Index(
 		NodeState nodeState,
 		String name,
@@ -378,11 +388,23 @@ public class Index {
 		StateSync sync,
 		CommitPolicy commitPolicy
 	) {
+		this(nodeState, name, localPath, sync, commitPolicy, DocumentCache.disabled());
+	}
+
+	public Index(
+		NodeState nodeState,
+		String name,
+		Path localPath,
+		StateSync sync,
+		CommitPolicy commitPolicy,
+		DocumentCache documentCache
+	) {
 		this.nodeState = nodeState;
 		this.id = name;
 		this.indexName = IndexName.parse(name).index();
 		this.localPath = localPath;
 		this.sync = sync;
+		this.documentCache = documentCache;
 
 		this.schema = new IndexSchema();
 		this.similarity = new IndexSimilarity(schema);
@@ -2427,8 +2449,12 @@ public class Index {
 					return null;
 				}
 
-				var storedFields = searcher.storedFields();
-				var doc = storedFields.document(hits.scoreDocs[0].doc);
+				var doc = documentCache.read(
+					searcher,
+					searcher.storedFields(),
+					hits.scoreDocs[0].doc,
+					null
+				);
 
 				return documentReader(Sets.immutable.<String>empty()).read(doc);
 			}
@@ -2669,33 +2695,29 @@ public class Index {
 
 				var reader = documentReader(request.fields());
 				var names = reader.namesOf();
-				var storedFields = searcher.storedFields();
 				var primaryKey = schema.getPrimaryKey();
 
-				/*
-				 * The text a fragment is cut out of is a stored field of the
-				 * same document the hit is built from, and stored fields arrive
-				 * compressed in blocks, so reading the page once for its values
-				 * and again for its text decompresses every block twice. A page
-				 * that is wanted twice is therefore read here and kept - one
-				 * that is not is read hit by hit below and let go again, rather
-				 * than held whole for nothing.
-				 */
-				IntObjectMap<org.apache.lucene.document.Document> page = null;
+				if(!highlightTargets.isEmpty() && names != null) {
+					/*
+					 * The text a fragment is cut out of is a stored field of
+					 * the same document the hit is built from, so it is read
+					 * with the rest of the page rather than on a pass of its
+					 * own.
+					 */
+					for(var target : highlightTargets) {
+						names.add(Highlighter.storedField(target.luceneField()));
+					}
+				}
+
+				var docIds = new int[Math.max(0, topDocs.scoreDocs.length - request.offset())];
+				for(var i = 0; i < docIds.length; i++) {
+					docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
+				}
+
+				var page = readStored(searcher, docIds, names);
+
 				ListIterable<ImmutableMap<String, ImmutableList<String>>> highlights = null;
 				if(!highlightTargets.isEmpty()) {
-					if(names != null) {
-						for(var target : highlightTargets) {
-							names.add(Highlighter.storedField(target.luceneField()));
-						}
-					}
-
-					var docIds = new int[Math.max(0, topDocs.scoreDocs.length - request.offset())];
-					for(var i = 0; i < docIds.length; i++) {
-						docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
-					}
-
-					page = readStored(storedFields, docIds, names);
 					highlights = highlight(
 						searcher,
 						compiler,
@@ -2709,11 +2731,7 @@ public class Index {
 				var hits = Lists.mutable.<SearchResult.Hit>empty();
 				for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
 					var scoreDoc = topDocs.scoreDocs[i];
-					var document = reader.read(
-						page == null
-							? storedDocument(storedFields, scoreDoc.doc, names)
-							: page.get(scoreDoc.doc)
-					);
+					var document = reader.read(page.get(scoreDoc.doc));
 
 					hits.add(
 						new SearchResult.Hit(
@@ -3211,30 +3229,19 @@ public class Index {
 	}
 
 	/**
-	 * Read the stored fields of one document.
+	 * Read the stored fields of a whole page of results at once.
 	 *
-	 * @param storedFields
-	 * @param docId
-	 * @param names
-	 *   the stored fields to read, or {@code null} for all of them
-	 * @return
-	 * @throws IOException
-	 */
-	private static org.apache.lucene.document.Document storedDocument(
-		StoredFields storedFields,
-		int docId,
-		Set<String> names
-	) throws IOException {
-		return names == null
-			? storedFields.document(docId)
-			: storedFields.document(docId, names);
-	}
-
-	/**
-	 * Read the stored fields of a whole page of results at once, for a page
-	 * whose documents are needed more than once.
+	 * Stored fields arrive compressed in blocks holding many documents, and
+	 * the reader keeps only the block it last decompressed. Read hit by hit in
+	 * the order the page ranks them, hits land in no particular block order
+	 * and a block is decompressed again for every hit that returns to it -
+	 * which is why the page is read here, in one pass, however many times its
+	 * documents are needed afterwards. The reads go through the document
+	 * cache, which is what keeps a page that was read recently from being
+	 * decompressed again at all.
 	 *
-	 * @param storedFields
+	 * @param searcher
+	 *   the searcher the ids belong to
 	 * @param docIds
 	 *   Lucene ids of the documents of the page, in any order
 	 * @param names
@@ -3243,8 +3250,8 @@ public class Index {
 	 *   the documents, keyed by Lucene id
 	 * @throws IOException
 	 */
-	private static IntObjectMap<org.apache.lucene.document.Document> readStored(
-		StoredFields storedFields,
+	private IntObjectMap<org.apache.lucene.document.Document> readStored(
+		IndexSearcher searcher,
 		int[] docIds,
 		Set<String> names
 	) throws IOException {
@@ -3256,10 +3263,11 @@ public class Index {
 		var ordered = docIds.clone();
 		Arrays.sort(ordered);
 
+		var storedFields = searcher.storedFields();
 		var documents = IntObjectMaps.mutable
 			.<org.apache.lucene.document.Document>ofInitialCapacity(ordered.length);
 		for(var docId : ordered) {
-			documents.put(docId, storedDocument(storedFields, docId, names));
+			documents.put(docId, documentCache.read(searcher, storedFields, docId, names));
 		}
 
 		return documents;
@@ -3278,7 +3286,7 @@ public class Index {
 	 *   Lucene ids of the documents of the page, in page order
 	 * @param stored
 	 *   the stored fields of those documents, read by
-	 *   {@link #readStored(StoredFields, int[], Set)}
+	 *   {@link #readStored(IndexSearcher, int[], Set)}
 	 * @return
 	 *   one map per hit of the page, in page order - or {@code null} when the
 	 *   search holds nothing that ranks, which every hit answers with no
