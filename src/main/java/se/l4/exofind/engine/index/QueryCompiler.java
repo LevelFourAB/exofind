@@ -126,11 +126,12 @@ public class QueryCompiler {
 
 	/**
 	 * How much the fields a document matched besides its best one count when
-	 * text is searched across several. Enough to separate a document that
-	 * matched twice from one that matched once, not enough to reorder
-	 * documents that matched their best field differently.
+	 * text is searched across several. Zero, so a document is ranked by the
+	 * one field that matched it best. Anything above zero also stops a
+	 * {@link DisjunctionMaxQuery} from skipping documents that cannot reach
+	 * the page, so a common word is scored in every document holding it.
 	 */
-	private static final float TIE_BREAKER = 0.1f;
+	private static final float TIE_BREAKER = 0f;
 
 	private final IndexSchema schema;
 	private final IndexEncounterImpl encounter;
