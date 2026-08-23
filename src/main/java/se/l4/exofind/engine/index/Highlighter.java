@@ -12,15 +12,20 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MultiTermQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryVisitor;
+import org.apache.lucene.search.uhighlight.FieldOffsetStrategy;
 import org.apache.lucene.search.uhighlight.LengthGoalBreakIterator;
+import org.apache.lucene.search.uhighlight.OffsetsEnum;
 import org.apache.lucene.search.uhighlight.Passage;
 import org.apache.lucene.search.uhighlight.PassageFormatter;
 import org.apache.lucene.search.uhighlight.PassageScorer;
+import org.apache.lucene.search.uhighlight.PostingsOffsetStrategy;
 import org.apache.lucene.search.uhighlight.UHComponents;
 import org.apache.lucene.search.uhighlight.UnifiedHighlighter;
 import org.apache.lucene.util.BytesRef;
@@ -273,6 +278,29 @@ class Highlighter {
 		}
 
 		@Override
+		protected FieldOffsetStrategy getOffsetStrategy(
+			OffsetSource offsetSource,
+			UHComponents components
+		) {
+			/*
+			 * The queries this highlighter is handed reduce to plain terms:
+			 * weight matching is off, multi-term queries were expanded in
+			 * getHighlightComponents, and the compiler builds nothing
+			 * position-sensitive. The guards keep the stock per-document
+			 * strategy for anything that stops being true.
+			 */
+			if(offsetSource == OffsetSource.POSTINGS
+				&& !components.phraseHelper().hasPositionSensitivity()
+				&& components.automata().length == 0
+				&& !components.highlightFlags().contains(HighlightFlag.WEIGHT_MATCHES))
+			{
+				return new SeekOncePostingsOffsetStrategy(components);
+			}
+
+			return super.getOffsetStrategy(offsetSource, components);
+		}
+
+		@Override
 		protected UHComponents getHighlightComponents(
 			String field,
 			Query query,
@@ -470,6 +498,114 @@ class Highlighter {
 			int[] maxPassages
 		) throws IOException {
 			return highlightFieldsAsObjects(fields, query, docIds, maxPassages);
+		}
+	}
+
+	/**
+	 * Reads offsets from postings with each term sought once per segment
+	 * rather than once per document.
+	 *
+	 * <p>The stock {@link PostingsOffsetStrategy} opens a fresh
+	 * {@link org.apache.lucene.index.TermsEnum} and seeks every term of the
+	 * query again for each document, though the documents of a page mostly
+	 * share a segment. This one keeps the {@link PostingsEnum} of each term
+	 * for as long as the segment stays the same, which turns the repeated
+	 * seeks into forward advances - sound because the highlighter visits the
+	 * documents of one call in ascending order.
+	 *
+	 * <p>Handles plain terms only; {@link #getOffsetStrategy} is what checks
+	 * that nothing position-sensitive, no automaton and no weight matching is
+	 * in play before choosing this. One instance serves one call and is not
+	 * safe for concurrent use.
+	 */
+	private static final class SeekOncePostingsOffsetStrategy extends PostingsOffsetStrategy {
+		private LeafReader reader;
+		private PostingsEnum[] postings;
+
+		private SeekOncePostingsOffsetStrategy(UHComponents components) {
+			super(components);
+		}
+
+		@Override
+		public OffsetsEnum getOffsetsEnum(LeafReader reader, int docId, String content)
+			throws IOException
+		{
+			if(this.reader != reader) {
+				this.reader = reader;
+				this.postings = seekTerms(reader);
+			}
+
+			if(postings == null) {
+				// The segment holds no value for the field
+				return OffsetsEnum.EMPTY;
+			}
+
+			var terms = components.terms();
+			var matches = new ArrayList<OffsetsEnum>(terms.length);
+			for(var i = 0; i < terms.length; i++) {
+				var termPostings = postings[i];
+				if(termPostings == null) {
+					continue;
+				}
+
+				var current = termPostings.docID();
+				if(current < docId) {
+					current = termPostings.advance(docId);
+				}
+
+				if(current == docId) {
+					matches.add(new OffsetsEnum.OfPostings(terms[i], termPostings));
+				} else if(current == DocIdSetIterator.NO_MORE_DOCS) {
+					// Advancing an exhausted enum is undefined, so it is
+					// dropped rather than looked at again
+					postings[i] = null;
+				}
+			}
+
+			return switch(matches.size()) {
+				case 0 -> OffsetsEnum.EMPTY;
+				case 1 -> matches.get(0);
+				default -> new OffsetsEnum.MultiOffsetsEnum(matches);
+			};
+		}
+
+		/**
+		 * Position a {@link PostingsEnum} on each term of the query that the
+		 * segment holds, aligned by index with {@code components.terms()}. A
+		 * term the segment lacks stays {@code null}.
+		 *
+		 * @return
+		 *   the enums, or {@code null} when the segment holds no postings for
+		 *   the field at all
+		 * @throws IllegalArgumentException
+		 *   if the field was indexed without offsets, matching the stock
+		 *   strategy
+		 */
+		private PostingsEnum[] seekTerms(LeafReader reader) throws IOException {
+			var termsIndex = reader.terms(getField());
+			if(termsIndex == null) {
+				return null;
+			}
+
+			var terms = components.terms();
+			var termsEnum = termsIndex.iterator();
+			var postings = new PostingsEnum[terms.length];
+			for(var i = 0; i < terms.length; i++) {
+				if(!termsEnum.seekExact(terms[i])) {
+					continue;
+				}
+
+				var termPostings = termsEnum.postings(null, PostingsEnum.OFFSETS);
+				if(termPostings == null) {
+					throw new IllegalArgumentException(
+						"field '" + getField() + "' was indexed without offsets, cannot highlight"
+					);
+				}
+
+				postings[i] = termPostings;
+			}
+
+			return postings;
 		}
 	}
 

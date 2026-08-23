@@ -130,6 +130,59 @@ public class HighlightSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testEveryHitOfThePageIsHighlighted() throws IOException {
+		var index = create(
+			"winter",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", string(highlightedMatching()).build())
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Winter Journal")
+			)
+		);
+
+		// Sits between the matches, so the shared postings skip past it
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "Summer House")
+			)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "3"),
+				new Document.Value("name", "Winter Light")
+			)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "4"),
+				new Document.Value("name", "Winter Notes")
+			)
+		);
+
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("winter"))
+				.addHighlight("name")
+				.build()
+		);
+
+		assertThat(result.hits().size(), is(3));
+		assertThat(highlightsOf(result, "1", "name"), contains("<em>Winter</em> Journal"));
+		assertThat(highlightsOf(result, "3", "name"), contains("<em>Winter</em> Light"));
+		assertThat(highlightsOf(result, "4", "name"), contains("<em>Winter</em> Notes"));
+	}
+
+	@Test
 	public void testTextShorterThanTheLengthIsOneWholeFragment() throws IOException {
 		var index = library();
 
