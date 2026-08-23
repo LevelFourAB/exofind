@@ -119,14 +119,18 @@ public class IndexesTest {
 	/**
 	 * A node only keeps copies of the indexes it has been asked for, so one
 	 * created on another node is found by reading the registry.
+	 *
+	 * <p>The emptiness is asserted before the index exists rather than after,
+	 * because a node refreshes on its own as well as when asked to and may
+	 * already have read a registry written a moment ago.
 	 */
 	@Test
 	public void testIndexCreatedElsewhereIsFound() throws IOException {
 		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
 		try {
-			indexes.create("books", IndexDef.getDefaultInstance());
 			assertThat(other.getIndexNames(), emptyIterable());
 
+			indexes.create("books", IndexDef.getDefaultInstance());
 			other.refresh();
 
 			assertThat(other.getIndexNames(), contains("books"));

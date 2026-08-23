@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -60,8 +62,16 @@ public class IndexerNodeTest {
 
 		@Override
 		public Map<String, String> getConfigOverrides() {
+			Path directory;
+			try {
+				directory = Files.createTempDirectory("exofind-indexer-node-test");
+			} catch(IOException e) {
+				throw new IllegalStateException("Could not make a directory to run in", e);
+			}
+
 			return Map.ofEntries(
 				Map.entry("exofind.storage.mode", "object"),
+				Map.entry("local.storage.directory", directory.toString()),
 				Map.entry("remote.storage.url", TestObjectStorage.url()),
 				Map.entry("remote.storage.access-key", TestObjectStorage.ACCESS_KEY),
 				Map.entry("remote.storage.secret-key", TestObjectStorage.SECRET_KEY),
