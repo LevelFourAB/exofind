@@ -6,8 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.lucene.search.IndexSearcher;
 
@@ -19,21 +18,27 @@ import se.l4.exofind.engine.logging.Log;
  * a user to continue searching with the searcher they used for their query
  * instead of always using the latest searcher.
  *
- * The latest searcher is the only one handles are handed out for, and it stays
- * open for as long as it is the latest. A searcher is retired when a newer one
- * replaces it, and the reader it holds is closed once the last handle taken
- * before the replacement is released - never while a search is still reading
- * it, as a reader closed underneath a search fails it with
+ * <p>The latest searcher is the only one handles are handed out for, and it
+ * stays open for as long as it is the latest. A searcher is retired when a
+ * newer one replaces it, and the reader it holds is closed once the last
+ * handle taken before the replacement is released - never while a search is
+ * still reading it, as a reader closed underneath a search fails it with
  * {@link org.apache.lucene.store.AlreadyClosedException} rather than answering
  * it. A retired searcher that is still held long after it was replaced is
  * logged, because holding one is the only thing that can keep the files of a
  * commit from being freed.
+ *
+ * <p>{@link #acquire()} and releasing the handle it returns are on the path
+ * of every search and take no lock - a contended monitor parks waiting
+ * threads, and a parked thread resumes on the scheduler's terms, not when the
+ * monitor is free. Replacing and closing searchers may block; {@link #close()}
+ * must not run concurrently with {@link #acquire()}, which the index
+ * guarantees by holding its write lock while closing.
  */
 public class IndexSearcherManager {
 	private static final Log logger = Log.of(IndexSearcherManager.class);
 
 	private final Duration retiredSearcherTimeout;
-	private final ReadWriteLock lock;
 	private final Set<SearcherRef> retiredSearchers;
 	private final ScheduledFuture<?> cleanupTask;
 
@@ -45,7 +50,6 @@ public class IndexSearcherManager {
 		ScheduledExecutorService cleanupExecutor
 	) {
 		this.retiredSearcherTimeout = retiredSearcherTimeout;
-		this.lock = new ReentrantReadWriteLock();
 		this.retiredSearchers = ConcurrentHashMap.newKeySet();
 
 		// Mostly for testing, use timeout directly if less than 30 seconds
@@ -66,25 +70,18 @@ public class IndexSearcherManager {
 	 *
 	 * @param searcher
 	 */
-	public void refreshLatest(IndexSearcher searcher) {
-		SearcherRef retired;
-		lock.writeLock().lock();
-		try {
-			if(closed) {
-				throw new IllegalStateException("IndexSearcherManager is closed");
-			}
-
-			retired = currentSearcher;
-			currentSearcher = new SearcherRef(searcher);
-		} finally {
-			lock.writeLock().unlock();
+	public synchronized void refreshLatest(IndexSearcher searcher) {
+		if(closed) {
+			throw new IllegalStateException("IndexSearcherManager is closed");
 		}
+
+		var retired = currentSearcher;
+		currentSearcher = new SearcherRef(searcher);
 
 		if(retired != null) {
 			/*
 			 * Retiring is what starts the timeout, and it closes the reader
-			 * here and now if nothing is reading it. Done outside the write
-			 * lock so a close never holds up the searches waiting for it.
+			 * here and now if nothing is reading it.
 			 */
 			retiredSearchers.add(retired);
 			retired.retire();
@@ -98,8 +95,7 @@ public class IndexSearcherManager {
 	 * @return
 	 */
 	public Handle acquire() {
-		lock.readLock().lock();
-		try {
+		while(true) {
 			if(closed) {
 				throw new IllegalStateException("IndexSearcherManager is closed");
 			}
@@ -109,35 +105,25 @@ public class IndexSearcherManager {
 				throw new IllegalStateException("No searcher available");
 			}
 
-			/*
-			 * Retiring takes the write lock before it touches the current
-			 * searcher, so the one read here can not be retired while this
-			 * holds the read lock.
-			 */
-			if(!ref.tryAcquire()) {
-				throw new IllegalStateException("No searcher available");
+			if(ref.tryAcquire()) {
+				return new SearcherHandle(ref);
 			}
 
-			return new SearcherHandle(ref);
-		} finally {
-			lock.readLock().unlock();
+			/*
+			 * The ref was retired between reading it and acquiring it, which
+			 * means something newer replaced it - go read that instead.
+			 */
 		}
 	}
 
-	public void close() {
-		SearcherRef current;
-		lock.writeLock().lock();
-		try {
-			if(closed) {
-				return;
-			}
-			closed = true;
-
-			current = currentSearcher;
-			currentSearcher = null;
-		} finally {
-			lock.writeLock().unlock();
+	public synchronized void close() {
+		if(closed) {
+			return;
 		}
+		closed = true;
+
+		var current = currentSearcher;
+		currentSearcher = null;
 
 		cleanupTask.cancel(false);
 
@@ -219,91 +205,122 @@ public class IndexSearcherManager {
 		}
 	}
 
+	/**
+	 * A searcher together with the handles that are reading it. The whole
+	 * lifecycle - handle count, retired, closed - is one atomic integer, so
+	 * that taking and releasing a handle is a CAS rather than a monitor: with
+	 * every search of an index acquiring and releasing on the one shared
+	 * current ref, a monitor there is the contention point of the entire read
+	 * path.
+	 *
+	 * <p>The low bits count handles. {@link #RETIRED} means no new handles;
+	 * {@link #CLOSED} means the reader is closed or being closed. The CAS that
+	 * moves the state to retired-with-no-handles also sets {@link #CLOSED},
+	 * so exactly one caller wins the transition and closes the reader.
+	 */
 	private class SearcherRef {
-		private final IndexSearcher searcher;
+		private static final int RETIRED = 1 << 30;
+		private static final int CLOSED = 1 << 31;
+		private static final int HANDLES = RETIRED - 1;
 
-		private int handles;
-		private boolean retired;
-		private boolean closed;
+		private final IndexSearcher searcher;
+		private final AtomicInteger state;
+
+		/**
+		 * When {@link #retire()} ran. Written before the CAS that sets
+		 * {@link #RETIRED} and read only after seeing that bit, so it needs no
+		 * volatile of its own.
+		 */
 		private long retiredAt;
+
+		/** Only touched by the single-threaded cleanup task. */
 		private boolean reported;
 
 		SearcherRef(IndexSearcher searcher) {
 			this.searcher = searcher;
+			this.state = new AtomicInteger();
 		}
 
-		synchronized boolean tryAcquire() {
-			if(retired) {
-				return false;
-			}
+		boolean tryAcquire() {
+			while(true) {
+				int s = state.get();
+				if((s & RETIRED) != 0) {
+					return false;
+				}
 
-			handles++;
-			return true;
+				if(state.compareAndSet(s, s + 1)) {
+					return true;
+				}
+			}
 		}
 
 		void release() {
-			boolean close;
-			synchronized(this) {
-				handles--;
-				close = retired && handles == 0 && !closed;
+			while(true) {
+				int s = state.get();
+				int next = s - 1;
+				boolean close = next == RETIRED;
 				if(close) {
-					closed = true;
+					next |= CLOSED;
 				}
-			}
 
-			if(close) {
-				retiredSearchers.remove(this);
-				closeReader();
+				if(state.compareAndSet(s, next)) {
+					if(close) {
+						retiredSearchers.remove(this);
+						closeReader();
+					}
+					return;
+				}
 			}
 		}
 
 		void retire() {
-			boolean close;
-			synchronized(this) {
-				if(retired) {
+			retiredAt = System.currentTimeMillis();
+
+			while(true) {
+				int s = state.get();
+				if((s & RETIRED) != 0) {
 					return;
 				}
 
-				retired = true;
-				retiredAt = System.currentTimeMillis();
-				close = handles == 0 && !closed;
+				int next = s | RETIRED;
+				boolean close = s == 0;
 				if(close) {
-					closed = true;
+					next |= CLOSED;
 				}
-			}
 
-			if(close) {
-				retiredSearchers.remove(this);
-				closeReader();
+				if(state.compareAndSet(s, next)) {
+					if(close) {
+						retiredSearchers.remove(this);
+						closeReader();
+					}
+					return;
+				}
 			}
 		}
 
 		void forceClose() {
-			synchronized(this) {
-				retired = true;
-				if(closed) {
+			while(true) {
+				int s = state.get();
+				if((s & CLOSED) != 0) {
 					return;
 				}
 
-				closed = true;
+				if(state.compareAndSet(s, s | RETIRED | CLOSED)) {
+					closeReader();
+					return;
+				}
 			}
-
-			closeReader();
 		}
 
 		void reportIfHeldSince(long deadline) {
-			int held;
-			synchronized(this) {
-				if(closed || reported || retiredAt > deadline) {
-					return;
-				}
-
-				reported = true;
-				held = handles;
+			int s = state.get();
+			if((s & RETIRED) == 0 || (s & CLOSED) != 0 || reported || retiredAt > deadline) {
+				return;
 			}
 
+			reported = true;
 			logger.atWarn()
-				.addKeyValue("handles", held)
+				.addKeyValue("handles", s & HANDLES)
 				.log(
 					"A searcher is still being read "
 						+ retiredSearcherTimeout
@@ -311,8 +328,8 @@ public class IndexSearcherManager {
 				);
 		}
 
-		synchronized boolean isValid() {
-			return !closed;
+		boolean isValid() {
+			return (state.get() & CLOSED) == 0;
 		}
 
 		private void closeReader() {
