@@ -480,6 +480,33 @@ public class ObjectStorageIndexerOwnershipTest {
 		assertThat(heldBy, is("a"));
 	}
 
+	/**
+	 * A create claims the index before it writes the registry, so the claim
+	 * has to survive the rounds that run while the write is still in flight -
+	 * a round that took it for a claim on a deleted index would leave the
+	 * create with nothing to write to.
+	 */
+	@Test
+	void testAClaimTakenAheadOfTheRegistryIsKept() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var ownership = newOwnership("a");
+		var owned = start(ownership);
+		await(() -> owned.contains("books"), "the candidate to take the known index");
+
+		assertThat(ownership.tryClaim("brand-new"), is(true));
+
+		// Long enough for several rounds to have had the chance to drop it
+		Thread.sleep(LEASE.toMillis() * 2);
+
+		assertThat(owned.contains("brand-new"), is(true));
+		assertThat(
+			readTable().getClaimsList().stream()
+				.anyMatch(c -> c.getIndex().equals("brand-new") && c.getNode().equals("a")),
+			is(true)
+		);
+	}
+
 	@Test
 	void testTryClaimRefusesAnIndexHeldAlive() throws Exception {
 		names.set(Sets.immutable.of("held"));

@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeSet;
@@ -126,6 +127,25 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 */
 	private static final Duration CLAIM_TIMEOUT = Duration.ofSeconds(10);
 
+	/**
+	 * How long a claim taken through {@link #tryClaim} is kept while the
+	 * registry still knows nothing of the index.
+	 *
+	 * <p>A create claims the index before it writes the registry - claiming
+	 * afterwards would leave a window where another candidate takes the index
+	 * the create is about to write. The claim therefore names something that
+	 * does not exist yet, and the drop that clears claims on deleted indexes
+	 * cannot tell the two apart, so a round landing in between would revoke
+	 * the create's own writer and leave it answering that the index is
+	 * readonly.
+	 *
+	 * <p>Long enough for the registry write the claim was taken for to land
+	 * over a storage having a bad minute, short enough that a create which
+	 * never lands does not hold the name for long - while it does, writes for
+	 * that name are sent here and answered with the endpoint's 404.
+	 */
+	private static final Duration CLAIM_AHEAD_GRACE = Duration.ofSeconds(30);
+
 	private final S3Client client;
 	private final String bucket;
 	private final String tableKey;
@@ -138,8 +158,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * The names the deployment's registry currently holds, read fresh every
 	 * round, or {@code null} while the registry has never been read. What is
 	 * divided up; a name not in it is not claimed and an own claim on one is
-	 * dropped. A {@code null} answer claims and drops nothing - what exists
-	 * is not known yet.
+	 * dropped, unless the claim was taken for a write that is still running -
+	 * see {@link #CLAIM_AHEAD_GRACE}. A {@code null} answer claims and drops
+	 * nothing - what exists is not known yet.
 	 */
 	private final Supplier<? extends SetIterable<String>> indexNames;
 
@@ -172,6 +193,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 */
 	private final ConcurrentHashMap<String, CompletableFuture<Boolean>> pendingClaims =
 		new ConcurrentHashMap<>();
+
+	/**
+	 * When each index claimed ahead of the registry stops being spared the
+	 * drop that clears claims on indexes the registry does not hold, as a
+	 * {@link System#currentTimeMillis()} reading. An entry goes as soon as the
+	 * registry names its index, and lapses on its own when it never does - see
+	 * {@link #CLAIM_AHEAD_GRACE}. Only touched on the executor thread.
+	 */
+	private final Map<String, Long> claimedAhead = new HashMap<>();
 
 	private final ScheduledExecutorService executor;
 
@@ -719,6 +749,14 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			}
 
 			if(etag != null) {
+				/*
+				 * Recorded whether or not the registry already names the
+				 * index: the write this claim was taken for may be the create
+				 * that is about to put it there, and only the next round can
+				 * tell.
+				 */
+				claimedAhead.put(index, now + CLAIM_AHEAD_GRACE.toMillis());
+
 				apply(now, rebuilt);
 				return true;
 			}
@@ -933,7 +971,22 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * remaining claim is on a deleted index and is dropped.
 		 */
 		if(names != null) {
-			mine.removeIf(name -> !names.contains(name) && !name.equals(forcedClaim));
+			/*
+			 * An index claimed for a create the registry has not caught up
+			 * with yet is not a deleted one, however alike they look from
+			 * here. Pruned before it is read rather than after, so a round
+			 * that has to be retried prunes the same entries again instead of
+			 * working from a shorter list the second time.
+			 */
+			claimedAhead.entrySet().removeIf(
+				ahead -> names.contains(ahead.getKey()) || ahead.getValue() <= now
+			);
+
+			mine.removeIf(
+				name -> !names.contains(name)
+					&& !name.equals(forcedClaim)
+					&& !claimedAhead.containsKey(name)
+			);
 
 			var fairShare = fairShare(names.size(), otherCandidates.size() + 1);
 
