@@ -217,3 +217,11 @@ Which part of the version moves is the commit types deciding: `fix` a patch,
 long as the major is 0. The version in `pom.xml` is written by the same pull
 request and carries `-SNAPSHOT` between releases, so the version a build
 reports is the release it came after.
+
+## License
+
+Copyright 2026 Level Four AB
+
+Licensed under the Apache License, Version 2.0. You may not use this work
+except in compliance with the License; a copy is in [LICENSE](LICENSE) and at
+<https://www.apache.org/licenses/LICENSE-2.0>.
