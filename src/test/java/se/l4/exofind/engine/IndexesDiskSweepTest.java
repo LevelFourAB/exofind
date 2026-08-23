@@ -267,11 +267,16 @@ public class IndexesDiskSweepTest {
 		}
 	}
 
+	/**
+	 * A node that has read the registry, which is what the sweep needs before
+	 * it may remove anything. A node reads it on a thread of its own as well,
+	 * but only the read asked for here has happened by the time this returns.
+	 */
 	private Indexes open(String maxSize, Duration minIdle) throws IOException {
 		var state = new NodeState(true);
 		state.updateOwnership(true);
 
-		return new Indexes(
+		var node = new Indexes(
 			state,
 			new NoopSyncProvider(),
 			new IndexRegistry(
@@ -290,6 +295,10 @@ public class IndexesDiskSweepTest {
 			Duration.ofHours(168),
 			Duration.ofHours(1)
 		);
+
+		node.refresh();
+
+		return node;
 	}
 
 	/**
