@@ -54,7 +54,7 @@ Code lives under `se.l4.exofind.engine`.
 - **An `Index` owns one Lucene directory**, moves through a state machine as it
   syncs (`NEEDS_PULL` → `PULLING` → `USABLE` → `MODIFIED`) and pushes and pulls
   through a `StateSyncProvider`. Below the open cache, `Indexes` sweeps the
-  coldest closed directories when `indexes.disk.maxSize` is set, and
+  coldest closed directories when `indexes.disk.max-size` is set, and
   `LocalCopy` is what refuses to remove anything the remote does not fully
   hold.
 - **`NodeState` says which indexes this node writes.** The `indexer` property

@@ -210,17 +210,17 @@ public class Indexes {
 		StateSyncProvider syncProvider,
 		IndexRegistry registry,
 		@ConfigProperty(name = "local.storage.directory") Path storageDirectory,
-		@ConfigProperty(name = "indexes.maxOpen") OptionalInt maxOpen,
-		@ConfigProperty(name = "indexes.refreshInterval", defaultValue = "30s") Duration refreshInterval,
-		@ConfigProperty(name = "indexes.refreshConcurrency", defaultValue = "4") int refreshConcurrency,
-		@ConfigProperty(name = "indexes.closeGracePeriod", defaultValue = "10s") Duration closeGracePeriod,
-		@ConfigProperty(name = "indexes.commit.maxChanges", defaultValue = "10000") int commitMaxChanges,
-		@ConfigProperty(name = "indexes.commit.maxInterval", defaultValue = "5s") Duration commitMaxInterval,
-		@ConfigProperty(name = "indexes.disk.maxSize") Optional<String> diskMaxSize,
+		@ConfigProperty(name = "indexes.max-open") OptionalInt maxOpen,
+		@ConfigProperty(name = "indexes.refresh-interval", defaultValue = "30s") Duration refreshInterval,
+		@ConfigProperty(name = "indexes.refresh-concurrency", defaultValue = "4") int refreshConcurrency,
+		@ConfigProperty(name = "indexes.close-grace-period", defaultValue = "10s") Duration closeGracePeriod,
+		@ConfigProperty(name = "indexes.commit.max-changes", defaultValue = "10000") int commitMaxChanges,
+		@ConfigProperty(name = "indexes.commit.max-interval", defaultValue = "5s") Duration commitMaxInterval,
+		@ConfigProperty(name = "indexes.disk.max-size") Optional<String> diskMaxSize,
 		@ConfigProperty(name = "indexes.document-cache.max-size") Optional<String> documentCacheMaxSize,
-		@ConfigProperty(name = "indexes.disk.minIdle", defaultValue = "24h") Duration diskMinIdle,
-		@ConfigProperty(name = "indexes.disk.halfLife", defaultValue = "168h") Duration diskHalfLife,
-		@ConfigProperty(name = "indexes.disk.sweepInterval", defaultValue = "1h") Duration diskSweepInterval
+		@ConfigProperty(name = "indexes.disk.min-idle", defaultValue = "24h") Duration diskMinIdle,
+		@ConfigProperty(name = "indexes.disk.half-life", defaultValue = "168h") Duration diskHalfLife,
+		@ConfigProperty(name = "indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval
 	) throws IOException {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;

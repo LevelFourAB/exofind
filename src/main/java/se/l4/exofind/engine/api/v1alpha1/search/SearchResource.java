@@ -52,7 +52,7 @@ public class SearchResource {
 
 	public SearchResource(
 		Indexes indexes,
-		@ConfigProperty(name = "search.maxPageDepth", defaultValue = "10000") int maxPageDepth
+		@ConfigProperty(name = "search.max-page-depth", defaultValue = "10000") int maxPageDepth
 	) {
 		this.indexes = indexes;
 		this.maxPageDepth = maxPageDepth;

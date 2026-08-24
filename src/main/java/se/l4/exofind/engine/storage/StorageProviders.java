@@ -72,7 +72,7 @@ public class StorageProviders {
 	public StorageMode storageMode(
 		@ConfigProperty(name = "exofind.storage.mode", defaultValue = "local") String mode,
 		@ConfigProperty(name = "local.storage.directory") Path storageDirectory,
-		@ConfigProperty(name = "indexes.disk.maxSize") Optional<String> diskMaxSize,
+		@ConfigProperty(name = "indexes.disk.max-size") Optional<String> diskMaxSize,
 		@ConfigProperty(name = "remote.storage.url") Optional<String> remoteUrl
 	) {
 		var resolved = switch(mode.trim().toLowerCase(Locale.ROOT)) {

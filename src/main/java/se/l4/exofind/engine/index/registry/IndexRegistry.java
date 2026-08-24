@@ -120,7 +120,7 @@ public class IndexRegistry {
 
 	public IndexRegistry(
 		RegistryStorage storage,
-		@ConfigProperty(name = "indexes.refreshInterval", defaultValue = "30s")
+		@ConfigProperty(name = "indexes.refresh-interval", defaultValue = "30s")
 		Duration refreshInterval
 	) {
 		this.storage = storage;
