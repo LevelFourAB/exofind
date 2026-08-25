@@ -8,9 +8,11 @@ import org.eclipse.collections.api.list.ImmutableList;
  *
  * The counts are what a list of filters to pick from is built out of - each
  * value with how many results choosing it would leave. A facet is counted
- * sideways of the {@link SearchRequest#filters() filters} on its own field:
+ * sideways of the {@link SearchRequest#filters() filters} it
+ * {@link #excludes(String) excludes} - by default the ones on its own field:
  * ticking a category still shows what the other categories would hold, while
  * every other filter and the whole query keep narrowing the counts.
+ * {@link #excludeFilters()} is what changes the default.
  *
  * A facet given {@link #ranges() ranges} counts into those buckets instead of
  * per value - what a price or date facet shows. The counts come back one per
@@ -50,6 +52,12 @@ import org.eclipse.collections.api.list.ImmutableList;
  * @param depth
  *   how many levels below {@link #path()} to count, between 1 and
  *   {@link #MAX_DEPTH}
+ * @param excludeFilters
+ *   the field paths whose filter entries are left out of this facet's
+ *   counts, or {@code null} for the facet's own field - the sideways rule a
+ *   filtering UI wants. Empty leaves nothing out, so the counts are exactly
+ *   the results; more paths widen the scope, which is what one control
+ *   backed by several fields asks for
  */
 public record Facet(
 	String name,
@@ -58,7 +66,8 @@ public record Facet(
 	Order order,
 	ImmutableList<Range> ranges,
 	String path,
-	int depth
+	int depth,
+	ImmutableList<String> excludeFilters
 ) {
 	/**
 	 * How many values a facet brings back when nothing else is asked for.
@@ -175,13 +184,47 @@ public record Facet(
 				"Counting into buckets answers one count per bucket, so it can not also count down a tree"
 			);
 		}
+
+		if(excludeFilters == null) {
+			excludeFilters = Lists.immutable.of(field);
+		}
+
+		for(var excluded : excludeFilters) {
+			if(excluded == null || excluded.isBlank()) {
+				throw new IllegalArgumentException(
+					"A path to leave the filters of out can not be blank - leave the whole list out for the facet's own field"
+				);
+			}
+		}
 	}
 
 	/**
 	 * Count per value.
 	 */
 	public Facet(String name, String field, int limit, Order order) {
-		this(name, field, limit, order, null, null, DEFAULT_DEPTH);
+		this(name, field, limit, order, null, null, DEFAULT_DEPTH, null);
+	}
+
+	/**
+	 * Get whether a filter entry naming the given field path is left out of
+	 * this facet's counts.
+	 *
+	 * An entry is left out when its path equals one of
+	 * {@link #excludeFilters()} or falls under it - {@code variants.color}
+	 * falls under {@code variants}. Exclusion is always of whole entries: a
+	 * {@code nested} filter whose clauses name several fields carries the one
+	 * path they share, so it is left out together or not at all.
+	 *
+	 * @param filterPath
+	 *   the field path a filter entry names - the field of a {@code field}
+	 *   clause, or the most specific path covering everything a {@code nested}
+	 *   clause reads
+	 * @return
+	 */
+	public boolean excludes(String filterPath) {
+		return excludeFilters.anySatisfy(excluded ->
+			filterPath.equals(excluded) || filterPath.startsWith(excluded + '.')
+		);
 	}
 
 	/**
@@ -206,7 +249,7 @@ public record Facet(
 	 * @return
 	 */
 	public static Facet of(String field) {
-		return new Facet(null, field, DEFAULT_LIMIT, Order.COUNT, null, null, DEFAULT_DEPTH);
+		return new Facet(null, field, DEFAULT_LIMIT, Order.COUNT, null, null, DEFAULT_DEPTH, null);
 	}
 
 	/**
@@ -216,7 +259,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withName(String name) {
-		return new Facet(name, field, limit, order, ranges, path, depth);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
 	}
 
 	/**
@@ -226,7 +269,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withLimit(int limit) {
-		return new Facet(name, field, limit, order, ranges, path, depth);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
 	}
 
 	/**
@@ -236,7 +279,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withOrder(Order order) {
-		return new Facet(name, field, limit, order, ranges, path, depth);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
 	}
 
 	/**
@@ -248,7 +291,7 @@ public record Facet(
 	 */
 	public Facet withRanges(Range... ranges) {
 		return new Facet(
-			name, field, limit, order, Lists.immutable.of(ranges), path, depth
+			name, field, limit, order, Lists.immutable.of(ranges), path, depth, excludeFilters
 		);
 	}
 
@@ -261,7 +304,7 @@ public record Facet(
 	 */
 	public Facet withRanges(Iterable<? extends Range> ranges) {
 		return new Facet(
-			name, field, limit, order, Lists.immutable.ofAll(ranges), path, depth
+			name, field, limit, order, Lists.immutable.ofAll(ranges), path, depth, excludeFilters
 		);
 	}
 
@@ -273,7 +316,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPath(String path) {
-		return new Facet(name, field, limit, order, ranges, path, depth);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
 	}
 
 	/**
@@ -283,6 +326,36 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withDepth(int depth) {
-		return new Facet(name, field, limit, order, ranges, path, depth);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
+	}
+
+	/**
+	 * Set the field paths whose filter entries are left out of the counts,
+	 * replacing the facet's own field. Give none at all to count inside every
+	 * filter, so the counts are exactly the results.
+	 *
+	 * @param excludeFilters
+	 * @return
+	 */
+	public Facet withExcludeFilters(String... excludeFilters) {
+		return new Facet(
+			name, field, limit, order, ranges, path, depth,
+			Lists.immutable.of(excludeFilters)
+		);
+	}
+
+	/**
+	 * Set the field paths whose filter entries are left out of the counts,
+	 * replacing the facet's own field. An empty iterable counts inside every
+	 * filter, so the counts are exactly the results.
+	 *
+	 * @param excludeFilters
+	 * @return
+	 */
+	public Facet withExcludeFilters(Iterable<String> excludeFilters) {
+		return new Facet(
+			name, field, limit, order, ranges, path, depth,
+			Lists.immutable.ofAll(excludeFilters)
+		);
 	}
 }

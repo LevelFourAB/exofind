@@ -91,9 +91,16 @@ import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.index.state.SyncIncompatibleException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.query.AndQuery;
+import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldQuery;
+import se.l4.exofind.engine.query.KnnQuery;
+import se.l4.exofind.engine.query.NestedQuery;
+import se.l4.exofind.engine.query.NotQuery;
+import se.l4.exofind.engine.query.OrQuery;
 import se.l4.exofind.engine.query.Query;
+import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortKey;
@@ -3302,19 +3309,22 @@ public class Index {
 	/**
 	 * Count the matches per value for every facet of the search.
 	 *
-	 * A facet is counted sideways of the filters on its own field: those are
-	 * left out of its scope, so ticking a value keeps the other values of that
-	 * field visible and countable, while the query and every other filter
-	 * narrow the counts the way they narrow the hits. Facets whose field no
-	 * filter names all share the scope of the search itself, so the matches
-	 * are collected once per distinct scope rather than once per facet.
+	 * A facet is counted sideways of the filter entries it
+	 * {@link Facet#excludes(String) excludes} - by default the ones on its own
+	 * field: those are left out of its scope, so ticking a value keeps the
+	 * other values of that field visible and countable, while the query and
+	 * every other filter narrow the counts the way they narrow the hits.
+	 * Facets that exclude no filter of the search all share the scope of the
+	 * search itself, so the matches are collected once per distinct scope
+	 * rather than once per facet.
 	 *
 	 * A facet over a field inside an object counts the values of that object
 	 * instead - the ones the search matched, which is what its {@code nested}
 	 * clauses say - and rolls them up, so it answers how many documents hold
-	 * each value the way every other facet does. Filters name fields of the
-	 * index and never reach inside one, so those facets have no sideways scope
-	 * of their own and share one per object field.
+	 * each value the way every other facet does. Its scope is worked out the
+	 * same way, a {@code nested} filter being excludable by its field path
+	 * like any other entry, and facets that keep the same filters share one
+	 * scope per object field.
 	 *
 	 * A facet over a field whose values are paths counts a level of the tree at
 	 * a time and answers the counts nested. The scope is worked out the same
@@ -3358,7 +3368,7 @@ public class Index {
 
 		var documents = assembled.documents();
 		var reader = searcher.getIndexReader();
-		var filtered = request.filters().collect(FieldQuery::field).toSet();
+		var filterPaths = request.filters().collect(Index::filterPathOf);
 
 		/*
 		 * The matches of everything the index holds, collected the first time
@@ -3367,36 +3377,45 @@ public class Index {
 		 */
 		var everything = clauses.isEmpty() ? whole : null;
 
-		var collectors = Maps.mutable.<String, FacetMatches>empty();
-		var values = Maps.mutable.<String, FacetMatches>empty();
+		var collectors = Maps.mutable.<ImmutableList<Query>, FacetMatches>empty();
+		var values = Maps.mutable.<Pair<String, ImmutableList<Query>>, FacetMatches>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
 
 		for(var facet : request.facets()) {
+			var filters = keptFilters(request.filters(), filterPaths, facet);
+			var sideways = filters.size() != request.filters().size();
+
 			var nested = schema.getNestedField(facet.field());
 
 			FacetMatches scope;
 			if(nested.isPresent()) {
 				var path = nested.get().path();
 
-				scope = values.get(path);
+				var key = Tuples.pair(path, filters);
+				scope = values.get(key);
 				if(scope == null) {
+					var scoped = sideways
+						? request.query().newWithAll(filters)
+						: clauses;
+					var scopedDocuments = sideways
+						? assemble(compiler, request, scoped).documents()
+						: documents;
+
 					scope = FacetMatches.rolledUp(
 						searcher.search(
-							compiler.compileNestedValues(path, documents, clauses),
+							compiler.compileNestedValues(path, scopedDocuments, scoped),
 							new FacetsCollectorManager()
 						),
 						nestedParents
 					);
-					values.put(path, scope);
+					values.put(key, scope);
 				}
 			} else {
-				var sideways = filtered.contains(facet.field())
-					? request.query().newWithAll(
-						request.filters().reject(f -> f.field().equals(facet.field()))
-					)
-					: null;
+				var scoped = sideways
+					? request.query().newWithAll(filters)
+					: clauses;
 
-				if(sideways == null ? clauses.isEmpty() : sideways.isEmpty()) {
+				if(scoped.isEmpty()) {
 					var kept = FacetStates.wholeCountsOf(reader, request.locale(), facet);
 					if(kept == null) {
 						if(everything == null) {
@@ -3411,16 +3430,16 @@ public class Index {
 					continue;
 				}
 
-				if(sideways != null) {
-					scope = collectors.get(facet.field());
+				if(sideways) {
+					scope = collectors.get(filters);
 					if(scope == null) {
 						scope = FacetMatches.of(
 							searcher.search(
-								assemble(compiler, request, sideways).hits(),
+								assemble(compiler, request, scoped).hits(),
 								new FacetsCollectorManager()
 							)
 						);
-						collectors.put(facet.field(), scope);
+						collectors.put(filters, scope);
 					}
 				} else {
 					if(whole == null) {
@@ -3474,11 +3493,12 @@ public class Index {
 	 * are not the hits and not on the documents either, so no count of it
 	 * describes this result set.
 	 *
-	 * The sideways rule holds unchanged - a facet leaves the filters on its
-	 * own field out of its scope - and a scope is the value hits of that
-	 * narrowed search, assembled the same way the search itself is. Nothing
-	 * here reads the per-reader whole-index answers {@link FacetStates} keeps:
-	 * those count documents, and even an unnarrowed search counts values here.
+	 * The sideways rule holds unchanged - a facet leaves the filter entries it
+	 * {@link Facet#excludes(String) excludes} out of its scope - and a scope
+	 * is the value hits of that narrowed search, assembled the same way the
+	 * search itself is. Nothing here reads the per-reader whole-index answers
+	 * {@link FacetStates} keeps: those count documents, and even an unnarrowed
+	 * search counts values here.
 	 *
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
@@ -3498,10 +3518,10 @@ public class Index {
 		FacetsCollector whole
 	) throws IOException {
 		var reader = searcher.getIndexReader();
-		var filtered = request.filters().collect(FieldQuery::field).toSet();
+		var filterPaths = request.filters().collect(Index::filterPathOf);
 		var path = request.hits().path();
 
-		var collectors = Maps.mutable.<String, FacetMatches>empty();
+		var collectors = Maps.mutable.<ImmutableList<Query>, FacetsCollector>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
 
 		for(var facet : request.facets()) {
@@ -3514,39 +3534,29 @@ public class Index {
 				);
 			}
 
-			/*
-			 * Filters name fields of the index and never reach inside an
-			 * object, so only a facet over a field of the index can have a
-			 * sideways scope of its own.
-			 */
-			var sideways = nested.isEmpty() && filtered.contains(facet.field())
-				? request.query().newWithAll(
-					request.filters().reject(f -> f.field().equals(facet.field()))
-				)
-				: null;
+			var filters = keptFilters(request.filters(), filterPaths, facet);
 
-			FacetMatches scope;
-			if(sideways != null) {
-				scope = collectors.get(facet.field());
-				if(scope == null) {
-					scope = FacetMatches.parentsByValue(
-						searcher.search(
-							assemble(compiler, request, sideways).hits(),
-							new FacetsCollectorManager()
-						),
-						nestedParents
+			FacetsCollector matches;
+			if(filters.size() != request.filters().size()) {
+				matches = collectors.get(filters);
+				if(matches == null) {
+					matches = searcher.search(
+						assemble(compiler, request, request.query().newWithAll(filters)).hits(),
+						new FacetsCollectorManager()
 					);
-					collectors.put(facet.field(), scope);
+					collectors.put(filters, matches);
 				}
 			} else {
 				if(whole == null) {
 					whole = searcher.search(assembled.hits(), new FacetsCollectorManager());
 				}
 
-				scope = nested.isPresent()
-					? FacetMatches.values(whole)
-					: FacetMatches.parentsByValue(whole, nestedParents);
+				matches = whole;
 			}
+
+			var scope = nested.isPresent()
+				? FacetMatches.values(matches)
+				: FacetMatches.parentsByValue(matches, nestedParents);
 
 			counts.put(facet.name(), countFacet(reader, compiler, facet, scope));
 		}
@@ -3556,6 +3566,102 @@ public class Index {
 			: searcher.count(assembled.hits());
 
 		return new Faceted(counts.toImmutable(), total);
+	}
+
+	/**
+	 * The filter entries a facet's counts are narrowed by - every entry of the
+	 * search except the ones the facet excludes.
+	 *
+	 * @param filterPaths
+	 *   the field path of each entry, aligned with {@code filters} - worked
+	 *   out once per search rather than once per facet
+	 */
+	private static ImmutableList<Query> keptFilters(
+		ImmutableList<Query> filters,
+		ListIterable<String> filterPaths,
+		Facet facet
+	) {
+		var kept = Lists.mutable.<Query>empty();
+		for(var i = 0; i < filters.size(); i++) {
+			if(!facet.excludes(filterPaths.get(i))) {
+				kept.add(filters.get(i));
+			}
+		}
+
+		return kept.toImmutable();
+	}
+
+	/**
+	 * The field path a filter entry is excluded by, see
+	 * {@link Facet#excludes(String)}.
+	 *
+	 * A {@code field} entry is the field it names. A {@code nested} entry is
+	 * the one field path its clauses read, or - when they read several - the
+	 * most specific path covering all of them, down to the object field
+	 * itself. The entry is one condition however many fields it touches, so
+	 * its path is only as specific as the whole of it.
+	 */
+	private static String filterPathOf(Query filter) {
+		if(filter instanceof FieldQuery field) {
+			return field.field();
+		}
+
+		var nested = (NestedQuery) filter;
+		var named = Lists.mutable.<String>empty();
+		collectFieldPaths(nested.clauses(), nested.path(), named);
+
+		String path = null;
+		for(var name : named) {
+			path = path == null ? name : commonPath(path, name);
+		}
+
+		return path == null ? nested.path() : path;
+	}
+
+	/**
+	 * Collect the dotted paths of every field the clauses read, the object
+	 * field itself standing in for a clause that covers all of its fields.
+	 */
+	private static void collectFieldPaths(
+		ListIterable<Query> clauses,
+		String path,
+		MutableList<String> collected
+	) {
+		for(var clause : clauses) {
+			switch(clause) {
+				case FieldQuery q -> collected.add(q.field());
+				case TextQuery q -> {
+					if(q.fields().isEmpty()) {
+						collected.add(path);
+					} else {
+						collected.addAllIterable(q.fields().keysView());
+					}
+				}
+				case AndQuery q -> collectFieldPaths(q.clauses(), path, collected);
+				case OrQuery q -> collectFieldPaths(q.clauses(), path, collected);
+				case NotQuery q -> collectFieldPaths(q.clauses(), path, collected);
+				case BoostQuery q -> collectFieldPaths(q.clauses(), path, collected);
+				case NestedQuery q -> collected.add(q.path());
+				case KnnQuery q -> collected.add(q.field());
+			}
+		}
+	}
+
+	/**
+	 * The longest path two dotted paths share whole segments of, empty when
+	 * they share none.
+	 */
+	private static String commonPath(String a, String b) {
+		var left = a.split("\\.");
+		var right = b.split("\\.");
+
+		var shared = 0;
+		while(shared < left.length && shared < right.length
+			&& left[shared].equals(right[shared])) {
+			shared++;
+		}
+
+		return String.join(".", Arrays.copyOf(left, shared));
 	}
 
 	/**

@@ -28,6 +28,7 @@ import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.matchers.Matchers;
+import se.l4.exofind.engine.query.matchers.RangeMatcher;
 
 /**
  * Tests for indexing and searching timestamps - values compared as the
@@ -59,6 +60,21 @@ public class TimestampIndexingTest extends AbstractIndexTest {
 		);
 
 		assertThat(ids(result), containsInAnyOrder("c"));
+	}
+
+	@Test
+	public void testRangesFindsInstantsInAnyOfThem() throws IOException {
+		var index = books();
+
+		var result = search(
+			index,
+			Query.field("published", Matchers.ranges(
+				RangeMatcher.atMost("2020-01-01T00:00:00Z"),
+				RangeMatcher.atLeast("2022-01-01T00:00:00Z")
+			))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("a", "c"));
 	}
 
 	/**

@@ -24,7 +24,6 @@ import se.l4.exofind.engine.query.AndQuery;
 import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.DecaySignal;
 import se.l4.exofind.engine.query.Facet;
-import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.FieldSort;
 import se.l4.exofind.engine.query.GeoDistanceSort;
 import se.l4.exofind.engine.query.KnnQuery;
@@ -44,6 +43,7 @@ import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.InMatcher;
 import se.l4.exofind.engine.query.matchers.PrefixMatcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
+import se.l4.exofind.engine.query.matchers.RangesMatcher;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
 import se.l4.exofind.engine.query.matchers.UnderMatcher;
 
@@ -184,6 +184,18 @@ public class SearchRequestMapper {
 		ErrorType.withCode("search:matcher:range_conflicting")
 			.withMessage("Use only one of `gte` and `gt`, and only one of `lte` and `lt`");
 
+	private static final ErrorType FILTER_CLAUSE_INVALID =
+		ErrorType.withCode("search:filter:clause_invalid")
+			.withMessage(
+				"A filter is a `field` or a `nested` clause - a clause that scopes the whole search belongs in `query`"
+			);
+
+	private static final ErrorType FILTER_SCORES =
+		ErrorType.withCode("search:filter:scores")
+			.withMessage(
+				"A filter narrows without ranking - clauses that score belong in `query`"
+			);
+
 	private static final ErrorType FACET_FIELD_REQUIRED =
 		ErrorType.withCode("search:facet:field_required")
 			.withMessage("The name of the field to count is required");
@@ -236,6 +248,12 @@ public class SearchRequestMapper {
 	private static final ErrorType FACET_RANGE_EMPTY =
 		ErrorType.withCode("search:facet:range_empty")
 			.withMessage("A bucket needs at least one bound");
+
+	private static final ErrorType FACET_EXCLUDE_FILTERS_INVALID =
+		ErrorType.withCode("search:facet:exclude_filters_invalid")
+			.withMessage(
+				"A path to leave the filters of out can not be blank - leave `excludeFilters` out for the facet's own field, or empty to leave nothing out"
+			);
 
 	private static final ErrorType SORT_FIELD_REQUIRED =
 		ErrorType.withCode("search:sort:field_required")
@@ -511,15 +529,15 @@ public class SearchRequestMapper {
 	/**
 	 * Map the ticked refinements, or collect what is wrong with them.
 	 */
-	private static ImmutableList<FieldQuery> toFilters(
-		List<SearchRequest.Filter> filters,
+	private static ImmutableList<Query> toFilters(
+		List<Clause> filters,
 		MutableList<ErrorMessage> errors
 	) {
 		if(filters == null) {
 			return Lists.immutable.empty();
 		}
 
-		var result = Lists.mutable.<FieldQuery>empty();
+		var result = Lists.mutable.<Query>empty();
 		for(var i = 0; i < filters.size(); i++) {
 			var path = "/filters/" + i;
 			var filter = filters.get(i);
@@ -529,21 +547,22 @@ public class SearchRequestMapper {
 				continue;
 			}
 
-			var valid = true;
-			if(filter.field() == null || filter.field().isBlank()) {
-				errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
-				valid = false;
-			}
-
-			if(filter.match() == null) {
-				errors.add(CLAUSE_MATCH_REQUIRED.toMessage(Location.create(path + "/match")));
+			if(!(filter instanceof Clause.Field) && !(filter instanceof Clause.Nested)) {
+				errors.add(FILTER_CLAUSE_INVALID.toMessage(Location.create(path)));
 				continue;
 			}
 
-			var matcher = toMatcher(filter.match(), path + "/match", errors);
-			if(matcher != null && valid) {
-				result.add(new FieldQuery(filter.field(), matcher));
+			var mapped = toClause(filter, path, errors);
+			if(mapped == null) {
+				continue;
 			}
+
+			if(mapped.scores()) {
+				errors.add(FILTER_SCORES.toMessage(Location.create(path)));
+				continue;
+			}
+
+			result.add(mapped);
 		}
 
 		return result.toImmutable();
@@ -650,6 +669,25 @@ public class SearchRequestMapper {
 				}
 			}
 
+			ImmutableList<String> excludeFilters = null;
+			if(facet.excludeFilters() != null) {
+				var excluded = Lists.mutable.<String>empty();
+				for(var j = 0; j < facet.excludeFilters().size(); j++) {
+					var excludedPath = facet.excludeFilters().get(j);
+					if(excludedPath == null || excludedPath.isBlank()) {
+						errors.add(FACET_EXCLUDE_FILTERS_INVALID.toMessage(
+							Location.create(path + "/excludeFilters/" + j)
+						));
+						valid = false;
+						continue;
+					}
+
+					excluded.add(excludedPath);
+				}
+
+				excludeFilters = excluded.toImmutable();
+			}
+
 			if(!valid) {
 				continue;
 			}
@@ -669,7 +707,8 @@ public class SearchRequestMapper {
 					: Facet.Order.COUNT,
 				ranges.toImmutable(),
 				facet.path(),
-				depth
+				depth,
+				excludeFilters
 			));
 		}
 
@@ -1428,6 +1467,59 @@ public class SearchRequestMapper {
 					upper,
 					range.lte() != null
 				);
+			}
+
+			case Matcher.Ranges ranges -> {
+				if(ranges.values() == null) {
+					errors.add(
+						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + "/values"))
+					);
+					return null;
+				}
+
+				var valid = true;
+				var result = Lists.mutable.<RangeMatcher>empty();
+				for(var j = 0; j < ranges.values().size(); j++) {
+					var rangePath = path + "/values/" + j;
+					var range = ranges.values().get(j);
+
+					if(range == null) {
+						errors.add(REQUIRED.toMessage(Location.create(rangePath)));
+						valid = false;
+						continue;
+					}
+
+					if(range.gte() != null && range.gt() != null
+						|| range.lte() != null && range.lt() != null) {
+						errors.add(
+							MATCHER_RANGE_CONFLICTING.toMessage(Location.create(rangePath))
+						);
+						valid = false;
+						continue;
+					}
+
+					var lower = range.gte() != null ? range.gte() : range.gt();
+					var upper = range.lte() != null ? range.lte() : range.lt();
+
+					if(lower == null && upper == null) {
+						errors.add(MATCHER_RANGE_EMPTY.toMessage(Location.create(rangePath)));
+						valid = false;
+						continue;
+					}
+
+					result.add(new RangeMatcher(
+						lower,
+						range.gte() != null,
+						upper,
+						range.lte() != null
+					));
+				}
+
+				if(!valid) {
+					return null;
+				}
+
+				return new RangesMatcher(result.toImmutable());
 			}
 
 			case Matcher.Text text -> {

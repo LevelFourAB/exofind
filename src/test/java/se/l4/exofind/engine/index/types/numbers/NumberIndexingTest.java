@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index.types.numbers;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -31,6 +32,7 @@ import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.matchers.Matchers;
+import se.l4.exofind.engine.query.matchers.RangeMatcher;
 
 /**
  * Tests for indexing and searching numbers - filtering by equality and range,
@@ -80,6 +82,45 @@ public class NumberIndexingTest extends AbstractIndexTest {
 		var result = search(index, Query.field("pages", Matchers.atMost(320)));
 
 		assertThat(ids(result), containsInAnyOrder("a", "b"));
+	}
+
+	@Test
+	public void testRangesFindsValuesInAnyOfThem() throws IOException {
+		var index = books();
+
+		var result = search(
+			index,
+			Query.field("pages", Matchers.ranges(
+				RangeMatcher.between(100, 150),
+				RangeMatcher.between(300, 400)
+			))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("a", "b"));
+	}
+
+	@Test
+	public void testRangesOnDoubles() throws IOException {
+		var index = books();
+
+		var result = search(
+			index,
+			Query.field("price", Matchers.ranges(
+				RangeMatcher.atMost(15.0),
+				RangeMatcher.atLeast(40.0)
+			))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("b", "c"));
+	}
+
+	@Test
+	public void testEmptyRangesMatchesNothing() throws IOException {
+		var index = books();
+
+		var result = search(index, Query.field("pages", Matchers.ranges()));
+
+		assertThat(ids(result), is(empty()));
 	}
 
 	@Test

@@ -27,6 +27,7 @@ import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.matchers.Matchers;
+import se.l4.exofind.engine.query.matchers.RangeMatcher;
 
 /**
  * Tests for counting the matches of a search per value of a field and into
@@ -226,6 +227,94 @@ public class FacetSearchTest extends AbstractIndexTest {
 			containsInAnyOrder(
 				new SearchResult.Facet.Value("shoes", 2),
 				new SearchResult.Facet.Value("clothes", 2)
+			)
+		);
+	}
+
+	@Test
+	public void testEmptyExcludeFiltersCountsInsideEveryFilter() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(new FieldQuery("category", Matchers.equalTo("shoes")))
+				.addFacet(Facet.of("category").withExcludeFilters())
+				.build()
+		);
+
+		// Nothing is left out, so the counts are exactly the results
+		var facet = result.facets().get("category");
+		assertThat(facet.values(), contains(new SearchResult.Facet.Value("shoes", 2)));
+		assertThat(facet.totalValues(), is(1));
+	}
+
+	@Test
+	public void testExcludeFiltersWidensToAnotherField() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(new FieldQuery("category", Matchers.equalTo("shoes")))
+				.addFilter(new FieldQuery("published", Matchers.equalTo(true)))
+				.addFacet(Facet.of("category"))
+				.addFacet(
+					Facet.of("category")
+						.withName("wide")
+						.withExcludeFilters("category", "published")
+				)
+				.build()
+		);
+
+		// The default leaves out only its own field, so `published` narrows it
+		assertThat(
+			result.facets().get("category").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value("shoes", 2),
+				new SearchResult.Facet.Value("clothes", 1)
+			)
+		);
+
+		// The widened facet leaves both filters out of its counts
+		assertThat(
+			result.facets().get("wide").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value("shoes", 2),
+				new SearchResult.Facet.Value("clothes", 2)
+			)
+		);
+	}
+
+	@Test
+	public void testTickedBucketsSentBackAsARangesFilterAreLeftOut() throws IOException {
+		var index = products();
+
+		// Two ticked buckets come back as one `ranges` filter on the field
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(new FieldQuery("price", Matchers.ranges(
+					new RangeMatcher(null, false, 100.0, false),
+					new RangeMatcher(150.0, true, null, false)
+				)))
+				.addFacet(
+					Facet.of("price").withRanges(
+						new Facet.Range(null, 100.0),
+						new Facet.Range(100.0, 150.0),
+						new Facet.Range(150.0, null)
+					)
+				)
+				.build()
+		);
+
+		// The hits are narrowed to the ticked buckets
+		assertThat(result.total().count(), is(3L));
+
+		// While every bucket stays countable, the whole filter being left out
+		assertThat(
+			result.facets().get("price").buckets(),
+			contains(
+				new SearchResult.Facet.Bucket(null, 100.0, 2),
+				new SearchResult.Facet.Bucket(100.0, 150.0, 1),
+				new SearchResult.Facet.Bucket(150.0, null, 1)
 			)
 		);
 	}

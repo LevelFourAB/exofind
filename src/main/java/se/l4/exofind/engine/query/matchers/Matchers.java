@@ -103,6 +103,26 @@ public final class Matchers {
 	}
 
 	/**
+	 * Match a value inside any of the given ranges.
+	 *
+	 * @param ranges
+	 * @return
+	 */
+	public static RangesMatcher ranges(RangeMatcher... ranges) {
+		return RangesMatcher.of(ranges);
+	}
+
+	/**
+	 * Match a value inside any of the given ranges.
+	 *
+	 * @param ranges
+	 * @return
+	 */
+	public static RangesMatcher ranges(Iterable<? extends RangeMatcher> ranges) {
+		return RangesMatcher.of(ranges);
+	}
+
+	/**
 	 * Match a value starting with the given prefix.
 	 *
 	 * @param value

@@ -131,11 +131,15 @@ Anything that runs against a single value may sit inside - `field`, `text`,
 refused with `index:query:nested:unsupported_clause`. Empty `clauses` ask only
 that the document holds a value at all.
 
-Conditions on values belong in `query`. A filter is a condition on a single
-field of the index and never reaches inside an object, so a refinement over
-variants is a `nested` clause in `query` too - and it narrows every facet
-count along with the hits, rather than being left out of the counts of its own
-field the way [a filter is](../reference/search-api.md#facets).
+Where a condition on values goes decides what the facet counts say, the same
+way it does for fields of the index. The scope of the page - the search box,
+"only in stock" - is a `nested` clause in `query`, narrowing every count
+along with the hits. A refinement the user ticked is a `nested` clause in
+`filters`, which a facet on the field it reads leaves out of its counts - so
+ticking `red` keeps the other colours pickable. Tick each facet's field as an
+entry of its own: an entry is excluded whole, so colour and price fused into
+one clause can only be left out together - see
+[Facets](../reference/search-api.md#facets).
 
 Results are documents unless asked otherwise. A hit carries the whole field,
 the values that matched and the ones that did not alike. A UI showing which

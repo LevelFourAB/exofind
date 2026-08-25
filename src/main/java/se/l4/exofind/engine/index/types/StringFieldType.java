@@ -77,6 +77,7 @@ import se.l4.exofind.engine.query.matchers.InMatcher;
 import se.l4.exofind.engine.query.matchers.Matcher;
 import se.l4.exofind.engine.query.matchers.PrefixMatcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
+import se.l4.exofind.engine.query.matchers.RangesMatcher;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
 import se.l4.exofind.engine.query.matchers.UnderMatcher;
 
@@ -784,19 +785,21 @@ public class StringFieldType implements FieldType {
 		}
 
 		if(matcher instanceof RangeMatcher m) {
-			/*
-			 * Bounded by the bytes of the value as it is filtered on, not by
-			 * the collation ordering results uses - a range is between two
-			 * values a caller wrote, and it holds whatever falls between them
-			 * however the locale would have sorted it.
-			 */
-			return new TermRangeQuery(
-				filterName(encounter),
-				bound(encounter, m.lower()),
-				bound(encounter, m.upper()),
-				m.lowerInclusive(),
-				m.upperInclusive()
-			);
+			return rangeQuery(encounter, m);
+		}
+
+		if(matcher instanceof RangesMatcher m) {
+			if(m.ranges().isEmpty()) {
+				return new MatchNoDocsQuery();
+			}
+
+			var builder = new BooleanQuery.Builder();
+			builder.setMinimumNumberShouldMatch(1);
+			for(var range : m.ranges()) {
+				builder.add(rangeQuery(encounter, range), BooleanClause.Occur.SHOULD);
+			}
+
+			return builder.build();
 		}
 
 		if(matcher instanceof AnyMatcher) {
@@ -809,6 +812,22 @@ public class StringFieldType implements FieldType {
 		}
 
 		throw new IndexInvalidQueryTypeException("string", matcher.id());
+	}
+
+	private Query rangeQuery(IndexEncounter encounter, RangeMatcher m) {
+		/*
+		 * Bounded by the bytes of the value as it is filtered on, not by the
+		 * collation ordering results uses - a range is between two values a
+		 * caller wrote, and it holds whatever falls between them however the
+		 * locale would have sorted it.
+		 */
+		return new TermRangeQuery(
+			filterName(encounter),
+			bound(encounter, m.lower()),
+			bound(encounter, m.upper()),
+			m.lowerInclusive(),
+			m.upperInclusive()
+		);
 	}
 
 	@Override

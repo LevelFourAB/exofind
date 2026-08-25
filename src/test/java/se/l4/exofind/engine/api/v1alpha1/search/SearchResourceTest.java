@@ -290,7 +290,7 @@ public class SearchResourceTest {
 			"books",
 			new SearchRequest(
 				null, null,
-				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
+				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
@@ -322,7 +322,7 @@ public class SearchResourceTest {
 							new SearchRequest.Facet.Range(null, 100),
 							new SearchRequest.Facet.Range(100, 200),
 							new SearchRequest.Facet.Range(200, null)
-						), null, null
+						), null, null, null
 					)
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
@@ -350,7 +350,7 @@ public class SearchResourceTest {
 			"catalogue",
 			new SearchRequest(
 				null, null,
-				List.of(new SearchRequest.Facet(null, "category", null, null, null, "Men", 2)),
+				List.of(new SearchRequest.Facet(null, "category", null, null, null, "Men", 2, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
@@ -391,7 +391,7 @@ public class SearchResourceTest {
 			"books",
 			new SearchRequest(
 				null, null,
-				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
+				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
@@ -421,11 +421,11 @@ public class SearchResourceTest {
 			new SearchRequest(
 				null,
 				List.of(
-					new SearchRequest.Filter("category", new Matcher.In(List.of("fiction")))
+					new Clause.Field("category", new Matcher.In(List.of("fiction")))
 				),
 				List.of(
-					new SearchRequest.Facet(null, "category", null, null, null, null, null),
-					new SearchRequest.Facet(null, "published", null, null, null, null, null)
+					new SearchRequest.Facet(null, "category", null, null, null, null, null, null),
+					new SearchRequest.Facet(null, "published", null, null, null, null, null, null)
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			)
@@ -455,7 +455,7 @@ public class SearchResourceTest {
 				"books",
 				new SearchRequest(
 					null, null,
-					List.of(new SearchRequest.Facet(null, "tags", null, null, null, null, null)),
+					List.of(new SearchRequest.Facet(null, "tags", null, null, null, null, null, null)),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
 				)
 			)

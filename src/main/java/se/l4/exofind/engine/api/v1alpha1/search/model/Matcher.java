@@ -35,12 +35,13 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = Matcher.Prefix.class, name = "prefix"),
 	@JsonSubTypes.Type(value = Matcher.Under.class, name = "under"),
 	@JsonSubTypes.Type(value = Matcher.Range.class, name = "range"),
+	@JsonSubTypes.Type(value = Matcher.Ranges.class, name = "ranges"),
 	@JsonSubTypes.Type(value = Matcher.Text.class, name = "text"),
 	@JsonSubTypes.Type(value = Matcher.Distance.class, name = "distance")
 })
 public sealed interface Matcher
 	permits Matcher.Equals, Matcher.In, Matcher.Any, Matcher.Prefix, Matcher.Under,
-		Matcher.Range, Matcher.Text, Matcher.Distance {
+		Matcher.Range, Matcher.Ranges, Matcher.Text, Matcher.Distance {
 	/**
 	 * Match values equal to the given one.
 	 */
@@ -115,6 +116,49 @@ public sealed interface Matcher
 		 */
 		Object lt
 	) implements Matcher {
+	}
+
+	/**
+	 * Match values inside any one of several ranges - what the ticked buckets
+	 * of a range facet turn into, the way ticked values are an `in`. An empty
+	 * list matches nothing, like an empty `in` does.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	record Ranges(
+		/**
+		 * The ranges to look in, a value matching when any one of them holds
+		 * it. Each is written the way a `range` matcher is and needs at least
+		 * one bound - a bucket sent back from a range facet is its `from` as
+		 * `gte` and its `to` as `lt`.
+		 */
+		List<Range> values
+	) implements Matcher {
+		/**
+		 * One range, each side one of an inclusive and an exclusive bound.
+		 */
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		public record Range(
+			/**
+			 * Values have to be this or above it.
+			 */
+			Object gte,
+
+			/**
+			 * Values have to be above this.
+			 */
+			Object gt,
+
+			/**
+			 * Values have to be this or below it.
+			 */
+			Object lte,
+
+			/**
+			 * Values have to be below this.
+			 */
+			Object lt
+		) {
+		}
 	}
 
 	/**

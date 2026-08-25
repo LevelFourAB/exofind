@@ -325,6 +325,140 @@ public class NestedValueSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testNestedFilterOnTheFacetsOwnFieldIsLeftOut() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(
+					Query.nested(
+						"variants",
+						Query.field("variants.color", Matchers.equalTo("red"))
+					)
+				)
+				.addFacet(Facet.of("variants.color"))
+				.build()
+		);
+
+		// The hits are narrowed to the products with a red variant
+		assertThat(result.total().count(), is(3L));
+
+		// While the colour counts still show what the other colours would hold
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("red", 3),
+				new SearchResult.Facet.Value("black", 1),
+				new SearchResult.Facet.Value("blue", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testAnotherNestedFilterStillNarrowsTheCounts() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(
+					Query.nested(
+						"variants",
+						Query.field("variants.color", Matchers.equalTo("red"))
+					)
+				)
+				.addFilter(
+					Query.nested(
+						"variants",
+						Query.field("variants.price", Matchers.atMost(20d))
+					)
+				)
+				.addFacet(Facet.of("variants.color").withOrder(Facet.Order.VALUE))
+				.build()
+		);
+
+		/*
+		 * The colour facet leaves out its own entry and keeps the price entry,
+		 * so the colours counted are those of variants at most 20 - the Ridge
+		 * Boot holds no such variant and takes no part.
+		 */
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("blue", 1),
+				new SearchResult.Facet.Value("red", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testFusedNestedFilterIsLeftOutByTheObjectPath() throws IOException {
+		var index = products();
+
+		/*
+		 * Colour and price fused into one nested clause hold inside the same
+		 * variant, so the entry is one condition on `variants` - the colour
+		 * facet's default exclusion of `variants.color` does not cover it.
+		 */
+		var fused = Query.nested(
+			"variants",
+			Query.field("variants.color", Matchers.equalTo("red")),
+			Query.field("variants.price", Matchers.atLeast(40d))
+		);
+
+		var narrowed = index.search(
+			SearchRequest.create()
+				.addFilter(fused)
+				.addFacet(Facet.of("variants.color"))
+				.build()
+		);
+
+		assertThat(
+			narrowed.facets().get("variants.color").values(),
+			contains(new SearchResult.Facet.Value("red", 1))
+		);
+
+		// Naming the object path is what leaves the fused entry out whole
+		var sideways = index.search(
+			SearchRequest.create()
+				.addFilter(fused)
+				.addFacet(Facet.of("variants.color").withExcludeFilters("variants"))
+				.build()
+		);
+
+		assertThat(
+			sideways.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("red", 3),
+				new SearchResult.Facet.Value("black", 1),
+				new SearchResult.Facet.Value("blue", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testEmptyExcludeFiltersCountsInsideTheNestedFilter() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(
+					Query.nested(
+						"variants",
+						Query.field("variants.color", Matchers.equalTo("red"))
+					)
+				)
+				.addFacet(Facet.of("variants.color").withExcludeFilters())
+				.build()
+		);
+
+		// Nothing is left out, so only the ticked colour is counted
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(new SearchResult.Facet.Value("red", 3))
+		);
+	}
+
+	@Test
 	public void testCountingValuesReadsEveryValueOfOne() throws IOException {
 		var index = products();
 

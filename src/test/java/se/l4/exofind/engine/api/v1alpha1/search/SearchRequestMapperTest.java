@@ -37,6 +37,7 @@ import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
+import se.l4.exofind.engine.query.matchers.RangesMatcher;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
 import se.l4.exofind.engine.query.matchers.UnderMatcher;
 
@@ -794,7 +795,7 @@ public class SearchRequestMapperTest {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
 				null,
-				List.of(new SearchRequest.Filter("category", new Matcher.Equals("fiction"))),
+				List.of(new Clause.Field("category", new Matcher.Equals("fiction"))),
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
@@ -808,11 +809,169 @@ public class SearchRequestMapperTest {
 	}
 
 	@Test
+	public void testNestedFilterBecomesANestedQuery() {
+		var mapped = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null,
+				List.of(new Clause.Nested(
+					"variants",
+					List.of(new Clause.Field("variants.color", new Matcher.Equals("red"))),
+					null
+				)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null, null
+			),
+			MAX_DEPTH
+		);
+
+		assertThat(
+			mapped.request().filters().castToList(),
+			contains(NestedQuery.of(
+				"variants",
+				new FieldQuery("variants.color", new EqualsMatcher("red"))
+			))
+		);
+	}
+
+	@Test
+	public void testFilterThatIsNotAFieldOrNestedClauseIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null,
+					List.of(new Clause.Or(List.of())),
+					null, null, null, null, null, null, null, null, null, null, null, null, null, null
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:filter:clause_invalid"));
+		assertThat(pathsOf(e), contains("/filters/0"));
+	}
+
+	@Test
+	public void testFilterThatScoresIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null,
+					List.of(new Clause.Nested(
+						"variants",
+						List.of(new Clause.Text(
+							"waterproof", null, null, null, null, null, null, null
+						)),
+						null
+					)),
+					null, null, null, null, null, null, null, null, null, null, null, null, null, null
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:filter:scores"));
+		assertThat(pathsOf(e), contains("/filters/0"));
+	}
+
+	@Test
+	public void testRangesMatcherCarriesEveryRange() {
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(new Clause.Field("price", new Matcher.Ranges(List.of(
+				new Matcher.Ranges.Range(10, null, null, 20),
+				new Matcher.Ranges.Range(50, null, null, null)
+			)))),
+			MAX_DEPTH
+		);
+
+		var query = (FieldQuery) mapped.request().query().get(0);
+		assertThat(query.matcher(), is(RangesMatcher.of(
+			new RangeMatcher(10, true, 20, false),
+			new RangeMatcher(50, true, null, false)
+		)));
+	}
+
+	@Test
+	public void testEmptyRangesMatcherIsAllowed() {
+		// An empty list matches nothing, which the engine has an opinion on - not the API
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(new Clause.Field("price", new Matcher.Ranges(List.of()))),
+			MAX_DEPTH
+		);
+
+		var query = (FieldQuery) mapped.request().query().get(0);
+		assertThat(query.matcher(), is(new RangesMatcher(Lists.immutable.empty())));
+	}
+
+	@Test
+	public void testRangesMatcherProblemsAreCollectedPerRange() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(new Clause.Field("price", new Matcher.Ranges(List.of(
+					new Matcher.Ranges.Range(10, 10, null, null),
+					new Matcher.Ranges.Range(null, null, null, null)
+				)))),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(
+			codesOf(e),
+			contains("search:matcher:range_conflicting", "search:matcher:range_empty")
+		);
+		assertThat(
+			pathsOf(e),
+			contains("/query/0/match/values/0", "/query/0/match/values/1")
+		);
+	}
+
+	@Test
+	public void testFacetCarriesExcludeFilters() {
+		var mapped = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null, null,
+				List.of(new SearchRequest.Facet(
+					null, "price", null, null, null, null, null,
+					List.of("price", "sale_price")
+				)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null
+			),
+			MAX_DEPTH
+		);
+
+		assertThat(
+			mapped.request().facets().get(0).excludeFilters(),
+			is(Lists.immutable.of("price", "sale_price"))
+		);
+	}
+
+	@Test
+	public void testBlankExcludeFiltersPathIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null, null,
+					List.of(new SearchRequest.Facet(
+						null, "price", null, null, null, null, null, List.of(" ")
+					)),
+					null, null, null, null, null, null, null, null, null, null, null, null, null
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:facet:exclude_filters_invalid"));
+		assertThat(pathsOf(e), contains("/facets/0/excludeFilters/0"));
+	}
+
+	@Test
 	public void testFacetFillsInTheDefaults() {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
 				null, null,
-				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
+				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
@@ -822,6 +981,7 @@ public class SearchRequestMapperTest {
 		assertThat(facet.name(), is("category"));
 		assertThat(facet.limit(), is(Facet.DEFAULT_LIMIT));
 		assertThat(facet.order(), is(Facet.Order.COUNT));
+		assertThat(facet.excludeFilters(), is(Lists.immutable.of("category")));
 	}
 
 	@Test
@@ -831,7 +991,7 @@ public class SearchRequestMapperTest {
 				null, null,
 				List.of(
 					new SearchRequest.Facet(
-						"alpha", "category", 5, SearchRequest.Facet.Order.VALUE, null, null, null
+						"alpha", "category", 5, SearchRequest.Facet.Order.VALUE, null, null, null, null
 					)
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
@@ -850,7 +1010,7 @@ public class SearchRequestMapperTest {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
 				null, null,
-				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
+				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
@@ -868,7 +1028,7 @@ public class SearchRequestMapperTest {
 				null, null,
 				List.of(
 					new SearchRequest.Facet(
-						null, "category", null, null, null, "Men/Shoes", 3
+						null, "category", null, null, null, "Men/Shoes", 3, null
 					)
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
@@ -889,13 +1049,13 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 					null, null,
 					List.of(
-						new SearchRequest.Facet(null, "category", null, null, null, " ", null),
+						new SearchRequest.Facet(null, "category", null, null, null, " ", null, null),
 						new SearchRequest.Facet(
-							"deep", "category", null, null, null, null, Facet.MAX_DEPTH + 1
+							"deep", "category", null, null, null, null, Facet.MAX_DEPTH + 1, null
 						),
 						new SearchRequest.Facet(
 							"bucketed", "price", null, null,
-							List.of(new SearchRequest.Facet.Range(0, 10)), "Men", null
+							List.of(new SearchRequest.Facet.Range(0, 10)), "Men", null, null
 						)
 					),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
@@ -959,7 +1119,7 @@ public class SearchRequestMapperTest {
 						List.of(
 							new SearchRequest.Facet.Range(null, 100.0),
 							new SearchRequest.Facet.Range(100.0, null)
-						), null, null
+						), null, null, null
 					)
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
@@ -984,18 +1144,18 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 					null, null,
 					List.of(
-						new SearchRequest.Facet(null, "price", null, null, List.of(), null, null),
+						new SearchRequest.Facet(null, "price", null, null, List.of(), null, null, null),
 						new SearchRequest.Facet(
 							"limited", "price", 5, null,
-							List.of(new SearchRequest.Facet.Range(0, 10)), null, null
+							List.of(new SearchRequest.Facet.Range(0, 10)), null, null, null
 						),
 						new SearchRequest.Facet(
 							"ordered", "price", null, SearchRequest.Facet.Order.VALUE,
-							List.of(new SearchRequest.Facet.Range(0, 10)), null, null
+							List.of(new SearchRequest.Facet.Range(0, 10)), null, null, null
 						),
 						new SearchRequest.Facet(
 							"unbounded", "price", null, null,
-							List.of(new SearchRequest.Facet.Range(null, null)), null, null
+							List.of(new SearchRequest.Facet.Range(null, null)), null, null, null
 						)
 					),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
@@ -1031,12 +1191,12 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
 					null,
-					List.of(new SearchRequest.Filter(null, null)),
+					List.of(new Clause.Field(null, null)),
 					List.of(
-						new SearchRequest.Facet(null, null, null, null, null, null, null),
-						new SearchRequest.Facet(" ", "category", 0, null, null, null, null),
-						new SearchRequest.Facet(null, "published", null, null, null, null, null),
-						new SearchRequest.Facet("published", "tags", null, null, null, null, null)
+						new SearchRequest.Facet(null, null, null, null, null, null, null, null),
+						new SearchRequest.Facet(" ", "category", 0, null, null, null, null, null),
+						new SearchRequest.Facet(null, "published", null, null, null, null, null, null),
+						new SearchRequest.Facet("published", "tags", null, null, null, null, null, null)
 					),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),

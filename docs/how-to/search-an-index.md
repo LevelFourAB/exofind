@@ -94,9 +94,9 @@ what makes the category list keep showing the other categories while
 
 The counts come back under `facets`, keyed by name - `values` for a value
 facet, `buckets` for one given `ranges`. Either can be sent straight back as
-a filter on the same field, a value as it came back and a bucket's bounds as
-a `range`, so rendering a checkbox and handling the click need no mapping
-between them.
+one filter on the same field - ticked values through an `in`, ticked buckets
+through a `ranges` matcher with each `from` as `gte` and each `to` as `lt` -
+so rendering a checkbox and handling the click need no mapping between them.
 
 A search with `"limit": 0` and facets refreshes the counts without fetching
 hits, which is what a filtering UI asks for when only the counts changed.

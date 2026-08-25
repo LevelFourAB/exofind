@@ -27,9 +27,15 @@ import org.eclipse.collections.api.set.ImmutableSet;
  *   document, which is what an unfiltered listing is
  * @param filters
  *   the ticked refinements of a filtering UI, kept apart from the query
- *   because facets are counted sideways of them - a facet leaves the filters
- *   on its own field out of its counts, while a clause in the query narrows
- *   every count. Hits have to satisfy filters and query alike
+ *   because facets are counted sideways of them - a facet leaves the entries
+ *   it {@link Facet#excludes(String) excludes} out of its counts, by default
+ *   the ones on its own field, while a clause in the query narrows every
+ *   count. Only {@link FieldQuery field} and {@link NestedQuery nested}
+ *   clauses may sit here - a condition on a field inside an object is a
+ *   {@code nested} clause naming it - and no entry may rank, so ticking a
+ *   filter never reshuffles the results. Exclusion is per entry, so tick
+ *   each facet's field as an entry of its own, several values through one
+ *   matcher. Hits have to satisfy filters and query alike
  * @param facets
  *   what to count the matches per value of, empty for no counting. Each
  *   facet's counts are keyed by its name in the result
@@ -84,7 +90,7 @@ import org.eclipse.collections.api.set.ImmutableSet;
  */
 public record SearchRequest(
 	ImmutableList<Query> query,
-	ImmutableList<FieldQuery> filters,
+	ImmutableList<Query> filters,
 	ImmutableList<Facet> facets,
 	ImmutableList<SortBy> sort,
 	ImmutableSet<String> fields,
@@ -308,6 +314,21 @@ public record SearchRequest(
 			filters = Lists.immutable.empty();
 		}
 
+		for(var filter : filters) {
+			if(!(filter instanceof FieldQuery) && !(filter instanceof NestedQuery)) {
+				throw new IllegalArgumentException(
+					"A filter is a field or nested clause - a `" + filter.type()
+						+ "` clause scopes the whole search and belongs in the query"
+				);
+			}
+
+			if(filter.scores()) {
+				throw new IllegalArgumentException(
+					"A filter narrows without ranking - clauses that score belong in the query"
+				);
+			}
+		}
+
 		if(facets == null) {
 			facets = Lists.immutable.empty();
 		}
@@ -438,7 +459,7 @@ public record SearchRequest(
 
 	public record Builder(
 		ImmutableList<Query> query,
-		ImmutableList<FieldQuery> filters,
+		ImmutableList<Query> filters,
 		ImmutableList<Facet> facets,
 		ImmutableList<SortBy> sort,
 		ImmutableSet<String> fields,
@@ -494,13 +515,15 @@ public record SearchRequest(
 
 		/**
 		 * Set the ticked refinements hits have to satisfy, replacing any set
-		 * before. Facets are counted sideways of the filters on their own
-		 * field, unlike clauses in the query which narrow every count.
+		 * before. Facets are counted sideways of the filters they exclude,
+		 * unlike clauses in the query which narrow every count. Only
+		 * {@code field} and {@code nested} clauses may sit here, none of them
+		 * ranking.
 		 *
 		 * @param filters
 		 * @return
 		 */
-		public Builder withFilters(FieldQuery... filters) {
+		public Builder withFilters(Query... filters) {
 			return new Builder(
 				query,
 				Lists.immutable.of(filters),
@@ -510,16 +533,18 @@ public record SearchRequest(
 
 		/**
 		 * Set the ticked refinements hits have to satisfy, replacing any set
-		 * before. Facets are counted sideways of the filters on their own
-		 * field, unlike clauses in the query which narrow every count.
+		 * before. Facets are counted sideways of the filters they exclude,
+		 * unlike clauses in the query which narrow every count. Only
+		 * {@code field} and {@code nested} clauses may sit here, none of them
+		 * ranking.
 		 *
 		 * @param filters
 		 * @return
 		 */
-		public Builder withFilters(Iterable<? extends FieldQuery> filters) {
+		public Builder withFilters(Iterable<? extends Query> filters) {
 			return new Builder(
 				query,
-				Lists.immutable.<FieldQuery>ofAll(filters),
+				Lists.immutable.<Query>ofAll(filters),
 				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
@@ -530,7 +555,7 @@ public record SearchRequest(
 		 * @param filter
 		 * @return
 		 */
-		public Builder addFilter(FieldQuery filter) {
+		public Builder addFilter(Query filter) {
 			return new Builder(
 				query,
 				filters.newWith(filter),

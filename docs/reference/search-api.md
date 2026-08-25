@@ -35,7 +35,7 @@ back the first few of them.
 | Property | Meaning |
 |----------|---------|
 | `query` | Clauses a document has to satisfy, all of them - the list is an implicit AND. Left out to match every document. A clause here narrows every facet count, so a search box and the scope it runs in belong here. |
-| `filters` | The refinements a user has ticked, each a condition on a single field. They narrow the hits the way `query` clauses do, but a facet leaves the filters on its own field out of its counts - see [Facets](#facets). |
+| `filters` | The refinements a user has ticked, each a `field` clause or - for a condition inside an object - a `nested` clause. They narrow the hits the way `query` clauses do, but a facet leaves the entries it excludes out of its counts, by default the ones on its own field - see [Facets](#facets). Any other clause kind is refused with `search:filter:clause_invalid`, and an entry that would rank the hits with `search:filter:scores` - a scope belongs in `query`. Send one entry per facet field, several ticked values through one matcher. |
 | `facets` | What to count the matches per value of, see [Facets](#facets). Left out for no counting. |
 | `sort` | The order results come back in. Left out for the best matches first. |
 | `signals` | Values of the documents themselves to take into their relevance, see [Signals](#signals). Left out to rank by the ones the index declares. |
@@ -299,6 +299,7 @@ looked for.
 | `prefix` | `{ "type": "prefix", "value": "EX-" }` | Values starting with the prefix, compared against the whole value rather than the words inside it. |
 | `under` | `{ "type": "under", "path": "Men/Shoes" }` | Values sitting at or below a path of a tree, which is what choosing a category asks for. Only a field defined with [`hierarchy`](field-types.md#string) can answer it. Levels are matched whole, so `Men/Sho` finds nothing where a `prefix` would have found the shoes. |
 | `range` | `{ "type": "range", "gte": 10, "lt": 20 }` | Values between two bounds. Each side is one of an inclusive (`gte`/`lte`) and an exclusive (`gt`/`lt`) bound; either side may be left open, at least one has to be given. |
+| `ranges` | `{ "type": "ranges", "values": [ { "gte": 10, "lt": 20 }, { "gte": 50 } ] }` | Values inside any one of the ranges - what the ticked buckets of a [range facet](#range-buckets) turn into, the way ticked values are an `in`. Each range is written the way `range` is and needs at least one bound; an empty list matches nothing, like an empty `in` does. |
 | `text` | `{ "type": "text", "text": "..." }` | Text matched within one field, analyzed the same way the field was. Carries the same `match`, `prefix`, `typos`, `slop` and `relax` options as the `text` clause. |
 | `distance` | `{ "type": "distance", "lat": 59.3, "lon": 18.1, "radius": 5000 }` | Geo point values within `radius` meters of the origin. |
 
@@ -400,6 +401,7 @@ is not is refused with `index:query:usage_not_enabled`.
 | `ranges` | Buckets to count the matches into instead of per value - see [Range buckets](#range-buckets). Being present is what asks for it, and neither `limit` nor `order` combines with it (`search:facet:ranges_conflicting`). |
 | `path` | The level of the tree to count the children of, for a field whose values are paths - see [Counting down a tree](#counting-down-a-tree). Left out to count from the top. |
 | `depth` | How many levels below `path` to count, between 1 and 10. Defaults to 1. |
+| `excludeFilters` | The field paths whose filter entries are left out of this facet's counts - an entry is left out when the path it names equals one of these or falls under it. Left out for the facet's own field, which is the sideways rule described below. An empty list leaves nothing out, so the counts are exactly the results; more paths widen the scope, for one control backed by several fields. A blank path is refused with `search:facet:exclude_filters_invalid`. |
 
 The response carries the counts under `facets`, keyed by name:
 
@@ -461,20 +463,30 @@ the order they were given, echoing the bounds:
 }
 ```
 
-A bucket can be sent back as a `range` filter on the same field with
-`gte`/`lt`. Ticking one bucket keeps the others countable the same way
-value facets do - see below - but offering several buckets at once needs a
-filter that ORs ranges together, which the filter shape does not have yet.
+Ticked buckets are sent back as one [`ranges`](#matchers) filter on the same
+field, each bucket's `from` as `gte` and its `to` as `lt`. The whole entry
+sits on the facet's field, so ticking buckets keeps the others countable the
+same way value facets do - see below.
+
+```json
+"filters": [
+  { "field": "price", "match": { "type": "ranges", "values": [ { "lt": 100 }, { "gte": 200 } ] } }
+]
+```
 
 What a facet counts is decided by where the conditions of the search sit:
 
 - Everything in `query` narrows every count, the way it narrows the hits.
-- A filter narrows the counts of every facet except the ones on its own
-  field. Ticking `fiction` still shows what the other categories would
-  hold - the counts a filtering UI needs to keep its other options alive -
-  while the hits and every other facet are narrowed by it. Every filter on
-  the field is left out together, and it is the field that decides, not the
-  facet's name.
+- A filter narrows the counts of every facet except the ones that exclude
+  it - by default, the facets on its own field. Ticking `fiction` still
+  shows what the other categories would hold - the counts a filtering UI
+  needs to keep its other options alive - while the hits and every other
+  facet are narrowed by it. Every filter entry on the field is left out
+  together, it is the field that decides rather than the facet's name, and
+  `excludeFilters` is what changes which entries a facet leaves out.
+- Exclusion is always of whole entries, never of parts of one - the engine
+  never dissects a clause. Conditions ticked separately belong in entries of
+  their own, so each can be left out on its own.
 - A locale specific field is counted in the variant the search reads it in -
   the locale asked for when the field holds it, its default otherwise.
 
@@ -560,11 +572,28 @@ on the path orders by - so counting colours under a search for variants
 below 20 answers the colours of those variants rather than every colour of
 the products they belong to.
 
-Filters name fields of the index and never reach inside an object, so these
-facets have no sideways scope of their own: a `nested` clause narrowing them
-sits in `query` and narrows the counts along with everything else. Range
-buckets work the same way and count a document once however many of its
-values fall in the bucket.
+A condition on a value that a user ticked is a `nested` clause in `filters`,
+and the sideways rule covers it like any other entry: a facet on
+`variants.color` leaves out an entry whose clauses read that field, so
+ticking `red` keeps the other colours countable, while an entry on
+`variants.price` still narrows which values the colours are counted over.
+
+```json
+"filters": [
+  { "type": "nested", "path": "variants",
+    "clauses": [ { "field": "variants.color", "match": { "value": "red" } } ] },
+  { "type": "nested", "path": "variants",
+    "clauses": [ { "field": "variants.price", "match": { "type": "range", "lte": 20 } } ] }
+]
+```
+
+An entry is named by the most specific path covering everything its clauses
+read: the two entries above sit on `variants.color` and `variants.price`,
+excludable one at a time, while colour and price fused into one entry sit on
+`variants` - one inseparable condition, which only a facet excluding
+`variants` leaves out. A `nested` clause in `query` narrows the counts along
+with everything else. Range buckets work the same way and count a document
+once however many of its values fall in the bucket.
 
 ## Highlighting
 

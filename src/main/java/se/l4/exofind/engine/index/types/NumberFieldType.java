@@ -5,7 +5,10 @@ import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DoubleValuesSource;
+import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.util.BytesRef;
@@ -35,6 +38,7 @@ import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.InMatcher;
 import se.l4.exofind.engine.query.matchers.Matcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
+import se.l4.exofind.engine.query.matchers.RangesMatcher;
 
 /**
  * Base for the fields that hold a number.
@@ -207,13 +211,21 @@ public abstract class NumberFieldType implements FieldType {
 		}
 
 		if(matcher instanceof RangeMatcher m) {
-			return rangeQuery(
-				filterName(encounter),
-				m.lower() == null ? null : queryValue(encounter, m.lower()),
-				m.lowerInclusive(),
-				m.upper() == null ? null : queryValue(encounter, m.upper()),
-				m.upperInclusive()
-			);
+			return rangeQuery(encounter, m);
+		}
+
+		if(matcher instanceof RangesMatcher m) {
+			if(m.ranges().isEmpty()) {
+				return new MatchNoDocsQuery();
+			}
+
+			var builder = new BooleanQuery.Builder();
+			builder.setMinimumNumberShouldMatch(1);
+			for(var range : m.ranges()) {
+				builder.add(rangeQuery(encounter, range), BooleanClause.Occur.SHOULD);
+			}
+
+			return builder.build();
 		}
 
 		if(matcher instanceof AnyMatcher) {
@@ -225,6 +237,16 @@ public abstract class NumberFieldType implements FieldType {
 		}
 
 		throw new IndexInvalidQueryTypeException(typeName(), matcher.id());
+	}
+
+	private Query rangeQuery(IndexEncounter encounter, RangeMatcher m) {
+		return rangeQuery(
+			filterName(encounter),
+			m.lower() == null ? null : queryValue(encounter, m.lower()),
+			m.lowerInclusive(),
+			m.upper() == null ? null : queryValue(encounter, m.upper()),
+			m.upperInclusive()
+		);
 	}
 
 	@Override

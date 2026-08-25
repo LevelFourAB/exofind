@@ -57,7 +57,7 @@ public class SearchRequestJsonTest {
 
 		var request = mapper.readValue(json, SearchRequest.class);
 
-		var filter = request.filters().get(0);
+		var filter = (Clause.Field) request.filters().get(0);
 		assertThat(filter.field(), is("category"));
 		assertThat(filter.match(), instanceOf(Matcher.In.class));
 
@@ -71,6 +71,66 @@ public class SearchRequestJsonTest {
 		assertThat(named.name(), is("alpha"));
 		assertThat(named.limit(), is(5));
 		assertThat(named.order(), is(SearchRequest.Facet.Order.VALUE));
+	}
+
+	@Test
+	public void testNestedFilterAndExcludeFilters() throws Exception {
+		var json = """
+			{
+				"filters": [
+					{
+						"type": "nested",
+						"path": "variants",
+						"clauses": [
+							{ "field": "variants.color", "match": { "value": "red" } }
+						]
+					}
+				],
+				"facets": [
+					{ "field": "variants.color", "excludeFilters": ["variants"] }
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var filter = (Clause.Nested) request.filters().get(0);
+		assertThat(filter.path(), is("variants"));
+
+		var inner = (Clause.Field) filter.clauses().get(0);
+		assertThat(inner.field(), is("variants.color"));
+
+		var facet = request.facets().get(0);
+		assertThat(facet.excludeFilters(), is(List.of("variants")));
+	}
+
+	@Test
+	public void testRangesMatcher() throws Exception {
+		var json = """
+			{
+				"filters": [
+					{
+						"field": "price",
+						"match": {
+							"type": "ranges",
+							"values": [ { "gte": 10, "lt": 20 }, { "gte": 50 } ]
+						}
+					}
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var filter = (Clause.Field) request.filters().get(0);
+		var match = (Matcher.Ranges) filter.match();
+		assertThat(
+			match.values(),
+			is(List.of(
+				new Matcher.Ranges.Range(10, null, null, 20),
+				new Matcher.Ranges.Range(50, null, null, null)
+			))
+		);
 	}
 
 	@Test

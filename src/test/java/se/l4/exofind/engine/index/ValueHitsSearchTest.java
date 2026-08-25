@@ -451,6 +451,32 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testFacetOnThePathCountsSidewaysOfANestedFilter() throws IOException {
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withFilters(red())
+				.withHits("variants")
+				.addFacet(Facet.of("variants.color"))
+				.build()
+		);
+
+		// The hits are the red variants
+		assertThat(result.total().count(), is(3L));
+
+		// While the colour counts still cover every variant
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("red", 3),
+				new SearchResult.Facet.Value("black", 1),
+				new SearchResult.Facet.Value("blue", 1)
+			)
+		);
+	}
+
+	@Test
 	public void testFacetOnAnotherPathIsRefused() throws IOException {
 		var index = products();
 

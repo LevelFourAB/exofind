@@ -49,11 +49,18 @@ public record SearchRequest(
 	/**
 	 * The ticked refinements of a filtering UI, each narrowing the results
 	 * the way a {@code query} clause does. Kept apart from the query because
-	 * facets are counted sideways of them: a facet leaves the filters on its
-	 * own field out of its counts, so ticking a category still shows what the
-	 * other categories would hold.
+	 * facets are counted sideways of them: a facet leaves the entries it
+	 * excludes - by default the ones on its own field - out of its counts,
+	 * so ticking a category still shows what the other categories would
+	 * hold.
+	 *
+	 * Only {@code field} and {@code nested} clauses may sit here - a
+	 * condition on a field inside an object is a {@code nested} clause
+	 * naming it - and no entry may rank, so ticking a filter never
+	 * reshuffles the results. Exclusion is per entry: send one entry per
+	 * facet field, several ticked values through one matcher.
 	 */
-	List<Filter> filters,
+	List<Clause> filters,
 
 	/**
 	 * What to count the matches per value of, left out for no counting. The
@@ -160,24 +167,6 @@ public record SearchRequest(
 	}
 
 	/**
-	 * One ticked refinement - always a condition on a single field, which is
-	 * what lets a facet on the same field leave it out of its counts.
-	 */
-	@JsonInclude(JsonInclude.Include.NON_NULL)
-	public record Filter(
-		/**
-		 * Name of the field, as it is called in the definition of the index.
-		 */
-		String field,
-
-		/**
-		 * What to look for in it.
-		 */
-		Matcher match
-	) {
-	}
-
-	/**
 	 * A request to count the matches per value of one field, for building the
 	 * list of filters a user picks from - or into buckets, when {@code ranges}
 	 * is given.
@@ -228,7 +217,17 @@ public record SearchRequest(
 		 * How many levels below `path` to count, left out for one. At most
 		 * 10, and `limit` and `order` apply per level.
 		 */
-		Integer depth
+		Integer depth,
+
+		/**
+		 * The field paths whose filter entries are left out of this facet's
+		 * counts - an entry is left out when the path it names equals one of
+		 * these or falls under it. Left out for the facet's own field, which
+		 * is the sideways rule a filtering UI wants. An empty list leaves
+		 * nothing out, so the counts are exactly the results; more paths
+		 * widen the scope, for one control backed by several fields.
+		 */
+		List<String> excludeFilters
 	) {
 		/**
 		 * The order the values of a facet come back in.

@@ -9,6 +9,8 @@ import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DoubleValuesSource;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
@@ -38,6 +40,7 @@ import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.InMatcher;
 import se.l4.exofind.engine.query.matchers.Matcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
+import se.l4.exofind.engine.query.matchers.RangesMatcher;
 
 /**
  * A field holding a point in time.
@@ -147,23 +150,21 @@ public class TimestampFieldType implements FieldType {
 		}
 
 		if(matcher instanceof RangeMatcher m) {
-			var low = m.lower() == null ? Long.MIN_VALUE : queryValue(encounter, m.lower());
-			if(m.lower() != null && !m.lowerInclusive()) {
-				if(low == Long.MAX_VALUE) {
-					return new MatchNoDocsQuery();
-				}
-				low++;
+			return rangeQuery(encounter, m);
+		}
+
+		if(matcher instanceof RangesMatcher m) {
+			if(m.ranges().isEmpty()) {
+				return new MatchNoDocsQuery();
 			}
 
-			var high = m.upper() == null ? Long.MAX_VALUE : queryValue(encounter, m.upper());
-			if(m.upper() != null && !m.upperInclusive()) {
-				if(high == Long.MIN_VALUE) {
-					return new MatchNoDocsQuery();
-				}
-				high--;
+			var builder = new BooleanQuery.Builder();
+			builder.setMinimumNumberShouldMatch(1);
+			for(var range : m.ranges()) {
+				builder.add(rangeQuery(encounter, range), BooleanClause.Occur.SHOULD);
 			}
 
-			return LongPoint.newRangeQuery(filterName(encounter), low, high);
+			return builder.build();
 		}
 
 		if(matcher instanceof AnyMatcher) {
@@ -172,6 +173,26 @@ public class TimestampFieldType implements FieldType {
 		}
 
 		throw new IndexInvalidQueryTypeException("timestamp", matcher.id());
+	}
+
+	private Query rangeQuery(IndexEncounter encounter, RangeMatcher m) {
+		var low = m.lower() == null ? Long.MIN_VALUE : queryValue(encounter, m.lower());
+		if(m.lower() != null && !m.lowerInclusive()) {
+			if(low == Long.MAX_VALUE) {
+				return new MatchNoDocsQuery();
+			}
+			low++;
+		}
+
+		var high = m.upper() == null ? Long.MAX_VALUE : queryValue(encounter, m.upper());
+		if(m.upper() != null && !m.upperInclusive()) {
+			if(high == Long.MIN_VALUE) {
+				return new MatchNoDocsQuery();
+			}
+			high--;
+		}
+
+		return LongPoint.newRangeQuery(filterName(encounter), low, high);
 	}
 
 	@Override
