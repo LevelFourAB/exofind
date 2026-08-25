@@ -10,6 +10,7 @@ import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.BitSet;
 import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.primitive.LongLists;
 import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.factory.primitive.LongSets;
 import org.eclipse.collections.api.factory.primitive.ObjectLongMaps;
@@ -291,6 +292,286 @@ final class NestedFacets {
 							counted[bucket] = true;
 							counts[bucket]++;
 						}
+					}
+				}
+			}
+		}
+
+		var buckets = Lists.mutable.<SearchResult.Facet.Bucket>empty();
+		var position = 0;
+		for(var range : ranges) {
+			buckets.add(
+				new SearchResult.Facet.Bucket(range.from(), range.to(), counts[position++])
+			);
+		}
+
+		return SearchResult.Facet.ofBuckets(buckets.toImmutable());
+	}
+
+	/**
+	 * Count matched values per value of a field of the index, read off the
+	 * document each one belongs to - what a facet over a field of the index
+	 * answers when the hits of the search are values.
+	 *
+	 * Each matched value is one count, so a brand facet answers how many
+	 * matching variants each brand has - a document with three matching values
+	 * counts three times, once per hit it stands behind. The document's values
+	 * of the counted field are deduplicated within it, the way counting the
+	 * document itself would, so a document naming the same brand twice still
+	 * counts each of its hits once there.
+	 *
+	 * The values of one document sit together and end just before it, so the
+	 * matches of one document arrive together and its doc values are read once
+	 * and reused for the rest of its matches - which is also what keeps the
+	 * forward-only doc values moving forward.
+	 *
+	 * @param matches
+	 *   the values that matched, and what finds the document above each one
+	 * @param field
+	 *   the Lucene field the documents' values were written under
+	 * @param limit
+	 *   how many values to bring back at most
+	 * @param order
+	 *   the order values come back in
+	 * @param decode
+	 *   how a counted term reads back as a value
+	 * @return
+	 * @throws IOException
+	 */
+	static SearchResult.Facet countParentStrings(
+		FacetMatches matches,
+		String field,
+		int limit,
+		Facet.Order order,
+		Function<String, Object> decode
+	) throws IOException {
+		var counts = ObjectLongMaps.mutable.<String>empty();
+
+		for(var docs : matches.hits().getMatchingDocs()) {
+			var context = docs.context();
+			var values = context.reader().getSortedSetDocValues(field);
+			var iterator = docs.bits() == null ? null : docs.bits().iterator();
+			var parents = matches.parents().getBitSet(context);
+			if(values == null || iterator == null || parents == null) {
+				continue;
+			}
+
+			var document = -1;
+			var documentOrds = LongLists.mutable.empty();
+			var byOrdinal = LongLongMaps.mutable.empty();
+
+			for(
+				var doc = iterator.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = iterator.nextDoc()
+			) {
+				if(doc > document) {
+					document = documentOf(parents, doc);
+					if(document == DocIdSetIterator.NO_MORE_DOCS) {
+						break;
+					}
+
+					documentOrds.clear();
+					if(values.advanceExact(document)) {
+						for(var i = 0; i < values.docValueCount(); i++) {
+							documentOrds.add(values.nextOrd());
+						}
+					}
+				}
+
+				for(var i = 0; i < documentOrds.size(); i++) {
+					byOrdinal.addToValue(documentOrds.get(i), 1);
+				}
+			}
+
+			var ordinals = byOrdinal.keySet().toSortedArray();
+			for(var ord : ordinals) {
+				counts.addToValue(
+					values.lookupOrd(ord).utf8ToString(),
+					byOrdinal.get(ord)
+				);
+			}
+		}
+
+		Comparator<ObjectLongPair<String>> byValue =
+			Comparator.comparing(ObjectLongPair::getOne);
+		Comparator<ObjectLongPair<String>> byCount =
+			Comparator.<ObjectLongPair<String>>comparingLong(ObjectLongPair::getTwo)
+				.reversed()
+				.thenComparing(byValue);
+
+		var sorted = counts.keyValuesView()
+			.toSortedList(order == Facet.Order.VALUE ? byValue : byCount);
+
+		return toFacet(
+			sorted.collect(pair -> new SearchResult.Facet.Value(
+				decode.apply(pair.getOne()),
+				pair.getTwo()
+			)),
+			limit,
+			counts.size()
+		);
+	}
+
+	/**
+	 * Count matched values per value of a field of the index written as sorted
+	 * numeric doc values, read off the document each one belongs to. What the
+	 * counting means is {@link #countParentStrings}.
+	 *
+	 * @param matches
+	 *   the values that matched, and what finds the document above each one
+	 * @param field
+	 *   the Lucene field the documents' values were written under
+	 * @param limit
+	 *   how many values to bring back at most
+	 * @param order
+	 *   the order values come back in
+	 * @param decode
+	 *   how a counted number reads back as a value
+	 * @return
+	 * @throws IOException
+	 */
+	static SearchResult.Facet countParentLongs(
+		FacetMatches matches,
+		String field,
+		int limit,
+		Facet.Order order,
+		LongFunction<Object> decode
+	) throws IOException {
+		var counts = LongLongMaps.mutable.empty();
+
+		for(var docs : matches.hits().getMatchingDocs()) {
+			var context = docs.context();
+			var values = context.reader().getSortedNumericDocValues(field);
+			var iterator = docs.bits() == null ? null : docs.bits().iterator();
+			var parents = matches.parents().getBitSet(context);
+			if(values == null || iterator == null || parents == null) {
+				continue;
+			}
+
+			var document = -1;
+			var documentValues = LongLists.mutable.empty();
+
+			for(
+				var doc = iterator.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = iterator.nextDoc()
+			) {
+				if(doc > document) {
+					document = documentOf(parents, doc);
+					if(document == DocIdSetIterator.NO_MORE_DOCS) {
+						break;
+					}
+
+					documentValues.clear();
+					if(values.advanceExact(document)) {
+						/*
+						 * Sorted numeric doc values can repeat a value the
+						 * document gave twice, so the document's values are
+						 * deduplicated as they are read - they arrive sorted,
+						 * which makes the previous one enough to compare with.
+						 */
+						var previous = Long.MIN_VALUE;
+						for(var i = 0; i < values.docValueCount(); i++) {
+							var value = values.nextValue();
+							if(i == 0 || value != previous) {
+								documentValues.add(value);
+							}
+
+							previous = value;
+						}
+					}
+				}
+
+				for(var i = 0; i < documentValues.size(); i++) {
+					counts.addToValue(documentValues.get(i), 1);
+				}
+			}
+		}
+
+		Comparator<LongLongPair> byValue = Comparator.comparingLong(LongLongPair::getOne);
+		Comparator<LongLongPair> byCount =
+			Comparator.<LongLongPair>comparingLong(LongLongPair::getTwo)
+				.reversed()
+				.thenComparing(byValue);
+
+		var sorted = counts.keyValuesView()
+			.toSortedList(order == Facet.Order.VALUE ? byValue : byCount);
+
+		return toFacet(
+			sorted.collect(pair -> new SearchResult.Facet.Value(
+				decode.apply(pair.getOne()),
+				pair.getTwo()
+			)),
+			limit,
+			counts.size()
+		);
+	}
+
+	/**
+	 * Count matched values into buckets over a field of the index, read off
+	 * the document each one belongs to. A value falls in a bucket when any of
+	 * its document's values does, and counts once per bucket however many of
+	 * them do - the same reading {@link #countRanges} gives a document.
+	 *
+	 * @param matches
+	 *   the values that matched, and what finds the document above each one
+	 * @param field
+	 *   the Lucene field the documents' values were written under
+	 * @param ranges
+	 *   the buckets as they were asked for, for echoing their bounds
+	 * @param bounds
+	 *   the same buckets in the encoding the values were written in
+	 * @return
+	 * @throws IOException
+	 */
+	static SearchResult.Facet countParentRanges(
+		FacetMatches matches,
+		String field,
+		ListIterable<Facet.Range> ranges,
+		LongRange[] bounds
+	) throws IOException {
+		var counts = new long[bounds.length];
+
+		for(var docs : matches.hits().getMatchingDocs()) {
+			var context = docs.context();
+			var values = context.reader().getSortedNumericDocValues(field);
+			var iterator = docs.bits() == null ? null : docs.bits().iterator();
+			var parents = matches.parents().getBitSet(context);
+			if(values == null || iterator == null || parents == null) {
+				continue;
+			}
+
+			var document = -1;
+			var inBucket = new boolean[bounds.length];
+
+			for(
+				var doc = iterator.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = iterator.nextDoc()
+			) {
+				if(doc > document) {
+					document = documentOf(parents, doc);
+					if(document == DocIdSetIterator.NO_MORE_DOCS) {
+						break;
+					}
+
+					Arrays.fill(inBucket, false);
+					if(values.advanceExact(document)) {
+						for(var i = 0; i < values.docValueCount(); i++) {
+							var value = values.nextValue();
+							for(var bucket = 0; bucket < bounds.length; bucket++) {
+								if(!inBucket[bucket] && bounds[bucket].accept(value)) {
+									inBucket[bucket] = true;
+								}
+							}
+						}
+					}
+				}
+
+				for(var bucket = 0; bucket < bounds.length; bucket++) {
+					if(inBucket[bucket]) {
+						counts[bucket]++;
 					}
 				}
 			}

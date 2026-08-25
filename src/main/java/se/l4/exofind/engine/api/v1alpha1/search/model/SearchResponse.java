@@ -50,26 +50,51 @@ public record SearchResponse(
 	double tookMs
 ) {
 	/**
-	 * A single document that matched.
+	 * A single result. Usually a document that matched; for a search whose
+	 * `hits` names an object field, one matched value of that field, with
+	 * `index` and `value` present and the document it belongs to under
+	 * `document`.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	public record Hit(
 		/**
 		 * The primary key of the document, left out for an index that has no
-		 * primary key.
+		 * primary key. A hit standing for a value carries the key of the
+		 * document holding it, so several hits share an `id` whenever several
+		 * values of one document matched - the identity of such a hit is `id`
+		 * together with `index`, and deduping by `id` alone is a mistake.
 		 */
 		Object id,
 
 		/**
-		 * How well the document matched, left out when the search computed no
+		 * The position of the value this hit stands for in the field's value
+		 * array as the document gave it, counted from zero. Present only when
+		 * the search asked for value hits.
+		 */
+		Integer index,
+
+		/**
+		 * How well the hit matched, left out when the search computed no
 		 * scores rather than defaulted to something that looks like a value.
+		 * A hit standing for a value scores what its document scored plus
+		 * what the value itself scored under the `nested` clauses of its
+		 * path.
 		 */
 		Float score,
 
 		/**
+		 * The value this hit stands for, as it was given. Present only when
+		 * the search asked for value hits, and left out on an index that
+		 * keeps no copy of its documents.
+		 */
+		@JsonSerialize(using = DocumentSerializer.class)
+		Document value,
+
+		/**
 		 * The fields that were asked for, as they were given. A field with
 		 * several values is an array, and a locale specific field is an
-		 * object keyed by locale tag.
+		 * object keyed by locale tag. For a hit standing for a value, the
+		 * fields of the document holding it.
 		 */
 		@JsonSerialize(using = DocumentSerializer.class)
 		Document document,

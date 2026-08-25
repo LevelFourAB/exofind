@@ -119,6 +119,22 @@ public class QueryCompiler {
 			+ "in `nested` mode, whose values are matched one at a time"
 		);
 
+	private static final ErrorType HITS_NOT_OBJECT = ErrorType
+		.withCode("index:query:hits:not_object")
+		.withArguments("path")
+		.withMessage(
+			"Hits can only stand for the values of an object field in `nested` mode, "
+			+ "whose values are matched one at a time, which `{{path}}` is not"
+		);
+
+	private static final ErrorType HITS_SORT_UNSUPPORTED = ErrorType
+		.withCode("index:query:hits:sort_unsupported")
+		.withArguments("name", "path")
+		.withMessage(
+			"Hits standing for the values of `{{path}}` can be ordered by score or by "
+			+ "a field inside it, which `{{name}}` is not"
+		);
+
 	/**
 	 * The kinds of ordering that can read a value out of the objects of one
 	 * document and order the document by it. Anything else - a distance from an
@@ -868,6 +884,27 @@ public class QueryCompiler {
 	 *   object in {@code nested} mode
 	 */
 	public Field objectField(String name) {
+		return nestedObjectField(name, MATCHED_NOT_OBJECT);
+	}
+
+	/**
+	 * Resolve the object field whose matched values a search asks to be its
+	 * hits, which takes the same shape of field {@link #objectField} does -
+	 * one whose values are matched one at a time.
+	 *
+	 * @param name
+	 * @return
+	 * @throws IndexFieldNotFoundException
+	 *   if the index has no field by the name
+	 * @throws IndexException
+	 *   with {@code index:query:hits:not_object} if the field is not an
+	 *   object in {@code nested} mode
+	 */
+	public Field hitsObjectField(String name) {
+		return nestedObjectField(name, HITS_NOT_OBJECT);
+	}
+
+	private Field nestedObjectField(String name, ErrorType notAnObject) {
 		/*
 		 * A name inside an object resolves through field() with an error
 		 * telling to use a `nested` clause, which is not the mistake made
@@ -875,13 +912,13 @@ public class QueryCompiler {
 		 * whatever the name is of.
 		 */
 		if(schema.getNestedField(name).isPresent()) {
-			throw new IndexException(MATCHED_NOT_OBJECT, "path", name);
+			throw new IndexException(notAnObject, "path", name);
 		}
 
 		var field = schema.getField(name)
 			.orElseThrow(() -> new IndexFieldNotFoundException(name));
 		if(!field.isObject() || !field.isNestedObject()) {
-			throw new IndexException(MATCHED_NOT_OBJECT, "path", name);
+			throw new IndexException(notAnObject, "path", name);
 		}
 
 		return field;
@@ -1565,6 +1602,101 @@ public class QueryCompiler {
 		}
 
 		return sort;
+	}
+
+	/**
+	 * Compile the order hits standing for the values of one object field come
+	 * back in.
+	 *
+	 * The hits are the values themselves - the Lucene documents they were
+	 * written as - so a field inside the path orders them by its plain sort
+	 * field, with nothing standing for anything else: no value is picked to
+	 * stand for a document, and a value without one sorts where the field puts
+	 * a missing value. Anything outside the path is refused - the fields of
+	 * the index are not part of a value, so ordering by one would read the
+	 * value's own documents for a field they do not hold. The tie breakers of
+	 * the index are fields of the index too, and are skipped for the same
+	 * reason.
+	 *
+	 * @param sort
+	 * @param path
+	 *   name of the object field the hits are values of
+	 * @return
+	 *   the order, or {@code null} to leave the best matches first
+	 * @throws IndexException
+	 *   with {@code index:query:hits:sort_unsupported} for a step no value of
+	 *   the path can answer
+	 */
+	public Sort compileChildSort(ListIterable<SortBy> sort, String path) {
+		if(sort.isEmpty()) {
+			return null;
+		}
+
+		var fields = Lists.mutable.<SortField>empty();
+		for(var entry : sort) {
+			fields.add(compileChildSort(entry, path));
+		}
+
+		return new Sort(fields.toArray(new SortField[0]));
+	}
+
+	private SortField compileChildSort(SortBy sort, String path) {
+		return switch(sort) {
+			case ScoreSort s -> new SortField(
+				null,
+				SortField.Type.SCORE,
+				s.order() == SortBy.Order.ASCENDING
+			);
+
+			case FieldSort s -> {
+				var nested = schema.getNestedField(s.field());
+				if(nested.isEmpty()) {
+					if(schema.getField(s.field()).isEmpty()) {
+						throw new IndexFieldNotFoundException(s.field());
+					}
+
+					throw new IndexException(
+						HITS_SORT_UNSUPPORTED,
+						"name", s.field(),
+						"path", path
+					);
+				}
+
+				if(!nested.get().path().equals(path)) {
+					throw new IndexException(
+						FIELD_NOT_IN_PATH,
+						"name", s.field(),
+						"path", path
+					);
+				}
+
+				var field = nested.get().field();
+				if(!field.isSorted()) {
+					throw new IndexFieldUsageException(s.field(), "sort");
+				}
+
+				select(s.field(), field);
+				var ordering = field.getType()
+					.createSortField(encounter, s.order() == SortBy.Order.ASCENDING);
+
+				/*
+				 * The same kinds of ordering a value can stand for a document
+				 * with are the ones a value answers directly - anything else
+				 * was built to read the document rather than the value.
+				 */
+				if(!NESTED_SORT_TYPES.contains(ordering.getType())) {
+					throw new IndexException(NESTED_SORT_UNSUPPORTED, "name", s.field());
+				}
+
+				yield ordering;
+			}
+
+			case GeoDistanceSort s -> throw new IndexException(
+				HITS_SORT_UNSUPPORTED,
+				"name", s.field(),
+				"path", path
+			);
+		};
 	}
 
 	/**

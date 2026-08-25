@@ -360,6 +360,35 @@ public class SearchRequestJsonTest {
 	}
 
 	@Test
+	public void testHitsNamesThePath() throws Exception {
+		var json = """
+			{
+				"hits": { "path": "variants" }
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		assertThat(request.hits(), is(new SearchRequest.Hits("variants", null)));
+	}
+
+	@Test
+	public void testHitsWithFieldsOfTheValues() throws Exception {
+		var json = """
+			{
+				"hits": { "path": "variants", "fields": ["variants.color"] }
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		assertThat(
+			request.hits(),
+			is(new SearchRequest.Hits("variants", List.of("variants.color")))
+		);
+	}
+
+	@Test
 	public void testPagingAndTotal() throws Exception {
 		var json = """
 			{

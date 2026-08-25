@@ -92,6 +92,13 @@ public record SearchRequest(
 	Matched matched,
 
 	/**
+	 * Change what a hit stands for: each matched value of an object field
+	 * becomes a hit of its own, instead of the document holding it. Left out
+	 * for hits that are documents. See {@link Hits}.
+	 */
+	Hits hits,
+
+	/**
 	 * How many results to return. Zero returns how many there are without
 	 * returning any of them.
 	 */
@@ -305,6 +312,38 @@ public record SearchRequest(
 		 * defaults. A field that is not a `nested` object is refused.
 		 */
 		Map<String, MatchedField> fields
+	) {
+	}
+
+	/**
+	 * What a hit stands for, when it is not a document.
+	 *
+	 * With a path given, every matched value of that object field is a hit of
+	 * its own: the total counts values, facets count value hits, and the
+	 * cursors move through values. The query keeps its meaning - clauses on
+	 * the fields of the index still say which documents take part, and
+	 * `nested` clauses on the path still say which of their values matched.
+	 *
+	 * A search whose hits are values can not also ask for `matched` or
+	 * `highlight`, hold a `knn` clause, or sort by distance or by a field of
+	 * the index - it is ordered by score or by fields inside the path.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	public record Hits(
+		/**
+		 * Name of the object field whose matched values are the hits, as it
+		 * is called in the definition of the index. The field has to be an
+		 * object in `nested` mode.
+		 */
+		String path,
+
+		/**
+		 * The fields of each value to bring back, named by their dotted
+		 * paths, left out for all of them. A name that is not inside the
+		 * object, or any name on an index that keeps no copy of its
+		 * documents, is refused.
+		 */
+		List<String> fields
 	) {
 	}
 

@@ -70,8 +70,20 @@ public interface FacetCounter {
 				return new SearchResult.Facet(Lists.immutable.empty(), 0);
 			}
 
-			if(matches.isNested()) {
-				return NestedFacets.countStrings(matches, field, limit, order, decode);
+			/*
+			 * DOCUMENTS and VALUES both count each match as it comes - the
+			 * modes only differ in what a match is - so both are left to
+			 * Lucene's counting.
+			 */
+			switch(matches.mode()) {
+				case ROLLED_UP -> {
+					return NestedFacets.countStrings(matches, field, limit, order, decode);
+				}
+				case PARENTS_BY_VALUE -> {
+					return NestedFacets.countParentStrings(matches, field, limit, order, decode);
+				}
+				default -> {
+				}
 			}
 
 			var counts = new StringValueFacetCounts(
@@ -103,8 +115,15 @@ public interface FacetCounter {
 	 */
 	static FacetCounter overLongs(String field, LongFunction<Object> decode) {
 		return (reader, matches, limit, order) -> {
-			if(matches.isNested()) {
-				return NestedFacets.countLongs(matches, field, limit, order, decode);
+			switch(matches.mode()) {
+				case ROLLED_UP -> {
+					return NestedFacets.countLongs(matches, field, limit, order, decode);
+				}
+				case PARENTS_BY_VALUE -> {
+					return NestedFacets.countParentLongs(matches, field, limit, order, decode);
+				}
+				default -> {
+				}
 			}
 
 			var counts = new LongValueFacetCounts(field, matches.hits());

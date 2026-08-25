@@ -53,7 +53,7 @@ problem is in:
 | `index:update:*` | A document being refused while indexing | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
 | `index:source:*` | The copy of a document as it was given being needed and not there | `index:source:not_kept`, `index:source:unreadable` |
 | `index:query:*` | A query asking an index for something it does not have | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept` |
-| `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:facet:*`, `search:signal:*` | A malformed part of a search request | `search:clause:field_required`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:facet:duplicate_name`, `search:signal:shape_invalid` |
+| `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:signal:*` | A malformed part of a search request | `search:clause:field_required`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:hits:path_required`, `search:facet:duplicate_name`, `search:signal:shape_invalid` |
 | `search:cursor:*`, `search:page*` | Paging | `search:cursor:sort_mismatch`, `search:page:too_deep` |
 | Other `index:*` | The index itself | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
 
@@ -86,7 +86,9 @@ The codes worth handling specially in a client:
 - `search:page:too_deep` - the offset asked for is past
   `SEARCH_MAX_PAGE_DEPTH`. Follow `next`/`previous` cursors instead.
 - `search:cursor:sort_mismatch` - a cursor was used under a different sort
-  than it was handed out under.
+  than it was handed out under, or under hits standing for something else -
+  a position among the values of an object field names nothing among
+  documents, and the other way around.
 - `index:definition:unrepresentable` - the definition the index holds was
   written by a version of the API that can describe more than this one, and
   a `PUT` here would drop what it cannot see. Answered as `409`; send the
@@ -100,8 +102,9 @@ The codes worth handling specially in a client:
   an index keeping no copy of its documents answers this as well.
 - `index:query:source_not_kept` - `fields` names an object, or something
   inside one, on an index whose `source` is `none` - whether at the top of
-  the search or inside a `matched` entry. An object holds no value of its
-  own to store, so only the copy of the document could return it.
+  the search, inside a `matched` entry or on `hits`. An object holds no
+  value of its own to store, so only the copy of the document could return
+  it.
 - `index:source:not_kept` - changing part of a document on an index whose
   `source` is `none`, or on a document indexed while it was. There is
   nothing to merge the change into, so the document has to be sent whole.

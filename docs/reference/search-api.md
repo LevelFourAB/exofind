@@ -43,6 +43,7 @@ back the first few of them.
 | `fields` | Fields to bring back with each result. A field inside an [`object`](field-types.md#object) is named by its dotted path and comes back inside the object, which then holds only the fields that were asked for. Naming a field the index has no way to return is refused, see [Document source](field-types.md#document-source). Left out for every stored field. The primary key is always included. |
 | `highlight` | Fields to return highlighted fragments for, see [Highlighting](#highlighting). Left out for none. |
 | `matched` | Object fields to say which values of matched with each hit, see [Matched values](#matched-values). Left out for none. |
+| `hits` | What a hit stands for: name an object field and each of its matched values is a hit of its own, see [What a hit stands for](#what-a-hit-stands-for). Left out for hits that are documents. |
 | `limit` | How many results to return. Defaults to 10. `0` answers only how many there are. |
 | `offset` | How many results to skip. At most one of `offset`, `after` and `before` is given. |
 | `after` | Cursor to continue after, from the `next` of a previous response. |
@@ -671,6 +672,94 @@ document without any answers `totalValues` of 0.
 Elsewhere this is what "inner hits" answer, put beside the hit rather than
 inside the query.
 
+## What a hit stands for
+
+A hit is usually a document. `hits` makes each matched value of a `nested`
+[`object` field](field-types.md#object) a hit of its own instead - a
+catalogue of products with variants answers a page of variants, each knowing
+which product it belongs to:
+
+```json
+"hits": { "path": "variants" }
+```
+
+The clauses keep their meaning: clauses on the fields of the index still say
+which documents take part, and `nested` clauses on the path still say which
+of their values matched - a search that asks nothing of the values answers
+every value of every matching document. What changes is the unit of the
+answer: the total counts values, facets count value hits, and the cursors
+move through values. A field that is not an object in `nested` mode is
+refused with `index:query:hits:not_object`.
+
+| Option | Meaning |
+|--------|---------|
+| `path` | Name of the object field whose matched values are the hits. Required. |
+| `fields` | The fields of each value to bring back, named by their dotted paths the way every field inside an object is - `["variants.color"]` answers each hit's `value` as only its colour. Left out for the values whole. |
+
+A name in `fields` that is not led by the path is refused with
+`search:hits:field_not_inside`, and one the object does not hold with
+`index:query:field_not_found`. On an index whose [document
+source](field-types.md#document-source) is `none` naming any is refused with
+`index:query:source_not_kept`, as there is nothing to return the values
+from.
+
+Each hit carries the value and where it came from:
+
+```json
+{
+  "id": "9781234567890",
+  "index": 2,
+  "score": 8.42,
+  "value": { "color": "red", "size": "M", "price": 19.5 },
+  "document": { "name": "Trail Tee", "brand": "Ridge" }
+}
+```
+
+- `id` - the primary key of the document holding the value, so several hits
+  share an `id` whenever several values of one document matched. The
+  identity of a value hit is `id` together with `index` - deduping by `id`
+  alone merges hits that stand for different values.
+- `index` - the position of the value in the field's value array as the
+  document gave it, counted from zero.
+- `value` - the value itself, as it was given - cut down to the fields
+  asked for when the `hits` option named some. Left out on an index whose
+  [document source](field-types.md#document-source) is `none`, which keeps
+  no copy to read it from.
+- `document` - the fields of the document holding the value, per the
+  search's `fields` - what an ordinary hit's `document` holds. The two
+  selections are independent: the search's `fields` cuts `document`, the
+  `hits` option's cuts `value`.
+
+A hit scores what its document scored - [signals](#signals) included - plus
+what the value itself scored under the `nested` clauses of its path, so a
+page of variants is ordered by product relevance with the best matching
+variant of each first. A `sort` may order by score or by fields inside the
+path - `[{ "field": "variants.price" }]` is a page of the cheapest matching
+variants. Anything else is refused: a field of the index with
+`index:query:hits:sort_unsupported`, a distance sort with
+`search:hits:distance_sort`. The tie breakers of the index are fields of the
+index too, and are skipped.
+
+Facets count value hits. A facet on a field inside the path counts the
+matched values directly - three matching red variants count as three,
+however few products hold them - and one on a field of the index counts each
+value hit into what its document says there, so a brand facet answers how
+many matching variants each brand has. A facet on a field inside another
+object is refused with `index:query:hits:facet_unsupported`.
+
+[Relaxing](#finding-something-rather-than-nothing), `pages` and both kinds
+of cursor work as they do for documents. A cursor is tied to what a hit
+stands for the way it is tied to the sort, so one taken among values never
+resumes among documents or under another path
+(`search:cursor:sort_mismatch`).
+
+`hits` does not combine with `matched` - once the hits are the matched
+values, `matched` would ask a hit about itself
+(`search:hits:with_matched`) - nor with `highlight`
+(`search:hits:with_highlight`) or a `knn` clause (`search:hits:with_knn`).
+
+## Response
+
 ```json
 {
   "hits": [
@@ -697,7 +786,9 @@ inside the query.
   name to a list of fragments - a field the hit holds no match in is left
   out of it, so a hit nothing matched carries `{}`. `matched` is present
   whenever [matched values](#matched-values) were asked for, with an entry
-  per field asked about.
+  per field asked about. `index` and `value` are present when the search
+  asked for [value hits](#what-a-hit-stands-for), where `document` holds the
+  fields of the document the value belongs to.
 - `total` - how many documents matched. `exact` says whether `count` is the
   whole number or at least that many.
 - `facets` - the counts per value asked for, keyed by the name of each

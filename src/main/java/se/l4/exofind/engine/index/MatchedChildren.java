@@ -204,4 +204,124 @@ final class MatchedChildren {
 	static Matches none() {
 		return new Matches(NO_ORDINALS, NO_SCORES);
 	}
+
+	/**
+	 * Where one value of a path sits: the document it belongs to, and its
+	 * position among that document's values of the path.
+	 *
+	 * @param parent
+	 *   Lucene id of the document holding the value
+	 * @param ordinal
+	 *   position of the value among the document's values of the path, counted
+	 *   from zero in the order the document gave them - the index into what the
+	 *   copy of the document holds for the path
+	 */
+	record Location(int parent, int ordinal) {
+	}
+
+	/**
+	 * Work out where each of the given values sits, for a page of hits that
+	 * are the values themselves.
+	 *
+	 * The walk is the same single forward pass per segment {@link #find} makes,
+	 * turned around: instead of starting from documents and finding their
+	 * matching values, it starts from the values and finds the document above
+	 * each one, counting the children of the path passed on the way to know
+	 * the position.
+	 *
+	 * @param searcher
+	 * @param parents
+	 *   the documents of the index per segment, which is what tells where the
+	 *   block of each one starts and ends
+	 * @param path
+	 *   name of the object field the values belong to, for telling its
+	 *   children apart from the children of other paths
+	 * @param docIds
+	 *   Lucene ids of the values to answer for, in any order. Every one has to
+	 *   be a value of the path
+	 * @return
+	 *   where each value sits, keyed by its Lucene id
+	 * @throws IOException
+	 */
+	static IntObjectMap<Location> locate(
+		IndexSearcher searcher,
+		BitSetProducer parents,
+		String path,
+		int[] docIds
+	) throws IOException {
+		var result = IntObjectMaps.mutable.<Location>empty();
+		if(docIds.length == 0) {
+			return result;
+		}
+
+		var ordered = docIds.clone();
+		Arrays.sort(ordered);
+
+		var pathTerm = new BytesRef(path);
+		var position = 0;
+
+		for(var context : searcher.getIndexReader().leaves()) {
+			var leafEnd = context.docBase + context.reader().maxDoc();
+			var from = position;
+			while(position < ordered.length && ordered[position] < leafEnd) {
+				position++;
+			}
+
+			if(from == position) {
+				continue;
+			}
+
+			var parentBits = parents.getBitSet(context);
+			var nested = context.reader().getSortedDocValues(FieldNames.NESTED);
+			if(parentBits == null || nested == null) {
+				// Only a segment holding values could have answered them as hits
+				continue;
+			}
+
+			var pathOrd = nested.lookupTerm(pathTerm);
+			if(pathOrd < 0) {
+				continue;
+			}
+
+			var blockStart = -1;
+			var ordinal = 0;
+
+			for(var i = from; i < position; i++) {
+				var value = ordered[i] - context.docBase;
+				var parent = parentBits.nextSetBit(value);
+
+				/*
+				 * The position of a value counts the children of the path in
+				 * front of it, matched or not. Values are visited in order, so
+				 * within one block the count carries over from the value before
+				 * and only the stretch between the two is walked.
+				 */
+				var start = parent == 0 ? 0 : parentBits.prevSetBit(parent - 1) + 1;
+				if(start != blockStart) {
+					blockStart = start;
+					ordinal = 0;
+
+					if(nested.docID() < blockStart) {
+						nested.advance(blockStart);
+					}
+				}
+
+				while(nested.docID() < value) {
+					if(nested.ordValue() == pathOrd) {
+						ordinal++;
+					}
+
+					nested.nextDoc();
+				}
+
+				result.put(ordered[i], new Location(parent + context.docBase, ordinal));
+
+				// The value itself is a child of the path
+				ordinal++;
+				nested.nextDoc();
+			}
+		}
+
+		return result;
+	}
 }

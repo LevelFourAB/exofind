@@ -47,16 +47,32 @@ public record SearchResult(
 	}
 
 	/**
-	 * A single document that matched.
+	 * A single result. What one stands for is the search's to say: a document
+	 * that matched, or - for a search whose {@link SearchRequest#hits()} names
+	 * an object field - one matched value of that field.
 	 *
 	 * @param id
 	 *   the primary key of the document, or {@code null} for an index that has
-	 *   no primary key
+	 *   no primary key. A hit standing for a value carries the key of the
+	 *   document holding it, so several hits share an {@code id} whenever
+	 *   several values of one document matched - the identity of such a hit is
+	 *   {@code id} together with {@code index}
+	 * @param index
+	 *   for a hit standing for a value: the position of the value in the
+	 *   field's value array as the document gave it, counted from zero.
+	 *   {@code null} for a hit standing for a document
 	 * @param score
-	 *   how well the document matched. Only means something when the search
-	 *   held a clause that scores, see {@link Query#scores()}
+	 *   how well the hit matched. Only means something when the search held a
+	 *   clause that scores, see {@link Query#scores()}. A hit standing for a
+	 *   value scores what its document scored plus what the value itself
+	 *   scored under the {@code nested} clauses of its path
 	 * @param document
-	 *   the fields that were asked for, as they were given
+	 *   the fields that were asked for, as they were given - for a hit
+	 *   standing for a value, the fields of the document holding it
+	 * @param value
+	 *   for a hit standing for a value: the value itself, as it was given.
+	 *   {@code null} for a hit standing for a document, and for an index that
+	 *   keeps no copy of its documents, which has no value to hand back
 	 * @param key
 	 *   where the hit sits in the order it came back in, for continuing from
 	 *   it with {@link SearchRequest.Builder#withAfter(SortKey)} or
@@ -73,8 +89,10 @@ public record SearchResult(
 	 */
 	public record Hit(
 		Object id,
+		Integer index,
 		float score,
 		Document document,
+		Document value,
 		SortKey key,
 		ImmutableMap<String, ImmutableList<String>> highlights,
 		ImmutableMap<String, Matched> matched
@@ -87,6 +105,20 @@ public record SearchResult(
 			if(matched == null) {
 				matched = Maps.immutable.empty();
 			}
+		}
+
+		/**
+		 * A hit standing for a document.
+		 */
+		public Hit(
+			Object id,
+			float score,
+			Document document,
+			SortKey key,
+			ImmutableMap<String, ImmutableList<String>> highlights,
+			ImmutableMap<String, Matched> matched
+		) {
+			this(id, null, score, document, null, key, highlights, matched);
 		}
 	}
 

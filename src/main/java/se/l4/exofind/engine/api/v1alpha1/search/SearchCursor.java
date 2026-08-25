@@ -226,7 +226,33 @@ sealed interface SearchCursor {
 	 * @return
 	 */
 	static int fingerprintOf(ListIterable<? extends SortBy> sort) {
+		return fingerprintOf(sort, null);
+	}
+
+	/**
+	 * Fingerprint the effective sort of a search together with what its hits
+	 * stand for.
+	 *
+	 * A search whose hits are the values of an object field keys its
+	 * positions on values, so a cursor taken there names nothing among
+	 * documents and the other way around - even under a sort that reads the
+	 * same. The path is part of the fingerprint so cursors never cross that
+	 * line, and a search whose hits are documents fingerprints exactly as it
+	 * did before there was a line to cross.
+	 *
+	 * @param sort
+	 * @param hitsPath
+	 *   the object field whose values the hits stand for, or {@code null} for
+	 *   hits that are documents
+	 * @return
+	 */
+	static int fingerprintOf(ListIterable<? extends SortBy> sort, String hitsPath) {
 		var description = new StringBuilder();
+
+		if(hitsPath != null) {
+			// The separator below follows, so the prefix reads `values:<path>|`
+			description.append("values:").append(hitsPath);
+		}
 
 		if(sort.isEmpty()) {
 			sort = Lists.immutable.<SortBy>of(ScoreSort.INSTANCE);

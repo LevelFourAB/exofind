@@ -8,6 +8,7 @@ import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.BitSet;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
+import org.eclipse.collections.api.factory.primitive.IntLists;
 import org.eclipse.collections.api.factory.primitive.LongSets;
 import org.eclipse.collections.api.factory.primitive.ObjectLongMaps;
 import org.eclipse.collections.api.list.ImmutableList;
@@ -87,7 +88,7 @@ final class HierarchyFacets {
 			}
 
 			BitSet parents = null;
-			if(matches.isNested()) {
+			if(matches.parents() != null) {
 				parents = matches.parents().getBitSet(context);
 				if(parents == null) {
 					continue;
@@ -122,37 +123,79 @@ final class HierarchyFacets {
 			 */
 			var perSlot = new long[slots];
 
-			var document = -1;
-			var seen = LongSets.mutable.empty();
+			if(matches.mode() == FacetMatches.Mode.PARENTS_BY_VALUE) {
+				/*
+				 * The matches are values of an object field but the levels
+				 * live on the documents holding them, so each match counts
+				 * what its document says. A document's matches arrive
+				 * together, so its levels are read once and reused for the
+				 * rest of them - which also keeps the forward-only doc values
+				 * moving forward.
+				 */
+				var document = -1;
+				var documentSlots = IntLists.mutable.empty();
 
-			for(
-				var doc = iterator.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = iterator.nextDoc()
-			) {
-				if(parents != null && doc > document) {
-					document = documentOf(parents, doc);
-					seen.clear();
+				for(
+					var doc = iterator.nextDoc();
+					doc != DocIdSetIterator.NO_MORE_DOCS;
+					doc = iterator.nextDoc()
+				) {
+					if(doc > document) {
+						document = documentOf(parents, doc);
+						if(document == DocIdSetIterator.NO_MORE_DOCS) {
+							break;
+						}
+
+						documentSlots.clear();
+						if(values.advanceExact(document)) {
+							for(var i = 0; i < values.docValueCount(); i++) {
+								var slot = slotOfOrd[(int) values.nextOrd()];
+								if(slot >= 0) {
+									documentSlots.add(slot);
+								}
+							}
+						}
+					}
+
+					for(var i = 0; i < documentSlots.size(); i++) {
+						perSlot[documentSlots.get(i)]++;
+					}
 				}
+			} else {
+				var document = -1;
+				var seen = LongSets.mutable.empty();
 
-				if(!values.advanceExact(doc)) {
-					continue;
-				}
+				for(
+					var doc = iterator.nextDoc();
+					doc != DocIdSetIterator.NO_MORE_DOCS;
+					doc = iterator.nextDoc()
+				) {
+					if(parents != null && doc > document) {
+						document = documentOf(parents, doc);
+						seen.clear();
+					}
 
-				for(var i = 0; i < values.docValueCount(); i++) {
-					var ord = values.nextOrd();
-					var slot = slotOfOrd[(int) ord];
-					if(slot < 0) {
+					if(!values.advanceExact(doc)) {
 						continue;
 					}
 
-					/*
-					 * The levels of one Lucene document are a set already, so
-					 * only values of an object field can meet the same level
-					 * twice - once per value of the document holding it.
-					 */
-					if(parents == null || seen.add(ord)) {
-						perSlot[slot]++;
+					for(var i = 0; i < values.docValueCount(); i++) {
+						var ord = values.nextOrd();
+						var slot = slotOfOrd[(int) ord];
+						if(slot < 0) {
+							continue;
+						}
+
+						/*
+						 * The levels of one Lucene document are a set already,
+						 * so only values of an object field can meet the same
+						 * level twice - once per value of the document holding
+						 * it. Rolling up is only wanted when the counts are of
+						 * documents; counted as values, every match counts.
+						 */
+						if(parents == null || seen.add(ord)) {
+							perSlot[slot]++;
+						}
 					}
 				}
 			}

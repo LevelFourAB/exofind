@@ -115,4 +115,20 @@ public class SearchCursorTest {
 		assertThat(score, is(not(byName)));
 		assertThat(byName, is(not(byNameDescending)));
 	}
+
+	@Test
+	public void testWhatAHitStandsForIsPartOfTheFingerprint() {
+		var sort = Lists.immutable.of(SortBy.score());
+
+		var documents = SearchCursor.fingerprintOf(sort);
+		var values = SearchCursor.fingerprintOf(sort, "variants");
+		var otherValues = SearchCursor.fingerprintOf(sort, "chunks");
+
+		// A position among values names nothing among documents
+		assertThat(documents, is(not(values)));
+		assertThat(values, is(not(otherValues)));
+
+		// Hits that are documents fingerprint exactly as they always have
+		assertThat(SearchCursor.fingerprintOf(sort, null), is(documents));
+	}
 }

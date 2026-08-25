@@ -292,6 +292,35 @@ public class SearchRequestMapper {
 			.withArguments("field", "path")
 			.withMessage("Field `{{field}}` is not inside `{{path}}` - the fields of the values are named by their dotted paths");
 
+	private static final ErrorType HITS_PATH_REQUIRED =
+		ErrorType.withCode("search:hits:path_required")
+			.withMessage("The name of the object field whose matched values are the hits is required");
+
+	private static final ErrorType HITS_WITH_MATCHED =
+		ErrorType.withCode("search:hits:with_matched")
+			.withMessage("When the hits are the matched values, `matched` would ask a hit about itself - leave it out");
+
+	private static final ErrorType HITS_WITH_HIGHLIGHT =
+		ErrorType.withCode("search:hits:with_highlight")
+			.withMessage("Highlighting can not be combined with hits that stand for values");
+
+	private static final ErrorType HITS_WITH_KNN =
+		ErrorType.withCode("search:hits:with_knn")
+			.withMessage("A `knn` clause can not be combined with hits that stand for values");
+
+	private static final ErrorType HITS_DISTANCE_SORT =
+		ErrorType.withCode("search:hits:distance_sort")
+			.withMessage("Hits that stand for values can not be ordered by distance");
+
+	private static final ErrorType HITS_FIELDS_EMPTY =
+		ErrorType.withCode("search:hits:fields_empty")
+			.withMessage("Bringing back only some fields of the values needs at least one field named");
+
+	private static final ErrorType HITS_FIELD_NOT_INSIDE =
+		ErrorType.withCode("search:hits:field_not_inside")
+			.withArguments("field", "path")
+			.withMessage("Field `{{field}}` is not inside `{{path}}` - the fields of the values are named by their dotted paths");
+
 	/**
 	 * The longest a fragment may aim to be. The engine reads whole stored
 	 * values to cut fragments from, so the cap is what keeps a request from
@@ -339,7 +368,7 @@ public class SearchRequestMapper {
 		if(body == null) {
 			body = new SearchRequest(
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-				null
+				null, null
 			);
 		}
 
@@ -355,7 +384,17 @@ public class SearchRequestMapper {
 		}
 
 		var sort = toSort(body.sort(), errors);
-		var fingerprint = SearchCursor.fingerprintOf(sort);
+		var hits = toHits(body, errors);
+
+		/*
+		 * What a hit stands for is part of what a cursor names a position in,
+		 * so it fingerprints with the sort - a cursor taken among values never
+		 * resumes among documents, or the other way around.
+		 */
+		var fingerprint = SearchCursor.fingerprintOf(
+			sort,
+			hits == null ? null : hits.path()
+		);
 
 		var position = resolvePosition(body, fingerprint, errors);
 
@@ -435,6 +474,10 @@ public class SearchRequestMapper {
 
 		if(matched != null) {
 			request = request.withMatched(matched);
+		}
+
+		if(hits != null) {
+			request = request.withHits(hits);
 		}
 
 		return new Mapped(request.build(), fingerprint, pagesMax);
@@ -788,6 +831,123 @@ public class SearchRequestMapper {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Map what a hit stands for, or collect what is wrong with the ask and
+	 * return {@code null}.
+	 *
+	 * Most of what value hits can not combine with is refused here, where the
+	 * shape of the request is on hand: highlighting and {@code matched} have
+	 * no meaning once the hits are the matched values, a {@code knn} clause
+	 * picks the nearest documents and has no per-value reading, and a
+	 * distance sort reads a document. Whether the path itself can answer as
+	 * hits is the index's to judge, when the request runs.
+	 */
+	private static se.l4.exofind.engine.query.SearchRequest.Hits toHits(
+		SearchRequest body,
+		MutableList<ErrorMessage> errors
+	) {
+		if(body.hits() == null) {
+			return null;
+		}
+
+		var path = body.hits().path();
+		if(path == null || path.isBlank()) {
+			errors.add(HITS_PATH_REQUIRED.toMessage(Location.create("/hits/path")));
+			return null;
+		}
+
+		if(body.matched() != null) {
+			errors.add(HITS_WITH_MATCHED.toMessage(Location.create("/matched")));
+		}
+
+		if(body.highlight() != null) {
+			errors.add(HITS_WITH_HIGHLIGHT.toMessage(Location.create("/highlight")));
+		}
+
+		refuseKnn(body.query(), "/query", errors);
+
+		if(body.sort() != null) {
+			for(var i = 0; i < body.sort().size(); i++) {
+				if(body.sort().get(i) instanceof Sort.Distance) {
+					errors.add(
+						HITS_DISTANCE_SORT.toMessage(Location.create("/sort/" + i))
+					);
+				}
+			}
+		}
+
+		var valid = true;
+		var inside = Sets.mutable.<String>empty();
+		var fields = body.hits().fields();
+		if(fields != null) {
+			if(fields.isEmpty()) {
+				// Asking for values with nothing in them can not be meant
+				errors.add(HITS_FIELDS_EMPTY.toMessage(Location.create("/hits/fields")));
+				valid = false;
+			}
+
+			for(var i = 0; i < fields.size(); i++) {
+				var field = fields.get(i);
+				/*
+				 * A field inside an object is named by its dotted path
+				 * everywhere, so a name not led by the path - a bare inner
+				 * name, a field of the document, a blank - is a mistake
+				 * that needs no index to judge.
+				 */
+				if(field == null || !field.startsWith(path + ".")
+					|| field.length() == path.length() + 1) {
+					errors.add(HITS_FIELD_NOT_INSIDE.toMessage(
+						Location.create("/hits/fields/" + i),
+						"field", field == null ? "" : field,
+						"path", path
+					));
+					valid = false;
+					continue;
+				}
+
+				inside.add(field);
+			}
+		}
+
+		if(!valid) {
+			return null;
+		}
+
+		return new se.l4.exofind.engine.query.SearchRequest.Hits(
+			path,
+			inside.toImmutable()
+		);
+	}
+
+	/**
+	 * Point at every {@code knn} clause of a search whose hits are values.
+	 * Only the branches that can hold one are walked - a {@code knn}'s own
+	 * pre-filter needs no visit, as the clause itself is already refused.
+	 */
+	private static void refuseKnn(
+		List<Clause> clauses,
+		String path,
+		MutableList<ErrorMessage> errors
+	) {
+		if(clauses == null) {
+			return;
+		}
+
+		for(var i = 0; i < clauses.size(); i++) {
+			var at = path + "/" + i;
+			switch(clauses.get(i)) {
+				case Clause.Knn knn ->
+					errors.add(HITS_WITH_KNN.toMessage(Location.create(at)));
+				case Clause.And and -> refuseKnn(and.clauses(), at + "/clauses", errors);
+				case Clause.Or or -> refuseKnn(or.clauses(), at + "/clauses", errors);
+				case Clause.Not not -> refuseKnn(not.clauses(), at + "/clauses", errors);
+				case Clause.Boost boost -> refuseKnn(boost.clauses(), at + "/clauses", errors);
+				case null, default -> {
+				}
+			}
+		}
 	}
 
 	/**

@@ -111,7 +111,9 @@ public class SearchResource {
 			hits.add(
 				new SearchResponse.Hit(
 					hit.id(),
+					hit.index(),
 					scores ? hit.score() : null,
+					hit.value(),
 					hit.document(),
 					/*
 					 * Present whenever highlighting was asked for, so a caller

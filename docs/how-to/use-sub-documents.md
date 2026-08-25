@@ -137,10 +137,10 @@ variants is a `nested` clause in `query` too - and it narrows every facet
 count along with the hits, rather than being left out of the counts of its own
 field the way [a filter is](../reference/search-api.md#facets).
 
-Results are documents, never values. A hit carries the whole field, the values
-that matched and the ones that did not alike. A UI showing which variant
-answered asks for it with `matched`, which brings the values the search
-matched back beside each hit - see [Matched
+Results are documents unless asked otherwise. A hit carries the whole field,
+the values that matched and the ones that did not alike. A UI showing which
+variant answered asks for it with `matched`, which brings the values the
+search matched back beside each hit - see [Matched
 values](../reference/search-api.md#matched-values):
 
 ```json
@@ -157,6 +157,13 @@ values](../reference/search-api.md#matched-values):
 Each value comes back whole. A tile that only shows the colour swatch asks
 for just that field of it, named by its dotted path the way fields inside an
 object always are: `"variants": { "fields": ["variants.color"] }`.
+
+A page that should show every matching variant as a tile of its own - not
+one tile per product - turns the hits into the values instead, with
+`"hits": { "path": "variants" }`. The total, the facets and the cursors are
+then all about values, and a `fields` beside the path cuts each value the
+same way; see [What a hit stands
+for](../reference/search-api.md#what-a-hit-stands-for).
 
 ## Search text inside the values
 

@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -50,7 +51,7 @@ public class SearchRequestMapperTest {
 	private static SearchRequest withQuery(Clause... clauses) {
 		return new SearchRequest(
 			Arrays.asList(clauses),
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null
+			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null
 		);
 	}
 
@@ -352,7 +353,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null,
 				List.of(new Sort.Score(null), new Sort.Field("name", Sort.Order.DESC)),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -368,7 +369,7 @@ public class SearchRequestMapperTest {
 
 	private static SearchRequest withSignals(List<Signal> signals) {
 		return new SearchRequest(
-			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 			signals
 		);
 	}
@@ -461,7 +462,7 @@ public class SearchRequestMapperTest {
 	public void testPagesImplyExactTotal() {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, null, 20, null, null, null,
+				null, null, null, null, null, null, null, null, null, 20, null, null, null,
 				new SearchRequest.Pages(null),
 				null, null
 			),
@@ -494,7 +495,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
+				null, null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -509,7 +510,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
+				null, null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -525,7 +526,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, null, 20, null, null, token, null, null, null
+				null, null, null, null, null, null, null, null, null, 20, null, null, token, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -545,7 +546,7 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 					null, null, null,
 					List.of(new Sort.Field("name", null)),
-					null, null, null, null, null, null, token, null, null, null, null
+					null, null, null, null, null, null, null, token, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -568,7 +569,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null,
 				List.of(new Sort.Field("name", null)),
-				null, null, null, null, null, null, token, null, null, null, null
+				null, null, null, null, null, null, null, token, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -583,7 +584,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, null, 10, null, token, null, null, null, null
+				null, null, null, null, null, null, null, null, null, 10, null, token, null, null, null, null
 			),
 			10
 		);
@@ -599,7 +600,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-					null, null, null, null, null, null, null, null, 10, null, token, null,
+					null, null, null, null, null, null, null, null, null, 10, null, token, null,
 					new SearchRequest.Pages(null),
 					null, null
 				),
@@ -617,7 +618,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-					null, null, null, null, null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null, null, null, null, null,
 					"??not-a-cursor??", null, null, null
 				),
 				MAX_DEPTH
@@ -634,7 +635,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-				null, null, null, null, null, null, null, null, null, 20, "token", null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, 20, "token", null, null, null, null
 			),
 				MAX_DEPTH
 			)
@@ -649,7 +650,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-				null, null, null, null, null, null, null, null, 10, 95, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, 10, 95, null, null, null, null, null
 			),
 				100
 			)
@@ -754,7 +755,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-				null, null, null, null, "xx", null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, "xx", null, null, null, null, null, null, null, null, null, null, null
 			),
 				MAX_DEPTH
 			)
@@ -768,7 +769,7 @@ public class SearchRequestMapperTest {
 	public void testSupportedLocalePassesThrough() {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, "sv", null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, "sv", null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -794,7 +795,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null,
 				List.of(new SearchRequest.Filter("category", new Matcher.Equals("fiction"))),
-				null, null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -812,7 +813,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
-				null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -833,7 +834,7 @@ public class SearchRequestMapperTest {
 						"alpha", "category", 5, SearchRequest.Facet.Order.VALUE, null, null, null
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -850,7 +851,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
-				null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -870,7 +871,7 @@ public class SearchRequestMapperTest {
 						null, "category", null, null, null, "Men/Shoes", 3
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -897,7 +898,7 @@ public class SearchRequestMapperTest {
 							List.of(new SearchRequest.Facet.Range(0, 10)), "Men", null
 						)
 					),
-					null, null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -961,7 +962,7 @@ public class SearchRequestMapperTest {
 						), null, null
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -997,7 +998,7 @@ public class SearchRequestMapperTest {
 							List.of(new SearchRequest.Facet.Range(null, null)), null, null
 						)
 					),
-					null, null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -1037,7 +1038,7 @@ public class SearchRequestMapperTest {
 						new SearchRequest.Facet(null, "published", null, null, null, null, null),
 						new SearchRequest.Facet("published", "tags", null, null, null, null, null)
 					),
-					null, null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -1069,7 +1070,7 @@ public class SearchRequestMapperTest {
 
 	private static SearchRequest withHighlight(SearchRequest.Highlight highlight) {
 		return new SearchRequest(
-			null, null, null, null, null, null, highlight, null, null, null, null, null, null, null, null
+			null, null, null, null, null, null, highlight, null, null, null, null, null, null, null, null, null
 		);
 	}
 
@@ -1176,7 +1177,7 @@ public class SearchRequestMapperTest {
 
 	private static SearchRequest withMatched(SearchRequest.Matched matched) {
 		return new SearchRequest(
-			null, null, null, null, null, null, null, matched, null, null, null, null, null, null, null
+			null, null, null, null, null, null, null, matched, null, null, null, null, null, null, null, null
 		);
 	}
 
@@ -1331,5 +1332,203 @@ public class SearchRequestMapperTest {
 				"/matched/fields/variants/fields/1"
 			)
 		);
+	}
+
+	private static SearchRequest withHits(
+		List<Clause> query,
+		List<Sort> sort,
+		SearchRequest.Highlight highlight,
+		SearchRequest.Matched matched,
+		SearchRequest.Hits hits
+	) {
+		return new SearchRequest(
+			query, null, null, sort, null, null, highlight, matched, hits,
+			null, null, null, null, null, null, null
+		);
+	}
+
+	@Test
+	public void testHitsMapThePath() {
+		var mapped = SearchRequestMapper.toEngine(
+			withHits(null, null, null, null, new SearchRequest.Hits("variants", null)),
+			MAX_DEPTH
+		);
+
+		assertThat(
+			mapped.request().hits(),
+			is(new se.l4.exofind.engine.query.SearchRequest.Hits("variants"))
+		);
+
+		/*
+		 * Cursors are keyed on what a hit stands for, so the same sort
+		 * fingerprints differently once the hits are values.
+		 */
+		var documents = SearchRequestMapper.toEngine(null, MAX_DEPTH);
+		assertThat(mapped.fingerprint(), is(not(documents.fingerprint())));
+	}
+
+	@Test
+	public void testHitsFieldsAreKept() {
+		var mapped = SearchRequestMapper.toEngine(
+			withHits(
+				null, null, null, null,
+				new SearchRequest.Hits(
+					"variants",
+					List.of("variants.color", "variants.price")
+				)
+			),
+			MAX_DEPTH
+		);
+
+		assertThat(
+			mapped.request().hits().fields(),
+			is(Sets.immutable.of("variants.color", "variants.price"))
+		);
+	}
+
+	@Test
+	public void testHitsEmptyFieldsAreRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null, null, null,
+					new SearchRequest.Hits("variants", List.of())
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:fields_empty"));
+		assertThat(pathsOf(e), contains("/hits/fields"));
+	}
+
+	@Test
+	public void testHitsFieldOutsideThePathIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null, null, null,
+					new SearchRequest.Hits(
+						"variants",
+						List.of("color", "badges.label")
+					)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(
+			codesOf(e),
+			contains(
+				"search:hits:field_not_inside",
+				"search:hits:field_not_inside"
+			)
+		);
+		assertThat(
+			pathsOf(e),
+			contains("/hits/fields/0", "/hits/fields/1")
+		);
+	}
+
+	@Test
+	public void testHitsWithoutAPathAreRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(null, null, null, null, new SearchRequest.Hits(" ", null)),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:path_required"));
+		assertThat(pathsOf(e), contains("/hits/path"));
+	}
+
+	@Test
+	public void testHitsWithMatchedAreRefused() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put("variants", null);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null, null,
+					new SearchRequest.Matched(fields),
+					new SearchRequest.Hits("variants", null)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:with_matched"));
+		assertThat(pathsOf(e), contains("/matched"));
+	}
+
+	@Test
+	public void testHitsWithHighlightAreRefused() {
+		var fields = new HashMap<String, SearchRequest.HighlightField>();
+		fields.put("name", null);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null,
+					new SearchRequest.Highlight(fields),
+					null,
+					new SearchRequest.Hits("variants", null)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:with_highlight"));
+		assertThat(pathsOf(e), contains("/highlight"));
+	}
+
+	@Test
+	public void testHitsWithKnnAreRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					List.of(
+						new Clause.Knn("embedding", new float[] { 1f }, 5, null),
+						new Clause.Or(List.of(
+							new Clause.Field("published", new Matcher.Equals(true)),
+							new Clause.Knn("embedding", new float[] { 1f }, 5, null)
+						))
+					),
+					null, null, null,
+					new SearchRequest.Hits("variants", null)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:with_knn", "search:hits:with_knn"));
+		assertThat(pathsOf(e), contains("/query/0", "/query/1/clauses/1"));
+	}
+
+	@Test
+	public void testHitsWithADistanceSortAreRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null,
+					List.of(new Sort.Distance("location", 59.3, 18.1)),
+					null, null,
+					new SearchRequest.Hits("variants", null)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:distance_sort"));
+		assertThat(pathsOf(e), contains("/sort/0"));
 	}
 }

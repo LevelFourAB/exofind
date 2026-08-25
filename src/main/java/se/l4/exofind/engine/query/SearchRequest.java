@@ -48,6 +48,11 @@ import org.eclipse.collections.api.set.ImmutableSet;
  *   the object fields to say which values of matched with each hit, each with
  *   how many values to bring back, empty for none. A field that is not a
  *   nested object is refused when the search runs
+ * @param hits
+ *   what a hit of this search stands for, or {@code null} for a document -
+ *   see {@link Hits}. With it set, each matched value of the named object
+ *   field is a hit of its own, and the total, the facets and the cursors are
+ *   all about values
  * @param locale
  *   the locale the search reads locale specific fields in (BCP-47), deciding
  *   which variant of each is matched and sorted by. {@code null} leaves every
@@ -85,6 +90,7 @@ public record SearchRequest(
 	ImmutableSet<String> fields,
 	ImmutableMap<String, Highlight> highlight,
 	ImmutableMap<String, Matched> matched,
+	Hits hits,
 	String locale,
 	int limit,
 	int offset,
@@ -241,6 +247,58 @@ public record SearchRequest(
 		}
 	}
 
+	/**
+	 * What a hit of a search stands for: each matched value of one object
+	 * field, instead of the document holding it.
+	 *
+	 * The clauses of the search keep their meaning - clauses on the fields of
+	 * the index still say which documents take part, and {@code nested} clauses
+	 * on the path still say which of their values matched. What changes is the
+	 * unit of the answer: every matched value is a hit of its own, and the
+	 * total, the facets and the cursors are all about values. The identity of
+	 * such a hit is the pair of {@link SearchResult.Hit#id()} and
+	 * {@link SearchResult.Hit#index()} - several hits share an {@code id}
+	 * whenever several values of one document matched.
+	 *
+	 * A search whose hits are values can not also ask for {@code highlight} or
+	 * {@code matched} - once the hits are the matched values, {@code matched}
+	 * would ask a hit about itself - and can only be ordered by score or by
+	 * fields inside the path.
+	 *
+	 * @param path
+	 *   name of the object field whose matched values are the hits. The field
+	 *   has to be an object in {@code nested} mode, which is refused when the
+	 *   search runs
+	 * @param fields
+	 *   the fields of each value to bring back, named by their dotted paths,
+	 *   empty for all of them. A name that is not a field inside the object,
+	 *   or one on an index that keeps no copy of its documents, is refused
+	 *   when the search runs
+	 */
+	public record Hits(String path, ImmutableSet<String> fields) {
+		public Hits {
+			if(path == null || path.isBlank()) {
+				throw new IllegalArgumentException(
+					"Hits that stand for values need the object field they are values of"
+				);
+			}
+
+			if(fields == null) {
+				fields = Sets.immutable.empty();
+			}
+		}
+
+		/**
+		 * Bring back the values whole.
+		 *
+		 * @param path
+		 *   name of the object field whose matched values are the hits
+		 */
+		public Hits(String path) {
+			this(path, null);
+		}
+	}
+
 	public SearchRequest {
 		if(query == null) {
 			query = Lists.immutable.empty();
@@ -277,6 +335,18 @@ public record SearchRequest(
 
 		if(matched == null) {
 			matched = Maps.immutable.empty();
+		}
+
+		if(hits != null && matched.notEmpty()) {
+			throw new IllegalArgumentException(
+				"A search whose hits are matched values can not also ask for matched values - they are the hits"
+			);
+		}
+
+		if(hits != null && highlight.notEmpty()) {
+			throw new IllegalArgumentException(
+				"A search whose hits are matched values can not highlight"
+			);
 		}
 
 		if(total == null) {
@@ -320,6 +390,7 @@ public record SearchRequest(
 			fields,
 			highlight,
 			matched,
+			hits,
 			locale,
 			limit,
 			offset,
@@ -344,6 +415,7 @@ public record SearchRequest(
 			Sets.immutable.empty(),
 			Maps.immutable.empty(),
 			Maps.immutable.empty(),
+			null,
 			null,
 			DEFAULT_LIMIT,
 			0,
@@ -372,6 +444,7 @@ public record SearchRequest(
 		ImmutableSet<String> fields,
 		ImmutableMap<String, Highlight> highlight,
 		ImmutableMap<String, Matched> matched,
+		Hits hits,
 		String locale,
 		int limit,
 		int offset,
@@ -389,7 +462,7 @@ public record SearchRequest(
 		public Builder withQuery(Query... query) {
 			return new Builder(
 				Lists.immutable.of(query),
-				filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -402,7 +475,7 @@ public record SearchRequest(
 		public Builder withQuery(Iterable<? extends Query> query) {
 			return new Builder(
 				Lists.immutable.<Query>ofAll(query),
-				filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -415,7 +488,7 @@ public record SearchRequest(
 		public Builder addQuery(Query clause) {
 			return new Builder(
 				query.newWith(clause),
-				filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -431,7 +504,7 @@ public record SearchRequest(
 			return new Builder(
 				query,
 				Lists.immutable.of(filters),
-				facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -447,7 +520,7 @@ public record SearchRequest(
 			return new Builder(
 				query,
 				Lists.immutable.<FieldQuery>ofAll(filters),
-				facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -461,7 +534,7 @@ public record SearchRequest(
 			return new Builder(
 				query,
 				filters.newWith(filter),
-				facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -476,7 +549,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters,
 				Lists.immutable.of(facets),
-				sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -491,7 +564,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters,
 				Lists.immutable.<Facet>ofAll(facets),
-				sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -505,7 +578,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters,
 				facets.newWith(facet),
-				sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -519,7 +592,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets,
 				Lists.immutable.of(sort),
-				fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -533,7 +606,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets,
 				Lists.immutable.<SortBy>ofAll(sort),
-				fields, highlight, matched, locale, limit, offset, after, before, total, signals
+				fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -547,7 +620,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort,
 				Sets.immutable.of(fields),
-				highlight, matched, locale, limit, offset, after, before, total, signals
+				highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -561,7 +634,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort,
 				Sets.immutable.ofAll(fields),
-				highlight, matched, locale, limit, offset, after, before, total, signals
+				highlight, matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -580,7 +653,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields,
 				copied.toImmutable(),
-				matched, locale, limit, offset, after, before, total, signals
+				matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -597,7 +670,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields,
 				highlight.newWithKeyValue(field, options),
-				matched, locale, limit, offset, after, before, total, signals
+				matched, hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -628,7 +701,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields, highlight,
 				copied.toImmutable(),
-				locale, limit, offset, after, before, total, signals
+				hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -646,7 +719,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields, highlight,
 				matched.newWithKeyValue(field, options),
-				locale, limit, offset, after, before, total, signals
+				hits, locale, limit, offset, after, before, total, signals
 			);
 		}
 
@@ -664,6 +737,31 @@ public record SearchRequest(
 		}
 
 		/**
+		 * Set what a hit of this search stands for, replacing anything set
+		 * before.
+		 *
+		 * @param hits
+		 *   the object field whose matched values are the hits, or {@code null}
+		 *   for hits that are documents
+		 * @return
+		 */
+		public Builder withHits(Hits hits) {
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+		}
+
+		/**
+		 * Make each matched value of an object field a hit of its own.
+		 *
+		 * @param path
+		 *   name of the object field, as it is called in the definition of the
+		 *   index
+		 * @return
+		 */
+		public Builder withHits(String path) {
+			return withHits(new Hits(path));
+		}
+
+		/**
 		 * Set the locale the search reads locale specific fields in.
 		 *
 		 * @param locale
@@ -672,7 +770,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withLocale(String locale) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
 		}
 
 		/**
@@ -682,7 +780,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withLimit(int limit) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
 		}
 
 		/**
@@ -692,7 +790,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withOffset(int offset) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
 		}
 
 		/**
@@ -705,7 +803,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withAfter(SortKey after) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
 		}
 
 		/**
@@ -718,7 +816,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withBefore(SortKey before) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
 		}
 
 		/**
@@ -732,7 +830,7 @@ public record SearchRequest(
 		 */
 		public Builder withSignals(RankingSignal... signals) {
 			return new Builder(
-				query, filters, facets, sort, fields, highlight, matched, locale, limit, offset,
+				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
 				after, before, total,
 				Lists.immutable.of(signals)
 			);
@@ -748,7 +846,7 @@ public record SearchRequest(
 		 */
 		public Builder withSignals(Iterable<? extends RankingSignal> signals) {
 			return new Builder(
-				query, filters, facets, sort, fields, highlight, matched, locale, limit, offset,
+				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
 				after, before, total,
 				signals == null ? null : Lists.immutable.<RankingSignal>ofAll(signals)
 			);
@@ -761,12 +859,12 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withTotal(Total total) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
 		}
 
 		public SearchRequest build() {
 			return new SearchRequest(
-				query, filters, facets, sort, fields, highlight, matched, locale, limit, offset,
+				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
 				after, before, total, signals
 			);
 		}

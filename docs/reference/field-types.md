@@ -127,7 +127,8 @@ How the values relate to the document is `mode`:
   several conditions hold inside the same value - a variant that is both red
   and under 20, not a product that is red in one variant and cheap in
   another. Which values matched can come back with each hit, see [Matched
-  values](search-api.md#matched-values). [Use
+  values](search-api.md#matched-values), or be the hits themselves, see
+  [What a hit stands for](search-api.md#what-a-hit-stands-for). [Use
   sub-documents](../how-to/use-sub-documents.md) walks defining one,
   indexing values and searching them.
 

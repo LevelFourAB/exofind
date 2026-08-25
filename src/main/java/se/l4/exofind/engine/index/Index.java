@@ -61,6 +61,7 @@ import org.apache.lucene.util.BytesRef;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.factory.primitive.IntObjectMaps;
+import org.eclipse.collections.api.factory.primitive.IntSets;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
@@ -174,6 +175,15 @@ public class Index {
 			.withArguments("locale")
 			.withMessage(
 				"The search asks for locale `{{locale}}` which this version of the engine does not support"
+			);
+
+	private static final ErrorType ERROR_HITS_FACET_UNSUPPORTED =
+		ErrorType.withCode("index:query:hits:facet_unsupported")
+			.withArguments("field", "path")
+			.withMessage(
+				"Hits standing for the values of `{{path}}` can count facets over "
+					+ "fields of the index and fields inside the path, but `{{field}}` "
+					+ "is inside another object"
 			);
 
 	private static final Log logger = Log.of(Index.class);
@@ -2502,13 +2512,31 @@ public class Index {
 
 				var compiler = new QueryCompiler(schema, request.locale(), nestedParents);
 				var searched = request.query().newWithAll(request.filters());
-				var query = parentsOnly(compiler.compile(searched), compiler, searched);
+
+				/*
+				 * What a hit stands for is resolved before anything runs, so a
+				 * field that can not answer as hits is refused however many
+				 * results the search would have brought back.
+				 */
+				var hitsPath = request.hits() == null ? null : request.hits().path();
+				if(hitsPath != null) {
+					compiler.hitsObjectField(hitsPath);
+					valueFieldsReturnable(hitsPath, request.hits().fields());
+				}
+
+				var assembled = assemble(compiler, request, searched);
+				var query = assembled.hits();
+
 				/*
 				 * Ordering by a value inside an object reads which values a
 				 * document may be ordered by off the clauses of the search, so
 				 * the order is decided by the same values the search matched.
+				 * Hits that are the values themselves are ordered by their own
+				 * fields instead.
 				 */
-				var sort = compiler.compileSort(request.sort(), searched);
+				var sort = hitsPath == null
+					? compiler.compileSort(request.sort(), searched)
+					: compiler.compileChildSort(request.sort(), hitsPath);
 
 				/*
 				 * Resolved before anything runs, so a field that can not be
@@ -2531,7 +2559,7 @@ public class Index {
 				 */
 				for(var pair : request.matched().keyValuesView()) {
 					compiler.objectField(pair.getOne());
-					matchedFieldsReturnable(pair.getOne(), pair.getTwo());
+					valueFieldsReturnable(pair.getOne(), pair.getTwo().fields());
 				}
 
 				/*
@@ -2573,7 +2601,7 @@ public class Index {
 						 * the matches here would pay for what those answers
 						 * exist to avoid.
 						 */
-						counted = countFacets(searcher, compiler, request, searched, query, null);
+						counted = countFacets(searcher, compiler, request, searched, assembled, null);
 						count = counted.total();
 					} else if(withFacets) {
 						matches = searcher.search(query, new FacetsCollectorManager());
@@ -2588,7 +2616,8 @@ public class Index {
 							request = request.withQuery(outcome.query());
 							relaxed = outcome.relaxed();
 							searched = request.query().newWithAll(request.filters());
-							query = parentsOnly(compiler.compile(searched), compiler, searched);
+							assembled = assemble(compiler, request, searched);
+							query = assembled.hits();
 
 							if(withFacets) {
 								matches = searcher.search(query, new FacetsCollectorManager());
@@ -2600,7 +2629,7 @@ public class Index {
 					}
 
 					if(withFacets && counted == null) {
-						counted = countFacets(searcher, compiler, request, searched, query, matches);
+						counted = countFacets(searcher, compiler, request, searched, assembled, matches);
 					}
 
 					return new SearchResult(
@@ -2614,27 +2643,7 @@ public class Index {
 					);
 				}
 
-				/*
-				 * A signal multiplies the score, so it only says anything where
-				 * the score is what orders results. A search sorting by a field
-				 * of its own is ordered by that field, and reading doc values
-				 * to build a number nothing looks at would be paid for nothing.
-				 *
-				 * Applied here rather than to the query above, so that counting
-				 * matches and counting facets - neither of which reads a score
-				 * - are left with the plain query they can count fastest.
-				 */
-				var ranked = request.sort().isEmpty()
-					? compiler.applySignals(query, request.signals())
-					: query;
-
-				/*
-				 * Scores are worth reporting when something in the search
-				 * decided them, which a signal does even for a search whose
-				 * clauses only narrow - a listing ranked by what sells is
-				 * ordered by its scores and by nothing else.
-				 */
-				var scores = request.query().anySatisfy(Query::scores) || ranked != query;
+				var ranked = ranked(compiler, request, assembled, searched);
 
 				/*
 				 * Continuing from a key hands Lucene the position instead of
@@ -2649,12 +2658,12 @@ public class Index {
 
 				var topDocs = topDocs(
 					searcher,
-					ranked,
+					ranked.query(),
 					sort,
 					wanted,
 					position,
 					backwards,
-					scores
+					ranked.scores()
 				);
 
 				/*
@@ -2672,19 +2681,18 @@ public class Index {
 						relaxed = outcome.relaxed();
 
 						searched = request.query().newWithAll(request.filters());
-						query = parentsOnly(compiler.compile(searched), compiler, searched);
-						ranked = request.sort().isEmpty()
-							? compiler.applySignals(query, request.signals())
-							: query;
+						assembled = assemble(compiler, request, searched);
+						query = assembled.hits();
+						ranked = ranked(compiler, request, assembled, searched);
 
 						topDocs = topDocs(
 							searcher,
-							ranked,
+							ranked.query(),
 							sort,
 							wanted,
 							position,
 							backwards,
-							request.query().anySatisfy(Query::scores) || ranked != query
+							ranked.scores()
 						);
 					}
 				}
@@ -2701,7 +2709,7 @@ public class Index {
 				 */
 				var faceted = request.facets().isEmpty()
 					? null
-					: countFacets(searcher, compiler, request, searched, query, null);
+					: countFacets(searcher, compiler, request, searched, assembled, null);
 
 				var reader = documentReader(request.fields());
 				var names = reader.namesOf();
@@ -2729,12 +2737,36 @@ public class Index {
 					names.add(FieldNames.SOURCE);
 				}
 
+				if(hitsPath != null && names != null) {
+					/*
+					 * The value each hit stands for is read out of the copy of
+					 * the document holding it, whether or not `fields` asked
+					 * the path back.
+					 */
+					names.add(FieldNames.SOURCE);
+				}
+
 				var docIds = new int[Math.max(0, topDocs.scoreDocs.length - request.offset())];
 				for(var i = 0; i < docIds.length; i++) {
 					docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
 				}
 
-				var page = readStored(searcher, docIds, names);
+				/*
+				 * A hit standing for a value is materialized from the document
+				 * above it: where each value of the page sits is worked out in
+				 * one pass, and the stored fields read are those of the
+				 * documents rather than of the values, which carry none.
+				 */
+				IntObjectMap<MatchedChildren.Location> locations = null;
+				var stored = docIds;
+				if(hitsPath != null) {
+					locations = MatchedChildren.locate(searcher, nestedParents, hitsPath, docIds);
+					var parents = IntSets.mutable.empty();
+					locations.forEachValue(location -> parents.add(location.parent()));
+					stored = parents.toArray();
+				}
+
+				var page = readStored(searcher, stored, names);
 
 				ListIterable<ImmutableMap<String, ImmutableList<String>>> highlights = null;
 				if(!highlightTargets.isEmpty()) {
@@ -2785,44 +2817,114 @@ public class Index {
 				var matchedNames = request.matched().keysView().toSet();
 
 				var hits = Lists.mutable.<SearchResult.Hit>empty();
-				for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
-					var scoreDoc = topDocs.scoreDocs[i];
+				if(hitsPath != null) {
+					/*
+					 * Several hits can stand for values of one document, so the
+					 * copy is decoded once per document of the page rather than
+					 * once per hit.
+					 */
+					var decoded = IntObjectMaps.mutable.<DocumentReader.WithSource>empty();
+					var alsoDecode = Sets.immutable.of(hitsPath);
 
-					Document document;
-					ImmutableMap<String, SearchResult.Matched> matched = null;
-					if(matchedPaths == null) {
-						document = reader.read(page.get(scoreDoc.doc));
-					} else {
-						var withSource = reader.readWithSource(
-							page.get(scoreDoc.doc),
-							matchedNames
+					/*
+					 * The request names fields by their dotted paths; cut()
+					 * keeps by the name a field has inside the value.
+					 */
+					var inside = request.hits().fields().isEmpty()
+						? null
+						: request.hits().fields().collect(
+							name -> name.substring(hitsPath.length() + 1)
 						);
-						document = withSource.document();
-						matched = matchedOf(
-							request,
-							matchedPaths,
-							scoreDoc.doc,
-							withSource.source()
+
+					for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
+						var scoreDoc = topDocs.scoreDocs[i];
+						var location = locations.get(scoreDoc.doc);
+
+						var withSource = decoded.get(location.parent());
+						if(withSource == null) {
+							withSource = reader.readWithSource(
+								page.get(location.parent()),
+								alsoDecode
+							);
+							decoded.put(location.parent(), withSource);
+						}
+
+						var document = withSource.document();
+
+						/*
+						 * The block and the copy hold the values in the order
+						 * the document gave them, so the position found among
+						 * the children is the position in the copy. A value
+						 * that is not there was indexed before a copy was
+						 * kept, and is left out the way a whole missing copy
+						 * is - the hit still answers its document and its
+						 * position.
+						 */
+						Document value = null;
+						if(withSource.source() != null) {
+							var all = withSource.source().getAll(hitsPath);
+							if(location.ordinal() < all.size()
+								&& all.get(location.ordinal()) instanceof Document valueDoc) {
+								value = inside == null
+									? valueDoc
+									: cut(valueDoc, inside);
+							}
+						}
+
+						hits.add(
+							new SearchResult.Hit(
+								primaryKey.map(field -> document.get(field.getName())).orElse(null),
+								location.ordinal(),
+								Float.isNaN(scoreDoc.score) ? 0f : scoreDoc.score,
+								document,
+								value,
+								SortKeys.keyOf(scoreDoc, backwards),
+								null,
+								null
+							)
 						);
 					}
+				} else {
+					for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
+						var scoreDoc = topDocs.scoreDocs[i];
 
-					hits.add(
-						new SearchResult.Hit(
-							primaryKey.map(field -> document.get(field.getName())).orElse(null),
-							/*
-							 * Ordering by a field with nothing in the query to
-							 * score leaves Lucene with no score to report, which
-							 * is no score rather than an unusable number.
-							 */
-							Float.isNaN(scoreDoc.score) ? 0f : scoreDoc.score,
-							document,
-							SortKeys.keyOf(scoreDoc, backwards),
-							highlights == null
-								? null
-								: highlights.get(i - request.offset()),
-							matched
-						)
-					);
+						Document document;
+						ImmutableMap<String, SearchResult.Matched> matched = null;
+						if(matchedPaths == null) {
+							document = reader.read(page.get(scoreDoc.doc));
+						} else {
+							var withSource = reader.readWithSource(
+								page.get(scoreDoc.doc),
+								matchedNames
+							);
+							document = withSource.document();
+							matched = matchedOf(
+								request,
+								matchedPaths,
+								scoreDoc.doc,
+								withSource.source()
+							);
+						}
+
+						hits.add(
+							new SearchResult.Hit(
+								primaryKey.map(field -> document.get(field.getName())).orElse(null),
+								/*
+								 * Ordering by a field with nothing in the query
+								 * to score leaves Lucene with no score to
+								 * report, which is no score rather than an
+								 * unusable number.
+								 */
+								Float.isNaN(scoreDoc.score) ? 0f : scoreDoc.score,
+								document,
+								SortKeys.keyOf(scoreDoc, backwards),
+								highlights == null
+									? null
+									: highlights.get(i - request.offset()),
+								matched
+							)
+						);
+					}
 				}
 
 				if(backwards) {
@@ -2940,14 +3042,19 @@ public class Index {
 			return null;
 		}
 
+		/*
+		 * Assembled rather than compiled directly, so every question relaxing
+		 * asks counts the unit the search answers with - value hits for a
+		 * search whose hits are values. The heuristics compare the counts of
+		 * words against each other, which holds for values the way it does for
+		 * documents.
+		 */
 		return relaxation.run(
 			clauses -> {
 				var whole = clauses.newWithAll(request.filters());
-				return anyMatch(searcher, parentsOnly(compiler.compile(whole), compiler, whole));
+				return anyMatch(searcher, assemble(compiler, request, whole).hits());
 			},
-			clauses -> searcher.count(
-				parentsOnly(compiler.compile(clauses), compiler, clauses)
-			)
+			clauses -> searcher.count(assemble(compiler, request, clauses).hits())
 		);
 	}
 
@@ -3022,7 +3129,9 @@ public class Index {
 	}
 
 	/**
-	 * Refuse a matched-values field selection the index could never answer.
+	 * Refuse a field selection on values the index could never answer - the
+	 * same rule whether the values come back beside each hit ({@code matched})
+	 * or as the hits themselves ({@code hits}).
 	 *
 	 * Judged the way {@link DocumentReader} judges what {@code fields} asks
 	 * back: refused rather than answered with the field left out of every
@@ -3030,16 +3139,16 @@ public class Index {
 	 *
 	 * @param path
 	 *   name of the object field whose values are being reported
-	 * @param options
-	 *   how the values were asked back
+	 * @param fields
+	 *   the fields of each value asked back, by their dotted paths
 	 * @throws IndexSourceRequiredException
 	 *   if fields were named on an index that keeps no copy of its documents,
 	 *   which is the only place a value could be read back from
 	 * @throws IndexFieldNotFoundException
 	 *   if a name is not a field inside the object
 	 */
-	private void matchedFieldsReturnable(String path, SearchRequest.Matched options) {
-		for(var name : options.fields()) {
+	private void valueFieldsReturnable(String path, SetIterable<String> fields) {
+		for(var name : fields) {
 			if(!schema.isSourceStored()) {
 				throw new IndexSourceRequiredException(name);
 			}
@@ -3221,23 +3330,33 @@ public class Index {
 	 * when something still needs them - a search every facet of which is
 	 * answered that way pays a count for its total instead of a collection.
 	 *
+	 * A search whose hits are values counts differently enough - the counts
+	 * are of values, and nothing per reader answers those - that it is counted
+	 * apart, in {@link #countValueFacets}.
+	 *
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
-	 * @param documents
-	 *   those clauses compiled, matching the documents of the search
+	 * @param assembled
+	 *   those clauses assembled, for the documents of the search and the query
+	 *   its hits come from
 	 * @param whole
-	 *   the matches of {@code documents} where the caller already collected
-	 *   them, or {@code null} to collect them here if a facet or the total
-	 *   needs them - either way the scope of every facet no filter names
+	 *   the matches of the search where the caller already collected them, or
+	 *   {@code null} to collect them here if a facet or the total needs them -
+	 *   either way the scope of every facet no filter names
 	 */
 	private Faceted countFacets(
 		IndexSearcher searcher,
 		QueryCompiler compiler,
 		SearchRequest request,
 		ListIterable<Query> clauses,
-		org.apache.lucene.search.Query documents,
+		Assembled assembled,
 		FacetsCollector whole
 	) throws IOException {
+		if(request.hits() != null) {
+			return countValueFacets(searcher, compiler, request, clauses, assembled, whole);
+		}
+
+		var documents = assembled.documents();
 		var reader = searcher.getIndexReader();
 		var filtered = request.filters().collect(FieldQuery::field).toSet();
 
@@ -3261,7 +3380,7 @@ public class Index {
 
 				scope = values.get(path);
 				if(scope == null) {
-					scope = new FacetMatches(
+					scope = FacetMatches.rolledUp(
 						searcher.search(
 							compiler.compileNestedValues(path, documents, clauses),
 							new FacetsCollectorManager()
@@ -3297,7 +3416,7 @@ public class Index {
 					if(scope == null) {
 						scope = FacetMatches.of(
 							searcher.search(
-								parentsOnly(compiler.compile(sideways), compiler, sideways),
+								assemble(compiler, request, sideways).hits(),
 								new FacetsCollectorManager()
 							)
 						);
@@ -3337,6 +3456,104 @@ public class Index {
 				total = kept;
 			}
 		}
+
+		return new Faceted(counts.toImmutable(), total);
+	}
+
+	/**
+	 * Count the facets of a search whose hits are the matched values of one
+	 * object field, where the counts are of those hits rather than of
+	 * documents.
+	 *
+	 * A facet over a field inside the path counts the value hits per value
+	 * directly - each hit holds its own values, and no rolling up is wanted
+	 * because a hit is the unit being counted. A facet over a field of the
+	 * index counts each value hit into what the document holding it says
+	 * there, so a brand facet answers how many matching variants each brand
+	 * has. A facet over a field inside another object is refused: its values
+	 * are not the hits and not on the documents either, so no count of it
+	 * describes this result set.
+	 *
+	 * The sideways rule holds unchanged - a facet leaves the filters on its
+	 * own field out of its scope - and a scope is the value hits of that
+	 * narrowed search, assembled the same way the search itself is. Nothing
+	 * here reads the per-reader whole-index answers {@link FacetStates} keeps:
+	 * those count documents, and even an unnarrowed search counts values here.
+	 *
+	 * @param clauses
+	 *   the clauses the search ran with, query and filters together
+	 * @param assembled
+	 *   those clauses assembled
+	 * @param whole
+	 *   the matches of the search - its value hits - where the caller already
+	 *   collected them, or {@code null} to collect them here when a facet or
+	 *   the total needs them
+	 */
+	private Faceted countValueFacets(
+		IndexSearcher searcher,
+		QueryCompiler compiler,
+		SearchRequest request,
+		ListIterable<Query> clauses,
+		Assembled assembled,
+		FacetsCollector whole
+	) throws IOException {
+		var reader = searcher.getIndexReader();
+		var filtered = request.filters().collect(FieldQuery::field).toSet();
+		var path = request.hits().path();
+
+		var collectors = Maps.mutable.<String, FacetMatches>empty();
+		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
+
+		for(var facet : request.facets()) {
+			var nested = schema.getNestedField(facet.field());
+			if(nested.isPresent() && !nested.get().path().equals(path)) {
+				throw new IndexException(
+					ERROR_HITS_FACET_UNSUPPORTED,
+					"field", facet.field(),
+					"path", path
+				);
+			}
+
+			/*
+			 * Filters name fields of the index and never reach inside an
+			 * object, so only a facet over a field of the index can have a
+			 * sideways scope of its own.
+			 */
+			var sideways = nested.isEmpty() && filtered.contains(facet.field())
+				? request.query().newWithAll(
+					request.filters().reject(f -> f.field().equals(facet.field()))
+				)
+				: null;
+
+			FacetMatches scope;
+			if(sideways != null) {
+				scope = collectors.get(facet.field());
+				if(scope == null) {
+					scope = FacetMatches.parentsByValue(
+						searcher.search(
+							assemble(compiler, request, sideways).hits(),
+							new FacetsCollectorManager()
+						),
+						nestedParents
+					);
+					collectors.put(facet.field(), scope);
+				}
+			} else {
+				if(whole == null) {
+					whole = searcher.search(assembled.hits(), new FacetsCollectorManager());
+				}
+
+				scope = nested.isPresent()
+					? FacetMatches.values(whole)
+					: FacetMatches.parentsByValue(whole, nestedParents);
+			}
+
+			counts.put(facet.name(), countFacet(reader, compiler, facet, scope));
+		}
+
+		var total = whole != null
+			? matchCount(whole)
+			: searcher.count(assembled.hits());
 
 		return new Faceted(counts.toImmutable(), total);
 	}
@@ -3403,6 +3620,161 @@ public class Index {
 		}
 
 		return total;
+	}
+
+	/**
+	 * What one search runs against Lucene, in both of the shapes the parts of
+	 * answering need.
+	 *
+	 * @param documents
+	 *   the compiled clauses, matching the documents of the search - what
+	 *   facet scopes and value hits are built from
+	 * @param hits
+	 *   the query matching what the search answers with, one match per hit:
+	 *   the same query as {@code documents} when hits are documents, and the
+	 *   matched values of the request's path when they are values. Ranking is
+	 *   not applied - see {@link #ranked}
+	 */
+	private record Assembled(
+		org.apache.lucene.search.Query documents,
+		org.apache.lucene.search.Query hits
+	) {
+	}
+
+	/**
+	 * Compile what a search runs, which is the one place that knows what its
+	 * hits stand for. Everything that runs or counts a search goes through
+	 * here - the search itself, relaxing it, and the scopes of its facets - so
+	 * they all count the same unit.
+	 *
+	 * @param compiler
+	 *   the compiler of the search, still pointed at its locale
+	 * @param request
+	 *   the request, read for what a hit stands for
+	 * @param clauses
+	 *   the clauses to compile - the search's own, or a facet's sideways scope
+	 * @return
+	 */
+	private Assembled assemble(
+		QueryCompiler compiler,
+		SearchRequest request,
+		ListIterable<Query> clauses
+	) {
+		var documents = parentsOnly(compiler.compile(clauses), compiler, clauses);
+		if(request.hits() == null) {
+			return new Assembled(documents, documents);
+		}
+
+		return new Assembled(
+			documents,
+			valueHits(compiler, request.hits().path(), documents, clauses, false)
+		);
+	}
+
+	/**
+	 * Compile the query whose matches are the value hits of a search: the
+	 * values of one object field that belong to a matching document and that
+	 * the search's {@code nested} clauses on the path asked for - every value
+	 * of a matching document when they asked for nothing.
+	 *
+	 * @param compiler
+	 * @param path
+	 *   name of the object field the hits are values of
+	 * @param documents
+	 *   the documents of the search, compiled - ranked or not, which is the
+	 *   caller's to decide
+	 * @param clauses
+	 *   the clauses of the search, for the conditions they put on the values
+	 * @param scores
+	 *   whether each hit scores - what its document scored, joined down the
+	 *   block, plus what the value itself scored under the clauses that rank
+	 *   on the path. Off, everything only filters
+	 * @return
+	 */
+	private org.apache.lucene.search.Query valueHits(
+		QueryCompiler compiler,
+		String path,
+		org.apache.lucene.search.Query documents,
+		ListIterable<Query> clauses,
+		boolean scores
+	) {
+		var valueScores = scores && compiler.matchedValuesScore(path, clauses);
+
+		return new BooleanQuery.Builder()
+			.add(
+				new ToChildBlockJoinQuery(documents, nestedParents),
+				scores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER
+			)
+			.add(
+				compiler.compileMatchedValues(path, clauses, valueScores),
+				valueScores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER
+			)
+			.build();
+	}
+
+	/**
+	 * What ranking a search settled on: the query to hand Lucene, and whether
+	 * its hits carry scores worth reporting.
+	 *
+	 * Scores are worth reporting when something in the search decided them,
+	 * which a signal does even for a search whose clauses only narrow - a
+	 * listing ranked by what sells is ordered by its scores and by nothing
+	 * else.
+	 */
+	private record Ranked(org.apache.lucene.search.Query query, boolean scores) {
+	}
+
+	/**
+	 * Apply what ranks a search to its assembled query.
+	 *
+	 * A signal multiplies the score, so it only says anything where the score
+	 * is what orders results - a search sorting by a field of its own is
+	 * ordered by that field, and reading doc values to build a number nothing
+	 * looks at would be paid for nothing. Applied here rather than when the
+	 * search is assembled, so that counting matches and counting facets -
+	 * neither of which reads a score - are left with the plain query they can
+	 * count fastest.
+	 *
+	 * For a search whose hits are values, the signals are applied to the
+	 * documents and the block join is rebuilt to carry scores down: a hit then
+	 * scores what its document scored - signals included - plus what the value
+	 * itself scored under the clauses that rank on the path. A search where
+	 * nothing scores keeps the plain query.
+	 *
+	 * @param compiler
+	 * @param request
+	 * @param assembled
+	 * @param clauses
+	 *   the clauses the search runs with, query and filters together
+	 * @return
+	 */
+	private Ranked ranked(
+		QueryCompiler compiler,
+		SearchRequest request,
+		Assembled assembled,
+		ListIterable<Query> clauses
+	) {
+		var scores = request.query().anySatisfy(Query::scores);
+
+		if(request.hits() == null) {
+			var ranked = request.sort().isEmpty()
+				? compiler.applySignals(assembled.hits(), request.signals())
+				: assembled.hits();
+
+			return new Ranked(ranked, scores || ranked != assembled.hits());
+		}
+
+		var documents = request.sort().isEmpty()
+			? compiler.applySignals(assembled.documents(), request.signals())
+			: assembled.documents();
+		scores = scores || documents != assembled.documents();
+
+		return new Ranked(
+			scores
+				? valueHits(compiler, request.hits().path(), documents, clauses, true)
+				: assembled.hits(),
+			scores
+		);
 	}
 
 	/**

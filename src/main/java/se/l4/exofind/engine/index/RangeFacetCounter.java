@@ -88,8 +88,15 @@ public interface RangeFacetCounter {
 		}
 
 		return (reader, matches) -> {
-			if(matches.isNested()) {
-				return NestedFacets.countRanges(matches, field, ranges, longRanges);
+			switch(matches.mode()) {
+				case ROLLED_UP -> {
+					return NestedFacets.countRanges(matches, field, ranges, longRanges);
+				}
+				case PARENTS_BY_VALUE -> {
+					return NestedFacets.countParentRanges(matches, field, ranges, longRanges);
+				}
+				default -> {
+				}
 			}
 
 			var counts = new LongRangeFacetCounts(field, matches.hits(), longRanges);
