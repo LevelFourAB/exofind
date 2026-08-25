@@ -42,6 +42,7 @@ back the first few of them.
 | `locale` | Locale the search reads locale specific fields in (BCP-47). Matched as closely as each field's declared locales tell apart, so `sv-SE` reads a field holding `sv`; a field holding no variant the tag names reads its default. Left out to leave every field to its own default locale. |
 | `fields` | Fields to bring back with each result. A field inside an [`object`](field-types.md#object) is named by its dotted path and comes back inside the object, which then holds only the fields that were asked for. Naming a field the index has no way to return is refused, see [Document source](field-types.md#document-source). Left out for every stored field. The primary key is always included. |
 | `highlight` | Fields to return highlighted fragments for, see [Highlighting](#highlighting). Left out for none. |
+| `matched` | Object fields to say which values of matched with each hit, see [Matched values](#matched-values). Left out for none. |
 | `limit` | How many results to return. Defaults to 10. `0` answers only how many there are. |
 | `offset` | How many results to skip. At most one of `offset`, `after` and `before` is given. |
 | `after` | Cursor to continue after, from the `next` of a previous response. |
@@ -263,7 +264,8 @@ scored, which is what `score` reads:
 
 Ordering by and counting a value inside an object are written as an ordinary
 [sort](#sorts) and [facet](#facets) on the dotted path, and both read the
-values the `nested` clauses of the search matched - see there.
+values the `nested` clauses of the search matched - see there. Asking which
+values those were with each hit is [`matched`](#matched-values).
 
 ### `and`, `or`, `not`
 
@@ -606,6 +608,69 @@ The fragments are the stored text as it was given, with `pre` and `post`
 spliced in - nothing is HTML escaped. Text beyond the first 10000 characters
 of a value is not searched for matches.
 
+## Matched values
+
+Asking for `matched` answers each hit with which values of a `nested`
+[`object` field](field-types.md#object) the search matched - the t-shirt
+found through its red variants says which variants those were, so a result
+tile can show the colour that answered rather than the first one:
+
+```json
+"matched": {
+  "fields": {
+    "variants": { "limit": 3, "fields": ["variants.color"] }
+  }
+}
+```
+
+`fields` maps each object field to its options, `{}` asking for the
+defaults. A field that is not an object in `nested` mode is refused with
+`index:query:matched:not_object`.
+
+| Option | Meaning |
+|--------|---------|
+| `limit` | How many values to bring back at most, between 1 and 100. Defaults to 3. |
+| `fields` | The fields of each value to bring back, named by their dotted paths the way every field inside an object is - the example answers each variant as only its colour. Left out for the values whole. How many values matched is unaffected. |
+
+A name in a per-field `fields` that is not led by the path it sits under is
+refused with `search:matched:field_not_inside`, and one the object does not
+hold with `index:query:field_not_found`. On an index whose [document
+source](field-types.md#document-source) is `none` naming any is refused with
+`index:query:source_not_kept`, as there is nothing to return the values
+from - `matched` without the option still answers `totalValues` there.
+
+Each hit answers under the same key, one entry per field asked about:
+
+```json
+"matched": {
+  "variants": {
+    "values": [ { "color": "red", "size": "M", "price": 19.5 } ],
+    "totalValues": 3
+  }
+}
+```
+
+- `values` - the values that matched, as they were given and at most `limit`
+  of them - each cut down to the fields asked for when the option named
+  some. Best first when the clauses on the field rank - text inside the
+  `nested` clause, say - and in the order the document gave them otherwise.
+  They are read from the copy of the document, so they answer even when
+  the search's own `fields` leaves the path out; an index whose [document
+  source](field-types.md#document-source) is `none` leaves `values` out
+  entirely.
+- `totalValues` - how many values matched in all, so a limit never hides the
+  number: `2 more colours` is `totalValues` minus what `values` shows.
+
+Which values matched is what the `nested` clauses every result had to
+satisfy say - the same values a [sort](#ordering-by-a-value-inside-an-object)
+on the path orders by and a [facet](#counting-a-value-inside-an-object) on a
+field inside it counts. Clauses inside an `or`, a `not` or a `boost` take no
+part, and a search that asked nothing of the values matched all of them - a
+document without any answers `totalValues` of 0.
+
+Elsewhere this is what "inner hits" answer, put beside the hit rather than
+inside the query.
+
 ```json
 {
   "hits": [
@@ -630,7 +695,9 @@ of a value is not searched for matches.
   array, a locale specific field is an object keyed by locale tag.
   `highlights` is present whenever the search asked for highlighting, field
   name to a list of fragments - a field the hit holds no match in is left
-  out of it, so a hit nothing matched carries `{}`.
+  out of it, so a hit nothing matched carries `{}`. `matched` is present
+  whenever [matched values](#matched-values) were asked for, with an entry
+  per field asked about.
 - `total` - how many documents matched. `exact` says whether `count` is the
   whole number or at least that many.
 - `facets` - the counts per value asked for, keyed by the name of each

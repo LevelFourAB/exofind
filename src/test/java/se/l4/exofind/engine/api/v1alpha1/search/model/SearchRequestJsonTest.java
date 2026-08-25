@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
 import java.util.HashMap;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -330,6 +331,31 @@ public class SearchRequestJsonTest {
 		assertThat(
 			request.highlight().fields().get("description"),
 			is(new SearchRequest.HighlightField(1, 40, "<b>", "</b>"))
+		);
+	}
+
+	@Test
+	public void testMatchedWithEmptyOptionsAndPerFieldOptions() throws Exception {
+		var json = """
+			{
+				"matched": {
+					"fields": {
+						"variants": {},
+						"chunks": { "limit": 5, "fields": ["chunks.text"] }
+					}
+				}
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		assertThat(
+			request.matched().fields().get("variants"),
+			is(new SearchRequest.MatchedField(null, null))
+		);
+		assertThat(
+			request.matched().fields().get("chunks"),
+			is(new SearchRequest.MatchedField(5, List.of("chunks.text")))
 		);
 	}
 

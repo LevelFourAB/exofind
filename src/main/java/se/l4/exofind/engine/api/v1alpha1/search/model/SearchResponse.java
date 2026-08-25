@@ -80,7 +80,37 @@ public record SearchResponse(
 		 * asked for, with fields the document holds no match in left out -
 		 * and left out entirely when it was not.
 		 */
-		Map<String, List<String>> highlights
+		Map<String, List<String>> highlights,
+
+		/**
+		 * Which values of each object field the request asked about matched,
+		 * keyed by field name. Present whenever matched values were asked
+		 * for, with an entry per field asked about - and left out entirely
+		 * when they were not.
+		 */
+		Map<String, MatchedValues> matched
+	) {
+	}
+
+	/**
+	 * Which values of one object field matched for one hit.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	public record MatchedValues(
+		/**
+		 * The values that matched, as they were given - at most as many as
+		 * the request asked for, best first when the clauses on the field
+		 * rank and in the order the document gave them otherwise. Left out
+		 * for an index that keeps no copy of its documents.
+		 */
+		@JsonSerialize(contentUsing = DocumentSerializer.class)
+		List<Document> values,
+
+		/**
+		 * How many values matched in all, which is more than the number under
+		 * `values` whenever the limit was reached.
+		 */
+		int totalValues
 	) {
 	}
 

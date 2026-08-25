@@ -2525,6 +2525,16 @@ public class Index {
 				}
 
 				/*
+				 * Resolved for the same reason the highlights are - a field
+				 * that can not answer which of its values matched is refused
+				 * however many results the search brings back.
+				 */
+				for(var pair : request.matched().keyValuesView()) {
+					compiler.objectField(pair.getOne());
+					matchedFieldsReturnable(pair.getOne(), pair.getTwo());
+				}
+
+				/*
 				 * What the search lets go of rather than come back empty, filled
 				 * in below by whichever of the two paths found nothing. The
 				 * request is replaced by the relaxed one as soon as that
@@ -2709,6 +2719,16 @@ public class Index {
 					}
 				}
 
+				if(request.matched().notEmpty() && names != null) {
+					/*
+					 * The matched values are read out of the copy of the
+					 * document, whether or not `fields` needs it - which is
+					 * what answers them even when the path itself was not
+					 * asked back.
+					 */
+					names.add(FieldNames.SOURCE);
+				}
+
 				var docIds = new int[Math.max(0, topDocs.scoreDocs.length - request.offset())];
 				for(var i = 0; i < docIds.length; i++) {
 					docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
@@ -2728,10 +2748,63 @@ public class Index {
 					);
 				}
 
+				/*
+				 * Which values of each asked-about object field matched, found
+				 * for the whole page at once - and off the settled clauses, so
+				 * a relaxed search reports the values its hits actually came
+				 * from.
+				 */
+				MapIterable<String, MatchedPath> matchedPaths = null;
+				if(request.matched().notEmpty()) {
+					var found = Maps.mutable.<String, MatchedPath>empty();
+					for(var pair : request.matched().keyValuesView()) {
+						var path = pair.getOne();
+						var options = pair.getTwo();
+						var valueScores = compiler.matchedValuesScore(path, searched);
+						found.put(path, new MatchedPath(
+							MatchedChildren.find(
+								searcher,
+								compiler.compileMatchedValues(path, searched, valueScores),
+								valueScores,
+								nestedParents,
+								path,
+								docIds
+							),
+							valueScores,
+							options.fields().isEmpty()
+								? null
+								: options.fields().collect(
+									name -> name.substring(path.length() + 1)
+								)
+						));
+					}
+
+					matchedPaths = found;
+				}
+
+				var matchedNames = request.matched().keysView().toSet();
+
 				var hits = Lists.mutable.<SearchResult.Hit>empty();
 				for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
 					var scoreDoc = topDocs.scoreDocs[i];
-					var document = reader.read(page.get(scoreDoc.doc));
+
+					Document document;
+					ImmutableMap<String, SearchResult.Matched> matched = null;
+					if(matchedPaths == null) {
+						document = reader.read(page.get(scoreDoc.doc));
+					} else {
+						var withSource = reader.readWithSource(
+							page.get(scoreDoc.doc),
+							matchedNames
+						);
+						document = withSource.document();
+						matched = matchedOf(
+							request,
+							matchedPaths,
+							scoreDoc.doc,
+							withSource.source()
+						);
+					}
 
 					hits.add(
 						new SearchResult.Hit(
@@ -2746,7 +2819,8 @@ public class Index {
 							SortKeys.keyOf(scoreDoc, backwards),
 							highlights == null
 								? null
-								: highlights.get(i - request.offset())
+								: highlights.get(i - request.offset()),
+							matched
 						)
 					);
 				}
@@ -2945,6 +3019,159 @@ public class Index {
 
 	private DocumentReader documentReader(SetIterable<String> fields) {
 		return new DocumentReader(schema, fields);
+	}
+
+	/**
+	 * Refuse a matched-values field selection the index could never answer.
+	 *
+	 * Judged the way {@link DocumentReader} judges what {@code fields} asks
+	 * back: refused rather than answered with the field left out of every
+	 * value, which reads as values that never held it.
+	 *
+	 * @param path
+	 *   name of the object field whose values are being reported
+	 * @param options
+	 *   how the values were asked back
+	 * @throws IndexSourceRequiredException
+	 *   if fields were named on an index that keeps no copy of its documents,
+	 *   which is the only place a value could be read back from
+	 * @throws IndexFieldNotFoundException
+	 *   if a name is not a field inside the object
+	 */
+	private void matchedFieldsReturnable(String path, SearchRequest.Matched options) {
+		for(var name : options.fields()) {
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceRequiredException(name);
+			}
+
+			var nested = schema.getNestedField(name);
+			if(nested.isEmpty() || !nested.get().path().equals(path)) {
+				throw new IndexFieldNotFoundException(name);
+			}
+		}
+	}
+
+	/**
+	 * The matched values of one asked-about object field, found for a whole
+	 * page of results.
+	 *
+	 * @param found
+	 *   the matches keyed by Lucene id, a document with none absent
+	 * @param ranked
+	 *   whether the clauses on the field rank its values, which is what orders
+	 *   them by how well each matched rather than as the document gave them
+	 * @param inside
+	 *   the fields to keep of each value, by their name inside it, or
+	 *   {@code null} to hand the values back whole
+	 */
+	private record MatchedPath(
+		IntObjectMap<MatchedChildren.Matches> found,
+		boolean ranked,
+		SetIterable<String> inside
+	) {
+	}
+
+	/**
+	 * Shape which values matched for one hit, for every object field the
+	 * search asked about.
+	 *
+	 * @param request
+	 * @param matchedPaths
+	 *   what {@link MatchedChildren} found for the page, per path
+	 * @param doc
+	 *   Lucene id of the hit
+	 * @param source
+	 *   the copy of the hit's document, or {@code null} when it has none - the
+	 *   values are then left out and only their number answers
+	 * @return
+	 */
+	private static ImmutableMap<String, SearchResult.Matched> matchedOf(
+		SearchRequest request,
+		MapIterable<String, MatchedPath> matchedPaths,
+		int doc,
+		Document source
+	) {
+		var result = Maps.mutable.<String, SearchResult.Matched>empty();
+
+		request.matched().forEachKeyValue((path, options) -> {
+			var forPath = matchedPaths.get(path);
+			var matches = forPath.found().get(doc);
+			if(matches == null) {
+				matches = MatchedChildren.none();
+			}
+
+			var ordinals = matches.ordinals();
+			if(forPath.ranked() && ordinals.length > 1) {
+				ordinals = byScore(ordinals, matches.scores());
+			}
+
+			ImmutableList<Document> values = null;
+			if(source != null) {
+				var all = source.getAll(path);
+				var picked = Lists.mutable.<Document>empty();
+				var wanted = Math.min(options.limit(), ordinals.length);
+				for(var i = 0; i < wanted; i++) {
+					/*
+					 * The block and the copy hold the values in the order the
+					 * document gave them, so the position found among the
+					 * children is the position in the copy. A value that is
+					 * not there is one indexed before the copy was kept, and
+					 * is left out the way a whole missing copy is.
+					 */
+					if(ordinals[i] < all.size()
+						&& all.get(ordinals[i]) instanceof Document value) {
+						picked.add(
+							forPath.inside() == null
+								? value
+								: cut(value, forPath.inside())
+						);
+					}
+				}
+
+				values = picked.toImmutable();
+			}
+
+			result.put(path, new SearchResult.Matched(values, matches.count()));
+		});
+
+		return result.toImmutable();
+	}
+
+	/**
+	 * Cut one matched value down to the fields that were asked for inside it.
+	 * A field is kept by the name it has inside the value, so every locale
+	 * variant of a named field comes along, the same as when {@code fields}
+	 * cuts an object.
+	 */
+	private static Document cut(Document value, SetIterable<String> names) {
+		var kept = Lists.mutable.<Document.Value>empty();
+		for(var field : value.fields()) {
+			if(names.contains(field.name())) {
+				kept.add(field);
+			}
+		}
+
+		return new Document(kept.toArray(new Document.Value[0]));
+	}
+
+	/**
+	 * Order the matched values best first, keeping the order the document gave
+	 * them between values that scored the same.
+	 */
+	private static int[] byScore(int[] ordinals, float[] scores) {
+		var order = new Integer[ordinals.length];
+		for(var i = 0; i < order.length; i++) {
+			order[i] = i;
+		}
+
+		Arrays.sort(order, (a, b) -> Float.compare(scores[b], scores[a]));
+
+		var sorted = new int[ordinals.length];
+		for(var i = 0; i < sorted.length; i++) {
+			sorted[i] = ordinals[order[i]];
+		}
+
+		return sorted;
 	}
 
 	/**

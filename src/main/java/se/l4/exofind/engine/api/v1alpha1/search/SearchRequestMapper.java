@@ -274,6 +274,24 @@ public class SearchRequestMapper {
 		ErrorType.withCode("search:highlight:length_invalid")
 			.withMessage("How long a fragment aims to be has to be between 1 and 10000 characters");
 
+	private static final ErrorType MATCHED_FIELD_REQUIRED =
+		ErrorType.withCode("search:matched:field_required")
+			.withMessage("The name of an object field to answer matched values for is required");
+
+	private static final ErrorType MATCHED_LIMIT_INVALID =
+		ErrorType.withCode("search:matched:limit_invalid")
+			.withArguments("max")
+			.withMessage("Matched values come back between 1 and {{max}} per field");
+
+	private static final ErrorType MATCHED_FIELDS_EMPTY =
+		ErrorType.withCode("search:matched:fields_empty")
+			.withMessage("Bringing back only some fields of the values needs at least one field named");
+
+	private static final ErrorType MATCHED_FIELD_NOT_INSIDE =
+		ErrorType.withCode("search:matched:field_not_inside")
+			.withArguments("field", "path")
+			.withMessage("Field `{{field}}` is not inside `{{path}}` - the fields of the values are named by their dotted paths");
+
 	/**
 	 * The longest a fragment may aim to be. The engine reads whole stored
 	 * values to cut fragments from, so the cap is what keeps a request from
@@ -320,7 +338,8 @@ public class SearchRequestMapper {
 	public static Mapped toEngine(SearchRequest body, int maxPageDepth) {
 		if(body == null) {
 			body = new SearchRequest(
-				null, null, null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null
 			);
 		}
 
@@ -345,6 +364,7 @@ public class SearchRequestMapper {
 		var filters = toFilters(body.filters(), errors);
 		var facets = toFacets(body.facets(), errors);
 		var highlight = toHighlight(body.highlight(), errors);
+		var matched = toMatched(body.matched(), errors);
 
 		if(body.locale() != null && !Locales.isSupported(body.locale())) {
 			errors.add(
@@ -411,6 +431,10 @@ public class SearchRequestMapper {
 
 		if(highlight != null) {
 			request = request.withHighlight(highlight);
+		}
+
+		if(matched != null) {
+			request = request.withMatched(matched);
 		}
 
 		return new Mapped(request.build(), fingerprint, pagesMax);
@@ -672,6 +696,95 @@ public class SearchRequestMapper {
 						: options.post()
 				));
 			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Map what to answer matched values for, or collect what is wrong with it
+	 * and return {@code null}.
+	 */
+	private static MapIterable<String, se.l4.exofind.engine.query.SearchRequest.Matched> toMatched(
+		SearchRequest.Matched matched,
+		MutableList<ErrorMessage> errors
+	) {
+		if(matched == null) {
+			return null;
+		}
+
+		if(matched.fields() == null || matched.fields().isEmpty()) {
+			// Asking about no field is a mistake, not a quieter way of not asking
+			errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("/matched/fields")));
+			return null;
+		}
+
+		var result = Maps.mutable.<String, se.l4.exofind.engine.query.SearchRequest.Matched>empty();
+		for(var entry : matched.fields().entrySet()) {
+			var name = entry.getKey();
+			if(name == null || name.isBlank()) {
+				errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("/matched/fields")));
+				continue;
+			}
+
+			var path = "/matched/fields/" + name;
+			var options = entry.getValue();
+			if(options == null) {
+				options = new SearchRequest.MatchedField(null, null);
+			}
+
+			var valid = true;
+			if(options.limit() != null
+				&& (options.limit() < 1
+					|| options.limit() > se.l4.exofind.engine.query.SearchRequest.Matched.MAX_LIMIT)) {
+				errors.add(MATCHED_LIMIT_INVALID.toMessage(
+					Location.create(path + "/limit"),
+					"max", se.l4.exofind.engine.query.SearchRequest.Matched.MAX_LIMIT
+				));
+				valid = false;
+			}
+
+			var inside = Sets.mutable.<String>empty();
+			if(options.fields() != null) {
+				if(options.fields().isEmpty()) {
+					// Asking for values with nothing in them can not be meant
+					errors.add(MATCHED_FIELDS_EMPTY.toMessage(Location.create(path + "/fields")));
+					valid = false;
+				}
+
+				for(var i = 0; i < options.fields().size(); i++) {
+					var field = options.fields().get(i);
+					/*
+					 * A field inside an object is named by its dotted path
+					 * everywhere, so a name not led by the path - a bare inner
+					 * name, a field of the document, a blank - is a mistake
+					 * that needs no index to judge.
+					 */
+					if(field == null || !field.startsWith(name + ".")
+						|| field.length() == name.length() + 1) {
+						errors.add(MATCHED_FIELD_NOT_INSIDE.toMessage(
+							Location.create(path + "/fields/" + i),
+							"field", field == null ? "" : field,
+							"path", name
+						));
+						valid = false;
+						continue;
+					}
+
+					inside.add(field);
+				}
+			}
+
+			if(!valid) {
+				continue;
+			}
+
+			result.put(name, new se.l4.exofind.engine.query.SearchRequest.Matched(
+				options.limit() == null
+					? se.l4.exofind.engine.query.SearchRequest.Matched.DEFAULT_LIMIT
+					: options.limit(),
+				inside.toImmutable()
+			));
 		}
 
 		return result;

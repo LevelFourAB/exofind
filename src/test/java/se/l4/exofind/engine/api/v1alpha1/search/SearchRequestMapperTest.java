@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 
 import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.Sets;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
@@ -49,7 +50,7 @@ public class SearchRequestMapperTest {
 	private static SearchRequest withQuery(Clause... clauses) {
 		return new SearchRequest(
 			Arrays.asList(clauses),
-			null, null, null, null, null, null, null, null, null, null, null, null, null
+			null, null, null, null, null, null, null, null, null, null, null, null, null, null
 		);
 	}
 
@@ -351,7 +352,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null,
 				List.of(new Sort.Score(null), new Sort.Field("name", Sort.Order.DESC)),
-				null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -367,7 +368,7 @@ public class SearchRequestMapperTest {
 
 	private static SearchRequest withSignals(List<Signal> signals) {
 		return new SearchRequest(
-			null, null, null, null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 			signals
 		);
 	}
@@ -460,7 +461,7 @@ public class SearchRequestMapperTest {
 	public void testPagesImplyExactTotal() {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, 20, null, null, null,
+				null, null, null, null, null, null, null, null, 20, null, null, null,
 				new SearchRequest.Pages(null),
 				null, null
 			),
@@ -493,7 +494,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, 20, null, token, null, null, null, null
+				null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -508,7 +509,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, 20, null, token, null, null, null, null
+				null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -524,7 +525,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, 20, null, null, token, null, null, null
+				null, null, null, null, null, null, null, null, 20, null, null, token, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -544,7 +545,7 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 					null, null, null,
 					List.of(new Sort.Field("name", null)),
-					null, null, null, null, null, token, null, null, null, null
+					null, null, null, null, null, null, token, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -567,7 +568,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null,
 				List.of(new Sort.Field("name", null)),
-				null, null, null, null, null, token, null, null, null, null
+				null, null, null, null, null, null, token, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -582,7 +583,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, null, null, null, 10, null, token, null, null, null, null
+				null, null, null, null, null, null, null, null, 10, null, token, null, null, null, null
 			),
 			10
 		);
@@ -598,7 +599,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-					null, null, null, null, null, null, null, 10, null, token, null,
+					null, null, null, null, null, null, null, null, 10, null, token, null,
 					new SearchRequest.Pages(null),
 					null, null
 				),
@@ -616,7 +617,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-					null, null, null, null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null, null, null, null,
 					"??not-a-cursor??", null, null, null
 				),
 				MAX_DEPTH
@@ -633,7 +634,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-				null, null, null, null, null, null, null, null, 20, "token", null, null, null, null
+				null, null, null, null, null, null, null, null, null, 20, "token", null, null, null, null
 			),
 				MAX_DEPTH
 			)
@@ -648,7 +649,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-				null, null, null, null, null, null, null, 10, 95, null, null, null, null, null
+				null, null, null, null, null, null, null, null, 10, 95, null, null, null, null, null
 			),
 				100
 			)
@@ -753,7 +754,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				new SearchRequest(
-				null, null, null, null, "xx", null, null, null, null, null, null, null, null, null
+				null, null, null, null, "xx", null, null, null, null, null, null, null, null, null, null
 			),
 				MAX_DEPTH
 			)
@@ -767,7 +768,7 @@ public class SearchRequestMapperTest {
 	public void testSupportedLocalePassesThrough() {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(
-				null, null, null, null, "sv", null, null, null, null, null, null, null, null, null
+				null, null, null, null, "sv", null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -793,7 +794,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null,
 				List.of(new SearchRequest.Filter("category", new Matcher.Equals("fiction"))),
-				null, null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -811,7 +812,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -832,7 +833,7 @@ public class SearchRequestMapperTest {
 						"alpha", "category", 5, SearchRequest.Facet.Order.VALUE, null, null, null
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -849,7 +850,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -869,7 +870,7 @@ public class SearchRequestMapperTest {
 						null, "category", null, null, null, "Men/Shoes", 3
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -896,7 +897,7 @@ public class SearchRequestMapperTest {
 							List.of(new SearchRequest.Facet.Range(0, 10)), "Men", null
 						)
 					),
-					null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -960,7 +961,7 @@ public class SearchRequestMapperTest {
 						), null, null
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			),
 			MAX_DEPTH
 		);
@@ -996,7 +997,7 @@ public class SearchRequestMapperTest {
 							List.of(new SearchRequest.Facet.Range(null, null)), null, null
 						)
 					),
-					null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -1036,7 +1037,7 @@ public class SearchRequestMapperTest {
 						new SearchRequest.Facet(null, "published", null, null, null, null, null),
 						new SearchRequest.Facet("published", "tags", null, null, null, null, null)
 					),
-					null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null
 				),
 				MAX_DEPTH
 			)
@@ -1068,7 +1069,7 @@ public class SearchRequestMapperTest {
 
 	private static SearchRequest withHighlight(SearchRequest.Highlight highlight) {
 		return new SearchRequest(
-			null, null, null, null, null, null, highlight, null, null, null, null, null, null, null
+			null, null, null, null, null, null, highlight, null, null, null, null, null, null, null, null
 		);
 	}
 
@@ -1171,5 +1172,164 @@ public class SearchRequestMapperTest {
 
 		assertThat(codesOf(e), contains("search:highlight:field_required"));
 		assertThat(pathsOf(e), contains("/highlight/fields"));
+	}
+
+	private static SearchRequest withMatched(SearchRequest.Matched matched) {
+		return new SearchRequest(
+			null, null, null, null, null, null, null, matched, null, null, null, null, null, null, null
+		);
+	}
+
+	@Test
+	public void testMatchedFillsInTheDefaults() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put("variants", null);
+		fields.put("chunks", new SearchRequest.MatchedField(5, null));
+
+		var mapped = SearchRequestMapper.toEngine(
+			withMatched(new SearchRequest.Matched(fields)),
+			MAX_DEPTH
+		);
+
+		var matched = mapped.request().matched();
+		assertThat(
+			matched.get("variants"),
+			is(se.l4.exofind.engine.query.SearchRequest.Matched.defaults())
+		);
+		assertThat(
+			matched.get("chunks"),
+			is(new se.l4.exofind.engine.query.SearchRequest.Matched(5))
+		);
+	}
+
+	@Test
+	public void testMatchedWithoutFieldsIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withMatched(new SearchRequest.Matched(new HashMap<>())),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:matched:field_required"));
+		assertThat(pathsOf(e), contains("/matched/fields"));
+	}
+
+	@Test
+	public void testMatchedBlankFieldNameIsRefused() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put(" ", null);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withMatched(new SearchRequest.Matched(fields)),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:matched:field_required"));
+		assertThat(pathsOf(e), contains("/matched/fields"));
+	}
+
+	@Test
+	public void testMatchedLimitOutOfBoundsIsRefused() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put("variants", new SearchRequest.MatchedField(0, null));
+		fields.put("chunks", new SearchRequest.MatchedField(101, null));
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withMatched(new SearchRequest.Matched(fields)),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(
+			codesOf(e),
+			contains("search:matched:limit_invalid", "search:matched:limit_invalid")
+		);
+		assertThat(
+			pathsOf(e),
+			containsInAnyOrder(
+				"/matched/fields/variants/limit",
+				"/matched/fields/chunks/limit"
+			)
+		);
+	}
+
+	@Test
+	public void testMatchedFieldsAreKept() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put(
+			"variants",
+			new SearchRequest.MatchedField(null, List.of("variants.color", "variants.price"))
+		);
+
+		var mapped = SearchRequestMapper.toEngine(
+			withMatched(new SearchRequest.Matched(fields)),
+			MAX_DEPTH
+		);
+
+		var matched = mapped.request().matched().get("variants");
+		assertThat(
+			matched.fields(),
+			is(Sets.immutable.of("variants.color", "variants.price"))
+		);
+		assertThat(
+			matched.limit(),
+			is(se.l4.exofind.engine.query.SearchRequest.Matched.DEFAULT_LIMIT)
+		);
+	}
+
+	@Test
+	public void testMatchedEmptyFieldsIsRefused() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put("variants", new SearchRequest.MatchedField(null, List.of()));
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withMatched(new SearchRequest.Matched(fields)),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:matched:fields_empty"));
+		assertThat(pathsOf(e), contains("/matched/fields/variants/fields"));
+	}
+
+	@Test
+	public void testMatchedFieldOutsideThePathIsRefused() {
+		var fields = new HashMap<String, SearchRequest.MatchedField>();
+		fields.put(
+			"variants",
+			new SearchRequest.MatchedField(null, List.of("color", "badges.label"))
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withMatched(new SearchRequest.Matched(fields)),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(
+			codesOf(e),
+			contains(
+				"search:matched:field_not_inside",
+				"search:matched:field_not_inside"
+			)
+		);
+		assertThat(
+			pathsOf(e),
+			contains(
+				"/matched/fields/variants/fields/0",
+				"/matched/fields/variants/fields/1"
+			)
+		);
 	}
 }

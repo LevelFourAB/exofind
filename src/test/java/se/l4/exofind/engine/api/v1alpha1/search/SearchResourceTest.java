@@ -45,6 +45,7 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
@@ -290,7 +291,7 @@ public class SearchResourceTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -324,7 +325,7 @@ public class SearchResourceTest {
 						), null, null
 					)
 				),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -350,7 +351,7 @@ public class SearchResourceTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, "Men", 2)),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -391,7 +392,7 @@ public class SearchResourceTest {
 			new SearchRequest(
 				null, null,
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null)),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -426,7 +427,7 @@ public class SearchResourceTest {
 					new SearchRequest.Facet(null, "category", null, null, null, null, null),
 					new SearchRequest.Facet(null, "published", null, null, null, null, null)
 				),
-				null, null, null, null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -455,7 +456,7 @@ public class SearchResourceTest {
 				new SearchRequest(
 					null, null,
 					List.of(new SearchRequest.Facet(null, "tags", null, null, null, null, null)),
-					null, null, null, null, null, null, null, null, null, null, null
+					null, null, null, null, null, null, null, null, null, null, null, null
 				)
 			)
 		);
@@ -463,7 +464,7 @@ public class SearchResourceTest {
 
 	private static SearchRequest request(List<Clause> query) {
 		return new SearchRequest(
-			query, null, null, null, null, null, null, null, null, null, null, null, null, null
+			query, null, null, null, null, null, null, null, null, null, null, null, null, null, null
 		);
 	}
 
@@ -554,7 +555,7 @@ public class SearchResourceTest {
 				List.of(new Clause.Text("silent", null, null, null, null, null, null, null)),
 				null, null, null, null, null,
 				new SearchRequest.Highlight(fields),
-				null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -578,13 +579,167 @@ public class SearchResourceTest {
 				List.of(new Clause.Field("category", new Matcher.Equals("non-fiction"))),
 				null, null, null, null, null,
 				new SearchRequest.Highlight(fields),
-				null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null
 			)
 		);
 
 		// Asked for, so the key is there to count on - just with nothing in it
 		assertThat(response.hits().get(0).highlights(), is(notNullValue()));
 		assertThat(response.hits().get(0).highlights().isEmpty(), is(true));
+	}
+
+	/**
+	 * A product whose variants are nested values, for asking which of them
+	 * matched.
+	 */
+	private void products() throws IOException {
+		var index = indexes.create(
+			"products",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", string().build())
+				.putFields(
+					"variants",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields(
+										"color",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+									.putFields(
+										"stock",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setInt32(
+													Int32FieldTypeDef.getDefaultInstance()
+												)
+											)
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							)
+						)
+						.setMultiple(true)
+						.build()
+				)
+				.build()
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Trail Runner"),
+				new Document.Value(
+					"variants",
+					new Document(
+						new Document.Value("color", "red"),
+						new Document.Value("stock", 3)
+					)
+				),
+				new Document.Value(
+					"variants",
+					new Document(
+						new Document.Value("color", "blue"),
+						new Document.Value("stock", 7)
+					)
+				)
+			)
+		);
+
+		index.commit();
+	}
+
+	@Test
+	public void testMatchedValuesComeBackWithEachHit() throws IOException {
+		products();
+
+		var response = resource.search(
+			"products",
+			new SearchRequest(
+				List.of(
+					new Clause.Nested(
+						"variants",
+						List.of(
+							new Clause.Field("variants.color", new Matcher.Equals("red"))
+						),
+						null
+					)
+				),
+				null, null, null, null, null, null,
+				new SearchRequest.Matched(
+					Map.of("variants", new SearchRequest.MatchedField(null, null))
+				),
+				null, null, null, null, null, null, null
+			)
+		);
+
+		var json = new ObjectMapper()
+			.convertValue(response.hits().get(0), new TypeReference<Map<String, Object>>() {});
+
+		assertThat(
+			json.get("matched"),
+			is(Map.of(
+				"variants", Map.of(
+					"values", List.of(Map.of("color", "red", "stock", 3)),
+					"totalValues", 1
+				)
+			))
+		);
+	}
+
+	@Test
+	public void testMatchedFieldsCutEachValue() throws IOException {
+		products();
+
+		var response = resource.search(
+			"products",
+			new SearchRequest(
+				List.of(
+					new Clause.Nested(
+						"variants",
+						List.of(
+							new Clause.Field("variants.color", new Matcher.Equals("red"))
+						),
+						null
+					)
+				),
+				null, null, null, null, null, null,
+				new SearchRequest.Matched(
+					Map.of(
+						"variants",
+						new SearchRequest.MatchedField(null, List.of("variants.color"))
+					)
+				),
+				null, null, null, null, null, null, null
+			)
+		);
+
+		var json = new ObjectMapper()
+			.convertValue(response.hits().get(0), new TypeReference<Map<String, Object>>() {});
+
+		assertThat(
+			json.get("matched"),
+			is(Map.of(
+				"variants", Map.of(
+					"values", List.of(Map.of("color", "red")),
+					"totalValues", 1
+				)
+			))
+		);
+	}
+
+	@Test
+	public void testMatchedIsLeftOutWhenNotAskedFor() throws IOException {
+		products();
+
+		var response = resource.search("products", request(null));
+
+		assertThat(response.hits().get(0).matched(), is(nullValue()));
 	}
 
 	@Test
@@ -614,7 +769,7 @@ public class SearchResourceTest {
 				List.of(new Clause.Field("category", new Matcher.Equals("non-fiction"))),
 				null, null, null, null,
 				List.of("category"),
-				null, null, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, null
 			)
 		);
 
@@ -658,7 +813,7 @@ public class SearchResourceTest {
 		var response = resource.search(
 			"books",
 			new SearchRequest(
-				null, null, null, null, null, null, null, 0, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, 0, null, null, null, null, null, null
 			)
 		);
 
@@ -673,7 +828,7 @@ public class SearchResourceTest {
 		var first = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null, null, null, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null, null, null, null, null,
 				null
 			)
 		);
@@ -687,7 +842,7 @@ public class SearchResourceTest {
 		var second = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null,
 				first.page().next(),
 				null, null, null, null
 			)
@@ -700,7 +855,7 @@ public class SearchResourceTest {
 		var third = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null,
 				second.page().next(),
 				null, null, null, null
 			)
@@ -715,7 +870,7 @@ public class SearchResourceTest {
 		var backToFirst = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null, null,
 				second.page().previous(),
 				null, null, null
 			)
@@ -734,7 +889,7 @@ public class SearchResourceTest {
 		var first = shallow.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null, null, null, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null, null, null, null, null,
 				null
 			)
 		);
@@ -745,7 +900,7 @@ public class SearchResourceTest {
 			() -> shallow.search(
 				"many",
 				new SearchRequest(
-					null, null, null, List.of(byCode()), null, null, null, 10, 10, null, null, null,
+					null, null, null, List.of(byCode()), null, null, null, null, 10, 10, null, null, null,
 					null, null
 				)
 			)
@@ -754,7 +909,7 @@ public class SearchResourceTest {
 		var second = shallow.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null,
 				first.page().next(),
 				null, null, null, null
 			)
@@ -764,7 +919,7 @@ public class SearchResourceTest {
 		var third = shallow.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null,
 				second.page().next(),
 				null, null, null, null
 			)
@@ -779,14 +934,14 @@ public class SearchResourceTest {
 		var first = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, null, null, null, null, 10, null, null, null, null, null, null
+				null, null, null, null, null, null, null, null, 10, null, null, null, null, null, null
 			)
 		);
 
 		var second = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, null, null, null, null, 10, null,
+				null, null, null, null, null, null, null, null, 10, null,
 				first.page().next(),
 				null, null, null, null
 			)
@@ -795,7 +950,7 @@ public class SearchResourceTest {
 		var backToFirst = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, null, null, null, null, 10, null, null,
+				null, null, null, null, null, null, null, null, 10, null, null,
 				second.page().previous(),
 				null, null, null
 			)
@@ -812,7 +967,7 @@ public class SearchResourceTest {
 		var first = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 10, null, null, null, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 10, null, null, null, null, null,
 				null
 			)
 		);
@@ -824,7 +979,7 @@ public class SearchResourceTest {
 				new SearchRequest(
 					null, null, null,
 					List.of(new Sort.Field("code", Sort.Order.DESC)),
-					null, null, null, 10, null,
+					null, null, null, null, 10, null,
 					first.page().next(),
 					null, null, null, null
 				)
@@ -839,7 +994,7 @@ public class SearchResourceTest {
 		var response = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 5, 10, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 5, 10, null, null,
 				new SearchRequest.Pages(null),
 				null, null
 			)
@@ -868,7 +1023,7 @@ public class SearchResourceTest {
 		var fourth = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 5, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 5, null,
 				pages.next().cursor(),
 				null, null, null, null
 			)
@@ -885,7 +1040,7 @@ public class SearchResourceTest {
 		var response = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 2, 12, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 2, 12, null, null,
 				new SearchRequest.Pages(5),
 				null, null
 			)
@@ -919,7 +1074,7 @@ public class SearchResourceTest {
 		var response = shallow.search(
 			"many",
 			new SearchRequest(
-				null, null, null, List.of(byCode()), null, null, null, 5, null, null, null,
+				null, null, null, List.of(byCode()), null, null, null, null, 5, null, null, null,
 				new SearchRequest.Pages(null),
 				null, null
 			)
@@ -944,7 +1099,7 @@ public class SearchResourceTest {
 		var response = resource.search(
 			"many",
 			new SearchRequest(
-				null, null, null, null, null, null, null, 10, null, null, null, null,
+				null, null, null, null, null, null, null, null, 10, null, null, null, null,
 				SearchRequest.Total.EXACT,
 				null
 			)

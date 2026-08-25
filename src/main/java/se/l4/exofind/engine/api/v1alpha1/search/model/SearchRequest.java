@@ -86,6 +86,12 @@ public record SearchRequest(
 	Highlight highlight,
 
 	/**
+	 * Ask each hit which values of an object field matched, left out for
+	 * none.
+	 */
+	Matched matched,
+
+	/**
 	 * How many results to return. Zero returns how many there are without
 	 * returning any of them.
 	 */
@@ -282,6 +288,44 @@ public record SearchRequest(
 		 * refused.
 		 */
 		Map<String, HighlightField> fields
+	) {
+	}
+
+	/**
+	 * What to ask about matched values. The values are the ones the `nested`
+	 * clauses every result had to satisfy asked for - the same values a sort
+	 * or a facet on the field reads. A search that asked nothing of the
+	 * values matched all of them.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	public record Matched(
+		/**
+		 * The object fields to answer for, keyed by the name a field has in
+		 * the definition of the index. An empty options object asks for the
+		 * defaults. A field that is not a `nested` object is refused.
+		 */
+		Map<String, MatchedField> fields
+	) {
+	}
+
+	/**
+	 * How the matched values of one field come back.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	public record MatchedField(
+		/**
+		 * How many values to bring back at most, between 1 and 100. Left out
+		 * for three. How many matched in all always comes back beside them.
+		 */
+		Integer limit,
+
+		/**
+		 * The fields of each value to bring back, named by their dotted
+		 * paths, left out for all of them. A name that is not inside the
+		 * object, or any name on an index that keeps no copy of its
+		 * documents, is refused.
+		 */
+		List<String> fields
 	) {
 	}
 

@@ -305,6 +305,78 @@ public class DocumentReader {
 	}
 
 	/**
+	 * What {@link #readWithSource} hands back.
+	 *
+	 * @param document
+	 *   the fields that were asked for, shaped the way {@link #read} shapes
+	 *   them
+	 * @param source
+	 *   the copy of the document, holding the extra fields that were asked to
+	 *   be readable beside what {@code document} holds - or {@code null} when
+	 *   the document has no copy to read them from
+	 */
+	public record WithSource(Document document, Document source) {
+	}
+
+	/**
+	 * Turn a document as Lucene holds it into one shaped like the document
+	 * that was indexed, keeping the copy it was read from readable.
+	 *
+	 * What was asked for comes back exactly as {@link #read} answers it; the
+	 * copy is for fields a caller needs to look at without handing them back -
+	 * the values of an object field whose matches are being reported, whether
+	 * or not the search asks the field itself back. Loading the copy is the
+	 * caller's to arrange, by adding {@link FieldNames#SOURCE} to what
+	 * {@link #namesOf()} says to load.
+	 *
+	 * @param doc
+	 * @param alsoDecode
+	 *   names of fields to keep readable in the copy beyond the ones that
+	 *   were asked for
+	 * @return
+	 */
+	public WithSource readWithSource(
+		org.apache.lucene.document.Document doc,
+		SetIterable<String> alsoDecode
+	) {
+		var source = doc.getBinaryValue(FieldNames.SOURCE);
+		if(source == null) {
+			return new WithSource(read(doc), null);
+		}
+
+		if(fields.isEmpty()) {
+			var decoded = DocumentSource.decode(source);
+			return new WithSource(decoded, decoded);
+		}
+
+		var decoded = DocumentSource.decode(
+			source,
+			name -> wanted(name) || alsoDecode.contains(name)
+		);
+
+		return new WithSource(cutObjects(askedFor(decoded)), decoded);
+	}
+
+	/**
+	 * Keep the fields of a document that were asked for, dropping the ones
+	 * decoded only to be looked at.
+	 */
+	private Document askedFor(Document doc) {
+		var values = Lists.mutable.<Document.Value>empty();
+		for(var value : doc.fields()) {
+			if(wanted(value.name())) {
+				values.add(value);
+			}
+		}
+
+		if(values.size() == doc.fields().length) {
+			return doc;
+		}
+
+		return new Document(values.toArray(new Document.Value[0]));
+	}
+
+	/**
 	 * Cut the objects of a document down to the fields that were asked for
 	 * inside them. Which fields of the document itself are there was decided
 	 * as it was read.

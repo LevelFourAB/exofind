@@ -126,8 +126,10 @@ How the values relate to the document is `mode`:
   clause](search-api.md#nested) of the search API, so a search can ask that
   several conditions hold inside the same value - a variant that is both red
   and under 20, not a product that is red in one variant and cheap in
-  another. [Use sub-documents](../how-to/use-sub-documents.md) walks
-  defining one, indexing values and searching them.
+  another. Which values matched can come back with each hit, see [Matched
+  values](search-api.md#matched-values). [Use
+  sub-documents](../how-to/use-sub-documents.md) walks defining one,
+  indexing values and searching them.
 
 A field holding a single value is one unit whichever way it is kept, so the
 mode is required exactly when the field is `multiple`: a list leaving it out

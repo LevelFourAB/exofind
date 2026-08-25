@@ -66,19 +66,51 @@ public record SearchResult(
 	 *   highlight, keyed by field name. A field the document holds no match
 	 *   in has no entry, and a search that asked for no highlighting leaves
 	 *   the map empty
+	 * @param matched
+	 *   which values of each object field the search asked about matched,
+	 *   keyed by field name. One entry per field asked about, and a search
+	 *   that asked about none leaves the map empty
 	 */
 	public record Hit(
 		Object id,
 		float score,
 		Document document,
 		SortKey key,
-		ImmutableMap<String, ImmutableList<String>> highlights
+		ImmutableMap<String, ImmutableList<String>> highlights,
+		ImmutableMap<String, Matched> matched
 	) {
 		public Hit {
 			if(highlights == null) {
 				highlights = Maps.immutable.empty();
 			}
+
+			if(matched == null) {
+				matched = Maps.immutable.empty();
+			}
 		}
+	}
+
+	/**
+	 * Which values of one object field matched for one hit.
+	 *
+	 * The values are the ones the {@code nested} clauses every result had to
+	 * satisfy asked for - the same values a sort or a facet on the field
+	 * reads. A search that asked nothing of the values matched all of them.
+	 *
+	 * @param values
+	 *   the values that matched, as they were given - at most as many as the
+	 *   search asked for, ordered by how well each matched when the clauses on
+	 *   the field rank and in the order the document gave them otherwise.
+	 *   {@code null} for an index that keeps no copy of its documents, which
+	 *   has no values to hand back
+	 * @param totalValues
+	 *   how many values matched in all, which is more than the number of
+	 *   values whenever the limit was reached
+	 */
+	public record Matched(
+		ImmutableList<Document> values,
+		int totalValues
+	) {
 	}
 
 	/**

@@ -111,6 +111,14 @@ public class QueryCompiler {
 			+ "inside the same value takes the `nested` mode on the field"
 		);
 
+	private static final ErrorType MATCHED_NOT_OBJECT = ErrorType
+		.withCode("index:query:matched:not_object")
+		.withArguments("path")
+		.withMessage(
+			"Which values of `{{path}}` matched can only be said for an object field "
+			+ "in `nested` mode, whose values are matched one at a time"
+		);
+
 	/**
 	 * The kinds of ordering that can read a value out of the objects of one
 	 * document and order the document by it. Anything else - a distance from an
@@ -795,6 +803,88 @@ public class QueryCompiler {
 		requiredValues(clauses, path, required);
 
 		return valuesOf(path, required, false);
+	}
+
+	/**
+	 * Compile the query matching the values of an object field that a search
+	 * asked something of, whichever document they belong to, keeping the
+	 * scoring the clauses hold.
+	 *
+	 * What the values are is decided the same way {@link #compileNestedValues}
+	 * decides it - by the {@code nested} clauses every result had to satisfy,
+	 * every value when there are none. What is kept beyond that is each
+	 * value's own score, for saying which of a document's values answered the
+	 * search best rather than only which document did.
+	 *
+	 * @param path
+	 *   name of the object field
+	 * @param clauses
+	 *   the clauses of the search, for the conditions it put on the values
+	 * @param scores
+	 *   whether each value scores by the clauses that rank, or only matches -
+	 *   what {@link #matchedValuesScore} answers for the same clauses
+	 * @return
+	 */
+	public org.apache.lucene.search.Query compileMatchedValues(
+		String path,
+		ListIterable<Query> clauses,
+		boolean scores
+	) {
+		var required = Lists.mutable.<Query>empty();
+		requiredValues(clauses, path, required);
+
+		return valuesOf(path, required, scores);
+	}
+
+	/**
+	 * Get whether the conditions a search put on the values of an object field
+	 * rank them, so the values that matched can be ordered by how well each
+	 * one did. Nothing ranking leaves them in the order the document gave
+	 * them.
+	 *
+	 * @param path
+	 *   name of the object field
+	 * @param clauses
+	 *   the clauses of the search
+	 * @return
+	 */
+	public boolean matchedValuesScore(String path, ListIterable<Query> clauses) {
+		var required = Lists.mutable.<Query>empty();
+		requiredValues(clauses, path, required);
+
+		return required.anySatisfy(Query::scores);
+	}
+
+	/**
+	 * Resolve an object field whose values are matched one at a time, which is
+	 * what saying which of them matched takes.
+	 *
+	 * @param name
+	 * @return
+	 * @throws IndexFieldNotFoundException
+	 *   if the index has no field by the name
+	 * @throws IndexException
+	 *   with {@code index:query:matched:not_object} if the field is not an
+	 *   object in {@code nested} mode
+	 */
+	public Field objectField(String name) {
+		/*
+		 * A name inside an object resolves through field() with an error
+		 * telling to use a `nested` clause, which is not the mistake made
+		 * here - naming anything but an object field is the one judgement,
+		 * whatever the name is of.
+		 */
+		if(schema.getNestedField(name).isPresent()) {
+			throw new IndexException(MATCHED_NOT_OBJECT, "path", name);
+		}
+
+		var field = schema.getField(name)
+			.orElseThrow(() -> new IndexFieldNotFoundException(name));
+		if(!field.isObject() || !field.isNestedObject()) {
+			throw new IndexException(MATCHED_NOT_OBJECT, "path", name);
+		}
+
+		return field;
 	}
 
 	/**

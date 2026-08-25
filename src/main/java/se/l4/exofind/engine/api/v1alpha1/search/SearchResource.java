@@ -104,6 +104,7 @@ public class SearchResource {
 		 */
 		var scores = mapped.request().query().anySatisfy(Query::scores);
 		var highlighting = mapped.request().highlight().notEmpty();
+		var matching = mapped.request().matched().notEmpty();
 
 		var hits = new ArrayList<SearchResponse.Hit>(result.hits().size());
 		for(var hit : result.hits()) {
@@ -117,7 +118,8 @@ public class SearchResource {
 					 * can count on the key - possibly empty, when nothing in
 					 * the hit matched the text of the search.
 					 */
-					highlighting ? toHighlightsJson(hit) : null
+					highlighting ? toHighlightsJson(hit) : null,
+					matching ? toMatchedJson(hit) : null
 				)
 			);
 		}
@@ -228,6 +230,21 @@ public class SearchResource {
 		var result = new LinkedHashMap<String, List<String>>();
 		hit.highlights().forEachKeyValue(
 			(field, fragments) -> result.put(field, fragments.castToList())
+		);
+
+		return result;
+	}
+
+	private static Map<String, SearchResponse.MatchedValues> toMatchedJson(SearchResult.Hit hit) {
+		var result = new LinkedHashMap<String, SearchResponse.MatchedValues>();
+		hit.matched().forEachKeyValue(
+			(field, matched) -> result.put(
+				field,
+				new SearchResponse.MatchedValues(
+					matched.values() == null ? null : matched.values().castToList(),
+					matched.totalValues()
+				)
+			)
 		);
 
 		return result;

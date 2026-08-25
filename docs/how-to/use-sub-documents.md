@@ -138,8 +138,25 @@ count along with the hits, rather than being left out of the counts of its own
 field the way [a filter is](../reference/search-api.md#facets).
 
 Results are documents, never values. A hit carries the whole field, the values
-that matched and the ones that did not alike, so a UI showing which variant
-answered picks it out of what came back.
+that matched and the ones that did not alike. A UI showing which variant
+answered asks for it with `matched`, which brings the values the search
+matched back beside each hit - see [Matched
+values](../reference/search-api.md#matched-values):
+
+```json
+{
+  "query": [
+    { "type": "nested", "path": "variants", "clauses": [
+      { "field": "variants.color", "match": { "value": "red" } }
+    ] }
+  ],
+  "matched": { "fields": { "variants": {} } }
+}
+```
+
+Each value comes back whole. A tile that only shows the colour swatch asks
+for just that field of it, named by its dotted path the way fields inside an
+object always are: `"variants": { "fields": ["variants.color"] }`.
 
 ## Search text inside the values
 
