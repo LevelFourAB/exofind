@@ -967,6 +967,21 @@ public class IndexSchema {
 	}
 
 	/**
+	 * Get whether a wildcard field could give a document of the index a field
+	 * whose name starts with the given path and a dot. When it cannot - and
+	 * validation keeps declared names off the paths of objects - a dotted name
+	 * under the path can only belong to the values of the object field there.
+	 *
+	 * @param path
+	 *   name of an object field
+	 * @return
+	 */
+	public boolean hasWildcardFieldUnder(String path) {
+		var prefix = path + '.';
+		return state.wildcardFields.anySatisfy(field -> field.nameCanStartWith(prefix));
+	}
+
+	/**
 	 * Get the primary key for the index.
 	 *
 	 * @return

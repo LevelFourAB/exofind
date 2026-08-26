@@ -361,6 +361,25 @@ public class Field {
 	}
 
 	/**
+	 * Check if any name this field accepts starts with the given prefix.
+	 * {@code false} only when no accepted name can; a name with a wildcard
+	 * answers for every name its pattern could match.
+	 *
+	 * @param prefix
+	 * @return
+	 */
+	public boolean nameCanStartWith(String prefix) {
+		var matcher = namePattern.matcher(prefix);
+
+		/*
+		 * hitEnd() after a failed match says the input ran out while the
+		 * pattern could still have continued - exactly when a longer name
+		 * could match.
+		 */
+		return matcher.matches() || matcher.hitEnd();
+	}
+
+	/**
 	 * Get if the field is required to be present when a document is added.
 	 * Can not be {@code true} if the field name contains a wildcard.
 	 *

@@ -284,11 +284,7 @@ public class QueryCompiler {
 	 * the whole index, values of object fields included.
 	 */
 	private boolean textDocumentsOnly(TextQuery clause) {
-		if(clause.matcher().match() == TextMatcher.Match.USER
-			&& !UserText.parse(clause.matcher().text())
-				.parts()
-				.anySatisfy(part -> !part.exclude()))
-		{
+		if(!textMatchesSomething(clause)) {
 			return false;
 		}
 
@@ -717,11 +713,39 @@ public class QueryCompiler {
 		ListIterable<Query> clauses,
 		boolean scores
 	) {
+		return valuesOf(path, clauses, scores, false);
+	}
+
+	private org.apache.lucene.search.Query valuesOf(
+		String path,
+		ListIterable<Query> clauses,
+		boolean scores,
+		boolean keepPathClause
+	) {
 		var enclosing = nestedPath;
 		nestedPath = path;
 		try {
-			return new BooleanQuery.Builder()
-				.add(NestedDocuments.childrenQuery(path), BooleanClause.Occur.FILTER)
+			var builder = new BooleanQuery.Builder();
+
+			/*
+			 * The clause naming the path is only there to keep the rest of the
+			 * index out. When the conditions already can match nothing else,
+			 * it is a second walk of every value of the path that never rules
+			 * anything out - and the clause Lucene could otherwise answer a
+			 * count of matches for straight from its statistics.
+			 *
+			 * Kept on request even then: the clause is dense enough that
+			 * Lucene fills whole windows of matches from it at once, and a
+			 * caller that will visit every match - ranking them by a field -
+			 * measures faster with it than filling those windows from the
+			 * conditions a document at a time. See ValueHitsBenchmark before
+			 * reshaping this.
+			 */
+			if(keepPathClause || !matchesValuesOnly(path, clauses)) {
+				builder.add(NestedDocuments.childrenQuery(path), BooleanClause.Occur.FILTER);
+			}
+
+			return builder
 				.add(
 					compileAll(clauses),
 					scores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER
@@ -730,6 +754,61 @@ public class QueryCompiler {
 		} finally {
 			nestedPath = enclosing;
 		}
+	}
+
+	/**
+	 * Whether everything the given clauses can match is a value of the object
+	 * field at {@code path} - the mirror image of {@link #matchesDocumentsOnly}.
+	 * The fields inside an object exist only on its values, so no document of
+	 * the index and no value of another path can satisfy a positive condition
+	 * on one. What cannot answer is what widens - a {@code not}, a boost, text
+	 * of nothing but exclusions - and an index whose wildcard fields could put
+	 * a name shaped like the path's own on a document of the index.
+	 *
+	 * @param path
+	 *   name of the object field the clauses sit under
+	 * @param clauses
+	 *   clauses of a {@code nested} clause on the path
+	 * @return
+	 *   {@code false} whenever it cannot be told, which is always safe - the
+	 *   query then keeps the clause it would otherwise have done without
+	 */
+	private boolean matchesValuesOnly(String path, ListIterable<Query> clauses) {
+		if(schema.hasWildcardFieldUnder(path)) {
+			return false;
+		}
+
+		return clauses.anySatisfy(this::valuesOnly);
+	}
+
+	/**
+	 * Whether one clause answers {@link #matchesValuesOnly} on its own. A
+	 * clause naming a field resolves to a field of the path or compiling
+	 * refuses the search, so the name alone answers.
+	 */
+	private boolean valuesOnly(Query clause) {
+		return switch(clause) {
+			case FieldQuery q -> true;
+			case TextQuery q -> textMatchesSomething(q);
+			case AndQuery q -> q.clauses().anySatisfy(this::valuesOnly);
+
+			// Every way of matching has to answer, as any of them may be the one that did
+			case OrQuery q -> q.clauses().notEmpty() && q.clauses().allSatisfy(this::valuesOnly);
+
+			default -> false;
+		};
+	}
+
+	/**
+	 * Whether a text clause asks for anything at all - text a person typed
+	 * that holds nothing but exclusions matches by what it does not name, so
+	 * it says nothing about where its matches sit.
+	 */
+	private static boolean textMatchesSomething(TextQuery clause) {
+		return clause.matcher().match() != TextMatcher.Match.USER
+			|| UserText.parse(clause.matcher().text())
+				.parts()
+				.anySatisfy(part -> !part.exclude());
 	}
 
 	/**
@@ -846,10 +925,41 @@ public class QueryCompiler {
 		ListIterable<Query> clauses,
 		boolean scores
 	) {
+		return compileMatchedValues(path, clauses, scores, false);
+	}
+
+	/**
+	 * Compile the query matching the values of an object field that a search
+	 * asked something of, keeping the clause naming the path even where the
+	 * conditions alone would do.
+	 *
+	 * What {@link #compileMatchedValues(String, ListIterable, boolean)}
+	 * compiles, for a caller that will rank every match by a field: the
+	 * clause naming the path matches most of a segment at once, and a walk
+	 * that visits every match anyway goes faster led by it than by the
+	 * conditions - see {@code valuesOf}.
+	 *
+	 * @param path
+	 *   name of the object field
+	 * @param clauses
+	 *   the clauses of the search, for the conditions it put on the values
+	 * @param scores
+	 *   whether each value scores by the clauses that rank, or only matches
+	 * @param keepPathClause
+	 *   whether to keep the clause naming the path whatever the conditions
+	 *   cover
+	 * @return
+	 */
+	public org.apache.lucene.search.Query compileMatchedValues(
+		String path,
+		ListIterable<Query> clauses,
+		boolean scores,
+		boolean keepPathClause
+	) {
 		var required = Lists.mutable.<Query>empty();
 		requiredValues(clauses, path, required);
 
-		return valuesOf(path, required, scores);
+		return valuesOf(path, required, scores, keepPathClause);
 	}
 
 	/**

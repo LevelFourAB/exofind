@@ -145,6 +145,46 @@ public class NestedSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testExclusionAloneInsideNested() throws IOException {
+		var index = products();
+
+		/*
+		 * An exclusion matches by what it does not name, so the values it can
+		 * match have to be pinned to the path some other way - products 1 and 2
+		 * each hold a variant that is not red, product 3 holds no variants.
+		 */
+		var result = search(
+			index,
+			Query.nested(
+				"variants",
+				Query.not(Query.field("variants.color", Matchers.equalTo("red")))
+			)
+		);
+
+		assertThat(ids(result), containsInAnyOrder("1", "2"));
+	}
+
+	@Test
+	public void testExclusionBesideAConditionInsideNested() throws IOException {
+		var index = products();
+
+		/*
+		 * Product 1's red variant comes in S and M, product 2's red variant
+		 * names no size at all - both are red variants that are not XL.
+		 */
+		var result = search(
+			index,
+			Query.nested(
+				"variants",
+				Query.field("variants.color", Matchers.equalTo("red")),
+				Query.not(Query.field("variants.sizes", Matchers.equalTo("XL")))
+			)
+		);
+
+		assertThat(ids(result), containsInAnyOrder("1", "2"));
+	}
+
+	@Test
 	public void testSeveralValuesOfAnInnerField() throws IOException {
 		var index = products();
 

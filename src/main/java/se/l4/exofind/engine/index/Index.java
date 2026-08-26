@@ -3773,7 +3773,7 @@ public class Index {
 
 		return new Assembled(
 			documents,
-			valueHits(compiler, request.hits().path(), documents, clauses, false)
+			valueHits(compiler, request, documents, clauses, false)
 		);
 	}
 
@@ -3784,8 +3784,9 @@ public class Index {
 	 * of a matching document when they asked for nothing.
 	 *
 	 * @param compiler
-	 * @param path
-	 *   name of the object field the hits are values of
+	 * @param request
+	 *   the request, read for the path its hits are values of and for whether
+	 *   it orders by a field
 	 * @param documents
 	 *   the documents of the search, compiled - ranked or not, which is the
 	 *   caller's to decide
@@ -3799,12 +3800,19 @@ public class Index {
 	 */
 	private org.apache.lucene.search.Query valueHits(
 		QueryCompiler compiler,
-		String path,
+		SearchRequest request,
 		org.apache.lucene.search.Query documents,
 		ListIterable<Query> clauses,
 		boolean scores
 	) {
+		var path = request.hits().path();
 		var valueScores = scores && compiler.matchedValuesScore(path, clauses);
+
+		/*
+		 * Ordering by a field visits every match, which is the walk the
+		 * clause naming the path is worth keeping for - see valuesOf.
+		 */
+		var keepPathClause = !request.sort().isEmpty();
 
 		/*
 		 * When every clause sits on the path, the join adds nothing: a value
@@ -3816,7 +3824,7 @@ public class Index {
 		 * down, so it stays.
 		 */
 		if(!scores && onPathAlone(clauses, path)) {
-			return compiler.compileMatchedValues(path, clauses, false);
+			return compiler.compileMatchedValues(path, clauses, false, keepPathClause);
 		}
 
 		return new BooleanQuery.Builder()
@@ -3825,7 +3833,7 @@ public class Index {
 				scores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER
 			)
 			.add(
-				compiler.compileMatchedValues(path, clauses, valueScores),
+				compiler.compileMatchedValues(path, clauses, valueScores, keepPathClause),
 				valueScores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER
 			)
 			.build();
@@ -3906,7 +3914,7 @@ public class Index {
 
 		return new Ranked(
 			scores
-				? valueHits(compiler, request.hits().path(), documents, clauses, true)
+				? valueHits(compiler, request, documents, clauses, true)
 				: assembled.hits(),
 			scores
 		);
