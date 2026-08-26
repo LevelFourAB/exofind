@@ -46,6 +46,8 @@ to 100 000 documents.
 | `FacetBenchmark`       | Counting the matches per value, per bucket and down a tree - one facet, a page's worth, beside a filter on the facet's own field, the same pages after opening a category, and refreshing counts alone with nothing fetched. |
 | `SortAndPageBenchmark` | Ordering by a field rather than by relevance, ranking signals, and a deep page reached by offset against the same page reached by cursor. |
 | `NestedBenchmark`      | Conditions on the values inside an object field, and counting them.                             |
+| `MatchedBenchmark`     | Asking which values of an object field matched, beside each hit - against the same search without asking, with and without a condition on the values, and cut down to one field. `-p page=` is how many hits carry the answer. |
+| `ValueHitsBenchmark`   | Hits standing for the matched values of an object field - against the same search answered with documents, sorted by a field of the values, faceted per value and rolled up onto the documents, and what an exact total of values costs. |
 
 The first run of a size builds the index and keeps it in
 `target/benchmark-indexes`; later runs copy it. Building 100 000 catalogue
