@@ -3806,6 +3806,19 @@ public class Index {
 	) {
 		var valueScores = scores && compiler.matchedValuesScore(path, clauses);
 
+		/*
+		 * When every clause sits on the path, the join adds nothing: a value
+		 * satisfying all of the conditions is itself the child that qualifies
+		 * its document, so the values query alone matches the same values -
+		 * and skips evaluating the conditions a second time from the document
+		 * side, which is most of what a search that has to visit every value
+		 * pays. With scores the join is what carries the document's score
+		 * down, so it stays.
+		 */
+		if(!scores && onPathAlone(clauses, path)) {
+			return compiler.compileMatchedValues(path, clauses, false);
+		}
+
 		return new BooleanQuery.Builder()
 			.add(
 				new ToChildBlockJoinQuery(documents, nestedParents),
@@ -3816,6 +3829,22 @@ public class Index {
 				valueScores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER
 			)
 			.build();
+	}
+
+	/**
+	 * Get whether clauses ask nothing of the documents of the index beyond
+	 * what they ask of the values of one path - every one a {@code nested}
+	 * clause on the path, or an {@code and} of such clauses, the same shapes
+	 * whose conditions reach the values query. Any other clause narrows the
+	 * documents in a way the values query does not carry, and an empty list
+	 * asks nothing at all.
+	 */
+	private static boolean onPathAlone(ListIterable<Query> clauses, String path) {
+		return clauses.allSatisfy(clause -> switch(clause) {
+			case NestedQuery q -> q.path().equals(path);
+			case AndQuery q -> onPathAlone(q.clauses(), path);
+			default -> false;
+		});
 	}
 
 	/**
