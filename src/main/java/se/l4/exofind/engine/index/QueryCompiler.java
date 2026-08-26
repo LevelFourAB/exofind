@@ -713,7 +713,7 @@ public class QueryCompiler {
 		ListIterable<Query> clauses,
 		boolean scores
 	) {
-		return valuesOf(path, clauses, scores, false);
+		return valuesOf(path, clauses, scores, true);
 	}
 
 	private org.apache.lucene.search.Query valuesOf(
@@ -729,17 +729,16 @@ public class QueryCompiler {
 
 			/*
 			 * The clause naming the path is only there to keep the rest of the
-			 * index out. When the conditions already can match nothing else,
-			 * it is a second walk of every value of the path that never rules
-			 * anything out - and the clause Lucene could otherwise answer a
-			 * count of matches for straight from its statistics.
+			 * index out, so when the conditions already can match nothing else
+			 * a caller may ask for it to be left out - and Lucene can then
+			 * answer a count of matches straight from its statistics.
 			 *
-			 * Kept on request even then: the clause is dense enough that
-			 * Lucene fills whole windows of matches from it at once, and a
-			 * caller that will visit every match - ranking them by a field -
-			 * measures faster with it than filling those windows from the
-			 * conditions a document at a time. See ValueHitsBenchmark before
-			 * reshaping this.
+			 * Left out only on request, because which shape runs faster is the
+			 * caller's walk to judge: standing alone as the query of a search,
+			 * the conditions win, while inside a block join - and for a search
+			 * ranking every match by a field - the dense clause is what Lucene
+			 * fills whole windows of matches from at once. Measured both ways;
+			 * see ValueHitsBenchmark before reshaping this.
 			 */
 			if(keepPathClause || !matchesValuesOnly(path, clauses)) {
 				builder.add(NestedDocuments.childrenQuery(path), BooleanClause.Occur.FILTER);
