@@ -7,6 +7,8 @@ import java.util.function.Function;
 import java.util.function.LongFunction;
 
 import org.apache.lucene.facet.range.LongRange;
+import org.apache.lucene.index.DocValues;
+import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.BitSet;
 import org.eclipse.collections.api.factory.Lists;
@@ -15,6 +17,9 @@ import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.factory.primitive.LongSets;
 import org.eclipse.collections.api.factory.primitive.ObjectLongMaps;
 import org.eclipse.collections.api.list.ListIterable;
+import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
+import org.eclipse.collections.api.map.primitive.MutableObjectLongMap;
+import org.eclipse.collections.api.set.primitive.MutableLongSet;
 import org.eclipse.collections.api.tuple.primitive.LongLongPair;
 import org.eclipse.collections.api.tuple.primitive.ObjectLongPair;
 
@@ -79,7 +84,6 @@ final class NestedFacets {
 			}
 
 			var document = -1;
-			var counted = LongSets.mutable.empty();
 
 			/*
 			 * Counted by ordinal rather than by term: reading a term costs a
@@ -87,7 +91,7 @@ final class NestedFacets {
 			 * term would pay that for every document holding a value rather
 			 * than once for the value itself.
 			 */
-			var byOrdinal = LongLongMaps.mutable.empty();
+			var byOrdinal = OrdinalCounts.of(values.getValueCount());
 
 			for(
 				var doc = iterator.nextDoc();
@@ -96,7 +100,6 @@ final class NestedFacets {
 			) {
 				if(doc > document) {
 					document = documentOf(parents, doc);
-					counted.clear();
 				}
 
 				if(!values.advanceExact(doc)) {
@@ -109,26 +112,13 @@ final class NestedFacets {
 					/*
 					 * Ordinals are per segment and a document's values never
 					 * cross one, so the same term is the same ordinal for as
-					 * long as the set is held.
+					 * long as the counts are held.
 					 */
-					if(counted.add(ord)) {
-						byOrdinal.addToValue(ord, 1);
-					}
+					byOrdinal.addOncePer(ord, document);
 				}
 			}
 
-			/*
-			 * In order, because the dictionary is read forwards - a term after
-			 * the one just read is found by carrying on rather than by seeking
-			 * again.
-			 */
-			var ordinals = byOrdinal.keySet().toSortedArray();
-			for(var ord : ordinals) {
-				counts.addToValue(
-					values.lookupOrd(ord).utf8ToString(),
-					byOrdinal.get(ord)
-				);
-			}
+			byOrdinal.copyInto(values, counts);
 		}
 
 		Comparator<ObjectLongPair<String>> byValue =
@@ -357,8 +347,16 @@ final class NestedFacets {
 			}
 
 			var document = -1;
-			var documentOrds = LongLists.mutable.empty();
-			var byOrdinal = LongLongMaps.mutable.empty();
+			var documentOrds = new long[4];
+			var documentOrdCount = 0;
+			var byOrdinal = OrdinalCounts.of(values.getValueCount());
+
+			/*
+			 * A field holding one value per document reads through the sorted
+			 * doc values directly - the set wrapper answers the same thing
+			 * through two more calls per document.
+			 */
+			var singleton = DocValues.unwrapSingleton(values);
 
 			for(
 				var doc = iterator.nextDoc();
@@ -371,26 +369,32 @@ final class NestedFacets {
 						break;
 					}
 
-					documentOrds.clear();
-					if(values.advanceExact(document)) {
-						for(var i = 0; i < values.docValueCount(); i++) {
-							documentOrds.add(values.nextOrd());
+					documentOrdCount = 0;
+					if(singleton != null) {
+						if(singleton.advanceExact(document)) {
+							documentOrds[0] = singleton.ordValue();
+							documentOrdCount = 1;
 						}
+					} else if(values.advanceExact(document)) {
+						var count = values.docValueCount();
+						if(documentOrds.length < count) {
+							documentOrds = new long[count];
+						}
+
+						for(var i = 0; i < count; i++) {
+							documentOrds[i] = values.nextOrd();
+						}
+
+						documentOrdCount = count;
 					}
 				}
 
-				for(var i = 0; i < documentOrds.size(); i++) {
-					byOrdinal.addToValue(documentOrds.get(i), 1);
+				for(var i = 0; i < documentOrdCount; i++) {
+					byOrdinal.add(documentOrds[i]);
 				}
 			}
 
-			var ordinals = byOrdinal.keySet().toSortedArray();
-			for(var ord : ordinals) {
-				counts.addToValue(
-					values.lookupOrd(ord).utf8ToString(),
-					byOrdinal.get(ord)
-				);
-			}
+			byOrdinal.copyInto(values, counts);
 		}
 
 		Comparator<ObjectLongPair<String>> byValue =
@@ -596,6 +600,129 @@ final class NestedFacets {
 		return doc < parents.length()
 			? parents.nextSetBit(doc)
 			: DocIdSetIterator.NO_MORE_DOCS;
+	}
+
+	/**
+	 * Counts per ordinal of one segment's sorted set doc values.
+	 *
+	 * An array indexed by ordinal while the segment holds few enough distinct
+	 * values to afford one, a hash map above that - counting a match is an
+	 * array store instead of a hash probe, and matches outnumber distinct
+	 * values in any count worth speeding up.
+	 */
+	private abstract static sealed class OrdinalCounts {
+		/**
+		 * How many distinct values an array is afforded for. 64k ordinals is
+		 * half a megabyte of counts and markers, held only while one facet of
+		 * one segment counts.
+		 */
+		private static final long DENSE_LIMIT = 1 << 16;
+
+		static OrdinalCounts of(long valueCount) {
+			return valueCount <= DENSE_LIMIT
+				? new Dense((int) valueCount)
+				: new Sparse();
+		}
+
+		/**
+		 * Count the ordinal once.
+		 */
+		abstract void add(long ord);
+
+		/**
+		 * Count the ordinal, at most once per document - what rolling up
+		 * means. Documents arrive in order, so the one counted last is the
+		 * only one a repeat can belong to.
+		 */
+		abstract void addOncePer(long ord, int document);
+
+		/**
+		 * Add what was counted to {@code counts} by term. Ordinals are read in
+		 * order, so the dictionary is read forwards - a term after the one
+		 * just read is found by carrying on rather than by seeking again.
+		 */
+		abstract void copyInto(
+			SortedSetDocValues values,
+			MutableObjectLongMap<String> counts
+		) throws IOException;
+
+		private static final class Dense extends OrdinalCounts {
+			private final int[] counts;
+			private int[] countedFor;
+
+			Dense(int valueCount) {
+				this.counts = new int[valueCount];
+			}
+
+			@Override
+			void add(long ord) {
+				counts[(int) ord]++;
+			}
+
+			@Override
+			void addOncePer(long ord, int document) {
+				if(countedFor == null) {
+					countedFor = new int[counts.length];
+					Arrays.fill(countedFor, -1);
+				}
+
+				if(countedFor[(int) ord] != document) {
+					countedFor[(int) ord] = document;
+					counts[(int) ord]++;
+				}
+			}
+
+			@Override
+			void copyInto(
+				SortedSetDocValues values,
+				MutableObjectLongMap<String> counts
+			) throws IOException {
+				for(var ord = 0; ord < this.counts.length; ord++) {
+					if(this.counts[ord] > 0) {
+						counts.addToValue(
+							values.lookupOrd(ord).utf8ToString(),
+							this.counts[ord]
+						);
+					}
+				}
+			}
+		}
+
+		private static final class Sparse extends OrdinalCounts {
+			private final MutableLongLongMap counts = LongLongMaps.mutable.empty();
+			private final MutableLongSet counted = LongSets.mutable.empty();
+			private int countedDocument = -1;
+
+			@Override
+			void add(long ord) {
+				counts.addToValue(ord, 1);
+			}
+
+			@Override
+			void addOncePer(long ord, int document) {
+				if(document != countedDocument) {
+					countedDocument = document;
+					counted.clear();
+				}
+
+				if(counted.add(ord)) {
+					counts.addToValue(ord, 1);
+				}
+			}
+
+			@Override
+			void copyInto(
+				SortedSetDocValues values,
+				MutableObjectLongMap<String> counts
+			) throws IOException {
+				for(var ord : this.counts.keySet().toSortedArray()) {
+					counts.addToValue(
+						values.lookupOrd(ord).utf8ToString(),
+						this.counts.get(ord)
+					);
+				}
+			}
+		}
 	}
 
 	private static SearchResult.Facet toFacet(
