@@ -97,6 +97,11 @@ the definition is what decides - which is why the same object is a locale map
 for one field and a point for another. A locale specific field given a value
 without any locale keeps it in the field's default locale.
 
+A hit holds a locale specific field in the [one variant the search read it
+in](search-api.md#locale-specific-fields), so a hit sent back to be indexed
+replaces that field with the one language. A document that is to be written
+back whole is kept where it came from rather than read out of a search.
+
 An object field is written the same way whichever mode it declares - a
 document gives the value inside the object, never under the dotted path a
 search names. A field written as `"dimensions.width"` directly is refused

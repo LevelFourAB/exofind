@@ -2473,7 +2473,9 @@ public class Index {
 					null
 				);
 
-				return documentReader(Sets.immutable.<String>empty()).read(doc);
+				return DocumentReader
+					.everyVariant(schema, Sets.immutable.<String>empty())
+					.read(doc);
 			}
 		} finally {
 			syncLock.readLock().unlock();
@@ -2718,7 +2720,11 @@ public class Index {
 					? null
 					: countFacets(searcher, compiler, request, searched, assembled, null);
 
-				var reader = documentReader(request.fields());
+				var reader = DocumentReader.inLocale(
+					schema,
+					request.fields(),
+					request.locale()
+				);
 				var names = reader.namesOf();
 				var primaryKey = schema.getPrimaryKey();
 
@@ -3129,10 +3135,6 @@ public class Index {
 		public ScoreMode scoreMode() {
 			return ScoreMode.COMPLETE_NO_SCORES;
 		}
-	}
-
-	private DocumentReader documentReader(SetIterable<String> fields) {
-		return new DocumentReader(schema, fields);
 	}
 
 	/**

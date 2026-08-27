@@ -39,7 +39,7 @@ back the first few of them.
 | `facets` | What to count the matches per value of, see [Facets](#facets). Left out for no counting. |
 | `sort` | The order results come back in. Left out for the best matches first. |
 | `signals` | Values of the documents themselves to take into their relevance, see [Signals](#signals). Left out to rank by the ones the index declares. |
-| `locale` | Locale the search reads locale specific fields in (BCP-47). Matched as closely as each field's declared locales tell apart, so `sv-SE` reads a field holding `sv`; a field holding no variant the tag names reads its default. Left out to leave every field to its own default locale. |
+| `locale` | Locale the search reads locale specific fields in (BCP-47). Matched as closely as each field's declared locales tell apart, so `sv-SE` reads a field holding `sv`; a field holding no variant the tag names reads its default. Also the variant such a field comes back in. Left out to leave every field to its own default locale. |
 | `fields` | Fields to bring back with each result. A field inside an [`object`](field-types.md#object) is named by its dotted path and comes back inside the object, which then holds only the fields that were asked for. Naming a field the index has no way to return is refused, see [Document source](field-types.md#document-source). Left out for every stored field. The primary key is always included. |
 | `highlight` | Fields to return highlighted fragments for, see [Highlighting](#highlighting). Left out for none. |
 | `matched` | Object fields to say which values of matched with each hit, see [Matched values](#matched-values). Left out for none. |
@@ -810,7 +810,9 @@ values, `matched` would ask a hit about itself
   the search computed no scores - a search made only of filters - rather
   than defaulted to something that looks like a value. `document` holds the
   fields asked for, as they were given: a field with several values is an
-  array, a locale specific field is an object keyed by locale tag.
+  array, a locale specific field is an object holding the one variant the
+  search read it in, keyed by that variant's tag - see [Locale specific
+  fields](#locale-specific-fields).
   `highlights` is present whenever the search asked for highlighting, field
   name to a list of fragments - a field the hit holds no match in is left
   out of it, so a hit nothing matched carries `{}`. `matched` is present
@@ -832,6 +834,31 @@ values, `matched` would ask a hit about itself
   Left out entirely when it found what was asked for.
 - `tookMs` - how long answering took, measured around the whole call, in
   milliseconds and fractions of one.
+
+### Locale specific fields
+
+A [locale specific field](../how-to/localize-fields.md) comes back in the one
+variant the search read it in - the `locale` asked for where the field
+declares a variant that tag names, its default otherwise. A search in `sv`
+of a field holding English, Swedish and German answers:
+
+```json
+"document": {
+  "id": "1",
+  "name": { "sv": "röda löparskor" }
+}
+```
+
+- The key is the variant that was read, not the tag the value arrived
+  under, so a value indexed as `sv-SE` comes back under the `sv` the field
+  declares.
+- A document holding no value in that variant leaves the field out of its
+  hit, the way a field it never held is left out.
+- An index that fills the locales a document left empty answers such a hit
+  with the value the variant was filled with, since that is the value the
+  search matched.
+- A search answers in one locale, so reading a field in several means
+  searching once per locale.
 
 ### Numbered pages
 

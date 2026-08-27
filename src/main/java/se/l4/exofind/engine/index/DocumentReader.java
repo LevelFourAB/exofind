@@ -34,6 +34,12 @@ import se.l4.exofind.engine.index.schema.IndexSchema;
  * the fields that were not asked for left out of it. Asking for the object
  * itself asks for everything inside it.
  *
+ * A locale specific field comes back in one variant, {@link #inLocale the one
+ * the search reads it in} and under the tag of that variant, as what the
+ * document holds in the other languages is not what a search asking in one of
+ * them is answering. {@link #everyVariant} hands a document back whole instead,
+ * which is how it is read for its own sake.
+ *
  * Asking for a field the definition leaves no way to return is refused rather
  * than answered with it missing from every hit, which reads as documents that
  * never held it.
@@ -45,6 +51,25 @@ public class DocumentReader {
 	private final IndexSchema schema;
 	private final IndexEncounterImpl encounter;
 	private final SetIterable<String> fields;
+
+	/**
+	 * The locale that locale specific fields are read in, or {@code null} to
+	 * read each of them in its own default locale. Says nothing when
+	 * {@link #everyVariant} is set.
+	 */
+	private final String locale;
+
+	/**
+	 * Whether every variant of a locale specific field comes back, rather than
+	 * the one {@link #locale} names.
+	 */
+	private final boolean everyVariant;
+
+	/**
+	 * Whether the index declares a locale specific field at all, so documents
+	 * of an index that has none are never walked looking for one.
+	 */
+	private final boolean localeSpecific;
 
 	/**
 	 * The fields of the document that were asked for whole, by the name they
@@ -60,10 +85,16 @@ public class DocumentReader {
 	private final MutableMap<String, MutableSet<String>> inside;
 
 	/**
+	 * Read documents the way a search answers them, with every locale specific
+	 * field in the one variant the search reads it in.
+	 *
 	 * @param schema
 	 * @param fields
 	 *   the fields wanted, as they are called in the definition of the index -
 	 *   a field inside an object by its dotted path - or empty for all of them
+	 * @param locale
+	 *   the locale the search reads locale specific fields in (BCP-47), or
+	 *   {@code null} to read every field in its own default locale
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by one of the names
 	 * @throws IndexFieldUsageException
@@ -72,9 +103,51 @@ public class DocumentReader {
 	 *   if only the copy of the document could return one of them and the
 	 *   index keeps none
 	 */
-	public DocumentReader(IndexSchema schema, SetIterable<String> fields) {
+	public static DocumentReader inLocale(
+		IndexSchema schema,
+		SetIterable<String> fields,
+		String locale
+	) {
+		return new DocumentReader(schema, fields, locale, false);
+	}
+
+	/**
+	 * Read documents whole, keeping every variant of every locale specific
+	 * field.
+	 *
+	 * This is how a document is read for its own sake rather than as a result:
+	 * there is no locale it is being answered in, and what it says in each
+	 * language is part of what it is.
+	 *
+	 * @param schema
+	 * @param fields
+	 *   the fields wanted, judged as {@link #inLocale} judges them
+	 * @throws IndexFieldNotFoundException
+	 *   if the index has no field by one of the names
+	 * @throws IndexFieldUsageException
+	 *   if the definition leaves the index no way to return one of them
+	 * @throws IndexSourceRequiredException
+	 *   if only the copy of the document could return one of them and the
+	 *   index keeps none
+	 */
+	public static DocumentReader everyVariant(
+		IndexSchema schema,
+		SetIterable<String> fields
+	) {
+		return new DocumentReader(schema, fields, null, true);
+	}
+
+	private DocumentReader(
+		IndexSchema schema,
+		SetIterable<String> fields,
+		String locale,
+		boolean everyVariant
+	) {
 		this.schema = schema;
 		this.fields = fields;
+		this.locale = locale;
+		this.everyVariant = everyVariant;
+		this.localeSpecific = schema.getFields().anySatisfy(Field::isLocaleSpecific);
 
 		this.whole = Maps.mutable.empty();
 		this.inside = Maps.mutable.empty();
@@ -231,18 +304,67 @@ public class DocumentReader {
 
 	/**
 	 * Add the names a field's values are stored under. A locale specific field
-	 * stores a variant per locale it holds values in, and asking for the field
-	 * means asking for all of them - which variants exist is exactly what the
-	 * declared locales of the field say.
+	 * stores a variant per locale it holds values in, so only the one being
+	 * read is named - the others hold the same field in languages this is not
+	 * answering in, and reading them costs the same as reading anything else.
+	 * Reading a document whole names every variant, which is what the declared
+	 * locales of the field say exist.
 	 */
 	private void addStoredNames(MutableSet<String> names, String name, Field field) {
-		if(field.isLocaleSpecific()) {
+		if(!field.isLocaleSpecific()) {
+			names.add(FieldNames.name(name, null, FieldNames.STORED));
+			return;
+		}
+
+		if(everyVariant) {
 			for(var locale : field.getLocales()) {
 				names.add(FieldNames.name(name, locale, FieldNames.STORED));
 			}
-		} else {
-			names.add(FieldNames.name(name, null, FieldNames.STORED));
+
+			return;
 		}
+
+		names.add(FieldNames.name(name, variantOf(field), FieldNames.STORED));
+	}
+
+	/**
+	 * The variant of a locale specific field that is being read, judged the way
+	 * a search judges which variant it matches and sorts by: the locale asked
+	 * for when the field declares a variant the tag names - matched as closely
+	 * as the declared locales tell apart - and the field's default otherwise,
+	 * so a field that never held the locale still answers.
+	 *
+	 * @see QueryCompiler
+	 */
+	private String variantOf(Field field) {
+		return locale == null
+			? field.getDefaultLocale()
+			: field.resolveLocale(locale).orElseGet(field::getDefaultLocale);
+	}
+
+	/**
+	 * The variant of a locale specific field a value belongs to, which is the
+	 * declared locale the tag it was given under resolves to. {@code null} when
+	 * the field no longer declares a variant the tag names, as a value indexed
+	 * before a locale was taken out of the definition belongs to no variant the
+	 * field now has.
+	 */
+	private String variantOf(Field field, String locale) {
+		return locale == null
+			? field.getDefaultLocale()
+			: field.resolveLocale(locale).orElse(null);
+	}
+
+	/**
+	 * The field a value belongs to when that field is locale specific, and
+	 * {@code null} for every other value - one of a field that is not locale
+	 * specific, or of a field the definition no longer has.
+	 */
+	private Field localeSpecificField(String name) {
+		var field = schema.getField(name);
+		return field.isPresent() && field.get().isLocaleSpecific()
+			? field.get()
+			: null;
 	}
 
 	/**
@@ -256,7 +378,7 @@ public class DocumentReader {
 		var source = doc.getBinaryValue(FieldNames.SOURCE);
 		if(source != null) {
 			if(fields.isEmpty()) {
-				return DocumentSource.decode(source);
+				return cutVariants(DocumentSource.decode(source));
 			}
 
 			/*
@@ -265,7 +387,7 @@ public class DocumentReader {
 			 * what a page of results ordinarily costs. What was not asked for
 			 * is stepped over instead.
 			 */
-			return cutObjects(DocumentSource.decode(source, this::wanted));
+			return cutObjects(cutVariants(DocumentSource.decode(source, this::wanted)));
 		}
 
 		var values = Lists.mutable.<Document.Value>empty();
@@ -287,6 +409,22 @@ public class DocumentReader {
 				 * document was indexed. It is still on disk until the document
 				 * is written again, but it is no longer part of the index.
 				 */
+				continue;
+			}
+
+			/*
+			 * The variants beside the one being read are stored fields of the
+			 * same document, and are loaded with it whenever everything stored
+			 * is - a search asking for no fields in particular, or one whose
+			 * highlighting reads a field of its own.
+			 *
+			 * A filled variant is a stored field like any other here, and is
+			 * answered as the variant it fills - which is what reading from the
+			 * copy answers too, so the two agree.
+			 */
+			if(!everyVariant
+				&& field.get().isLocaleSpecific()
+				&& !variantOf(field.get()).equals(parsed.locale())) {
 				continue;
 			}
 
@@ -329,6 +467,11 @@ public class DocumentReader {
 	 * caller's to arrange, by adding {@link FieldNames#SOURCE} to what
 	 * {@link #namesOf()} says to load.
 	 *
+	 * The copy is handed back as the document was given, in every language it
+	 * holds. Only what was asked for is read in one variant, as only that is
+	 * being answered; the fields inside an object are never locale specific, so
+	 * what a caller looks at here is the same either way.
+	 *
 	 * @param doc
 	 * @param alsoDecode
 	 *   names of fields to keep readable in the copy beyond the ones that
@@ -346,7 +489,7 @@ public class DocumentReader {
 
 		if(fields.isEmpty()) {
 			var decoded = DocumentSource.decode(source);
-			return new WithSource(decoded, decoded);
+			return new WithSource(cutVariants(decoded), decoded);
 		}
 
 		var decoded = DocumentSource.decode(
@@ -354,7 +497,7 @@ public class DocumentReader {
 			name -> wanted(name) || alsoDecode.contains(name)
 		);
 
-		return new WithSource(cutObjects(askedFor(decoded)), decoded);
+		return new WithSource(cutObjects(cutVariants(askedFor(decoded))), decoded);
 	}
 
 	/**
@@ -370,6 +513,129 @@ public class DocumentReader {
 		}
 
 		if(values.size() == doc.fields().length) {
+			return doc;
+		}
+
+		return new Document(values.toArray(new Document.Value[0]));
+	}
+
+	/**
+	 * Keep one value of every locale specific field the document holds: the one
+	 * the field is being read in, and where the document was never given that
+	 * variant, the one an index that fills its locales filled it with - which is
+	 * the value the search matched, and comes back under the variant it fills
+	 * rather than the language it is in.
+	 *
+	 * That a filled variant answers as the variant is what the Lucene fields
+	 * say too, where it is a copy written into that variant and nothing tells it
+	 * from a translation - so a search asking for a field that is stored on its
+	 * own is answered the same whether the copy of the document is read or not.
+	 * {@link #everyVariant Reading a document whole} is what says which
+	 * languages it was given.
+	 *
+	 * A field the document holds nothing to answer with is left out, the way a
+	 * field it never held is.
+	 */
+	private Document cutVariants(Document doc) {
+		if(everyVariant || !localeSpecific) {
+			return doc;
+		}
+
+		/*
+		 * The locale specific fields the document holds and the variants it
+		 * holds them in, gathered before anything is judged because which value
+		 * of a field answers depends on which of them are there. Left
+		 * unallocated for a document that holds no such field, which is every
+		 * document of an index whose locale specific fields are not among the
+		 * ones being read.
+		 */
+		MutableMap<String, Field> localized = null;
+		MutableMap<String, MutableSet<String>> held = null;
+
+		for(var value : doc.fields()) {
+			var field = localeSpecificField(value.name());
+			if(field == null) {
+				continue;
+			}
+
+			if(localized == null) {
+				localized = Maps.mutable.empty();
+				held = Maps.mutable.empty();
+			}
+
+			localized.put(value.name(), field);
+
+			var variant = variantOf(field, value.locale());
+			if(variant != null) {
+				held.getIfAbsentPut(value.name(), Sets.mutable::empty).add(variant);
+			}
+		}
+
+		if(localized == null) {
+			return doc;
+		}
+
+		var keep = Maps.mutable.<String, String>empty();
+		for(var entry : localized.keyValuesView()) {
+			var variants = held.get(entry.getOne());
+			if(variants == null) {
+				continue;
+			}
+
+			var variant = variantOf(entry.getTwo());
+			if(variants.contains(variant)) {
+				keep.put(entry.getOne(), variant);
+				continue;
+			}
+
+			/*
+			 * The document was never given this variant, so what a search read
+			 * of the field is what the index filled it with - the first locale
+			 * of the chain the document does hold, found here the way it was
+			 * found when the document was indexed. An index that fills nothing
+			 * has no chain, and the field is left out.
+			 */
+			var filled = schema.getLocaleFallbackChain(entry.getTwo())
+				.detect(variants::contains);
+
+			if(filled != null) {
+				keep.put(entry.getOne(), filled);
+			}
+		}
+
+		var values = Lists.mutable.<Document.Value>empty();
+		var cut = false;
+
+		for(var value : doc.fields()) {
+			var field = localized.get(value.name());
+			if(field == null) {
+				values.add(value);
+				continue;
+			}
+
+			var variant = keep.get(value.name());
+			if(variant == null || !variant.equals(variantOf(field, value.locale()))) {
+				cut = true;
+				continue;
+			}
+
+			/*
+			 * Handed back under the variant that was read rather than the tag
+			 * the value carries: a value given as `nb-NO` comes back as the
+			 * `no` the field declares, and one taken from another locale comes
+			 * back as the variant it was taken for. Either way a caller reads
+			 * the variant it asked about without matching tags itself.
+			 */
+			var read = variantOf(field);
+			if(read.equals(value.locale())) {
+				values.add(value);
+			} else {
+				cut = true;
+				values.add(new Document.Value(value.name(), value.value(), read));
+			}
+		}
+
+		if(!cut) {
 			return doc;
 		}
 

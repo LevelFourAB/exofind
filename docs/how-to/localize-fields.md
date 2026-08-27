@@ -42,8 +42,22 @@ tag names falls back to its default, so a search across several fields
 does not fail on the one that never held the locale. The same matching
 applies to values on the way in.
 
-In results, a locale specific field comes back as an object keyed by
-locale tag.
+In results, a locale specific field comes back as an object holding the one
+variant the search read it in, keyed by that variant's tag:
+
+```json
+"document": {
+  "id": "1",
+  "name": { "sv": "röda löparskor" }
+}
+```
+
+The key is the variant that was read rather than the tag the value was
+given under, so a `sv-SE` value comes back under `sv`. A document that
+holds no value in the variant leaves the field out of its hit.
+
+A search answers in one locale, so a caller that needs a field in several -
+a translation view, say - searches once per locale.
 
 ## Find documents that were never translated
 
@@ -88,16 +102,19 @@ the one it came from. That is what lets a Swedish search's terms meet it,
 and what keeps `å` sorting where a Swedish reader expects among filled
 and translated documents alike.
 
-Results are unaffected. A document comes back as it was given, so a field
-still reads only in the locales it was given in and a caller can tell a
-translation from a gap.
+A search reads the filled variant like any other, so a hit found through
+one comes back with the value it was filled with - an untranslated product
+answers a Swedish search under `"sv"` with its English name rather than
+with nothing to show. Nothing in a result says whether the variant it
+answered with was translated or filled.
 
 ### What it costs
 
 The copies are written per missing locale per document, so the cost
 follows how much is untranslated - a fully translated field pays nothing.
-It is the field's inverted index, doc values and any term vectors that
-multiply, not the stored document.
+It is the field's inverted index, doc values, any term vectors and its
+stored value that multiply, not the copy of the document, which keeps only
+what the document was given.
 
 A field where the gap is cheaper than the copies - a long description
 that is only ever read, rather than a name that is searched, sorted and

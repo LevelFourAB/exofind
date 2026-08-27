@@ -99,6 +99,19 @@ public class LocaleSearchTest extends AbstractIndexTest {
 	}
 
 	/**
+	 * What one hit came back with for `name`, as `locale:value`, so a test says
+	 * both which variant answered and what it held.
+	 */
+	private static List<String> names(SearchResult result, Object id) {
+		var hit = result.hits().detect(candidate -> candidate.id().equals(id));
+
+		return Arrays.stream(hit.document().fields())
+			.filter(value -> value.name().equals("name"))
+			.map(value -> value.locale() + ":" + value.value())
+			.toList();
+	}
+
+	/**
 	 * The Swedish `bilar` stems to `bil` by Swedish rules, so searching for
 	 * the singular in Swedish finds it. The same query read as English never
 	 * would - which is also what the second search shows.
@@ -431,12 +444,136 @@ public class LocaleSearchTest extends AbstractIndexTest {
 	}
 
 	/**
-	 * Without a copy of the document, results are read from the stored
-	 * variants - all of them, which is what declaring the locales of a field
-	 * makes known.
+	 * A search reads a locale specific field in one language, so that is the
+	 * language it answers in - the other translations are not what it was asked
+	 * about.
 	 */
 	@Test
-	public void testStoredVariantsAllComeBackWhenFieldsAreSelected() throws IOException {
+	public void testFieldComesBackInTheLocaleTheSearchAsksFor() throws IOException {
+		var index = localized();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("löparskor"))
+				.withLocale("sv")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(result, "1"), contains("sv:röda löparskor"));
+	}
+
+	/**
+	 * Asking for no fields in particular asks for the document, which is still
+	 * the document in one language.
+	 */
+	@Test
+	public void testFieldComesBackInItsDefaultLocaleWithoutASearchLocale() throws IOException {
+		var index = localized();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("shoes"))
+				.build()
+		);
+
+		assertThat(names(result, "1"), contains("en:red running shoes"));
+	}
+
+	/**
+	 * A search naming a locale the field never held reads it in its default, so
+	 * that is also the variant it answers with - the one that was searched.
+	 */
+	@Test
+	public void testFieldComesBackInItsDefaultLocaleWhenTheSearchLocaleIsNotDeclared()
+		throws IOException
+	{
+		var index = localized();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("running"))
+				.withLocale("fr")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(result, "1"), contains("en:red running shoes"));
+	}
+
+	/**
+	 * Asked for with a region, answered under the variant the field declares -
+	 * so a caller reads the value it was answered with rather than matching
+	 * tags itself.
+	 */
+	@Test
+	public void testFieldComesBackUnderTheVariantTheSearchLocaleResolvesTo() throws IOException {
+		var index = localized();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("bil"))
+				.withLocale("sv-SE")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(result, "2"), contains("sv:snabba bilar"));
+	}
+
+	/**
+	 * The same on the way out as on the way in: a value that arrived with a
+	 * region comes back under the variant it landed in.
+	 */
+	@Test
+	public void testValueGivenWithARegionComesBackUnderTheDeclaredVariant() throws IOException {
+		var index = localized();
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "3"),
+				new Document.Value("name", "vandringskängor", "sv-SE")
+			)
+		);
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("vandringskängor"))
+				.withLocale("sv")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(result, "3"), contains("sv:vandringskängor"));
+	}
+
+	/**
+	 * A document that was never translated says nothing in the locale, and an
+	 * index that fills no locales has nothing to say it with - so the field is
+	 * left out rather than answered in a language that was not asked for.
+	 */
+	@Test
+	public void testFieldIsLeftOutWhereTheDocumentHoldsNoValueInTheVariant() throws IOException {
+		var index = localized();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withLocale("de")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(result, "1"), contains("de:rote Laufschuhe"));
+		assertThat(names(result, "2"), is(empty()));
+	}
+
+	/**
+	 * Without a copy of the document, results are read from the stored
+	 * variants - the one the search reads the field in, the same as with a copy.
+	 */
+	@Test
+	public void testStoredVariantComesBackForTheLocaleTheSearchReads() throws IOException {
 		var index = create(
 			"stored",
 			IndexDef.newBuilder()
@@ -464,17 +601,19 @@ public class LocaleSearchTest extends AbstractIndexTest {
 		);
 		index.commit();
 
-		var result = index.search(
+		// Nothing named, so every stored field is read and cut down here
+		var swedish = index.search(
+			SearchRequest.create()
+				.withLocale("sv")
+				.build()
+		);
+		assertThat(names(swedish, "1"), contains("sv:skor"));
+
+		var byDefault = index.search(
 			SearchRequest.create()
 				.withFields("name")
 				.build()
 		);
-
-		var values = Arrays.stream(result.hits().getFirst().document().fields())
-			.filter(value -> value.name().equals("name"))
-			.map(value -> value.locale() + ":" + value.value())
-			.toList();
-
-		assertThat(values, containsInAnyOrder("en:shoes", "sv:skor"));
+		assertThat(names(byDefault, "1"), contains("en:shoes"));
 	}
 }

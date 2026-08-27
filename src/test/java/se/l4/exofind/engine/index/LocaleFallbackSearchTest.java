@@ -31,8 +31,8 @@ import se.l4.exofind.engine.query.matchers.Matchers;
  *
  * Without it a search naming a locale only sees the documents translated into
  * it, and the rest are missing rather than ranked lower - so what these check
- * is that an untranslated document is matched, ordered, counted and filtered
- * like any other, while the document itself still says only what it was given.
+ * is that an untranslated document is matched, ordered, counted, filtered and
+ * answered like any other.
  */
 public class LocaleFallbackSearchTest extends AbstractIndexTest {
 	private static FieldDef.Builder string(StringFieldTypeDef.Builder type) {
@@ -42,6 +42,19 @@ public class LocaleFallbackSearchTest extends AbstractIndexTest {
 
 	private static List<Object> ids(SearchResult result) {
 		return result.hits().collect(SearchResult.Hit::id).toList();
+	}
+
+	/**
+	 * What one hit came back with for `name`, as `locale:value`, so a test says
+	 * both which language answered and what it held.
+	 */
+	private static List<String> names(SearchResult result, Object id) {
+		var hit = result.hits().detect(candidate -> candidate.id().equals(id));
+
+		return Arrays.stream(hit.document().fields())
+			.filter(value -> value.name().equals("name"))
+			.map(value -> value.locale() + ":" + value.value())
+			.toList();
 	}
 
 	/**
@@ -444,6 +457,85 @@ public class LocaleFallbackSearchTest extends AbstractIndexTest {
 				.build()
 		);
 		assertThat(ids(description), is(empty()));
+	}
+
+	/**
+	 * A search answers a locale specific field in the variant it read it in, and
+	 * for an untranslated document that variant holds what it was filled with -
+	 * so a Swedish search has something to show for it rather than a hit with no
+	 * name at all.
+	 */
+	@Test
+	public void testUntranslatedDocumentAnswersWithTheValueItWasFilledWith() throws IOException {
+		var index = catalogue();
+
+		/*
+		 * Named and stored on its own, so the answer is read from the stored
+		 * variants; asked for as part of the whole document, so it is read from
+		 * the copy. Both say the same thing about a filled variant.
+		 */
+		var named = index.search(
+			SearchRequest.create()
+				.withLocale("sv")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(named, "1"), contains("sv:skor"));
+		assertThat(names(named, "2"), contains("sv:gloves"));
+
+		var whole = index.search(
+			SearchRequest.create()
+				.withLocale("sv")
+				.build()
+		);
+
+		assertThat(names(whole, "1"), contains("sv:skor"));
+		assertThat(names(whole, "2"), contains("sv:gloves"));
+	}
+
+	/**
+	 * A field that opted out of being filled has nothing to answer a locale the
+	 * document never held, so it is left out of the result the way it is left
+	 * out of the matching.
+	 */
+	@Test
+	public void testFieldThatIsNotFilledAnswersNothingInALocaleItNeverHeld() throws IOException {
+		var index = create(
+			"unfilled",
+			IndexDef.newBuilder()
+				.setLocaleFallback(IndexDef.LocaleFallbackConfig.newBuilder().addChain("en"))
+				.putFields("id", string(StringFieldTypeDef.newBuilder()).setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(StringFieldTypeDef.newBuilder())
+						.setStored(true)
+						.setLocales(
+							FieldDef.LocaleConfig.newBuilder()
+								.setDefaultLocale("en")
+								.addLocales("sv")
+								.setFallback(FieldDef.LocaleConfig.Fallback.FALLBACK_DISABLED)
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "gloves", "en")
+			)
+		);
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withLocale("sv")
+				.withFields("name")
+				.build()
+		);
+
+		assertThat(names(result, "1"), is(empty()));
 	}
 
 	/**
