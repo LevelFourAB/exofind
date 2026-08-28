@@ -105,6 +105,8 @@ POST /v1alpha1/indexes/products/search
 
 With an empty query, the response returns the total count of searchable documents. Documents indexed since the last commit are not counted until they are committed. If the returned count is lower than expected, commit the index and repeat the search.
 
+The count is what the node answering the search can find. In a deployment with more than one node, a committed change reaches the other nodes on a refresh interval, so a count taken through a load balancer can lag the writer. See [Make a write visible to search](make-writes-visible.md).
+
 ## Handling errors
 
 If a request fails, use the following guidelines:
@@ -135,5 +137,6 @@ If a request fails, use the following guidelines:
 - [Define an index](define-an-index.md) - Define schemas and field validation rules.
 - [Roll out a definition change](roll-out-a-definition-change.md) - Reindex documents when an index definition changes.
 - [Search an index](search-an-index.md) - Query and retrieve indexed documents.
+- [Make a write visible to search](make-writes-visible.md) - The commit and refresh delays between a write and a search that can see it.
 - [Run more than one node](run-multiple-nodes.md) - Keeping candidates that can take the writes.
 - [Architecture](../explanation/architecture.md) - Why a write reaches the one node that holds the index, and what happens when no node does.

@@ -22,7 +22,9 @@ Three components handle documentation loading:
   published URLs. The build reports missing link targets.
 - [`src/sidebar.mjs`](src/sidebar.mjs) generates the sidebar navigation from
   [`docs/README.md`](../docs/README.md). Adding a document to `docs/README.md`
-  includes it in the sidebar.
+  includes it in the sidebar. Each `##` heading becomes a sidebar group, and a
+  `###` heading under it becomes a group nested inside that one, which is how
+  a long section such as the how-to guides is divided.
 
 To add a new document, create a file in `docs/` and add a link to
 `docs/README.md`. You do not need to edit files in this directory.

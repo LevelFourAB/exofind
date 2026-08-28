@@ -1,8 +1,9 @@
 [tools]
 java = "temurin-25"
 maven = "3.9.16"
-# Only the website needs it - the engine itself builds without node
+# Only the website needs these - the engine itself builds without node
 node = "26"
+pnpm = "10.33.0"
 
 [tasks.dev]
 description = "Run Quarkus in dev mode with hot reload"
@@ -100,7 +101,7 @@ dir = "website"
 # never run Astro and in CI, neither of which should be writing to a
 # preferences directory to find that out.
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
-run = ["npm install", "npm run dev"]
+run = ["pnpm install", "pnpm run dev"]
 
 [tasks."site:build"]
 description = "Build the site into website/dist"
@@ -109,10 +110,10 @@ dir = "website"
 # they search localhost, which is what a local build wants and what the
 # deployment overrides.
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
-run = ["npm ci", "npm run build"]
+run = ["pnpm install --frozen-lockfile", "pnpm run build"]
 
 [tasks."site:preview"]
 description = "Serve what site:build wrote, at the path the deployment serves it from"
 dir = "website"
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
-run = "npm run preview"
+run = "pnpm run preview"

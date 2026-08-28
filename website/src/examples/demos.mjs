@@ -26,7 +26,7 @@ export const DEMOS = [
 			+ 'index splits compound words.',
 		shows: [
 			'compound splitting',
-			'facets counted sideways of filters',
+			'facet counts that ignore their own filter',
 			'range buckets',
 			'highlighting'
 		]
@@ -52,10 +52,10 @@ export const DEMOS = [
 			+ 'and the wall of thumbnails changes while the department counts stay '
 			+ 'as they were.',
 		shows: [
-			'facets counted sideways of filters',
+			'facet counts that ignore their own filter',
 			'range buckets',
 			'ordering',
-			'numbered pages against cursors',
+			'numbered pages and cursors',
 			'highlighting'
 		]
 	}

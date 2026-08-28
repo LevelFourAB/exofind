@@ -31,21 +31,31 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # mise.toml decides the Node release, the same as it decides the JDK the
-      # engine is built with. Only node is installed; nothing here builds Java.
+      # mise.toml decides the Node and pnpm releases, the same as it decides
+      # the JDK the engine is built with. Only those two are installed;
+      # nothing here builds Java.
       - uses: jdx/mise-action@v2
         with:
-          install_args: node
+          install_args: node pnpm
 
       - uses: actions/configure-pages@v5
         id: pages
 
-      - name: Cache the npm downloads
+      # Asked rather than written down, because where the store lies depends on
+      # the runner and on how pnpm was installed.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      # The store rather than `node_modules`: what an install puts in the
+      # project is hard links out of this directory, so a cache hit saves the
+      # downloads without deciding what the installed tree looks like.
+      - name: Cache the pnpm store
         uses: actions/cache@v4
         with:
-          path: ~/.npm
-          key: npm-${{ hashFiles('website/package-lock.json') }}
-          restore-keys: npm-
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ hashFiles('website/pnpm-lock.yaml') }}
+          restore-keys: pnpm-
 
       # `PUBLIC_EXOFIND_NODE` is the node the demo pages search. It is a
       # repository variable rather than a value here, because it names a
@@ -61,8 +71,8 @@ jobs:
           ASTRO_TELEMETRY_DISABLED: '1'
           PUBLIC_EXOFIND_NODE: ${{ vars.EXOFIND_DEMO_NODE }}
         run: |
-          npm ci
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - uses: actions/upload-pages-artifact@v3
         with:

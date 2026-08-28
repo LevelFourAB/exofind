@@ -28,19 +28,19 @@ const features = [
 	{
 		title: 'Object storage is the source of truth',
 		body: 'Wipe a node and it pulls the index back from the bucket. One node '
-			+ 'writes at a time, and conditional writes stop a stale writer from '
-			+ 'corrupting anything.'
+			+ 'writes an index at a time, and conditional writes stop a stale '
+			+ 'writer from corrupting anything.'
 	},
 	{
 		title: 'Search is Lucene',
 		body: 'Full-text matching with typo tolerance and autocomplete, filtering, '
 			+ 'sorting, numbers, timestamps, geopoints, lists of nested objects, '
-			+ 'and k-nearest-neighbour vector search.'
+			+ 'and k-nearest neighbor (KNN) vector search.'
 	},
 	{
 		title: 'Values carry their locale',
 		body: 'Analysis, segmentation and collation follow it, Chinese, Japanese '
-			+ 'and Korean included, without configuring an analyzer.'
+			+ 'and Korean included. There is no analyzer to configure.'
 	},
 	{
 		title: 'Indexes are declared, not migrated',
@@ -91,7 +91,7 @@ const features = [
 
 	<h2>What it does</h2>
 
-	<div class="features">
+	<div class="features not-content">
 		{features.map(feature => (
 			<div class="feature">
 				<h3>{feature.title}</h3>
@@ -126,14 +126,27 @@ const features = [
 		padding-inline-start: 1rem;
 	}
 
+	/*
+	 * The grid opts out of the prose styling - `not-content` - because that
+	 * styling puts a top margin on every block that follows another one, and
+	 * here the blocks are cells rather than paragraphs: the margin lands on
+	 * every cell but the first and drops the rest of the row below it. The
+	 * spacing is the grid's gap instead, so the headings of a row start on one
+	 * line.
+	 */
 	.features {
+		align-items: start;
 		display: grid;
 		gap: 1.5rem 2rem;
 		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 	}
 
+	/* Opting out of the prose styling means the heading carries its own. */
 	.feature h3 {
+		color: var(--sl-color-white);
 		font-size: var(--sl-text-lg);
+		font-weight: 600;
+		line-height: var(--sl-line-height-headings);
 		margin-block: 0 0.4rem;
 	}
 

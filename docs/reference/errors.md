@@ -38,7 +38,9 @@ Each object in the `errors` array contains the following fields:
 | `path` | string | Location of the invalid field in the request. |
 | `arguments` | object | Key-value pairs containing the values used to build the error message. |
 
-For HTTP status codes, see the status tables in the [admin API](admin-api.md#status-codes) reference. The `400 Bad Request` status code covers both invalid request bodies and queries that request data or features an index does not have.
+For what each status code means, and for the conventions the whole API shares, see [API conventions](api-conventions.md). For the conditions that produce a status on a particular endpoint, see the status tables in the [admin API](admin-api.md#status-codes) reference. The `400 Bad Request` status code covers both invalid request bodies and queries that request data or features an index does not have.
+
+For deciding what a client does with a failure, see [Handle errors in a client](../how-to/handle-api-errors.md).
 
 ## Code prefixes
 

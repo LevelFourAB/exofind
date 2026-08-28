@@ -32,8 +32,9 @@ along with the demo pages at
 [levelfourab.github.io/exofind](https://levelfourab.github.io/exofind/). It is
 organized by [Diátaxis](https://diataxis.fr):
 
-- **[Tutorials](docs/README.md#tutorials)**: Run a node against local object
-  storage and define your first index.
+- **[Tutorials](docs/README.md#tutorials)**: Run the published image with
+  Docker and define your first index, then move it onto an object storage
+  bucket.
 - **[How-to guides](docs/README.md#how-to-guides)**: Define indexes, roll out
   schema changes, use localized fields and custom analysis, configure
   pagination, run multiple nodes, and manage Lucene upgrades.
@@ -44,35 +45,27 @@ organized by [Diátaxis](https://diataxis.fr):
 
 ## Quick start
 
-To start a node using [mise](https://mise.jdx.dev/) and Docker:
+Start a node using Docker:
 
 ```shell
-mise install         # Java and Maven
-mise run storage     # object storage on localhost:9000
-echo "s3.bucket.create -name exofind" | docker exec -i seaweedfs weed shell
-
-EXOFIND_STORAGE_MODE=object \
-REMOTE_STORAGE_URL=http://localhost:9000 \
-REMOTE_STORAGE_ACCESS_KEY=exofind \
-REMOTE_STORAGE_SECRET_KEY=exofind123 \
-REMOTE_STORAGE_BUCKET=exofind \
-LOCAL_STORAGE_DIRECTORY=data/indexes \
-INDEXER=true \
-mise run dev
+docker run -d --name exofind -p 8080:8080 \
+  -v exofind-data:/data \
+  -e EXOFIND_AUTH_ROOT_KEY=exok_quickstart \
+  ghcr.io/levelfourab/exofind:main-latest
 ```
 
-To run a single node without remote storage and store data on local disk, see
-[Run on one node](docs/how-to/run-on-one-node.md):
-
-```shell
-LOCAL_STORAGE_DIRECTORY=data/indexes mise run dev
-```
+The node stores indexes, the index registry, and API keys in the `exofind-data`
+volume on local disk. Replace the root key value before exposing the node over a
+network. `GET /q/health/ready` reports when the node is ready without requiring
+a key. For production deployments, pin a release tag from
+[Published images](#published-images).
 
 Define an index by sending the desired definition in a `PUT` request. The same
 request creates or updates the index:
 
 ```http
 PUT /v1alpha1/admin/indexes/books
+Authorization: Bearer exok_quickstart
 Content-Type: application/json
 
 {
@@ -89,6 +82,7 @@ Add documents to the index:
 
 ```http
 POST /v1alpha1/indexes/books/documents
+Authorization: Bearer exok_quickstart
 Content-Type: application/json
 
 {
@@ -102,12 +96,14 @@ Delete a document by its primary key, or delete multiple documents by query:
 
 ```http
 DELETE /v1alpha1/indexes/books/documents/1
+Authorization: Bearer exok_quickstart
 ```
 
 Search from any node. A list of query clauses uses an implicit `AND` condition:
 
 ```http
 POST /v1alpha1/indexes/books/search
+Authorization: Bearer exok_quickstart
 Content-Type: application/json
 
 {
@@ -119,12 +115,17 @@ Content-Type: application/json
 }
 ```
 
-Development mode does not require authentication. In all other environments,
-requests require an `Authorization: Bearer <key>` header. For details, see
+The image enforces credentials, so requests carry a bearer token. The root key
+is for bootstrapping; a real deployment uses it once to create keys through
+`POST /v1alpha1/admin/keys`, one per client. For details, see
 [Secure a deployment](docs/how-to/secure-a-deployment.md).
 
-For a complete step-by-step walkthrough, see the
-[getting started tutorial](docs/tutorials/getting-started.md).
+For step-by-step walkthroughs, see:
+
+- [Getting started](docs/tutorials/getting-started.md) - the walkthrough this
+  section compresses.
+- [Getting started with object storage](docs/tutorials/getting-started-with-object-storage.md) -
+  the same walkthrough using an object storage bucket.
 
 ## Examples
 
@@ -147,8 +148,8 @@ only, and 124 items when compound words are split.
 
 ## Development
 
-Exofind uses [Quarkus](https://quarkus.io/) with toolchains managed by mise.
-Common workflows include:
+Exofind uses [Quarkus](https://quarkus.io/) with toolchains managed by
+[mise](https://mise.jdx.dev/). Common workflows include:
 
 ```shell
 mise run dev         # Quarkus dev mode with hot reload
@@ -175,6 +176,7 @@ as running from source, but default `LOCAL_STORAGE_DIRECTORY` to `/data`:
 
 ```shell
 docker run --rm -p 8080:8080 \
+  -e EXOFIND_STORAGE_MODE=object \
   -e REMOTE_STORAGE_URL=http://host.docker.internal:9000 \
   -e REMOTE_STORAGE_ACCESS_KEY=exofind \
   -e REMOTE_STORAGE_SECRET_KEY=exofind123 \
