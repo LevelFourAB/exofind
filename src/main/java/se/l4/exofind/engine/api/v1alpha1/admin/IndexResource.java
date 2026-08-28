@@ -24,6 +24,7 @@ import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
+import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -33,6 +34,7 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.EntityTag;
 import jakarta.ws.rs.core.MediaType;
@@ -76,14 +78,30 @@ public class IndexResource {
 		.withArguments("index")
 		.withMessage("The index `{{index}}` could not be updated on disk");
 
+	private static final ErrorType REINDEX_NEEDS_NEW_GENERATION =
+		ErrorType.withCode("index:reindex_needs_new_generation")
+			.withArguments("name")
+			.withMessage(
+				"`reindex` fills a generation as it is created from the one that is"
+					+ " live, which `{{name}}` does not create. Create a generation"
+					+ " like `books@2`, or use the reindex action"
+			);
+
 	private final Indexes indexes;
 	private final AuthContext auth;
 	private final IndexerOwnership ownership;
+	private final ReindexJobs reindexJobs;
 
-	public IndexResource(Indexes indexes, AuthContext auth, IndexerOwnership ownership) {
+	public IndexResource(
+		Indexes indexes,
+		AuthContext auth,
+		IndexerOwnership ownership,
+		ReindexJobs reindexJobs
+	) {
 		this.indexes = indexes;
 		this.auth = auth;
 		this.ownership = ownership;
+		this.reindexJobs = reindexJobs;
 	}
 
 	/**
@@ -143,6 +161,11 @@ public class IndexResource {
 	 *   version the definition is expected to have, as returned by the
 	 *   {@code ETag} of a previous request. When given and the index has since
 	 *   been changed the request fails instead of overwriting that change
+	 * @param reindex
+	 *   {@code auto} or {@code manual} to also fill the generation being
+	 *   created from the live one, the way the reindex action would - sugar
+	 *   over the action, for creating a generation only if the reindex is
+	 *   wanted. Only meaningful when a generation is created
 	 * @param definition
 	 * @return
 	 * @throws UnrepresentableStateException
@@ -157,6 +180,7 @@ public class IndexResource {
 	public Response put(
 		@PathParam("name") String name,
 		@HeaderParam("If-Match") String ifMatch,
+		@QueryParam("reindex") String reindex,
 		@Context UriInfo uriInfo,
 		IndexDefinition definition
 	) {
@@ -166,6 +190,12 @@ public class IndexResource {
 
 		var stored = IndexDefinitionMapper.toStored(definition);
 		var requested = IndexName.parse(name);
+
+		// A value the job would refuse is refused before anything is created
+		if(reindex != null) {
+			ReindexJobs.parsePromote(reindex);
+		}
+
 		var existing = indexes.get(name);
 
 		if(existing.isEmpty()) {
@@ -177,11 +207,43 @@ public class IndexResource {
 				throw new IndexNotFoundException(name);
 			}
 
+			if(reindex != null && !requested.isPinned()) {
+				/*
+				 * Creating the index itself leaves nothing to fill the first
+				 * generation from - the flag belongs to a generation created
+				 * next to a live one.
+				 */
+				throw new ValidationException(
+					REINDEX_NEEDS_NEW_GENERATION.toMessage(ObjectLocation.root(), "name", name)
+				);
+			}
+
 			var created = requested.isPinned()
 				? indexes.createGeneration(name, stored)
 				: indexes.create(name, stored);
 
+			if(reindex != null) {
+				/*
+				 * A one-shot instruction rather than part of the definition:
+				 * the same job the reindex action starts, reading from the
+				 * live generation. A node dying between the create and here
+				 * loses the flag, and the client calls the action instead.
+				 */
+				reindexJobs.start(name, null, reindex);
+			}
+
 			return toResponse(Response.created(uriInfo.getAbsolutePath()), created).build();
+		}
+
+		if(reindex != null) {
+			/*
+			 * The flag fills what is being created, and this request created
+			 * nothing. Refused rather than ignored, so a repeated create does
+			 * not quietly stop meaning "and fill it".
+			 */
+			throw new ValidationException(
+				REINDEX_NEEDS_NEW_GENERATION.toMessage(ObjectLocation.root(), "name", name)
+			);
 		}
 
 		var index = existing.get();
@@ -238,6 +300,11 @@ public class IndexResource {
 	 * interval. Nothing they hold changes, so this is also how a rollout is
 	 * undone: promote the generation that was answering before.
 	 *
+	 * <p>A generation a reindex is filling is promoted through the job: one
+	 * that says it is ready is drained and promoted complete, one that has
+	 * not caught up yet is refused - promoting a partial copy is what the job
+	 * exists to prevent.
+	 *
 	 * @param name
 	 *   the generation to promote, as {@code index@generation}
 	 * @return
@@ -247,7 +314,10 @@ public class IndexResource {
 	@RequiresPermission(Permission.INDEXES_PROMOTE)
 	@ServedBy(ServedBy.Node.INDEXER)
 	public Response promote(@PathParam("name") String name) {
-		indexes.promote(name);
+		if(!reindexJobs.promoteThroughJob(name)) {
+			indexes.promote(name);
+		}
+
 		return toResponse(Response.ok(), indexes.getOrThrow(name)).build();
 	}
 

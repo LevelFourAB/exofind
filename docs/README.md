@@ -38,6 +38,9 @@ The documentation includes the following how-to guides:
 - [Roll out a definition change](how-to/roll-out-a-definition-change.md):
   Change what an index holds for documents already in it, without callers
   noticing.
+- [Reindex into a new generation](how-to/reindex-into-a-new-generation.md):
+  Have the engine fill the new generation from the one it replaces, instead
+  of sending every document again.
 - [Localize fields](how-to/localize-fields.md): Hold values in several languages
   and search them by locale.
 - [Customize text analysis](how-to/customize-analysis.md): Configure presets,

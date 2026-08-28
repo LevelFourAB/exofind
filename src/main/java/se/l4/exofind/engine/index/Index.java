@@ -52,6 +52,7 @@ import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
+import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
@@ -678,6 +679,14 @@ public class Index {
 			 * about local state the pulled files replace either way.
 			 */
 			closeMergeReader();
+
+			/*
+			 * The in-memory log belongs to the state the pulled files replace.
+			 * Kept, a node that loses and regains an index would resume from
+			 * it instead of the pulled log file - whoever tracks loads the
+			 * file again through beginChangeTracking.
+			 */
+			this.changeLog = null;
 
 			if(this.writer != null) {
 				/*
@@ -2568,6 +2577,127 @@ public class Index {
 			}
 		} finally {
 			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Get how many documents the index holds, as a search sees it - the last
+	 * commit, without anything indexed since.
+	 *
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 * @throws IOException
+	 */
+	public long getDocumentCount() throws IOException {
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				throw new IndexClosedException(id);
+			}
+
+			try(var handle = searcherManager.acquire()) {
+				return handle.getSearcher().count(parentsOnly(new MatchAllDocsQuery()));
+			}
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Read the stored copy of the document a primary key term names, seeing
+	 * everything written so far whether committed or not. The term is a key as
+	 * Lucene indexed it - what a {@link ChangeLog} records - comparable only
+	 * between indexes whose primary key fields share a name and type.
+	 *
+	 * <p>Answering from what is not committed yet takes the writer, so only
+	 * the node writing the index can ask.
+	 *
+	 * @param keyTerm
+	 * @return
+	 *   the document, or {@code null} when nothing is indexed under the key
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key
+	 * @throws IndexSourceNotKeptException
+	 *   if the index keeps no copy of its documents, or the document was
+	 *   indexed while it kept none
+	 * @throws IndexReadonlyException
+	 *   if this node is not the indexer
+	 * @throws IOException
+	 */
+	public Document getDocumentByKeyTerm(BytesRef keyTerm) throws IOException {
+		syncLock.readLock().lock();
+		try {
+			checkModifiable();
+
+			var field = primaryKeyField();
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceNotKeptException(id);
+			}
+
+			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
+			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+			encounter.updateValue(field.getName(), field.getDef());
+
+			return readSource(new Term(encounter.name(FieldNames.PRIMARY_KEY), keyTerm));
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Remove the document a primary key term names, the way
+	 * {@link #deleteDocument(Object)} removes one named by its value. The term
+	 * is a key as Lucene indexed it - what a {@link ChangeLog} of an index
+	 * with the same primary key field records - so a caller catching this
+	 * index up against another can take a removal over without decoding the
+	 * key.
+	 *
+	 * @param keyTerm
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key
+	 * @throws IndexReadonlyException
+	 *   if this node is not the indexer
+	 * @throws IOException
+	 */
+	public void deleteDocumentByKeyTerm(BytesRef keyTerm) throws IOException {
+		writeGate.readLock().lock();
+		syncLock.readLock().lock();
+		try {
+			checkModifiable();
+
+			var field = primaryKeyField();
+			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
+			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+			encounter.updateValue(field.getName(), field.getDef());
+
+			var term = new Term(
+				encounter.name(FieldNames.PRIMARY_KEY),
+				BytesRef.deepCopyOf(keyTerm)
+			);
+
+			/*
+			 * Held like deleteDocuments holds it, so a partial update that read
+			 * the document just before cannot write its merge back afterwards
+			 * and bring the document back.
+			 */
+			var lock = lockFor(term.bytes());
+			lock.lock();
+			try {
+				writer.deleteDocuments(term);
+				rememberRemoved(term.bytes());
+			} finally {
+				lock.unlock();
+			}
+
+			var log = this.changeLog;
+			if(log != null) {
+				log.record(term.bytes());
+			}
+
+			markModified(1);
+		} finally {
+			syncLock.readLock().unlock();
+			writeGate.readLock().unlock();
 		}
 	}
 

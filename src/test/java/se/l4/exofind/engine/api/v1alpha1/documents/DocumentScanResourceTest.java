@@ -40,6 +40,7 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.reindex.TestReindexJobs;
 import jakarta.ws.rs.core.StreamingOutput;
 
 /**
@@ -60,13 +61,15 @@ public class DocumentScanResourceTest {
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
 
+		var registry = new IndexRegistry(
+			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		);
+
 		indexes = new Indexes(
 			nodeState,
 			new NoopSyncProvider(),
-			new IndexRegistry(
-				new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
-				Duration.ofMinutes(5)
-			),
+			registry,
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
@@ -81,7 +84,11 @@ public class DocumentScanResourceTest {
 			Duration.ofHours(1)
 		);
 
-		resource = new DocumentResource(indexes, new CustomProviders().objectMapper());
+		resource = new DocumentResource(
+			indexes,
+			new CustomProviders().objectMapper(),
+			TestReindexJobs.create(nodeState, indexes, registry, storageDirectory)
+		);
 	}
 
 	@AfterEach

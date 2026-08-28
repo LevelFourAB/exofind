@@ -18,8 +18,12 @@ DELETE /v1alpha1/admin/indexes/{name}                   # remove an index or a g
 POST   /v1alpha1/admin/indexes/{name}/actions/promote   # answer for this generation
 POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
 POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state now
+POST   /v1alpha1/admin/indexes/{target}/actions/reindex # start a job
+GET    /v1alpha1/admin/indexes/{name}/actions/reindex   # job status
+POST   /v1alpha1/admin/indexes/{name}/actions/reindex/cancel # stop a job
 
 GET    /v1alpha1/admin/indexers                         # which node writes which index
+GET    /v1alpha1/admin/reindexes                        # every job across the deployment
 ```
 
 Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
@@ -131,9 +135,115 @@ The API provides index action endpoints:
 
 - `commit`: Pushes pending changes (documents and definition) to storage and returns the resulting status.
 - `pull`: Fetches the latest remote state immediately instead of waiting for the refresh interval, and returns the resulting status.
-- `promote`: Configures the index to serve from the specified generation and returns the updated index resource. The request path must specify a generation name; calling `promote` without a generation returns `index:generation:name_required`.
+- `promote`: Configures the index to serve from the specified generation and returns the updated index resource. The request path must specify a generation name; calling `promote` without a generation returns `index:generation:name_required`. Promoting the target of a `ready` reindex job finishes the job, while promoting before the job is ready is refused with `409 Conflict` (`reindex:target_busy`).
 
 `commit` and `pull` act on the generation specified in the request path (or the live generation if omitted). Nodes automatically discover indexes, generations, and changes at the interval configured by `INDEXES_REFRESH_INTERVAL`.
+
+## Reindex
+
+A reindex job populates a new generation by copying documents from an existing generation of the same index inside the engine, without resending documents from the client. For step-by-step instructions, see [Reindex into a new generation](../how-to/reindex-into-a-new-generation.md).
+
+### Starting a job
+
+To start a reindex job, send a `POST` request to `/v1alpha1/admin/indexes/{target}/actions/reindex`. This request requires the `indexes.reindex` permission.
+
+The `{target}` must meet the following requirements:
+
+- It must specify a generation by name (for example, `products@2`).
+- The generation must already exist and must be empty.
+- The generation must not be the live generation.
+- The source generation must have a primary key and keep document sources (`source` mode not `none`).
+- The primary key of the source and target generations must have the same field name and type.
+
+If the target does not meet these requirements, the server returns `400 Bad Request`.
+
+The request body accepts the following optional JSON fields:
+
+- `from`: The generation to read documents from. Defaults to the live generation. Must belong to the same index as the target.
+- `promote`: The promotion mode. `auto` (default) automatically promotes the target generation once it catches up with changes. `manual` pauses the job in the `ready` phase and keeps the target caught up until you manually promote it.
+
+A successful request returns `202 Accepted` with the job record. The job runs in the background on the node holding the index.
+
+An index can run at most one reindex job at a time. Starting a second job on an index returns `409 Conflict` with the error code `reindex:in_progress`. A finished job's record remains readable until a new job for that index replaces it.
+
+### Creation parameter
+
+You can create a generation and start a reindex job in one request by adding the `?reindex=auto` or `?reindex=manual` query parameter to a `PUT` request:
+
+```text
+PUT /v1alpha1/admin/indexes/products@2?reindex=auto
+```
+
+This creates the target generation with the definition in the request body and starts a reindex job reading from the live generation.
+
+The `reindex` query parameter is one-shot and is not stored in the index definition. The server returns `400 Bad Request` if the request does not create a generation, such as on an initial index creation or on a `PUT` request that updates an existing generation's definition.
+
+### Job record and phases
+
+Reindex endpoints return a job record:
+
+```json
+{
+  "index": "products",
+  "target": "products@2",
+  "source": "products@1",
+  "phase": "copying",
+  "promote": "auto",
+  "documentsCopied": 125000,
+  "sourceDocuments": 2400000,
+  "backlog": 4100,
+  "error": null,
+  "startedAt": "2026-08-28T10:15:30Z",
+  "updatedAt": "2026-08-28T10:16:02Z"
+}
+```
+
+The job record contains the following fields:
+
+- `index`: The name of the index.
+- `target`: The generation being populated.
+- `source`: The generation providing the source documents.
+- `phase`: The current phase of the job.
+- `promote`: The configured promote mode (`auto` or `manual`).
+- `documentsCopied`: The number of confirmed documents copied to the target.
+- `sourceDocuments`: The document count of the source generation when the copy started.
+- `backlog`: The number of changed documents waiting to be replayed when the record was last written.
+- `error`: The error message if the job failed, or `null`.
+- `startedAt`: The timestamp when the job started.
+- `updatedAt`: The timestamp when the job record was last updated.
+
+A job progresses through the following phases:
+
+| Phase | Description |
+|---|---|
+| `pending` | Accepted and waiting for a concurrency slot on the node. |
+| `copying` | Streaming documents from the source to the target in primary key order. |
+| `replaying` | Copying documents that changed in the source while the copy ran. |
+| `ready` | Used only with `promote: manual`. Caught up and waiting for manual promotion, while continuing to catch up periodically. |
+| `promoting` | Holding writes for the final drain and promotion. |
+| `done` | Completed and promoted successfully. |
+| `failed` | Stopped before promotion due to an error. The `error` field indicates the cause. |
+| `cancelled` | Stopped before completion in response to a cancellation request. |
+
+### Job status and fleet-wide listing
+
+To check the status of a job on an index, send a `GET` request to `/v1alpha1/admin/indexes/{name}/actions/reindex`. If no job exists for the index, the server returns `404 Not Found` with the error code `reindex:not_found`.
+
+To list every reindex job across the deployment, send a `GET` request to `/v1alpha1/admin/reindexes`.
+
+Both endpoints require the `indexes.read` permission. Status and fleet-wide listings are served from a durable job record, so any node can serve the request and returns the same response.
+
+### Cancelling a job
+
+To stop an in-progress job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex/cancel`. This requires the `indexes.reindex` permission.
+
+Cancelling a job stops the background process and leaves the partially populated target generation in place. You can remove the generation with `DELETE /v1alpha1/admin/indexes/{target}`. Cancelling a finished job changes nothing.
+
+### Target constraints and promotion
+
+Direct document writes to a generation being filled by a reindex job return `409 Conflict` with the error code `reindex:target_busy`. Document writes to the live generation continue unaffected.
+
+When a job configured with `promote: manual` reaches the `ready` phase, calling `POST /v1alpha1/admin/indexes/{target}/actions/promote` finishes the job by draining remaining changes, promoting the generation, and transitioning the job to `done`. Promoting a target generation before the job reaches the `ready` phase is refused with `409 Conflict` and the error code `reindex:target_busy`.
 
 ## Indexers
 
@@ -172,8 +282,8 @@ The Admin API returns the following status codes:
 | `400 Bad Request` | The request body failed validation. The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
-| `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, the definition contains unrepresentable settings, the index requires unsupported engine features, or writing to the registry failed. |
+| `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), or the index falls outside the credential's allowed patterns. |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), the definition contains unrepresentable settings, the index requires unsupported engine features, or writing to the registry failed. |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

@@ -12,6 +12,8 @@ Use this guide when a definition change alters how existing values are indexed:
 
 You do not need this procedure if the index is empty, if the change only affects documents indexed after the change, or if you are about to reindex all documents. For conceptual background, see [Generations](../explanation/generations.md).
 
+If the index keeps document sources (the default), the engine can fill the new generation for you instead of you resending every document - see [Reindex into a new generation](reindex-into-a-new-generation.md). Use the procedure below when sources are not kept, or when the documents should come fresh from the system that owns them.
+
 ## Prerequisites
 
 Before you begin, verify that your API key has permissions for `products@*`. An API key granted permissions only for `products` follows the active generation across rollouts, but cannot search or list specific generations by name. For more information, see [Patterns and generations](../reference/auth.md#patterns-and-generations).

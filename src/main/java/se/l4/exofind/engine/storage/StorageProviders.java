@@ -25,6 +25,9 @@ import se.l4.exofind.engine.index.state.ObjectStorageIndexerOwnership;
 import se.l4.exofind.engine.index.state.ObjectStorageSyncProvider;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.reindex.LocalReindexJobStorage;
+import se.l4.exofind.engine.reindex.ObjectStorageReindexJobStorage;
+import se.l4.exofind.engine.reindex.ReindexJobStorage;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
@@ -244,6 +247,26 @@ public class StorageProviders {
 		return switch(mode) {
 			case LOCAL -> new LocalRegistryStorage(storageDirectory.resolve(LOCAL_REGISTRY_FILE));
 			case OBJECT -> new ObjectStorageRegistryStorage(storage.get());
+		};
+	}
+
+	/**
+	 * Where the reindex job records are kept. They share the storage the
+	 * indexes live in, so a half-finished job survives its node and any node
+	 * answers where one stands.
+	 */
+	@Produces
+	@Singleton
+	public ReindexJobStorage reindexJobStorage(
+		StorageMode mode,
+		Instance<ObjectStorage> storage,
+		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+	) {
+		return switch(mode) {
+			case LOCAL -> new LocalReindexJobStorage(
+				storageDirectory.resolve("jobs").resolve("reindex")
+			);
+			case OBJECT -> new ObjectStorageReindexJobStorage(storage.get());
 		};
 	}
 

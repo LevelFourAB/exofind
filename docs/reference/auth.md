@@ -50,6 +50,7 @@ Exofind supports the following permissions:
 | `indexes.promote` | index | Promotes an index to serve from a generation. |
 | `indexes.commit` | index | Commits and pushes pending changes. |
 | `indexes.pull` | index | Pulls the latest index state. |
+| `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. |
 | `keys.read` | deployment | Lists API keys. |
 | `keys.write` | deployment | Creates and revokes API keys. |
 

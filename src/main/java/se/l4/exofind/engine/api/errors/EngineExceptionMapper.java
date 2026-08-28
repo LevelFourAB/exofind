@@ -33,6 +33,9 @@ import se.l4.exofind.engine.index.state.IndexerLeadershipUnreadableException;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.reindex.ReindexInProgressException;
+import se.l4.exofind.engine.reindex.ReindexNotFoundException;
+import se.l4.exofind.engine.reindex.ReindexTargetBusyException;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -177,6 +180,16 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			/*
 			 * The change is well formed but could not be stored, which leaves
 			 * the indexes exactly as they were.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof ReindexNotFoundException) {
+			return Response.Status.NOT_FOUND;
+		} else if(e instanceof ReindexInProgressException
+			|| e instanceof ReindexTargetBusyException) {
+			/*
+			 * The request is well formed but collides with a reindex that is
+			 * running - it is served once the job finishes or is cancelled,
+			 * so the state is what has to change rather than the request.
 			 */
 			return Response.Status.CONFLICT;
 		} else if(e instanceof IndexClosedException) {

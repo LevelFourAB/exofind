@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.reindex;
+
+/*
+ * This file is the format a reindex job is described in - one record per
+ * index, kept in the bucket under `jobs/reindex/<index>` or in the jobs
+ * directory of a node storing locally. A record outlives the node that wrote
+ * it: it is what a successor resumes a half-finished job from, so it has to
+ * stay readable for as long as a job can exist. The same rules as for an
+ * index definition apply: scalars are `optional` so unset can be told apart
+ * from the zero value, and a field number is never reused.
+ */
+
+/**
+ * ReindexPhaseStore is where a job stands. The names are stored, so a value
+ * is never renamed or reused - a phase this build does not know means the
+ * record was written by a newer version, and the job is left alone.
+ */
+enum ReindexPhaseStore {
+	REINDEX_PHASE_UNSPECIFIED = 0;
+	/**
+	 * Accepted but not yet running, waiting for a slot in the node's budget.
+	 */
+	REINDEX_PHASE_PENDING = 1;
+	/**
+	 * Streaming documents out of the source generation and into the target,
+	 * in primary key order, checkpointed by the cursor.
+	 */
+	REINDEX_PHASE_COPYING = 2;
+	/**
+	 * The copy is complete and the changes that landed in the source while it
+	 * ran are being replayed, round by round, until the backlog is small.
+	 */
+	REINDEX_PHASE_REPLAYING = 3;
+	/**
+	 * Caught up and waiting for the promote the creator asked to make
+	 * themselves, running periodic catch-up rounds meanwhile.
+	 */
+	REINDEX_PHASE_READY = 4;
+	/**
+	 * Holding writes for the final drain and the conditional promote.
+	 */
+	REINDEX_PHASE_PROMOTING = 5;
+	REINDEX_PHASE_DONE = 6;
+	REINDEX_PHASE_FAILED = 7;
+	REINDEX_PHASE_CANCELLED = 8;
+}
+
+/**
+ * ReindexJobStore is one reindex job: the generation being filled, the one it
+ * is filled from, and how far the work has come. Both the status endpoints
+ * and a resume read it, so everything either needs is here rather than in the
+ * memory of the node running the job.
+ */
+message ReindexJobStore {
+	/**
+	 * Name of the index, without a generation. Also the name the record is
+	 * stored under, kept in the record so a listing does not have to parse
+	 * keys.
+	 */
+	optional string index = 1;
+	/**
+	 * Generation being filled.
+	 */
+	optional string target = 2;
+	/**
+	 * Generation the documents are read from, pinned when the job starts -
+	 * a promote while the job runs does not move it.
+	 */
+	optional string source = 3;
+	/**
+	 * Where the job stands.
+	 */
+	optional ReindexPhaseStore phase = 4;
+	/**
+	 * The last primary key whose copy is known to have reached the remote,
+	 * written the way a key is written in a URL. Only moved after the target's
+	 * commit has been pushed, so a resume can only re-copy - and copying by
+	 * key is idempotent. Unset before the first checkpoint.
+	 */
+	optional string cursor = 5;
+	/**
+	 * How many documents the copy has confirmed so far, moved with the cursor.
+	 */
+	optional int64 documents_copied = 6;
+	/**
+	 * How many documents the source held when the copy started, for reading
+	 * progress off the record. The source keeps taking writes, so this is a
+	 * figure rather than a promise.
+	 */
+	optional int64 source_doc_count = 7;
+	/**
+	 * How many documents the change log named when the record was last
+	 * written, saying how far behind the copy is.
+	 */
+	optional int64 backlog = 8;
+	/**
+	 * Why the job failed, naming the offending document where there is one.
+	 * Set only in the failed phase.
+	 */
+	optional string error = 9;
+	/**
+	 * Whether the creator promotes the target themselves. The job stops in
+	 * the ready phase and the promote endpoint finishes it, instead of the
+	 * job promoting on its own.
+	 */
+	optional bool manual_promote = 10;
+	/**
+	 * When the job was accepted, as milliseconds since the Unix epoch.
+	 */
+	optional int64 started_at = 11;
+	/**
+	 * When the record was last written, as milliseconds since the Unix epoch.
+	 */
+	optional int64 updated_at = 12;
+}

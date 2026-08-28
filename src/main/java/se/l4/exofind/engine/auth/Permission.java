@@ -31,6 +31,7 @@ public enum Permission {
 	INDEXES_PROMOTE("indexes.promote", Scope.INDEX, Anonymous.REFUSED),
 	INDEXES_COMMIT("indexes.commit", Scope.INDEX, Anonymous.REFUSED),
 	INDEXES_PULL("indexes.pull", Scope.INDEX, Anonymous.REFUSED),
+	INDEXES_REINDEX("indexes.reindex", Scope.INDEX, Anonymous.REFUSED),
 
 	KEYS_READ("keys.read", Scope.DEPLOYMENT, Anonymous.REFUSED),
 	KEYS_WRITE("keys.write", Scope.DEPLOYMENT, Anonymous.REFUSED);

@@ -64,6 +64,11 @@ Code lives under `se.l4.exofind.engine`.
   does not hold are forwarded by `IndexerForwardFilter`, per what the endpoint
   declares with `@ServedBy` - and a write for an index nothing holds is what
   appoints its writer, via `tryClaim`.
+- **`se.l4.exofind.engine.reindex` fills a generation from another one.**
+  `ReindexJobs` drives the copy-replay-hold-promote sequence off a durable
+  record per index (`ReindexJobStorage`), which is also what a successor
+  resumes a half-finished job from - the job runs wherever the index's writer
+  is, and status is answered from the record on any node.
 - **`se.l4.exofind.engine.auth` decides who a request is from.** `Keys` turns a
   bearer token into a `Principal`, and `AuthFilter` checks that principal
   against the `@RequiresPermission` the endpoint declares.

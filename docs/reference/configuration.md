@@ -64,6 +64,10 @@ The following table lists indexer configuration variables:
 |----------|-------------|---------|
 | `INDEXER` | Specifies whether this node can write indexes. Multiple indexer candidates divide indexes through a leadership table in object storage. Each index is written by one node at a time. Other nodes take over an index if its holder stops or stalls. | `false` (`true` in `local` mode) |
 | `INDEXER_LEASE_DURATION` | Duration an index lease is held before expiring without renewal. Failover takes approximately this duration. Renewal occurs at one third of this duration. | `30s` |
+| `INDEXER_REINDEX_MAX_CONCURRENT` | Number of reindex jobs one node runs at once. Accepted jobs past the limit wait in the `pending` phase. | `2` |
+| `INDEXER_REINDEX_SWEEP_INTERVAL` | Interval at which an indexer candidate looks for unfinished reindex jobs whose index no node holds, and claims them to resume. | `30s` |
+| `INDEXER_REINDEX_CATCHUP_INTERVAL` | Interval at which a `ready` reindex job replays what changed in the source, so a manual promote stays quick. | `30s` |
+| `INDEXER_REINDEX_PROMOTE_GRACE` | Delay between a reindex job's promote and its final catch-up sweep, for writes that resolved the index name just before the promote. | `1s` |
 | `NODE_ID` | Identifier this node uses in the leadership table. | Hostname with a random suffix |
 | `NODE_ADDRESS` | Network address where this node serves write requests. Recorded in the leadership table so other nodes can forward write requests. Must be reachable by other nodes. If not set, write requests to other nodes are rejected instead of forwarded. | None |
 

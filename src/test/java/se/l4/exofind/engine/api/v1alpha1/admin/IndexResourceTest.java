@@ -47,6 +47,8 @@ import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.reindex.ReindexJobs;
+import se.l4.exofind.engine.reindex.TestReindexJobs;
 import jakarta.ws.rs.core.UriInfo;
 
 public class IndexResourceTest {
@@ -56,6 +58,7 @@ public class IndexResourceTest {
 	Indexes indexes;
 	AuthContext auth;
 	IndexResource resource;
+	ReindexJobs reindexJobs;
 	UriInfo uriInfo;
 
 	@BeforeEach
@@ -63,13 +66,15 @@ public class IndexResourceTest {
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
 
+		var registry = new IndexRegistry(
+			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		);
+
 		indexes = new Indexes(
 			nodeState,
 			new NoopSyncProvider(),
-			new IndexRegistry(
-				new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
-				Duration.ofMinutes(5)
-			),
+			registry,
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
@@ -87,7 +92,8 @@ public class IndexResourceTest {
 		auth = new AuthContext();
 		auth.set(Principal.unchecked());
 
-		resource = new IndexResource(indexes, auth, new LocalIndexerOwnership());
+		reindexJobs = TestReindexJobs.create(nodeState, indexes, registry, storageDirectory);
+		resource = new IndexResource(indexes, auth, new LocalIndexerOwnership(), reindexJobs);
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())
@@ -123,7 +129,7 @@ public class IndexResourceTest {
 	}
 
 	private IndexInfo create(String name, IndexDefinition definition) {
-		var response = resource.put(name, null, uriInfo, definition);
+		var response = resource.put(name, null, null, uriInfo, definition);
 		assertThat(response.getStatus(), is(201));
 		return (IndexInfo) response.getEntity();
 	}
@@ -162,7 +168,7 @@ public class IndexResourceTest {
 			))
 		)));
 
-		var withOwnership = new IndexResource(indexes, auth, ownership);
+		var withOwnership = new IndexResource(indexes, auth, ownership, reindexJobs);
 		var info = (IndexInfo) withOwnership.get("books").getEntity();
 
 		assertThat(info.status().indexer(), is(notNullValue()));
@@ -226,7 +232,7 @@ public class IndexResourceTest {
 	public void testGenerationOfUnknownIndexIsNotFound() {
 		assertThrows(
 			IndexNotFoundException.class,
-			() -> resource.put("books@2", null, uriInfo, definition())
+			() -> resource.put("books@2", null, null, uriInfo, definition())
 		);
 	}
 
@@ -249,7 +255,7 @@ public class IndexResourceTest {
 	public void testCreateWithoutDefinitionIsRejected() {
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.put("books", null, uriInfo, null)
+			() -> resource.put("books", null, null, uriInfo, null)
 		);
 
 		assertThat(e.getErrors().get(0).getCode(), is("request:missing_body"));
@@ -259,7 +265,7 @@ public class IndexResourceTest {
 	public void testCreateWithInvalidNameIsRejected() {
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.put("Books!", null, uriInfo, definition())
+			() -> resource.put("Books!", null, null, uriInfo, definition())
 		);
 
 		assertThat(e.getErrors().get(0).getCode(), is("index:invalid_name"));
@@ -285,7 +291,7 @@ public class IndexResourceTest {
 
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.put("books", null, uriInfo, invalid)
+			() -> resource.put("books", null, null, uriInfo, invalid)
 		);
 
 		assertThat(
@@ -348,7 +354,7 @@ public class IndexResourceTest {
 			null
 		);
 
-		var response = resource.put("books", null, uriInfo, updated);
+		var response = resource.put("books", null, null, uriInfo, updated);
 		assertThat(response.getStatus(), is(200));
 
 		var info = (IndexInfo) response.getEntity();
@@ -363,6 +369,7 @@ public class IndexResourceTest {
 		var response = resource.put(
 			"books",
 			"\"" + created.version() + "\"",
+			null,
 			uriInfo,
 			new IndexDefinition(
 				null, Map.of("owner", "search"), definition().fields(), null, null, null
@@ -381,6 +388,7 @@ public class IndexResourceTest {
 			() -> resource.put(
 				"books",
 				"\"0000000000000000\"",
+				null,
 				uriInfo,
 				new IndexDefinition(
 					null, Map.of("owner", "search"), definition().fields(), null, null, null
@@ -396,6 +404,7 @@ public class IndexResourceTest {
 		var response = resource.put(
 			"books",
 			"*",
+			null,
 			uriInfo,
 			new IndexDefinition(
 				null, Map.of("owner", "search"), definition().fields(), null, null, null
@@ -409,7 +418,7 @@ public class IndexResourceTest {
 	public void testCreateWithVersionIsRejected() {
 		assertThrows(
 			IndexNotFoundException.class,
-			() -> resource.put("books", "\"0000000000000000\"", uriInfo, definition())
+			() -> resource.put("books", "\"0000000000000000\"", null, uriInfo, definition())
 		);
 	}
 
@@ -433,7 +442,7 @@ public class IndexResourceTest {
 
 		var e = assertThrows(
 			UnrepresentableStateException.class,
-			() -> resource.put("books", null, uriInfo, definition())
+			() -> resource.put("books", null, null, uriInfo, definition())
 		);
 
 		assertThat(e.getCode(), is("index:definition:unrepresentable"));

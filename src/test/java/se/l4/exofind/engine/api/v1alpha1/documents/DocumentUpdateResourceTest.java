@@ -41,6 +41,7 @@ import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.reindex.TestReindexJobs;
 
 /**
  * Tests for changing some of the fields of a document over the API - what the
@@ -59,13 +60,15 @@ public class DocumentUpdateResourceTest {
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
 
+		var registry = new IndexRegistry(
+			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		);
+
 		indexes = new Indexes(
 			nodeState,
 			new NoopSyncProvider(),
-			new IndexRegistry(
-				new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
-				Duration.ofMinutes(5)
-			),
+			registry,
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
@@ -80,7 +83,11 @@ public class DocumentUpdateResourceTest {
 			Duration.ofHours(1)
 		);
 
-		resource = new DocumentResource(indexes, new ObjectMapper());
+		resource = new DocumentResource(
+			indexes,
+			new ObjectMapper(),
+			TestReindexJobs.create(nodeState, indexes, registry, storageDirectory)
+		);
 	}
 
 	@AfterEach

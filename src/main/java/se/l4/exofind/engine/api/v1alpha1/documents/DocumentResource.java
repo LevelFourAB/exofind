@@ -37,6 +37,7 @@ import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
+import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -174,10 +175,22 @@ public class DocumentResource {
 
 	private final Indexes indexes;
 	private final ObjectMapper mapper;
+	private final ReindexJobs reindexJobs;
 
-	public DocumentResource(Indexes indexes, ObjectMapper mapper) {
+	public DocumentResource(Indexes indexes, ObjectMapper mapper, ReindexJobs reindexJobs) {
 		this.indexes = indexes;
 		this.mapper = mapper;
+		this.reindexJobs = reindexJobs;
+	}
+
+	/**
+	 * The index a write may go to. A generation a reindex is filling is
+	 * refused - what lands in it has to come from the job alone, or the
+	 * job's replay would overwrite it.
+	 */
+	private Index writable(String name) {
+		reindexJobs.checkTargetWritable(name);
+		return indexes.getOrThrow(name);
 	}
 
 	/**
@@ -196,7 +209,7 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = indexes.getOrThrow(name);
+		var index = writable(name);
 
 		var documents = body.documents();
 		for(var i = 0; i < documents.size(); i++) {
@@ -224,7 +237,7 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = indexes.getOrThrow(name);
+		var index = writable(name);
 		var indexed = 0;
 
 		try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
@@ -267,7 +280,7 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = indexes.getOrThrow(name);
+		var index = writable(name);
 		var skipMissing = skipMissing(missing);
 		var missingKeys = Lists.mutable.empty();
 
@@ -305,7 +318,7 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = indexes.getOrThrow(name);
+		var index = writable(name);
 		var skipMissing = skipMissing(missing);
 		var missingKeys = Lists.mutable.empty();
 
@@ -426,7 +439,7 @@ public class DocumentResource {
 	@RequiresPermission(Permission.DOCUMENTS_DELETE)
 	@ServedBy(ServedBy.Node.INDEXER)
 	public Response delete(@PathParam("name") String name, @PathParam("key") String key) {
-		var index = indexes.getOrThrow(name);
+		var index = writable(name);
 
 		try {
 			index.deleteDocument(index.parsePrimaryKey(key));
@@ -467,7 +480,7 @@ public class DocumentResource {
 			);
 		}
 
-		var index = indexes.getOrThrow(name);
+		var index = writable(name);
 
 		try {
 			if(body.keys() != null) {
