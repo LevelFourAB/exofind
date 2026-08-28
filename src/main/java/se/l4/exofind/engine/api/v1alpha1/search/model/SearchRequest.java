@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
  * A search as it is received over the API.
@@ -38,12 +39,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * preceding it, and hits always come back in sort order.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = """
+	All request properties are optional. An empty request matches all \
+	documents in the index.""")
 public record SearchRequest(
 	/**
 	 * The clauses a document has to satisfy, all of them. Left out to match
 	 * every document. A clause here narrows every facet count - scope a
 	 * search here, tick filters in {@code filters}.
 	 */
+	@Schema(description = """
+		Clauses that a matching document must satisfy. Clauses in the array \
+		are combined with an implicit `AND`. Evaluated clauses narrow all \
+		facet counts. If omitted, matches all documents.""")
 	List<Clause> query,
 
 	/**
@@ -60,23 +68,45 @@ public record SearchRequest(
 	 * reshuffles the results. Exclusion is per entry: send one entry per
 	 * facet field, several ticked values through one matcher.
 	 */
+	@Schema(description = """
+		Refinement clauses, specified as `field` clauses or `nested` \
+		clauses. Filters narrow hits, but facets on the filtered field \
+		exclude their own filter entries from counts by default (see \
+		[Facets](https://levelfourab.github.io/exofind/reference/search-api/#facets)). \
+		Unsupported clause types return `search:filter:clause_invalid`. \
+		Clauses that score results return `search:filter:scores`.""")
 	List<Clause> filters,
 
 	/**
 	 * What to count the matches per value of, left out for no counting. The
 	 * response keys each facet's counts by its name.
 	 */
+	@Schema(description = """
+		Fields to aggregate match counts for. See \
+		[Facets](https://levelfourab.github.io/exofind/reference/search-api/#facets). \
+		If omitted, no facet counts are calculated.""")
 	List<Facet> facets,
 
 	/**
 	 * The order results come back in, left out for the best matches first.
 	 */
+	@Schema(description = """
+		Order in which results are returned. If omitted, results are sorted \
+		by relevance score in descending order.""")
 	List<Sort> sort,
 
 	/**
 	 * The locale the search reads locale specific fields in (BCP-47), left
 	 * out to leave every field to its own default locale.
 	 */
+	@Schema(
+		description = """
+			BCP-47 locale tag used to read and return locale-specific \
+			fields. Matches the closest declared locale on each field (for \
+			example, `sv-SE` falls back to `sv`). If no matching variant \
+			exists, uses the field default.""",
+		examples = "sv"
+	)
 	String locale,
 
 	/**
@@ -85,17 +115,31 @@ public record SearchRequest(
 	 * named by its dotted path and comes back inside the object, which then
 	 * holds only the fields that were asked for.
 	 */
+	@Schema(description = """
+		Document fields to return with each result. Fields inside an \
+		[`object`](https://levelfourab.github.io/exofind/reference/field-types/#object) \
+		are specified by dotted path and returned nested inside the object. \
+		Requesting unretrievable fields returns an error (see [Document \
+		source](https://levelfourab.github.io/exofind/reference/field-types/#document-source)). \
+		The primary key is always included.""")
 	List<String> fields,
 
 	/**
 	 * Ask for highlighted fragments with each hit, left out for none.
 	 */
+	@Schema(description = """
+		Fields to return highlighted snippets for. See \
+		[Highlighting](https://levelfourab.github.io/exofind/reference/search-api/#highlighting).""")
 	Highlight highlight,
 
 	/**
 	 * Ask each hit which values of an object field matched, left out for
 	 * none.
 	 */
+	@Schema(description = """
+		Nested object fields for which to return matched values with each \
+		hit. See [Matched \
+		values](https://levelfourab.github.io/exofind/reference/search-api/#matched-values).""")
 	Matched matched,
 
 	/**
@@ -103,28 +147,50 @@ public record SearchRequest(
 	 * becomes a hit of its own, instead of the document holding it. Left out
 	 * for hits that are documents. See {@link Hits}.
 	 */
+	@Schema(description = """
+		Specifies an object field whose matched values return as individual \
+		hits instead of full documents. See [What a hit stands \
+		for](https://levelfourab.github.io/exofind/reference/search-api/#what-a-hit-stands-for).""")
 	Hits hits,
 
 	/**
 	 * How many results to return. Zero returns how many there are without
 	 * returning any of them.
 	 */
+	@Schema(
+		description = """
+			Maximum number of results to return. Setting `limit` to `0` \
+			returns the total match count without hits.""",
+		defaultValue = "10"
+	)
 	Integer limit,
 
 	/**
 	 * How many results to skip before the ones being returned.
 	 */
+	@Schema(
+		description = """
+			Number of matching results to skip. Specify at most one of \
+			`offset`, `after`, or `before`.""",
+		defaultValue = "0"
+	)
 	Integer offset,
 
 	/**
 	 * Cursor to continue after, from the {@code next} of a previous response.
 	 */
+	@Schema(description = """
+		Cursor string from the `next` property of a previous response to \
+		fetch the next page.""")
 	String after,
 
 	/**
 	 * Cursor to read the window preceding, from the {@code previous} of a
 	 * previous response.
 	 */
+	@Schema(description = """
+		Cursor string from the `previous` property of a previous response to \
+		fetch the preceding page.""")
 	String before,
 
 	/**
@@ -132,11 +198,16 @@ public record SearchRequest(
 	 * Being present is what asks, and implies {@code total} being
 	 * {@code exact} - pages can not be numbered against a lower bound.
 	 */
+	@Schema(description = """
+		Requests numbered page metadata. Accepts an optional \
+		`{ "max": n }` object to limit the number of page entries (default \
+		`9`). Implies `"total": "exact"`.""")
 	Pages pages,
 
 	/**
 	 * How far the total is counted, left out for {@code estimate}.
 	 */
+	@Schema(defaultValue = "estimate")
 	Total total,
 
 	/**
@@ -146,11 +217,19 @@ public record SearchRequest(
 	 * where relevance is the ordering, so a search that gives a {@code sort}
 	 * of its own is unaffected.
 	 */
+	@Schema(description = """
+		Document ranking signals used to adjust relevance scoring. See \
+		[Signals](https://levelfourab.github.io/exofind/reference/search-api/#signals). \
+		If omitted, uses the ranking signals configured on the index.""")
 	List<Signal> signals
 ) {
 	/**
 	 * How far the total of a search is counted.
 	 */
+	@Schema(description = """
+		Counting mode for the total matching document count: `"estimate"` \
+		counts until exceeding the returned window; `"exact"` counts every \
+		matching document.""")
 	public enum Total {
 		/**
 		 * Stop counting once it is known there are more matches than the
@@ -172,30 +251,55 @@ public record SearchRequest(
 	 * is given.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Computes match counts for distinct values of a field. The target \
+		field must have `facet` enabled in its field definition; otherwise, \
+		the request returns `index:query:usage_not_enabled`.""")
 	public record Facet(
 		/**
 		 * What the counts are keyed by in the response. Left out to key them
 		 * by the field - only needed when one search counts the same field
 		 * twice.
 		 */
+		@Schema(description = """
+			Key used for the facet in the response. Required when faceting \
+			on the same field multiple times. Duplicate facet names return \
+			`search:facet:duplicate_name`. Defaults to the field name.""")
 		String name,
 
 		/**
 		 * Name of the field to count, as it is called in the definition of
 		 * the index. The field has to be defined for faceting.
 		 */
+		@Schema(
+			description = "Target field to aggregate.",
+			required = true,
+			examples = "category"
+		)
 		String field,
 
 		/**
 		 * How many values to bring back at most, left out for 10. Capped at
 		 * 1000. Does not combine with {@code ranges}.
 		 */
+		@Schema(
+			description = "Maximum number of facet values to return.",
+			defaultValue = "10",
+			minimum = "1",
+			maximum = "1000"
+		)
 		Integer limit,
 
 		/**
 		 * The order values come back in, left out for {@code count}. Does not
 		 * combine with {@code ranges}.
 		 */
+		@Schema(
+			description = """
+				Sort order of facet values: `"count"` (descending by count) \
+				or `"value"` (ascending by value).""",
+			defaultValue = "count"
+		)
 		Order order,
 
 		/**
@@ -203,6 +307,11 @@ public record SearchRequest(
 		 * price or date facet shows. Being present is what asks for it; the
 		 * counts come back one per bucket, in this order.
 		 */
+		@Schema(description = """
+			Array of range bucket definitions. See [Range \
+			buckets](https://levelfourab.github.io/exofind/reference/search-api/#range-buckets). \
+			Cannot be combined with `limit` or `order` \
+			(`search:facet:ranges_conflicting`).""")
 		List<Range> ranges,
 
 		/**
@@ -211,12 +320,24 @@ public record SearchRequest(
 		 * answer it, and the value to send is the `path` of a level a
 		 * previous response answered with.
 		 */
+		@Schema(description = """
+			Starting path level for hierarchical fields. See [Counting down \
+			a \
+			tree](https://levelfourab.github.io/exofind/reference/search-api/#counting-down-a-tree). \
+			Defaults to the root.""")
 		String path,
 
 		/**
 		 * How many levels below `path` to count, left out for one. At most
 		 * 10, and `limit` and `order` apply per level.
 		 */
+		@Schema(
+			description = """
+				Number of hierarchical levels below `path` to count.""",
+			defaultValue = "1",
+			minimum = "1",
+			maximum = "10"
+		)
 		Integer depth,
 
 		/**
@@ -227,11 +348,19 @@ public record SearchRequest(
 		 * nothing out, so the counts are exactly the results; more paths
 		 * widen the scope, for one control backed by several fields.
 		 */
+		@Schema(description = """
+			List of field paths whose filter entries are excluded from this \
+			facet's calculation. Defaults to the facet's own field path. An \
+			empty array `[]` disables filter exclusion. A blank path returns \
+			`search:facet:exclude_filters_invalid`.""")
 		List<String> excludeFilters
 	) {
 		/**
 		 * The order the values of a facet come back in.
 		 */
+		@Schema(description = """
+			Sort order of facet values: `count` (descending by count) or \
+			`value` (ascending by value).""")
 		public enum Order {
 			/**
 			 * The most common values first.
@@ -252,17 +381,41 @@ public record SearchRequest(
 		 * value twice. At least one bound has to be given.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(
+			name = "FacetRange",
+			description = """
+				One range bucket, holding values from `from` (inclusive) up to \
+				`to` (exclusive), so adjacent buckets sharing a bound count no \
+				value twice. Either bound may be omitted for an open-ended \
+				range, but not both (`search:facet:range_empty`), and `to` \
+				must be greater than `from` \
+				(`index:query:facet_range_empty`). At most 1000 buckets per \
+				facet (`search:facet:ranges_too_many`); using `ranges` on an \
+				unsupported field type returns `index:invalid-query-type`."""
+		)
 		public record Range(
 			/**
 			 * The lowest value the bucket holds, itself included. Left out
 			 * for no lower end.
 			 */
+			@Schema(
+				description = """
+					The lowest value the bucket holds, itself included. Omit \
+					for no lower end.""",
+				examples = "100"
+			)
 			Object from,
 
 			/**
 			 * Where the bucket ends, itself not included. Left out for no
 			 * upper end.
 			 */
+			@Schema(
+				description = """
+					Where the bucket ends, itself not included. Omit for no \
+					upper end.""",
+				examples = "200"
+			)
 			Object to
 		) {
 		}
@@ -272,11 +425,19 @@ public record SearchRequest(
 	 * How numbered pages are asked for.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Requests numbered page metadata. Sending an empty object asks for the \
+		defaults. Can be combined with `offset` or page cursors, but not with \
+		`after` or `before`.""")
 	public record Pages(
 		/**
 		 * How many page entries the response may hold at most, left out for
 		 * a window of nine.
 		 */
+		@Schema(
+			description = "Maximum number of page entries to return.",
+			defaultValue = "9"
+		)
 		Integer max
 	) {
 	}
@@ -286,6 +447,12 @@ public record SearchRequest(
 	 * search - what only narrows the results is never highlighted.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Requests highlighted snippets. Fragments are generated only from \
+		scoring clauses, so non-scoring filter clauses produce no highlights. \
+		Highlighted text is not HTML-escaped, and text beyond the first 10,000 \
+		characters of a field value is not evaluated. See \
+		[Highlighting](https://levelfourab.github.io/exofind/reference/search-api/#highlighting).""")
 	public record Highlight(
 		/**
 		 * The fields to return fragments for, keyed by the name a field has
@@ -293,6 +460,15 @@ public record SearchRequest(
 		 * the defaults. A field that was not defined for highlighting is
 		 * refused.
 		 */
+		@Schema(
+			description = """
+				Fields to return fragments for, keyed by the name the field \
+				has in the index definition. An empty options object asks for \
+				the defaults. Fields must have highlighting enabled \
+				(`matching` or `autocomplete`); requesting an unconfigured \
+				field returns `index:query:usage_not_enabled`.""",
+			required = true
+		)
 		Map<String, HighlightField> fields
 	) {
 	}
@@ -304,12 +480,25 @@ public record SearchRequest(
 	 * values matched all of them.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Requests the matched values of `nested` object fields with each hit. \
+		Cannot be combined with `hits` (`search:hits:with_matched`). See \
+		[Matched \
+		values](https://levelfourab.github.io/exofind/reference/search-api/#matched-values).""")
 	public record Matched(
 		/**
 		 * The object fields to answer for, keyed by the name a field has in
 		 * the definition of the index. An empty options object asks for the
 		 * defaults. A field that is not a `nested` object is refused.
 		 */
+		@Schema(
+			description = """
+				Object fields to answer for, keyed by the name the field has \
+				in the index definition. An empty options object asks for the \
+				defaults. Targeting a field that is not a `nested` object \
+				returns `index:query:matched:not_object`.""",
+			required = true
+		)
 		Map<String, MatchedField> fields
 	) {
 	}
@@ -328,12 +517,28 @@ public record SearchRequest(
 	 * the index - it is ordered by score or by fields inside the path.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Makes each matched value of a `nested` object field a hit of its own \
+		instead of a document hit. Totals count matching nested values, facets \
+		count value hits, and pagination cursors step through values. Cannot \
+		be combined with `matched` (`search:hits:with_matched`), `highlight` \
+		(`search:hits:with_highlight`) or `knn` clauses \
+		(`search:hits:with_knn`). See [What a hit stands \
+		for](https://levelfourab.github.io/exofind/reference/search-api/#what-a-hit-stands-for).""")
 	public record Hits(
 		/**
 		 * Name of the object field whose matched values are the hits, as it
 		 * is called in the definition of the index. The field has to be an
 		 * object in `nested` mode.
 		 */
+		@Schema(
+			description = """
+				Dotted path of the nested object field whose matched values \
+				become hits. Targeting a field that is not a `nested` object \
+				returns `index:query:hits:not_object`.""",
+			required = true,
+			examples = "variants"
+		)
 		String path,
 
 		/**
@@ -342,6 +547,12 @@ public record SearchRequest(
 		 * object, or any name on an index that keeps no copy of its
 		 * documents, is refused.
 		 */
+		@Schema(description = """
+			Dotted field paths inside the nested object to return in `value`, \
+			defaulting to all of them. Names must be prefixed by `path` \
+			(`search:hits:field_not_inside`) and exist in the index \
+			(`index:query:field_not_found`). On an index whose `source` is \
+			`none`, naming any field returns `index:query:source_not_kept`.""")
 		List<String> fields
 	) {
 	}
@@ -350,11 +561,20 @@ public record SearchRequest(
 	 * How the matched values of one field come back.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "How the matched values of one nested object field come back.")
 	public record MatchedField(
 		/**
 		 * How many values to bring back at most, between 1 and 100. Left out
 		 * for three. How many matched in all always comes back beside them.
 		 */
+		@Schema(
+			description = """
+				Maximum number of matched values to return per hit. How many \
+				matched in all always comes back beside them.""",
+			defaultValue = "3",
+			minimum = "1",
+			maximum = "100"
+		)
 		Integer limit,
 
 		/**
@@ -363,6 +583,13 @@ public record SearchRequest(
 		 * object, or any name on an index that keeps no copy of its
 		 * documents, is refused.
 		 */
+		@Schema(description = """
+			Field paths inside the nested object to include in each returned \
+			value, defaulting to all of them. Paths must reside under the \
+			target object path (`search:matched:field_not_inside`) and exist \
+			in the schema (`index:query:field_not_found`). On an index whose \
+			`source` is `none`, naming any field returns \
+			`index:query:source_not_kept`.""")
 		List<String> fields
 	) {
 	}
@@ -371,10 +598,15 @@ public record SearchRequest(
 	 * How to build the fragments of one field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "How the fragments of one highlighted field are built.")
 	public record HighlightField(
 		/**
 		 * How many fragments to return at most, left out for three.
 		 */
+		@Schema(
+			description = "Maximum number of fragments to return.",
+			defaultValue = "3"
+		)
 		Integer fragments,
 
 		/**
@@ -382,18 +614,37 @@ public record SearchRequest(
 		 * Text shorter than this comes back as a single fragment holding all
 		 * of it.
 		 */
+		@Schema(
+			description = """
+				Target character length per fragment. Fragments break on \
+				sentence boundaries, and text shorter than this comes back as \
+				a single fragment holding all of it.""",
+			defaultValue = "150",
+			minimum = "1",
+			maximum = "10000"
+		)
 		Integer length,
 
 		/**
 		 * What to put in front of each match, left out for {@code <em>}. May
 		 * be empty.
 		 */
+		@Schema(
+			description = """
+				Prefix tag inserted before highlighted terms. May be empty.""",
+			defaultValue = "<em>"
+		)
 		String pre,
 
 		/**
 		 * What to put after each match, left out for {@code </em>}. May be
 		 * empty.
 		 */
+		@Schema(
+			description = """
+				Postfix tag inserted after highlighted terms. May be empty.""",
+			defaultValue = "</em>"
+		)
 		String post
 	) {
 	}

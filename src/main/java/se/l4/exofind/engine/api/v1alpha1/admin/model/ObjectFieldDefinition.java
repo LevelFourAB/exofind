@@ -2,6 +2,8 @@ package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
 import java.util.Map;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -47,31 +49,79 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * of the document, so an index that keeps no copy does not return them.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = """
+	Structured object values holding nested field definitions, referenced by \
+	dot notation such as `variants.price`. An object field itself configures no \
+	`filter`, `sort`, `facet`, `locales` or `stored`, and its name may not use \
+	wildcards. Values are returned in search results only on an index that \
+	keeps document sources. See \
+	[`object`](https://levelfourab.github.io/exofind/reference/field-types/#object).""")
 public record ObjectFieldDefinition(
+	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Boolean primaryKey,
+
+	@Schema(description = FieldDefinition.REQUIRED_DESCRIPTION, defaultValue = "false")
 	Boolean required,
+
+	@Schema(
+		description = """
+			When `true`, the field holds a list of object values, and `mode` \
+			becomes required. A field holding a single value is one unit \
+			either way and is always flattened.""",
+		defaultValue = "false"
+	)
 	Boolean multiple,
+
+	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Boolean stored,
+
+	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Locales locales,
+
+	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Filter filter,
+
+	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Sort sort,
+
+	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Facet facet,
 
 	/**
 	 * How the values relate to the document. Required when the field is
 	 * {@code multiple}, refused when it is not.
 	 */
+	@Schema(description = """
+		Storage mode for multiple objects. Required when `multiple` is `true` \
+		(`index:field:object:mode_required`) and refused when it is not \
+		(`index:field:object:mode_without_multiple`).""")
 	Mode mode,
 
 	/**
 	 * The fields a value holds, keyed by their name inside the value.
 	 */
+	@Schema(description = """
+		The fields a value holds, keyed by their name inside the value. A \
+		child field may use `filter`, `matching`, `autocomplete`, `facet`, \
+		`validation`, `required` and `multiple`; `primaryKey`, `highlight`, \
+		`locales`, `stored`, wildcard names and nested `object` types are \
+		refused. Sorting on a child field works in a single object and in \
+		`nested` mode, and is refused in `flattened` mode with \
+		`index:field:object:flattened_sort`.""")
 	Map<String, FieldDefinition> fields
 ) implements FieldDefinition {
 	/**
 	 * How the values of an object field relate to the document that holds
 	 * them.
 	 */
+	@Schema(description = """
+		How the values of an object field relate to the document holding them. \
+		`nested` keeps each value as an isolated sub-document, so a search can \
+		ask that several conditions hold inside the same value, and it is what \
+		the `nested` clause, matched values and value hits work over. \
+		`flattened` indexes child fields directly into the parent document \
+		under their dot-notation paths, so object boundaries are not \
+		preserved.""")
 	public enum Mode {
 		/**
 		 * Every value is one unit, so a search can ask that several

@@ -3,6 +3,8 @@ package se.l4.exofind.engine.api.v1alpha1.admin.model;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -36,12 +38,51 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *   documents translated into it
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = """
+	What an index contains and how it can be searched. A definition is the \
+	state a caller wants: it is sent in full and anything left out is removed. \
+	Observed state, such as whether the index is usable, is reported separately \
+	under `status`.""")
 public record IndexDefinition(
+	@Schema(
+		description = """
+			How much of a document the index keeps. `full` keeps the document \
+			as it was given, so it comes back whole and can be reindexed from \
+			the index itself; `none` keeps nothing beyond the fields that ask \
+			to be `stored`. Changing it applies to documents indexed from \
+			there on.""",
+		defaultValue = "full"
+	)
 	Source source,
+
+	@Schema(description = """
+		Free-form metadata for the index, not interpreted by the engine.""")
 	Map<String, String> metadata,
+
+	@Schema(description = """
+		The fields of the index, keyed by field name. A name may contain `*` \
+		to define several fields at once, such as `metadata.*` - the wildcard \
+		matches exactly one path segment, explicit definitions take \
+		precedence, and among wildcards the longest literal prefix wins.""")
 	Map<String, FieldDefinition> fields,
+
+	@Schema(description = """
+		Tie-breaking rules and ranking signals. Omitted for no opinion beyond \
+		how well documents match. Replaced entirely while an index has \
+		[search \
+		settings](https://levelfourab.github.io/exofind/reference/admin-api/#search-settings).""")
 	Ranking ranking,
+
+	@Schema(description = """
+		Things shared between fields rather than owned by one - named analysis \
+		chains, stopword lists and synonym sets - referred to by name from the \
+		fields.""")
 	Resources resources,
+
+	@Schema(description = """
+		How the locales a document holds no value in are filled from the ones \
+		it does. Omitted to leave them empty, so a search in a locale only \
+		finds the documents translated into it.""")
 	LocaleFallback localeFallback
 ) {
 	/**
@@ -67,6 +108,13 @@ public record IndexDefinition(
 	 * again.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Fills the locales a document holds no value in from the ones it does, \
+		as it is indexed. Fallback values are analyzed using the target \
+		fallback locale, and results are unaffected - a document comes back as \
+		it was given. Applies to every locale-specific field except those \
+		setting `"locales": { "fallback": "disabled" }`. Changing it decides \
+		only what is written from there on.""")
 	public record LocaleFallback(
 		/**
 		 * The locales to take a value from, in the order they are tried, for a
@@ -77,6 +125,12 @@ public record IndexDefinition(
 		 * holds is refused. Left out to send every field to its own
 		 * {@code defaultLocale}.
 		 */
+		@Schema(description = """
+			Ordered list of locales to take a value from. A field skips the \
+			entries it holds no values in, so one chain serves fields \
+			declaring different locales; a locale no field of the index holds \
+			is refused. Omitted, every field falls back to its own \
+			`defaultLocale`.""")
 		List<String> chain
 	) {
 	}
@@ -84,6 +138,9 @@ public record IndexDefinition(
 	/**
 	 * How much of a document an index keeps.
 	 */
+	@Schema(description = """
+		How much of a document an index keeps: `full` keeps it whole, `none` \
+		keeps nothing beyond the fields marked `stored`.""")
 	public enum Source {
 		/**
 		 * Keep the document as it was given, so that it comes back whole
@@ -122,24 +179,37 @@ public record IndexDefinition(
 	 * </pre>
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Things shared between the fields of an index, each named and referred \
+		to by that name.""")
 	public record Resources(
 		/**
 		 * Analysis chains by name, used from a usage with
 		 * {@code "analyzer": { "named": "..." } }. A preset is expanded the
 		 * same way it is on a field.
 		 */
+		@Schema(description = """
+			Analysis chains by name, referenced from a usage with \
+			`"analyzer": { "named": "..." }`. A preset is expanded the same \
+			way it is on a field.""")
 		Map<String, AnalyzerDefinition> analyzers,
 
 		/**
 		 * Stopword lists by name, used from the stopwords component of a
 		 * chain with {@code "stopwords": { "named": "..." } }.
 		 */
+		@Schema(description = """
+			Stopword lists by name, referenced from the stopwords component of \
+			a chain with `"stopwords": { "named": "..." }`.""")
 		Map<String, List<String>> stopwords,
 
 		/**
 		 * Synonym sets by name, used from the synonyms component of a chain
 		 * with {@code "synonyms": { "named": "..." } }.
 		 */
+		@Schema(description = """
+			Synonym sets by name, referenced from the synonyms component of a \
+			chain with `"synonyms": { "named": "..." }`.""")
 		Map<String, Synonyms> synonyms
 	) {
 		/**
@@ -148,7 +218,12 @@ public record IndexDefinition(
 		 * there on.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(description = """
+			Words that mean the same thing. Synonyms are applied when a value \
+			is indexed, so changing a set only affects documents indexed from \
+			there on.""")
 		public record Synonyms(
+			@Schema(description = "The rules of the set.", required = true)
 			List<Rule> rules
 		) {
 			/**
@@ -156,11 +231,18 @@ public record IndexDefinition(
 			 * equivalent, or a one way mapping.
 			 */
 			@JsonInclude(JsonInclude.Include.NON_NULL)
+			@Schema(description = """
+				One rule of a synonym set, carrying exactly one kind: words \
+				that are all equivalent, or a one-way mapping.""")
 			public record Rule(
 				/**
 				 * Terms that all mean the same thing - each matches every
 				 * other. A term of several words matches them in sequence.
 				 */
+				@Schema(description = """
+					Terms that all mean the same thing, each matching every \
+					other. A term of several words matches them in \
+					sequence.""")
 				List<String> equivalent,
 
 				/**
@@ -168,11 +250,22 @@ public record IndexDefinition(
 				 * answers searches for any of {@code to}, but not the other
 				 * way around.
 				 */
+				@Schema(description = """
+					A one-way rule: a value containing one of `from` also \
+					answers searches for any of `to`, but not the other way \
+					around.""")
 				Mapping mapping
 			) {
 				@JsonInclude(JsonInclude.Include.NON_NULL)
+				@Schema(description = "The two sides of a one-way synonym rule.")
 				public record Mapping(
+					@Schema(description = "Terms the rule reads from.", required = true)
 					List<String> from,
+
+					@Schema(
+						description = "Terms the rule also answers for.",
+						required = true
+					)
 					List<String> to
 				) {
 				}
@@ -195,17 +288,29 @@ public record IndexDefinition(
 	 * by a field of its own is left alone.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Tie-breaking rules and signal score multipliers. See \
+		[Relevance](https://levelfourab.github.io/exofind/explanation/relevance/).""")
 	public record Ranking(
 		/**
 		 * The tie breakers, applied in order until one of them tells two
 		 * documents apart.
 		 */
+		@Schema(description = """
+			Secondary sort criteria applied in sequence after the search's own \
+			sort or relevance scoring, until one of them tells two documents \
+			apart. Target fields must have `sort` enabled.""")
 		List<TieBreaker> tieBreakers,
 
 		/**
 		 * The values of the documents themselves to take into their relevance,
 		 * each multiplied into the score in turn.
 		 */
+		@Schema(description = """
+			Document values multiplied into relevance, each applied in turn. \
+			Evaluated at search time without reindexing, and only where \
+			relevance is the ordering. A search that carries its own `signals` \
+			replaces these.""")
 		List<Signal> signals
 	) {
 		/**
@@ -223,21 +328,42 @@ public record IndexDefinition(
 		 * something for a number, how long ago it was for a timestamp.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(description = """
+			One document value taken into relevance. The value is read from a \
+			field defined for sorting, shaped into a number between `0` and \
+			`1`, and multiplied into the score as `1 + weight * shape`. A \
+			document holding no value contributes `0` rather than being \
+			multiplied away, so a signal can lift a document by at most its \
+			weight. Exactly one shape must be given, and which one a field can \
+			answer for follows from its type.""")
 		public record Signal(
 			/**
 			 * The field to read the value from. Has to be a number or a
 			 * timestamp defined for sorting.
 			 */
+			@Schema(
+				description = """
+					The field to read the value from. Must be a number or \
+					timestamp field with sorting enabled.""",
+				required = true,
+				examples = "purchases"
+			)
 			String field,
 
 			/**
 			 * Rank by how far the value is above a pivot. For numbers.
 			 */
+			@Schema(description = """
+				Ranks by how far the value rises above a pivot. For `int32`, \
+				`int64`, `float` and `double` fields.""")
 			Saturation saturation,
 
 			/**
 			 * Rank by how long ago the value was. For timestamps.
 			 */
+			@Schema(description = """
+				Ranks by how long ago the value was. For `timestamp` \
+				fields.""")
 			Decay decay,
 
 			/**
@@ -245,6 +371,14 @@ public record IndexDefinition(
 			 * its score. Left out for 1, which lets a document at the top of
 			 * the signal reach twice the score of one holding no value at all.
 			 */
+			@Schema(
+				description = """
+					How much the signal can lift a document at most, as a \
+					share of its score. At `1`, a document at the top of the \
+					signal reaches twice the score of one holding no value at \
+					all.""",
+				defaultValue = "1"
+			)
 			Float weight
 		) {
 			/**
@@ -254,11 +388,28 @@ public record IndexDefinition(
 			 * no ceiling, such as how often something was bought.
 			 */
 			@JsonInclude(JsonInclude.Include.NON_NULL)
+			@Schema(
+				name = "RankingSaturation",
+				description = """
+					Computes `value / (value + pivot)`, reaching `0.5` at the \
+					pivot and approaching but never reaching `1` above it. \
+					Values below `0` evaluate to `0`. The shape for a count \
+					with no ceiling, such as how often something was bought."""
+			)
 			public record Saturation(
 				/**
 				 * The value that counts for half of what the signal can give.
 				 * Has to be above zero.
 				 */
+				@Schema(
+					description = """
+						The value that counts for half of what the signal can \
+						give. Required, and must be greater than `0`.""",
+					required = true,
+					exclusiveMinimum = true,
+					minimum = "0",
+					examples = "50"
+				)
 				Double pivot
 			) {
 			}
@@ -267,11 +418,28 @@ public record IndexDefinition(
 			 * Rank by how long ago a value was, halving every half life.
 			 */
 			@JsonInclude(JsonInclude.Include.NON_NULL)
+			@Schema(
+				name = "RankingDecay",
+				description = """
+					Halves the multiplier every `halfLife` seconds of age. \
+					Values dated at or after the current time evaluate to \
+					`1`."""
+			)
 			public record Decay(
 				/**
 				 * How many seconds it takes for the signal to be worth half as
 				 * much. Has to be above zero.
 				 */
+				@Schema(
+					description = """
+						How many seconds it takes for the signal to be worth \
+						half as much. Required, and must be greater than \
+						`0`.""",
+					required = true,
+					exclusiveMinimum = true,
+					minimum = "0",
+					examples = "604800"
+				)
 				Long halfLife
 			) {
 			}
@@ -281,18 +449,34 @@ public record IndexDefinition(
 		 * One way of breaking a tie, by a field defined for sorting.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(description = "One way of breaking a tie, by a field defined for sorting.")
 		public record TieBreaker(
 			/**
 			 * The field to break ties by. Has to be defined for sorting.
 			 */
+			@Schema(
+				description = """
+					The field to break ties by. Must have `sort` enabled.""",
+				required = true,
+				examples = "sales"
+			)
 			String field,
 
 			/**
 			 * Which end of the field wins the tie. Defaults to
 			 * {@code descending}, the way recency and popularity read.
 			 */
+			@Schema(
+				description = """
+					Which end of the field wins the tie. `descending` is the \
+					way recency and popularity read.""",
+				defaultValue = "descending"
+			)
 			Direction direction
 		) {
+			@Schema(description = """
+				Which end of a tie-breaker field wins: `ascending` or \
+				`descending`.""")
 			public enum Direction {
 				@JsonProperty("ascending")
 				ASCENDING,

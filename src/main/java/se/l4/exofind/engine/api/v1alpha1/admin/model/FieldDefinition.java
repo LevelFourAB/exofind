@@ -2,6 +2,8 @@ package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
 import java.util.List;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -58,11 +60,58 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = GeoPointFieldDefinition.class, name = "geo_point"),
 	@JsonSubTypes.Type(value = ObjectFieldDefinition.class, name = "object")
 })
+@Schema(description = """
+	Definition of one field, structured as a tagged union where `type` selects \
+	the field type and the properties available on it. Field usages are \
+	opt-in: an empty configuration object enables a usage with engine \
+	defaults, and only explicitly configured properties are stored, so \
+	defaults stay owned by the engine across upgrades. See [Field \
+	types](https://levelfourab.github.io/exofind/reference/field-types/).""")
 public sealed interface FieldDefinition
 	permits StringFieldDefinition, BooleanFieldDefinition, VectorFieldDefinition,
 		Int32FieldDefinition, Int64FieldDefinition, FloatFieldDefinition,
 		DoubleFieldDefinition, TimestampFieldDefinition, GeoPointFieldDefinition,
 		ObjectFieldDefinition {
+	/**
+	 * Descriptions of the properties every field type carries, kept here so
+	 * that the ten records implementing this interface describe them the same
+	 * way. An annotation takes a constant expression, and a text block is one,
+	 * so each record refers to these rather than repeating the text.
+	 */
+	String PRIMARY_KEY_DESCRIPTION = """
+		Marks the field as the unique document identifier. Documents with \
+		matching primary keys overwrite existing documents, and an index can \
+		have at most one primary key. A primary key must be `required` and \
+		cannot be `multiple`, locale-specific, or a wildcard field.""";
+
+	String REQUIRED_DESCRIPTION = """
+		When `true`, documents that lack a value for this field are \
+		rejected.""";
+
+	String MULTIPLE_DESCRIPTION = """
+		When `true`, the field accepts several values in one document. When \
+		`false`, a document carrying several values for it is rejected.""";
+
+	String STORED_DESCRIPTION = """
+		When `true`, values are stored so they can be returned in search \
+		results. Only matters on an index whose `source` is `none`, since a \
+		document is otherwise kept whole.""";
+
+	String LOCALES_DESCRIPTION = """
+		Makes values locale-specific, so analysis and collation follow the \
+		locale each value carries.""";
+
+	String FILTER_DESCRIPTION = """
+		Enables narrowing results to the documents holding a given value. \
+		Filtering is exact whatever the type; on numeric and timestamp fields \
+		it also enables range matching.""";
+
+	String SORT_DESCRIPTION = "Enables ordering results by the value of this field.";
+
+	String FACET_DESCRIPTION = """
+		Enables counting how many documents share each value of this field. On \
+		numeric and timestamp fields it also enables range buckets.""";
+
 	/**
 	 * If this field is the primary key of the index. An index has at most one
 	 * primary key, and documents with the same primary key replace each other.
@@ -109,10 +158,18 @@ public sealed interface FieldDefinition
 	 * How values of a field being locale specific behaves.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Configures locale-specific field values. See [Localize \
+		fields](https://levelfourab.github.io/exofind/how-to/localize-fields/).""")
 	record Locales(
 		/**
 		 * The locale assumed for a value that does not carry one (BCP-47).
 		 */
+		@Schema(
+			description = """
+				BCP-47 locale assumed for a value that carries none.""",
+			examples = "sv"
+		)
 		String defaultLocale,
 
 		/**
@@ -120,6 +177,11 @@ public sealed interface FieldDefinition
 		 * carrying a locale that is not listed here (or the default) is
 		 * refused, and these are the locales a search can ask the field for.
 		 */
+		@Schema(description = """
+			The locales the field holds values in, besides the default. A value \
+			carrying a locale named neither here nor as the default is \
+			refused, and these are the locales a search can ask the field \
+			for.""")
 		List<String> locales,
 
 		/**
@@ -130,8 +192,20 @@ public sealed interface FieldDefinition
 		 * {@code enabled} where it does not is refused, as nothing would fill
 		 * anything.
 		 */
+		@Schema(
+			description = """
+				Whether this field takes part in the index's `localeFallback`. \
+				Only read on an index that declares a fallback; saying \
+				`enabled` where it does not is refused, as nothing would fill \
+				anything.""",
+			defaultValue = "enabled"
+		)
 		Fallback fallback
 	) {
+		@Schema(description = """
+			Whether a field takes part in the index's locale fallback: \
+			`enabled` fills the locales it holds no value in, `disabled` \
+			leaves them empty.""")
 		public enum Fallback {
 			/**
 			 * Fill the locales this field holds no value in, the way the index
@@ -155,6 +229,10 @@ public sealed interface FieldDefinition
 	 * {@code keyword} config of the string type.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Enables filtering. Carries no options - filtering is exact whatever the \
+		type, and how a string is normalized before it is compared is the \
+		`keyword` config of the string type.""")
 	record Filter() {
 	}
 
@@ -162,19 +240,36 @@ public sealed interface FieldDefinition
 	 * How ordering by a field behaves.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "Enables sorting, and says how values compare.")
 	record Sort(
 		/**
 		 * How two values are ordered relative to each other. Only meaningful
 		 * for strings, which default to {@code locale}.
 		 */
+		@Schema(
+			description = """
+				How two values compare. Only meaningful for strings.""",
+			defaultValue = "locale"
+		)
 		Collation collation,
 
 		/**
 		 * Where documents without a value are placed when ordering ascending.
 		 * Defaults to {@code last}.
 		 */
+		@Schema(
+			description = """
+				Where documents holding no value are placed when ordering \
+				ascending.""",
+			defaultValue = "last"
+		)
 		Missing missing
 	) {
+		@Schema(description = """
+			How two string values compare: `locale` orders by the rules of the \
+			locale, so `å` sorts where a reader of that locale expects it; \
+			`binary` orders by bytes, which is faster but only reads correctly \
+			for plain ASCII.""")
 		public enum Collation {
 			/**
 			 * Order by the bytes of the value. Fast, but only reads correctly
@@ -191,6 +286,9 @@ public sealed interface FieldDefinition
 			LOCALE
 		}
 
+		@Schema(description = """
+			Where documents holding no value are placed when ordering \
+			ascending: `first` or `last`.""")
 		public enum Missing {
 			@JsonProperty("first")
 			FIRST,
@@ -204,6 +302,9 @@ public sealed interface FieldDefinition
 	 * How counting documents per value of a field behaves.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Enables counting documents per value of the field. Carries no \
+		options.""")
 	record Facet() {
 	}
 }

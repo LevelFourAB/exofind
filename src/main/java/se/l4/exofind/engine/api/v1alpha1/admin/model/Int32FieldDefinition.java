@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
@@ -17,15 +19,37 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = """
+	A 32-bit signed integer. A number has nothing to analyze, so it is searched \
+	by filtering - which for a number means ranges as well as equality.""")
 public record Int32FieldDefinition(
+	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
+
+	@Schema(description = FieldDefinition.REQUIRED_DESCRIPTION, defaultValue = "false")
 	Boolean required,
+
+	@Schema(description = FieldDefinition.MULTIPLE_DESCRIPTION, defaultValue = "false")
 	Boolean multiple,
+
+	@Schema(description = FieldDefinition.STORED_DESCRIPTION, defaultValue = "false")
 	Boolean stored,
+
+	@Schema(description = FieldDefinition.LOCALES_DESCRIPTION)
 	Locales locales,
+
+	@Schema(description = FieldDefinition.FILTER_DESCRIPTION)
 	Filter filter,
+
+	@Schema(description = FieldDefinition.SORT_DESCRIPTION)
 	Sort sort,
+
+	@Schema(description = FieldDefinition.FACET_DESCRIPTION)
 	Facet facet,
+
+	@Schema(description = """
+		Bounds the values the field accepts. A document holding a value \
+		outside them is rejected.""")
 	Validation validation
 ) implements FieldDefinition {
 	/**
@@ -33,8 +57,15 @@ public record Int32FieldDefinition(
 	 * a document is added.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(
+		name = "Int32Validation",
+		description = "The values an `int32` field accepts."
+	)
 	public record Validation(
+		@Schema(description = "Lowest value accepted.", examples = "0")
 		Integer min,
+
+		@Schema(description = "Highest value accepted.")
 		Integer max
 	) {
 	}

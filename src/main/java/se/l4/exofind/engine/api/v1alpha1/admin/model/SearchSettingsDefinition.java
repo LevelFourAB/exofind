@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
@@ -18,7 +20,18 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   else - the settings say nothing and the definition stands
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = """
+	Per-index settings that affect how searches are answered, sent in full and \
+	replacing what was stored. They belong to the index name rather than to a \
+	generation, so promoting a generation keeps them.""")
 public record SearchSettingsDefinition(
+	@Schema(description = """
+		The ranking searches run with instead of the definition's, in the same \
+		shape as the definition's `ranking`. While present it replaces the \
+		definition's ranking completely; an empty object turns ranking off. \
+		Supplying `signals` in a search request still replaces both. Validated \
+		against the generation the index name answers from, using the same \
+		`index:ranking:*` codes that validate a definition's ranking.""")
 	IndexDefinition.Ranking ranking
 ) {
 }

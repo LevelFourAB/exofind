@@ -8,9 +8,19 @@ import java.util.Map;
 
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import se.l4.exofind.engine.Indexes;
+import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
+import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
@@ -42,6 +52,15 @@ import jakarta.ws.rs.core.MediaType;
  * way past the cap: those cursors carry the hit a window ended at rather than
  * a count, so continuing from one costs the same at any depth.
  */
+@Tag(
+	name = "Search",
+	description = "Finds documents in an index.",
+	externalDocs = @ExternalDocumentation(
+		description = "Search API reference",
+		url = "https://levelfourab.github.io/exofind/reference/search-api/"
+	)
+)
+@SecurityRequirement(name = ExofindApi.API_KEY)
 @Path("/v1alpha1/indexes/{name}/search")
 @Produces(MediaType.APPLICATION_JSON)
 public class SearchResource {
@@ -66,16 +85,87 @@ public class SearchResource {
 	/**
 	 * Search an index.
 	 *
-	 * @param name
 	 * @param body
 	 *   what to search for, all of it optional - no body matches everything
-	 * @return
 	 */
 	@POST
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.SEARCH)
 	@ServedBy(ServedBy.Node.ANY_NODE)
-	public SearchResponse search(@PathParam("name") String name, SearchRequest body) {
+	@Operation(
+		operationId = "search",
+		summary = "Search an index",
+		description = """
+			Executes a search query against an index on the node that \
+			receives the request. A node that does not index the target \
+			answers from the generation it last pulled, so a recently \
+			indexed document may not appear yet.
+
+			Requires the `search` permission."""
+	)
+	@APIResponse(
+		responseCode = "200",
+		description = "The matching documents, in the order that `sort` asks for.",
+		content = @Content(schema = @Schema(implementation = SearchResponse.class))
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The request is not a valid search. The `code` property names the \
+			reason, such as `search:filter:scores` when a filter clause \
+			affects the score, `index:query:usage_not_enabled` when a field is \
+			used in a way the definition does not enable, or \
+			`search:page:too_deep` when `offset` reaches past \
+			`SEARCH_MAX_PAGE_DEPTH`.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "401",
+		description = """
+			The request carries no credential this node accepts. Absent, \
+			malformed, unknown and lapsed keys all answer this, so a refusal \
+			cannot be used to find out which keys exist. The response carries \
+			`WWW-Authenticate: Bearer`.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "403",
+		description = "The API key does not have the `search` permission.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			No index has this name, or the key has no grant covering it - an \
+			index a key was granted nothing on is answered as though it did \
+			not exist.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			The index exists but answers for none of its generations \
+			(`index:no_live_generation`). Promote a generation and send the \
+			request again.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = """
+			The search raced the index being closed to free local resources \
+			(`index:closed`). Sending the same request again reopens it.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public SearchResponse search(
+		@Parameter(
+			description = """
+				Name of the index to search. To search one generation, add \
+				`@` and the name of the generation, such as `books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		SearchRequest body
+	) {
 		var started = System.nanoTime();
 
 		var index = indexes.getOrThrow(name);
