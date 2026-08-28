@@ -14,6 +14,7 @@ import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexClosedException;
+import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.IndexInvalidCursorException;
@@ -101,6 +102,14 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			/*
 			 * The change to the keys is well formed but could not be stored,
 			 * which leaves the keys exactly as they were.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof IndexDefinitionIncompatibleException) {
+			/*
+			 * The definition is well formed - an empty generation takes the same
+			 * one - and disagrees with the documents the generation holds, so it
+			 * is the state and the request that conflict. Checked before
+			 * ValidationException, whose errors it carries.
 			 */
 			return Response.Status.CONFLICT;
 		} else if(e instanceof ValidationException) {

@@ -5,12 +5,13 @@ This guide shows you how to roll out an index definition change without search d
 Use this guide when a definition change alters how existing values are indexed:
 
 - A field gaining `matching`, `filter`, `sort`, `facet`, or a vector
+- A field gaining `stored`, or the index starting to keep document sources
 - A different analyzer, preset, tokenizer, or token filter
 - A changed or newly referenced stopword list or synonym set
 - A new locale on a field, or a changed locale fallback chain
 - Different vector dimensions
 
-You do not need this procedure if the index is empty, if the change only affects documents indexed after the change, or if you are about to reindex all documents. For conceptual background, see [Generations](../explanation/generations.md).
+Sending such a change to a generation that holds documents returns `409 Conflict` with `index:definition:incompatible`, so this procedure is required rather than recommended. You do not need this procedure if the generation is empty, if the change reaches every document already indexed, such as adding a field or turning a usage off, or if you are about to reindex everything, where `allowStaleDocuments=true` takes the change in place. For conceptual background, see [Generations](../explanation/generations.md).
 
 If the index keeps document sources (the default), the engine can fill the new generation for you instead of you resending every document - see [Reindex into a new generation](reindex-into-a-new-generation.md). Use the procedure below when sources are not kept, or when the documents should come fresh from the system that owns them.
 

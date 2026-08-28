@@ -92,6 +92,7 @@ import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.locales.Locales;
+import se.l4.exofind.engine.index.schema.DefinitionCompatibility;
 import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.IndexFeatures;
@@ -1146,10 +1147,28 @@ public class Index {
 	 * Update the definition of the index.
 	 *
 	 * @param def
+	 * @throws IndexDefinitionIncompatibleException
+	 *   if the index holds documents that were not indexed under {@code def}
 	 * @throws IOException
 	 */
 	public void updateDefinition(IndexDef def) throws IOException {
-		updateDefinition(def, null);
+		updateDefinition(def, null, false);
+	}
+
+	/**
+	 * Update the definition of the index, optionally only if the current
+	 * definition has the expected version.
+	 *
+	 * @param def
+	 * @param expectedVersion
+	 *   version the current definition is expected to have, or {@code null} to
+	 *   update no matter the current version
+	 * @throws IndexDefinitionIncompatibleException
+	 *   if the index holds documents that were not indexed under {@code def}
+	 * @throws IOException
+	 */
+	public void updateDefinition(IndexDef def, String expectedVersion) throws IOException {
+		updateDefinition(def, expectedVersion, false);
 	}
 
 	/**
@@ -1158,13 +1177,33 @@ public class Index {
 	 * performed atomically, so a caller that read a definition and its version
 	 * can update it without racing another caller.
 	 *
+	 * <p>A definition that reaches nothing already indexed is refused while the
+	 * index holds documents, which is what keeps a definition and the documents
+	 * under it saying the same thing. Which differences those are, and why the
+	 * alternative is a search quietly answering with less than it should, is in
+	 * {@link DefinitionCompatibility}; the way through is a new generation. The
+	 * count is read here rather than by the caller because the write lock is
+	 * what makes it and the definition one answer - a document indexed between
+	 * the two would be indexed under a definition that was about to be replaced.
+	 *
 	 * @param def
 	 * @param expectedVersion
 	 *   version the current definition is expected to have, or {@code null} to
 	 *   update no matter the current version
+	 * @param allowStaleDocuments
+	 *   {@code true} to store the definition even where the documents already
+	 *   indexed were not indexed under it, leaving them answering as they were
+	 *   until they are indexed again
+	 * @throws IndexDefinitionIncompatibleException
+	 *   if the index holds documents that were not indexed under {@code def}
+	 *   and {@code allowStaleDocuments} is {@code false}
 	 * @throws IOException
 	 */
-	public void updateDefinition(IndexDef def, String expectedVersion) throws IOException {
+	public void updateDefinition(
+		IndexDef def,
+		String expectedVersion,
+		boolean allowStaleDocuments
+	) throws IOException {
 		syncLock.writeLock().lock();
 		try {
 			if(state == IndexState.CLOSED) {
@@ -1187,6 +1226,13 @@ public class Index {
 
 			if(expectedVersion != null && !expectedVersion.equals(definitionVersion)) {
 				throw new IndexVersionMismatchException(id, expectedVersion, definitionVersion);
+			}
+
+			if(!allowStaleDocuments && holdsDocuments()) {
+				var incompatibilities = DefinitionCompatibility.check(this.definition, def);
+				if(!incompatibilities.isEmpty()) {
+					throw new IndexDefinitionIncompatibleException(incompatibilities);
+				}
 			}
 
 			/*
@@ -1214,6 +1260,29 @@ public class Index {
 		} finally {
 			syncLock.writeLock().unlock();
 		}
+	}
+
+	/**
+	 * Get whether anything is indexed here that a definition change could
+	 * leave behind.
+	 *
+	 * Counted from the writer rather than from a searcher, so a document
+	 * indexed but not committed yet counts - it was written under the
+	 * definition that is about to be replaced the same way a committed one was.
+	 * Child documents count too: a value written as its own unit is as much a
+	 * thing that was analyzed as the document holding it.
+	 *
+	 * Only called with the write lock held, which is what keeps the answer true
+	 * for as long as it is acted on.
+	 *
+	 * @return
+	 */
+	private boolean holdsDocuments() {
+		/*
+		 * A writable index has a writer from the moment it is pulled, so a null
+		 * one here is an index nothing has been written to.
+		 */
+		return writer != null && writer.getDocStats().numDocs > 0;
 	}
 
 	/**

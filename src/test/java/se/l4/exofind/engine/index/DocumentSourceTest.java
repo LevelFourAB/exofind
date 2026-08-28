@@ -84,6 +84,8 @@ public class DocumentSourceTest extends AbstractIndexTest {
 	/**
 	 * Changing the setting does not rewrite what has already been indexed, so
 	 * both kinds of document have to keep reading whichever way it is left.
+	 * Turning it on is the direction that leaves documents behind, so it only
+	 * goes through by saying the documents may go stale.
 	 */
 	@Test
 	public void testDocumentsIndexedBeforeItWasTurnedOnStillRead() throws IOException {
@@ -91,7 +93,9 @@ public class DocumentSourceTest extends AbstractIndexTest {
 
 		index.updateDefinition(
 			definition(IndexDef.newBuilder().setSource(IndexDef.SourceMode.SOURCE_MODE_FULL))
-				.build()
+				.build(),
+			null,
+			true
 		);
 
 		index.addDocument(
@@ -238,9 +242,10 @@ public class DocumentSourceTest extends AbstractIndexTest {
 	/**
 	 * A field that asked to be stored after a document was indexed is only in
 	 * that document's copy, which asking for stored fields alone does not
-	 * read - the value stays behind until the document is indexed again.
-	 * Asking for no fields in particular still reads the copy and brings it
-	 * back.
+	 * read - the value stays behind until the document is indexed again, which
+	 * is why the change only goes through by saying the documents may go
+	 * stale. Asking for no fields in particular still reads the copy and
+	 * brings it back.
 	 */
 	@Test
 	public void testFieldStoredAfterADocumentWasIndexedStaysInItsCopy() throws IOException {
@@ -255,7 +260,9 @@ public class DocumentSourceTest extends AbstractIndexTest {
 						.setFilter(FilterConfig.getDefaultInstance())
 						.build()
 				)
-				.build()
+				.build(),
+			null,
+			true
 		);
 
 		var some = index.search(

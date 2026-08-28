@@ -35,13 +35,16 @@ import se.l4.exofind.engine.index.types.VectorFieldType;
 public class IndexCodec extends Lucene104Codec {
 	/**
 	 * The HNSW neighbour count used when the definition does not give one,
-	 * which is Lucene's own default.
+	 * which is Lucene's own default. {@code DefinitionCompatibility} writes
+	 * the same value out when it compares definitions, so a change here has to
+	 * change there too.
 	 */
 	private static final int DEFAULT_M = 16;
 
 	/**
 	 * The HNSW beam width used when the definition does not give one, which is
-	 * Lucene's own default.
+	 * Lucene's own default. Written out in {@code DefinitionCompatibility} the
+	 * same way {@code DEFAULT_M} is.
 	 */
 	private static final int DEFAULT_EF_CONSTRUCTION = 100;
 

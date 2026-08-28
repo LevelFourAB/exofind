@@ -95,6 +95,41 @@ The target of a `PUT` request depends on the name format:
 
 A newly created generation contains no documents and is not live; the index continues serving from the previous live generation. A `PUT products@2` request on a non-existent index returns `404 Not Found`.
 
+When the target generation already holds documents, a `PUT` request is refused if the new definition changes how documents are indexed. Written but uncommitted documents count; deleted documents do not. Incompatible updates return `409 Conflict` with the error code `index:definition:incompatible`. The response includes one detail item per difference. Each detail carries a `path` naming the field that caused it, dotted for a field inside an object such as `variants.sku`, and one of the following error codes:
+
+- `index:definition:usage_added`: A usage was enabled on an existing field.
+- `index:definition:analysis_changed`: An analyzer chain, decompounding setting, stopword list, or synonym set changed for a text usage.
+- `index:definition:setting_changed`: A field setting that determines how data was indexed changed.
+- `index:definition:locale_fallback_changed`: The index locale fallback changed.
+- `index:definition:source_added`: The index started to keep document sources.
+
+On a generation that holds documents, refused changes include:
+
+- Enabling `filter`, `sort`, `facet`, `matching`, `autocomplete`, `hierarchy`, `highlight`, `exact`, or `locales` on an existing field.
+- Changing field `type`, `primaryKey`, or `multiple`.
+- Changing the analyzer of a text usage (inline or via `analyzerRef`), changing `decompound`, or editing a stopword list or synonym set referenced by a field.
+- Changing `keyword.caseFolding`, `sort.collation` on a string field, or `hierarchy.separator`.
+- Changing a vector field's `dimensions`, `similarity`, `hnsw`, or `quantization`.
+- Changing the `mode` of an object field between nested and flattened.
+- Changing `locales.defaultLocale` or adding a locale to the list.
+- Enabling or changing `localeFallback`.
+
+Accepted changes on a generation that holds documents include:
+
+- Adding or removing a field.
+- Disabling a usage.
+- Changing `stored`.
+- Changing the index `source` mode.
+- Changing `metadata`.
+- Changing `ranking` (tie breakers and signals).
+- Changing search-time settings: `weight`, `typoTolerance`, `lengthNormalization`, and sort `missing` placement.
+- Changing document validation rules: `required`, `min`, and `max`.
+- Setting an explicit default that matches the engine's default.
+
+To force the update without reindexing, set the `allowStaleDocuments` query parameter to `true` (boolean, default `false`). Existing documents continue to serve queries as indexed until they are reindexed. The parameter has no effect on empty generations.
+
+To apply an incompatible definition change to existing documents, reindex them into a new generation. See [Reindex into a new generation](../how-to/reindex-into-a-new-generation.md).
+
 If an index definition contains settings from a newer API version that the current node does not recognize, reading the index returns `409 Conflict`. Updating such an index is rejected with `409 Conflict` and the error code `index:definition:unrepresentable`. To resolve these errors, send the request to a node running a version that supports the definition.
 
 ## Index states
@@ -283,7 +318,7 @@ The Admin API returns the following status codes:
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
 | `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), the definition contains unrepresentable settings, the index requires unsupported engine features, or writing to the registry failed. |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, the index requires unsupported engine features, or writing to the registry failed. |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

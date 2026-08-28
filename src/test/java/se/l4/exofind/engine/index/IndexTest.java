@@ -109,6 +109,96 @@ public class IndexTest {
 		}
 	}
 
+	/**
+	 * A definition holding one string field, and the same one with the field
+	 * turned into something a search can filter on - a change that writes a
+	 * Lucene field nothing already indexed has.
+	 */
+	private static IndexDef.Builder oneStringField(boolean filterable) {
+		var field = FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setString(StringFieldTypeDef.getDefaultInstance())
+			)
+			.setPrimaryKey(true);
+
+		if(filterable) {
+			field.setFilter(FilterConfig.getDefaultInstance());
+		}
+
+		return IndexDef.newBuilder().putFields("id", field.build());
+	}
+
+	@Test
+	public void testDefinitionChangeIsAcceptedWhileNothingIsIndexed() throws IOException {
+		var index = create(oneStringField(false));
+
+		index.updateDefinition(oneStringField(true).build());
+
+		assertThat(index.getField("id").get().isFiltered(), is(true));
+	}
+
+	@Test
+	public void testDefinitionChangeReachingNoIndexedDocumentIsRefused() throws IOException {
+		var index = create(oneStringField(false));
+		index.addDocument(new Document(new Document.Value("id", "1")));
+		index.commit();
+
+		var e = assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> index.updateDefinition(oneStringField(true).build())
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:definition:usage_added"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("id"));
+
+		// The definition the documents were indexed under is what the index keeps
+		assertThat(index.getField("id").get().isFiltered(), is(false));
+	}
+
+	/**
+	 * A document that has been written but not committed was written under the
+	 * definition about to be replaced the same way a committed one was.
+	 */
+	@Test
+	public void testDefinitionChangeIsRefusedForUncommittedDocuments() throws IOException {
+		var index = create(oneStringField(false));
+		index.addDocument(new Document(new Document.Value("id", "1")));
+
+		assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> index.updateDefinition(oneStringField(true).build())
+		);
+	}
+
+	@Test
+	public void testDefinitionChangeIsAcceptedWhenStaleDocumentsAreAllowed() throws IOException {
+		var index = create(oneStringField(false));
+		index.addDocument(new Document(new Document.Value("id", "1")));
+		index.commit();
+
+		index.updateDefinition(oneStringField(true).build(), null, true);
+
+		assertThat(index.getField("id").get().isFiltered(), is(true));
+	}
+
+	/**
+	 * Nothing is left to be stale once the documents are gone, so the index
+	 * takes the definition it refused while it held them.
+	 */
+	@Test
+	public void testDefinitionChangeIsAcceptedAfterTheDocumentsAreRemoved() throws IOException {
+		var index = create(oneStringField(false));
+		index.addDocument(new Document(new Document.Value("id", "1")));
+		index.commit();
+
+		index.deleteDocument("1");
+		index.commit();
+
+		index.updateDefinition(oneStringField(true).build());
+
+		assertThat(index.getField("id").get().isFiltered(), is(true));
+	}
+
 	@Test
 	public void testAddDocumentWithValidFields() throws IOException {
 		var index = create(

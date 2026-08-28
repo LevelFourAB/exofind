@@ -26,6 +26,19 @@ public class ValidationException extends EngineException {
 	}
 
 	/**
+	 * Create an exception carrying located errors under a code of its own, for
+	 * a subclass that is answered differently from a request being malformed.
+	 * The errors are reported the same way whatever the code is.
+	 *
+	 * @param type
+	 * @param errors
+	 */
+	protected ValidationException(ErrorType type, ListIterable<ErrorMessage> errors) {
+		super(type, Maps.immutable.of("errors", errors));
+		this.errors = errors.toImmutable();
+	}
+
+	/**
 	 * Get the validation errors that caused this exception.
 	 * 
 	 * @return

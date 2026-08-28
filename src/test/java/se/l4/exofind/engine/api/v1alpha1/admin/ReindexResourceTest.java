@@ -126,7 +126,7 @@ public class ReindexResourceTest {
 	}
 
 	private void create(String name) {
-		var response = indexResource.put(name, null, null, uriInfo, definition());
+		var response = indexResource.put(name, null, null, false, uriInfo, definition());
 		assertThat(response.getStatus(), is(201));
 	}
 
@@ -188,7 +188,7 @@ public class ReindexResourceTest {
 	public void creatingAGenerationWithTheFlagStartsTheJob() throws Exception {
 		create("books");
 
-		var response = indexResource.put("books@2", null, "manual", uriInfo, definition());
+		var response = indexResource.put("books@2", null, "manual", false, uriInfo, definition());
 		assertThat(response.getStatus(), is(201));
 
 		awaitPhase("books", "ready");
@@ -202,13 +202,13 @@ public class ReindexResourceTest {
 		// The index already exists, so the request creates nothing to fill
 		assertThrows(
 			ValidationException.class,
-			() -> indexResource.put("books", null, "auto", uriInfo, definition())
+			() -> indexResource.put("books", null, "auto", false, uriInfo, definition())
 		);
 
 		// Creating the index itself leaves nothing to read from
 		assertThrows(
 			ValidationException.class,
-			() -> indexResource.put("shops", null, "auto", uriInfo, definition())
+			() -> indexResource.put("shops", null, "auto", false, uriInfo, definition())
 		);
 	}
 
@@ -218,7 +218,7 @@ public class ReindexResourceTest {
 
 		assertThrows(
 			ValidationException.class,
-			() -> indexResource.put("books@2", null, "always", uriInfo, definition())
+			() -> indexResource.put("books@2", null, "always", false, uriInfo, definition())
 		);
 
 		// The refused request left no generation behind

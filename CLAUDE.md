@@ -93,9 +93,15 @@ Everything else is caught by the compiler, a test or validation. These are not:
   anything that *narrows* a key needs one in `AuthFeatures`. Protobuf keeps
   fields it has no code for, so without a name an older node reads a newer
   definition, misses the part it does not understand and indexes anyway.
+- **A setting that decides what is written needs a comparison in
+  `DefinitionCompatibility`.** It names every such setting one at a time rather
+  than deriving them, so one added without a branch is accepted over documents
+  that were never given it - which is the silent under-answering the whole
+  class exists to refuse. A setting a search reads needs nothing.
 - **Names written to disk, or written by callers, are never renamed or
   reused**: feature names, `Permission` constants, matcher and clause
-  identifiers, proto field numbers.
+  identifiers, proto field numbers, the error codes
+  `DefinitionCompatibility` reports.
 - **`definitions.proto` and `storage.proto` are storage formats** that have to
   stay readable for as long as an index exists. The rules are in the header
   comment of `definitions.proto` - read it before adding a field.
@@ -126,7 +132,9 @@ Everything else is caught by the compiler, a test or validation. These are not:
 - A way of using a field: on `FieldDef` when it works whatever the value is
   (`filter`, `sort`, `facet`), on the type when it depends on how the value is
   analyzed. In both the proto and `FieldDefinition`. Rules every type shares
-  are checked in `Field.validate`, rules only one type can judge in its own.
+  are checked in `Field.validate`, rules only one type can judge in its own,
+  and turning it on reaches no indexed document, so it needs a branch in
+  `DefinitionCompatibility` too.
 - A locale: an entry in `Locales`, which registers `locale.<tag>` as a feature
   on its own.
 - An indexable type: a case in `documents.proto` and in `DocumentSource`, or

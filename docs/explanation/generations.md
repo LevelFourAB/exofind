@@ -13,6 +13,14 @@ Applying these changes in place causes searches to return fewer results than exp
 
 Because in-place modifications are unsafe, the engine does not support them. To apply a definition change to indexed documents, you populate a new generation and promote it. Promotion requires a single conditional write to one object.
 
+## Enforcing definition changes
+
+The engine enforces this requirement directly rather than relying on convention. A `PUT` request that changes how documents are indexed is refused while the target generation holds documents, with errors located at the fields that caused the refusal. An empty generation accepts any definition because nothing can be stale.
+
+Refusing an incompatible change is safer than accepting it. A false refusal is answerable through an explicit error that you can inspect and address. A false acceptance creates the silent failure described above, where queries miss results without reporting an error.
+
+For cases where you plan to send the entire catalogue again anyway, the `allowStaleDocuments` query parameter provides an escape hatch. Setting `allowStaleDocuments=true` stores the definition even when indexed documents were not indexed under it. Existing documents continue to answer queries as they were indexed until you index them again.
+
 ## Why the name is what callers hold
 
 The alternative approach—creating `products_v3` alongside `products` and requiring every caller to switch—moves the problem rather than solving it. Every application configuration, stored query, and access key that references the index must change, often at different times.

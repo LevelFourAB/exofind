@@ -39,6 +39,8 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexListResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.Document;
+import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
@@ -129,7 +131,7 @@ public class IndexResourceTest {
 	}
 
 	private IndexInfo create(String name, IndexDefinition definition) {
-		var response = resource.put(name, null, null, uriInfo, definition);
+		var response = resource.put(name, null, null, false, uriInfo, definition);
 		assertThat(response.getStatus(), is(201));
 		return (IndexInfo) response.getEntity();
 	}
@@ -232,7 +234,7 @@ public class IndexResourceTest {
 	public void testGenerationOfUnknownIndexIsNotFound() {
 		assertThrows(
 			IndexNotFoundException.class,
-			() -> resource.put("books@2", null, null, uriInfo, definition())
+			() -> resource.put("books@2", null, null, false, uriInfo, definition())
 		);
 	}
 
@@ -255,7 +257,7 @@ public class IndexResourceTest {
 	public void testCreateWithoutDefinitionIsRejected() {
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.put("books", null, null, uriInfo, null)
+			() -> resource.put("books", null, null, false, uriInfo, null)
 		);
 
 		assertThat(e.getErrors().get(0).getCode(), is("request:missing_body"));
@@ -265,7 +267,7 @@ public class IndexResourceTest {
 	public void testCreateWithInvalidNameIsRejected() {
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.put("Books!", null, null, uriInfo, definition())
+			() -> resource.put("Books!", null, null, false, uriInfo, definition())
 		);
 
 		assertThat(e.getErrors().get(0).getCode(), is("index:invalid_name"));
@@ -291,7 +293,7 @@ public class IndexResourceTest {
 
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.put("books", null, null, uriInfo, invalid)
+			() -> resource.put("books", null, null, false, uriInfo, invalid)
 		);
 
 		assertThat(
@@ -354,7 +356,7 @@ public class IndexResourceTest {
 			null
 		);
 
-		var response = resource.put("books", null, null, uriInfo, updated);
+		var response = resource.put("books", null, null, false, uriInfo, updated);
 		assertThat(response.getStatus(), is(200));
 
 		var info = (IndexInfo) response.getEntity();
@@ -370,6 +372,7 @@ public class IndexResourceTest {
 			"books",
 			"\"" + created.version() + "\"",
 			null,
+			false,
 			uriInfo,
 			new IndexDefinition(
 				null, Map.of("owner", "search"), definition().fields(), null, null, null
@@ -389,6 +392,7 @@ public class IndexResourceTest {
 				"books",
 				"\"0000000000000000\"",
 				null,
+				false,
 				uriInfo,
 				new IndexDefinition(
 					null, Map.of("owner", "search"), definition().fields(), null, null, null
@@ -405,6 +409,7 @@ public class IndexResourceTest {
 			"books",
 			"*",
 			null,
+			false,
 			uriInfo,
 			new IndexDefinition(
 				null, Map.of("owner", "search"), definition().fields(), null, null, null
@@ -414,11 +419,73 @@ public class IndexResourceTest {
 		assertThat(response.getStatus(), is(200));
 	}
 
+	/**
+	 * The same definition as {@link #definition()} with the field also searched
+	 * as text, which writes terms nothing already indexed has.
+	 */
+	private IndexDefinition definitionWithMatching() {
+		return new IndexDefinition(
+			null,
+			null,
+			Map.of(
+				"id",
+				new StringFieldDefinition(
+					true, null, null, null, null,
+					new FieldDefinition.Filter(),
+					null,
+					null,
+					null,
+					new StringFieldDefinition.TextUsage(
+						null, null, null, null, null, null, null
+					),
+					null,
+					null
+				)
+			),
+			null,
+			null,
+			null
+		);
+	}
+
+	@Test
+	public void testUpdateReachingNoIndexedDocumentIsRefused() throws IOException {
+		create("books", definition());
+
+		var index = indexes.getOrThrow("books");
+		index.addDocument(new Document(new Document.Value("id", "1")));
+		index.commit();
+
+		var e = assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> resource.put("books", null, null, false, uriInfo, definitionWithMatching())
+		);
+
+		assertThat(e.getCode(), is("index:definition:incompatible"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:definition:usage_added"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("id"));
+	}
+
+	@Test
+	public void testUpdateReachingNoIndexedDocumentIsTakenWhenStaleIsAllowed() throws IOException {
+		create("books", definition());
+
+		var index = indexes.getOrThrow("books");
+		index.addDocument(new Document(new Document.Value("id", "1")));
+		index.commit();
+
+		var response = resource.put(
+			"books", null, null, true, uriInfo, definitionWithMatching()
+		);
+
+		assertThat(response.getStatus(), is(200));
+	}
+
 	@Test
 	public void testCreateWithVersionIsRejected() {
 		assertThrows(
 			IndexNotFoundException.class,
-			() -> resource.put("books", "\"0000000000000000\"", null, uriInfo, definition())
+			() -> resource.put("books", "\"0000000000000000\"", null, false, uriInfo, definition())
 		);
 	}
 
@@ -442,7 +509,7 @@ public class IndexResourceTest {
 
 		var e = assertThrows(
 			UnrepresentableStateException.class,
-			() -> resource.put("books", null, null, uriInfo, definition())
+			() -> resource.put("books", null, null, false, uriInfo, definition())
 		);
 
 		assertThat(e.getCode(), is("index:definition:unrepresentable"));

@@ -19,6 +19,7 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
@@ -27,6 +28,7 @@ import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
@@ -155,6 +157,12 @@ public class IndexResource {
 	 * created here holds no documents and the index goes on answering from the
 	 * one it had, until {@code actions/promote} says otherwise.
 	 *
+	 * <p>Replacing the definition of a generation that holds documents is
+	 * refused where the change would reach none of them - a usage turned on for
+	 * a field, a different analysis chain, an edited synonym set. Such a change
+	 * is rolled out through a generation instead, which is what keeps a search
+	 * from quietly answering with less than it should.
+	 *
 	 * @param name
 	 *   the index, or one generation of it
 	 * @param ifMatch
@@ -166,11 +174,19 @@ public class IndexResource {
 	 *   created from the live one, the way the reindex action would - sugar
 	 *   over the action, for creating a generation only if the reindex is
 	 *   wanted. Only meaningful when a generation is created
+	 * @param allowStaleDocuments
+	 *   {@code true} to store a definition the documents already indexed were
+	 *   not indexed under, for the case where they are about to be sent again
+	 *   anyway. They go on answering the way they were indexed until they are
+	 *   sent
 	 * @param definition
 	 * @return
 	 * @throws UnrepresentableStateException
 	 *   if the index already has a definition holding settings this version of
 	 *   the API can not describe, which replacing it would drop
+	 * @throws IndexDefinitionIncompatibleException
+	 *   if the generation holds documents the definition would not reach, and
+	 *   {@code allowStaleDocuments} was not given
 	 */
 	@PUT
 	@Path("/{name}")
@@ -181,6 +197,7 @@ public class IndexResource {
 		@PathParam("name") String name,
 		@HeaderParam("If-Match") String ifMatch,
 		@QueryParam("reindex") String reindex,
+		@QueryParam("allowStaleDocuments") @DefaultValue("false") boolean allowStaleDocuments,
 		@Context UriInfo uriInfo,
 		IndexDefinition definition
 	) {
@@ -256,7 +273,7 @@ public class IndexResource {
 		IndexDefinitionMapper.checkRepresentable(index.getDefinition());
 
 		try {
-			index.updateDefinition(stored, expectedVersion(ifMatch));
+			index.updateDefinition(stored, expectedVersion(ifMatch), allowStaleDocuments);
 		} catch(IOException e) {
 			throw new IndexException(IO_ERROR, e, "index", name);
 		}

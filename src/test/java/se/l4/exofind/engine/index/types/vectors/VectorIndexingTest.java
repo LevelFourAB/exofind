@@ -263,7 +263,9 @@ public class VectorIndexingTest extends AbstractIndexTest {
 
 	/**
 	 * Changing quantization only affects segments flushed from then on, the
-	 * way an analysis change behaves - a search reads both kinds.
+	 * way an analysis change behaves - a search reads both kinds. Reaching
+	 * nothing already indexed is what makes it a change the index only takes
+	 * when the caller says the documents may go stale.
 	 */
 	@Test
 	public void testQuantizationChangeSearchesAcrossOldAndNewSegments() throws IOException {
@@ -274,7 +276,9 @@ public class VectorIndexingTest extends AbstractIndexTest {
 				VectorFieldTypeDef.newBuilder()
 					.setDimensions(4)
 					.setQuantization(VectorFieldTypeDef.Quantization.QUANTIZATION_INT8)
-			).build()
+			).build(),
+			null,
+			true
 		);
 
 		index.addDocument(doc("w", new float[] { 0.7f, 0.7f, 0f, 0f }));
