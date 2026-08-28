@@ -90,6 +90,43 @@ public class IndexRegistryTest {
 		assertThrows(RegistryException.class, () -> registry.create("books", "1"));
 	}
 
+	/**
+	 * A registry that can no longer be parsed is not an answer the copy can
+	 * be replaced with - the node goes on serving what it read last.
+	 */
+	@Test
+	public void testCorruptRegistryKeepsTheCopy() {
+		registry.create("books", "1");
+
+		storage.corrupt = true;
+
+		assertThat(registry.refresh(), is(false));
+		assertThat(registry.names(), contains("books"));
+	}
+
+	/**
+	 * A node that has only ever seen corrupt contents has not read the
+	 * registry, so its empty copy stays a gap rather than an answer.
+	 */
+	@Test
+	public void testCorruptRegistryDoesNotCountAsRead() {
+		storage.corrupt = true;
+
+		assertThat(registry.refresh(), is(false));
+		assertThat(registry.hasBeenRead(), is(false));
+	}
+
+	/**
+	 * A change needs a version to build on, which corrupt contents do not
+	 * give, so it is refused rather than written blind over them.
+	 */
+	@Test
+	public void testCorruptRegistryRefusesChanges() {
+		storage.corrupt = true;
+
+		assertThrows(RegistryException.class, () -> registry.create("books", "1"));
+	}
+
 	@Test
 	public void testAddedGenerationDoesNotBecomeLive() {
 		registry.create("books", "1");

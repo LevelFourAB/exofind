@@ -2,6 +2,8 @@ package se.l4.exofind.engine.index.registry;
 
 import java.io.IOException;
 
+import com.google.protobuf.InvalidProtocolBufferException;
+
 import se.l4.exofind.engine.index.state.ObjectStorageSync;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -55,10 +57,14 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 		}
 
 		try(var response = client.getObject(request.build())) {
-			return new Read.Loaded(
-				IndexRegistryStore.parseFrom(response.readAllBytes()),
-				ObjectStorageSync.quoteETag(response.response().eTag())
-			);
+			var contents = response.readAllBytes();
+			var version = ObjectStorageSync.quoteETag(response.response().eTag());
+
+			try {
+				return new Read.Loaded(IndexRegistryStore.parseFrom(contents), version);
+			} catch(InvalidProtocolBufferException e) {
+				return new Read.Corrupt(version);
+			}
 		} catch(S3Exception e) {
 			if(e.statusCode() == 304) {
 				return new Read.Unchanged();

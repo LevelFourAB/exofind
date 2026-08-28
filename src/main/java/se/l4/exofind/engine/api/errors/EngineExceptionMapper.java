@@ -29,6 +29,7 @@ import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
+import se.l4.exofind.engine.index.registry.RegistryAuditUnavailableException;
 import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.state.IndexerLeadershipUnreadableException;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
@@ -189,6 +190,13 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			/*
 			 * The change is well formed but could not be stored, which leaves
 			 * the indexes exactly as they were.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof RegistryAuditUnavailableException) {
+			/*
+			 * The node stores locally, so there is no storage to compare the
+			 * registry with. Nothing about the request changes the answer -
+			 * it is the deployment that has no audit to give.
 			 */
 			return Response.Status.CONFLICT;
 		} else if(e instanceof ReindexNotFoundException) {

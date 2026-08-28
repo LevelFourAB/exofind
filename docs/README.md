@@ -57,6 +57,9 @@ The documentation includes the following how-to guides:
 - [Operate a deployment](how-to/operate-a-deployment.md): See what each node is
   serving, tell a node that is behind from one that is broken, and manage disk
   and upgrades.
+- [Repair the index registry](how-to/repair-the-index-registry.md): Audit the
+  registry against what the storage holds, rebuild one that is lost or
+  corrupt, and spot drift before it matters.
 - [Secure a deployment](how-to/secure-a-deployment.md): Bootstrap the first key,
   hand out one key per client, and rotate keys.
 - [Run a public demo node](how-to/run-a-demo-node.md): Answer searches from a

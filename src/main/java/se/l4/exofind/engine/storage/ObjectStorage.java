@@ -154,6 +154,15 @@ public class ObjectStorage {
 	}
 
 	/**
+	 * The path every index lives under, without a trailing separator. Listing
+	 * it with {@code /} as the delimiter reports one entry per index, and each
+	 * of those one entry per generation.
+	 */
+	public String indexesPath() {
+		return resolvePath(prefix.orElse(""), INDEXES_PATH);
+	}
+
+	/**
 	 * Where one generation of an index lives, which is a path of its own under
 	 * the path of the index it belongs to.
 	 *

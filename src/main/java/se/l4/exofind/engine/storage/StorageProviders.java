@@ -16,7 +16,9 @@ import se.l4.exofind.engine.auth.NoKeyStorage;
 import se.l4.exofind.engine.auth.ObjectStorageKeyStorage;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.ObjectStorageRegistryAudit;
 import se.l4.exofind.engine.index.registry.ObjectStorageRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryAudit;
 import se.l4.exofind.engine.index.registry.RegistryStorage;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
@@ -248,6 +250,29 @@ public class StorageProviders {
 			case LOCAL -> new LocalRegistryStorage(storageDirectory.resolve(LOCAL_REGISTRY_FILE));
 			case OBJECT -> new ObjectStorageRegistryStorage(storage.get());
 		};
+	}
+
+	/**
+	 * The audit that compares the registry with what the storage holds, and
+	 * repairs it from there. Exists only in {@link StorageMode#OBJECT} - a node
+	 * storing locally has no storage to compare its registry with, which
+	 * callers check before resolving this.
+	 */
+	@Produces
+	@Singleton
+	public RegistryAudit registryAudit(
+		StorageMode mode,
+		Instance<ObjectStorage> storage,
+		RegistryStorage registryStorage
+	) {
+		if(mode != StorageMode.OBJECT) {
+			throw new IllegalStateException(
+				"There is no registry audit while EXOFIND_STORAGE_MODE is '"
+					+ mode.name().toLowerCase(Locale.ROOT) + "'"
+			);
+		}
+
+		return new ObjectStorageRegistryAudit(storage.get(), registryStorage);
 	}
 
 	/**

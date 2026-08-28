@@ -34,7 +34,10 @@ public enum Permission {
 	INDEXES_REINDEX("indexes.reindex", Scope.INDEX, Anonymous.REFUSED),
 
 	KEYS_READ("keys.read", Scope.DEPLOYMENT, Anonymous.REFUSED),
-	KEYS_WRITE("keys.write", Scope.DEPLOYMENT, Anonymous.REFUSED);
+	KEYS_WRITE("keys.write", Scope.DEPLOYMENT, Anonymous.REFUSED),
+
+	REGISTRY_AUDIT("registry.audit", Scope.DEPLOYMENT, Anonymous.REFUSED),
+	REGISTRY_REPAIR("registry.repair", Scope.DEPLOYMENT, Anonymous.REFUSED);
 
 	/**
 	 * Whether a permission is about one index or about the deployment.

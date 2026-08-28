@@ -151,6 +151,22 @@ public class IndexRegistry {
 					RegistryCodec.fromStored(loaded.indexes()),
 					loaded.version()
 				);
+				case RegistryStorage.Read.Corrupt corrupt -> {
+					/*
+					 * Not an answer the copy can be replaced with, and not one
+					 * that counts as having read the registry - a node holding
+					 * nothing must keep saying so rather than serve an empty
+					 * deployment as the truth.
+					 */
+					logger.atError()
+						.log(
+							"The stored registry can not be parsed, using the copy this"
+								+ " node holds. Repair it through the registry audit"
+								+ " endpoint"
+						);
+
+					return false;
+				}
 			}
 
 			readEver = true;

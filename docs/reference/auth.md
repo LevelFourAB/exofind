@@ -53,6 +53,8 @@ Exofind supports the following permissions:
 | `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. |
 | `keys.read` | deployment | Lists API keys. |
 | `keys.write` | deployment | Creates and revokes API keys. |
+| `registry.audit` | deployment | Compares the index registry with what the storage holds. |
+| `registry.repair` | deployment | Rebuilds the index registry from what the storage holds. |
 
 Grants are evaluated as a union: a request is allowed if any grant permits it. There are no deny rules.
 

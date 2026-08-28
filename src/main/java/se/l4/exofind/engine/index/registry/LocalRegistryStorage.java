@@ -8,6 +8,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
 
+import com.google.protobuf.InvalidProtocolBufferException;
+
 /**
  * RegistryStorage for a node keeping everything on its own disk, held as a file
  * beside the indexes.
@@ -49,7 +51,11 @@ public class LocalRegistryStorage implements RegistryStorage {
 				return new Read.Unchanged();
 			}
 
-			return new Read.Loaded(IndexRegistryStore.parseFrom(contents), version);
+			try {
+				return new Read.Loaded(IndexRegistryStore.parseFrom(contents), version);
+			} catch(InvalidProtocolBufferException e) {
+				return new Read.Corrupt(version);
+			}
 		} finally {
 			lock.unlock();
 		}

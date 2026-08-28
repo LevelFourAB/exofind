@@ -24,6 +24,9 @@ POST   /v1alpha1/admin/indexes/{name}/actions/reindex/cancel # stop a job
 
 GET    /v1alpha1/admin/indexers                         # which node writes which index
 GET    /v1alpha1/admin/reindexes                        # every job across the deployment
+
+GET    /v1alpha1/admin/registry/audit                   # compare the registry with the storage
+POST   /v1alpha1/admin/registry/actions/repair          # register what the storage holds
 ```
 
 Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
@@ -308,6 +311,91 @@ Indexes without an active claim are omitted from `claims` until a write operatio
 
 On nodes using local storage, `candidates` and `claims` are empty. If a node cannot read shared state from storage, it returns `503 Service Unavailable`.
 
+## Registry
+
+The registry tracks which indexes and generations exist across the deployment. Registry endpoints compare the shared registry with remote storage and repair discrepancies.
+
+Both endpoints are served by whichever node receives them and are never forwarded to the indexer. Both endpoints answer only in object storage mode. In local storage mode (`EXOFIND_STORAGE_MODE=local`), requests return `409 Conflict` with the error code `index:registry:audit_unavailable`.
+
+### Audit
+
+`GET /v1alpha1/admin/registry/audit` reads the registry and storage, comparing the two without changing either. This endpoint requires the `registry.audit` permission (deployment-scoped).
+
+```json
+{
+  "registry": "PRESENT",
+  "indexes": [
+    {
+      "name": "products",
+      "registered": true,
+      "live": "2",
+      "generations": [
+        { "name": "1", "registered": true, "stored": "SYNCED" },
+        { "name": "2", "registered": true, "stored": "SYNCED" }
+      ]
+    },
+    {
+      "name": "analytics",
+      "registered": false,
+      "proposedLive": "1",
+      "generations": [
+        { "name": "1", "registered": false, "stored": "SYNCED" }
+      ]
+    }
+  ],
+  "unusable": []
+}
+```
+
+The response contains the following fields:
+
+- `registry`: The state of the registry object: `PRESENT`, `ABSENT` (no registry object), or `CORRUPT` (contents cannot be parsed).
+- `indexes`: Every index named by the registry or found in storage, ordered by name. Each entry contains:
+  - `name`: The name of the index.
+  - `registered`: A boolean indicating whether the registry has an entry for the index.
+  - `live`: The generation the index answers for. Omitted when unregistered or when no generation is live.
+  - `proposedLive`: The generation that a repair with `promoteNewest` would make live. Omitted when none would be promoted.
+  - `generations`: A list of generations found for the index. Each entry contains `name`, `registered` (boolean), and `stored`:
+    - `SYNCED`: Storage holds a manifest; nodes can pull and serve this generation.
+    - `INCOMPLETE`: Storage holds a prefix without a manifest (such as an unfinished push or leftovers from a deleted generation).
+    - `MISSING`: The generation is registered, but nothing exists in storage.
+- `unusable`: A list of storage prefixes whose names no index or generation may carry (as `index` or `index/generation`). A repair never registers these prefixes.
+
+### Repair
+
+`POST /v1alpha1/admin/registry/actions/repair` registers what storage holds. This endpoint requires the `registry.repair` permission (deployment-scoped).
+
+The repair operation only adds entries. It registers every `SYNCED` generation that the registry does not name, and keeps existing entries as stored. It never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
+
+The write is conditional and rebuilds on top of concurrent registry changes. The node that served the repair applies the repaired registry immediately. Other nodes pick up the changes within their registry refresh interval (`INDEXES_REFRESH_INTERVAL`).
+
+The request body accepts an optional JSON object:
+
+- `promoteNewest`: A boolean. When `true`, each index created by the repair answers for its highest-numbered generation. Hand-named generations are not selected. Indexes that are already registered keep what they answer for.
+
+A successful repair returns a summary of the changes:
+
+```json
+{
+  "createdIndexes": [
+    "analytics"
+  ],
+  "addedGenerations": [
+    "analytics@1",
+    "products@3"
+  ],
+  "promoted": [
+    "analytics@1"
+  ]
+}
+```
+
+The response contains the following fields:
+
+- `createdIndexes`: Index entries added to the registry.
+- `addedGenerations`: Generations added to the registry, formatted as `index@generation`.
+- `promoted`: Generations made live by the repair, formatted as `index@generation`.
+
 ## Status codes
 
 The Admin API returns the following status codes:
@@ -318,7 +406,7 @@ The Admin API returns the following status codes:
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
 | `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, the index requires unsupported engine features, or writing to the registry failed. |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, the index requires unsupported engine features, writing to the registry failed, or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

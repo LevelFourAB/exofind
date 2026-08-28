@@ -63,5 +63,14 @@ public interface RegistryStorage {
 		 */
 		record Absent() implements Read {
 		}
+
+		/**
+		 * There is a registry but its contents can not be parsed. The version
+		 * is the one the unreadable contents were read at, so a repair can
+		 * replace exactly what it found rather than whatever is there by the
+		 * time it writes.
+		 */
+		record Corrupt(String version) implements Read {
+		}
 	}
 }

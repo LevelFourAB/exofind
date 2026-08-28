@@ -35,12 +35,22 @@ public class InMemoryRegistryStorage implements RegistryStorage {
 	 */
 	public boolean unreachable;
 
+	/**
+	 * When set, every read answers that the stored contents can not be
+	 * parsed.
+	 */
+	public boolean corrupt;
+
 	@Override
 	public Read read(String knownVersion) throws IOException {
 		reads++;
 
 		if(unreachable) {
 			throw new IOException("Storage is unreachable");
+		}
+
+		if(corrupt) {
+			return new Read.Corrupt(version == null ? "corrupt" : version);
 		}
 
 		if(indexes == null) {
