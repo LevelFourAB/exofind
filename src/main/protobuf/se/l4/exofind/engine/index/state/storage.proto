@@ -220,3 +220,23 @@ message IndexerLeadership {
 	 */
 	repeated Candidate candidates = 2;
 }
+
+/**
+ * ChangeLogStore is which documents of an index have changed since the index
+ * began tracking its changes, stored next to the index files and carried in
+ * the manifest while tracking runs.
+ *
+ * The log says which documents may differ from a copy taken when tracking
+ * began, not what changed about them - a reader catches a copy up by reading
+ * the named documents from the index as they are now. A key may be listed
+ * for a document that was written back unchanged; a changed document is never
+ * missing.
+ */
+message ChangeLogStore {
+	/**
+	 * Primary key terms of the documents that changed, as Lucene indexed them,
+	 * one entry per document ordered by bytes. Comparable only with terms of
+	 * an index whose primary key field has the same type.
+	 */
+	repeated bytes keys = 1;
+}

@@ -60,11 +60,13 @@ import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.factory.primitive.IntLists;
 import org.eclipse.collections.api.factory.primitive.IntObjectMaps;
 import org.eclipse.collections.api.factory.primitive.IntSets;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
+import org.eclipse.collections.api.list.primitive.MutableIntList;
 import org.eclipse.collections.api.map.ImmutableMap;
 import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.collections.api.map.MutableMap;
@@ -110,6 +112,13 @@ import se.l4.exofind.engine.query.SortKey;
  */
 public class Index {
 	public static final String DEFINITION_FILE = "definition.ef.bin";
+
+	/**
+	 * File the change log is kept in while this index tracks its changes,
+	 * next to the Lucene files and pushed with them - see
+	 * {@link #beginChangeTracking()}.
+	 */
+	public static final String CHANGES_FILE = "changes.ef.bin";
 
 	private static final ErrorType ERROR_FIELD_NOT_FOUND =
 		ErrorType.withCode("index:update:field_not_found")
@@ -237,6 +246,23 @@ public class Index {
 	private final DocumentCache documentCache;
 
 	private final ReadWriteLock syncLock;
+
+	/**
+	 * Gate every change to the contents passes through, separate from
+	 * {@link #syncLock} so that holding writes still does not hold searches.
+	 * Writes take the read side before the sync lock and a
+	 * {@link #holdWrites() hold} takes the write side alone - a holder is free
+	 * to commit or push while it holds the gate, which the other order would
+	 * deadlock on.
+	 */
+	private final ReadWriteLock writeGate;
+
+	/**
+	 * Which documents have changed since tracking began, or {@code null} while
+	 * nothing tracks them. Written under the write lock; read by the write
+	 * paths under the read lock.
+	 */
+	private volatile ChangeLog changeLog;
 
 	private final IndexSchema schema;
 
@@ -426,6 +452,7 @@ public class Index {
 		this.schema = new IndexSchema();
 		this.similarity = new IndexSimilarity(schema);
 		this.syncLock = new ReentrantReadWriteLock();
+		this.writeGate = new ReentrantReadWriteLock();
 		this.stateLock = new Object();
 
 		this.mergeLock = new Object();
@@ -902,6 +929,15 @@ public class Index {
 			files.add(DEFINITION_FILE);
 		}
 
+		/*
+		 * Carried whether or not this instance is tracking, so a log written
+		 * by an earlier writer survives ownership moving until whoever tracks
+		 * resumes or ends it.
+		 */
+		if(Files.exists(localPath.resolve(CHANGES_FILE))) {
+			files.add(CHANGES_FILE);
+		}
+
 		if(commit != null) {
 			files.addAll(commit.getFileNames());
 		}
@@ -1296,6 +1332,7 @@ public class Index {
 	 * @throws IOException
 	 */
 	public void addDocument(Document doc) throws IOException {
+		writeGate.readLock().lock();
 		syncLock.readLock().lock();
 		try {
 			checkModifiable();
@@ -1638,9 +1675,15 @@ public class Index {
 				}
 			}
 
+			var log = this.changeLog;
+			if(log != null && primaryKeyTerm != null) {
+				log.record(primaryKeyTerm.bytes());
+			}
+
 			markModified(1);
 		} finally {
 			syncLock.readLock().unlock();
+			writeGate.readLock().unlock();
 		}
 	}
 
@@ -1988,6 +2031,11 @@ public class Index {
 	 * @throws IOException
 	 */
 	public boolean updateDocument(DocumentPatch patch) throws IOException {
+		/*
+		 * Taken before the sync lock, like every write - the addDocument below
+		 * takes both again on the same thread, which the gate allows.
+		 */
+		writeGate.readLock().lock();
 		syncLock.readLock().lock();
 		try {
 			checkModifiable();
@@ -2034,6 +2082,7 @@ public class Index {
 			}
 		} finally {
 			syncLock.readLock().unlock();
+			writeGate.readLock().unlock();
 		}
 	}
 
@@ -2275,6 +2324,7 @@ public class Index {
 	 * @throws IOException
 	 */
 	public int deleteDocuments(ListIterable<Object> primaryKeys) throws IOException {
+		writeGate.readLock().lock();
 		syncLock.readLock().lock();
 		try {
 			checkModifiable();
@@ -2320,10 +2370,18 @@ public class Index {
 				}
 			}
 
+			var log = this.changeLog;
+			if(log != null) {
+				for(var term : terms) {
+					log.record(term.bytes());
+				}
+			}
+
 			markModified(terms.length);
 			return terms.length;
 		} finally {
 			syncLock.readLock().unlock();
+			writeGate.readLock().unlock();
 		}
 	}
 
@@ -2350,6 +2408,7 @@ public class Index {
 	 * @throws IOException
 	 */
 	public int deleteByQuery(ListIterable<Query> clauses, String locale) throws IOException {
+		writeGate.readLock().lock();
 		syncLock.readLock().lock();
 		try {
 			checkModifiable();
@@ -2364,6 +2423,16 @@ public class Index {
 			int matched;
 			try(var handle = searcherManager.acquire()) {
 				matched = handle.getSearcher().count(documents);
+			}
+
+			/*
+			 * Which keys go has to be written down before they are gone -
+			 * recorded ahead of the removal, so a failure between the two
+			 * leaves the log saying more than changed rather than less.
+			 */
+			var log = this.changeLog;
+			if(log != null) {
+				recordMatches(log, documents);
 			}
 
 			writer.deleteDocuments(withNestedValues(documents));
@@ -2384,6 +2453,7 @@ public class Index {
 			return matched;
 		} finally {
 			syncLock.readLock().unlock();
+			writeGate.readLock().unlock();
 		}
 	}
 
@@ -4059,6 +4129,214 @@ public class Index {
 	}
 
 	/**
+	 * Start recording which documents change, so that a copy of this index
+	 * taken from here on can be caught up by reading the recorded documents
+	 * again. Every write records the primary keys it touches into the returned
+	 * {@link ChangeLog}, including the keys a delete by query resolves to, and
+	 * the log is persisted and pushed with every commit - a node that takes
+	 * this index over resumes the same log rather than starting blind.
+	 *
+	 * <p>Tracking already underway is returned as it is. It ends with
+	 * {@link #endChangeTracking()} and does not survive {@link #close()};
+	 * what was committed of the log does, and is resumed by the next call
+	 * here.
+	 *
+	 * @return
+	 *   the log the writes record into
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key, without which a change
+	 *   cannot be named
+	 * @throws IndexSourceNotKeptException
+	 *   if the index keeps no copy of its documents, without which the keys a
+	 *   delete by query takes cannot be read
+	 * @throws IndexReadonlyException
+	 *   if this node is not the indexer
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 * @throws IndexOutOfDateException
+	 *   if the index has not been pulled yet
+	 * @throws IOException
+	 *   if a log persisted by an earlier writer could not be read back
+	 */
+	public ChangeLog beginChangeTracking() throws IOException {
+		syncLock.writeLock().lock();
+		try {
+			checkModifiable();
+
+			primaryKeyField();
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceNotKeptException(id);
+			}
+
+			if(changeLog != null) {
+				return changeLog;
+			}
+
+			var file = localPath.resolve(CHANGES_FILE);
+			this.changeLog = Files.exists(file)
+				? ChangeLog.load(file)
+				: new ChangeLog();
+
+			return changeLog;
+		} finally {
+			syncLock.writeLock().unlock();
+		}
+	}
+
+	/**
+	 * Stop recording which documents change and drop what has been recorded,
+	 * locally and - with the next commit - from the remote. Safe to call when
+	 * nothing tracks.
+	 *
+	 * @throws IOException
+	 *   if the persisted log could not be removed, in which case tracking has
+	 *   still ended
+	 */
+	public void endChangeTracking() throws IOException {
+		syncLock.writeLock().lock();
+		try {
+			this.changeLog = null;
+			Files.deleteIfExists(localPath.resolve(CHANGES_FILE));
+		} finally {
+			syncLock.writeLock().unlock();
+		}
+	}
+
+	/**
+	 * Get the log writes are being recorded into, empty while nothing tracks.
+	 */
+	public Optional<ChangeLog> getChangeLog() {
+		return Optional.ofNullable(changeLog);
+	}
+
+	/**
+	 * Hold every write to the contents still until the returned hold is
+	 * closed. Writes already underway finish first - this call waits for them
+	 * - and new ones wait at the gate rather than failing, so a caller sees
+	 * added latency and nothing else.
+	 *
+	 * <p>Searches, commits and pushes are not held; the holder itself may
+	 * commit. Meant for the moment a caught-up copy takes over, where the
+	 * change log has to stay empty while the switch is made.
+	 *
+	 * @return
+	 *   the hold, which the caller closes to let writes continue
+	 */
+	public WriteHold holdWrites() {
+		var lock = writeGate.writeLock();
+		lock.lock();
+		return lock::unlock;
+	}
+
+	/**
+	 * What {@link #holdWrites()} hands the caller: closing it lets writes
+	 * continue. Close once, from the thread that took the hold.
+	 */
+	public interface WriteHold extends AutoCloseable {
+		@Override
+		void close();
+	}
+
+	/**
+	 * Record every document a query is about to remove into the change log.
+	 * Reads the keys from the stored copies of the documents, seeing
+	 * everything written so far whether committed or not.
+	 *
+	 * @param documents
+	 *   the compiled query, matching documents of the index only
+	 * @throws IndexSourceNotKeptException
+	 *   if a matched document was indexed while the index kept no copy, where
+	 *   its key can no longer be read - nothing is recorded or removed
+	 * @throws IOException
+	 */
+	private void recordMatches(
+		ChangeLog log,
+		org.apache.lucene.search.Query documents
+	) throws IOException {
+		var field = primaryKeyField();
+		var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
+		encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+		encounter.updateValue(field.getName(), field.getDef());
+
+		synchronized(mergeLock) {
+			/*
+			 * Reopened whether or not it is stale: what is remembered beside
+			 * the reader cannot answer a query, so the reader alone has to
+			 * hold everything written so far.
+			 */
+			refreshMergeReader();
+
+			var searcher = new IndexSearcher(mergeReader);
+			var docIds = searcher.search(
+				documents,
+				new CollectorManager<CollectDocIds, MutableIntList>() {
+					@Override
+					public CollectDocIds newCollector() {
+						return new CollectDocIds();
+					}
+
+					@Override
+					public MutableIntList reduce(Collection<CollectDocIds> collectors) {
+						var all = IntLists.mutable.empty();
+						for(var collector : collectors) {
+							all.addAll(collector.docIds);
+						}
+						return all;
+					}
+				}
+			);
+
+			var storedFields = mergeReader.storedFields();
+			var wanted = Set.of(FieldNames.SOURCE);
+			for(var i = 0; i < docIds.size(); i++) {
+				var stored = storedFields.document(docIds.get(i), wanted);
+				var source = stored.getBinaryValue(FieldNames.SOURCE);
+				if(source == null) {
+					/*
+					 * Indexed while the index kept nothing, so which key the
+					 * removal takes cannot be said - and a log that is missing
+					 * a key is worse than a delete that is refused.
+					 */
+					throw new IndexSourceNotKeptException(id);
+				}
+
+				var decoded = DocumentSource.decode(source, field.getName()::equals);
+				var term = field.getType()
+					.createPrimaryKeyTerm(encounter, decoded.get(field.getName()));
+				log.record(term.bytes());
+			}
+		}
+	}
+
+	/**
+	 * Gathers the id of every matching document, for reading their stored
+	 * fields once the search is done.
+	 */
+	private static final class CollectDocIds implements Collector {
+		private final MutableIntList docIds = IntLists.mutable.empty();
+
+		@Override
+		public LeafCollector getLeafCollector(LeafReaderContext context) {
+			var base = context.docBase;
+			return new LeafCollector() {
+				@Override
+				public void setScorer(Scorable scorer) {
+				}
+
+				@Override
+				public void collect(int doc) {
+					docIds.add(base + doc);
+				}
+			};
+		}
+
+		@Override
+		public ScoreMode scoreMode() {
+			return ScoreMode.COMPLETE_NO_SCORES;
+		}
+	}
+
+	/**
 	 * Write what has been indexed into a Lucene commit and push it to the
 	 * remote, which is what makes it searchable here and elsewhere.
 	 *
@@ -4089,6 +4367,16 @@ public class Index {
 			}
 
 			logger.atDebug().addKeyValue("index", id).log("Committing index");
+
+			/*
+			 * Saved before the Lucene commit, while the write lock keeps every
+			 * write path out, so the file always covers at least the changes
+			 * the commit carries - and the push that follows uploads both.
+			 */
+			var log = this.changeLog;
+			if(log != null) {
+				log.save(localPath.resolve(CHANGES_FILE));
+			}
 
 			writer.commit();
 

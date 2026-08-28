@@ -54,8 +54,57 @@ A generation is a complete index with its own Lucene files, manifest, and epochs
 
 All mechanisms described in [Synchronization](synchronization.md) apply to generations without modification. Two generations of the same index are as independent as two separate indexes. Nodes push and pull them independently, and epoch-scoped keys prevent concurrent writer sessions from overwriting each other within each generation.
 
+## Writes while filling a new generation
+
+Populating a new generation takes time. For a large catalogue, the process can take hours. Writes continue during this time, but they flow only to the live generation.
+
+To prevent documents written during a rebuild from disappearing at promotion, the index tracks changes in a change log. Tracking records which documents change:
+
+- Adding or replacing a document records its primary key.
+- A partial update records the primary key of the modified document.
+- Removing a document by key records that key.
+- Removing documents by query resolves the query to primary keys before deletion and records those keys.
+
+The change log is an unordered set of keys. It identifies which documents might differ from the state when tracking began. A process catches up the new generation by reading each recorded document from the live generation in its current state. If the document exists, the process writes it to the new generation; if it was deleted, the process removes it. This replay is idempotent and order-insensitive.
+
+Replay occurs in rounds using log snapshots. Each round replays documents modified since the previous snapshot, making each subsequent round smaller. The rebuild finishes under a brief write hold:
+
+1. New writes pause at a gate while in-flight writes finish. Searches, commits, and pushes continue normally.
+2. The final tail of the change log replays to the new generation.
+3. The new generation is promoted using a conditional registry write.
+4. The write hold releases.
+
+Writes experience brief latency during the final hold—typically a few seconds—without rejected requests or new error states. Because tracking continues after promotion until it is ended, any write that completes against the old generation during the handoff is captured and replayed to the new live generation in a final sweep.
+
+The change log is stored alongside Lucene files in `changes.ef.bin`. It commits and pushes with index manifests, allowing tracking to survive indexer failover.
+
+### Tracking requirements
+
+Change tracking requires two index capabilities:
+
+- **A primary key:** Changes are recorded by document key.
+- **Kept sources:** Removing documents by query requires reading stored copies to resolve keys, and replay requires reading source documents from the live generation. Kept sources are enabled by default.
+
+If an index lacks either capability, change tracking is unavailable. Rebuilding such an index requires pausing writes for the entire copy duration.
+
+### Rejected alternatives
+
+Two alternative designs were rejected:
+
+- **A read-only window for the entire rebuild:** This approach pauses all indexing for hours on large datasets. It remains only as a fallback when an index lacks a primary key or kept sources.
+- **Dual-write to both generations:** Directing writes to both generations simultaneously fails because write operations behave differently across generations:
+  - Partial updates require a document to exist first, but in the generation being filled the document usually does not exist yet.
+  - Query-based deletions use the analysis chain of each generation. Because generations often exist specifically to change analysis rules, the same query deletes different documents in each generation.
+  - Concurrent writes race against the process copying older versions of the same documents into the new generation.
+
+Dual-write would also require changing the registry format to list multiple writable generations. That change would require the registry required-features mechanism, causing older nodes in a mixed fleet to reject the index outright.
+
+### Registry compatibility
+
+The change tracking design requires no changes to the registry format. A deployment undergoing a rebuild appears in the registry identical to a deployment where an operator manually created an extra generation. Because the registry format is unchanged, the required-features list remains empty. Older nodes in a mixed fleet process the index without modification, and nodes that do not support change tracking treat the log file as inert bytes.
+
 ## What this does not do
 
 Populating a new generation requires indexing documents into it. Because Exofind preserves every document in its original form (see [the source API reference](../reference/documents-api.md)), you do not need to send source documents again when rebuilding from an existing generation.
 
-However, the engine does not automatically execute the rebuild process or manage documents written while a rebuild is in progress.
+However, the engine does not automatically execute the rebuild process. Filling the new generation, replaying the change log, and promoting the generation are driven externally through the documents API and the registry.
