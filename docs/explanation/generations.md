@@ -103,10 +103,16 @@ Dual-write would also require changing the registry format to list multiple writ
 
 The change tracking design requires no changes to the registry format. A deployment undergoing a rebuild appears in the registry identical to a deployment where an operator manually created an extra generation. Because the registry format is unchanged, the required-features list remains empty. Older nodes in a mixed fleet process the index without modification, and nodes that do not support change tracking treat the log file as inert bytes.
 
-## What this does not do
+## Driving a rebuild
 
-`GET /v1alpha1/indexes/{name}/documents` reads the stored documents of a generation back out in primary key order (see [the documents API reference](../reference/documents-api.md)). Its newline-delimited output is what the indexing endpoint takes back in, so you can fill a new generation from the one it replaces without going back to the system the documents first came from.
+The engine drives a rebuild when requested. Sending a `POST` request to `/v1alpha1/admin/indexes/products@2/actions/reindex` starts a job on the index writer node. The job enables change tracking, copies documents from the source generation, replays the change log in rounds, and completes during a write hold. The job stores its phase and copy cursor in a durable storage record. This record allows the job to resume after indexer failover and lets any node report the job status. For more information, see [Reindex into a new generation](../how-to/reindex-into-a-new-generation.md).
 
-The engine does not drive the rebuild. Reading the old generation, writing into the new one, replaying the change log, and promoting the generation are all driven from outside.
+Because the copy process reads the source generation while writes continue, it does not capture a single point in time. The change log records any changes made during the copy, and subsequent replay rounds apply those updates to the new generation.
 
-Because a read that resumes is not one moment, documents can change behind the read while it runs. What changes behind it is what the change log records and replays.
+You can also drive a rebuild from outside the engine. Calling `GET /v1alpha1/indexes/{name}/documents` exports stored documents from a generation in primary key order (see the [Documents API reference](../reference/documents-api.md)). The indexing endpoint accepts this newline-delimited output, so you can populate a new generation without querying the upstream source system. Use this approach for an index that does not support change tracking or when documents must be refreshed directly from the system of record.
+
+## Limitations
+
+Change tracking is designed specifically for internal reindex jobs and provides no external API. A rebuild driven from outside the engine cannot replay changes. Writes that occur during an external rebuild reach only the live generation and are lost at promotion. To prevent data loss, you must stop writes for the duration of an external rebuild.
+
+The engine does not rebuild indexes automatically. Creating a new generation and initiating a reindex are explicit actions that you control.
