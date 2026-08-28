@@ -75,7 +75,8 @@ public class SearchResource {
 	public SearchResource(
 		Indexes indexes,
 		SearchSettings searchSettings,
-		@ConfigProperty(name = "search.max-page-depth", defaultValue = "10000") int maxPageDepth
+		@ConfigProperty(name = "exofind.search.max-page-depth", defaultValue = "10000")
+		int maxPageDepth
 	) {
 		this.indexes = indexes;
 		this.searchSettings = searchSettings;
@@ -116,7 +117,7 @@ public class SearchResource {
 			affects the score, `index:query:usage_not_enabled` when a field is \
 			used in a way the definition does not enable, or \
 			`search:page:too_deep` when `offset` reaches past \
-			`SEARCH_MAX_PAGE_DEPTH`.""",
+			`EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(

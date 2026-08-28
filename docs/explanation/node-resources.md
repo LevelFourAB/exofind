@@ -78,7 +78,7 @@ For most deployments, G1 provides the best balance of throughput, low memory ove
 
 When a node exhausts its heap, remaining alive in an unstable state causes cluster-wide coordination failures:
 
-1. **Storage directory locks:** An unresponsive node continues to hold operating system file locks on its `LOCAL_STORAGE_DIRECTORY` (`/data`), preventing replacement processes from opening index files.
+1. **Storage directory locks:** An unresponsive node continues to hold operating system file locks on its `EXOFIND_STORAGE_LOCAL_DIRECTORY` (`/data`), preventing replacement processes from opening index files.
 2. **Lease renewals:** An indexer node that encounters heap starvation can continue executing background timer threads, renewing its leadership leases in object storage while failing to process incoming writes. Other candidate nodes cannot claim the indexes until the lease expires.
 
 Setting `-XX:+ExitOnOutOfMemoryError` ensures that a failing node terminates immediately. Process termination releases local file locks and stops lease renewal heartbeats, allowing standby candidate nodes to take over indexing immediately.

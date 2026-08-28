@@ -6,15 +6,15 @@ For the underlying storage model, see [Architecture](architecture.md). For the c
 
 ## Candidacy rather than role assignment
 
-Setting `INDEXER=true` does not assign a fixed set of indexes to a node. Instead, it marks the node as a candidate to write indexes.
+Setting `EXOFIND_INDEXER_ENABLED=true` does not assign a fixed set of indexes to a node. Instead, it marks the node as a candidate to write indexes.
 
 Candidate nodes coordinate through a shared leadership table in object storage. They divide existing index names among themselves so that each index has at most one writer at any time. When a candidate joins or leaves, the remaining candidates balance the index claims. If a candidate crashes or stops renewing its lease, its claims lapse and other candidates acquire them.
 
-Search nodes run with `INDEXER=false`. They never claim indexes or run Lucene writers. Instead, they discover indexes through the shared registry, pull committed files from storage, and serve search requests locally.
+Search nodes run with `EXOFIND_INDEXER_ENABLED=false`. They never claim indexes or run Lucene writers. Instead, they discover indexes through the shared registry, pull committed files from storage, and serve search requests locally.
 
 ## Why one pool cannot configure both roles
 
-A single pool of nodes can run both search and indexing if you enable `INDEXER=true` on some or all instances. However, searching and indexing place opposing demands on memory, scaling, disk management, and lifecycle handling. A single pool configuration compromises both workloads.
+A single pool of nodes can run both search and indexing if you enable `EXOFIND_INDEXER_ENABLED=true` on some or all instances. However, searching and indexing place opposing demands on memory, scaling, disk management, and lifecycle handling. A single pool configuration compromises both workloads.
 
 ### Memory split: heap against page cache
 
@@ -32,14 +32,14 @@ Search capacity scales horizontally with query volume. Adding search nodes incre
 Indexing capacity does not scale with search traffic. Indexer candidates run as a small, stable set of nodes (typically two or three). An autoscaler that reduces pool size when CPU usage drops terminates pods holding active write leases. When an indexer pod terminates unexpectedly:
 
 1. Pending unpushed writes remain uncommitted on that node.
-2. The index remains without an active writer until `INDEXER_LEASE_DURATION` expires.
+2. The index remains without an active writer until `EXOFIND_INDEXER_LEASE_DURATION` expires.
 3. Another candidate must take over the claim, pull the latest manifest, and reopen the Lucene writer before accepting new writes.
 
 Separating pools allows you to autoscale search nodes without triggering indexer failovers.
 
 ### Disk rules and cleanup
 
-The disk on a search node is an ephemeral read cache. If local disk space runs low, the background disk sweeper configured by `INDEXES_DISK_MAX_SIZE` safely deletes local copies of inactive indexes that exist in object storage.
+The disk on a search node is an ephemeral read cache. If local disk space runs low, the background disk sweeper configured by `EXOFIND_INDEXES_DISK_MAX_SIZE` safely deletes local copies of inactive indexes that exist in object storage.
 
 The disk on an indexer candidate holds unpushed commits and active Lucene segment merges. The disk sweeper cannot free uncommitted files. Running disk cleanup on an active writer risks deleting files required by ongoing merge operations. Indexer nodes require dedicated persistent storage sized for write buffers rather than cache budgets.
 
@@ -52,7 +52,7 @@ When rolling out updates, the two workloads require different shutdown behavior:
 
 ## Request routing and the cost of write forwarding
 
-Exofind allows clients to send any request to any node. A search node that receives a write request checks the leadership table for the candidate holding that index and proxies the request to the candidate's `NODE_ADDRESS`. If no candidate holds the index, the first candidate to receive the forwarded write claims the index.
+Exofind allows clients to send any request to any node. A search node that receives a write request checks the leadership table for the candidate holding that index and proxies the request to the candidate's `EXOFIND_NODE_ADDRESS`. If no candidate holds the index, the first candidate to receive the forwarded write claims the index.
 
 The forwarding proxy streams the request body directly using HTTP/1.1 and adds an `X-Exofind-Forwarded` header. If the target candidate no longer holds the index, it rejects the forwarded request with `409 Conflict` rather than forwarding it again, preventing proxy loops while the leadership table updates.
 
@@ -66,13 +66,13 @@ As a deployment grows to hundreds of indexes, resource contention appears on ind
 
 Every open index on an indexer candidate maintains an active Lucene writer with dedicated document buffers and merge threads.
 
-The `INDEXES_MAX_OPEN` variable caps how many indexes a node keeps open simultaneously. Setting this value too high exhausts JVM heap space and causes out-of-memory crashes. Setting it too low causes thrashing, where the node repeatedly closes and reopens writers as writes arrive for different indexes.
+The `EXOFIND_INDEXES_MAX_OPEN` variable caps how many indexes a node keeps open simultaneously. Setting this value too high exhausts JVM heap space and causes out-of-memory crashes. Setting it too low causes thrashing, where the node repeatedly closes and reopens writers as writes arrive for different indexes.
 
 ### Commit request volume against refresh polls
 
-Each active index commits and pushes updates to object storage based on `INDEXES_COMMIT_MAX_INTERVAL` (defaulting to 5 seconds). With hundreds of active indexes, frequent commits produce a high volume of upload requests and conditional manifest writes against the storage backend.
+Each active index commits and pushes updates to object storage based on `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` (defaulting to 5 seconds). With hundreds of active indexes, frequent commits produce a high volume of upload requests and conditional manifest writes against the storage backend.
 
-Search nodes poll storage for changes based on `INDEXES_REFRESH_INTERVAL` (defaulting to 30 seconds). Committing to storage more frequently than the search refresh interval generates storage API operations without making changes visible to searchers any sooner. Aligning `INDEXES_COMMIT_MAX_INTERVAL` with `INDEXES_REFRESH_INTERVAL` reduces commit overhead.
+Search nodes poll storage for changes based on `EXOFIND_INDEXES_REFRESH_INTERVAL` (defaulting to 30 seconds). Committing to storage more frequently than the search refresh interval generates storage API operations without making changes visible to searchers any sooner. Aligning `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` with `EXOFIND_INDEXES_REFRESH_INTERVAL` reduces commit overhead.
 
 ### Write throughput per index
 

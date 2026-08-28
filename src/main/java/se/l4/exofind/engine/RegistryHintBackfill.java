@@ -66,7 +66,7 @@ public class RegistryHintBackfill {
 		SearchSettingsStorage settingsStorage,
 		StateSyncProvider syncProvider,
 		StorageMode storageMode,
-		@ConfigProperty(name = "indexes.refresh-interval", defaultValue = "30s")
+		@ConfigProperty(name = "exofind.indexes.refresh-interval", defaultValue = "30s")
 		Duration interval
 	) {
 		this.registry = registry;

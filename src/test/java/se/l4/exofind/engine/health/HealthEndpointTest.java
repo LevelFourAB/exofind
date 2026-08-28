@@ -53,7 +53,7 @@ public class HealthEndpointTest {
 
 			return Map.of(
 				"exofind.storage.mode", "local",
-				"local.storage.directory", directory.toString(),
+				"exofind.storage.local.directory", directory.toString(),
 				"exofind.auth.mode", "keys",
 				"exofind.auth.root-key", "exok_root_health_test"
 			);

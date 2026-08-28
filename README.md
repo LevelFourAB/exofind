@@ -172,15 +172,16 @@ Both container build tasks package the application first and copy the build
 artifacts into the image using the JDK configured in `mise.toml`.
 The `mise run image` command builds for the host architecture, while
 `mise run image:amd64` builds for x86-64. Both images use the same configuration
-as running from source, but default `LOCAL_STORAGE_DIRECTORY` to `/data`:
+as running from source, but default `EXOFIND_STORAGE_LOCAL_DIRECTORY` to
+`/data`:
 
 ```shell
 docker run --rm -p 8080:8080 \
   -e EXOFIND_STORAGE_MODE=object \
-  -e REMOTE_STORAGE_URL=http://host.docker.internal:9000 \
-  -e REMOTE_STORAGE_ACCESS_KEY=exofind \
-  -e REMOTE_STORAGE_SECRET_KEY=exofind123 \
-  -e REMOTE_STORAGE_BUCKET=exofind \
+  -e EXOFIND_STORAGE_REMOTE_URL=http://host.docker.internal:9000 \
+  -e EXOFIND_STORAGE_REMOTE_ACCESS_KEY=exofind \
+  -e EXOFIND_STORAGE_REMOTE_SECRET_KEY=exofind123 \
+  -e EXOFIND_STORAGE_REMOTE_BUCKET=exofind \
   -e EXOFIND_AUTH_ROOT_KEY=dev-root-key \
   exofind/engine:dev
 ```

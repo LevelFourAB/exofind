@@ -25,7 +25,7 @@ public record IndexerInfo(
 	@Schema(
 		description = """
 			Where writes for the index are forwarded. Omitted when the node \
-			did not set `NODE_ADDRESS`.""",
+			did not set `EXOFIND_NODE_ADDRESS`.""",
 		examples = "http://node-a:8080"
 	)
 	String address

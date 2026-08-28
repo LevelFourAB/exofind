@@ -50,7 +50,7 @@ public class StorageDirectoryLock {
 	private final FileLock lock;
 
 	StorageDirectoryLock(
-		@ConfigProperty(name = "local.storage.directory") Path directory
+		@ConfigProperty(name = "exofind.storage.local.directory") Path directory
 	) throws IOException {
 		this.file = directory.resolve(LOCK_FILE);
 
@@ -85,7 +85,7 @@ public class StorageDirectoryLock {
 				"The local storage directory " + directory + " is already in use by"
 					+ " another node. Two nodes writing one directory overwrite each"
 					+ " other's index commits, so give this node a directory of its"
-					+ " own through LOCAL_STORAGE_DIRECTORY"
+					+ " own through EXOFIND_STORAGE_LOCAL_DIRECTORY"
 			);
 		}
 

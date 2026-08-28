@@ -15,9 +15,9 @@ Reader nodes discover indexes in the bucket, pull them locally, and answer searc
 
 To add search capacity:
 
-1. Start one or more nodes with the same remote storage configuration and leave `INDEXER` unset or set to `false`.
-2. (Optional) Set `INDEXES_REFRESH_INTERVAL` to adjust how often the node checks the bucket for updates. The default is `30s`. Lower values provide fresher reads at the cost of more storage traffic. You can also trigger the `pull` action on a node to fetch the latest state of an index immediately.
-3. (Optional) Set `INDEXES_MAX_OPEN` to limit how many open indexes a node keeps in memory at once. When the limit is reached, the node closes the least recently used indexes and reopens them when requested.
+1. Start one or more nodes with the same remote storage configuration and leave `EXOFIND_INDEXER_ENABLED` unset or set to `false`.
+2. (Optional) Set `EXOFIND_INDEXES_REFRESH_INTERVAL` to adjust how often the node checks the bucket for updates. The default is `30s`. Lower values provide fresher reads at the cost of more storage traffic. You can also trigger the `pull` action on a node to fetch the latest state of an index immediately.
+3. (Optional) Set `EXOFIND_INDEXES_MAX_OPEN` to limit how many open indexes a node keeps in memory at once. When the limit is reached, the node closes the least recently used indexes and reopens them when requested.
 
 ## 2. Configure and start writer candidates
 
@@ -30,10 +30,10 @@ To configure writer candidates:
    **Note:** Writes to a single index do not spread across multiple nodes. Running more than two or three candidates provides little benefit unless the deployment handles many busy indexes.
 
 2. Set the following environment variables on each candidate node:
-   - Set `INDEXER=true`.
-   - Set `NODE_ADDRESS` to the address that the node uses to serve writes. Other nodes use this address to forward writes to the candidate that holds an index. The address must be reachable by other nodes, but it does not need to be accessible to clients.
-   - (Optional) Set `NODE_ID` to a unique identifier for the node in the leadership table. By default, the node uses its hostname with a random suffix.
-   - (Optional) Set `INDEXER_LEASE_DURATION` to specify how long an index lease is held without renewal. The default is `30s`. Nodes renew their leases at one-third of this duration. Failover takes approximately the duration of the lease.
+   - Set `EXOFIND_INDEXER_ENABLED=true`.
+   - Set `EXOFIND_NODE_ADDRESS` to the address that the node uses to serve writes. Other nodes use this address to forward writes to the candidate that holds an index. The address must be reachable by other nodes, but it does not need to be accessible to clients.
+   - (Optional) Set `EXOFIND_NODE_ID` to a unique identifier for the node in the leadership table. By default, the node uses its hostname with a random suffix.
+   - (Optional) Set `EXOFIND_INDEXER_LEASE_DURATION` to specify how long an index lease is held without renewal. The default is `30s`. Nodes renew their leases at one-third of this duration. Failover takes approximately the duration of the lease.
 
 3. Start the candidate nodes.
    
@@ -47,14 +47,14 @@ Clients do not need to know which node holds a specific index.
 
 1. Put reader nodes behind a load balancer.
 2. Configure the load balancer health check to point to `/q/health/ready`. A node responds to `/q/health/ready` without an API key after it reads the registry. For more information, see [Ask whether a node is up](operate-a-deployment.md#ask-whether-a-node-is-up).
-3. Send write requests to any node. If a node receives a write for an index held by another candidate, it forwards the request to the holder's `NODE_ADDRESS` using the original request credentials and returns the holder's response. If an index does not have a holder, the candidate node that receives the write claims the index immediately.
+3. Send write requests to any node. If a node receives a write for an index held by another candidate, it forwards the request to the holder's `EXOFIND_NODE_ADDRESS` using the original request credentials and returns the holder's response. If an index does not have a holder, the candidate node that receives the write claims the index immediately.
 
 ### Write error codes
 
 If a write request cannot be processed, the node returns one of the following error responses:
 
-- `409 Conflict` with code `indexer:unavailable`: No candidate node is running, or no candidate has set `NODE_ADDRESS`.
-- `502 Bad Gateway` with code `indexer:unreachable`: The node that holds the index cannot be reached at its `NODE_ADDRESS`.
+- `409 Conflict` with code `indexer:unavailable`: No candidate node is running, or no candidate has set `EXOFIND_NODE_ADDRESS`.
+- `502 Bad Gateway` with code `indexer:unreachable`: The node that holds the index cannot be reached at its `EXOFIND_NODE_ADDRESS`.
 
 ## Verifying the deployment
 

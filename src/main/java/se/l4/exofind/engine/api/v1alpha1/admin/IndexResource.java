@@ -645,7 +645,8 @@ public class IndexResource {
 			rebuilt index is rolled out. Callers using the bare index name \
 			read the promoted generation from here on - on the answering node \
 			at once, and on every other node within \
-			`INDEXES_REFRESH_INTERVAL`. Nothing the callers hold changes, so \
+			`EXOFIND_INDEXES_REFRESH_INTERVAL`. Nothing the callers hold \
+			changes, so \
 			this is also how a rollout is undone: promote the generation that \
 			was answering before.
 
@@ -816,7 +817,8 @@ public class IndexResource {
 		summary = "Pull the latest state",
 		description = """
 			Fetches the latest remote state at once instead of waiting for \
-			`INDEXES_REFRESH_INTERVAL`, and answers with the resulting status.
+			`EXOFIND_INDEXES_REFRESH_INTERVAL`, and answers with the resulting \
+			status.
 
 			A pull updates the copy held by the node serving it, so it runs \
 			wherever it lands and is never forwarded - sending it to the index \

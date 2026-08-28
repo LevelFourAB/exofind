@@ -583,7 +583,7 @@ Page metadata is divided into `start`, `middle`, and `end` arrays. The `current`
 
 ## Paging rules
 
-- `offset` cannot exceed `SEARCH_MAX_PAGE_DEPTH`. Requests exceeding this limit return `search:page:too_deep`.
+- `offset` cannot exceed `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Requests exceeding this limit return `search:page:too_deep`.
 - `next` and `previous` cursors encode result positions rather than count offsets. Cursor navigation is uncapped by depth. Cursors are bound to the sort configuration of the original query; using a cursor with a different sort returns `search:cursor:sort_mismatch`.
-- Cursors inside `pages` encode count offsets and remain subject to `SEARCH_MAX_PAGE_DEPTH`.
+- Cursors inside `pages` encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
 - `pages` can be combined with `offset` or page cursors, but cannot be combined with `after` or `before`.

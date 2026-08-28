@@ -21,7 +21,7 @@ To reduce polling requests, the registry includes version hints for each index. 
 
 The node that updates an object also reports its hint. A manifest push reports the manifest version, and updating settings reports the settings version. Because both document writes and settings updates execute on the designated index writer, the writer always reports its own updates. The writer buffers hints for several seconds and applies them to the registry in a single conditional write. This batching avoids contending for the registry on every push. For entries that predate hints, the index writer reads storage and populates hints over multiple passes, avoiding request bursts during upgrades.
 
-Hints provide efficiency rather than authoritative state. Even if hints indicate no change, nodes verify every local copy directly against storage after at most `INDEXES_VERIFY_INTERVAL`. If a writer crashes before reporting a hint, or if an older node overwrites the registry without hints, the system experiences temporary staleness or extra requests, but never corrupted state. Like the leadership table, hints optimize performance while conditional reads and writes enforce safety.
+Hints provide efficiency rather than authoritative state. Even if hints indicate no change, nodes verify every local copy directly against storage after at most `EXOFIND_INDEXES_VERIFY_INTERVAL`. If a writer crashes before reporting a hint, or if an older node overwrites the registry without hints, the system experiences temporary staleness or extra requests, but never corrupted state. Like the leadership table, hints optimize performance while conditional reads and writes enforce safety.
 
 ## Why writes are scoped to epochs
 
@@ -37,7 +37,7 @@ When pushing an update, the system diffs the old and new manifests to identify a
 
 The bucket maintains a single leadership table that tracks which node writes to each index. The table contains a claim entry for each index naming its holder, alongside an entry for each candidate node indicating that the candidate is alive. The table is updated as a whole, conditionally based on its version. If two candidates attempt concurrent updates, only one write succeeds.
 
-Every candidate runs a coordination round at an interval equal to one-third of the claim duration (`INDEXER_LEASE_DURATION`). During a round, a candidate performs the following actions:
+Every candidate runs a coordination round at an interval equal to one-third of the claim duration (`EXOFIND_INDEXER_LEASE_DURATION`). During a round, a candidate performs the following actions:
 
 - Renews its own entries.
 - Takes over claims whose holders stopped renewing due to crashes, hangs, or network partitions.

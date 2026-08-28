@@ -3,7 +3,8 @@ services:
     image: chrislusf/seaweedfs:4.41
     container_name: seaweedfs
     ports:
-      # S3 API; kept on 9000 so existing REMOTE_STORAGE_URL values stay valid
+      # S3 API; kept on 9000 so existing EXOFIND_STORAGE_REMOTE_URL values stay
+      # valid
       - "9000:8333"
       # Filer UI, for browsing what is in the buckets
       - "8888:8888"

@@ -36,7 +36,7 @@ Before you begin, ensure you have:
    EXOFIND_AUTH_MODE=keys
    EXOFIND_AUTH_ROOT_KEY=sha256:...
    EXOFIND_AUTH_ANONYMOUS_KEY=<the id from above>
-   INDEXER=false
+   EXOFIND_INDEXER_ENABLED=false
    ```
 
    The node answers requests that arrive without an `Authorization` header as that key. All other requests still require credentials, so you can administer the node with the root key.
@@ -52,9 +52,9 @@ Before you begin, ensure you have:
 
 A public search endpoint consumes public compute resources. To limit costs and protect data, configure the following settings:
 
-- **Configure read-only storage credentials:** Set `REMOTE_STORAGE_ACCESS_KEY` to grant read-only access to the bucket. Combined with `INDEXER=false`, this prevents modifications to an index.
+- **Configure read-only storage credentials:** Set `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` to grant read-only access to the bucket. Combined with `EXOFIND_INDEXER_ENABLED=false`, this prevents modifications to an index.
 - **Configure rate limiting:** Place a Content Delivery Network (CDN) or reverse proxy in front of the node. The search engine does not provide rate limiting.
-- **Cap queries:** Set `SEARCH_MAX_PAGE_DEPTH` to bound offset pagination depth. The node refuses searches that exceed this depth rather than answering them slowly.
+- **Cap queries:** Set `EXOFIND_SEARCH_MAX_PAGE_DEPTH` to bound offset pagination depth. The node refuses searches that exceed this depth rather than answering them slowly.
 
 ## Loading example data
 

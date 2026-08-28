@@ -20,7 +20,7 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6
 # 1001, and neither the directory nor a volume mounted over it would be
 # writable by that user otherwise.
 RUN mkdir -p /data && chown 1001:root /data
-ENV LOCAL_STORAGE_DIRECTORY=/data
+ENV EXOFIND_STORAGE_LOCAL_DIRECTORY=/data
 
 WORKDIR /work/
 COPY --chown=1001:root target/*-runner /work/application

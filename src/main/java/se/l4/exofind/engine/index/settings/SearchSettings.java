@@ -153,7 +153,7 @@ public class SearchSettings {
 		RegistryHints registryHints,
 		@ConfigProperty(name = "exofind.settings.refresh-interval", defaultValue = "10s")
 		Duration refreshInterval,
-		@ConfigProperty(name = "indexes.verify-interval", defaultValue = "10m")
+		@ConfigProperty(name = "exofind.indexes.verify-interval", defaultValue = "10m")
 		Duration verifyInterval
 	) {
 		this.storage = storage;

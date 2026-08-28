@@ -28,7 +28,7 @@ Before you start, ensure you have the following:
 
      ```shell
      EXOFIND_STORAGE_MODE=local \
-     LOCAL_STORAGE_DIRECTORY=data/indexes \
+     EXOFIND_STORAGE_LOCAL_DIRECTORY=data/indexes \
      EXOFIND_AUTH_ROOT_KEY=exok_change_me \
      mise run run
      ```
@@ -79,7 +79,7 @@ Running a single node in `local` mode has the following limitations compared to 
 - **No failover:** The node is the deployment. If the node is down, nothing answers requests.
 - **No adding a node later without moving:** A second node requires storage that both nodes can access. Scaling out requires switching to `object` mode and reindexing into it.
 - **One node per directory:** The running node locks the directory. A second node pointed at the same directory fails to start. Keep the directory on a disk attached directly to the node. File locks on Network File System (NFS) and Server Message Block (SMB) are unreliable.
-- **`INDEXES_DISK_MAX_SIZE` frees nothing:** The disk sweep removes only copies that object storage already holds. In `local` mode, there is no remote storage and no secondary copies.
+- **`EXOFIND_INDEXES_DISK_MAX_SIZE` frees nothing:** The disk sweep removes only copies that object storage already holds. In `local` mode, there is no remote storage and no secondary copies.
 
 A node started in `local` mode logs this status once at startup.
 

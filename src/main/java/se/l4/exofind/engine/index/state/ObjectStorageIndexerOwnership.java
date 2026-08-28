@@ -319,7 +319,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		/*
 		 * The name this node competes under is what every other line about
 		 * indexes it writes is keyed by, and it is generated rather than
-		 * configured unless NODE_ID says otherwise. Said here rather than
+		 * configured unless EXOFIND_NODE_ID says otherwise. Said here rather than
 		 * only on taking an index, so that a candidate which never wins one
 		 * still gives the name its lines will carry.
 		 */

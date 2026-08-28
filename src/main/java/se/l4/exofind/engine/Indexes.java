@@ -227,19 +227,19 @@ public class Indexes {
 		StateSyncProvider syncProvider,
 		IndexRegistry registry,
 		RegistryHints registryHints,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory,
-		@ConfigProperty(name = "indexes.max-open") OptionalInt maxOpen,
-		@ConfigProperty(name = "indexes.refresh-interval", defaultValue = "30s") Duration refreshInterval,
-		@ConfigProperty(name = "indexes.verify-interval", defaultValue = "10m") Duration verifyInterval,
-		@ConfigProperty(name = "indexes.refresh-concurrency", defaultValue = "4") int refreshConcurrency,
-		@ConfigProperty(name = "indexes.close-grace-period", defaultValue = "10s") Duration closeGracePeriod,
-		@ConfigProperty(name = "indexes.commit.max-changes", defaultValue = "10000") int commitMaxChanges,
-		@ConfigProperty(name = "indexes.commit.max-interval", defaultValue = "5s") Duration commitMaxInterval,
-		@ConfigProperty(name = "indexes.disk.max-size") Optional<String> diskMaxSize,
-		@ConfigProperty(name = "indexes.document-cache.max-size") Optional<String> documentCacheMaxSize,
-		@ConfigProperty(name = "indexes.disk.min-idle", defaultValue = "24h") Duration diskMinIdle,
-		@ConfigProperty(name = "indexes.disk.half-life", defaultValue = "168h") Duration diskHalfLife,
-		@ConfigProperty(name = "indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory,
+		@ConfigProperty(name = "exofind.indexes.max-open") OptionalInt maxOpen,
+		@ConfigProperty(name = "exofind.indexes.refresh-interval", defaultValue = "30s") Duration refreshInterval,
+		@ConfigProperty(name = "exofind.indexes.verify-interval", defaultValue = "10m") Duration verifyInterval,
+		@ConfigProperty(name = "exofind.indexes.refresh-concurrency", defaultValue = "4") int refreshConcurrency,
+		@ConfigProperty(name = "exofind.indexes.close-grace-period", defaultValue = "10s") Duration closeGracePeriod,
+		@ConfigProperty(name = "exofind.indexes.commit.max-changes", defaultValue = "10000") int commitMaxChanges,
+		@ConfigProperty(name = "exofind.indexes.commit.max-interval", defaultValue = "5s") Duration commitMaxInterval,
+		@ConfigProperty(name = "exofind.indexes.disk.max-size") Optional<String> diskMaxSize,
+		@ConfigProperty(name = "exofind.indexes.document-cache.max-size") Optional<String> documentCacheMaxSize,
+		@ConfigProperty(name = "exofind.indexes.disk.min-idle", defaultValue = "24h") Duration diskMinIdle,
+		@ConfigProperty(name = "exofind.indexes.disk.half-life", defaultValue = "168h") Duration diskHalfLife,
+		@ConfigProperty(name = "exofind.indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval
 	) throws IOException {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;
@@ -1224,7 +1224,7 @@ public class Indexes {
 
 	/**
 	 * Get how long the refresh loop waits between passes, as
-	 * {@code INDEXES_REFRESH_INTERVAL} names it.
+	 * {@code EXOFIND_INDEXES_REFRESH_INTERVAL} names it.
 	 *
 	 * @return
 	 */

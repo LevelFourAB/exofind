@@ -65,7 +65,7 @@ public class NodeState {
 	@Inject
 	NodeState(
 		StorageMode storageMode,
-		@ConfigProperty(name = "indexer") Optional<Boolean> indexer
+		@ConfigProperty(name = "exofind.indexer.enabled") Optional<Boolean> indexer
 	) {
 		this(indexer.orElse(storageMode == StorageMode.LOCAL));
 	}

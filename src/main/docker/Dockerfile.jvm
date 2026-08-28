@@ -18,10 +18,10 @@
 #
 #   docker run --rm -p 8080:8080 \
 #     -e EXOFIND_STORAGE_MODE=object \
-#     -e REMOTE_STORAGE_URL=http://host.docker.internal:9000 \
-#     -e REMOTE_STORAGE_ACCESS_KEY=exofind \
-#     -e REMOTE_STORAGE_SECRET_KEY=exofind123 \
-#     -e REMOTE_STORAGE_BUCKET=exofind \
+#     -e EXOFIND_STORAGE_REMOTE_URL=http://host.docker.internal:9000 \
+#     -e EXOFIND_STORAGE_REMOTE_ACCESS_KEY=exofind \
+#     -e EXOFIND_STORAGE_REMOTE_SECRET_KEY=exofind123 \
+#     -e EXOFIND_STORAGE_REMOTE_BUCKET=exofind \
 #     exofind/engine
 #
 # Change what the JVM is given, one flag at a time - see the JAVA_OPTS block
@@ -64,7 +64,7 @@ ENV EXOFIND_DECOMPOUND_DIRECTORY=/app/decompound-data
 # exofind, and neither the directory nor a volume mounted over it would be
 # writable by that user otherwise.
 RUN mkdir -p /data && chown exofind:exofind /data
-ENV LOCAL_STORAGE_DIRECTORY=/data
+ENV EXOFIND_STORAGE_LOCAL_DIRECTORY=/data
 
 # What the JVM is started with. JAVA_OPTS_APPEND is passed after it, and the
 # JVM takes the last value of a flag it is given twice, so one of these is

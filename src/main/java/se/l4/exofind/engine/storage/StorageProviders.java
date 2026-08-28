@@ -86,9 +86,9 @@ public class StorageProviders {
 	@Singleton
 	public StorageMode storageMode(
 		@ConfigProperty(name = "exofind.storage.mode", defaultValue = "local") String mode,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory,
-		@ConfigProperty(name = "indexes.disk.max-size") Optional<String> diskMaxSize,
-		@ConfigProperty(name = "remote.storage.url") Optional<String> remoteUrl
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory,
+		@ConfigProperty(name = "exofind.indexes.disk.max-size") Optional<String> diskMaxSize,
+		@ConfigProperty(name = "exofind.storage.remote.url") Optional<String> remoteUrl
 	) {
 		var resolved = switch(mode.trim().toLowerCase(Locale.ROOT)) {
 			case "local" -> StorageMode.LOCAL;
@@ -107,8 +107,9 @@ public class StorageProviders {
 						+ " keys exist only in this directory: losing it loses them, no"
 						+ " other node can serve or take over from this one, and there"
 						+ " is nothing to add a second node against. Set"
-						+ " EXOFIND_STORAGE_MODE=object with the REMOTE_STORAGE_"
-						+ " settings to keep them in an object storage instead"
+						+ " EXOFIND_STORAGE_MODE=object with the"
+						+ " EXOFIND_STORAGE_REMOTE_ settings to keep them in an object"
+						+ " storage instead"
 				);
 
 			if(remoteUrl.isPresent()) {
@@ -122,9 +123,9 @@ public class StorageProviders {
 				logger.atWarn()
 					.addKeyValue("url", remoteUrl.get())
 					.log(
-						"REMOTE_STORAGE_URL is set but nothing reads it while storing"
-							+ " locally. Set EXOFIND_STORAGE_MODE=object to use that"
-							+ " storage"
+						"EXOFIND_STORAGE_REMOTE_URL is set but nothing reads it while"
+							+ " storing locally. Set EXOFIND_STORAGE_MODE=object to use"
+							+ " that storage"
 					);
 			}
 
@@ -137,9 +138,9 @@ public class StorageProviders {
 				 */
 				logger.atWarn()
 					.log(
-						"INDEXES_DISK_MAX_SIZE is set but frees nothing while storing"
-							+ " locally - these copies are the only ones there are, so"
-							+ " none of them may be removed"
+						"EXOFIND_INDEXES_DISK_MAX_SIZE is set but frees nothing while"
+							+ " storing locally - these copies are the only ones there"
+							+ " are, so none of them may be removed"
 					);
 			}
 		}
@@ -161,12 +162,12 @@ public class StorageProviders {
 	public ObjectStorage objectStorage(
 		StorageMode mode,
 		NodeState nodeState,
-		@ConfigProperty(name = "remote.storage.url") Optional<String> url,
-		@ConfigProperty(name = "remote.storage.access-key") Optional<String> accessKey,
-		@ConfigProperty(name = "remote.storage.secret-key") Optional<String> secretKey,
-		@ConfigProperty(name = "remote.storage.region") Optional<String> region,
-		@ConfigProperty(name = "remote.storage.bucket") Optional<String> bucket,
-		@ConfigProperty(name = "remote.storage.prefix") Optional<String> prefix
+		@ConfigProperty(name = "exofind.storage.remote.url") Optional<String> url,
+		@ConfigProperty(name = "exofind.storage.remote.access-key") Optional<String> accessKey,
+		@ConfigProperty(name = "exofind.storage.remote.secret-key") Optional<String> secretKey,
+		@ConfigProperty(name = "exofind.storage.remote.region") Optional<String> region,
+		@ConfigProperty(name = "exofind.storage.remote.bucket") Optional<String> bucket,
+		@ConfigProperty(name = "exofind.storage.remote.prefix") Optional<String> prefix
 	) throws IOException {
 		if(mode != StorageMode.OBJECT) {
 			throw new IllegalStateException(
@@ -176,11 +177,11 @@ public class StorageProviders {
 		}
 
 		return new ObjectStorage(
-			required(url, "REMOTE_STORAGE_URL"),
-			required(accessKey, "REMOTE_STORAGE_ACCESS_KEY"),
-			required(secretKey, "REMOTE_STORAGE_SECRET_KEY"),
+			required(url, "EXOFIND_STORAGE_REMOTE_URL"),
+			required(accessKey, "EXOFIND_STORAGE_REMOTE_ACCESS_KEY"),
+			required(secretKey, "EXOFIND_STORAGE_REMOTE_SECRET_KEY"),
 			region,
-			required(bucket, "REMOTE_STORAGE_BUCKET"),
+			required(bucket, "EXOFIND_STORAGE_REMOTE_BUCKET"),
 			prefix,
 			nodeState.isIndexerCandidate()
 		);
@@ -220,9 +221,10 @@ public class StorageProviders {
 		IndexRegistry registry,
 		NodeState nodeState,
 		Instance<Indexes> indexes,
-		@ConfigProperty(name = "node.id") Optional<String> nodeId,
-		@ConfigProperty(name = "node.address") Optional<String> address,
-		@ConfigProperty(name = "indexer.lease.duration", defaultValue = "30s") Duration leaseDuration
+		@ConfigProperty(name = "exofind.node.id") Optional<String> nodeId,
+		@ConfigProperty(name = "exofind.node.address") Optional<String> address,
+		@ConfigProperty(name = "exofind.indexer.lease.duration", defaultValue = "30s")
+		Duration leaseDuration
 	) {
 		return switch(mode) {
 			case LOCAL -> new LocalIndexerOwnership();
@@ -254,7 +256,7 @@ public class StorageProviders {
 	public RegistryStorage registryStorage(
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		return switch(mode) {
 			case LOCAL -> new LocalRegistryStorage(storageDirectory.resolve(LOCAL_REGISTRY_FILE));
@@ -295,7 +297,7 @@ public class StorageProviders {
 	public ReindexJobStorage reindexJobStorage(
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		return switch(mode) {
 			case LOCAL -> new LocalReindexJobStorage(
@@ -319,7 +321,7 @@ public class StorageProviders {
 	public KeyStorage keyStorage(
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		if(mode == StorageMode.LOCAL) {
 			return new LocalKeyStorage(storageDirectory.resolve(LOCAL_KEYS_FILE));
@@ -362,7 +364,7 @@ public class StorageProviders {
 	public SearchSettingsStorage searchSettingsStorage(
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		if(mode == StorageMode.LOCAL) {
 			return new LocalSearchSettingsStorage(

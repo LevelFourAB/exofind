@@ -71,17 +71,17 @@ public class IndexerNodeTest {
 
 			return Map.ofEntries(
 				Map.entry("exofind.storage.mode", "object"),
-				Map.entry("local.storage.directory", directory.toString()),
-				Map.entry("remote.storage.url", TestObjectStorage.url()),
-				Map.entry("remote.storage.access-key", TestObjectStorage.ACCESS_KEY),
-				Map.entry("remote.storage.secret-key", TestObjectStorage.SECRET_KEY),
-				Map.entry("remote.storage.bucket", TestObjectStorage.BUCKET),
-				Map.entry("remote.storage.prefix", PREFIX),
-				Map.entry("indexer", "true"),
-				Map.entry("node.id", NODE),
-				Map.entry("node.address", "http://localhost:8081"),
+				Map.entry("exofind.storage.local.directory", directory.toString()),
+				Map.entry("exofind.storage.remote.url", TestObjectStorage.url()),
+				Map.entry("exofind.storage.remote.access-key", TestObjectStorage.ACCESS_KEY),
+				Map.entry("exofind.storage.remote.secret-key", TestObjectStorage.SECRET_KEY),
+				Map.entry("exofind.storage.remote.bucket", TestObjectStorage.BUCKET),
+				Map.entry("exofind.storage.remote.prefix", PREFIX),
+				Map.entry("exofind.indexer.enabled", "true"),
+				Map.entry("exofind.node.id", NODE),
+				Map.entry("exofind.node.address", "http://localhost:8081"),
 				// Fast rounds, so a test never waits long for one
-				Map.entry("indexer.lease.duration", "2s"),
+				Map.entry("exofind.indexer.lease.duration", "2s"),
 				Map.entry("exofind.auth.mode", "keys"),
 				Map.entry("exofind.auth.root-key", ROOT_KEY)
 			);

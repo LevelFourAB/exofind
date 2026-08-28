@@ -34,7 +34,7 @@ POST   /v1alpha1/admin/registry/actions/repair          # register what the stor
 
 Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
 
-When no node holds an index, the first candidate node that receives a write claims the index. If no candidate node is available to forward to, or if no candidate node sets `NODE_ADDRESS`, the server returns `409 Conflict`. If a holder node does not respond, the server returns `502 Bad Gateway`.
+When no node holds an index, the first candidate node that receives a write claims the index. If no candidate node is available to forward to, or if no candidate node sets `EXOFIND_NODE_ADDRESS`, the server returns `409 Conflict`. If a holder node does not respond, the server returns `502 Bad Gateway`.
 
 ## Names and generations
 
@@ -53,7 +53,7 @@ Updating an index definition in place does not reindex existing documents. If a 
 
 A `DELETE` request on an index deletes the index and all of its generations. A `DELETE` request on a generation deletes only that generation. Deleting the live generation fails with `index:generation:is_live` until you promote another generation. Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. Deletion does not remove data held in remote storage—the generations and the [search settings](#search-settings) object alike—so an index created again under the same name picks its old settings back up. Both operations return `204 No Content`.
 
-The `promote` action configures the index to serve from the specified generation. The change takes effect immediately on the receiving node and within `INDEXES_REFRESH_INTERVAL` on all other nodes. To roll back a deployment, promote the previous generation.
+The `promote` action configures the index to serve from the specified generation. The change takes effect immediately on the receiving node and within `EXOFIND_INDEXES_REFRESH_INTERVAL` on all other nodes. To roll back a deployment, promote the previous generation.
 
 ## Index resource
 
@@ -212,7 +212,7 @@ The API provides index action endpoints:
 - `pull`: Fetches the latest remote state immediately instead of waiting for the refresh interval, and returns the resulting status.
 - `promote`: Configures the index to serve from the specified generation and returns the updated index resource. The request path must specify a generation name; calling `promote` without a generation returns `index:generation:name_required`. Promoting the target of a `ready` reindex job finishes the job, while promoting before the job is ready is refused with `409 Conflict` (`reindex:target_busy`).
 
-`commit` and `pull` act on the generation specified in the request path (or the live generation if omitted). Nodes automatically discover indexes, generations, and changes at the interval configured by `INDEXES_REFRESH_INTERVAL`.
+`commit` and `pull` act on the generation specified in the request path (or the live generation if omitted). Nodes automatically discover indexes, generations, and changes at the interval configured by `EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 ## Reindex
 
@@ -343,7 +343,7 @@ This endpoint requires the `indexes.read` permission. If a credential lacks perm
 
 Indexes without an active claim are omitted from `claims` until a write operation assigns a writer. In candidate and claim entries:
 
-- `address`: The target address for write forwarding. Omitted if the node did not set `NODE_ADDRESS`.
+- `address`: The target address for write forwarding. Omitted if the node did not set `EXOFIND_NODE_ADDRESS`.
 - `expiresAt`: The timestamp when the entry expires unless renewed by the node.
 
 On nodes using local storage, `candidates` and `claims` are empty. If a node cannot read shared state from storage, it returns `503 Service Unavailable`.
@@ -404,7 +404,7 @@ The response contains the following fields:
 
 The repair operation only adds entries. It registers every `SYNCED` generation that the registry does not name, and keeps existing entries as stored. It never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
 
-The write is conditional and rebuilds on top of concurrent registry changes. The node that served the repair applies the repaired registry immediately. Other nodes pick up the changes within their registry refresh interval (`INDEXES_REFRESH_INTERVAL`).
+The write is conditional and rebuilds on top of concurrent registry changes. The node that served the repair applies the repaired registry immediately. Other nodes pick up the changes within their registry refresh interval (`EXOFIND_INDEXES_REFRESH_INTERVAL`).
 
 The request body accepts an optional JSON object:
 

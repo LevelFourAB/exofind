@@ -35,7 +35,7 @@ Without a `KEY`, the script sends no `Authorization` header. This is the default
 
 When a node enforces authentication, provide a key with `indexes.write`, `documents.write`, and `indexes.commit` permissions on the index. Search-only keys cannot load datasets because loading requires write permissions.
 
-The target node must have the indexer role enabled with `INDEXER=true`. A node without the indexer role returns `index:readonly` for write requests, which stops the load process after the index definition. Read and search requests do not require the indexer role; any node with a copy can serve search queries for the demo pages.
+The target node must have the indexer role enabled with `EXOFIND_INDEXER_ENABLED=true`. A node without the indexer role returns `index:readonly` for write requests, which stops the load process after the index definition. Read and search requests do not require the indexer role; any node with a copy can serve search queries for the demo pages.
 
 In development mode, the node accepts requests from any origin. In other environments, configure allowed origins using `QUARKUS_HTTP_CORS_ENABLED` and `QUARKUS_HTTP_CORS_ORIGINS`.
 

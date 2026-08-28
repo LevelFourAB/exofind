@@ -16,7 +16,7 @@ Before you begin, ensure you have the following:
 
 This guide runs a `Deployment` that searches and a `StatefulSet` of indexer candidates, because the two want different heap, different scaling signals, different disk rules and different rollout order - see [Separating search and indexing nodes](../explanation/deployment-shapes.md) for the whole argument.
 
-One pool with `INDEXER=true` on a few of its pods also works and requires less management. Collapsing the two pools into one later involves enabling `INDEXER` in the search pool and deleting the `StatefulSet`. Splitting a single pool afterwards requires planning disk, routing, and probes again.
+One pool with `EXOFIND_INDEXER_ENABLED=true` on a few of its pods also works and requires less management. Collapsing the two pools into one later involves enabling `EXOFIND_INDEXER_ENABLED` in the search pool and deleting the `StatefulSet`. Splitting a single pool afterwards requires planning disk, routing, and probes again.
 
 ## Give the host enough memory maps
 
@@ -35,7 +35,7 @@ initContainers:
 
 ## Run the search pool
 
-Nodes with `INDEXER` set to `false` (the default) answer searches from their local copy and never write. They hold no persistent state, so the volume is ephemeral. A wiped pod slows down temporarily while it refills its cache.
+Nodes with `EXOFIND_INDEXER_ENABLED` set to `false` (the default) answer searches from their local copy and never write. They hold no persistent state, so the volume is ephemeral. A wiped pod slows down temporarily while it refills its cache.
 
 Replace the placeholder values in angle brackets with values sized for your deployment. For details on sizing each parameter, see [Size the pools](#size-the-pools). Replace `<version>` with a specific release version, such as `0.1.0`. Do not use `latest`, so that replaced pods run the same version as existing pods.
 
@@ -62,17 +62,17 @@ spec:
             - { name: http, containerPort: 8080 }
           env:
             - { name: EXOFIND_STORAGE_MODE, value: object }
-            - { name: REMOTE_STORAGE_URL, value: http://storage:9000 }
-            - { name: REMOTE_STORAGE_BUCKET, value: exofind }
-            - name: REMOTE_STORAGE_ACCESS_KEY
+            - { name: EXOFIND_STORAGE_REMOTE_URL, value: http://storage:9000 }
+            - { name: EXOFIND_STORAGE_REMOTE_BUCKET, value: exofind }
+            - name: EXOFIND_STORAGE_REMOTE_ACCESS_KEY
               valueFrom:
                 secretKeyRef: { name: exofind-storage, key: access-key }
-            - name: REMOTE_STORAGE_SECRET_KEY
+            - name: EXOFIND_STORAGE_REMOTE_SECRET_KEY
               valueFrom:
                 secretKeyRef: { name: exofind-storage, key: secret-key }
-            - { name: INDEXES_DISK_MAX_SIZE, value: <disk-budget> }
-            - { name: INDEXES_MAX_OPEN, value: "<search-max-open>" }
-            - { name: INDEXES_REFRESH_CONCURRENCY, value: "<refresh-concurrency>" }
+            - { name: EXOFIND_INDEXES_DISK_MAX_SIZE, value: <disk-budget> }
+            - { name: EXOFIND_INDEXES_MAX_OPEN, value: "<search-max-open>" }
+            - { name: EXOFIND_INDEXES_REFRESH_CONCURRENCY, value: "<refresh-concurrency>" }
             - { name: JAVA_OPTS_APPEND, value: -XX:MaxRAMPercentage=25 }
           resources:
             requests: { cpu: <search-cpu>, memory: <search-memory> }
@@ -84,7 +84,7 @@ spec:
           emptyDir: { sizeLimit: <search-volume> }
 ```
 
-The container image sets `LOCAL_STORAGE_DIRECTORY` to `/data`, so mounting a volume at `/data` is sufficient. Use local SSD storage when available on the node pool. A pull writes the entire index, and subsequent searches read it back through the page cache.
+The container image sets `EXOFIND_STORAGE_LOCAL_DIRECTORY` to `/data`, so mounting a volume at `/data` is sufficient. Use local SSD storage when available on the node pool. A pull writes the entire index, and subsequent searches read it back through the page cache.
 
 The `-XX:MaxRAMPercentage=25` setting allocates 25% of the pod memory to the JVM heap. A search-only node requires heap space only for in-flight searches, leaving the remaining 75% of memory for the Linux page cache where indexes are cached.
 
@@ -118,32 +118,33 @@ spec:
           ports:
             - { name: http, containerPort: 8080 }
           env:
-            # POD_IP and NODE_ID come first: Kubernetes expands $(...) against
-            # the variables declared before it and leaves the rest as written,
-            # so NODE_ADDRESS declared above POD_IP reaches the node as the
-            # literal text and the table records an address nothing can use.
+            # POD_IP and EXOFIND_NODE_ID come first: Kubernetes expands $(...)
+            # against the variables declared before it and leaves the rest as
+            # written, so EXOFIND_NODE_ADDRESS declared above POD_IP reaches the
+            # node as the literal text and the table records an address nothing
+            # can use.
             - name: POD_IP
               valueFrom:
                 fieldRef: { fieldPath: status.podIP }
-            - name: NODE_ID
+            - name: EXOFIND_NODE_ID
               valueFrom:
                 fieldRef: { fieldPath: metadata.name }
-            - { name: NODE_ADDRESS, value: http://$(POD_IP):8080 }
-            - { name: INDEXER, value: "true" }
+            - { name: EXOFIND_NODE_ADDRESS, value: http://$(POD_IP):8080 }
+            - { name: EXOFIND_INDEXER_ENABLED, value: "true" }
             - { name: EXOFIND_STORAGE_MODE, value: object }
-            - { name: REMOTE_STORAGE_URL, value: http://storage:9000 }
-            - { name: REMOTE_STORAGE_BUCKET, value: exofind }
-            - name: REMOTE_STORAGE_ACCESS_KEY
+            - { name: EXOFIND_STORAGE_REMOTE_URL, value: http://storage:9000 }
+            - { name: EXOFIND_STORAGE_REMOTE_BUCKET, value: exofind }
+            - name: EXOFIND_STORAGE_REMOTE_ACCESS_KEY
               valueFrom:
                 secretKeyRef: { name: exofind-storage, key: access-key }
-            - name: REMOTE_STORAGE_SECRET_KEY
+            - name: EXOFIND_STORAGE_REMOTE_SECRET_KEY
               valueFrom:
                 secretKeyRef: { name: exofind-storage, key: secret-key }
-            - { name: INDEXES_MAX_OPEN, value: "<indexer-max-open>" }
-            # Matching INDEXES_REFRESH_INTERVAL: committing more often than
-            # searching nodes poll costs requests without them seeing anything
-            # sooner.
-            - { name: INDEXES_COMMIT_MAX_INTERVAL, value: 30s }
+            - { name: EXOFIND_INDEXES_MAX_OPEN, value: "<indexer-max-open>" }
+            # Matching EXOFIND_INDEXES_REFRESH_INTERVAL: committing more often
+            # than searching nodes poll costs requests without them seeing
+            # anything sooner.
+            - { name: EXOFIND_INDEXES_COMMIT_MAX_INTERVAL, value: 30s }
             - { name: JAVA_OPTS_APPEND, value: -XX:MaxRAMPercentage=<indexer-heap> }
           resources:
             requests: { cpu: <indexer-cpu>, memory: <indexer-memory> }
@@ -158,9 +159,9 @@ spec:
           requests: { storage: <indexer-volume> }
 ```
 
-Setting `NODE_ID` to the pod name associates claims with specific pods and prefixes write log lines with the pod name. This makes failovers easier to track in logs.
+Setting `EXOFIND_NODE_ID` to the pod name associates claims with specific pods and prefixes write log lines with the pod name. This makes failovers easier to track in logs.
 
-Do not configure `INDEXES_DISK_MAX_SIZE` on indexers. The disk sweeper does not remove local copies that are not yet committed to object storage, so it cannot free disk space when disk usage is highest. Size the persistent volume claim for your expected write volume instead.
+Do not configure `EXOFIND_INDEXES_DISK_MAX_SIZE` on indexers. The disk sweeper does not remove local copies that are not yet committed to object storage, so it cannot free disk space when disk usage is highest. Size the persistent volume claim for your expected write volume instead.
 
 ## Size the pools
 
@@ -173,7 +174,7 @@ For the search pool:
 - **`<search-volume>`:** Sized for the total size of indexes a single pod holds, plus room for index downloads during updates. To decide whether a pod holds all indexes or a subset, see [Spread the indexes across the search pool](#spread-the-indexes-across-the-search-pool).
 - **`<disk-budget>`:** Set below `<search-volume>` so that the disk sweep runs before the volume fills. The sweeper frees disk space down to 10% below this bound and only removes copies that are fully uploaded to object storage.
 - **`<search-max-open>`:** The number of unique indexes a single pod serves within a few minutes. Setting this too low results in HTTP 503 errors and causes pods to repeatedly close and reopen indexes under load.
-- **`<refresh-concurrency>`:** Increase this value from the default of 4 if a refresh pass exceeds `INDEXES_REFRESH_INTERVAL`. A refresh pass makes one conditional request per open index, so concurrency depends on storage latency rather than query load.
+- **`<refresh-concurrency>`:** Increase this value from the default of 4 if a refresh pass exceeds `EXOFIND_INDEXES_REFRESH_INTERVAL`. A refresh pass makes one conditional request per open index, so concurrency depends on storage latency rather than query load.
 - **`<search-grace>`:** Set long enough to finish in-flight search requests. Search nodes have no uncommitted data to push.
 
 For the indexer pool:
@@ -190,7 +191,7 @@ Size memory before fine-tuning other settings. Nodes read indexes through memory
 
 You can send write requests to any Exofind pod. When a node receives a write for an index it does not manage, it forwards the request to the indexer candidate holding the lease for that index. The forwarding target is the pod IP address stored in the index registry table.
 
-If `NODE_ADDRESS` is misconfigured or fails to expand variable references, write forwarding fails with HTTP 409 errors. The receiving node logs a warning:
+If `EXOFIND_NODE_ADDRESS` is misconfigured or fails to expand variable references, write forwarding fails with HTTP 409 errors. The receiving node logs a warning:
 
 ```
 WARN  address=http://$(POD_IP):8080 Indexer address cannot be forwarded to; …
@@ -260,7 +261,7 @@ Set relaxed thresholds on the liveness probe. Large index downloads and merges c
 
 ## Roll out and shut down
 
-When a node shuts down, it closes its open indexes and pushes modified index data to object storage. An indexer candidate also releases its index leases, allowing successor nodes to take over immediately instead of waiting for `INDEXER_LEASE_DURATION` to expire.
+When a node shuts down, it closes its open indexes and pushes modified index data to object storage. An indexer candidate also releases its index leases, allowing successor nodes to take over immediately instead of waiting for `EXOFIND_INDEXER_LEASE_DURATION` to expire.
 
 Set `terminationGracePeriodSeconds` to allow sufficient time for final commits to upload. If a pod terminates before uploads complete, uncommitted data is lost from that node and must be recovered by another candidate.
 
@@ -301,15 +302,15 @@ Look for a log line indicating successful startup:
 INFO  node=exofind-indexer-0 address=http://10.4.2.17:8080 Competing for the indexer role
 ```
 
-If the address displays unresolved template syntax such as `http://$(POD_IP):8080`, verify the ordering of `POD_IP` and `NODE_ADDRESS` in the indexer `StatefulSet` environment variables.
+If the address displays unresolved template syntax such as `http://$(POD_IP):8080`, verify the ordering of `POD_IP` and `EXOFIND_NODE_ADDRESS` in the indexer `StatefulSet` environment variables.
 
 ## Tune a deployment with many indexes
 
 Deployments with hundreds of indexes reach their limits on the indexer pool first. Set the following on that pool:
 
-- Set `INDEXES_MAX_OPEN` to the number of indexes written at the same time, not the total number of indexes.
-- Set `INDEXES_COMMIT_MAX_INTERVAL` to match `INDEXES_REFRESH_INTERVAL`. Committing more often than the search pool polls produces storage requests without making changes visible any sooner.
-- Raise `INDEXES_REFRESH_CONCURRENCY` above its default of 4 if a refresh pass does not finish within `INDEXES_REFRESH_INTERVAL`. The requests themselves are cheap: a search node checks with `If-None-Match` and gets `304 Not Modified` for an index that has not changed.
+- Set `EXOFIND_INDEXES_MAX_OPEN` to the number of indexes written at the same time, not the total number of indexes.
+- Set `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` to match `EXOFIND_INDEXES_REFRESH_INTERVAL`. Committing more often than the search pool polls produces storage requests without making changes visible any sooner.
+- Raise `EXOFIND_INDEXES_REFRESH_CONCURRENCY` above its default of 4 if a refresh pass does not finish within `EXOFIND_INDEXES_REFRESH_INTERVAL`. The requests themselves are cheap: a search node checks with `If-None-Match` and gets `304 Not Modified` for an index that has not changed.
 
 For what each of these limits is, and why adding candidates does not make one index write faster, see [Separating search and indexing nodes](../explanation/deployment-shapes.md#scaling-limits-with-many-indexes).
 

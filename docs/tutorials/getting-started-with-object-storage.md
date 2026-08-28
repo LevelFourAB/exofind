@@ -64,11 +64,11 @@ services:
       - "8080:8080"
     environment:
       EXOFIND_STORAGE_MODE: object
-      REMOTE_STORAGE_URL: http://seaweedfs:8333
-      REMOTE_STORAGE_ACCESS_KEY: exofind
-      REMOTE_STORAGE_SECRET_KEY: exofind123
-      REMOTE_STORAGE_BUCKET: exofind
-      INDEXER: "true"
+      EXOFIND_STORAGE_REMOTE_URL: http://seaweedfs:8333
+      EXOFIND_STORAGE_REMOTE_ACCESS_KEY: exofind
+      EXOFIND_STORAGE_REMOTE_SECRET_KEY: exofind123
+      EXOFIND_STORAGE_REMOTE_BUCKET: exofind
+      EXOFIND_INDEXER_ENABLED: "true"
       EXOFIND_AUTH_ROOT_KEY: exok_tutorial
     volumes:
       - exofind-data:/data
@@ -84,21 +84,21 @@ service:
 - `EXOFIND_STORAGE_MODE: object` stores the indexes, the index registry, and
   authentication keys in the bucket. The mode must be set explicitly; the node
   refuses to start if storage settings are invalid.
-- `REMOTE_STORAGE_URL: http://seaweedfs:8333` points to the SeaweedFS S3
+- `EXOFIND_STORAGE_REMOTE_URL: http://seaweedfs:8333` points to the SeaweedFS S3
   endpoint inside the Compose network. The host reaches the same endpoint on
   `localhost:9000`.
-- `REMOTE_STORAGE_ACCESS_KEY` and `REMOTE_STORAGE_SECRET_KEY` provide the S3
-  credentials defined in `s3-config.json`.
-- `REMOTE_STORAGE_BUCKET: exofind` specifies the bucket name where indexes are
-  stored.
-- `INDEXER: "true"` marks this node as a candidate for writing indexes. In
-  `object` mode, `INDEXER` defaults to `false`. Search-only nodes do not need
-  this setting, but writer nodes require it.
+- `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` and `EXOFIND_STORAGE_REMOTE_SECRET_KEY`
+  provide the S3 credentials defined in `s3-config.json`.
+- `EXOFIND_STORAGE_REMOTE_BUCKET: exofind` specifies the bucket name where
+  indexes are stored.
+- `EXOFIND_INDEXER_ENABLED: "true"` marks this node as a candidate for writing
+  indexes. In `object` mode, `EXOFIND_INDEXER_ENABLED` defaults to `false`.
+  Search-only nodes do not need this setting, but writer nodes require it.
 - `EXOFIND_AUTH_ROOT_KEY: exok_tutorial` sets the initial per-node
   administrative credential.
 - `exofind-data` mounted at `/data` holds the node's local copies of the
-  indexes, not the only copy. `LOCAL_STORAGE_DIRECTORY` defaults to `/data` in
-  the image.
+  indexes, not the only copy. `EXOFIND_STORAGE_LOCAL_DIRECTORY` defaults to
+  `/data` in the image.
 
 ## 2. Starting the storage and creating the bucket
 
@@ -321,7 +321,7 @@ because keys are stored in the bucket.
 
 Any additional node configured with the same storage settings operates the same
 way. Search nodes that are not indexer candidates discover committed changes
-within `INDEXES_REFRESH_INTERVAL` (`30s` by default).
+within `EXOFIND_INDEXES_REFRESH_INTERVAL` (`30s` by default).
 
 ## 9. Cleaning up
 
@@ -340,13 +340,13 @@ and its indexes persist across restarts.
 To use Amazon S3 instead of SeaweedFS, update the `exofind` environment
 variables in `docker-compose.yml` and remove the `seaweedfs` service:
 
-- Set `REMOTE_STORAGE_URL` to your S3 endpoint URL.
-- Set `REMOTE_STORAGE_ACCESS_KEY` and `REMOTE_STORAGE_SECRET_KEY` to your AWS
-  credentials.
-- Set `REMOTE_STORAGE_BUCKET` to your S3 bucket name.
-- Optionally set `REMOTE_STORAGE_REGION` to your AWS region.
-- Optionally set `REMOTE_STORAGE_PREFIX` if sharing the bucket with other
-  services.
+- Set `EXOFIND_STORAGE_REMOTE_URL` to your S3 endpoint URL.
+- Set `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` and
+  `EXOFIND_STORAGE_REMOTE_SECRET_KEY` to your AWS credentials.
+- Set `EXOFIND_STORAGE_REMOTE_BUCKET` to your S3 bucket name.
+- Optionally set `EXOFIND_STORAGE_REMOTE_REGION` to your AWS region.
+- Optionally set `EXOFIND_STORAGE_REMOTE_PREFIX` if sharing the bucket with
+  other services.
 
 The target storage must enforce conditional writes. Amazon S3 enforces
 conditional writes.

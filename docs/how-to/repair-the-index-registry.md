@@ -185,7 +185,8 @@ indexes:
 
 The node that executed the repair serves the updated registry immediately.
 Other nodes pick up the updated registry during their next refresh pass, within
-the duration configured by `INDEXES_REFRESH_INTERVAL` (30 seconds by default).
+the duration configured by `EXOFIND_INDEXES_REFRESH_INTERVAL` (30 seconds by
+default).
 
 ## Related
 

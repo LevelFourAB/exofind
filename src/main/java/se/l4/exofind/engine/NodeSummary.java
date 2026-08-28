@@ -43,7 +43,7 @@ public class NodeSummary {
 		NodeState nodeState,
 		Instance<ObjectStorage> objectStorage,
 		@ConfigProperty(name = "exofind.auth.mode", defaultValue = "keys") AuthMode authMode,
-		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		this.storageMode = storageMode;
 		this.nodeState = nodeState;

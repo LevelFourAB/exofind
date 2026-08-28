@@ -80,8 +80,8 @@ Evaluate the checks in the response body:
   running. If the loop stops, the node stops receiving updates and requires a
   restart. If a refresh pass fails because the remote bucket is unreachable,
   the check logs a `WARN` and remains UP. The check turns DOWN only when
-  `secondsSinceRefresh` exceeds four times `INDEXES_REFRESH_INTERVAL` (with a
-  minimum of 60 seconds).
+  `secondsSinceRefresh` exceeds four times `EXOFIND_INDEXES_REFRESH_INTERVAL`
+  (with a minimum of 60 seconds).
 
 To check writer assignments, see [Know which node is writing](#know-which-node-is-writing).
 
@@ -122,8 +122,8 @@ To inspect the indexes available on a node and their local status:
 ## Tell whether a node is current
 
 Changes become searchable on a reader node within the commit delay plus one
-refresh interval: `INDEXES_COMMIT_MAX_INTERVAL` (5 seconds by default) plus
-`INDEXES_REFRESH_INTERVAL` (30 seconds by default). A node reporting
+refresh interval: `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` (5 seconds by default)
+plus `EXOFIND_INDEXES_REFRESH_INTERVAL` (30 seconds by default). A node reporting
 `NEEDS_PULL` or `PULLING` is within this refresh window.
 
 To immediately update an index without waiting for the next refresh interval:
@@ -134,7 +134,8 @@ To immediately update an index without waiting for the next refresh interval:
    ```
    This endpoint fetches the latest remote state immediately and returns the
    resulting status. Use this action after bulk loads or promotions.
-2. If all nodes require lower latency, reduce `INDEXES_REFRESH_INTERVAL` in
+2. If all nodes require lower latency, reduce
+   `EXOFIND_INDEXES_REFRESH_INTERVAL` in
    your configuration. Lower intervals increase remote storage request volume.
 3. If a node stays behind, check the logs for storage errors. Errors are keyed
    by `index` and `bucket`.
@@ -174,8 +175,9 @@ assigned writer.
 
 ## Keep the disk in hand
 
-If `INDEXES_DISK_MAX_SIZE` is unset, a node retains files for every index it has
-served. When `INDEXES_DISK_MAX_SIZE` is configured, the node sweeps least-used
+If `EXOFIND_INDEXES_DISK_MAX_SIZE` is unset, a node retains files for every index
+it has served. When `EXOFIND_INDEXES_DISK_MAX_SIZE` is configured, the node
+sweeps least-used
 local copies that are fully uploaded to remote storage.
 
 1. Monitor sweep warnings in the node log:
@@ -189,10 +191,10 @@ local copies that are fully uploaded to remote storage.
    - `Local copies exceed the disk budget and nothing more can be removed`:
      All local index copies are currently in use or unpushed. To resolve this,
      increase disk space, reduce the number of served indexes, or lower
-     `INDEXES_DISK_MIN_IDLE`.
+     `EXOFIND_INDEXES_DISK_MIN_IDLE`.
 2. Handle request retries: If a search or write conflicts with an index closing
    for space, the node returns HTTP `503`. Retrying the request reopens the
-   index. If `503` responses persist, increase `INDEXES_MAX_OPEN`.
+   index. If `503` responses persist, increase `EXOFIND_INDEXES_MAX_OPEN`.
 
 ## Replace a node
 
@@ -200,7 +202,7 @@ To replace a node using `object` storage mode:
 
 1. Stop the node cleanly. A clean shutdown releases indexer claims
    immediately, allowing candidate nodes to take over writer roles without
-   waiting for `INDEXER_LEASE_DURATION`.
+   waiting for `EXOFIND_INDEXER_LEASE_DURATION`.
 2. Start a replacement node with the same configuration. The replacement node
    pulls required index files from remote storage on demand. No volume
    migration or backup restoration is required.
@@ -230,10 +232,10 @@ To back up a deployment:
 
 1. If you use `object` storage mode, configure backups on your object storage
    bucket (such as bucket versioning, replication, or prefix snapshots). Scope
-   backups to the prefix set in `REMOTE_STORAGE_PREFIX`. Local node disks do
-   not require backups.
+   backups to the prefix set in `EXOFIND_STORAGE_REMOTE_PREFIX`. Local node
+   disks do not require backups.
 2. If you use `local` storage mode, stop the node and back up the directory
-   specified in `LOCAL_STORAGE_DIRECTORY`.
+   specified in `EXOFIND_STORAGE_LOCAL_DIRECTORY`.
 
 When deleting indexes in object storage mode, note that deleting an index
 removes it from the registry and local node disks, but objects remain in the

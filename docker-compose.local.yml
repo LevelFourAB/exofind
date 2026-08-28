@@ -10,7 +10,7 @@ services:
       # Everything - the indexes, the registry naming them and the keys that
       # reach them - lives in the volume below. Nothing else has to be running.
       EXOFIND_STORAGE_MODE: local
-      LOCAL_STORAGE_DIRECTORY: /data
+      EXOFIND_STORAGE_LOCAL_DIRECTORY: /data
 
       # The credential that creates the first key. Replace it before this
       # reaches anything but your own machine, or pass `sha256:` and a hash so

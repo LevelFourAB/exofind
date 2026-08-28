@@ -92,13 +92,13 @@ public class ForwardedWriteTest {
 
 			return Map.ofEntries(
 				Map.entry("exofind.storage.mode", "object"),
-				Map.entry("local.storage.directory", directory.toString()),
-				Map.entry("remote.storage.url", TestObjectStorage.url()),
-				Map.entry("remote.storage.access-key", TestObjectStorage.ACCESS_KEY),
-				Map.entry("remote.storage.secret-key", TestObjectStorage.SECRET_KEY),
-				Map.entry("remote.storage.bucket", TestObjectStorage.BUCKET),
-				Map.entry("remote.storage.prefix", PREFIX),
-				Map.entry("indexer", "false"),
+				Map.entry("exofind.storage.local.directory", directory.toString()),
+				Map.entry("exofind.storage.remote.url", TestObjectStorage.url()),
+				Map.entry("exofind.storage.remote.access-key", TestObjectStorage.ACCESS_KEY),
+				Map.entry("exofind.storage.remote.secret-key", TestObjectStorage.SECRET_KEY),
+				Map.entry("exofind.storage.remote.bucket", TestObjectStorage.BUCKET),
+				Map.entry("exofind.storage.remote.prefix", PREFIX),
+				Map.entry("exofind.indexer.enabled", "false"),
 				Map.entry("exofind.auth.mode", "keys"),
 				Map.entry("exofind.auth.root-key", ROOT_KEY),
 				// A lease that cannot be read only says so at debug level

@@ -68,7 +68,7 @@ To confirm that the rollout succeeded, search the index by name:
 POST /v1alpha1/indexes/products/search
 ```
 
-The node that served the promotion answers searches for `products` from generation `2` immediately. Every other node answers from generation `2` within `INDEXES_REFRESH_INTERVAL`.
+The node that served the promotion answers searches for `products` from generation `2` immediately. Every other node answers from generation `2` within `EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 ## Rolling back a change
 

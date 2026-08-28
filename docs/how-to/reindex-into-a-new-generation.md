@@ -137,7 +137,7 @@ To confirm that the new generation is serving live traffic, search the index by 
 POST /v1alpha1/indexes/products/search
 ```
 
-The node that processed the promotion answers immediately from `products@2`. Other nodes answer from `products@2` within `INDEXES_REFRESH_INTERVAL`.
+The node that processed the promotion answers immediately from `products@2`. Other nodes answer from `products@2` within `EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 ## Cancelling a job
 

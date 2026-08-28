@@ -39,7 +39,7 @@ To benchmark search and indexing over the REST API:
 
 1. Start a local node in a dedicated terminal:
    ```shell
-   LOCAL_STORAGE_DIRECTORY=data/benchmark mise run run
+   EXOFIND_STORAGE_LOCAL_DIRECTORY=data/benchmark mise run run
    ```
    This command starts the node as an indexer without credential checks. Run the node in a separate process to prevent it from competing with JMH for CPU cores.
 2. In another terminal, run the REST benchmarks:

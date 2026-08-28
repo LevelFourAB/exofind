@@ -37,7 +37,7 @@ To skip a specific number of results, set the `offset` parameter in your request
 { "query": [ ... ], "limit": 20, "offset": 40 }
 ```
 
-Skipping costs as much as ranking, so the depth an offset can reach is capped by `SEARCH_MAX_PAGE_DEPTH` (10000 by default). If a request exceeds this cap, the server rejects the request with `search:page:too_deep`. To retrieve results past the cap, follow cursors instead.
+Skipping costs as much as ranking, so the depth an offset can reach is capped by `EXOFIND_SEARCH_MAX_PAGE_DEPTH` (10000 by default). If a request exceeds this cap, the server rejects the request with `search:page:too_deep`. To retrieve results past the cap, follow cursors instead.
 
 ## Rendering numbered pages
 

@@ -23,7 +23,7 @@ description = "Build the application and run the packaged server"
 # It checks no credentials either, the way dev mode does. The packaged jar runs
 # under the prod profile, where a node would otherwise want a key on every
 # request and the examples carry none.
-env = { INDEXER = "true", EXOFIND_AUTH_MODE = "none" }
+env = { EXOFIND_INDEXER_ENABLED = "true", EXOFIND_AUTH_MODE = "none" }
 run = [
 	"mvn package -DskipTests",
 	"java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -jar target/quarkus-app/quarkus-run.jar"

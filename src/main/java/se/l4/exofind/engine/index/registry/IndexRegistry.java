@@ -120,7 +120,7 @@ public class IndexRegistry {
 
 	public IndexRegistry(
 		RegistryStorage storage,
-		@ConfigProperty(name = "indexes.refresh-interval", defaultValue = "30s")
+		@ConfigProperty(name = "exofind.indexes.refresh-interval", defaultValue = "30s")
 		Duration refreshInterval
 	) {
 		this.storage = storage;

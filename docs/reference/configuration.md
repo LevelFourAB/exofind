@@ -1,9 +1,11 @@
 # Configuration
 
-Exofind is configured through environment variables. Configuration is read
-through MicroProfile Config, so each variable is also available as a dotted
-property (`REMOTE_STORAGE_URL` corresponds to `remote.storage.url`), which is
-how tests and `application.properties` set them.
+Exofind is configured through environment variables. Every variable starts with
+`EXOFIND_`, apart from the `QUARKUS_` and `JAVA_OPTS` variables read by the
+framework and the JVM. Configuration is read through MicroProfile Config, so
+each variable is also available as a dotted property
+(`EXOFIND_STORAGE_REMOTE_URL` corresponds to `exofind.storage.remote.url`),
+which is how tests and `application.properties` set them.
 
 ## Storage
 
@@ -16,17 +18,17 @@ The following table lists storage configuration variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXOFIND_STORAGE_MODE` | Storage mode: `object` to store data in a shared S3-compatible bucket, or `local` to store data on local disk. | `local` |
-| `LOCAL_STORAGE_DIRECTORY` | Directory where the node writes data. In `object` mode, it holds local copies of indexes. In `local` mode, it holds the only copy of indexes, the registry, and keys. | Required |
+| `EXOFIND_STORAGE_LOCAL_DIRECTORY` | Directory where the node writes data. In `object` mode, it holds local copies of indexes. In `local` mode, it holds the only copy of indexes, the registry, and keys. | Required |
 
 `local` mode is for a single node, such as a local test environment or a
 single container. The node does not copy data to remote storage, and additional
 nodes cannot join or take over. If the directory is lost, all indexes and keys
 are lost. A node started in `local` mode logs this status.
-`INDEXES_DISK_MAX_SIZE` does not free disk space in `local` mode. For more
-information, see [Disk use](#disk-use).
+`EXOFIND_INDEXES_DISK_MAX_SIZE` does not free disk space in `local` mode. For
+more information, see [Disk use](#disk-use).
 
-`INDEXER` defaults to `true` in `local` mode because the single node must
-perform writes.
+`EXOFIND_INDEXER_ENABLED` defaults to `true` in `local` mode because the single
+node must perform writes.
 
 Only one node can run against a directory at a time. The node claims the
 directory with file locks for as long as the node runs. A second node pointed
@@ -41,12 +43,12 @@ The following table lists object storage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REMOTE_STORAGE_URL` | URL of the S3-compatible storage. | Required |
-| `REMOTE_STORAGE_ACCESS_KEY` | Access key for authentication. | Required |
-| `REMOTE_STORAGE_SECRET_KEY` | Secret key for authentication. | Required |
-| `REMOTE_STORAGE_REGION` | Region of the object storage. | None |
-| `REMOTE_STORAGE_BUCKET` | Bucket where indexes are stored. | Required |
-| `REMOTE_STORAGE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
+| `EXOFIND_STORAGE_REMOTE_URL` | URL of the S3-compatible storage. | Required |
+| `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` | Access key for authentication. | Required |
+| `EXOFIND_STORAGE_REMOTE_SECRET_KEY` | Secret key for authentication. | Required |
+| `EXOFIND_STORAGE_REMOTE_REGION` | Region of the object storage. | None |
+| `EXOFIND_STORAGE_REMOTE_BUCKET` | Bucket where indexes are stored. | Required |
+| `EXOFIND_STORAGE_REMOTE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
 
 ## Decompounding data
 
@@ -62,14 +64,14 @@ The following table lists indexer configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXER` | Specifies whether this node can write indexes. Multiple indexer candidates divide indexes through a leadership table in object storage. Each index is written by one node at a time. Other nodes take over an index if its holder stops or stalls. | `false` (`true` in `local` mode) |
-| `INDEXER_LEASE_DURATION` | Duration an index lease is held before expiring without renewal. Failover takes approximately this duration. Renewal occurs at one third of this duration. | `30s` |
-| `INDEXER_REINDEX_MAX_CONCURRENT` | Number of reindex jobs one node runs at once. Accepted jobs past the limit wait in the `pending` phase. | `2` |
-| `INDEXER_REINDEX_SWEEP_INTERVAL` | Interval at which an indexer candidate looks for unfinished reindex jobs whose index no node holds, and claims them to resume. | `30s` |
-| `INDEXER_REINDEX_CATCHUP_INTERVAL` | Interval at which a `ready` reindex job replays what changed in the source, so a manual promote stays quick. | `30s` |
-| `INDEXER_REINDEX_PROMOTE_GRACE` | Delay between a reindex job's promote and its final catch-up sweep, for writes that resolved the index name just before the promote. | `1s` |
-| `NODE_ID` | Identifier this node uses in the leadership table. | Hostname with a random suffix |
-| `NODE_ADDRESS` | Network address where this node serves write requests. Recorded in the leadership table so other nodes can forward write requests. Must be reachable by other nodes. If not set, write requests to other nodes are rejected instead of forwarded. | None |
+| `EXOFIND_INDEXER_ENABLED` | Specifies whether this node can write indexes. Multiple indexer candidates divide indexes through a leadership table in object storage. Each index is written by one node at a time. Other nodes take over an index if its holder stops or stalls. | `false` (`true` in `local` mode) |
+| `EXOFIND_INDEXER_LEASE_DURATION` | Duration an index lease is held before expiring without renewal. Failover takes approximately this duration. Renewal occurs at one third of this duration. | `30s` |
+| `EXOFIND_INDEXER_REINDEX_MAX_CONCURRENT` | Number of reindex jobs one node runs at once. Accepted jobs past the limit wait in the `pending` phase. | `2` |
+| `EXOFIND_INDEXER_REINDEX_SWEEP_INTERVAL` | Interval at which an indexer candidate looks for unfinished reindex jobs whose index no node holds, and claims them to resume. | `30s` |
+| `EXOFIND_INDEXER_REINDEX_CATCHUP_INTERVAL` | Interval at which a `ready` reindex job replays what changed in the source, so a manual promote stays quick. | `30s` |
+| `EXOFIND_INDEXER_REINDEX_PROMOTE_GRACE` | Delay between a reindex job's promote and its final catch-up sweep, for writes that resolved the index name just before the promote. | `1s` |
+| `EXOFIND_NODE_ID` | Identifier this node uses in the leadership table. | Hostname with a random suffix |
+| `EXOFIND_NODE_ADDRESS` | Network address where this node serves write requests. Recorded in the leadership table so other nodes can forward write requests. Must be reachable by other nodes. If not set, write requests to other nodes are rejected instead of forwarded. | None |
 
 The indexer requires storage that enforces conditional writes (`If-Match` on
 `PUT`) to prevent write collisions. Amazon S3 and SeaweedFS enforce conditional
@@ -102,30 +104,31 @@ The following table lists index management configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. | Unbounded |
-| `INDEXES_REFRESH_INTERVAL` | Interval at which the node checks storage for index and generation changes and pulls updates for open indexes. Also specifies how long promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
-| `INDEXES_REFRESH_CONCURRENCY` | Number of indexes refreshed concurrently. | `4` |
-| `INDEXES_VERIFY_INTERVAL` | Maximum time an index's manifest or search settings go unchecked against storage when the registry reports no change for them. The registry's change hints are what let a refresh skip per-index requests; this interval bounds the staleness if a hint is lost. | `10m` |
+| `EXOFIND_INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. | Unbounded |
+| `EXOFIND_INDEXES_REFRESH_INTERVAL` | Interval at which the node checks storage for index and generation changes and pulls updates for open indexes. Also specifies how long promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
+| `EXOFIND_INDEXES_REFRESH_CONCURRENCY` | Number of indexes refreshed concurrently. | `4` |
+| `EXOFIND_INDEXES_VERIFY_INTERVAL` | Maximum time an index's manifest or search settings go unchecked against storage when the registry reports no change for them. The registry's change hints are what let a refresh skip per-index requests; this interval bounds the staleness if a hint is lost. | `10m` |
 | `EXOFIND_SETTINGS_REFRESH_INTERVAL` | Interval at which the node refreshes the search settings of the indexes it serves from storage. Changing or removing settings can take up to this interval to reach other nodes; the node that served the change applies it immediately. | `10s` |
-| `INDEXES_CLOSE_GRACE_PERIOD` | Grace period that an evicted index waits for in-flight requests before closing. | `10s` |
+| `EXOFIND_INDEXES_CLOSE_GRACE_PERIOD` | Grace period that an evicted index waits for in-flight requests before closing. | `10s` |
 
 ## Committing
 
 The indexer automatically commits changes to make them searchable. Commits
 also push data to remote storage, making changes visible to other nodes after at
-most one `INDEXES_REFRESH_INTERVAL`.
+most one `EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 To disable automatic commits, set a trigger to `0`. If both triggers are
 disabled, an index commits only when requested through the API. For more
 information, see [Admin API](admin-api.md). When loading datasets, disable both
-triggers or increase `INDEXES_COMMIT_MAX_CHANGES` to commit once at the end.
+triggers or increase `EXOFIND_INDEXES_COMMIT_MAX_CHANGES` to commit once at the
+end.
 
 The following table lists commit configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_COMMIT_MAX_CHANGES` | Maximum number of uncommitted document changes before triggering a commit. | `10000` |
-| `INDEXES_COMMIT_MAX_INTERVAL` | Maximum duration uncommitted changes can wait before triggering a commit. | `5s` |
+| `EXOFIND_INDEXES_COMMIT_MAX_CHANGES` | Maximum number of uncommitted document changes before triggering a commit. | `10000` |
+| `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` | Maximum duration uncommitted changes can wait before triggering a commit. | `5s` |
 
 If a commit fails, the node retries with exponential backoff up to one minute
 while retaining pending changes. Retries are abandoned in two cases: another
@@ -134,31 +137,32 @@ ownership of the index.
 
 ## Disk use
 
-Closing an index retains its files on disk. Setting `INDEXES_DISK_MAX_SIZE`
-enables a background sweep that deletes local copies of inactive indexes until
-disk usage is 10% below the configured limit. Indexes are ranked by access
-frequency, with accesses halving in value after each half-life period. Evicted
-indexes are re-downloaded from storage when requested.
+Closing an index retains its files on disk. Setting
+`EXOFIND_INDEXES_DISK_MAX_SIZE` enables a background sweep that deletes local
+copies of inactive indexes until disk usage is 10% below the configured limit.
+Indexes are ranked by access frequency, with accesses halving in value after
+each half-life period. Evicted indexes are re-downloaded from storage when
+requested.
 
 Local index copies are deleted only if all changes exist in remote storage.
 Unpushed commits or definitions are retained and logged as warnings. Because
-all copies in `local` mode are unique, `INDEXES_DISK_MAX_SIZE` does not delete
-files in `local` mode.
+all copies in `local` mode are unique, `EXOFIND_INDEXES_DISK_MAX_SIZE` does not
+delete files in `local` mode.
 
 The following table lists disk usage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_DISK_MAX_SIZE` | Maximum disk space allocated for local index copies, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Unbounded |
-| `INDEXES_DISK_MIN_IDLE` | Minimum idle time required to retain an index copy regardless of the disk limit. | `24h` |
-| `INDEXES_DISK_HALF_LIFE` | Half-life duration after which unopened index access counts are halved. | `168h` |
-| `INDEXES_DISK_SWEEP_INTERVAL` | Interval between disk space cleanup checks. | `1h` |
+| `EXOFIND_INDEXES_DISK_MAX_SIZE` | Maximum disk space allocated for local index copies, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Unbounded |
+| `EXOFIND_INDEXES_DISK_MIN_IDLE` | Minimum idle time required to retain an index copy regardless of the disk limit. | `24h` |
+| `EXOFIND_INDEXES_DISK_HALF_LIFE` | Half-life duration after which unopened index access counts are halved. | `168h` |
+| `EXOFIND_INDEXES_DISK_SWEEP_INTERVAL` | Interval between disk space cleanup checks. | `1h` |
 
 ## Document cache
 
 Stored fields are compressed. Reading search results decompresses document hits
-on each request. Setting `INDEXES_DOCUMENT_CACHE_MAX_SIZE` enables a shared heap
-cache across all indexes on the node.
+on each request. Setting `EXOFIND_INDEXES_DOCUMENT_CACHE_MAX_SIZE` enables a
+shared heap cache across all indexes on the node.
 
 Cache entries are associated with Lucene index segments. Unmodified segments
 retain cache entries across commits, while merged or closed segments discard
@@ -171,7 +175,7 @@ The following table lists document cache configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_DOCUMENT_CACHE_MAX_SIZE` | Maximum memory allocated to cached documents, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Off |
+| `EXOFIND_INDEXES_DOCUMENT_CACHE_MAX_SIZE` | Maximum memory allocated to cached documents, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Off |
 
 ## Search
 
@@ -179,7 +183,7 @@ The following table lists search configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SEARCH_MAX_PAGE_DEPTH` | Maximum result depth allowed for offset-based pagination. Requests exceeding this depth are rejected with `search:page:too_deep`, and page numbers past the limit are not returned. Cursor-based pagination using `next` and `previous` is not capped. | `10000` |
+| `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | Maximum result depth allowed for offset-based pagination. Requests exceeding this depth are rejected with `search:page:too_deep`, and page numbers past the limit are not returned. Cursor-based pagination using `next` and `previous` is not capped. | `10000` |
 
 ## Logging
 
@@ -242,7 +246,7 @@ The container image starts the JVM with the following default flags:
 | `-XX:MaxRAMPercentage=50` | Sizes the maximum heap against the container's memory limit, leaving the other half for the page cache the indexes are read through. |
 | `--add-modules jdk.incubator.vector` | Gives Lucene the Vector API for vector distance calculations and postings decoding. Without it, Lucene falls back to scalar code and logs `Java vector incubator module is not readable` at startup. With it, the JVM warns that an incubator module is in use. |
 | `--enable-native-access=ALL-UNNAMED` | Lets Lucene advise the kernel how it reads index files. Without it, calls succeed with a one-time JVM warning; in future JVM releases they fail. |
-| `-XX:+ExitOnOutOfMemoryError` | Ends the process when the heap is exhausted, releasing the file lock on `LOCAL_STORAGE_DIRECTORY` and stopping indexer lease renewals. |
+| `-XX:+ExitOnOutOfMemoryError` | Ends the process when the heap is exhausted, releasing the file lock on `EXOFIND_STORAGE_LOCAL_DIRECTORY` and stopping indexer lease renewals. |
 
 No garbage collector is specified, so the JVM selects one: G1 on systems with at
 least two processors and approximately 2 GB of memory, and the serial collector

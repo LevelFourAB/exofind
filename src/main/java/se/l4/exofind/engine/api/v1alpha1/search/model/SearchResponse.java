@@ -516,7 +516,7 @@ public record SearchResponse(
 			How many results come before the window. Omitted when the window \
 			was reached through a `next` or `previous` cursor, which encodes a \
 			position rather than a count - which is what lets cursors go \
-			deeper than `SEARCH_MAX_PAGE_DEPTH` allows an offset to.""")
+			deeper than `EXOFIND_SEARCH_MAX_PAGE_DEPTH` allows an offset to.""")
 		Integer offset,
 
 		/**
@@ -555,7 +555,7 @@ public record SearchResponse(
 		Numbered pages, split into `start`, `middle` and `end` so a pager \
 		renders `1 2 3 … 7` with the ellipses exactly where a window boundary \
 		falls. Page numbers are 1-based, and the cursors inside encode count \
-		offsets, so they remain subject to `SEARCH_MAX_PAGE_DEPTH`.""")
+		offsets, so they remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""")
 	public record Pages(
 		/**
 		 * How many pages there are in total.

@@ -52,7 +52,7 @@ public record IndexerListResponse(
 		@Schema(
 			description = """
 				Target address for write forwarding. Omitted when the node did \
-				not set `NODE_ADDRESS`.""",
+				not set `EXOFIND_NODE_ADDRESS`.""",
 			examples = "http://node-a:8080"
 		)
 		String address,
@@ -92,7 +92,7 @@ public record IndexerListResponse(
 		@Schema(
 			description = """
 				Target address for write forwarding. Omitted when the node did \
-				not set `NODE_ADDRESS`.""",
+				not set `EXOFIND_NODE_ADDRESS`.""",
 			examples = "http://node-a:8080"
 		)
 		String address,

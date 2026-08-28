@@ -174,7 +174,7 @@ public class RegistryResource {
 			The write is conditional and rebuilds on top of concurrent \
 			registry changes. The answering node applies the repaired registry \
 			at once; other nodes pick it up within \
-			`INDEXES_REFRESH_INTERVAL`.
+			`EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 			Served by whichever node receives the request and never forwarded. \
 			Answers only in object storage mode. Requires the \

@@ -212,10 +212,14 @@ public class ReindexJobs {
 		IndexRegistry registry,
 		ReindexJobStorage storage,
 		IndexerOwnership ownership,
-		@ConfigProperty(name = "indexer.reindex.max-concurrent", defaultValue = "2") int maxConcurrent,
-		@ConfigProperty(name = "indexer.reindex.sweep-interval", defaultValue = "30s") Duration sweepInterval,
-		@ConfigProperty(name = "indexer.reindex.catchup-interval", defaultValue = "30s") Duration catchUpInterval,
-		@ConfigProperty(name = "indexer.reindex.promote-grace", defaultValue = "1s") Duration promoteGrace
+		@ConfigProperty(name = "exofind.indexer.reindex.max-concurrent", defaultValue = "2")
+		int maxConcurrent,
+		@ConfigProperty(name = "exofind.indexer.reindex.sweep-interval", defaultValue = "30s")
+		Duration sweepInterval,
+		@ConfigProperty(name = "exofind.indexer.reindex.catchup-interval", defaultValue = "30s")
+		Duration catchUpInterval,
+		@ConfigProperty(name = "exofind.indexer.reindex.promote-grace", defaultValue = "1s")
+		Duration promoteGrace
 	) {
 		this.nodeState = nodeState;
 		this.indexes = indexes;
