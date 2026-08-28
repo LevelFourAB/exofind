@@ -1,320 +1,278 @@
 # Configuration
 
 Exofind is configured through environment variables. Configuration is read
-through MicroProfile Config, so each variable is also available as the
-corresponding dotted property (`REMOTE_STORAGE_URL` is
-`remote.storage.url`), which is how tests and `application.properties`
-set them.
+through MicroProfile Config, so each variable is also available as a dotted
+property (`REMOTE_STORAGE_URL` corresponds to `remote.storage.url`), which is
+how tests and `application.properties` set them.
 
 ## Storage
 
-The mode decides where the indexes, the registry naming them and the keys
-that reach them are kept. It is named rather than inferred from which other
-variables are set, so a node meant for a cluster whose storage settings are
-wrong refuses to start instead of coming up alone with a registry of its own.
+The storage mode specifies where the node keeps indexes, the index registry,
+and authentication keys. The mode is explicitly set rather than inferred from
+other variables. If storage settings are invalid, the node refuses to start.
+
+The following table lists storage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_STORAGE_MODE` | `object` to keep everything in an S3 compatible bucket that every node shares, `local` to keep everything on this node's disk | `local` |
-| `LOCAL_STORAGE_DIRECTORY` | Directory this node writes in. In `object` mode it holds copies of the indexes; in `local` mode it holds the only copy there is, along with the registry and the keys | required |
+| `EXOFIND_STORAGE_MODE` | Storage mode: `object` to store data in a shared S3-compatible bucket, or `local` to store data on local disk. | `local` |
+| `LOCAL_STORAGE_DIRECTORY` | Directory where the node writes data. In `object` mode, it holds local copies of indexes. In `local` mode, it holds the only copy of indexes, the registry, and keys. | Required |
 
-`local` is for one node: a laptop, a container in a compose file, a test. It
-needs nothing else running, but nothing is copied anywhere, no second node can
-be added, no other node can take over, and losing the directory loses the
-indexes and the keys together. A node started this way says so in its log.
-`INDEXES_DISK_MAX_SIZE` frees nothing in this mode - see [Disk
-use](#disk-use).
+`local` mode is for a single node, such as a local test environment or a
+single container. The node does not copy data to remote storage, and additional
+nodes cannot join or take over. If the directory is lost, all indexes and keys
+are lost. A node started in `local` mode logs this status.
+`INDEXES_DISK_MAX_SIZE` does not free disk space in `local` mode. For more
+information, see [Disk use](#disk-use).
 
-`INDEXER` defaults to true in `local` mode, because the one node there is has
-to be the one that writes.
+`INDEXER` defaults to `true` in `local` mode because the single node must
+perform writes.
 
-Only one node may run against a directory. It is claimed for as long as the
-node runs, and a second node pointed at the same one refuses to start rather
-than write over the first one's indexes. The claim relies on file locking, so
-the directory belongs on a disk attached to the node - NFS and SMB implement
-locking unreliably.
+Only one node can run against a directory at a time. The node claims the
+directory with file locks for as long as the node runs. A second node pointed
+at the same directory refuses to start. Because file locking over NFS and SMB
+is unreliable, use locally attached disk storage.
 
 ### Object storage
 
-Read in `object` mode, and ignored in `local`.
+These variables are read in `object` mode and ignored in `local` mode.
+
+The following table lists object storage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REMOTE_STORAGE_URL` | URL of the S3 compatible storage | required |
-| `REMOTE_STORAGE_ACCESS_KEY` | Access key | required |
-| `REMOTE_STORAGE_SECRET_KEY` | Secret key | required |
-| `REMOTE_STORAGE_REGION` | Region of the storage | none |
-| `REMOTE_STORAGE_BUCKET` | Bucket the indexes are stored in | required |
-| `REMOTE_STORAGE_PREFIX` | Key prefix within the bucket, for sharing a bucket with something else | none |
+| `REMOTE_STORAGE_URL` | URL of the S3-compatible storage. | Required |
+| `REMOTE_STORAGE_ACCESS_KEY` | Access key for authentication. | Required |
+| `REMOTE_STORAGE_SECRET_KEY` | Secret key for authentication. | Required |
+| `REMOTE_STORAGE_REGION` | Region of the object storage. | None |
+| `REMOTE_STORAGE_BUCKET` | Bucket where indexes are stored. | Required |
+| `REMOTE_STORAGE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
 
 ## Decompounding data
 
+The following table lists decompounding configuration variables:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_DECOMPOUND_DIRECTORY` | Directory holding the per-locale data that splits compound words, see [Analysis](analysis.md#compound-words). One folder per locale with `patterns.txt` and `words.txt`, each optionally gzipped. A locale whose folder is missing indexes its compounds whole | `decompound-data` under the working directory |
+| `EXOFIND_DECOMPOUND_DIRECTORY` | Directory holding per-locale data to split compound words. For more information, see [Analysis](analysis.md#compound-words). Provide one directory per locale containing `patterns.txt` and `words.txt`, optionally gzipped. If a locale directory is missing, compound words are indexed whole. | `decompound-data` under the working directory |
 
 ## Indexer role
 
+The following table lists indexer configuration variables:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXER` | Whether this node may write indexes. Any number of candidates may run; they divide the indexes among themselves through a leadership table in the object storage, each index written by exactly one of them at a time, with the others taking an index over when its holder stops or stalls | `false`, and `true` in `local` mode |
-| `INDEXER_LEASE_DURATION` | How long an index is held before the claim lapses without renewal, which is roughly how long a failover takes. Renewal happens at a third of this | `30s` |
-| `NODE_ID` | Name this node competes under in the leadership table | hostname plus a random suffix |
-| `NODE_ADDRESS` | Address this node serves writes on, recorded in the table so other nodes can forward each write to the node holding its index. It only has to be reachable from the other nodes. Without it, writes to other nodes are refused instead of forwarded | none |
+| `INDEXER` | Specifies whether this node can write indexes. Multiple indexer candidates divide indexes through a leadership table in object storage. Each index is written by one node at a time. Other nodes take over an index if its holder stops or stalls. | `false` (`true` in `local` mode) |
+| `INDEXER_LEASE_DURATION` | Duration an index lease is held before expiring without renewal. Failover takes approximately this duration. Renewal occurs at one third of this duration. | `30s` |
+| `NODE_ID` | Identifier this node uses in the leadership table. | Hostname with a random suffix |
+| `NODE_ADDRESS` | Network address where this node serves write requests. Recorded in the leadership table so other nodes can forward write requests. Must be reachable by other nodes. If not set, write requests to other nodes are rejected instead of forwarded. | None |
 
-An indexer relies on the storage enforcing conditional writes (`If-Match` on
-`PUT`) to refuse a second writer instead of being corrupted by it. Amazon S3
-and SeaweedFS enforce them; the node checks at startup and refuses to run as
-the indexer against a storage that does not.
+The indexer requires storage that enforces conditional writes (`If-Match` on
+`PUT`) to prevent write collisions. Amazon S3 and SeaweedFS enforce conditional
+writes. The node verifies conditional write support at startup and refuses to
+run as an indexer against storage that does not support them.
 
 ## Authentication
 
-Keys live in the storage rather than here, so only what differs per node is
-configuration. See [Authentication](auth.md) for the permissions a key holds
-and the keys API.
+Keys are stored in the configured storage backend. Only node-specific settings
+are configured through environment variables. For information about key
+permissions and the keys API, see [Authentication](auth.md).
+
+The following table lists authentication configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_AUTH_MODE` | `keys` to check a credential on every request, `none` to check nothing and answer every request as allowed everything | `keys`, and `none` in dev mode |
-| `EXOFIND_AUTH_ROOT_KEY` | A credential allowed everything, accepted by this node alone and stored nowhere. Either the key itself or `sha256:` and its hash. Used to create the first key and to recover from deleting the last one that could manage keys | none |
-| `EXOFIND_AUTH_ANONYMOUS_KEY` | Id of the key requests carrying no credential are answered as. The key may only be granted `search`, or the node refuses to start. Without it such requests are refused | none |
-| `EXOFIND_AUTH_REFRESH_INTERVAL` | How often a node re-reads the keys, which is how long revoking one can take to reach a node already holding it. A key a node has not seen is looked up right away, at most once per interval | `10s` |
+| `EXOFIND_AUTH_MODE` | Authentication mode: `keys` to validate credentials on every request, or `none` to disable authentication and allow all requests. | `keys` (`none` in development mode) |
+| `EXOFIND_AUTH_ROOT_KEY` | Administrative credential with full access, accepted only by this node and not stored in storage. Provide either the raw key value or `sha256:` followed by its hash. Used to create the initial key or recover access if all administrative keys are deleted. | None |
+| `EXOFIND_AUTH_ANONYMOUS_KEY` | ID of the key applied to unauthenticated requests. The referenced key must have only the `search` permission, or the node refuses to start. If not set, unauthenticated requests are rejected. | None |
+| `EXOFIND_AUTH_REFRESH_INTERVAL` | Interval at which the node refreshes keys from storage. Revoking a key can take up to this interval to propagate. Unseen keys are looked up immediately, at most once per interval. | `10s` |
 
-A node in `keys` mode that can neither read the stored keys nor find a root key
-of its own refuses to start - a node nobody can administer is worse than one
-that does not come up. A node that named `object` mode but cannot reach the
-storage has nowhere to keep keys and can only be reached with its root key; one
-in `local` mode keeps them on disk like everything else.
+A node running in `keys` mode refuses to start if it cannot read stored keys and
+has no `EXOFIND_AUTH_ROOT_KEY` configured. If a node in `object` mode cannot
+connect to storage, you can access it only with the root key. A node in `local`
+mode stores keys on local disk.
 
 ## Index management
 
+The following table lists index management configuration variables:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_MAX_OPEN` | How many indexes are kept open at once | unbounded |
-| `INDEXES_REFRESH_INTERVAL` | How often a node re-reads which indexes and generations the deployment holds and pulls the ones it holds open. Also how long promoting a generation takes to reach a node still answering from the previous one. An index a node has not seen is looked up right away, at most once per interval | `30s` |
-| `INDEXES_REFRESH_CONCURRENCY` | How many indexes are refreshed at the same time | `4` |
-| `INDEXES_CLOSE_GRACE_PERIOD` | How long an index evicted from the open set waits for in-flight use before closing | `10s` |
+| `INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. | Unbounded |
+| `INDEXES_REFRESH_INTERVAL` | Interval at which the node checks storage for index and generation changes and pulls updates for open indexes. Also specifies how long promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
+| `INDEXES_REFRESH_CONCURRENCY` | Number of indexes refreshed concurrently. | `4` |
+| `INDEXES_CLOSE_GRACE_PERIOD` | Grace period that an evicted index waits for in-flight requests before closing. | `10s` |
 
 ## Committing
 
-The indexer commits on its own, so what is indexed becomes searchable without
-anything asking for it. A commit is also a push, so these decide how long a
-change takes to reach the storage - and a searching node sees it one
-`INDEXES_REFRESH_INTERVAL` after that at worst. Committing much more often than
-that interval costs requests against the storage without the other nodes seeing
-anything sooner.
+The indexer automatically commits changes to make them searchable. Commits
+also push data to remote storage, making changes visible to other nodes after at
+most one `INDEXES_REFRESH_INTERVAL`.
 
-Either trigger is turned off by setting it to zero, and with both off an index
-only commits when
-[asked to](admin-api.md). Loading a dataset is still one commit at the end
-rather than one per batch: raise `INDEXES_COMMIT_MAX_CHANGES` for the load, or
-commit by hand with both triggers off.
+To disable automatic commits, set a trigger to `0`. If both triggers are
+disabled, an index commits only when requested through the API. For more
+information, see [Admin API](admin-api.md). When loading datasets, disable both
+triggers or increase `INDEXES_COMMIT_MAX_CHANGES` to commit once at the end.
+
+The following table lists commit configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_COMMIT_MAX_CHANGES` | How many changed documents may be waiting before the index commits | `10000` |
-| `INDEXES_COMMIT_MAX_INTERVAL` | How long the oldest waiting change may go uncommitted | `5s` |
+| `INDEXES_COMMIT_MAX_CHANGES` | Maximum number of uncommitted document changes before triggering a commit. | `10000` |
+| `INDEXES_COMMIT_MAX_INTERVAL` | Maximum duration uncommitted changes can wait before triggering a commit. | `5s` |
 
-A commit that fails is tried again, waiting twice as long before each attempt up
-to a minute, and the changes stay counted meanwhile. Two failures are not
-retried and give up what they were counting: another node having written the
-storage first, where this node is about to pull the index over, and the index
-having stopped being this node's to write.
+If a commit fails, the node retries with exponential backoff up to one minute
+while retaining pending changes. Retries are abandoned in two cases: another
+node wrote to storage first (triggering an index pull), or the node lost write
+ownership of the index.
 
 ## Disk use
 
-Closing an index keeps its files, so without a bound the disk fills with every
-index a node has ever served. With `INDEXES_DISK_MAX_SIZE` set, a periodic
-sweep removes the local copies of the coldest indexes - ranked by how often
-they are opened, with opens counting for half after every half-life - until
-the total is a tenth under the bound. An index whose copy was removed stays
-known and usable; asking for it pulls everything back from storage.
+Closing an index retains its files on disk. Setting `INDEXES_DISK_MAX_SIZE`
+enables a background sweep that deletes local copies of inactive indexes until
+disk usage is 10% below the configured limit. Indexes are ranked by access
+frequency, with accesses halving in value after each half-life period. Evicted
+indexes are re-downloaded from storage when requested.
 
-A copy is only removed when the storage holds everything it does. One with a
-commit or definition that never reached the storage is kept and warned about,
-whatever the bound says - which also means the bound removes nothing in `local`
-mode, where every copy is the only one there is. A node started that way with a
-bound set says so in its log.
+Local index copies are deleted only if all changes exist in remote storage.
+Unpushed commits or definitions are retained and logged as warnings. Because
+all copies in `local` mode are unique, `INDEXES_DISK_MAX_SIZE` does not delete
+files in `local` mode.
+
+The following table lists disk usage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_DISK_MAX_SIZE` | How much disk the local copies may take together, as bytes with an optional `K`, `M`, `G` or `T` suffix (binary multiples) | unbounded |
-| `INDEXES_DISK_MIN_IDLE` | How recently a copy has to have been used to be kept regardless of the bound | `24h` |
-| `INDEXES_DISK_HALF_LIFE` | How long an index has to go unopened for its opens to count half | `168h` |
-| `INDEXES_DISK_SWEEP_INTERVAL` | How often disk use is checked against the bound | `1h` |
+| `INDEXES_DISK_MAX_SIZE` | Maximum disk space allocated for local index copies, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Unbounded |
+| `INDEXES_DISK_MIN_IDLE` | Minimum idle time required to retain an index copy regardless of the disk limit. | `24h` |
+| `INDEXES_DISK_HALF_LIFE` | Half-life duration after which unopened index access counts are halved. | `168h` |
+| `INDEXES_DISK_SWEEP_INTERVAL` | Interval between disk space cleanup checks. | `1h` |
 
 ## Document cache
 
-Stored fields are kept compressed, so returning a page of results decompresses
-the documents of its hits every time the page is asked for. With
-`INDEXES_DOCUMENT_CACHE_MAX_SIZE` set, those reads go through one cache shared
-by every index of the node. Which indexes hold the space is not configured:
-the budget is one, and the indexes being read are the ones that fill it.
+Stored fields are compressed. Reading search results decompresses document hits
+on each request. Setting `INDEXES_DOCUMENT_CACHE_MAX_SIZE` enables a shared heap
+cache across all indexes on the node.
 
-Entries follow the segments they were read from - a commit keeps the entries
-of the segments it did not change, and a segment merged away or closed takes
-its entries with it. Nothing needs invalidating by hand, and turning the cache
-on changes no answer, only what a repeated read costs.
+Cache entries are associated with Lucene index segments. Unmodified segments
+retain cache entries across commits, while merged or closed segments discard
+their entries.
 
-The cache lives on the heap, so the heap has to hold it next to the searches
-themselves - see [heap against page cache](#heap-against-page-cache) before
-giving it a large share.
+The document cache is stored on the Java heap. For heap sizing recommendations,
+see [Page cache and heap](../explanation/node-resources.md#page-cache-and-heap).
+
+The following table lists document cache configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INDEXES_DOCUMENT_CACHE_MAX_SIZE` | How much memory the cached documents may take together, as bytes with an optional `K`, `M`, `G` or `T` suffix (binary multiples) | off |
+| `INDEXES_DOCUMENT_CACHE_MAX_SIZE` | Maximum memory allocated to cached documents, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Off |
 
 ## Search
 
+The following table lists search configuration variables:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SEARCH_MAX_PAGE_DEPTH` | How deep into the results offset paging may reach - the deepest result a page may end at. Requests past it are refused with `search:page:too_deep`, and numbered pages past it are never offered. Following `next`/`previous` cursors is not capped | `10000` |
+| `SEARCH_MAX_PAGE_DEPTH` | Maximum result depth allowed for offset-based pagination. Requests exceeding this depth are rejected with `search:page:too_deep`, and page numbers past the limit are not returned. Cursor-based pagination using `next` and `previous` is not capped. | `10000` |
 
 ## Logging
 
-A node writes what it does to standard output. What each line means is [Read
-the log](../how-to/operate-a-deployment.md#read-the-log); these decide how
-much of it there is and what it looks like.
+The node writes logs to standard output. For information on log line formats,
+see [Operate a deployment](../how-to/operate-a-deployment.md#read-the-log).
+
+The following table lists logging configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `QUARKUS_LOG_LEVEL` | Lowest level written. `INFO` covers what a node does to indexes, keys and the indexer role; `DEBUG` adds every commit, pull and push | `INFO` |
-| `QUARKUS_LOG_CATEGORY__SE_L4_EXOFIND__LEVEL` | Level for the engine alone, so it can be raised without the frameworks under it following | `QUARKUS_LOG_LEVEL` |
-| `QUARKUS_HTTP_ACCESS_LOG_ENABLED` | Write a line per request. Off by default: a searching node answers enough requests for this to be the bulk of its output | `false` |
-| `QUARKUS_LOG_CONSOLE_JSON_ENABLED` | Write one JSON object per line instead of text | `false` |
+| `QUARKUS_LOG_LEVEL` | Minimum log level written to standard output. `INFO` logs index, key, and indexer role events; `DEBUG` adds commit, pull, and push events. | `INFO` |
+| `QUARKUS_LOG_CATEGORY__SE_L4_EXOFIND__LEVEL` | Log level for the Exofind engine. Use this variable to adjust engine logging independently of underlying frameworks. | `QUARKUS_LOG_LEVEL` |
+| `QUARKUS_HTTP_ACCESS_LOG_ENABLED` | Specifies whether to write an HTTP access log line for each request. | `false` |
+| `QUARKUS_LOG_CONSOLE_JSON_ENABLED` | Specifies whether to format console logs as one JSON object per line instead of plain text. | `false` |
 
-The narrower category is the one to reach for while looking into something -
-`DEBUG` across everything includes the S3 client logging every request it
-makes.
+To set engine logging to `DEBUG` without enabling verbose output for
+third-party libraries (such as the S3 client), set
+`QUARKUS_LOG_CATEGORY__SE_L4_EXOFIND__LEVEL`:
 
 ```shell
 docker run -e QUARKUS_LOG_CATEGORY__SE_L4_EXOFIND__LEVEL=DEBUG exofind/engine
 ```
 
-`TRACE` needs a rebuild as well as the variable, because the lowest level a
-build keeps is fixed at `DEBUG`.
+`TRACE` logging requires rebuilding the application because log levels below
+`DEBUG` are removed at build time.
 
 ### JSON output
 
-Text is the default so that a node being read by a person reads as one. A
-deployment shipping its log somewhere asks for JSON instead:
+To output logs in JSON format for log collection systems, set
+`QUARKUS_LOG_CONSOLE_JSON_ENABLED` to `true`:
 
 ```shell
 docker run -e QUARKUS_LOG_CONSOLE_JSON_ENABLED=true exofind/engine
 ```
 
-Each line becomes an object carrying the timestamp, level, logger, thread and
-host as fields, and a thrown exception as a nested object rather than as the
-lines following it - which is the part that makes a stack trace survive a
-collector intact.
+Each log line is formatted as a JSON object containing `timestamp`, `level`,
+`logger`, `thread`, and `host` fields. Exceptions are formatted as nested
+objects to preserve stack traces.
 
-The key/values the engine attaches to a line become fields of the object too,
-so `index` is filtered on rather than matched for inside `message` - which
-holds the sentence alone. Whole numbers are written as JSON numbers; every
-other value is written as a string, `true` and `false` included.
+Context key-value pairs are included as JSON fields on the log object. Whole
+numbers are encoded as JSON numbers, and all other values are encoded as
+strings.
 
 ## The JVM
 
-Read by the container image rather than by the engine, so a node started from
-`quarkus-run.jar` by hand takes these on the command line instead.
+The container image reads these variables at startup. When running
+`quarkus-run.jar` directly, pass these options to the `java` command.
+
+The following table lists JVM configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JAVA_OPTS` | Everything the JVM is started with. Setting it replaces the defaults below rather than adding to them | the flags below |
-| `JAVA_OPTS_APPEND` | Passed after `JAVA_OPTS`. The JVM takes the last value of a flag it is given twice, so one default is changed here without restating the rest | none |
+| `JAVA_OPTS` | JVM startup arguments. Setting this variable replaces default JVM flags. | See default flags below |
+| `JAVA_OPTS_APPEND` | JVM arguments appended to `JAVA_OPTS`. Overrides specific default flags without replacing the entire list. | None |
 
-The image starts the JVM with:
+The container image starts the JVM with the following default flags:
 
-```
--XX:MaxRAMPercentage=50
---add-modules jdk.incubator.vector
---enable-native-access=ALL-UNNAMED
--XX:+ExitOnOutOfMemoryError
-```
+| Flag | What it does |
+|------|--------------|
+| `-XX:MaxRAMPercentage=50` | Sizes the maximum heap against the container's memory limit, leaving the other half for the page cache the indexes are read through. |
+| `--add-modules jdk.incubator.vector` | Gives Lucene the Vector API for vector distance calculations and postings decoding. Without it, Lucene falls back to scalar code and logs `Java vector incubator module is not readable` at startup. With it, the JVM warns that an incubator module is in use. |
+| `--enable-native-access=ALL-UNNAMED` | Lets Lucene advise the kernel how it reads index files. Without it, calls succeed with a one-time JVM warning; in future JVM releases they fail. |
+| `-XX:+ExitOnOutOfMemoryError` | Ends the process when the heap is exhausted, releasing the file lock on `LOCAL_STORAGE_DIRECTORY` and stopping indexer lease renewals. |
 
-Halve the heap on a node that only searches, and leave the rest alone:
+No garbage collector is specified, so the JVM selects one: G1 on systems with at
+least two processors and approximately 2 GB of memory, and the serial collector
+on smaller systems. ZGC and Shenandoah are included in the JRE.
+
+`JAVA_OPTS_APPEND` is passed after `JAVA_OPTS`, and the JVM takes the last value
+of a flag it is given twice. A module cannot be removed this way: running
+without `jdk.incubator.vector` requires replacing `JAVA_OPTS`.
+
+To adjust the maximum heap size on a search-only node, append
+`-XX:MaxRAMPercentage`:
 
 ```shell
 docker run -e JAVA_OPTS_APPEND=-XX:MaxRAMPercentage=25 exofind/engine
 ```
 
-### Heap against page cache
-
-A node reads its indexes through memory maps, so the index is held in the
-kernel's page cache and not in the heap. Memory given to the heap is memory the
-index is not read from, and a node whose index no longer fits in what is left
-reads from disk on every search that misses.
-
-Half the container's limit is a heap that holds the searches themselves - the
-result sets being collected, the facets being counted, the documents being
-loaded - and leaves the other half to the index. A node that only searches can
-go lower; an indexer holds the buffered documents of an uncommitted batch and
-the segments of a running merge, and wants more.
-
-Above roughly 32 GB of heap the JVM stops compressing object pointers, and the
-same objects take more of it. A node that large is better given the memory as
-page cache.
-
-### The Vector API
-
-`--add-modules jdk.incubator.vector` is what Lucene runs vector distances and
-postings decoding through. Without it both fall back to scalar code, and the
-node logs `Java vector incubator module is not readable` at startup. With it
-the JVM warns that an incubator module is in use, which is expected and says
-nothing about the node.
-
-A module cannot be removed by a later flag, so a node that should run without
-it needs `JAVA_OPTS` replaced rather than appended to.
-
-### Native access
-
-`--enable-native-access=ALL-UNNAMED` is Lucene telling the kernel how it will
-read an index file, so pages are read ahead where a read is sequential and not
-where it is random. Without the flag the call still works and the JVM warns
-once per run; a later JVM release refuses it instead of warning, and the node
-loses the advice.
-
-### Memory maps
-
-Every index file a node holds open is at least one mapping, and Linux caps how
-many mappings a process may have with `vm.max_map_count` - 65530 on many
-distributions. A node serving many indexes, each of many segments, reaches that
-cap, and the open that crosses it fails. Raise it on the host:
-
-```shell
-sysctl -w vm.max_map_count=262144
-```
-
-### Garbage collection
-
-The image names no collector. The JVM picks G1 on a node with two processors
-and roughly 2 GB or more, and the serial collector below that.
-
-ZGC and Shenandoah are both built into the JRE the image runs on, and neither
-pays off at the heap a node runs with. What they shorten is the pause, which
-grows with the heap - and half of a container's limit is not a heap that pauses
-long. What they cost is throughput, and headroom in the heap to collect
-concurrently in. That headroom comes out of the memory the index was cached in,
-which is what decides how long a search takes.
-
-ZGC costs more than the headroom. It holds every reference uncompressed, so the
-same live set needs a larger heap - close to twice as much where the data is
-objects rather than arrays - and the page cache pays for the difference.
-
-Both are worth measuring on a node with a heap of tens of gigabytes, where a G1
-pause is long enough to reach the slowest requests. Under 32 GB of heap that is
-generational Shenandoah, which keeps references compressed:
+To select a different collector, append its flags:
 
 ```shell
 docker run -e JAVA_OPTS_APPEND="-XX:+UseShenandoahGC -XX:ShenandoahGCMode=generational" exofind/engine
 ```
 
-The mode is asked for by name because the collector still defaults to
-collecting the whole heap every cycle.
+For how to choose these values - what the heap is traded against, and which
+collector suits which node - see
+[Node memory and JVM configuration](../explanation/node-resources.md).
 
-### Running out of heap
+### Memory maps
 
-`-XX:+ExitOnOutOfMemoryError` stops a node that has run out of heap. A node
-left up instead holds the lock on `LOCAL_STORAGE_DIRECTORY` and keeps
-renewing its claims on the indexes it writes - so nothing takes over from a
-node that cannot do the work. Exiting hands both back.
+Each open index file uses at least one memory mapping. Linux limits the maximum
+number of mappings per process with `vm.max_map_count` (65530 on many
+distributions). A node serving many indexes across multiple segments can
+reach that cap, causing file open operations to fail.
+
+The setting is not namespaced, so it is raised on the host rather than in the
+container:
+
+```shell
+sysctl -w vm.max_map_count=262144
+```

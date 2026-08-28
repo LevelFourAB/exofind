@@ -1,52 +1,60 @@
-# Operate a deployment
+# Operating a deployment
 
-What to check on a deployment that is already running: what each node is
-serving, whether it is current, which node is writing, and what to do when
-disk, an upgrade or a lost node gets in the way. Setting one up is [Run more
-than one node](run-multiple-nodes.md); this is the day after.
+This guide shows you how to operate, monitor, and maintain an active search
+deployment. Use this guide to verify node configuration, check health and
+index freshness, identify active writers, manage disk capacity, replace or
+upgrade nodes, and back up deployment data.
 
-A node answers health endpoints for whatever decides where requests go.
-Everything past that is the status of the indexes it holds and its log; there
-is no metrics endpoint.
+## Prerequisites
+
+Before you begin, ensure that you have:
+
+- A running deployment with one or more nodes. To configure a deployment, see
+  [Run more than one node](run-multiple-nodes.md).
+- Network access to the HTTP endpoints of each node.
 
 ## Check what a node came up as
 
-A node names its own configuration before it answers anything, so what it is
-never has to be reconstructed from the environment it was started with:
+When a node starts, inspect its startup logs to verify its configuration
+before it begins handling requests:
 
-```
-INFO  storage=object auth=keys indexer=true bucket=exofind directory=/var/lib/exofind Starting node, which competes to write indexes
-INFO  node=node-a-7f21 address=http://node-a:8080 Competing for the indexer role
-INFO  exofind 0.1.0 on JVM … started in 1.4s. Listening on: http://0.0.0.0:8080
-```
-
-The last line is the node ready to answer, and the address in it is the one
-to reach it on. Ahead of it are the settings that decide what the node does -
-`storage`, `auth`, `indexer` and where the indexes live - and the name it
-competes under, which every later line about writing an index is keyed by. A
-node that may not write says `only answers searches` instead and competes
-for nothing. A node storing locally names no bucket and holds every index
-uncontested.
-
-Anything worth a second look arrives as a `WARN` of its own among those
-lines: `local` mode, authentication turned off, or settings the named mode
-never reads.
-
-Stopping closes the open indexes, and an index this node has changed is pushed
-as it closes. `Closing the open indexes` is what a stop that takes its time is
-waiting on.
+1. Review the initial startup lines in the node logs:
+   ```text
+   INFO  storage=object auth=keys indexer=true bucket=exofind directory=/var/lib/exofind Starting node, which competes to write indexes
+   INFO  node=node-a-7f21 address=http://node-a:8080 Competing for the indexer role
+   INFO  exofind 0.1.0 on JVM … started in 1.4s. Listening on: http://0.0.0.0:8080
+   ```
+2. Verify the configuration settings:
+   - Check `storage`, `auth`, `indexer`, and the storage location (`bucket` or
+     `directory`).
+   - Check the candidate name in `node` (used in write-assignment logs) and the
+     reachable `address`.
+   - Check write eligibility: A node that cannot write outputs `only answers
+     searches`. A node using local storage specifies no bucket and manages all
+     indexes uncontested.
+3. Check for any `WARN` lines during startup, such as running in `local` mode,
+   running with authentication disabled, or providing settings that the active
+   mode ignores.
+4. When stopping a node, observe that the node closes open indexes and pushes
+   modified indexes to remote storage. The shutdown log reports `Closing the
+   open indexes`.
 
 ## Ask whether a node is up
 
-Three endpoints, answered without a key:
+Check node health by querying the health endpoints. These endpoints do not
+require authentication keys:
 
 | Endpoint | Answers |
-|----------|---------|
+|---|---|
 | `GET /q/health/ready` | Whether to send this node requests |
 | `GET /q/health/live` | Whether restarting this node would help |
-| `GET /q/health` | Both together |
+| `GET /q/health` | Both readiness and liveness together |
 
-`200` is up and `503` is down. The body names the checks behind the answer:
+Status codes indicate the overall health:
+- `200`: The check is UP.
+- `503`: The check is DOWN.
+
+Example response:
 
 ```json
 {
@@ -62,221 +70,213 @@ Three endpoints, answered without a key:
 }
 ```
 
-`index-registry` is the readiness one. A node is ready once it has read the
-registry - the object saying which indexes exist and which generation each
-name answers for - which is the first thing it does, so readiness follows
-`Listening on` by a moment. A node that stays unready is one that never
-reached its storage, whatever it holds on disk. Failing to read the registry
-later does not take readiness away again: the node goes on serving the copy it
-has, which is worth more to the deployment than losing a node over a storage
-that will be back.
+Evaluate the checks in the response body:
+- `index-registry` (readiness): A node is ready once it reads the registry
+  object (defining existing indexes and generations) from storage. If a node
+  remains unready, check connectivity to remote storage. If subsequent
+  registry reads fail after startup, the node remains ready and continues
+  serving its local copy.
+- `index-refresh` (liveness): Reports whether the background refresh loop is
+  running. If the loop stops, the node stops receiving updates and requires a
+  restart. If a refresh pass fails because the remote bucket is unreachable,
+  the check logs a `WARN` and remains UP. The check turns DOWN only when
+  `secondsSinceRefresh` exceeds four times `INDEXES_REFRESH_INTERVAL` (with a
+  minimum of 60 seconds).
 
-`index-refresh` is the liveness one, and it reports only whether the refresh
-loop is still running. That loop is what keeps a node in step with the
-deployment, and a node whose loop has stopped answers searches from what it
-held when it stopped for as long as it is left running - which is the state
-worth restarting for. A pass that fails is still a pass: an unreachable bucket
-is a `WARN` in the log and leaves this up, because restarting the node would
-not mend it. `secondsSinceRefresh` has to grow past four
-`INDEXES_REFRESH_INTERVAL`s, and never less than a minute, before the answer
-turns.
-
-Neither says anything about which indexes a node writes. Taking one and
-handing it over is a healthy node doing its job - [which node is
-writing](#know-which-node-is-writing) is asked in another way.
+To check writer assignments, see [Know which node is writing](#know-which-node-is-writing).
 
 ## See what a node is serving
 
-```http
-GET /v1alpha1/admin/indexes
-```
+To inspect the indexes available on a node and their local status:
 
-The list is the registry - what the deployment holds, the same on every node.
-What differs per node is the status, which is observed rather than stored:
-
-```http
-GET /v1alpha1/admin/indexes/products
-```
-
-```json
-"status": {
-  "state": "USABLE",
-  "readOnly": true,
-  "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
-  "luceneCompatibility": "CURRENT"
-}
-```
-
-Ask each node in turn to see the deployment as its nodes see it - a load
-balancer answers for whichever it picks, which is not what you want here.
-
-Four [states](../reference/admin-api.md#index-states) are steps a healthy
-index moves through: `NEEDS_PULL`, `PULLING`, `USABLE`, and on the node
-writing it `MODIFIED` and `PUSHING`. Two are refusals and want a decision:
-
-- `UNSUPPORTED` - the definition uses something this build does not have. The
-  node is older than whatever wrote the definition; upgrade it.
-- `INCOMPATIBLE` - the Lucene files are too old for this build to open.
-  Upgrading moves further away, not closer; see [Survive Lucene
-  upgrades](survive-lucene-upgrades.md).
-
-`CLOSED` is not a fault: the index was closed to free disk or an open slot,
-and asking for it opens it again.
+1. Retrieve the list of all indexes in the deployment registry:
+   ```http
+   GET /v1alpha1/admin/indexes
+   ```
+   Every node returns the same registry list.
+2. Query an individual node directly (bypassing any load balancer) for the
+   status of a specific index:
+   ```http
+   GET /v1alpha1/admin/indexes/products
+   ```
+   Example response body:
+   ```json
+   "status": {
+     "state": "USABLE",
+     "readOnly": true,
+     "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
+     "luceneCompatibility": "CURRENT"
+   }
+   ```
+3. Check the index `state`:
+   - Standard operational states: `NEEDS_PULL`, `PULLING`, `USABLE`, and on
+     writer nodes `MODIFIED` and `PUSHING`. See
+     [Index states](../reference/admin-api.md#index-states).
+   - `CLOSED`: The node closed the index to free disk space or slots.
+     Requesting the index automatically reopens it.
+   - `UNSUPPORTED`: The index definition requires features missing in this node
+     version. Upgrade the node.
+   - `INCOMPATIBLE`: The Lucene index files are too old for this build. See
+     [Survive Lucene upgrades](survive-lucene-upgrades.md).
 
 ## Tell whether a node is current
 
-A change is searchable on a reader within the commit delay plus one refresh
-interval - `INDEXES_COMMIT_MAX_INTERVAL` (5s) plus `INDEXES_REFRESH_INTERVAL`
-(30s) with the defaults. A node showing `NEEDS_PULL` or `PULLING` is inside
-that window, not behind.
+Changes become searchable on a reader node within the commit delay plus one
+refresh interval: `INDEXES_COMMIT_MAX_INTERVAL` (5 seconds by default) plus
+`INDEXES_REFRESH_INTERVAL` (30 seconds by default). A node reporting
+`NEEDS_PULL` or `PULLING` is within this refresh window.
 
-To stop waiting for a particular index:
+To immediately update an index without waiting for the next refresh interval:
 
-```http
-POST /v1alpha1/admin/indexes/products/actions/pull
-```
-
-That fetches the latest remote state right away and answers the resulting
-status. Reach for it after a promotion or a bulk load rather than as a habit -
-lowering `INDEXES_REFRESH_INTERVAL` is the way to make every node fresher, at
-the cost of storage requests on every node on every interval.
-
-A node that stays behind is a storage problem rather than an index problem.
-The log says which request failed, keyed by `index` and `bucket`.
+1. Trigger an immediate pull action:
+   ```http
+   POST /v1alpha1/admin/indexes/products/actions/pull
+   ```
+   This endpoint fetches the latest remote state immediately and returns the
+   resulting status. Use this action after bulk loads or promotions.
+2. If all nodes require lower latency, reduce `INDEXES_REFRESH_INTERVAL` in
+   your configuration. Lower intervals increase remote storage request volume.
+3. If a node stays behind, check the logs for storage errors. Errors are keyed
+   by `index` and `bucket`.
 
 ## Know which node is writing
 
-Each index is written by one node at a time, and different indexes may be
-written by different nodes. Any node answers who writes what, a node that
-only searches included:
+Each index is written by one node at a time. Different indexes can be written
+by different nodes.
 
-```http
-GET /v1alpha1/admin/indexers
-```
+To identify index writers:
 
-The [claims](../reference/admin-api.md#indexers) name the writer of each
-index, next to the candidates that are alive; an index in no claim has no
-writer until a write for it appoints one. The same answer sits on each index
-as `status.indexer`, and `status.readOnly` is `false` on the node holding the
-index and `true` everywhere else. Both can lag a handover by a few seconds -
-the same read of the shared state that write forwarding runs on.
+1. Query the indexers endpoint on any node (including search-only nodes):
+   ```http
+   GET /v1alpha1/admin/indexers
+   ```
+   The [claims](../reference/admin-api.md#indexers) response names the writer
+   node for each index and lists active candidate nodes. An index without a
+   claim has no writer assigned until a write request arrives.
+2. Check the index status on an individual node:
+   - `status.indexer` names the active writer node.
+   - `status.readOnly` is `false` on the writer node and `true` on all other
+     nodes.
+   These values can lag handovers by a few seconds.
+3. Track index writer handovers in candidate node logs:
+   ```text
+   INFO  node=node-a-7f21 index=products Took over writing the index
+   INFO  node=node-a-7f21 index=products Handed over writing the index
+   ERROR node=node-a-7f21 index=products Giving up writing the index, <reason>
+   ```
+   - `Took over writing the index` and `Handed over writing the index` indicate
+     routine workload distribution between candidate nodes.
+   - `Giving up writing the index` indicates that the node lost storage
+     connectivity or claim renewals failed. Set up alerts for this error.
 
-The log is where an index changing hands is visible, keyed by `index`:
-
-```
-INFO  node=node-a-7f21 index=products Took over writing the index
-INFO  node=node-a-7f21 index=products Handed over writing the index
-ERROR node=node-a-7f21 index=products Giving up writing the index, <reason>
-```
-
-The first two are candidates dividing the work - an index is taken when it
-is free and handed over when another candidate has more room - and are
-routine. `Giving up writing the index` is worth alerting on: a node giving
-indexes up while it is still running is saying the storage stopped
-answering, or that its claims were past renewing.
-
-A write sent to a node that does not hold the index is forwarded to the one
-that does, so which node answered a write does not say which node served
-it - the log lines above, on the candidates, are what name the writers.
+Write requests sent to a non-writer node are automatically forwarded to the
+assigned writer.
 
 ## Keep the disk in hand
 
-Without `INDEXES_DISK_MAX_SIZE`, a node keeps the files of every index it has
-ever served. With it set, a sweep removes the coldest local copies - and only
-copies the bucket fully holds, which is why two log lines matter more than the
-number itself:
+If `INDEXES_DISK_MAX_SIZE` is unset, a node retains files for every index it has
+served. When `INDEXES_DISK_MAX_SIZE` is configured, the node sweeps least-used
+local copies that are fully uploaded to remote storage.
 
-```
-WARN  Index holds changes the remote never got, keeping its local copy
-WARN  Local copies exceed the disk budget and nothing more can be removed
-```
-
-The first means a commit or definition never reached storage; the copy stays
-whatever the bound says, because removing it would lose the only copy. Chase
-the push failure above it in the log. The second means every remaining copy is
-either in use or unpushed, and the bound cannot be met - the node needs more
-disk, fewer indexes, or a shorter `INDEXES_DISK_MIN_IDLE`.
-
-A search or write that raced an index being closed for room answers `503`, and
-repeating it opens the index again. Steady `503`s mean `INDEXES_MAX_OPEN` is
-below what the node is actually being asked for.
+1. Monitor sweep warnings in the node log:
+   ```text
+   WARN  Index holds changes the remote never got, keeping its local copy
+   WARN  Local copies exceed the disk budget and nothing more can be removed
+   ```
+   - `Index holds changes the remote never got, keeping its local copy`: A
+     commit or definition was not pushed to remote storage. The local copy is
+     preserved to prevent data loss. Inspect previous push errors in the log.
+   - `Local copies exceed the disk budget and nothing more can be removed`:
+     All local index copies are currently in use or unpushed. To resolve this,
+     increase disk space, reduce the number of served indexes, or lower
+     `INDEXES_DISK_MIN_IDLE`.
+2. Handle request retries: If a search or write conflicts with an index closing
+   for space, the node returns HTTP `503`. Retrying the request reopens the
+   index. If `503` responses persist, increase `INDEXES_MAX_OPEN`.
 
 ## Replace a node
 
-A node in `object` mode holds nothing that is not in the bucket. Stop it,
-start a new one with the same configuration, and it pulls back what it is
-asked for - there is no volume to migrate and nothing to restore. A wiped node
-is slow rather than broken while it refills.
+To replace a node using `object` storage mode:
 
-Stopping a node cleanly matters for one thing only: an indexer hands its
-claims back on shutdown, so the other candidates take its indexes over at
-once instead of after `INDEXER_LEASE_DURATION`.
+1. Stop the node cleanly. A clean shutdown releases indexer claims
+   immediately, allowing candidate nodes to take over writer roles without
+   waiting for `INDEXER_LEASE_DURATION`.
+2. Start a replacement node with the same configuration. The replacement node
+   pulls required index files from remote storage on demand. No volume
+   migration or backup restoration is required.
 
-A node in `local` mode is the opposite in every respect - its directory is the
-deployment, not a copy of it. See [Run on one node](run-on-one-node.md).
+If the node uses `local` storage mode, all deployment data resides in the local
+directory. See [Run on one node](run-on-one-node.md).
 
 ## Upgrade the engine
 
-Nodes of different versions run against the same bucket, so upgrade them one
-at a time. Two rules decide the order:
+Nodes of different versions can run against the same remote bucket. To perform
+a rolling upgrade:
 
-- Upgrade every node **before** writing a definition that uses something new.
-  A definition records the features it needs, and a node that lacks one
-  reports the index `UNSUPPORTED` rather than serving it wrongly - which is
-  the safe outcome, but it is an outage for that index on that node.
-- Reindex every index reporting `luceneCompatibility: "ENDING"` **before**
-  upgrading across a Lucene major, while there is still a node that can read
-  it. See [Survive Lucene upgrades](survive-lucene-upgrades.md).
+1. Check for indexes reporting `"luceneCompatibility": "ENDING"`. Reindex these
+   indexes before upgrading across major Lucene versions. See
+   [Survive Lucene upgrades](survive-lucene-upgrades.md).
+2. Upgrade nodes one at a time.
+3. Upgrade all nodes before applying index definitions that use new features.
+   If an un-upgraded node encounters a new feature in a definition, it marks the
+   index `UNSUPPORTED` and stops serving it.
 
-Rolling back to an older build has the same shape from the other side: it can
-read what it wrote, and reports `UNSUPPORTED` for anything the newer build
-defined.
+To roll back to an older version, reverse the process. An older build reads data
+it created, but reports `UNSUPPORTED` for features created by newer versions.
 
 ## Back up
 
-The bucket is the deployment. Whatever it holds - indexes, the registry, the
-keys - is what a new set of nodes comes up on, so backup means whatever your
-object storage offers: versioning, replication, or a copy of the prefix.
-Nothing on a node's disk needs backing up.
+To back up a deployment:
 
-Two things to know about the bucket's contents:
+1. If you use `object` storage mode, configure backups on your object storage
+   bucket (such as bucket versioning, replication, or prefix snapshots). Scope
+   backups to the prefix set in `REMOTE_STORAGE_PREFIX`. Local node disks do
+   not require backups.
+2. If you use `local` storage mode, stop the node and back up the directory
+   specified in `LOCAL_STORAGE_DIRECTORY`.
 
-- Deleting an index removes it from the registry, and the nodes remove their
-  copies, but what the remote holds under it is left. Reclaiming that space is
-  a job against the bucket.
-- `REMOTE_STORAGE_PREFIX` is what keeps a shared bucket separable, and it is
-  also what a backup or a restore is scoped by.
-
-In `local` mode there is no bucket, and `LOCAL_STORAGE_DIRECTORY` holds the
-only copy of the indexes and the keys both. It is backed up like any other
-data directory, with the node stopped.
+When deleting indexes in object storage mode, note that deleting an index
+removes it from the registry and local node disks, but objects remain in the
+bucket until deleted directly from remote storage.
 
 ## Read the log
 
-A line names the thing it is about as `key=value` after the message -
-`index`, `generation`, `node`, `bucket`, `object` - so it is matched on the
-index it concerns rather than on the wording of the message. [JSON
-output](../reference/configuration.md#json-output) makes each of them a field
-of its own instead, and leaves the message the sentence alone. The lines worth
-routing somewhere:
+Log messages include key-value attributes after the message text (such as
+`index`, `generation`, `node`, `bucket`, and `object`). When using
+[JSON output](../reference/configuration.md#json-output), these attributes
+appear as separate fields.
 
-| Line | Means |
-|------|-------|
-| `Giving up writing the index` | This node stopped writing an index without handing it over; the storage stopped answering or its claims were past renewing |
-| `Index holds changes the remote never got` | A push failed and the local copy is now the only copy |
-| `Local copies exceed the disk budget` | The bound cannot be met by sweeping |
-| `Index was created with Lucene …` | Compatibility is `ENDING` or already `UNREADABLE` |
-| `Authentication is turned off` | The node answers every request as allowed everything - see [Secure a deployment](secure-a-deployment.md) |
-| `Storing everything on this node's disk` | The node came up in `local` mode, which is worth noticing when it was meant for a bucket |
+Monitor and configure alerts for the following log messages:
+
+| Log message | Description |
+|---|---|
+| `Giving up writing the index` | The node stopped writing an index without handing it over. Remote storage stopped responding or claims expired. |
+| `Index holds changes the remote never got` | A push failed and the local copy is now the only copy. |
+| `Local copies exceed the disk budget` | The disk budget cannot be met by sweeping local copies. |
+| `Index was created with Lucene …` | Compatibility is `ENDING` or `UNREADABLE`. |
+| `Authentication is turned off` | Authentication is disabled; all requests are permitted. See [Secure a deployment](secure-a-deployment.md). |
+| `Storing everything on this node's disk` | The node started in `local` storage mode instead of `object` storage mode. |
+
+## Confirm the deployment status
+
+After performing maintenance or operational tasks, verify that the deployment is
+healthy:
+
+1. Check the health endpoint on each node:
+   ```http
+   GET /q/health
+   ```
+   Verify that the response returns HTTP status `200` with `"status": "UP"`.
+2. Check the index status on each node:
+   ```http
+   GET /v1alpha1/admin/indexes
+   ```
+   Verify that all expected indexes are listed and report a `USABLE` state.
 
 ## Related
 
-- [Admin API](../reference/admin-api.md) - the status shape and every state.
-- [Configuration](../reference/configuration.md) - the intervals and bounds
-  named here.
-- [Run more than one node](run-multiple-nodes.md) - candidacy, failover and
-  where writes go.
-- [Deploy on Kubernetes](deploy-on-kubernetes.md) - the same deployment as
-  manifests, split into a pool that searches and a pool that writes.
-- [Architecture](../explanation/architecture.md) - why a node holds nothing
-  worth backing up.
+- [Admin API](../reference/admin-api.md) - Status shapes and index state descriptions.
+- [Configuration](../reference/configuration.md) - Configuration settings, intervals, and bounds.
+- [Run more than one node](run-multiple-nodes.md) - Candidacy, failover, and write forwarding.
+- [Deploy on Kubernetes](deploy-on-kubernetes.md) - Deployment manifests for search and write pools.
+- [Architecture](../explanation/architecture.md) - Object storage architecture and node persistence.

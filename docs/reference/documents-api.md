@@ -1,50 +1,69 @@
 # Documents API
 
-Putting documents into an index and taking them out again, under
-`/v1alpha1/indexes/{name}/documents`.
+The Documents API creates, updates, and deletes documents in an index under `/v1alpha1/indexes/{name}/documents`.
 
-```
-POST   /v1alpha1/indexes/{name}/documents                  # index documents
-POST   /v1alpha1/indexes/{name}/documents/actions/update   # change some fields
-DELETE /v1alpha1/indexes/{name}/documents/{key}            # remove one document
-POST   /v1alpha1/indexes/{name}/documents/actions/delete   # remove by keys or query
-```
+## Routing and commits
 
-A document carries its own primary key, so indexing one is desired state the
-way a definition is: sending it again leaves the index holding what it says,
-replacing whatever sat under that key before. An index without a primary key
-gets a new document for every request instead.
+Each index is written by one node at a time. A node that receives a write request for an index it does not hold forwards the request to the active indexer node. If no target node is available to handle the forwarded request, the request returns status `409` with error `indexer:unavailable`.
 
-Removing a document says the same kind of thing, which is why a key nothing
-was indexed under is not an error - the index holds no document under that
-key either way.
+Changes become searchable and replicate to remote storage after the index commits. The writer commits automatically based on indexed document volume or elapsed time. For commit configuration details, see [Committing](configuration.md#committing).
 
-Each index is written by one node at a time. A request that reaches another
-node is forwarded to the node holding the index and answered with what it
-answered, and refused with `indexer:unavailable` when there is nobody to
-forward to - the same as the write endpoints of the
-[admin API](admin-api.md).
-
-Changes become searchable when the index is committed, which is also what
-pushes them to the remote. The writer commits on its own once enough has been
-indexed or enough time has passed - see
-[Committing](configuration.md#committing) for how long that is and how to
-change it - so nothing has to ask for a change to show up.
-
-Asking anyway commits whatever is waiting there and then:
+To commit changes immediately, send a request to the admin API:
 
 ```
 POST /v1alpha1/admin/indexes/{name}/actions/commit
 ```
 
-Loading a dataset is many requests here and one commit at the end, rather than
-a commit per batch.
+For more information, see the [Admin API](admin-api.md).
+
+## How a document is shaped
+
+A document specifies its own primary key. Indexing a document with an existing key replaces the document under that key. If an index definition does not declare a primary key, each request adds a new document.
+
+The following table lists the supported field formats:
+
+| Field type | Format | Example |
+| --- | --- | --- |
+| Single value | Value literal | `"name": "rågbröd"` |
+| Declared `multiple` | Array of values | `"tags": ["sylt", "bär"]` |
+| Locale-specific | Object keyed by locale tag | `"name": { "sv": "sylt", "en": "jam" }` |
+| Geo point | Object with `lat` and `lon` fields | `"origin": { "lat": 59.33, "lon": 18.07 }` |
+| Vector | Array of numbers | `"embedding": [0.12, -0.4]` |
+| Object | JSON object of declared fields | `"variants": { "size": "S" }` |
+| Timestamp | ISO 8601 string | `"published": "2026-08-16T09:00:00Z"` |
+
+Document fields follow these rules:
+
+- The schema definition determines how a JSON object is parsed (for example, as a locale map or a geo point).
+- If you provide a value without a locale tag for a locale-specific field, the value is stored in the field's default locale.
+- Search hits return a locale-specific field in the single requested locale. For more information, see [locale-specific fields in search results](search-api.md#locale-specific-fields). Indexing that search hit replaces the field with only that single language variant.
+- Object fields must be formatted as nested JSON objects. Specifying dotted paths such as `"dimensions.width"` directly returns the error `index:update:field_inside_object`.
+- A field set to `null` is treated as omitted. If the schema marks the field as `required`, validation fails and reports the field as missing.
 
 ## Indexing documents
 
-### Request
+```
+POST /v1alpha1/indexes/{name}/documents
+```
 
-With `Content-Type: application/json`, the documents come as a list:
+Indexes one or more documents into the specified index.
+
+### Request headers
+
+The request supports the following headers:
+
+| Header | Description |
+| --- | --- |
+| `Content-Type` | Set to `application/json` or `application/x-ndjson`. |
+
+### Request body
+
+You can format the request body in two ways:
+
+- `application/json`: A JSON object with a `documents` array containing document objects.
+- `application/x-ndjson`: Newline-delimited JSON containing one document object per line without a wrapper.
+
+The following example uses `Content-Type: application/json`:
 
 ```json
 {
@@ -59,67 +78,50 @@ With `Content-Type: application/json`, the documents come as a list:
 }
 ```
 
-With `Content-Type: application/x-ndjson`, one document per line and no
-wrapper:
+The following example uses `Content-Type: application/x-ndjson`:
 
 ```
 {"id": "1", "name": "blåbärssylt"}
 {"id": "2", "name": "rågbröd"}
 ```
 
-The two are the same request in different clothes. Newline delimited JSON is
-indexed as it is read, so how much a request may carry is a question of the
-connection rather than of memory, which is what a dataset is loaded as.
+### Response
 
-The answer says how many documents were taken:
+The endpoint returns status `200 OK` with the count of indexed documents:
 
 ```json
 { "indexed": 2 }
 ```
 
-## How a document is shaped
-
-A document is written the way a search reads one back, so a hit can be sent
-straight back to be indexed again:
-
-| The field | Is written as | Example |
-|-----------|---------------|---------|
-| Holding one value | the value itself | `"name": "rågbröd"` |
-| Declared `multiple` | an array | `"tags": ["sylt", "bär"]` |
-| Locale specific | an object keyed by locale tag | `"name": { "sv": "sylt", "en": "jam" }` |
-| A geo point | an object of `lat` and `lon` | `"origin": { "lat": 59.33, "lon": 18.07 }` |
-| A vector | an array of numbers | `"embedding": [0.12, -0.4]` |
-| An object | a JSON object of the fields it declares | `"variants": { "size": "S" }` |
-| A timestamp | an ISO 8601 instant | `"published": "2026-08-16T09:00:00Z"` |
-
-What a JSON object means therefore depends on the field it was given to, and
-the definition is what decides - which is why the same object is a locale map
-for one field and a point for another. A locale specific field given a value
-without any locale keeps it in the field's default locale.
-
-A hit holds a locale specific field in the [one variant the search read it
-in](search-api.md#locale-specific-fields), so a hit sent back to be indexed
-replaces that field with the one language. A document that is to be written
-back whole is kept where it came from rather than read out of a search.
-
-An object field is written the same way whichever mode it declares - a
-document gives the value inside the object, never under the dotted path a
-search names. A field written as `"dimensions.width"` directly is refused
-with `index:update:field_inside_object`, so there is one way to write a
-value.
-
-A field written as `null` is a field that was not given, so a document can be
-built with a key for every field the caller knows about. A field the
-definition marks `required` is still missing, and reported as missing.
-
 ## Changing some of the fields
-
-A price or availability feed touches most of a catalogue and changes two fields
-of each document. Sending only those fields is what `actions/update` is for:
 
 ```
 POST /v1alpha1/indexes/{name}/documents/actions/update
 ```
+
+Updates specific fields of existing documents in the index.
+
+### Query parameters
+
+The request supports the following query parameters:
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `missing` | string | `fail` | Behavior when a document key does not exist. Allowed values are `fail` (fails the request) and `skip` (skips missing documents and lists them in the response). |
+
+### Request headers
+
+The request supports the following headers:
+
+| Header | Description |
+| --- | --- |
+| `Content-Type` | Set to `application/json` or `application/x-ndjson`. |
+
+### Request body
+
+The body contains document objects. Each object must include the primary key and the fields to update.
+
+The following example uses `Content-Type: application/json`:
 
 ```json
 {
@@ -130,87 +132,103 @@ POST /v1alpha1/indexes/{name}/documents/actions/update
 }
 ```
 
-`application/x-ndjson` works here too, one change per line and no wrapper.
+You can also send updates using `Content-Type: application/x-ndjson` with one change object per line.
 
-Each change carries the primary key of the document it changes, and the unit of
-a change is a field:
+### Update behavior
 
-| The change | What it does |
-|------------|--------------|
-| A field with a value | replaces everything that field held |
-| A field written as `null` | empties the field |
-| A field left out | leaves it as it is |
+Field modifications apply as follows:
 
-This is the one place `null` empties a field rather than meaning a field that
-was not given - an update that could not say "empty this" would have no way to
-take a discount off.
+| Field change | Behavior |
+| --- | --- |
+| Field with a value | Replaces the current value of the field. |
+| Field set to `null` | Clears the field value. |
+| Omitted field | Leaves the existing field value unchanged. |
 
-A field is replaced whole, so a locale specific field named by a change holds
-the locales that change gives it and no others, and an object field holds the
-values it gives rather than merging into the ones already there. Sending the
-whole document is what changes part of one of those.
+Updates follow these rules:
 
-The document is read, changed and written back as one, so several changes to
-the same document take effect in the order they were given whether or not
-anything was committed in between. What comes out is indexed as if it had been
-sent whole, which is why a change that leaves the document failing validation
-is refused and leaves it as it was.
+- Locale-specific fields and object fields are replaced entirely rather than merged.
+- Multiple updates to the same document in a single batch apply in the order provided.
+- The updated document is validated as a whole. If validation fails, the request is rejected and the document remains unchanged.
 
-The answer says how many documents were changed:
+### Constraints and errors
+
+- If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. For more information, see the [Admin API](admin-api.md).
+- If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
+- If `missing` is set to `fail` (default) and a document key is not found, the request fails. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
+
+### Response
+
+The endpoint returns status `200 OK` with the count of updated documents and any missing keys:
 
 ```json
 { "updated": 2, "missing": [] }
 ```
 
-### A key nothing is indexed under
-
-There is nothing to change, and by default that fails the request the way any
-other refused document does. A feed running against a catalogue that is pruned
-elsewhere wants the rest applied instead:
-
-```
-POST /v1alpha1/indexes/{name}/documents/actions/update?missing=skip
-```
+When called with `?missing=skip`:
 
 ```json
 { "updated": 1998, "missing": ["sku-9", "sku-40"] }
 ```
 
-`missing` is `fail` or `skip`, and defaults to `fail`.
-
-### Indexes that keep no copy of their documents
-
-Changing part of a document needs the copy of it as it was given, which is what
-`source` being `none` in the [definition](admin-api.md) turns off. Such an index
-refuses `actions/update` with `index:source:not_kept` rather than indexing a
-document made of only the fields it was sent. The same answer comes back for a
-document that was indexed while the index kept nothing, on an index set to keep
-them now.
-
-An index without a primary key has no way to name the document to change, and
-refuses with `index:no_primary_key`.
-
 ## Removing documents
 
-One document is removed by its key in the path, which answers `204` whether
-or not anything was indexed under it:
+You can remove a single document by its key in the URL path, or remove multiple documents in a batch by keys or search query.
+
+### Delete a document by key
+
+```
+DELETE /v1alpha1/indexes/{name}/documents/{key}
+```
+
+Deletes a single document matching the specified key.
+
+#### Path parameters
+
+The request requires the following path parameters:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | string | Name of the index. |
+| `key` | string | Primary key of the document to remove. Parsed according to the key field type. |
+
+#### Errors
+
+- `index:query:invalid_value`: The key value cannot be parsed as the defined key field type.
+- `index:no_primary_key`: The index definition declares no primary key.
+
+#### Response
+
+The endpoint returns status `204 No Content` whether or not a document existed under the specified key.
 
 ```
 DELETE /v1alpha1/indexes/foods/documents/1
 ```
 
-The key arrives as text and is read as the type of the key field, so a
-numeric key is written the way it is written in a document. A key that is not
-a value of that type is refused with `index:query:invalid_value`, and an
-index whose definition declares no primary key with `index:no_primary_key` -
-there is nothing there to name a document by.
+### Delete documents by keys or query
 
-Several documents go in one request, named either by their keys or by a query
-they match. A request carries exactly one of the two:
+```
+POST /v1alpha1/indexes/{name}/documents/actions/delete
+```
+
+Deletes multiple documents matching a list of primary keys or a search query. The request body must include either `keys` or `query`, but not both.
+
+#### Request body
+
+The request body supports the following fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `keys` | array of strings | List of primary keys to delete. An empty array deletes nothing. |
+| `query` | array of objects | Query clauses matching documents to delete. For clause syntax, see the [Search API](search-api.md). An empty array matches and deletes all documents. |
+| `locale` | string | Optional. Specifies the locale variant to match for locale-specific fields. Valid only when `query` is provided. |
+
+The following example deletes documents by keys:
 
 ```json
 { "keys": ["1", "2", "3"] }
 ```
+
+The following example deletes documents by query:
 
 ```json
 {
@@ -219,33 +237,36 @@ they match. A request carries exactly one of the two:
 }
 ```
 
-The clauses are the ones a [search](search-api.md) is written with and mean
-the same here: what a search of those clauses brings back is what a delete of
-them removes. `locale` says which variant of a locale specific field is
-matched, and only belongs with a `query`. An empty `query` matches every
-document and empties the index; an empty `keys` names nothing and removes
-nothing.
+#### Execution behavior
 
-The answer says how many documents the request removed:
+- When deleting by `keys`, all keys are validated before any documents are removed. If any key is invalid, no documents are removed.
+- When deleting by `query`, the operation removes matching committed searchable documents and any uncommitted documents indexed since the last commit.
+
+#### Response
+
+The endpoint returns status `200 OK` with the count of deleted documents:
 
 ```json
 { "deleted": 3 }
 ```
 
-For keys that is the number of keys the request carried, as a key nothing was
-indexed under is not an error. For a query it is how many documents it
-matched among the searchable ones - documents indexed since the last commit
-are removed as well, and not counted, because nothing is searchable until it
-has been committed.
-
-Every key is read before anything is removed, so a key the index refuses
-leaves the keys around it in place.
+For requests using `keys`, `deleted` is the number of keys provided in the request. For requests using `query`, `deleted` is the number of matching committed searchable documents.
 
 ## Failures
 
-Documents are taken in the order they were sent, and the first one the index
-refuses fails the request with `400`. Which document it was, and what about
-it was wrong, is in the `path` of each error:
+Documents in a batch are processed in the order sent. The first invalid document halts processing and returns status `400 Bad Request`. Documents processed before the failure remain in the index.
+
+### Error response format
+
+The error response contains the following fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | string | Top-level error classification code (for example, `"validation"`). |
+| `message` | string | Human-readable description of the error. |
+| `errors` | array of objects | Detailed list of error objects. Each object contains `code`, `message`, `path` (identifying the document and field location), and optional `arguments`. |
+
+The following example shows an error response:
 
 ```json
 {
@@ -262,17 +283,16 @@ it was wrong, is in the `path` of each error:
 }
 ```
 
-The documents before it are already in the index and are committed with
-everything else, so a request that failed halfway is sent again after fixing
-it rather than undone - which is safe, because a document replaces whatever
-sat under its key.
+### HTTP status codes
 
-| Status | When |
-|--------|------|
-| `200` | Every document was taken, or the removal was made |
-| `204` | A document was removed by the key in the path |
-| `400` | A document or a key was refused, or the body could not be read |
-| `404` | No index of that name on this node |
-| `409` | There is no node to forward the request to, or the index is being synchronized |
-| `502` | The request was forwarded to the node writing the index and it did not answer |
-| `503` | The index was closed to make room; repeating the request opens it again |
+The API uses the following HTTP status codes:
+
+| Status code | Condition |
+| --- | --- |
+| `200` | The documents were indexed, updated, or deleted successfully. |
+| `204` | The document was removed by key in the URL path. |
+| `400` | A document or key was rejected by validation, or the request body could not be parsed. |
+| `404` | No index with the specified name exists on this node. |
+| `409` | No node is available to forward the request to (`indexer:unavailable`), or the index is currently synchronizing. |
+| `502` | The node holding the index writer did not respond to the forwarded request. |
+| `503` | The index was closed to free resources; repeating the request reopens the index. |

@@ -1,90 +1,108 @@
 # Architecture
 
-Exofind stores its indexes in S3 compatible object storage and runs as a set
-of interchangeable nodes in front of it. This page explains the shape that
-follows from that choice; [Synchronization](synchronization.md) covers the
-mechanics that make it safe.
+Exofind stores its indexes in S3-compatible object storage and runs as a set
+of interchangeable nodes in front of it. This document explains how Exofind is
+structured, why it uses object storage as the source of truth, and how nodes
+coordinate index reads and writes. For the mechanics that ensure safety, see
+[Synchronization](synchronization.md).
 
 ## Storage is the source of truth
 
-The copy of an index that matters is the one in the bucket. A node holds
-local copies - Lucene directories on its own disk - of the indexes it serves,
-but a local copy is a cache: a node can be wiped and replaced, and it will
-pull everything back from storage. Nothing a node holds locally is ever the
-only copy of anything that has been committed.
+The authoritative copy of an index is the copy stored in the bucket. A node
+holds local copies—Lucene directories on its own disk—of the indexes it serves.
+A local copy functions as a cache. If you wipe and replace a node, the node
+pulls all data back from storage. A local node never holds the only copy of
+committed data.
 
-This is what makes the nodes cheap. They need disk for the indexes they
-serve, but no volumes worth backing up, no replication between them, and no
-membership protocol - two nodes never talk to each other directly. Everything
-they coordinate, they coordinate through the bucket.
+This design makes nodes inexpensive to run. Nodes need disk space for the
+indexes they serve, but they do not require volumes that need backups,
+replication between nodes, or a membership protocol. Two nodes never
+communicate directly with each other. Nodes coordinate all actions through the
+bucket.
 
-Even the disk is a budget rather than a commitment. A node keeps the files of
-every index it has served, because reopening from a warm directory is nearly
-free - but with [a bound configured](../reference/configuration.md#disk-use)
-it removes the copies of the indexes that have gone longest without use, and
-pulls one back in full if it is asked for again. Only copies the bucket fully
-holds are ever removed, so the bound never deletes the last copy of anything.
+Local disk space functions as a cache budget rather than a permanent
+commitment. A node retains files for every index it has served because
+reopening an index from an existing directory has low overhead. When you
+configure [a disk bound](../reference/configuration.md#disk-use), the node
+removes local copies of indexes that have been unused the longest. If a request
+requires a removed index, the node pulls the complete index back from storage.
+Because the node removes only copies that are fully stored in the bucket, the
+bound never deletes the last copy of an index.
 
-A node can also be told to keep everything on its own disk instead, which is
-this shape with the bucket taken out: one node, nothing to pull back from, and
-a directory that is the deployment rather than a copy of it. What follows below
-still holds, with nothing to hold it against - the registry is a file, every
-index is held uncontested, and what the bucket's conditional writes were
-protecting against is instead prevented by there being one process, which the
-node enforces by claiming the directory for as long as it runs. The mode is
-named in configuration rather than inferred from which settings are present, so
-a node meant for a bucket cannot arrive here through a misspelt variable. [Run
-on one node](../how-to/run-on-one-node.md) covers when that trade is the right
-one.
+You can also configure a node to store all data on its local disk without an
+object storage bucket. In this single-node configuration, the local directory
+serves as the deployment rather than a cache. The registry is stored in a local
+file, and the single node holds every index without contention. Single-process
+execution replaces bucket-level conditional writes, and the node enforces this
+by claiming the directory while the process runs. You set this mode explicitly
+in configuration rather than by omitting bucket settings, preventing a node
+from falling back to local storage due to a misspelled variable. For guidance on
+when to use this mode, see [Run on one node](../how-to/run-on-one-node.md).
 
 ## One writer per index, many readers
 
-At any moment at most one node may modify an index, but different indexes
-may be written by different nodes. Any number of nodes may hold the
-`indexer` property, which makes them candidates; the candidates divide the
-indexes among themselves through a leadership table in the bucket, each
-holding a claim per index it writes. When a holder stops renewing, its
-claims lapse and the other candidates pick them up, so running two or three
-candidates is how writing survives a node dying - and, with more than one,
-how write work spreads across them.
+At any given moment, only one node can modify an index. Different indexes can
+be written by different nodes. Any number of nodes can have the `indexer`
+property, which makes them candidates. Candidate nodes divide indexes among
+themselves through a leadership table in the bucket, where each candidate holds
+a claim for each index it writes. When a holder stops renewing, its claims lapse
+and other candidates pick them up. Running two or three candidates ensures that
+writes continue if a node fails. Running multiple candidates also distributes
+the write workload across nodes.
 
-Every node also reads. It polls storage on an interval, notices indexes it
-has not seen and changes to the ones it has, and pulls them. What the
-deployment holds is read from one registry object rather than by listing the
-bucket, so learning about every index costs one conditional request however
-many there are - see [Generations](generations.md). A search runs on
-whichever node receives it, against the state that node has - no search ever
-needs to reach a writer. Search capacity scales by adding nodes; write
-capacity scales by adding candidates, up to one node per index - the writes
-to a single index never spread further.
+Every node also reads. Nodes poll storage at regular intervals, detect new
+indexes and changes to existing indexes, and pull the updates. A node learns
+about all indexes in the deployment by reading a single registry object rather
+than listing the bucket. Discovering all indexes requires only one conditional
+request regardless of the total index count. For more information, see
+[Generations](generations.md).
 
-The cost of this shape is freshness: a reader is as current as its last pull.
-Exofind trades away the seconds of freshness that a coordinated cluster buys
-with its complexity.
+A search request runs on whichever node receives it, against the current local
+state of that node. Search requests never need to reach a writer node. You
+scale search capacity by adding nodes. You scale write capacity by adding
+candidate nodes, up to a maximum of one node per index. Writes to a single
+index do not spread across multiple nodes.
+
+The trade-off of this architecture is data freshness: a reader is only as
+current as its most recent pull from storage. Exofind trades away seconds of
+freshness to avoid the complexity of a coordinated cluster.
 
 ## How requests flow
 
-Searches (`POST /v1alpha1/indexes/{name}/search`) are answered locally by any
-node. Writes - index definitions, documents, the commit action - run on the
-node holding the index they are about. Another node forwards a write there
-when the table says where that is, and answers with whatever the holder
-answered, so a client can send any request to any node without doing
-anything for it. An index nothing holds is appointed a writer by its first
-write: a candidate that receives one claims the index on the spot, which is
-also how a just-created index gets its writer. Only an index the deployment
-holds is appointed one - a write naming an index that does not exist is
-answered `404` where it lands, rather than claiming a writer for the name.
-Only when there is no candidate to forward to is the write refused, with
-`409 Conflict`.
+Any node answers search requests (`POST /v1alpha1/indexes/{name}/search`)
+locally.
+
+Write requests—such as index definitions, document updates, and commit
+actions—run on the node that holds the target index. If another node receives a
+write request, it checks the leadership table, forwards the request to the
+holder node, and returns the holder's response to the client. This proxy
+behavior allows clients to send any request to any node.
+
+When an index has no assigned writer, its first write request assigns one: a
+candidate node that receives the write claims the index immediately. Newly
+created indexes also receive their writer this way. A writer is appointed only
+for indexes that exist in the deployment. If a write request names an index that
+does not exist, the receiving node returns `404` directly instead of claiming a
+writer for the name. If no candidate node is available to handle or forward a
+write request, the node refuses the request with `409 Conflict`.
 
 ## The life of an index on a node
 
-An index on a node moves through the states in
-[the admin API reference](../reference/admin-api.md#index-states): it is
-discovered (`NEEDS_PULL`), pulled (`PULLING`), served (`USABLE`), and on the
-node holding it accumulates changes (`MODIFIED`) that a commit pushes back
-(`PUSHING`). Two states are refusals rather than steps: `UNSUPPORTED` means
-the definition needs a capability this build does not have - fixed by
-upgrading the node - and `INCOMPATIBLE` means the Lucene files are too old
-for this build to open, which upgrading makes worse, not better. The
-difference is explained in [Lucene compatibility](lucene-compatibility.md).
+An index on a node progresses through the lifecycle states listed in
+[the admin API reference](../reference/admin-api.md#index-states):
+
+- `NEEDS_PULL`: The node discovers the index in the registry.
+- `PULLING`: The node downloads index files from storage.
+- `USABLE`: The node serves reads and search queries from the local copy.
+- `MODIFIED`: The writer node accumulates changes locally.
+- `PUSHING`: The writer node commits and pushes changes back to storage.
+
+Two states indicate errors rather than lifecycle steps:
+
+- `UNSUPPORTED`: The index definition requires a capability that the current
+  node build does not have. You resolve this by upgrading the node.
+- `INCOMPATIBLE`: The Lucene files are too old for the current build to open.
+  Upgrading the node makes this issue worse rather than better.
+
+For more details on index version differences, see
+[Lucene compatibility](lucene-compatibility.md).

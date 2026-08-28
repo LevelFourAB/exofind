@@ -1,82 +1,73 @@
-# Run more than one node
+# Running multiple nodes
 
-Nodes coordinate through the object storage alone - they never talk to each
-other. Adding a node is starting another process against the same bucket.
+This guide shows you how to run multiple nodes against a shared object storage bucket to scale search capacity and provide high availability for writes.
 
-## Add search capacity
+## Prerequisites
 
-Start any number of nodes with the same remote storage configuration and
-`INDEXER` left off. Each finds the indexes in the bucket on its own, pulls
-them, and answers searches from its local copy - a search runs on whichever
-node receives it, so put the nodes behind any load balancer. Point its check
-at `/q/health/ready`, which a node answers without a key and only once it has
-read the registry - see [Ask whether a node is
-up](operate-a-deployment.md#ask-whether-a-node-is-up).
+Before you begin, ensure that you have:
 
-A reader is as current as its last pull, on the interval set by
-`INDEXES_REFRESH_INTERVAL` (30s by default). Lower it for fresher reads at
-the cost of more storage traffic, or hit the `pull` action to take the
-latest state of an index right away.
+- An object storage bucket that enforces conditional writes.
+- Multiple node processes configured with access to the same bucket.
 
-## Share the writing, and make it survive failures
+## 1. Start reader nodes
 
-Set `INDEXER=true` on two or three nodes. That makes them *candidates*: they
-divide the indexes among themselves through a leadership table in the
-bucket, each index held by exactly one of them at a time. A candidate that
-stops renewing hands its indexes to the others, so a second candidate is how
-writing survives a node dying - and each candidate writes its own share, so
-more candidates also spread the write work. Writes to a single index never
-spread: one node writes an index however many candidates run, so past two or
-three the benefit thins out unless the deployment holds many busy indexes.
+Reader nodes discover indexes in the bucket, pull them locally, and answer search queries from local copies.
 
-- `INDEXER_LEASE_DURATION` (30s) is how long an index is held without
-  renewal - roughly how long a failover takes. Renewal happens at a third
-  of it.
-- `NODE_ID` names the node in the table; the default of hostname plus a
-  random suffix is usually right.
-- Set `NODE_ADDRESS` on every candidate to the address it serves writes on.
-  It is recorded in the table, and is what lets other nodes forward writes
-  to whichever candidate holds an index - without it, writes sent to other
-  nodes are refused with `409`. The address only has to be reachable from
-  the other nodes, not from clients.
+To add search capacity:
 
-The table only decides who tries to write. What keeps a stale writer from
-corrupting anything is the storage refusing its pushes - see
-[Synchronization](../explanation/synchronization.md). That protection
-requires the storage to enforce conditional writes; the node checks at
-startup and refuses to run as a candidate against storage that does not.
+1. Start one or more nodes with the same remote storage configuration and leave `INDEXER` unset or set to `false`.
+2. (Optional) Set `INDEXES_REFRESH_INTERVAL` to adjust how often the node checks the bucket for updates. The default is `30s`. Lower values provide fresher reads at the cost of more storage traffic. You can also trigger the `pull` action on a node to fetch the latest state of an index immediately.
+3. (Optional) Set `INDEXES_MAX_OPEN` to limit how many open indexes a node keeps in memory at once. When the limit is reached, the node closes the least recently used indexes and reopens them when requested.
 
-Upgrade every candidate together when a release changes how they
-coordinate: candidates on different versions do not corrupt anything - the
-conditional writes hold regardless - but they can contest each other's
-indexes and churn instead of settling.
+## 2. Configure and start writer candidates
 
-## Send writes anywhere
+Writer candidate nodes divide indexes among themselves using a leadership table in the bucket. Each index is held and written by one candidate at a time. If a candidate stops renewing its lease, other candidates take over its indexes.
 
-Clients do not need to know which node writes which index. A write that
-reaches another node is forwarded to the holder - same request, same
-credential - and answered with whatever the holder answered, so the client
-never sees which node did the work. An index nothing holds yet - just
-created, or its holder just died - is claimed on the spot by the candidate
-the write reaches. Only when no candidate is running (or none set a
-`NODE_ADDRESS`) does a write fail, with `409 Conflict` and the code
-`indexer:unavailable`; a holder that cannot be reached answers `502` with
-`indexer:unreachable`.
+To configure writer candidates:
 
-An operator who does want to know asks any node:
-`GET /v1alpha1/admin/indexers` lists which node writes which index - see
-[Operate a deployment](operate-a-deployment.md#know-which-node-is-writing).
+1. Select two or three nodes to serve as candidates.
+   
+   **Note:** Writes to a single index do not spread across multiple nodes. Running more than two or three candidates provides little benefit unless the deployment handles many busy indexes.
 
-## Bound what a node holds
+2. Set the following environment variables on each candidate node:
+   - Set `INDEXER=true`.
+   - Set `NODE_ADDRESS` to the address that the node uses to serve writes. Other nodes use this address to forward writes to the candidate that holds an index. The address must be reachable by other nodes, but it does not need to be accessible to clients.
+   - (Optional) Set `NODE_ID` to a unique identifier for the node in the leadership table. By default, the node uses its hostname with a random suffix.
+   - (Optional) Set `INDEXER_LEASE_DURATION` to specify how long an index lease is held without renewal. The default is `30s`. Nodes renew their leases at one-third of this duration. Failover takes approximately the duration of the lease.
 
-A node opens every index it is asked for and keeps it synchronized. On a
-node that serves many indexes, `INDEXES_MAX_OPEN` bounds how many are kept
-open at once - the least recently used are closed to make room, and open
-again when next asked for.
+3. Start the candidate nodes.
+   
+   Each candidate node checks at startup whether the storage backend enforces conditional writes. If conditional writes are unsupported, the node refuses to run as a candidate. For more information, see [Synchronization](../explanation/synchronization.md).
+
+   **Note:** When upgrading to a release that changes candidate coordination, upgrade all candidate nodes at the same time. Candidates on different versions do not corrupt data, but they can contest index leases and cause churn.
+
+## 3. Route client traffic
+
+Clients do not need to know which node holds a specific index.
+
+1. Put reader nodes behind a load balancer.
+2. Configure the load balancer health check to point to `/q/health/ready`. A node responds to `/q/health/ready` without an API key after it reads the registry. For more information, see [Ask whether a node is up](operate-a-deployment.md#ask-whether-a-node-is-up).
+3. Send write requests to any node. If a node receives a write for an index held by another candidate, it forwards the request to the holder's `NODE_ADDRESS` using the original request credentials and returns the holder's response. If an index does not have a holder, the candidate node that receives the write claims the index immediately.
+
+### Write error codes
+
+If a write request cannot be processed, the node returns one of the following error responses:
+
+- `409 Conflict` with code `indexer:unavailable`: No candidate node is running, or no candidate has set `NODE_ADDRESS`.
+- `502 Bad Gateway` with code `indexer:unreachable`: The node that holds the index cannot be reached at its `NODE_ADDRESS`.
+
+## Verifying the deployment
+
+To confirm that candidate nodes are active and writing indexes:
+
+1. Send a `GET` request to any node:
+   ```http
+   GET /v1alpha1/admin/indexers
+   ```
+2. Verify that the response lists which node is currently writing each index. For more information, see [Operate a deployment](operate-a-deployment.md#know-which-node-is-writing).
 
 ## Related
 
-- [Deploy on Kubernetes](deploy-on-kubernetes.md) - this deployment as
-  manifests, with the candidates in a pool of their own.
-- [Operate a deployment](operate-a-deployment.md) - what to check once it is
-  running.
+- [Deploy on Kubernetes](deploy-on-kubernetes.md): Deploy multiple nodes using Kubernetes manifests.
+- [Operate a deployment](operate-a-deployment.md): Monitor and manage a running deployment.
+- [Synchronization](../explanation/synchronization.md): Learn how storage conditional writes protect data integrity.

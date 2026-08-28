@@ -1,55 +1,28 @@
-# Deploy on Kubernetes
+# Deploying on Kubernetes
 
-Nodes coordinate through the bucket alone and never talk to each other, so
-Kubernetes has nothing to wire together - it runs the containers and puts
-traffic in front of them. What is left to decide is how many pools there are,
-which of them may write, and how the pods find the disk and the host limits
-that many indexes need.
+This guide shows you how to deploy Exofind on Kubernetes using two separate pools: a `Deployment` of search-only nodes and a `StatefulSet` of indexer candidates. Use this guide to set up a production Exofind deployment where search and indexing workloads scale independently.
 
-This guide deploys two pools: a `Deployment` of nodes that only search, and a
-small `StatefulSet` of indexer candidates. [Run more than one
-node](run-multiple-nodes.md) is the same deployment without Kubernetes in the
-way, and is worth reading first.
+Nodes coordinate through object storage and do not communicate with each other directly. To learn how Exofind coordinates nodes without Kubernetes, see [Run more than one node](run-multiple-nodes.md).
+
+## Prerequisites
+
+Before you begin, ensure you have the following:
+
+- A Kubernetes cluster.
+- An S3-compatible object storage bucket.
+- A Kubernetes Secret named `exofind-storage` containing the keys `access-key` and `secret-key`.
 
 ## Why two pools
 
-One pool with `INDEXER=true` on a few of its pods works and is less to look
-after. Two pools are worth the extra manifest because the roles want
-different pods:
+This guide runs a `Deployment` that searches and a `StatefulSet` of indexer candidates, because the two want different heap, different scaling signals, different disk rules and different rollout order - see [Separating search and indexing nodes](../explanation/deployment-shapes.md) for the whole argument.
 
-- **Different memory split.** A searching node reads its indexes through the
-  page cache and wants a small heap; an indexer holds the buffered documents
-  of uncommitted batches and the segments of running merges and wants a large
-  one. One pool has one `JAVA_OPTS_APPEND`.
-- **Different scaling signal.** Search capacity scales with query load and
-  belongs behind an autoscaler. The number of indexer candidates is a fixed
-  small number, and an autoscaler that removes pods when CPU drops will
-  eventually remove one holding indexes and force a failover.
-- **Different disk.** A searching node's disk is a cache that a bound may
-  sweep. An indexer's disk holds commits the bucket has not got yet, which
-  nothing may remove.
-- **Different rollout.** Indexers restart one at a time and want long enough
-  to push what they hold; searchers can be replaced as fast as the pulls
-  allow.
-- **Somewhere to send writes.** Writes reach whichever candidate holds their
-  index from any pod - a searcher forwards them over the pod network - but a
-  `Service` in front of the candidates lets a bulk load skip that extra
-  hop - see [Send writes to the indexer](#send-writes-to-the-indexer).
-
-Collapsing the two into one pool later is turning `INDEXER` on in the search
-pool and deleting the `StatefulSet`. Splitting a single pool afterwards means
-planning disk, routing and probes again.
+One pool with `INDEXER=true` on a few of its pods also works and requires less management. Collapsing the two pools into one later involves enabling `INDEXER` in the search pool and deleting the `StatefulSet`. Splitting a single pool afterwards requires planning disk, routing, and probes again.
 
 ## Give the host enough memory maps
 
-Every index file a node holds open is at least one memory mapping, and Linux
-caps the mappings a process may have with `vm.max_map_count` - 65530 on many
-distributions. A node serving hundreds of indexes of many segments each
-reaches that cap, and the open that crosses it fails.
+Every index file a node holds open requires at least one memory mapping. Linux caps the number of mappings a process can have with `vm.max_map_count`, which defaults to 65530 on many distributions. A node serving hundreds of indexes with multiple segments reaches that cap, causing file open operations to fail.
 
-The setting is not namespaced, so it is set on the host rather than on the
-pod. Either configure it on the node pool, or raise it from a privileged init
-container in both pools:
+The setting is not namespaced, so you must configure it on the host rather than in the container. Configure `vm.max_map_count` on the node pool, or raise it with a privileged init container in both pools:
 
 ```yaml
 initContainers:
@@ -62,15 +35,11 @@ initContainers:
 
 ## Run the search pool
 
-Nodes with `INDEXER` left off answer searches from their own copy and never
-write. They hold no state worth keeping, so the volume is ephemeral and a
-wiped pod is slow rather than broken while it refills.
+Nodes with `INDEXER` set to `false` (the default) answer searches from their local copy and never write. They hold no persistent state, so the volume is ephemeral. A wiped pod slows down temporarily while it refills its cache.
 
-Everything in angle brackets is sized against the deployment rather than
-copied - [Size the pools](#size-the-pools) says what each one is measured
-from. `<version>` is the exception: it is a released version such as `0.1.0`,
-written out rather than left as `latest` so that a pod replaced tomorrow comes
-back as the one running today.
+Replace the placeholder values in angle brackets with values sized for your deployment. For details on sizing each parameter, see [Size the pools](#size-the-pools). Replace `<version>` with a specific release version, such as `0.1.0`. Do not use `latest`, so that replaced pods run the same version as existing pods.
+
+Apply the following `Deployment` manifest to create the search pool:
 
 ```yaml
 apiVersion: apps/v1
@@ -115,25 +84,17 @@ spec:
           emptyDir: { sizeLimit: <search-volume> }
 ```
 
-The image already points `LOCAL_STORAGE_DIRECTORY` at `/data`, so mounting
-something there is all the volume needs. Put it on local SSD where the node
-pool offers it - a pull writes the whole index and a search reads it back
-through the page cache.
+The container image sets `LOCAL_STORAGE_DIRECTORY` to `/data`, so mounting a volume at `/data` is sufficient. Use local SSD storage when available on the node pool. A pull writes the entire index, and subsequent searches read it back through the page cache.
 
-`MaxRAMPercentage=25` is the one value here that is not sized per deployment:
-a node that only searches wants a heap that holds the searches themselves and
-nothing more, and leaving three quarters of the limit to the page cache is
-what the indexes are read out of.
+The `-XX:MaxRAMPercentage=25` setting allocates 25% of the pod memory to the JVM heap. A search-only node requires heap space only for in-flight searches, leaving the remaining 75% of memory for the Linux page cache where indexes are cached.
 
 ## Run the indexer pool
 
-Two candidates. They divide the indexes between themselves and take over each
-other's on failure, so losing a node does not stop writes. Each index is
-written by exactly one of them however many run, so a third earns its keep
-only when the deployment holds many busy indexes to spread.
+Deploy two indexer candidates in a `StatefulSet`. The candidates divide indexes between themselves and handle failover if a node stops. Each index is written by exactly one candidate at a time. A third candidate is necessary only when the deployment manages many active indexes to distribute.
 
-The volume is a claim rather than an `emptyDir` because an index this node has
-changed holds commits the bucket has not got yet until the next push lands.
+The indexer pool uses a persistent volume claim (`volumeClaimTemplates`) rather than `emptyDir` storage. When an indexer modifies an index, the local disk holds unpushed commits until the next push to object storage finishes.
+
+Apply the following `StatefulSet` manifest to create the indexer pool:
 
 ```yaml
 apiVersion: apps/v1
@@ -197,93 +158,45 @@ spec:
           requests: { storage: <indexer-volume> }
 ```
 
-`NODE_ID` from the pod name is what the claims are held under and what every
-later log line about writing an index is keyed by, which makes a failover
-readable without mapping random suffixes back to pods.
+Setting `NODE_ID` to the pod name associates claims with specific pods and prefixes write log lines with the pod name. This makes failovers easier to track in logs.
 
-Leave `INDEXES_DISK_MAX_SIZE` off here. The sweep refuses to remove a copy the
-bucket does not fully hold, so on the pod doing the writing it frees the least
-when the disk is most under pressure. Size the claim for what the pool writes
-instead.
-
-The startup log is where to check that the address came out right:
-
-```
-INFO  node=exofind-indexer-0 address=http://10.4.2.17:8080 Competing for the indexer role
-```
+Do not configure `INDEXES_DISK_MAX_SIZE` on indexers. The disk sweeper does not remove local copies that are not yet committed to object storage, so it cannot free disk space when disk usage is highest. Size the persistent volume claim for your expected write volume instead.
 
 ## Size the pools
 
-None of these have a value that is right in general - each is measured
-against the indexes the deployment holds and the load it takes. Start from
-what they are measured *from* rather than from a number, and change one at a
-time.
+Size each pool based on the number of indexes and the query and write load of your deployment. Adjust one setting at a time.
 
-In the search pool:
+For the search pool:
 
-- **`<search-replicas>`, `<search-min-available>`** - query load, and what
-  is left answering while a node is drained. This is the pool an autoscaler
-  belongs on.
-- **`<search-cpu>`, `<search-memory>`** - a search is CPU work over
-  memory-mapped files. Size the memory so the indexes a pod holds fit in what
-  the heap leaves of it.
-- **`<search-volume>`** - the indexes one pod ends up holding, plus room for a
-  pull to land beside what it replaces. Whether that is all of them or a share
-  of them is [Spread the indexes across the search
-  pool](#spread-the-indexes-across-the-search-pool).
-- **`<disk-budget>`** - under `<search-volume>` by enough that the sweep runs
-  before the volume fills. It frees down to a tenth under the bound and only
-  removes copies the bucket fully holds.
-- **`<search-max-open>`** - the indexes one pod is asked for within a few
-  minutes of each other. Set below that, it shows up as `503`s and as indexes
-  being closed and reopened under load.
-- **`<refresh-concurrency>`** - raised from the default of 4 until a refresh
-  pass fits inside `INDEXES_REFRESH_INTERVAL`. A pass is one conditional
-  request per open index, so this follows the latency to the storage rather
-  than the query load.
-- **`<search-grace>`** - long enough to finish in-flight searches. There is
-  nothing to push.
+- **`<search-replicas>`, `<search-min-available>`:** Sized for query load and the minimum capacity required during node drains. Configure an autoscaler on this pool.
+- **`<search-cpu>`, `<search-memory>`:** Searches consume CPU across memory-mapped files. Size memory so that indexes fit in the memory remaining after JVM heap allocation.
+- **`<search-volume>`:** Sized for the total size of indexes a single pod holds, plus room for index downloads during updates. To decide whether a pod holds all indexes or a subset, see [Spread the indexes across the search pool](#spread-the-indexes-across-the-search-pool).
+- **`<disk-budget>`:** Set below `<search-volume>` so that the disk sweep runs before the volume fills. The sweeper frees disk space down to 10% below this bound and only removes copies that are fully uploaded to object storage.
+- **`<search-max-open>`:** The number of unique indexes a single pod serves within a few minutes. Setting this too low results in HTTP 503 errors and causes pods to repeatedly close and reopen indexes under load.
+- **`<refresh-concurrency>`:** Increase this value from the default of 4 if a refresh pass exceeds `INDEXES_REFRESH_INTERVAL`. A refresh pass makes one conditional request per open index, so concurrency depends on storage latency rather than query load.
+- **`<search-grace>`:** Set long enough to finish in-flight search requests. Search nodes have no uncommitted data to push.
 
-In the indexer pool:
+For the indexer pool:
 
-- **`<indexer-cpu>`, `<indexer-memory>`** - analysis, merging, and the
-  buffered documents of every index open for writing at once.
-- **`<indexer-heap>`** - above the image default of 50. This is the one pool
-  where heap is worth more than page cache; merge and buffer pressure decide
-  by how much.
-- **`<indexer-max-open>`** - the indexes written at the same time, not the
-  indexes that exist. Each open one is a Lucene writer with a buffer and
-  merges of its own.
-- **`<indexer-volume>`** - the indexes this pool writes, at the size they
-  reach between merges.
-- **`<indexer-grace>`** - longer than closing and pushing the largest index
-  takes. A pod killed before that finishes holds commits the bucket never got.
+- **`<indexer-cpu>`, `<indexer-memory>`:** Sized for text analysis, segment merging, and the buffered documents of all simultaneously open writer indexes.
+- **`<indexer-heap>`:** Set above the image default of 50. Indexers require more JVM heap than page cache to accommodate merge operations and write buffers.
+- **`<indexer-max-open>`:** The number of indexes written simultaneously, not the total number of existing indexes. Each open index maintains an active Lucene writer with its own memory buffer and merge threads.
+- **`<indexer-volume>`:** Sized for the indexes this pool writes, including the temporary space required during segment merges.
+- **`<indexer-grace>`:** Set longer than the time required to close and push the largest index to object storage. If a pod terminates before pushing, uncommitted changes remain unpushed until failover.
 
-Memory is the one to get roughly right before the rest. A node reads its
-indexes through memory maps, so what the heap does not take is what the index
-is cached in, and a node whose indexes no longer fit in the remainder reads
-from disk on every search that misses. Give the pod more memory before giving
-the JVM a larger share of it.
+Size memory before fine-tuning other settings. Nodes read indexes through memory-mapped files. Memory not allocated to the JVM heap serves as the operating system page cache. If indexes exceed available cache space, searches must read from disk. Increase pod memory limits before increasing the JVM heap percentage.
 
 ## Send writes to the indexer
 
-Writes can be sent to any pod: a node that does not hold the index forwards
-them to the address in the table and answers with what the holder answered.
-That address is a pod IP, which only has to resolve where the forwarding
-happens - inside the cluster - so callers outside never deal with it. What
-it does have
-to be is an address: a `NODE_ADDRESS` that never expanded cannot be forwarded
-to, which shows up as writes refused with `409` and this in the log of the
-node that answered:
+You can send write requests to any Exofind pod. When a node receives a write for an index it does not manage, it forwards the request to the indexer candidate holding the lease for that index. The forwarding target is the pod IP address stored in the index registry table.
+
+If `NODE_ADDRESS` is misconfigured or fails to expand variable references, write forwarding fails with HTTP 409 errors. The receiving node logs a warning:
 
 ```
 WARN  address=http://$(POD_IP):8080 Indexer address cannot be forwarded to; …
 ```
 
-Forwarding costs a second trip through the pod that happened to receive the
-write, which is noise for a definition change and real bandwidth for a bulk
-load. Give each pool a `Service` and point heavy indexing at the indexer one,
-so most writes skip the hop:
+Forwarding adds a network hop through the receiving pod. To avoid forwarding overhead during high-volume indexing, create dedicated `Service` resources for each pool:
 
 ```yaml
 apiVersion: v1
@@ -305,23 +218,17 @@ spec:
     - { name: http, port: 8080 }
 ```
 
-The indexer `Service` picks either candidate, and one that does not hold the
-index a write is about forwards to the one that does - one hop, inside the
-cluster. Point document writes and commit actions at it, and searches at
-`exofind-search`, which has no writes to pass along.
+Send document write and commit requests to `exofind-indexer`. If the selected pod does not hold the lease for the target index, it forwards the request directly to the managing candidate within the cluster.
+
+Send search queries to `exofind-search`, which balances traffic across search-only pods.
 
 ## Spread the indexes across the search pool
 
-A node pulls an index the first time it is asked for one and keeps the files
-afterwards. Behind a round-robin `Service`, every pod is eventually asked for
-every index, so every pod ends up holding the whole corpus and pulling every
-change to it.
+When a node receives a search request for an index, it pulls the index files from storage and caches them locally. With a round-robin `Service`, every pod eventually receives requests for every index, causing every pod to download and cache the entire index catalog.
 
-Whether that matters is arithmetic: if the indexes together fit on one pod's
-volume, let every pod hold all of them and skip this section - any pod can
-then serve any index, which is one less thing to reason about. When they do
-not fit, route searches by index name so each pod holds a share of them. The
-name is in the path, so an ingress that hashes on it is enough:
+If the combined size of all indexes fits comfortably within a single pod's local volume, allow all pods to hold all indexes and skip this section.
+
+If total index size exceeds single-pod capacity, route search requests by index name using ingress hashing so that each pod caches only a subset of indexes:
 
 ```yaml
 metadata:
@@ -329,20 +236,13 @@ metadata:
     nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
 ```
 
-A ring hash on the request path in Envoy or Istio does the same. Either way
-each pod holds a subset, pulls a subset, and answers more of its searches from
-a page cache that is not being shared with 400 other indexes.
+You can configure equivalent path-based consistent hashing in Envoy or Istio. Hashing distributes index subsets across pods, reducing disk requirements and improving page cache hit rates.
 
-The cost is that one very large index concentrates on one pod. Keep a way to
-send the largest ones somewhere of their own - a second search pool with its
-own ingress rule is the least clever way to do it.
+**Note:** Consistent hashing concentrates traffic for a single high-traffic index onto specific pods. To isolate very large indexes, deploy a separate search pool with dedicated ingress routing rules.
 
 ## Probe the pods
 
-Both pools serve health at the usual Quarkus paths, and readiness is the one
-that matters: a pod that has not read the registry yet answers searches with
-nothing found rather than with an error, so routing to it early looks like
-missing data rather than a failure.
+Configure readiness and liveness probes for both pools using the Quarkus health endpoints:
 
 ```yaml
 readinessProbe:
@@ -354,23 +254,19 @@ livenessProbe:
   failureThreshold: 6
 ```
 
-Keep the liveness probe slack. A node under a heavy pull or a large merge is
-working, and restarting it throws away the work and forces a failover of the
-indexes it holds.
+The readiness probe prevents traffic from reaching pods that have not yet loaded the index registry. A pod that receives queries before reading the registry returns empty search results instead of an error.
+
+Set relaxed thresholds on the liveness probe. Large index downloads and merges consume significant resources; restarting a busy node cancels in-progress operations and triggers unnecessary index failovers.
 
 ## Roll out and shut down
 
-Stopping a node closes its open indexes, and an index it has changed is pushed
-as it closes. An indexer also hands its claims back, so successors take over
-at once instead of after `INDEXER_LEASE_DURATION`. Both want time:
-`terminationGracePeriodSeconds` has to cover the push, or the pod is killed
-holding commits the bucket never got.
+When a node shuts down, it closes its open indexes and pushes modified index data to object storage. An indexer candidate also releases its index leases, allowing successor nodes to take over immediately instead of waiting for `INDEXER_LEASE_DURATION` to expire.
 
-For the indexer pool that means one pod at a time and a grace period measured
-against the largest index it writes. For the search pool there is nothing to
-push and the only cost of replacing a pod is the pulls the new one has to do,
-so a surge rollout is fine - with a `PodDisruptionBudget` so that a node drain
-does not take the pool below what search traffic needs:
+Set `terminationGracePeriodSeconds` to allow sufficient time for final commits to upload. If a pod terminates before uploads complete, uncommitted data is lost from that node and must be recovered by another candidate.
+
+For the indexer pool, update pods one at a time and set the grace period based on the upload duration of your largest index.
+
+For the search pool, pods hold no uncommitted state, so surge rollouts are safe. Apply a `PodDisruptionBudget` to ensure minimum search capacity remains available during cluster node drains:
 
 ```yaml
 apiVersion: policy/v1
@@ -383,46 +279,43 @@ spec:
     matchLabels: { app: exofind, role: search }
 ```
 
-Nodes of different versions run against the same bucket, so a rolling update
-is safe in itself. The two rules that decide the order - upgrade before
-writing a definition that uses something new, reindex before crossing a
-Lucene major - are in [Operate a
-deployment](operate-a-deployment.md#upgrade-the-engine).
+Nodes running different Exofind versions can operate against the same object storage bucket concurrently. For version upgrade sequencing and Lucene major version requirements, see [Operate a deployment](operate-a-deployment.md#upgrade-the-engine).
 
-## What to watch with many indexes
+## Confirm the deployment
 
-A deployment holding hundreds of indexes runs into its limits on the write
-side first, because one node writes all of them.
+Verify that all pods in both pools are running and ready:
 
-- **Open indexes are open Lucene writers.** The indexer holds a writer, its
-  buffered documents and its merges for every index it has open at once.
-  `INDEXES_MAX_OPEN` is what bounds that, and the right value is the number of
-  indexes actually being written at the same time, not the number that exist.
-  Set it too low and indexes are closed and reopened under a load that keeps
-  asking for them; too high and the heap holds buffers for all of them.
-- **Committing costs requests.** Each active index commits and pushes on
-  `INDEXES_COMMIT_MAX_INTERVAL`, and at the 5s default a few hundred of them
-  is a steady stream of uploads and conditional writes. Searching nodes see
-  none of it sooner than `INDEXES_REFRESH_INTERVAL` anyway, so raising the
-  commit interval to match it costs nothing in freshness.
-- **Refreshing does not.** A pull sends `If-None-Match` and takes a `304` for
-  an index that has not changed, so the interval costs one cheap request per
-  open index. `INDEXES_REFRESH_CONCURRENCY` is what to raise if a pass stops
-  fitting in the interval - the default of 4 is thin once a node holds
-  hundreds.
-- **Write throughput scales per index, not per pod.** The candidates divide
-  the indexes among themselves, so more of them spreads the writes of many
-  indexes - but every write to a single index goes through the one node
-  holding it, and a deployment whose load is one busy index gains nothing
-  from a third candidate. This is the number a test deployment is for.
+```shell
+kubectl get pods -l app=exofind
+```
+
+Check the indexer logs to confirm that the indexer node registered its address and is competing for the indexer role:
+
+```shell
+kubectl logs -l app=exofind,role=indexer
+```
+
+Look for a log line indicating successful startup:
+
+```
+INFO  node=exofind-indexer-0 address=http://10.4.2.17:8080 Competing for the indexer role
+```
+
+If the address displays unresolved template syntax such as `http://$(POD_IP):8080`, verify the ordering of `POD_IP` and `NODE_ADDRESS` in the indexer `StatefulSet` environment variables.
+
+## Tune a deployment with many indexes
+
+Deployments with hundreds of indexes reach their limits on the indexer pool first. Set the following on that pool:
+
+- Set `INDEXES_MAX_OPEN` to the number of indexes written at the same time, not the total number of indexes.
+- Set `INDEXES_COMMIT_MAX_INTERVAL` to match `INDEXES_REFRESH_INTERVAL`. Committing more often than the search pool polls produces storage requests without making changes visible any sooner.
+- Raise `INDEXES_REFRESH_CONCURRENCY` above its default of 4 if a refresh pass does not finish within `INDEXES_REFRESH_INTERVAL`. The requests themselves are cheap: a search node checks with `If-None-Match` and gets `304 Not Modified` for an index that has not changed.
+
+For what each of these limits is, and why adding candidates does not make one index write faster, see [Separating search and indexing nodes](../explanation/deployment-shapes.md#scaling-limits-with-many-indexes).
 
 ## Related
 
-- [Run more than one node](run-multiple-nodes.md) - candidacy, failover and
-  how writes find the node that serves them.
-- [Operate a deployment](operate-a-deployment.md) - what to check once it is
-  running, and what the log lines mean.
-- [Configuration](../reference/configuration.md) - every variable named here,
-  and what the JVM is started with.
-- [Architecture](../explanation/architecture.md) - why a pod holds nothing
-  worth backing up.
+- [Run more than one node](run-multiple-nodes.md) - Candidacy, failover, and write routing mechanisms.
+- [Operate a deployment](operate-a-deployment.md) - Operational checks, upgrades, and log messages.
+- [Configuration](../reference/configuration.md) - Environment variables and JVM configuration options.
+- [Architecture](../explanation/architecture.md) - Storage model and stateless node architecture.

@@ -1,95 +1,93 @@
-# Run a public demo node
+# Running a public demo node
 
-A node that answers searches from a browser with no credential at all - what the
-[example pages](../../examples/README.md) are pointed at. It is a deliberate
-narrowing of a normal node, not the shape a deployment takes: read
-[Secure a deployment](secure-a-deployment.md) for that one.
+This guide shows you how to configure a public demo node that answers search requests from a browser without credentials, such as for the [example pages](../../examples/README.md). This setup is a deliberate narrowing of a standard node and is not intended for production deployments. To secure a production deployment, see [Secure a deployment](secure-a-deployment.md).
 
-## Make the key it answers as
+## Prerequisites
 
-Create a key granted `search` and nothing else, over exactly the indexes the demo
-should reach:
+Before you begin, ensure you have:
 
-```http
-POST /v1alpha1/admin/keys
-Authorization: Bearer <root key>
-Content-Type: application/json
+- A root key for administrative requests.
+- An indexer node and a key with write permissions.
 
-{
-  "description": "the demo pages",
-  "grants": [{ "permissions": ["search"], "indexes": ["livsmedel", "airports", "cleveland"] }]
-}
-```
+## Creating the search key
 
-Keep its `id` from the response. The credential is not needed - the demo node
-answers *as* this key rather than presenting it.
+1. Send a `POST` request to `/v1alpha1/admin/keys` to create a key with the `search` permission for the demo indexes:
 
-## Point a node at it
+   ```http
+   POST /v1alpha1/admin/keys
+   Authorization: Bearer <root key>
+   Content-Type: application/json
 
-```shell
-EXOFIND_AUTH_MODE=keys
-EXOFIND_AUTH_ROOT_KEY=sha256:...
-EXOFIND_AUTH_ANONYMOUS_KEY=<the id from above>
-INDEXER=false
-```
+   {
+     "description": "the demo pages",
+     "grants": [{ "permissions": ["search"], "indexes": ["livsmedel", "airports", "cleveland"] }]
+   }
+   ```
 
-A request arriving with no `Authorization` header is now answered as that key.
-Everything else still needs a credential, so the same node stays administrable
-with the root key.
+2. Save the `id` from the response.
 
-`EXOFIND_AUTH_ANONYMOUS_KEY` is per-node configuration, so this makes one node in
-a fleet public while the rest go on refusing anonymous requests.
+   You do not need the secret credential because the demo node answers as this key rather than presenting the credential.
 
-Two guards mean a mistake here fails rather than opens up:
+## Configuring the demo node
 
-- The node refuses to start if the key holds any permission other than `search`.
-- Anything other than `search` is left out at every request too, so widening the
-  key from another node widens nothing on this one.
+1. Configure the demo node with the anonymous key and disable the indexer:
 
-## Narrow what it can cost you
+   ```shell
+   EXOFIND_AUTH_MODE=keys
+   EXOFIND_AUTH_ROOT_KEY=sha256:...
+   EXOFIND_AUTH_ANONYMOUS_KEY=<the id from above>
+   INDEXER=false
+   ```
 
-A public search endpoint is a public compute endpoint. Three things beyond auth
-are worth doing:
+   The node answers requests that arrive without an `Authorization` header as that key. All other requests still require credentials, so you can administer the node with the root key.
 
-- **Give it read-only storage credentials.** `REMOTE_STORAGE_ACCESS_KEY` on this
-  node only needs to read the bucket. With `INDEXER=false` as well, nothing about
-  this node can cost you an index even if something goes wrong in it.
-- **Put a CDN or proxy in front for rate limiting.** The engine does none.
-- **Cap the queries.** `SEARCH_MAX_PAGE_DEPTH` bounds how far offset paging can
-  reach; searches past it are refused rather than answered slowly.
+   `EXOFIND_AUTH_ANONYMOUS_KEY` is a per-node setting. This setting makes one node in a fleet public while other nodes continue to reject anonymous requests.
 
-## Load the examples into it
+   The node uses two guards to prevent configuration mistakes:
 
-The demo node serves what an indexer has already committed, so the examples are
-loaded against that indexer rather than against this node, with a key that may
-write:
+   - The node refuses to start if the key holds any permission other than `search`.
+   - The node excludes any permission other than `search` on every request. Granting additional permissions to the key on another node does not grant additional access on this node.
 
-```shell
-NODE=https://indexer.internal.example.com KEY=<a writing key> examples/livsmedel/load.sh
-```
+## Limiting resource consumption
 
-The anonymous key above cannot do this and is not meant to - it holds `search`
-alone.
+A public search endpoint consumes public compute resources. To limit costs and protect data, configure the following settings:
 
-## Serve the example pages against it
+- **Configure read-only storage credentials:** Set `REMOTE_STORAGE_ACCESS_KEY` to grant read-only access to the bucket. Combined with `INDEXER=false`, this prevents modifications to an index.
+- **Configure rate limiting:** Place a Content Delivery Network (CDN) or reverse proxy in front of the node. The search engine does not provide rate limiting.
+- **Cap queries:** Set `SEARCH_MAX_PAGE_DEPTH` to bound offset pagination depth. The node refuses searches that exceed this depth rather than answering them slowly.
 
-The pages read the node from `?api=`, from what the connection panel remembers,
-or from `VITE_EXOFIND_NODE` at build time:
+## Loading example data
 
-```shell
-VITE_EXOFIND_NODE=https://demo.example.com mise run examples:build
-```
+1. Load example data into the indexer node using a key with write permissions:
 
-They carry no key, which is the point - nothing about them models how a real
-deployment is reached. A reader who points the panel at their own node gets
-whatever that node allows anonymously, which for a normal node is nothing.
+   ```shell
+   NODE=https://indexer.internal.example.com KEY=<a writing key> examples/livsmedel/load.sh
+   ```
 
-The node needs to answer the origin the pages are served from:
+   The demo node serves data that an indexer has committed. The anonymous key cannot load data because it only holds the `search` permission.
 
-```shell
-QUARKUS_HTTP_CORS_ENABLED=true
-QUARKUS_HTTP_CORS_ORIGINS=https://demo.example.com
-```
+## Serving the example pages
 
-Credentials are only ever read from the `Authorization` header, so CORS here is
-about which pages may read the answers, not about what is allowed.
+1. Enable Cross-Origin Resource Sharing (CORS) on the demo node so browser pages can access it:
+
+   ```shell
+   QUARKUS_HTTP_CORS_ENABLED=true
+   QUARKUS_HTTP_CORS_ORIGINS=https://demo.example.com
+   ```
+
+   Credentials are only read from the `Authorization` header. CORS controls which web origins can read search responses, not which actions are permitted.
+
+2. Build the example pages:
+
+   ```shell
+   VITE_EXOFIND_NODE=https://demo.example.com mise run examples:build
+   ```
+
+   The example pages determine the node endpoint from the `?api=` query parameter, connection panel settings, or the `VITE_EXOFIND_NODE` build variable. The pages do not transmit credentials. Pointing the connection panel to a standard node fails if that node does not allow anonymous requests.
+
+## Verifying the setup
+
+To confirm that the public demo node functions correctly:
+
+1. Send a search request without an `Authorization` header to the demo node and confirm that it returns results for the granted indexes.
+2. Open the built example pages in a browser and confirm that search queries succeed without credentials.

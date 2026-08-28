@@ -1,179 +1,142 @@
 # Authentication
 
-A request presents a key as a bearer token:
+Authentication in Exofind verifies API requests using bearer tokens in the `Authorization` header. Exofind reads credentials only from the `Authorization` header, never from cookies or query parameters. Cross-Origin Resource Sharing (CORS) is a policy setting rather than a security boundary because requests carry no ambient credentials.
+
+A request presents an API key as a bearer token in the `Authorization` header:
 
 ```http
 POST /v1alpha1/indexes/books/search
 Authorization: Bearer exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH
 ```
 
-Credentials are only ever read from the `Authorization` header - never from a
-cookie or a query parameter. There is therefore no ambient credential another
-origin could ride, which is why CORS is a policy setting here rather than a
-security boundary.
-
 ## Modes
 
-`EXOFIND_AUTH_MODE` decides what a node checks.
+The `EXOFIND_AUTH_MODE` environment variable controls the authentication mode for a node:
 
-| Mode | What happens |
-|------|--------------|
-| `keys` | Every request presents a credential, checked against the keys of the deployment and this node's root key. The default |
-| `none` | Nothing is checked and every request is allowed everything. Dev mode runs this way; any other deployment has to ask for it by name |
+| Mode | Description |
+|------|-------------|
+| `keys` | Requires every request to present a credential, which is checked against deployment keys and the node's root key. This is the default. |
+| `none` | Disables authentication checks and allows all requests. Development mode uses this setting. Other deployments must specify it explicitly. |
 
-A node in `keys` mode that can neither read the stored keys nor find a root key
-of its own refuses to start, because a node nobody can administer is worse than
-one that does not come up.
+A node configured in `keys` mode refuses to start if it cannot read stored keys and has no root key configured.
 
 ## Where keys live
 
-Keys are kept wherever the indexes are - one object in the bucket in `object`
-mode, one file beside the indexes in `local` mode - read by every node and
-replaced conditionally on the version it was read at. That has three
-consequences worth knowing:
+Keys are stored alongside indexes: as an object in the storage bucket in `object` mode, or as a file beside the indexes in `local` mode. Every node reads this storage and updates keys conditionally based on the version read. Key synchronization behaves as follows:
 
-- A key created on one node works on every node, and revoking one takes effect
-  everywhere without redeploying anything.
-- Revocation is not instant. A node that already holds a key keeps accepting it
-  until its next read, at most `EXOFIND_AUTH_REFRESH_INTERVAL`. A key the node
-  has never seen is looked up right away, so a newly created key works without
-  waiting.
-- Managing keys does not need any particular node, so a leaked key can be
-  revoked while no candidate is up. Requests to `/v1alpha1/admin/keys` are served by
-  whichever node receives them and are never passed to the indexer.
+- A key created on one node works on all nodes. Revoking a key takes effect across all nodes without redeployment.
+- Revocation takes effect within the duration configured by `EXOFIND_AUTH_REFRESH_INTERVAL`. A node accepts a cached key until its next storage read. A node looks up an unseen key immediately, so newly created keys work without delay.
+- Key management does not depend on a specific node. Requests to `/v1alpha1/admin/keys` are handled directly by the node that receives them and are not forwarded to the indexer.
 
-In `local` mode there is one node, so the first two say nothing new; the key
-file is written readable by the user running the node alone, since a file gets
-whatever the umask gave it while a bucket has access rules of its own.
+In `local` mode, the single node writes the key file with permissions determined by the running process umask.
 
-A node that named `object` mode but cannot use the storage for keys has nowhere
-to keep them. It answers as though none had ever been created, which leaves its
-root key as the only way in.
+If a node configured in `object` mode cannot access object storage for keys, it acts as though no keys exist. In this state, only the root key can authenticate requests.
 
 ## Permissions
 
-A key holds **grants**. Each is a set of permissions crossed with a set of index
-patterns: every permission applies to every index matched.
+A key contains grants. Each grant combines a set of permissions with a set of index patterns. Every permission in the grant applies to every matching index.
 
-| Permission | Scope | Covers |
-|------------|-------|--------|
-| `search` | index | `POST /v1alpha1/indexes/{name}/search` |
-| `documents.write` | index | Putting documents into an index |
-| `documents.delete` | index | Taking documents out, by key or by query |
-| `indexes.read` | index | Listing indexes, reading a definition and status, and which node writes which index |
-| `indexes.write` | index | Creating an index or a generation, or replacing a definition |
-| `indexes.delete` | index | Removing an index or a generation |
-| `indexes.promote` | index | Making an index answer from a generation |
-| `indexes.commit` | index | Committing and pushing pending changes |
-| `indexes.pull` | index | Pulling the latest state now |
-| `keys.read` | deployment | Listing keys |
-| `keys.write` | deployment | Creating and revoking keys |
+Exofind supports the following permissions:
 
-Grants are evaluated as a union - a request is allowed when any one grant allows
-it. There are no deny rules.
+| Permission | Scope | Description |
+|------------|-------|-------------|
+| `search` | index | Executes search queries using `POST /v1alpha1/indexes/{name}/search`. |
+| `documents.write` | index | Adds documents to an index. |
+| `documents.delete` | index | Deletes documents by key or by query. |
+| `indexes.read` | index | Lists indexes, reads index definitions and status, and views writer node assignments. |
+| `indexes.write` | index | Creates an index or generation, or replaces an index definition. |
+| `indexes.delete` | index | Deletes an index or generation. |
+| `indexes.promote` | index | Promotes an index to serve from a generation. |
+| `indexes.commit` | index | Commits and pushes pending changes. |
+| `indexes.pull` | index | Pulls the latest index state. |
+| `keys.read` | deployment | Lists API keys. |
+| `keys.write` | deployment | Creates and revokes API keys. |
 
-An index pattern is the name of an index, or a prefix followed by `*`; `*` alone
-is every index. Nothing richer is accepted, so what a key reaches can be read off
-the pattern. Permissions of deployment scope are granted whatever the patterns
-say.
+Grants are evaluated as a union: a request is allowed if any grant permits it. There are no deny rules.
 
-Permission names are stored inside keys, so they are never renamed or reused.
+An index pattern is either the exact name of an index or a prefix followed by an asterisk (`*`). A single asterisk (`*`) matches all indexes. Deployment-scoped permissions apply regardless of specified index patterns.
+
+Permission names are stored inside keys and are immutable.
 
 ### Patterns and generations
 
-A generation is named `index@generation`, so the same patterns match it and
-nothing else is needed to scope one:
+Generations are named in the format `index@generation`. Index patterns match generations as follows:
 
-| Pattern | Reaches |
-|---------|---------|
-| `products` | the index, and no generation of it by name |
-| `products@*` | every generation of `products`, and not the index |
-| `products*` | both, and every other index whose name starts that way |
+| Pattern | Description |
+|---------|-------------|
+| `products` | Matches the `products` index, but no named generation of it. |
+| `products@*` | Matches every generation of `products`, but not the `products` index itself. |
+| `products*` | Matches the `products` index, its generations, and any other index whose name starts with `products`. |
 
-The `@` appears in no name of its own, so a pattern reaching the generations of
-one index can never run past it into another.
+The `@` character cannot be used in index names, so a pattern matching generations of one index cannot match another index.
 
-This is what lets a rollout leave keys alone. Grant the key an application holds
-`products` exactly: it searches the index, follows it across a rollout without
-being told one happened, and can neither address nor list the generations it
-moves between. Grant the key that performs the rollout `products@*` as well, and
-it reaches that index's generations and no other index's.
+For example, granting `products` allows an application to query the index across rollouts without permitting access to specific generations. Granting `products@*` allows a rollout process to manage generations of `products` without granting access to other indexes.
 
 ### Roles
 
-`reader`, `writer` and `admin` are shorthand for a set of permissions, and they
-are the three things that hold keys.
+Roles provide shorthand sets of permissions when creating keys:
 
 | Role | Permissions |
 |------|-------------|
 | `reader` | `search`, `indexes.read` |
 | `writer` | `search`, `indexes.read`, `documents.write`, `documents.delete`, `indexes.commit` |
-| `admin` | Everything, including managing keys |
+| `admin` | All permissions, including key management (`keys.read`, `keys.write`) |
 
-A role is expanded when the key is created and only the permissions are stored.
-Nothing reads a role afterwards, so a key granted today never gains a permission
-because a later version widened what a role covers. Note that `writer` cannot
-change a definition - a runaway loader cannot reshape a schema.
+When a key is created, roles are expanded into their constituent permissions. Only the resulting permissions are stored in the key. Existing keys do not change permissions if role definitions change in later software versions. The `writer` role does not include `indexes.write` and cannot modify index definitions.
 
 ## Being refused
 
-Refusal comes in two shapes, and the difference matters.
+When a request fails authorization, the server responds based on key permissions:
 
-- An index the key was granted **nothing** on is answered `404 Not Found`, the
-  same as an index that does not exist, and is left out of `GET
-  /v1alpha1/admin/indexes`. A key cannot find out what a deployment holds by
-  comparing a refusal against a miss.
-- An index the key can see but not use this way is answered `403 Forbidden`,
-  naming the permission that was missing.
+- If a key has no grants matching an index, the server returns `404 Not Found` and omits the index from `GET /v1alpha1/admin/indexes`.
+- If a key matches an index pattern but lacks the required permission for the operation, the server returns `403 Forbidden` and names the missing permission.
 
-| Status | Code | When |
-|--------|------|------|
-| `401 Unauthorized` | `auth:unauthenticated` | No credential, or one that is malformed, unknown or lapsed. All four answer the same. Carries `WWW-Authenticate: Bearer` |
-| `403 Forbidden` | `auth:forbidden` | A known caller reaching something they were not granted |
-| `404 Not Found` | `index:not-found` | An index outside every pattern of the key |
+The server returns the following authentication and authorization HTTP status codes:
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `401 Unauthorized` | `auth:unauthenticated` | The request contains no credential, or the credential is malformed, unknown, or expired. The response includes a `WWW-Authenticate: Bearer` header. |
+| `403 Forbidden` | `auth:forbidden` | The authenticated caller lacks the required permission for the requested action. |
+| `404 Not Found` | `index:not-found` | The requested index does not match any index pattern in the key. |
 
 ## The root key
 
-`EXOFIND_AUTH_ROOT_KEY` is a per-node credential allowed everything. It is not
-stored anywhere, cannot be listed or revoked through the API, and exists to
-create the first key and to get back in after the last key that could manage
-keys was deleted. Under normal operation nothing uses it.
+The `EXOFIND_AUTH_ROOT_KEY` environment variable defines a per-node credential with full administrative permissions. The root key is not stored in key storage and cannot be listed or revoked through the API.
 
-The value is either the key itself or `sha256:<hex>` of it, so the plaintext
-need not sit in an environment variable. Generate one with
-`openssl rand -base64 32`.
+The value can be the plain text key string or its SHA-256 hash formatted as `sha256:<hex>`.
+
+To generate a root key value, run:
+
+```bash
+openssl rand -base64 32
+```
 
 ## Answering requests that carry no credential
 
-`EXOFIND_AUTH_ANONYMOUS_KEY` names a key id. On a node where it is set, a request
-arriving with no `Authorization` header is answered as that key; on a node where
-it is not, such a request is refused. It is per-node configuration, so one node
-in a fleet can serve anonymous callers while the rest refuse them.
+The `EXOFIND_AUTH_ANONYMOUS_KEY` environment variable specifies a key ID for unauthenticated requests. When configured on a node, requests without an `Authorization` header execute with the permissions of the specified key. When unset, unauthenticated requests are rejected.
 
-Two things keep this narrow:
+Anonymous keys have the following restrictions:
 
-- The node refuses to start if the named key holds any permission other than
-  `search`.
-- Permissions other than `search` are left out at every request as well, so a key
-  widened from another node after the node started widens nothing here.
+- A node refuses to start if the referenced key contains any permission other than `search`.
+- Permissions other than `search` are omitted at request evaluation time if the referenced key is modified after node startup.
 
-See [Run a public demo node](../how-to/run-a-demo-node.md) for what else such a
-node needs.
+For more information on configuring demo environments, see [Run a public demo node](../how-to/run-a-demo-node.md).
 
 ## Keys API
 
-Under `/v1alpha1/admin/keys`. A key is created and revoked, never edited -
-changing what something may do means creating the key it should have, moving
-whatever uses it over, and revoking the old one, which leaves a moment where
-both work rather than a moment where neither does.
+The keys API manages deployment API keys under `/v1alpha1/admin/keys`. Keys are immutable: they can be created and revoked, but not modified.
 
-```
-GET    /v1alpha1/admin/keys        # every key, and how this node is configured
-POST   /v1alpha1/admin/keys        # create one
-DELETE /v1alpha1/admin/keys/{id}   # revoke one
+The API provides the following endpoints:
+
+```http
+GET    /v1alpha1/admin/keys        # List all keys and node configuration
+POST   /v1alpha1/admin/keys        # Create a key
+DELETE /v1alpha1/admin/keys/{id}   # Revoke a key
 ```
 
 ### Creating a key
+
+To create a key, send a `POST` request to `/v1alpha1/admin/keys`:
 
 ```http
 POST /v1alpha1/admin/keys
@@ -189,12 +152,13 @@ Content-Type: application/json
 }
 ```
 
-`role` and `permissions` may both be given and are unioned. `indexes` is required
-for grants holding permissions of index scope - a grant that allows nothing is
-refused rather than stored, because it would look right in a listing and refuse
-every request. `expiresAt` is optional; without it the key does not expire.
+The request body supports the following fields:
 
-The response is `201 Created` and carries the credential **once**:
+- `description` (optional): A string describing the key.
+- `grants` (required): An array of grant objects. Each grant specifies `role`, `permissions`, or both (evaluated as a union). The `indexes` array is required for grants containing index-scoped permissions.
+- `expiresAt` (optional): An ISO 8601 timestamp string defining when the key expires. If omitted, the key does not expire.
+
+A successful request returns `201 Created` with the generated credential string and key metadata. The full secret credential is returned only once in this response:
 
 ```json
 {
@@ -212,10 +176,11 @@ The response is `201 Created` and carries the credential **once**:
 }
 ```
 
-Only a hash of the secret is stored, so a credential that is lost is replaced
-rather than recovered. Logs record the `id`, never the credential.
+Key secrets are stored only as hashes. A lost credential cannot be recovered and must be replaced. Server logs record the key `id`, never the `credential` value.
 
 ### Listing keys
+
+To list keys, send a `GET` request to `/v1alpha1/admin/keys`:
 
 ```json
 {
@@ -225,27 +190,22 @@ rather than recovered. Logs record the `id`, never the credential.
 }
 ```
 
-`keys` is shared by every node; the two fields below it are the answering node's
-own configuration, so two nodes can answer the same list differently.
+The `keys` array contains deployment keys shared across all nodes. The `rootKeyConfigured` and `anonymousKey` fields reflect the local configuration of the node answering the request.
 
 ### Status codes
 
-| Status | Code | When |
-|--------|------|------|
-| `400 Bad Request` | `auth:key:*` | The definition names a role, permission or index pattern that does not exist, or an expiry that is not a timestamp. Every problem is reported, not the first |
-| `404 Not Found` | `auth:key:not_found` | Revoking an id no key is stored under |
-| `409 Conflict` | `auth:keys:unavailable` | This node has nowhere to keep keys - it named object storage that could not be used for them |
-| `409 Conflict` | `auth:keys:io_error` | The storage could not be reached. The stored keys are unchanged |
-| `409 Conflict` | `auth:keys:conflict` | Other nodes kept changing the keys underneath this change. The stored keys are unchanged |
+The keys API returns the following error status codes:
+
+| Status | Code | Description |
+|--------|------|-------------|
+| `400 Bad Request` | `auth:key:*` | The request specifies an unknown role, permission, or index pattern, or an invalid timestamp in `expiresAt`. All validation errors are reported. |
+| `404 Not Found` | `auth:key:not_found` | The specified key ID does not exist for revocation. |
+| `409 Conflict` | `auth:keys:unavailable` | Key storage is unavailable because object storage cannot be used for keys on this node. |
+| `409 Conflict` | `auth:keys:io_error` | Key storage could not be reached. Stored keys are unchanged. |
+| `409 Conflict` | `auth:keys:conflict` | Concurrent updates from other nodes conflicted with this request. Stored keys are unchanged. |
 
 ## Compatibility
 
-A stored key can carry `required_features`, naming what its meaning depends on.
-A node that does not know one of those names refuses the key outright rather than
-honouring the part it understands.
+A stored key can include a `required_features` list. If a node does not recognize a feature named in `required_features`, it rejects the key completely.
 
-The list exists for anything that **narrows** a key. Grants are additive, so a
-permission name a node has no code for is dropped and grants nothing, which is
-safe on its own; something that narrows a key and got dropped would allow more
-than was written. Nothing this version writes needs a feature name - everything a
-key can currently say shipped together.
+The `required_features` field is used for features that narrow key permissions. Because grants are additive, unrecognized permission names are ignored without granting additional access. Dropping an unrecognized restriction would permit unauthorized actions. Current versions do not write any feature names to `required_features`.

@@ -1,152 +1,101 @@
-# Index documents
+# Indexing documents
 
-Getting documents into an index, keeping them current afterwards, and
-knowing when a change is searchable. The shape of every request and answer is
-in the [documents API](../reference/documents-api.md); this guide is about
-which one to reach for.
+This guide shows you how to add documents to an index, update existing documents, remove documents, and verify that changes are searchable. For complete API details, see the [Documents API](../reference/documents-api.md).
 
-The index has to be [defined](define-an-index.md) first - a field a document
-carries and the definition does not know is refused rather than ignored.
+## Prerequisites
 
-## Send documents
+Before you index documents, ensure you have:
 
-```http
-POST /v1alpha1/indexes/products/documents
-Content-Type: application/json
+- A defined index. The index definition must include the fields and primary key used in your documents. If a document includes a field that is not defined in the index, the request is rejected. For more information, see [Define an index](define-an-index.md).
+- A running cluster with an available writer node. For more information, see [Run more than one node](run-multiple-nodes.md).
 
-{
-  "documents": [
-    { "id": "1", "name": "Rain jacket", "category": "Outerwear", "price": 129 },
-    { "id": "2", "name": "Wool hat", "category": "Hats", "price": 39 }
-  ]
-}
-```
+## Steps
 
-Each document carries the field the definition marked as the primary key, so
-sending it again replaces what sat under that key. There is no separate
-create and update: indexing is desired state, and a feed can send everything
-it has without knowing what the index already holds.
+1. Send documents to the index:
 
-Documents become searchable when the index is committed. Its writer commits
-on its own once enough has been indexed or enough time has passed - see
-[committing](../reference/configuration.md#committing) - so a steady feed
-needs to ask for nothing.
+   To send a batch of JSON documents, send a `POST` request to `/v1alpha1/indexes/{index_name}/documents`:
 
-## Write to the index's writer
+   ```http
+   POST /v1alpha1/indexes/products/documents
+   Content-Type: application/json
 
-Each index is written by one node at a time, but nothing has to aim at it: a
-write that reaches another node is forwarded to the node holding the index
-and answered with what it answered, so any node works. Where there is no
-candidate to hold it the write is refused with `indexer:unavailable`, which
-is what a cluster with no writers looks like - [Run more than one
-node](run-multiple-nodes.md) covers keeping candidates running.
+   {
+     "documents": [
+       { "id": "1", "name": "Rain jacket", "category": "Outerwear", "price": 129 },
+       { "id": "2", "name": "Wool hat", "category": "Hats", "price": 39 }
+     ]
+   }
+   ```
 
-Searches have no such rule and are answered by the node that receives them.
+   Each document must contain the field defined as the primary key. Sending a document with an existing key replaces the previous document. Indexing reflects desired state, so there is no separate create or update step.
 
-## Load a dataset
+   If you are loading a large dataset, send newline-delimited JSON (`application/x-ndjson`):
 
-Send newline delimited JSON and commit once at the end:
+   ```http
+   POST /v1alpha1/indexes/products/documents
+   Content-Type: application/x-ndjson
 
-```http
-POST /v1alpha1/indexes/products/documents
-Content-Type: application/x-ndjson
+   {"id": "1", "name": "Rain jacket", "category": "Outerwear", "price": 129}
+   {"id": "2", "name": "Wool hat", "category": "Hats", "price": 39}
+   ```
 
-{"id": "1", "name": "Rain jacket", "category": "Outerwear", "price": 129}
-{"id": "2", "name": "Wool hat", "category": "Hats", "price": 39}
-```
+   Documents are indexed as the request body is read. Stream the entire file in one request if the request can be reissued, or split it into requests of a few thousand documents if retries should not start from the beginning.
 
-Documents are indexed as the body is read, so the size of a load is a
-question of how long the connection stays up rather than of memory. Stream
-the whole file as one request where it can be reissued, or split it into
-requests of a few thousand documents where a retry should not start from the
-top.
+2. Commit changes (optional for bulk loads):
 
-```http
-POST /v1alpha1/admin/indexes/products/actions/commit
-```
+   The index writer commits automatically based on indexed volume or elapsed time (see [Committing](../reference/configuration.md#committing)). If you stream a bulk dataset, send an explicit commit request after all data is loaded:
 
-One commit at the end rather than one per batch. A commit writes a Lucene
-commit and pushes it to the remote, so committing per batch pays that cost
-for every batch and delays nothing else.
+   ```http
+   POST /v1alpha1/admin/indexes/products/actions/commit
+   ```
 
-## Change a few fields of many documents
+   Send one commit request at the end of the load. Do not commit after every batch, because each commit writes a Lucene commit and pushes it to the remote.
 
-A price or stock feed touches most of the catalogue and changes two fields of
-each document. Sending only those fields keeps the rest as it is:
+3. Update specific fields (optional):
 
-```http
-POST /v1alpha1/indexes/products/documents/actions/update
+   To update specific fields in existing documents without sending the entire document, send a `POST` request to `/v1alpha1/indexes/{index_name}/documents/actions/update`:
 
-{
-  "documents": [
-    { "id": "1", "price": 99, "inStock": true },
-    { "id": "2", "discount": null }
-  ]
-}
-```
+   ```http
+   POST /v1alpha1/indexes/products/documents/actions/update
 
-A field with a value replaces what that field held, `null` empties it, and a
-field left out is untouched. A field is replaced whole, so a change naming a
-locale specific field or an object field gives the values that field is to
-hold from then on - send the whole document to change part of one of those.
+   {
+     "documents": [
+       { "id": "1", "price": 99, "inStock": true },
+       { "id": "2", "discount": null }
+     ]
+   }
+   ```
 
-Two things to know before building a feed on this:
+   - A field with a value replaces the current value.
+   - A field set to `null` clears the current value.
+   - An omitted field remains unchanged.
+   - Locale-specific fields and object fields are replaced whole. To modify part of an object or locale-specific field, send the complete document.
+   - If the index definition sets `"source": "none"`, partial updates fail with `index:source:not_kept`.
+   - If a primary key does not exist in the index, the request fails by default. To skip missing keys and receive a list of missing keys in the response, add `?missing=skip` to the request URL.
 
-- The index has to keep a copy of its documents. `"source": "none"` in the
-  definition turns that off and makes updates refuse with
-  `index:source:not_kept`.
-- A key nothing is indexed under fails the request by default. A feed running
-  against a catalogue that is pruned elsewhere sends `?missing=skip` and
-  reads which keys were missing out of the answer.
+4. Delete documents (optional):
 
-## Remove documents
+   To delete a single document by its ID, send a `DELETE` request:
 
-```http
-DELETE /v1alpha1/indexes/products/documents/1
-```
+   ```http
+   DELETE /v1alpha1/indexes/products/documents/1
+   ```
 
-Answers `204` whether or not anything was indexed under the key, because the
-index holds no document under it either way.
+   The server returns `204` whether or not a document exists under that key.
 
-Several go in one request, by keys or by a query:
+   To delete multiple documents by query, send a `POST` request:
 
-```http
-POST /v1alpha1/indexes/products/documents/actions/delete
+   ```http
+   POST /v1alpha1/indexes/products/documents/actions/delete
 
-{ "query": [ { "field": "category", "match": { "value": "Hats" } } ] }
-```
+   { "query": [ { "field": "category", "match": { "value": "Hats" } } ] }
+   ```
 
-The clauses are the ones a [search](../reference/search-api.md) is written
-with and mean the same, so run the search first to see what the delete will
-take. An empty `query` matches every document and empties the index.
+   Query clauses use the same syntax as the [Search API](../reference/search-api.md). To remove all documents and empty the index, send an empty `query` array.
 
-## Handle a failed request
+## Confirming the result
 
-Documents are taken in the order they were sent, and the first one the index
-refuses fails the request with `400`. The documents before it are already
-indexed. Which document it was is in the `path` of the error:
-
-```json
-{
-  "code": "validation",
-  "errors": [
-    {
-      "code": "index:update:required_field_missing",
-      "path": "documents[41].name"
-    }
-  ]
-}
-```
-
-Fix the document and send the request again rather than trying to undo it -
-every document replaces whatever sat under its key, so the ones that went
-through the first time land the same way the second time.
-
-A `503` means the index was closed to make room on disk; repeating the
-request opens it again. A `409` means the index has no writer right now, or
-is being synchronized - both are worth a retry.
-
-## See what is in the index
+To verify how many documents are searchable in the index, send a search request with `limit` set to `0`:
 
 ```http
 POST /v1alpha1/indexes/products/search
@@ -154,17 +103,37 @@ POST /v1alpha1/indexes/products/search
 { "limit": 0 }
 ```
 
-A `limit` of `0` answers only how many documents match, which for an empty
-query is how many are searchable. Documents indexed since the last commit are
-not counted, because nothing is searchable until it has been committed - if
-the number is short of what was sent, commit and ask again.
+With an empty query, the response returns the total count of searchable documents. Documents indexed since the last commit are not counted until they are committed. If the returned count is lower than expected, commit the index and repeat the search.
+
+## Handling errors
+
+If a request fails, use the following guidelines:
+
+- **`400 Bad Request`**: Documents are processed in the order sent. The first invalid document causes the request to fail, but documents sent before it remain indexed. The `path` field in the response identifies the failed document:
+
+  ```json
+  {
+    "code": "validation",
+    "errors": [
+      {
+        "code": "index:update:required_field_missing",
+        "path": "documents[41].name"
+      }
+    ]
+  }
+  ```
+
+  Fix the invalid document and reissue the request. Because indexing replaces documents by primary key, previously indexed documents are overwritten safely.
+
+- **`409 Conflict`**: The index has no active writer or is synchronizing. Retry the request.
+
+- **`503 Service Unavailable`**: The index was closed to free disk space. Reissuing the request reopens the index.
 
 ## Related
 
-- [Documents API](../reference/documents-api.md) - every request, answer and
-  status code.
-- [Define an index](define-an-index.md) - what the documents are validated
-  against.
-- [Roll out a definition change](roll-out-a-definition-change.md) - reindexing
-  everything when the definition changes what is held.
-- [Search an index](search-an-index.md) - reading the documents back.
+- [Documents API](../reference/documents-api.md) - Request schemas, response formats, and status codes.
+- [Define an index](define-an-index.md) - Define schemas and field validation rules.
+- [Roll out a definition change](roll-out-a-definition-change.md) - Reindex documents when an index definition changes.
+- [Search an index](search-an-index.md) - Query and retrieve indexed documents.
+- [Run more than one node](run-multiple-nodes.md) - Keeping candidates that can take the writes.
+- [Architecture](../explanation/architecture.md) - Why a write reaches the one node that holds the index, and what happens when no node does.

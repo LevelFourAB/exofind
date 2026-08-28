@@ -1,8 +1,6 @@
 # Analysis
 
-How the text of a usage - a string field's `matching` or `autocomplete` -
-is turned into terms. An analyzer is given as exactly one of `preset`,
-`custom` and `named`:
+Analysis converts the text of a string field's `matching` or `autocomplete` usage into terms. You specify an analyzer with exactly one of `preset`, `custom`, or `named`:
 
 ```json
 "analyzer": { "preset": "full_text" }
@@ -10,32 +8,26 @@ is turned into terms. An analyzer is given as exactly one of `preset`,
 "analyzer": { "named": "prose" }
 ```
 
-Left out entirely, the engine builds analysis from the locale of the value
-and the usage, which is the right choice for most fields.
+If you omit the analyzer, the engine builds analysis from the usage and the locale of the value.
 
-A chain describes the indexing side; the engine derives the querying side
-from it. Components that pick words by locale - stopwords and stemming -
-follow the locale of the value being analyzed unless they name one, which is
-what lets one chain serve a field whose values come in several locales.
+An analyzer chain describes the indexing process. The engine derives the query analyzer from the indexing chain. Components that select words by locale, such as stopwords and stemming, use the locale of the value being analyzed unless you specify a locale.
 
 ## Presets
 
-A preset names a chain the engine expands. It is expanded before it is
-stored, so reading a definition back shows the chain it became - what a
-preset means can then never shift under an index that already exists.
+A preset specifies a predefined analyzer chain. The engine expands the preset before storing the index definition.
 
-| Preset | Meaning |
-|--------|---------|
-| `preserve_terms` | Tokenizes and normalizes but keeps every word whole. For names, codes and SKUs. |
-| `full_text` | Also drops stopwords, splits compounds and stems. For prose. |
+| Preset | Description |
+|---|---|
+| `preserve_terms` | Tokenizes and normalizes text, but keeps each word whole. Used for names, codes, and SKUs. |
+| `full_text` | Tokenizes and normalizes text, removes stopwords, splits compound words, and stems words. Used for prose. |
 
 ## Named chains
 
-`named` refers to a chain defined once in the `resources` of the index, for
-chains shared between fields. A name pointing at nothing is refused at
-validation.
+A named chain references an analyzer defined under `resources` in the index definition. You use named chains to share analyzer configurations across fields. Validation fails if the specified name does not exist under `resources`.
 
 ## Custom chains
+
+A custom analyzer chain defines character filters, a tokenizer, and token filters:
 
 ```json
 "custom": {
@@ -45,50 +37,53 @@ validation.
 }
 ```
 
-- `charFilters` run over the raw text before tokenization, in order.
-- `tokenizer` splits the text into tokens. Left out, the engine picks for
-  the locale of the value - Unicode segmentation for most locales, the
-  locale's own segmentation for Chinese, Japanese and Korean. Naming `icu`
-  outright pins Unicode segmentation instead.
-- `filters` run over the tokens, in order.
+A custom chain contains the following properties:
 
-Each component is written as an object with exactly one key selecting the
-kind: `{ "whitespace": {} }`.
+- `charFilters`: An array of character filters applied to the raw text before tokenization, in order.
+- `tokenizer`: The tokenizer that splits text into tokens. If omitted, the engine chooses a tokenizer based on the locale of the value (Unicode segmentation for most locales; language-specific segmentation for Chinese, Japanese, and Korean). Setting `icu` specifies Unicode segmentation directly.
+- `filters`: An array of token filters applied to tokens, in order.
+
+Each component is an object with one key that specifies the component type, for example `{ "whitespace": {} }`.
 
 ### Tokenizers
 
-| Tokenizer | Meaning |
-|-----------|---------|
-| `icu` | Segment on the rules of Unicode. The engine default. |
-| `whitespace` | Split on whitespace only. |
-| `keyword` | Keep the whole value as one token. |
-| `letter` | Split on anything that is not a letter. |
+The following tokenizers are available:
+
+| Tokenizer | Description |
+|---|---|
+| `icu` | Segments text based on Unicode rules. This is the default tokenizer. |
+| `whitespace` | Splits text on whitespace characters. |
+| `keyword` | Retains the entire input value as a single token. |
+| `letter` | Splits text on non-letter characters. |
 
 ### Char filters
 
-| Filter | Options | Meaning |
-|--------|---------|---------|
-| `htmlStrip` | | Strip HTML and XML markup, keeping the text between tags. |
-| `mapping` | `mappings` | Replace occurrences of each key with its value. |
-| `patternReplace` | `pattern`, `replacement` | Replace everything a regular expression matches. |
+The following character filters are available:
+
+| Filter | Options | Description |
+|---|---|---|
+| `htmlStrip` | None | Strips HTML and XML markup and keeps text between tags. |
+| `mapping` | `mappings` | Replaces occurrences of each key with its value. |
+| `patternReplace` | `pattern`, `replacement` | Replaces substrings that match a regular expression. |
 
 ### Token filters
 
-| Filter | Options | Meaning |
-|--------|---------|---------|
-| `normalize` | `caseFolding` (default true) | Unicode normalization, so the different ways of writing the same character compare as one. Folding case as part of it is what makes analysis case-insensitive. |
-| `stopwords` | `locale`, `words`, `named` - at most one | Drop words that appear too often to tell documents apart. An empty object means the words of the locale of the value being analyzed; `locale` pins a locale's list, `words` gives exactly these words, `named` uses a list from the resources of the index. |
-| `stemming` | `locale` | Reduce words to a shared root, so a search for one form finds the others. Absent means the locale of the value being analyzed. |
-| `asciiFolding` | `preserveOriginal` (default false) | Fold characters outside ASCII to their closest ASCII equivalent, optionally keeping the unfolded token alongside. |
-| `edgeNgram` | `minGram` (1), `maxGram` (20) | Index every prefix of a token between the given lengths, for matching a partially typed word. |
-| `ngram` | `minGram`, `maxGram` | Index every substring of a token between the given lengths. |
-| `synonyms` | `named` | Widen tokens with the words that mean the same thing, from a synonym set in the resources of the index. Applied when a value is indexed, not when it is searched. |
-| `decompound` | `locale` | Split compound words into their parts, keeping the whole word alongside them - see [Compound words](#compound-words). Absent means the locale of the value being analyzed. Applied when a value is indexed, not when it is searched. |
+The following token filters are available:
+
+| Filter | Options | Description |
+|---|---|---|
+| `normalize` | `caseFolding` (boolean, default: `true`) | Applies Unicode normalization and case folding to make analysis case-insensitive. |
+| `stopwords` | `locale`, `words`, `named` (at most one) | Removes frequent words. If no options are specified, uses stopwords for the locale of the value. `locale` specifies a locale code, `words` specifies a list of words, and `named` specifies a stopword list from `resources`. |
+| `stemming` | `locale` (string, optional) | Reduces words to a shared root. If omitted, uses the stemmer for the locale of the value. |
+| `asciiFolding` | `preserveOriginal` (boolean, default: `false`) | Converts non-ASCII characters to ASCII equivalents. If set to `true`, preserves the original non-ASCII token alongside the folded token. |
+| `edgeNgram` | `minGram` (integer, default: `1`), `maxGram` (integer, default: `20`) | Generates prefix n-grams for tokens within the specified character lengths. |
+| `ngram` | `minGram` (integer), `maxGram` (integer) | Generates substring n-grams for tokens within the specified character lengths. |
+| `synonyms` | `named` (string, required) | Expands tokens with synonyms from a synonym set defined in `resources`. Applied at index time. |
+| `decompound` | `locale` (string, optional) | Splits compound words into parts and retains the original compound word. See [Compound words](#compound-words). If omitted, uses the dictionary for the locale of the value. Applied at index time. |
 
 ## Resources
 
-Things shared between fields are named once under `resources` on the index
-definition and referred to by name:
+You define shared analysis components under `resources` in the index definition:
 
 ```json
 "resources": {
@@ -105,70 +100,41 @@ definition and referred to by name:
 }
 ```
 
-- `analyzers` - chains by name, used with `"analyzer": { "named": "..." }`.
-  A preset is expanded the same way it is on a field.
-- `stopwords` - word lists by name, used with
-  `{ "stopwords": { "named": "..." } }`.
-- `synonyms` - synonym sets by name, used with
-  `{ "synonyms": { "named": "..." } }`.
+The `resources` object contains the following fields:
 
-Every reference is resolved at validation, so a name pointing at nothing
-never reaches indexing.
+- `analyzers`: Named analyzer chains referenced by `"analyzer": { "named": "..." }`. Presets expand upon definition.
+- `stopwords`: Named stopword lists referenced by `{ "stopwords": { "named": "..." } }`.
+- `synonyms`: Named synonym sets referenced by `{ "synonyms": { "named": "..." } }`.
+
+Validation fails if an analyzer references a resource name that is not defined under `resources`.
 
 ### Synonym rules
 
-A rule is exactly one of:
+A synonym rule specifies one of the following structures:
 
-- `equivalent` - terms that all mean the same thing, each matching every
-  other. A term of several words matches them in sequence.
-- `mapping` - one way: a value containing one of `from` also answers
-  searches for any of `to`, but not the other way around.
+- `equivalent`: An array of equivalent terms. Each term matches all other terms in the array. Multi-word terms match words in sequence.
+- `mapping`: A one-way mapping object containing `from` and `to` arrays. A value containing a term in `from` matches searches for terms in `to`, but terms in `to` do not match searches for `from`.
 
-Synonyms are applied when a value is indexed rather than when it is
-searched, so changing a set only affects documents indexed from there on,
-like every other analysis change.
+Synonyms apply at index time. Modifying a synonym set only affects documents indexed after the modification.
 
 ## Compound words
 
-The languages that write compounds as one word - `regnjakke`, `Winterjacke`
-- lose searches for their parts unless the parts are indexed too, so the
-engine-built `matching` chain splits compounds for every locale it has data
-for: `da`, `de`, `nl`, `no`, `nb`, `nn` and `sv`. A word is split where the
-language's hyphenation rules allow and a part is only kept when the
-language's word list knows it; the whole word always stays alongside the
-parts.
+The engine-built `matching` chain automatically decompounds words for the following locales: `da`, `de`, `nl`, `no`, `nb`, `nn`, and `sv`.
 
-Splitting happens when a value is indexed and not when it is searched:
-searching `jakke` finds `regnjakke` through the indexed part, while
-searching `regnjakke` matches the whole word only, so a compound query does
-not flood with every document holding a part. A changed data set therefore
-only affects documents indexed from there on, like every other analysis
-change.
+Decompounding splits a word where hyphenation rules allow and matches parts against the locale dictionary. The engine indexes both the constituent parts and the complete compound word.
 
-Japanese and Korean reach the same end through their segmentation rather
-than through this data: their tokenizers know the parts a compound is built
-from and emit them alongside the whole word, so a part search works there
-without a data set installed. `"decompound": "none"` does not reach that -
-it turns off the splitting described here, not the locale's segmentation.
+Decompounding applies at index time. A query for an individual part matches the compound document, while a query for the complete compound matches only documents containing the compound word.
 
-`"decompound": "none"` on the usage turns it off where the parts would
-mislead - fields matched on names and brands, or where a synonym set
-already maps compounds to their parts. A custom chain is never split unless
-it says so itself, with a `decompound` component.
+Japanese and Korean handle compound segmentation through their tokenizers rather than through decompounding dictionaries.
 
-The data lives outside the application in a directory named by
-`EXOFIND_DECOMPOUND_DIRECTORY` - see
-[configuration](configuration.md) - with the attribution of its sources
-alongside the data. A node without the data for a locale indexes its
-compounds whole; the required features of a definition record which
-locales' data it needs, so such a node refuses the index rather than
-quietly answering part searches with nothing.
+To disable automatic decompounding for a usage, set `"decompound": "none"`. This setting does not affect Japanese or Korean tokenizer segmentation. A custom analyzer chain does not split compound words unless you include the `decompound` token filter.
+
+Decompounding dictionaries are stored on the filesystem in the directory specified by `EXOFIND_DECOMPOUND_DIRECTORY`. For more information, see [configuration](configuration.md).
+
+If a node lacks dictionary data for a locale required by an index definition, the node rejects the index definition during validation.
 
 ## Locales
 
-A locale hands analysis what Lucene ships for the language - stopwords, a
-stemmer, a tokenizer for languages whose words Unicode segmentation cannot
-find, and normalization for what Unicode case folding alone gets wrong, such
-as the Turkish dotless ı or Greek accents. The tags there are rules for, and
-what each one gets, are in the [locale reference](locales.md); a definition
-naming any other tag is refused at validation.
+Analysis uses Lucene language components for stopwords, stemming, tokenization, and locale-specific normalization (such as Turkish dotless ı or Greek accents).
+
+For supported locale tags and component configurations, see the [locale reference](locales.md). Validation fails if an index definition specifies an unsupported locale tag.

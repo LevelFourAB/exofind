@@ -1,156 +1,85 @@
 # Relevance
 
-When a search does not say how to order its results, the order is relevance:
-how well each document answers what was asked. That order is built in layers,
-and the layers are separate because they answer different questions - how good
-the match itself was, where it was found, what the document is worth on its
-own, and what to do about the documents left indistinguishable. This page is
-about how they fit together. What each setting is called, and what values it
-takes, is in [field types](../reference/field-types.md#ranking) and the
-[search API](../reference/search-api.md#signals).
+This document explains how Exofind calculates relevance scores and how its ranking layers interact when ordering search results. When a search query does not specify a sort order, Exofind orders results by relevance: how well each document matches the query. Ranking is calculated in separate layers that evaluate match quality, field location, intrinsic document signals, and tie breaking.
+
+For setting names and accepted values, see [Field types](../reference/field-types.md#ranking) and the [Search API](../reference/search-api.md#signals).
 
 ## What a match is worth
 
-The base is the stock text scoring Lucene ships: a rare word counts more than
-a common one, a word turning up repeatedly in a value counts more with
-diminishing returns, and a value's length counts against it - the same words
-covering a short value are a better answer than the same words sitting inside
-a long one.
+The foundation of relevance is standard Lucene text scoring:
 
-That last part is the one Exofind lets a field decide, because how much length
-should count is a property of what the field holds rather than of the engine.
-A field holding names wants it fully: the words left over are the difference
-between what was asked for and something merely related to it. A field holding
-prose wants far less. A field holding everything a document is about wants
-none at all, since a fuller value there is not a worse answer. That is
-`lengthNormalization`, and its three values are those three fields.
+- A rare word contributes more to the score than a common word.
+- A word that appears repeatedly in a field value contributes more, with diminishing returns.
+- A field value's length counts against its score. The same query words matching a short value indicate a better match than those matching inside a long value.
 
-The length itself is written with the document; what a definition chooses is
-only how much of it is read when a search runs. A changed setting therefore
-reorders results from the next search on, with nothing reindexed.
+Exofind lets a field definition configure length normalization through `lengthNormalization`, because the importance of value length depends on what the field contains. A field containing names needs full normalization, because extra words distinguish the target item from a merely related item. A field containing prose needs much less normalization. A field containing all document content needs no normalization, because a fuller value there is not a worse answer.
+
+Exofind stores the field length when indexing a document. The field definition controls only how much of that length Exofind reads at query time. Therefore, changing `lengthNormalization` reorders results on subsequent searches without requiring reindexing.
 
 ## Where the match was found
 
-A search box searches several fields at once, and a hit in a title is not a
-hit in a footnote. `weight` on a field's `matching` is how much a hit there
-counts, and a search can override the weights for that one request by mapping
-each field to a number in its `text` clause.
+A search can query several fields at once, and a match in a title carries more weight than a match in a footnote. The `weight` setting under a field's `matching` configuration controls how much a match in that field contributes to the score. A search request can override these field weights by mapping each field to a number in its `text` clause.
 
-How the fields are then combined is the `combine` option, and the default is
-per word rather than per field: each word is looked for everywhere and counts
-in whichever field holds it best. That is the right default for a search box,
-where `red nike shoes` is one thing described across a colour, a brand and a
-name. Fields that are parallel renderings of the same content - a title and
-its body - want `field` instead, so that one field has to satisfy the search
-on its own.
+The `combine` setting controls how Exofind combines matches across fields. The default behavior is per-word combination: Exofind looks for each word across all fields and counts it in whichever field matches best. This default fits a general search box where a query like `red nike shoes` describes attributes across color, brand, and name fields. For fields that represent parallel versions of the same content, such as a title and a body, set `combine` to `field` so that a single field must satisfy the search query.
 
-Combining words across fields only works where the fields cut text into the
-same words. Where they do not - one decompounds, another drops a stopword the
-rest keep - the fields that agree are combined among themselves, and a
-document is ranked by whichever group matched it best.
+Combining words across fields works only when the fields tokenize text into the same words. When fields analyze text differently—for example, if one decompounds words while another drops stopwords—Exofind combines the fields that share the same tokenization into groups. Exofind then ranks the document by the best-matching group.
 
 ## Matching the whole value
 
-`exact` on a field lifts a document whose value the search matched *whole*
-above one that merely holds the same words, which is what puts the product
-named `iphone 15` above the case listed for it.
+The `exact` setting on a field boosts a document when a search matches the entire field value, rather than merely matching the words within it. For example, this boost ranks a product named `iphone 15` above a case designed for `iphone 15`.
 
-It is a lift and never a filter: the boost reaches documents the words had
-already found, so the hits and the facet counts are the same as they would
-have been without it. This is deliberate - a ranking feature that also removed
-results would make every count depend on how the ranking was tuned. The price
-is that `exact` is written with the documents, so turning it on only reaches
-documents indexed from then on.
+The `exact` setting acts as a score boost, not a filter. It applies only to documents that the search query already matched, preserving hit counts and facet counts. This design ensures that ranking adjustments do not alter result counts. Because Exofind writes `exact` data during indexing, enabling `exact` applies only to documents indexed after the setting is enabled.
 
 ## Conditions that lift rather than narrow
 
-A `boost` clause ranks documents satisfying it higher without leaving out the
-ones that do not - featured products above the rest, in-stock above
-out-of-stock. It exists next to filters because the two are opposite answers
-to the same wish: a filter takes results away, a boost only moves them.
+A `boost` clause ranks matching documents higher without excluding non-matching documents. For example, you can rank featured products above standard products, or in-stock items above out-of-stock items. While filters remove non-matching results, boost clauses reorder them.
 
-Boosts count as part of why a hit ranks where it does, which is why
-[highlighting](../reference/search-api.md#highlighting) draws on them and not
-on the clauses that only narrow. A document is not highlighted for the
-category it happens to be filtered into.
+Boost clauses contribute to the relevance score of a match. For this reason, [highlighting](../reference/search-api.md#highlighting) evaluates boost clauses rather than filter clauses. A document does not receive highlighting for a category filter that matches it.
 
 ## What the document is worth on its own
 
-Text scoring only knows about the match. `signals` are the other half: a value
-the documents carry - how often something sells, how recently it was published
-- shaped into a number between zero and one and multiplied into the score as
-`1 + weight * shape`.
+Text scoring evaluates only the search match. The `signals` configuration provides the other half of relevance: intrinsic document values, such as sales volume or publication date. Exofind transforms a signal value into a number between 0 and 1, and multiplies it into the score as `1 + weight * shape`.
 
-The shape is what makes this safe to hand to a definition. Two properties
-follow from it:
+The transformation shape prevents signals from distorting search quality:
 
-- A document holding no value contributes nothing rather than being multiplied
-  away, so adding a signal never buries the documents that predate it.
-- A signal can lift a document by at most its `weight`, however far the
-  underlying value runs, so a runaway best seller cannot climb above a
-  document that actually answers the search.
+- A document with no value for a signal receives a shape value of 0. It is not penalized or multiplied away, so adding a signal does not bury existing documents that lack the value.
+- A signal can boost a document score by at most its `weight`, regardless of how large the underlying value is. A high-selling item cannot outrank a document with a significantly better text match.
 
-Which shape a value takes is a property of what it measures: a count with no
-ceiling saturates toward one, an age halves over time. Both are read where the
-search runs rather than written into the documents, so a ranking can be
-changed, and a search can bring signals of its own to try one out against the
-one in place, without touching a single document.
+The choice of shape depends on what the signal measures. An unbounded count saturates toward 1, while an age signal decays by halving over time. Because Exofind evaluates signals at query time rather than storing them in index structures, you can adjust signal configurations in the index definition or pass custom signals in a search request without reindexing documents.
 
 ## What breaks the remaining ties
 
-Signals are graded; tie breakers are what is left for documents that come out
-equal anyway - the common case being a search that only narrows, where every
-document matches exactly as well as every other. The index's `tieBreakers` are
-appended after whatever order the search asked for and applied in turn until
-one of them tells two documents apart, so they decide the order within ties
-without ever disturbing the order that was asked for.
+Signals produce continuous scores, but ties can still occur. For example, a search that only applies filters matches all returned documents equally. The index's `tieBreakers` setting defines fallback ordering rules. Exofind appends these tie breakers after the requested sort order and evaluates them in sequence until one resolves the tie between two documents. Tie breakers resolve ordering within ties without changing the primary sort order.
 
 ## When relevance is not the order
 
-A search that gives a `sort` of its own is ordered by that, and nothing above
-is read - no score is computed, and signals mean nothing. This is why a page
-offering "sort by price" needs a way back to relevance, and why a `score` sort
-exists to say so explicitly. Tie breakers are still appended, because a chosen
-order leaves ties of its own.
+When a search request specifies an explicit `sort` parameter, Exofind orders results by that sort. Exofind does not calculate relevance scores or evaluate signals for explicit sorts. If an application provides a "sort by price" option, it must provide a way to switch back to relevance ordering by requesting a `score` sort. Exofind still appends tie breakers to explicit sort orders to resolve ties.
 
 ## Vector scores are on their own scale
 
-A [`knn`](../reference/search-api.md#knn) clause scores by how near a vector
-is, which has nothing to do with how a text match scores. Combining the two -
-the `or` that makes a hybrid search - adds the two rankings together as they
-are, without normalizing either. What balance that gives depends on the model
-and the text, so it is something to measure and then set with a `boost` rather
-than something the engine can decide.
+A [`knn`](../reference/search-api.md#knn) clause scores documents based on vector distance, which uses a different scale from text matching. In a hybrid search combining both scoring methods with an `or` clause, Exofind adds the vector and text scores together without normalizing them. Because the appropriate balance depends on the specific embedding model and text data, you must measure your search results and tune the balance using a `boost` clause.
 
 ## Relaxing changes the result set, not the ranking
 
-A `text` search that found nothing may drop words rather than answer an empty
-page. What it dropped is reported alongside the results, and the words that
-went are still counted in the ranking - a document that does hold one of them
-comes first among the results that are left. Relaxing decides what there is to
-rank, not how it is ranked.
+When a `text` search matches no documents, query relaxation can drop terms instead of returning an empty result set. The response reports which terms were dropped. Dropped terms still contribute to ranking: documents that contain a dropped term rank higher among the returned results. Relaxation alters which documents are eligible to be ranked, not the ranking mechanics themselves.
 
 ## Where each part is decided
 
-| Part | Decided in | Takes effect |
-|------|------------|--------------|
-| Length normalization | the definition | next search |
-| Field weights | the definition, overridable per search | next search |
-| Whole-value lift (`exact`) | the definition | documents indexed from then on |
-| Boost clauses | the search | next search |
-| Signals | the definition, replaceable per search | next search |
-| Tie breakers | the definition | next search |
+The following table summarizes where you configure each ranking component and when changes take effect:
 
-Almost everything about ranking is read where the search runs, which is what
-makes tuning it cheap: change the definition, search again, and compare. Only
-`exact` is written with the documents, and changing anything about *analysis*
-- what the words are - is a rollout into a new generation rather than a
-ranking change at all.
+| Component | Configuration location | Takes effect |
+| :--- | :--- | :--- |
+| Length normalization | Index definition | Next search |
+| Field weights | Index definition (overridable per search) | Next search |
+| Whole-value match (`exact`) | Index definition | Newly indexed documents |
+| Boost clauses | Search request | Next search |
+| Signals | Index definition (overridable per search) | Next search |
+| Tie breakers | Index definition | Next search |
+
+Exofind evaluates most ranking components at query time, making ranking adjustments fast to test: update the definition or search query and compare results immediately. Only `exact` requires reindexing documents. Changes to text analysis (how text is tokenized into words) require reindexing into a new index generation rather than modifying ranking configuration.
 
 ## Related
 
-- [Field types](../reference/field-types.md#ranking) - `ranking`, `signals`
-  and the per-field settings.
-- [Search API](../reference/search-api.md) - `text`, `boost`, `signals` and
-  `sort` as a request.
-- [Search an index](../how-to/search-an-index.md) - putting a search together.
+- [Field types](../reference/field-types.md#ranking) - Reference for `ranking`, `signals`, and field-level settings.
+- [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `signals`, and `sort` parameters.
+- [Search an index](../how-to/search-an-index.md) - How-to guide for constructing search queries.

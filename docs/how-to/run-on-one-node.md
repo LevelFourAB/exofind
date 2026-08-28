@@ -1,27 +1,54 @@
-# Run on one node
+# Running on one node
 
-A node in `local` mode keeps everything on its own disk - the indexes, the
-registry naming them and the keys that reach them. Nothing else has to be
-running, which makes it what you want on a laptop, in a compose file beside
-the application it serves, or in a test.
+This guide shows you how to run a node in `local` mode on a single machine. In `local` mode, the node stores indexes, the registry, and keys on its local disk without external dependencies. Use `local` mode for development on a laptop, in a Docker Compose file beside an application, or in tests.
 
-It is also the default, so a node started with no storage settings at all runs
-this way. Read [What you give up](#what-you-give-up) before putting one
-somewhere you would mind losing.
+`local` mode is the default when you start a node without storage settings. Read [What you give up](#what-you-give-up) before deploying a node with data you cannot afford to lose.
 
-## Start one
+## Prerequisites
 
-```shell
-mise run image
-docker compose -f docker-compose.local.yml up -d
-```
+Before you start, ensure you have the following:
 
-That runs the node on port 8080 with a volume behind it. Everything below
-assumes the root key from the compose file; replace it with one of your own
-before the node is reachable by anything but you.
+- `mise` installed.
+- Docker installed, if you run the node in a container.
 
-Define an index, put a document in and search for it - the node holds every
-index on its own, so writes work without asking:
+## Starting the node
+
+1. Start the node with Docker Compose or from a local checkout:
+
+   - If you use Docker, run the following commands:
+
+     ```shell
+     mise run image
+     docker compose -f docker-compose.local.yml up -d
+     ```
+
+     This command runs the node on port 8080 backed by a storage volume. Replace the root key `exok_change_me` from `docker-compose.local.yml` with your own key before exposing the node to other clients.
+
+   - If you run without Docker from a repository checkout, run the following command:
+
+     ```shell
+     EXOFIND_STORAGE_MODE=local \
+     LOCAL_STORAGE_DIRECTORY=data/indexes \
+     EXOFIND_AUTH_ROOT_KEY=exok_change_me \
+     mise run run
+     ```
+
+2. Create an API key for your application by running the following command:
+
+   ```shell
+   curl -X POST localhost:8080/v1alpha1/admin/keys \
+     -H "Authorization: Bearer exok_change_me" \
+     -H "Content-Type: application/json" \
+     -d '{"description": "the app", "grants": [
+           {"role": "reader", "indexes": ["books"]}
+         ]}'
+   ```
+
+   The node writes keys to a file beside the indexes. The file is readable only by the user running the node. For more information, see [Secure a deployment](secure-a-deployment.md).
+
+## Confirming the result
+
+To confirm that the node is running and accepting writes, define an index:
 
 ```shell
 curl -X PUT localhost:8080/v1alpha1/admin/indexes/books \
@@ -33,68 +60,39 @@ curl -X PUT localhost:8080/v1alpha1/admin/indexes/books \
       }}'
 ```
 
-Without Docker, the same node runs from a checkout:
+The node holds every index locally and processes writes directly.
 
-```shell
-EXOFIND_STORAGE_MODE=local \
-LOCAL_STORAGE_DIRECTORY=data/indexes \
-EXOFIND_AUTH_ROOT_KEY=exok_change_me \
-mise run run
-```
+## Backing up the deployment
 
-## Hand out keys
+To back up the deployment, use one of the following methods:
 
-Keys work as they do anywhere else - create the first one with the root key
-and give each thing that holds one only what it needs:
+- Stop the node and copy the storage volume or directory.
+- Take a snapshot of the underlying file system.
 
-```shell
-curl -X POST localhost:8080/v1alpha1/admin/keys \
-  -H "Authorization: Bearer exok_change_me" \
-  -H "Content-Type: application/json" \
-  -d '{"description": "the app", "grants": [
-        {"role": "reader", "indexes": ["books"]}
-      ]}'
-```
-
-They are written to a file beside the indexes, readable by the user running
-the node alone. [Secure a deployment](secure-a-deployment.md) covers the rest,
-all of which applies here.
-
-## Back it up
-
-The volume is the deployment. Copy it while the node is stopped, or take a
-snapshot of the file system underneath it - a copy made while the node is
-writing may catch an index mid-commit.
+**Note:** Do not copy the directory while the node is writing. A copy made during writes can capture an index mid-commit.
 
 ## What you give up
 
-Everything a second node would have given you:
+Running a single node in `local` mode has the following limitations compared to a multi-node deployment:
 
-- **No second copy.** Losing the volume loses the indexes and the keys
-  together, and reindexing from the source data is the only way back.
-- **No failover.** The node is the deployment; while it is down there is
-  nothing answering.
-- **No adding a node later without moving.** A second node needs a storage
-  both can reach, so growing means switching to `object` mode and reindexing
-  into it.
-- **One node per directory.** The directory is claimed for as long as the node
-  runs, and a second node pointed at it refuses to start. Keep it on a disk
-  attached to the node - the claim is a file lock, and NFS and SMB implement
-  those unreliably.
-- **`INDEXES_DISK_MAX_SIZE` frees nothing.** The sweep only removes copies the
-  storage already holds, and here there is no storage and no copies.
+- **No second copy:** If you lose the volume, you lose both the indexes and the keys. You must reindex from the source data to recover.
+- **No failover:** The node is the deployment. If the node is down, nothing answers requests.
+- **No adding a node later without moving:** A second node requires storage that both nodes can access. Scaling out requires switching to `object` mode and reindexing into it.
+- **One node per directory:** The running node locks the directory. A second node pointed at the same directory fails to start. Keep the directory on a disk attached directly to the node. File locks on Network File System (NFS) and Server Message Block (SMB) are unreliable.
+- **`INDEXES_DISK_MAX_SIZE` frees nothing:** The disk sweep removes only copies that object storage already holds. In `local` mode, there is no remote storage and no secondary copies.
 
-A node started this way says so in its log, once, at startup.
+A node started in `local` mode logs this status once at startup.
 
 ## Move to object storage
 
-There is no migration: the indexes are Lucene files a node holds, not
-something the engine can hand over. Point a node at a bucket with
-`EXOFIND_STORAGE_MODE=object` and the settings in
-[Configuration](../reference/configuration.md#object-storage), define the
-indexes again, and load the documents again from wherever they came from.
-[Run more than one node](run-multiple-nodes.md) covers what to set from there.
+There is no direct migration path from `local` mode to `object` mode. Indexes are Lucene files stored locally on the node and cannot be transferred automatically.
 
-Doing this later is why the mode is named rather than guessed at: a node that
-was meant to join a bucket and got a variable wrong would otherwise come up
-alone, with a registry of its own, and look like it was working.
+To switch to object storage:
+
+1. Point a node at a bucket with `EXOFIND_STORAGE_MODE=object` and the settings in [Configuration](../reference/configuration.md#object-storage).
+2. Define the indexes again.
+3. Load the documents again from their original data source.
+
+For more information, see [Run more than one node](run-multiple-nodes.md), and
+[Architecture](../explanation/architecture.md) for why the storage mode is
+configured explicitly rather than guessed.

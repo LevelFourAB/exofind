@@ -1,95 +1,88 @@
-# Roll out a definition change
+# Rolling out a definition change
 
-Some changes to a definition reach documents that are already indexed, and some
-do not. Turning on `matching` for a field writes a Lucene field no indexed
-document has; a changed analysis chain, an edited synonym set or a new locale is
-applied when a value is indexed and never afterwards. Applied in place, these
-leave searches returning less than they should with no error anywhere.
+This guide shows you how to roll out an index definition change without search downtime by indexing into a new generation and promoting it.
 
-Roll such a change out by filling a new generation and promoting it. Callers go
-on using the index by name and never learn that it happened. The background is
-in [Generations](../explanation/generations.md).
+Use this guide when a definition change alters how existing values are indexed:
 
-## Decide whether you need this
+- A field gaining `matching`, `filter`, `sort`, `facet`, or a vector
+- A different analyzer, preset, tokenizer, or token filter
+- A changed or newly referenced stopword list or synonym set
+- A new locale on a field, or a changed locale fallback chain
+- Different vector dimensions
 
-You do not, if the change only affects documents indexed from here on and the
-index is empty, or if you are about to reindex everything anyway.
+You do not need this procedure if the index is empty, if the change only affects documents indexed after the change, or if you are about to reindex all documents. For conceptual background, see [Generations](../explanation/generations.md).
 
-You do, if the change alters how existing values would have been indexed:
+## Prerequisites
 
-- a field gaining `matching`, `filter`, `sort`, `facet` or a vector
-- a different analyzer, preset, tokenizer or token filter
-- a changed or newly referenced stopword list or synonym set
-- a new locale on a field, or a changed locale fallback chain
-- different vector dimensions
+Before you begin, verify that your API key has permissions for `products@*`. An API key granted permissions only for `products` follows the active generation across rollouts, but cannot search or list specific generations by name. For more information, see [Patterns and generations](../reference/auth.md#patterns-and-generations).
 
-## Roll it out
+## Rolling out the new generation
 
-Send the whole definition you want, at the generation you want it in. The index
-goes on answering from the generation it has.
+To roll out the definition change, complete the following steps:
+
+1. Create the new generation by sending the complete index definition to the target generation:
+
+   ```http
+   PUT /v1alpha1/admin/indexes/products@2
+   Content-Type: application/json
+
+   {
+     "fields": {
+       "id":    { "type": "string", "primaryKey": true, "required": true },
+       "title": { "type": "string", "matching": { "typoTolerance": {} } },
+       "brand": { "type": "string", "filter": {}, "facet": {} }
+     }
+   }
+   ```
+
+   The index continues to answer searches from the active generation.
+
+2. Index your documents into the new generation and commit the changes:
+
+   ```http
+   POST /v1alpha1/indexes/products@2/documents
+   POST /v1alpha1/admin/indexes/products@2/actions/commit
+   ```
+
+3. Search both generations to compare results before making the new generation live:
+
+   ```http
+   POST /v1alpha1/indexes/products@2/search
+   POST /v1alpha1/indexes/products/search
+   ```
+
+4. Promote the new generation:
+
+   ```http
+   POST /v1alpha1/admin/indexes/products@2/actions/promote
+   ```
+
+## Confirming the rollout
+
+To confirm that the rollout succeeded, search the index by name:
 
 ```http
-PUT /v1alpha1/admin/indexes/products@2
-Content-Type: application/json
-
-{
-  "fields": {
-    "id":    { "type": "string", "primaryKey": true, "required": true },
-    "title": { "type": "string", "matching": { "typoTolerance": {} } },
-    "brand": { "type": "string", "filter": {}, "facet": {} }
-  }
-}
-```
-
-Index the documents into it, exactly as into any index, and commit:
-
-```http
-POST /v1alpha1/indexes/products@2/documents
-POST /v1alpha1/admin/indexes/products@2/actions/commit
-```
-
-Check it before anyone else sees it. A generation is searchable by name while
-another is live, so the new one can be searched next to the old:
-
-```http
-POST /v1alpha1/indexes/products@2/search
 POST /v1alpha1/indexes/products/search
 ```
 
-Promote it when it looks right:
+The node that served the promotion answers searches for `products` from generation `2` immediately. Every other node answers from generation `2` within `INDEXES_REFRESH_INTERVAL`.
 
-```http
-POST /v1alpha1/admin/indexes/products@2/actions/promote
-```
+## Rolling back a change
 
-Searches for `products` are answered from generation `2` on the node that served
-the promotion at once, and on every other node within
-`INDEXES_REFRESH_INTERVAL`.
-
-## Undo it
-
-Promote what was live before. Nothing a caller holds changed, so nothing has to
-change back:
+If you need to revert the rollout, promote the previous generation:
 
 ```http
 POST /v1alpha1/admin/indexes/products@1/actions/promote
 ```
 
-## Clean up
+Callers do not need configuration changes to use the rolled-back generation.
 
-Keep the previous generation until you are confident, then remove it:
+## Deleting the previous generation
+
+After you confirm that the new generation works as expected, delete the previous generation:
 
 ```http
 DELETE /v1alpha1/admin/indexes/products@1
 ```
 
-Until it is removed it costs storage, and a node that has pulled it costs local
-disk for it too. The generation an index answers from cannot be removed - promote
-another one first.
-
-## Keys do not change
-
-A key granted `products` follows the index across the rollout and can neither
-search nor list a generation by name. The key doing the rollout needs
-`products@*` as well - see [patterns and
-generations](../reference/auth.md#patterns-and-generations).
+**Note:** You cannot delete the generation that an index currently answers from. Promote another generation before deleting it. Unremoved generations continue to consume storage and local disk on nodes that pulled them.

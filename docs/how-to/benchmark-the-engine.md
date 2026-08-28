@@ -1,171 +1,168 @@
-# Benchmark the engine
+# Benchmarking the engine
 
-The benchmarks measure searching and indexing so that a change can be shown to
-have made something faster rather than argued to have. They are [JMH][jmh]
-benchmarks under `src/benchmark/java`, compiled and run only under the
-`benchmark` Maven profile - an ordinary build never sees them.
+This guide shows you how to run benchmarks to measure searching and indexing performance and how to compare results across code changes. Use this guide when you want to measure engine performance, test performance regressions, or evaluate data layouts.
 
-```shell
-mise run bench                      # everything, which takes hours
-mise run bench TextSearchBenchmark  # one class
-mise run bench 'Facet.*hierarchy'   # anything matching a regular expression
-```
+Engine benchmarks use the [Java Microbenchmark Harness (JMH)][jmh] and live under `src/benchmark/java`. They compile and run only under the `benchmark` Maven profile.
 
-Anything after the task name is passed on to the JMH runner, so its options
-work as they do anywhere else - `-f 3` for three forks, `-prof gc` for
-allocation, `-rf json -rff before.json` to write results out.
+## Prerequisites
 
-[jmh]: https://github.com/openjdk/jmh
+Before you run the benchmarks, ensure that you have:
 
-## What runs against what
+- `mise` installed on your machine.
+- The project repository cloned locally.
 
-Documents are generated rather than loaded, from one seed, so an index built
-today holds the same documents as one built last month. Three corpora, chosen
-with `-p corpus=`:
+## Comparing performance across changes
 
-| Corpus      | What it holds                                                                                             |
-| ----------- | --------------------------------------------------------------------------------------------------------- |
-| `minimal`   | A key and two plain fields. Nothing is analyzed - the baseline every other number is read against.         |
-| `catalogue` | A product or place search: matched and completed text, filters, facets, a category tree, numbers, a timestamp, a geo point and nested variants. |
-| `articles`  | Short fields and one long body, so analysis and term volume dominate. `articles:sv` indexes it under Swedish, whose chain splits compound words. |
+To measure the performance impact of a code change:
 
-Text is drawn from a vocabulary whose words are as unevenly common as words in
-real text are, so a term's rank decides how many documents hold it. The
-benchmarks look for a common one, a middling one and a rare one by name.
+1. Run the benchmark on your baseline code and save the results to a file:
+   ```shell
+   mise run bench FilterBenchmark -rf json -rff before.json
+   ```
+2. Make your code change.
+3. Clean and recompile the benchmark classes while preserving existing benchmark indexes:
+   ```shell
+   mv target/benchmark-indexes /tmp/
+   ./mvnw -Pbenchmark clean test-compile
+   mv /tmp/benchmark-indexes target/
+   ```
+   **Note:** `mise run bench` recompiles incrementally, which leaves generated JMH classes stale. Forks then fail with `NoClassDefFoundError: InfraControl` and the runner exits with code 0 while omitting benchmarks from the results.
+4. Run the benchmark on your updated code and save the new results:
+   ```shell
+   mise run bench FilterBenchmark -rf json -rff after.json
+   ```
+5. Compare the `before.json` and `after.json` files side by side.
 
-## The search benchmarks
+## Running API benchmarks
 
-They open a committed index of a corpus and search it, with no HTTP and no
-Quarkus in the way. How large that index is comes from `-p size=` and defaults
-to 100 000 documents.
+To benchmark search and indexing over the REST API:
 
-| Class                  | What it measures                                                                              |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| `FilterBenchmark`      | Narrowing without ranking - equality, ranges, prefixes, negation, a subtree, a distance, and what an exact total costs. |
-| `TextSearchBenchmark`  | Text from a search box - one word, several, half-typed, misspelled, quoted, highlighted, and the second pass a search that found nothing makes. |
-| `FacetBenchmark`       | Counting the matches per value, per bucket and down a tree - one facet, a page's worth, beside a filter on the facet's own field, the same pages after opening a category, and refreshing counts alone with nothing fetched. |
-| `SortAndPageBenchmark` | Ordering by a field rather than by relevance, ranking signals, and a deep page reached by offset against the same page reached by cursor. |
-| `NestedBenchmark`      | Conditions on the values inside an object field, and counting them.                             |
-| `MatchedBenchmark`     | Asking which values of an object field matched, beside each hit - against the same search without asking, with and without a condition on the values, and cut down to one field. `-p page=` is how many hits carry the answer. |
-| `ValueHitsBenchmark`   | Hits standing for the matched values of an object field - against the same search answered with documents, sorted by a field of the values, faceted per value and rolled up onto the documents, and what an exact total of values costs. |
+1. Start a local node in a dedicated terminal:
+   ```shell
+   LOCAL_STORAGE_DIRECTORY=data/benchmark mise run run
+   ```
+   This command starts the node as an indexer without credential checks. Run the node in a separate process to prevent it from competing with JMH for CPU cores.
+2. In another terminal, run the REST benchmarks:
+   ```shell
+   mise run bench 'rest\..*' -p node=http://localhost:8080
+   ```
+3. If your node requires authentication, provide an API key using `-p key=`:
+   ```shell
+   mise run bench 'rest\..*' -p node=http://localhost:8080 -p key=exok_...
+   ```
+   Ensure that the key has `indexes.write`, `documents.write`, and `indexes.commit` permissions on indexes named `benchmark-*`.
 
-The first run of a size builds the index and keeps it in
-`target/benchmark-indexes`; later runs copy it. Building 100 000 catalogue
-documents takes minutes, so leave the directory alone between runs and delete
-it when the change being measured is one that alters what gets written.
+The setup process defines and populates the index if it does not already exist. Indexing benchmarks write to their own index and do not modify the search benchmark data.
 
-## Comparing ways of holding variants
+## Comparing variant layouts
 
-`GroupingBenchmark` is not about the engine as it is but about how a catalogue
-of products and their variants could be held. It lays a catalogue out four ways
-- variants as sub-documents in the product's block, a document per variant,
-every variant's values rolled up onto the product, and products and variants in
-separate indexes - and puts the same eight questions to each. The index of one
-document per variant is searched three ways over, differing only in what the
-grouping is allowed to assume about where a product's variants are, so there are
-six shapes over the four indexes.
+To evaluate different ways of holding product variants in a catalogue:
 
-```shell
-mise run bench GroupingBenchmark
-mise run bench GroupingBenchmark -p shape=NESTED,COLLAPSED -p selectivity=wide,narrow
-```
+1. Run `GroupingBenchmark` with your chosen shapes and selectivity values:
+   ```shell
+   mise run bench GroupingBenchmark -p shape=NESTED,COLLAPSED -p selectivity=wide,narrow
+   ```
+   To disable query clause caching and measure raw layout cost, add `-p cache=off`.
+2. Run `ShapeReport` to compare storage size, variant update costs, and query result accuracy across layouts:
+   ```shell
+   java -cp "target/classes:target/test-classes:$(cat target/benchmark-classpath.txt)" \
+     se.l4.exofind.engine.benchmark.grouping.ShapeReport 100000
+   ```
 
-It writes its own indexes rather than using a corpus, so `-p size=` counts
-products rather than documents. `-p selectivity=` says how much of the catalogue
-the colour a search narrows by covers, and `-p cache=off` stops the searcher
-keeping what a narrowing clause matched - which is what tells a layout's own
-cost from the cost of a condition it has answered before.
+## Adding a search benchmark
 
-A layout that cannot answer a question fails rather than being left out, so a
-run reports failures for the questions a layout has no answer to - which is part
-of the comparison.
+To create a new search benchmark:
 
-Timings alone would say the layout that keeps the least wins, so read them
-beside `ShapeReport`, which prints what each layout costs to keep, what changing
-one variant costs, and how far each layout's answers are from the others:
+1. Define a benchmark class that accepts `LoadedIndex` as a parameter.
+2. Build search requests in a method annotated with `@Setup(Level.Trial)` so that request construction is not timed.
+3. Access required fields through `Corpus.Roles` instead of direct field names.
 
-```shell
-java -cp "target/classes:target/test-classes:$(cat target/benchmark-classpath.txt)" \
-  se.l4.exofind.engine.benchmark.grouping.ShapeReport 100000
-```
+## Confirming results
 
-## The indexing benchmarks
+To confirm that your benchmark results are accurate and comparable:
 
-`IndexingBenchmark` writes a batch into an empty index, and
-`DocumentChangeBenchmark` replaces, patches and deletes documents in an index
-that already holds them. Both report per batch, so divide by `-p batch=` for a
-rate.
+- **Run on a quiet machine:** Run benchmarks only on a machine with no other active workloads.
+- **Verify parameters:** Check that both runs use the same corpus (`-p corpus=`), index size (`-p size=`), and batch size (`-p batch=`).
+- **Use sufficient forks:** Run with at least three forks (`-f 3`). One fork measures a single JIT compilation; multiple forks isolate real differences from JIT variance.
+- **Run the whole class:** Execute the full benchmark class to ensure an improvement in one clause does not cause regressions elsewhere.
+- **Check memory allocation:** Run with `-prof gc` to measure allocation rates.
+
+## Reference
+
+The following sections describe the corpora, benchmark classes, and configuration parameters.
+
+### Corpora
+
+Benchmarks generate documents deterministically from a single seed. Select a corpus with `-p corpus=`.
+
+| Corpus | Description |
+| --- | --- |
+| `minimal` | Contains a key and two plain fields with no text analysis. Serves as the baseline. |
+| `catalogue` | Simulates a product or place search with matched and completed text, filters, facets, a category tree, numbers, a timestamp, a geographic point, and nested variants. |
+| `articles` | Contains short fields and one long body field dominated by text analysis and term volume. `articles:sv` indexes under Swedish, which splits compound words. |
+
+Generated text draws from a vocabulary with realistic word frequencies. Benchmarks query for common, middling, and rare terms by name.
+
+### Search benchmark classes
+
+Search benchmarks open a committed index and execute queries without HTTP or Quarkus overhead. Set index size with `-p size=` (defaults to 100 000 documents).
+
+| Class | Description |
+| --- | --- |
+| `FilterBenchmark` | Measures narrowing without ranking: equality, ranges, prefixes, negation, subtrees, distance, and exact match count costs. |
+| `TextSearchBenchmark` | Measures text queries: single-word, multi-word, prefix, misspelled, quoted, highlighted, and second-pass searches when no hits match. |
+| `FacetBenchmark` | Measures match counting per value, per bucket, and down category trees: single facet, full page, facet filtering, category drill-down, and count refreshes without document fetches. |
+| `SortAndPageBenchmark` | Measures sorting by field versus relevance, ranking signals, and deep pagination with offsets versus cursors. |
+| `NestedBenchmark` | Measures conditions on object field values and value counting. |
+| `MatchedBenchmark` | Measures retrieving matching object field values per hit with and without conditions. Set returned hit count with `-p page=`. |
+| `ValueHitsBenchmark` | Measures returning object field values as hits, sorting by value fields, faceting by value with document rollup, and calculating exact value totals. |
+
+Indexes are built on the first run and cached in `target/benchmark-indexes`. Subsequent runs copy the cached index. Delete this directory if you modify indexing logic.
+
+### Indexing benchmarks
+
+Indexing benchmarks measure document write performance:
+
+- `IndexingBenchmark`: Measures writing document batches into an empty index.
+- `DocumentChangeBenchmark`: Measures replacing, patching, and deleting documents in an existing index.
+
+Both benchmarks report throughput per batch. Divide the result by `-p batch=` to calculate per-document rates:
 
 ```shell
 mise run bench IndexingBenchmark -p corpus=minimal,catalogue -p batch=5000
 ```
 
-Running one corpus against another is how the cost of a usage is told apart
-from the cost of holding a document at all: `catalogue` minus `minimal` is what
-the analysis, facets, sorting and nested values in a catalogue document cost.
+To isolate the cost of specific features, compare results between corpora. For example, `catalogue` minus `minimal` indicates the cost of analysis, facets, sorting, and nested values.
 
-## The API benchmarks
+### Grouping benchmark layouts
 
-`RestSearchBenchmark` and `RestIndexingBenchmark` send real requests to a real
-node, so they measure the mapping and the round trip as well as the engine.
-Start a node yourself first - benchmarking a server from inside the JVM running
-it makes the two compete for the same cores.
+`GroupingBenchmark` tests four catalogue layouts across six shapes and eight queries:
 
-```shell
-LOCAL_STORAGE_DIRECTORY=data/benchmark mise run run   # in one terminal
-mise run bench 'rest\..*' -p node=http://localhost:8080
-```
+- Nested variants as sub-documents in a product block.
+- One document per variant (searched using three grouping strategies).
+- Rolled-up variant values on the product document.
+- Separate indexes for products and variants.
 
-`mise run run` already starts the node as the indexer and with no credentials
-checked, which is what the benchmarks need - any other node has to be the
-indexer too, or every write is refused as readonly. A node that checks
-credentials wants `-p key=exok_...` with `indexes.write`, `documents.write` and
-`indexes.commit` over the indexes named `benchmark-*`.
+In `GroupingBenchmark`, `-p size=` sets the number of products instead of documents. `-p selectivity=` controls how much of the catalogue matches the colour filter. Layouts that cannot answer a query report failures as part of the benchmark comparison.
 
-Setup defines the index and fills it if it does not already hold the right
-number of documents, so a second run against the same node starts measuring
-immediately. Nothing is removed afterwards; the indexing benchmarks write to an
-index of their own, so they cannot disturb what a search benchmark reads.
+### JMH command options
 
-## Compare a change
-
-Only numbers from the same machine, doing nothing else, compare at all. Write
-the results out before and after:
+Pass arguments after the task name to supply options to the JMH runner:
 
 ```shell
-mise run bench FilterBenchmark -rf json -rff before.json
-# make the change
-mise run bench FilterBenchmark -rf json -rff after.json
+mise run bench                      # Run all benchmarks (takes hours)
+mise run bench TextSearchBenchmark  # Run a specific benchmark class
+mise run bench 'Facet.*hierarchy'   # Run benchmarks matching a regular expression
 ```
 
-The change between the runs is where the rebuild bites. `mise run bench`
-recompiles incrementally, which leaves the benchmark classes JMH generated
-from the previous sources stale: every fork then dies with
-`NoClassDefFoundError: InfraControl`, and the runner still exits zero, so the
-failure shows only as benchmarks missing from the results. After any source
-change, build clean - keeping the built indexes out of the way of the clean:
+Common options:
 
-```shell
-mv target/benchmark-indexes /tmp/
-./mvnw -Pbenchmark clean test-compile
-mv /tmp/benchmark-indexes target/
-```
+| Option | Description |
+| --- | --- |
+| `-f <n>` | Number of forks (for example, `-f 3`). |
+| `-prof gc` | Enable garbage collection profiling to measure memory allocations. |
+| `-rf <format>` | Results format (for example, `-rf json`). |
+| `-rff <file>` | Results output file path (for example, `-rff before.json`). |
+| `-p <param>=<value>` | Benchmark parameter (for example, `-p corpus=catalogue -p size=100000`). |
 
-Then read the two side by side. What a comparison needs to be worth anything:
-
-- **The same corpus, size and batch.** They are printed with every result.
-- **Enough forks.** One fork measures one JIT compilation of the code; `-f 3`
-  or more is what tells a real difference from a lucky one. The default is one,
-  for a run that finishes.
-- **A whole benchmark class.** A change that helps one clause and hurts
-  another is only visible if both were run.
-
-`-prof gc` answers how much a search allocates, which is often the thing to
-change rather than the time itself.
-
-## Add a benchmark
-
-A search benchmark takes `LoadedIndex` as a parameter and builds its requests
-in a `@Setup(Level.Trial)` method, so what is timed is the search rather than
-the describing of it. Name the field it needs through `Corpus.Roles` rather
-than by name, and the same benchmark runs over any corpus that has one.
+[jmh]: https://github.com/openjdk/jmh

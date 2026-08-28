@@ -1,6 +1,10 @@
 # Errors
 
-Failures share one body:
+API error responses share a standard JSON format.
+
+## Error response format
+
+When an API request fails, the server returns an error response body:
 
 ```json
 {
@@ -17,101 +21,66 @@ Failures share one body:
 }
 ```
 
-- `code` identifies the kind of failure. Codes are written by callers, so
-  they are stable: never renamed and never reused for something else.
-- `message` is for a human reading a log; its wording may change, so match
-  on `code`, not on it.
-- `errors` is present on a validation failure and carries every problem
-  found rather than the first one, so they can be fixed in one go. Each
-  entry has its own `code`, a `path` locating it in the request, and
-  `arguments` holding the values the message was built from.
+The top-level error response contains the following fields:
 
-The HTTP status says whose problem it is - see the status tables in the
-[admin API](admin-api.md#status-codes); `400 Bad Request` covers both a
-rejected body and a query asking an index for something it does not have.
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | string | Identifies the failure type. Error codes are stable across versions. |
+| `message` | string | Human-readable message for log output. Match on `code` rather than `message`. |
+| `errors` | array | Optional. Contains all validation errors detected in the request. Present on validation failures. |
 
-## Code vocabulary
+Each object in the `errors` array contains the following fields:
 
-Codes are namespaced by colon. The prefix says which part of a request the
-problem is in:
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | string | The error code identifying the specific validation failure. |
+| `message` | string | Human-readable description of the validation failure. |
+| `path` | string | Location of the invalid field in the request. |
+| `arguments` | object | Key-value pairs containing the values used to build the error message. |
 
-| Prefix | Covers | Examples |
-|--------|--------|----------|
-| `request:*` | The body of a request being unreadable before anything looked at what it says | `request:missing_body`, `request:document:malformed`, `request:delete:target_required` |
-| `auth:*` | Who the caller is and what they may do | `auth:unauthenticated`, `auth:forbidden` |
-| `auth:key:*` | A key being rejected at validation, or named by an id nothing is stored under | `auth:key:unknown_role`, `auth:key:unknown_permission`, `auth:key:not_found` |
-| `auth:keys:*` | A change to the keys that could not be stored | `auth:keys:unavailable`, `auth:keys:conflict`, `auth:keys:io_error` |
-| `index:field:*` | A field in a definition being rejected at validation | `index:field:invalid_name`, `index:field:sorting_not_supported`, `index:field:vector:missing_dimensions` |
-| `index:field:analyzer:*` | An analysis chain being rejected | `index:field:analyzer:unknown_ref`, `index:field:analyzer:unsupported_locale` |
-| `index:schema:*` | Rules spanning the whole definition | `index:schema:multiple_primary_keys`, `index:schema:unsupported_features` |
-| `index:ranking:*` | Tie breakers and ranking signals referring to fields wrongly, or a signal shaped in a way its field cannot answer for | `index:ranking:field_not_sortable`, `index:ranking:signal:shape_not_supported`, `index:ranking:signal:invalid_pivot` |
-| `index:locale_fallback:*` | A locale fallback chain naming locales wrongly | `index:locale_fallback:locale_not_held`, `index:locale_fallback:unsupported_locale` |
-| `index:resources:*` | Shared resources being rejected | `index:resources:synonyms:one_sided` |
-| `index:definition:*` | The stored definition being beyond what this version of the API can describe | `index:definition:unrepresentable` |
-| `index:generation:*` | A generation being named where it cannot be used, or one that cannot be removed | `index:generation:already_exists`, `index:generation:is_live`, `index:generation:name_required`, `index:generation:not_creatable` |
-| `index:registry:*` | A change to which indexes and generations exist that could not be stored | `index:registry:conflict`, `index:registry:io_error` |
-| `index:update:*` | A document being refused while indexing | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
-| `index:source:*` | The copy of a document as it was given being needed and not there | `index:source:not_kept`, `index:source:unreadable` |
-| `index:query:*` | A query asking an index for something it does not have | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept` |
-| `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:signal:*` | A malformed part of a search request | `search:clause:field_required`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:hits:path_required`, `search:facet:duplicate_name`, `search:signal:shape_invalid` |
-| `search:cursor:*`, `search:page*` | Paging | `search:cursor:sort_mismatch`, `search:page:too_deep` |
-| Other `index:*` | The index itself | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
+For HTTP status codes, see the status tables in the [admin API](admin-api.md#status-codes) reference. The `400 Bad Request` status code covers both invalid request bodies and queries that request data or features an index does not have.
 
-The codes worth handling specially in a client:
+## Code prefixes
 
-- `auth:unauthenticated` - no credential this node accepts. A credential
-  that is absent, malformed, unknown or lapsed all answer this, so that the
-  answers cannot be compared to find out which keys exist. Answered as
-  `401` with `WWW-Authenticate: Bearer`.
-- `auth:forbidden` - a known caller reaching something they were not
-  granted; the `permission` argument names what was missing. An index the
-  caller was granted nothing at all on answers `index:not-found` instead,
-  so a refusal never confirms that an index exists.
-- `indexer:unavailable` - the request needs the node writing the index and
-  there is none to forward it to: no candidate is running, none set a
-  `NODE_ADDRESS`, or the request was already forwarded once and the index
-  has changed hands since. Answered as `409`; retrying reaches a writer once
-  a candidate is up.
-- `indexer:unreachable` - the request was forwarded to the node writing the
-  index and it did not answer. Answered as `502`. Whether it served the
-  request before the connection died cannot be known, so retry the way any
-  failed write is retried.
-- `indexer:leadership_unreadable` - who writes which index was asked for and
-  the shared state saying so could not be read. Answered as `503` rather than
-  as nobody writing anything; retrying once the storage answers is served.
-- `index:readonly` - the request modifies an index on a node that cannot
-  right now, answered as `409`. Reached only in the moment where a node
-  loses the index while serving the request; retrying is forwarded to
-  wherever it went.
-- `search:page:too_deep` - the offset asked for is past
-  `SEARCH_MAX_PAGE_DEPTH`. Follow `next`/`previous` cursors instead.
-- `search:cursor:sort_mismatch` - a cursor was used under a different sort
-  than it was handed out under, or under hits standing for something else -
-  a position among the values of an object field names nothing among
-  documents, and the other way around.
-- `index:definition:unrepresentable` - the definition the index holds was
-  written by a version of the API that can describe more than this one, and
-  a `PUT` here would drop what it cannot see. Answered as `409`; send the
-  update to a node that knows the definition rather than changing the body.
-  A field type this version has no model for is reported as
-  `index:field:unrepresentable_type`, naming the field.
-- `index:query:usage_not_enabled` - the field exists but the definition
-  never asked for it to be used this way. Refused rather than answered with
-  no results, because the two look the same to a caller and only one of
-  them can be fixed. A `fields` naming something not defined for `stored` on
-  an index keeping no copy of its documents answers this as well.
-- `index:query:source_not_kept` - `fields` names an object, or something
-  inside one, on an index whose `source` is `none` - whether at the top of
-  the search, inside a `matched` entry or on `hits`. An object holds no
-  value of its own to store, so only the copy of the document could return
-  it.
-- `index:source:not_kept` - changing part of a document on an index whose
-  `source` is `none`, or on a document indexed while it was. There is
-  nothing to merge the change into, so the document has to be sent whole.
-- `index:generation:is_live` - the generation named is the one its index
-  answers from, and removing it would leave the index answering for nothing.
-  Promote another generation first.
-- `index:unsupported` - the index says it needs engine features this node
-  does not have, so the node refuses to resolve its name rather than answer
-  from a generation the deployment did not name. Answered as `409`; use a
-  node running a version that knows them.
+Error codes use colon-separated namespaces. The prefix indicates which part of the request caused the error:
+
+| Prefix | Scope | Examples |
+| --- | --- | --- |
+| `request:*` | Unreadable or malformed request body | `request:missing_body`, `request:document:malformed`, `request:delete:target_required` |
+| `auth:*` | Caller identity and permissions | `auth:unauthenticated`, `auth:forbidden` |
+| `auth:key:*` | Key validation failure or unassigned key ID | `auth:key:unknown_role`, `auth:key:unknown_permission`, `auth:key:not_found` |
+| `auth:keys:*` | Key storage failure | `auth:keys:unavailable`, `auth:keys:conflict`, `auth:keys:io_error` |
+| `index:field:*` | Field definition validation failure | `index:field:invalid_name`, `index:field:sorting_not_supported`, `index:field:vector:missing_dimensions` |
+| `index:field:analyzer:*` | Analysis chain validation failure | `index:field:analyzer:unknown_ref`, `index:field:analyzer:unsupported_locale` |
+| `index:schema:*` | Index-wide schema rule failure | `index:schema:multiple_primary_keys`, `index:schema:unsupported_features` |
+| `index:ranking:*` | Ranking signal or tie-breaker configuration error | `index:ranking:field_not_sortable`, `index:ranking:signal:shape_not_supported`, `index:ranking:signal:invalid_pivot` |
+| `index:locale_fallback:*` | Locale fallback chain configuration error | `index:locale_fallback:locale_not_held`, `index:locale_fallback:unsupported_locale` |
+| `index:resources:*` | Shared resource validation failure | `index:resources:synonyms:one_sided` |
+| `index:definition:*` | Stored index definition incompatible with this API version | `index:definition:unrepresentable` |
+| `index:generation:*` | Generation usage or deletion error | `index:generation:already_exists`, `index:generation:is_live`, `index:generation:name_required`, `index:generation:not_creatable` |
+| `index:registry:*` | Index or generation registry storage failure | `index:registry:conflict`, `index:registry:io_error` |
+| `index:update:*` | Document indexing failure | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
+| `index:source:*` | Stored document source copy unavailable | `index:source:not_kept`, `index:source:unreadable` |
+| `index:query:*` | Query refers to unavailable index features or fields | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept` |
+| `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:signal:*` | Malformed search request component | `search:clause:field_required`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:hits:path_required`, `search:facet:duplicate_name`, `search:signal:shape_invalid` |
+| `search:cursor:*`, `search:page:*` | Pagination error | `search:cursor:sort_mismatch`, `search:page:too_deep` |
+| Other `index:*` | Index-level state and lifecycle errors | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
+
+## Error codes
+
+The following error codes require specific handling in client applications:
+
+- `auth:unauthenticated`: Returned with HTTP `401` and the `WWW-Authenticate: Bearer` header when the request contains no accepted credential. Absent, malformed, unknown, or lapsed credentials all return this code to prevent key enumeration.
+- `auth:forbidden`: Returned when an authenticated caller lacks the required permission. The `permission` argument identifies the missing permission. When the caller has no permissions on the target index, the server returns `index:not-found` instead.
+- `indexer:unavailable`: Returned with HTTP `409` when the request requires the index writer node, but no writer node is available. This occurs when no candidate node is running, no candidate sets `NODE_ADDRESS`, or the request was forwarded and the index moved. Retry the request once a candidate node is available.
+- `indexer:unreachable`: Returned with HTTP `502` when the request was forwarded to the index writer node, but the node did not respond. Retry the write operation.
+- `indexer:leadership_unreadable`: Returned with HTTP `503` when index leadership assignments cannot be read from shared state storage. Retry the request once storage responds.
+- `index:readonly`: Returned with HTTP `409` when modifying an index on a node that cannot accept writes, such as when a node loses index leadership while processing a request. Retry the request to forward it to the active writer node.
+- `search:page:too_deep`: Returned when the requested offset exceeds `SEARCH_MAX_PAGE_DEPTH`. Follow `next` or `previous` cursors instead of offset paging.
+- `search:cursor:sort_mismatch`: Returned when a cursor is used with a different sort order than the sort order used to generate it, or with incompatible hit types between object field values and documents.
+- `index:definition:unrepresentable`: Returned with HTTP `409` when the stored index definition was written by a newer API version with features that this API version cannot represent, and a `PUT` request would discard them. Send the update to a node that supports the definition. If a specific field type is unsupported, the server returns `index:field:unrepresentable_type` and names the field.
+- `index:query:usage_not_enabled`: Returned when a query uses an existing field in a manner not enabled in the index definition, or when `fields` specifies a field not defined as `stored` on an index that does not keep document copies.
+- `index:query:source_not_kept`: Returned when `fields` specifies an object or object property on an index where `source` is `none`, including in top-level search, within `matched`, or on `hits`.
+- `index:source:not_kept`: Returned when attempting a partial document update on an index where `source` is `none`, or on a document indexed when `source` was `none`. Resend the entire document.
+- `index:generation:is_live`: Returned when attempting to delete the live generation for an index. Promote another generation before deleting the live generation.
+- `index:unsupported`: Returned with HTTP `409` when the index requires engine features that the node does not support. Send the request to a node running a version that supports the required features.

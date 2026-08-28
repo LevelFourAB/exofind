@@ -1,45 +1,54 @@
 # Getting started
 
-In this tutorial you will run an Exofind node on your machine against local
-object storage, define an index, and make a first search. At the end you will
-have seen the whole shape of the system: object storage holding the index,
-a node acting as the indexer, and the admin and search APIs.
+In this tutorial, you run an Exofind node on your machine against local
+object storage, define an index, and run search queries against the index. At the
+end, you have a working system with object storage holding the index, a node
+acting as the indexer, and usable admin and search APIs.
 
-You need [mise](https://mise.jdx.dev/) and Docker.
+## Prerequisites
 
-> Exofind is experimental and its API is `v1alpha1` - it changes without
-> keeping compatibility.
+Before you begin, ensure you have the following tools installed:
 
-## 1. Install the toolchain
+- [mise](https://mise.jdx.dev/)
+- Docker
 
-From a checkout of the repository:
+**Note:** Exofind is experimental and its API is `v1alpha1`. It can change
+without backward compatibility.
+
+## 1. Installing the toolchain
+
+From a checkout of the repository, install the required tools:
 
 ```shell
 mise install
 ```
 
-This installs the Java and Maven versions the project expects. With mise
-activated in your shell they are on the `PATH` whenever you are inside the
-project.
+This installs the Java and Maven versions that the project expects. With mise
+activated in your shell, they are on the `PATH` whenever you are inside the
+project directory.
 
-## 2. Start object storage and create a bucket
+## 2. Starting object storage and creating a bucket
+
+Start the local object storage service:
 
 ```shell
 mise run storage
 ```
 
-[SeaweedFS](https://github.com/seaweedfs/seaweedfs) is now serving an S3 API
-on `localhost:9000` (access key `exofind`, secret `exofind123`), with a file
-browser on `localhost:8888`. Create the bucket the indexes will live in:
+[SeaweedFS](https://github.com/seaweedfs/seaweedfs) serves an S3 API on
+`localhost:9000` with the access key `exofind` and secret key `exofind123`. A
+file browser is available at `localhost:8888`.
+
+Create the bucket where indexes are stored:
 
 ```shell
 echo "s3.bucket.create -name exofind" | docker exec -i seaweedfs weed shell
 ```
 
-## 3. Run a node
+## 3. Running a node
 
-Start the node in dev mode, pointed at the storage and allowed to act as the
-indexer:
+Start the node in development mode, configured to use object storage and to act
+as the indexer:
 
 ```shell
 EXOFIND_STORAGE_MODE=object \
@@ -52,23 +61,19 @@ INDEXER=true \
 mise run dev
 ```
 
-`EXOFIND_STORAGE_MODE=object` is what makes the node use the bucket. Left out,
-it keeps everything on its own disk instead and the settings above go unread -
-which is a fine way to run one node, and is what [Run on one
-node](../how-to/run-on-one-node.md) is about.
+The environment variables configure the following behavior:
 
-`INDEXER=true` makes this node a candidate for writing indexes. Being the
-only candidate, it claims every index through a leadership table it writes
-into the bucket - you now have a one node cluster.
+- `EXOFIND_STORAGE_MODE=object` directs the node to use the bucket.
+- `INDEXER=true` makes this node a candidate for writing indexes. Because it is
+  the only candidate, it claims every index through a leadership table in the
+  bucket.
 
-Dev mode checks no credentials, which is why nothing below carries one.
-Anywhere else a node wants `Authorization: Bearer <key>` on every request -
-[Secure a deployment](../how-to/secure-a-deployment.md) covers getting the
-first key.
+Development mode disables credential checks. Requests in this tutorial do not
+require an `Authorization` header.
 
-## 4. Define an index
+## 4. Defining an index
 
-Send the index the definition you want it to have:
+Send a definition for a new index named `books`:
 
 ```shell
 curl -i -X PUT http://localhost:8080/v1alpha1/admin/indexes/books \
@@ -82,8 +87,8 @@ curl -i -X PUT http://localhost:8080/v1alpha1/admin/indexes/books \
   }'
 ```
 
-The answer is `201 Created`, carrying the definition now in effect, the
-status of the index, and an `ETag` naming the version of the definition:
+The server returns a `201 Created` response containing the active definition,
+the index status, and an `ETag` header:
 
 ```json
 {
@@ -94,20 +99,15 @@ status of the index, and an `ETag` naming the version of the definition:
 }
 ```
 
-Each field opted into the ways it can be used: `title` can be matched
-against and sorted by, `published` can be filtered on. Browse to
-[localhost:8888/buckets/exofind/](http://localhost:8888/buckets/exofind/) -
-the definition is already there, which is all another node would need to
-serve this index.
+Each field defines its allowed operations: `title` enables matching and sorting,
+and `published` enables filtering.
 
-Sending the same request again with a change updates the index; the
-definition is desired state, so it can live in version control and be
-applied whenever it changes.
+You can view the definition in the file browser at
+[localhost:8888/buckets/exofind/](http://localhost:8888/buckets/exofind/).
 
-## 5. Index some books
+## 5. Indexing documents
 
-Documents go in through the index's own endpoint, and become searchable when
-the index is committed:
+Add documents through the index endpoint:
 
 ```shell
 curl -X POST http://localhost:8080/v1alpha1/indexes/books/documents \
@@ -118,20 +118,30 @@ curl -X POST http://localhost:8080/v1alpha1/indexes/books/documents \
       { "id": "2", "title": "Spring Cleaning", "published": false }
     ]
   }'
+```
 
+The server returns the number of indexed documents:
+
+```json
+{"indexed": 2}
+```
+
+Commit the index to make the documents searchable:
+
+```shell
 curl -X POST http://localhost:8080/v1alpha1/admin/indexes/books/actions/commit
 ```
 
-The answer to the first is `{"indexed": 2}`. The commit writes the documents
-into a Lucene commit and pushes it, with the definition and a manifest, to
-the bucket - which is what makes them searchable here and available to every
-other node.
+The commit action writes the documents to a Lucene commit and uploads the
+commit, definition, and manifest to the bucket. This makes the documents
+searchable on this node and available to other nodes.
 
-Each document carries its own `id`, which the definition marks as the
-primary key, so sending the same document again replaces it rather than
-adding a second copy.
+Each document includes an `id` field defined as the primary key. Sending a
+document with an existing `id` replaces the previous document.
 
-## 6. Search
+## 6. Searching the index
+
+Search for documents matching the text `spring`:
 
 ```shell
 curl http://localhost:8080/v1alpha1/indexes/books/search \
@@ -139,8 +149,9 @@ curl http://localhost:8080/v1alpha1/indexes/books/search \
   -d '{ "query": [ { "type": "text", "text": "spring" } ] }'
 ```
 
-Both books match, because `title` opted into being matched against. Add a
-filter and only one does:
+Both documents match because `title` is configured for text matching.
+
+Run a search with a filter on the `published` field:
 
 ```shell
 curl http://localhost:8080/v1alpha1/indexes/books/search \
@@ -151,7 +162,9 @@ curl http://localhost:8080/v1alpha1/indexes/books/search \
       ] }'
 ```
 
-Try misusing a field to see validation answer:
+Only the published book matches the query.
+
+To test field validation, run a query with an unsupported operation:
 
 ```shell
 curl http://localhost:8080/v1alpha1/indexes/books/search \
@@ -159,20 +172,27 @@ curl http://localhost:8080/v1alpha1/indexes/books/search \
   -d '{ "query": [ { "field": "title", "match": { "value": "x" } } ] }'
 ```
 
-The definition never asked for `title` to be filtered on, so the search is
-refused with `index:query:usage_not_enabled` instead of answered with no
-results - a definition mistake and an empty result would otherwise look the
-same.
+Because the index definition does not enable filtering on `title`, the server
+rejects the query with the error `index:query:usage_not_enabled`.
 
 ## Where to go next
 
-- [Define an index](../how-to/define-an-index.md) walks the definition
-  itself: field types, wildcards, document source, tie breakers.
-- [Index documents](../how-to/index-documents.md) turns two curl calls into
-  a dataset load and a feed that keeps it current.
-- [Search an index](../how-to/search-an-index.md) turns one query into a
-  search page: filters, facets, ordering and highlighting.
-- [Run more than one node](../how-to/run-multiple-nodes.md) turns this into
-  a cluster.
-- [Architecture](../explanation/architecture.md) explains the shape you just
-  ran.
+You now have a running Exofind node backed by local object storage, an index with
+documents, and verified search results.
+
+For more details on specific tasks and concepts, see the following documents:
+
+- [Define an index](../how-to/define-an-index.md): learn about field types,
+  wildcards, document source, and tie breakers.
+- [Index documents](../how-to/index-documents.md): load larger datasets and
+  maintain a continuous feed.
+- [Search an index](../how-to/search-an-index.md): configure queries with
+  filters, facets, sorting, and highlighting.
+- [Run more than one node](../how-to/run-multiple-nodes.md): set up a
+  multi-node cluster.
+- [Run on one node](../how-to/run-on-one-node.md): run a single node without
+  object storage.
+- [Secure a deployment](../how-to/secure-a-deployment.md): configure
+  authentication keys and tokens.
+- [Architecture](../explanation/architecture.md): learn about Exofind system
+  design and storage coordination.

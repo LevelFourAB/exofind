@@ -1,115 +1,114 @@
-# Define an index
+# Defining an index
 
-An index is defined by sending the definition you want it to have. The same
-request creates the index and updates it later on, so keep the definition in
-version control and apply it whenever it changes.
+This guide shows you how to define an index schema and apply it to your cluster. Use this guide when creating a new index or updating an existing index definition.
 
-## Send the definition
+## Prerequisites
 
-```http
-PUT /v1alpha1/admin/indexes/products
-Content-Type: application/json
+Before you define an index, ensure you have:
 
-{
-  "metadata": {
-    "owner": "search-team"
-  },
-  "fields": {
-    "id": {
-      "type": "string",
-      "primaryKey": true,
-      "required": true
-    },
-    "name": {
-      "type": "string",
-      "sort": {},
-      "matching": {
-        "highlight": {},
-        "weight": 2,
-        "typoTolerance": {}
-      },
-      "autocomplete": {}
-    },
-    "description": {
-      "type": "string",
-      "matching": {
-        "analyzer": { "preset": "full_text" },
-        "highlight": {}
-      }
-    },
-    "category": {
-      "type": "string",
-      "filter": {},
-      "facet": {}
-    },
-    "published": {
-      "type": "boolean",
-      "filter": {}
-    },
-    "metadata.*": {
-      "type": "string",
-      "filter": {}
-    }
-  }
-}
-```
+- Access to the cluster admin API.
 
-The definition is desired state: it is sent in full, and anything left out
-is removed. A rejected definition reports every problem it found, so they
-can be fixed in one go - see [Errors](../reference/errors.md).
+## Defining the index
 
-A `PUT` changes what happens to documents indexed from then on, and reaches
-nothing already in the index. Once an index holds documents, a change that
-alters how their values would have been indexed - a field gaining `matching`,
-a different analyzer, an edited synonym set - needs [a rollout through a new
-generation](roll-out-a-definition-change.md) instead.
+1. Prepare your index definition in JSON. Keep the definition in version control so you can apply it whenever it changes.
 
-## Pick what each field is for
+2. Send the definition to the admin API with a `PUT` request:
 
-Each field has a `type` selecting what it can hold, and every way of using
-it is opt-in - including the configuration is what enables it, an empty
-object being the defaults of the engine.
+   ```http
+   PUT /v1alpha1/admin/indexes/products
+   Content-Type: application/json
 
-The ways that read the same whatever the field holds:
+   {
+     "metadata": {
+       "owner": "search-team"
+     },
+     "fields": {
+       "id": {
+         "type": "string",
+         "primaryKey": true,
+         "required": true
+       },
+       "name": {
+         "type": "string",
+         "sort": {},
+         "matching": {
+           "highlight": {},
+           "weight": 2,
+           "typoTolerance": {}
+         },
+         "autocomplete": {}
+       },
+       "description": {
+         "type": "string",
+         "matching": {
+           "analyzer": { "preset": "full_text" },
+           "highlight": {}
+         }
+       },
+       "category": {
+         "type": "string",
+         "filter": {},
+         "facet": {}
+       },
+       "published": {
+         "type": "boolean",
+         "filter": {}
+       },
+       "metadata.*": {
+         "type": "string",
+         "filter": {}
+       }
+     }
+   }
+   ```
 
-- `filter` narrows results down to documents holding a value. Filtering
-  compares exact values; for strings case is folded away first, so filtering
-  on `Fiction` also finds `fiction` (`keyword.caseFolding` turns that off).
-  For numbers and timestamps it also means ranges, and for geo points
-  distance.
-- `sort` orders results by the field. Strings compare by the rules of the
-  locale rather than by their bytes, so `Äpple` sorts before `Zebra` instead
-  of after it; set `sort.collation` to `binary` to compare bytes.
-- `facet` counts how many documents share each value - the basis of a list
-  of filters to pick from, requested through the search API's
-  [`facets`](../reference/search-api.md#facets). On number and timestamp
-  fields the same counts can fall into
-  [range buckets](../reference/search-api.md#range-buckets) instead, for a
-  price or date facet.
+   You can send the request to any node in the cluster. Definitions are applied on the node that holds the index, and any other node forwards the request automatically. For more information, see the [admin API reference](../reference/admin-api.md).
 
-The ways that depend on how text is analyzed belong to the string type:
-`matching` searches with a query, `autocomplete` matches what a user has
-typed so far, and `hierarchy` reads values as paths through a tree such as
-`Men/Shoes/Running` - which is what a category navigation needs, as a facet
-on such a field counts
-[one level at a time](../reference/search-api.md#counting-down-a-tree).
-[Field types](../reference/field-types.md) lists every option on every type.
+   The definition represents the desired state. Send the definition in full, because any omitted fields are removed.
 
-## Enable more than one value
+   If the definition is invalid, the server rejects the request and reports all errors found. For more information, see [Errors](../reference/errors.md).
 
-A field holds a single value unless it declares `"multiple": true`, and a
-document giving a single-valued field several values is refused. A locale
-specific field holds one value per locale either way - a value per
-translation is not several values - so `multiple` there means several values
-within the same locale.
+   A `PUT` request applies only to documents indexed after the request. If the index already contains documents and a change alters how values are indexed (such as adding `matching`, changing an analyzer, or editing a synonym set), perform [a rollout through a new generation](roll-out-a-definition-change.md) instead.
 
-## Group fields that belong together
+3. If you update an existing index concurrently, include the `If-Match` header.
 
-An `object` field holds fields inside another, described the way the index
-describes its own. A group that is only structure - a `dimensions` holding a
-width and a height - is a single object, and its fields are ordinary fields
-of the index under the dotted path, `dimensions.width`, with nothing more to
-declare:
+   To avoid overwriting changes made by another client, include the `ETag` value from a previous `GET` or `PUT` response:
+
+   ```http
+   PUT /v1alpha1/admin/indexes/products
+   If-Match: "9f2c1a0b3d4e5f60"
+   ```
+
+   If another client updated the index in the meantime, the server returns a `412 Precondition Failed` error.
+
+## Confirming the result
+
+To verify that the index definition was applied:
+
+- Check the response of the `PUT` request. The response returns the definition and includes an `ETag` header with the current version.
+- Alternatively, send a `GET` request to the index endpoint to inspect the active definition and its `ETag` header.
+
+## Configuration reference
+
+### Pick what each field is for
+
+Each field has a `type` that defines what data it can hold. Field capabilities are opt-in: including a configuration object enables the capability, and an empty object uses engine defaults.
+
+The following capabilities behave consistently across field types:
+
+- `filter`: Narrows results to documents matching a value. Filtering compares exact values. For string fields, case folding is applied by default, so filtering on `Fiction` also matches `fiction` (set `keyword.caseFolding` to turn this off). For number and timestamp fields, filtering also supports ranges. For geo points, filtering supports distance.
+- `sort`: Orders results by the field value. Strings are compared according to locale rules rather than byte order, so `Äpple` sorts before `Zebra`. To compare bytes directly, set `sort.collation` to `binary`.
+- `facet`: Counts how many documents share each value, providing values for filter lists requested through the search API [`facets`](../reference/search-api.md#facets) parameter. For number and timestamp fields, counts can be grouped into [range buckets](../reference/search-api.md#range-buckets) for price or date facets.
+
+String fields also support capabilities that depend on text analysis: `matching` searches with a query, `autocomplete` matches prefix text as a user types, and `hierarchy` interprets values as tree paths (such as `Men/Shoes/Running`) so facets count [one level at a time](../reference/search-api.md#counting-down-a-tree). For a complete list of options for every type, see [Field types](../reference/field-types.md).
+
+### Enable more than one value
+
+A field holds a single value unless you set `"multiple": true`. If a document provides multiple values for a single-valued field, the server rejects the document. A locale-specific field holds one value per locale by default; setting `multiple` allows multiple values within the same locale.
+
+### Group fields that belong together
+
+An `object` field holds nested fields, defined using the same schema structure as the index. A structural group—such as `dimensions` containing `width` and `height`—is a single object. Its fields are accessible using dotted paths such as `dimensions.width` without extra configuration:
 
 ```json
 "dimensions": {
@@ -121,13 +120,7 @@ declare:
 }
 ```
 
-A *list* of objects has to say what its values mean. A product with a list of
-variants, each holding a color and a price, is not well served by fields that
-match independently - flattened, "red and under 20" is satisfied by a product
-that is red in one variant and cheap in another. Declare the list
-`"mode": "nested"` and a search matches one variant at a time through the
-`nested` clause of the [search API](../reference/search-api.md#nested), so
-"red and under 20" means one variant that is both:
+A list of objects must define how its values are processed. If fields match independently in a flattened list, a query for "red and under 20" matches a product that has a red variant and a separate cheap variant. To match fields within the same object, set `"mode": "nested"`. A search then evaluates one variant at a time through the `nested` clause of the [search API](../reference/search-api.md#nested):
 
 ```json
 "variants": {
@@ -141,29 +134,15 @@ that is red in one variant and cheap in another. Declare the list
 }
 ```
 
-Give the fields inside `sort`, `facet` and `matching` as well, and the
-variant that matched can order the product, count it and rank it - "the
-cheapest red variant, cheapest first" is a `nested` clause and a sort on
-`variants.price`. A list whose values really are independent takes
-`"mode": "flattened"` instead and costs nothing beyond its fields. What each
-mode allows is listed in [Field types](../reference/field-types.md#object),
-and [Use sub-documents](use-sub-documents.md) walks indexing, searching and
-changing nested values.
+When you configure `sort`, `facet`, or `matching` on nested fields, the matching variant can sort, count, or rank the parent document. For example, finding the cheapest red variant sorted by price requires a `nested` clause and a sort on `variants.price`. If the values in a list are independent, use `"mode": "flattened"` instead. For details on each mode, see [Field types](../reference/field-types.md#object). To learn how to index, search, and update nested values, see [Use sub-documents](use-sub-documents.md).
 
-## Cover many names with one field
+### Cover many names with one field
 
-A field name can contain `*` to define several fields at once, such as
-`metadata.*` above. The `*` stands for exactly one name segment. When
-patterns overlap, the one with the longer literal prefix wins - the exact
-rules are in [Field types](../reference/field-types.md#wildcard-fields).
+A field name can contain a wildcard `*` to define multiple fields at once, such as `metadata.*`. The `*` matches exactly one name segment. When patterns overlap, the pattern with the longer literal prefix takes precedence. For full matching rules, see [Field types](../reference/field-types.md#wildcard-fields).
 
-## Decide how much of a document is kept
+### Decide how much of a document is kept
 
-By default the index keeps a copy of every document as it was given, so
-results come back holding the values that were indexed, and a document can
-be indexed again from the index itself after its definition changes. When
-documents are large and results only need to identify them, turn it off and
-mark the fields to bring back:
+By default, the index stores a full copy of every indexed document. This allows search results to return the original values and lets the system reindex documents directly when definitions change. If documents are large and search results only need to identify them, disable full source storage and specify the fields to store:
 
 ```json
 {
@@ -175,13 +154,11 @@ mark the fields to bring back:
 }
 ```
 
-Changing this does not rewrite what is already indexed - it decides what is
-written from there on, and both kinds keep reading.
+Changing this setting does not rewrite existing documents. It applies only to documents written after the change.
 
-## Put the thing named what was typed above the things that mention it
+### Put the thing named what was typed above the things that mention it
 
-A search for `iphone 15` has to return the phone, not the case listed for it.
-Say so on the field that holds the name:
+To boost documents where a field value matches the search query exactly over documents that merely mention the terms, configure `exact` and `lengthNormalization` on the field:
 
 ```json
 "name": {
@@ -193,23 +170,15 @@ Say so on the field that holds the name:
 }
 ```
 
-`exact` writes the value a second time as one term and lifts a document whose
-whole value is what was searched for. It only reorders: the lift reaches
-documents the words had already found, so hit counts and facets are the same
-either way. Whole means whole, so it takes effect once the last word has been
-typed out.
+`exact`: Indexes the full value as a single term and boosts documents where the entire field matches the query. This setting reorders results without changing hit counts or facets. It takes effect when the user types the full field value.
 
-`lengthNormalization` is the same question by degrees - how much the words a
-value holds beyond the ones searched for count against it. `"strong"` suits a
-field holding names, where the leftover words are the difference between the
-thing asked for and something related to it; `"none"` suits a field holding
-everything a document is about, where a fuller value is not a worse answer.
-Nothing is written for it, so it can be changed without reindexing.
+`lengthNormalization`: Penalizes extra terms in a field value beyond the searched terms. Use `"strong"` for title or name fields, where additional words indicate a related item rather than an exact match. Use `"none"` for body or description fields, where longer text does not imply a worse match. This setting does not affect stored data and can be changed without reindexing.
 
-Declare `exact` where the value of the field is the identity of the document.
-On a description or a list of tags it lifts whatever happens to be short.
+Configure `exact` on fields that represent the primary identity of the document. Do not configure `exact` on description fields or tag lists, where it can boost unintended short values.
 
-## Break ties in the order of results
+### Break ties in the order of results
+
+To establish a consistent order for results with equal relevance scores, define tie breakers in the `ranking` configuration:
 
 ```json
 "ranking": {
@@ -219,14 +188,11 @@ On a description or a list of tags it lifts whatever happens to be short.
 }
 ```
 
-Tie breakers are appended after whatever ordering a search asks for, so they
-decide the order within ties without ever disturbing it. Each field has to
-be defined for sorting.
+The engine evaluates tie breakers after applying the sort order requested by a search query. Each field used as a tie breaker must have sorting enabled.
 
-## Rank what sells, or what is new, above the rest
+### Rank what sells, or what is new, above the rest
 
-A tie breaker only reaches documents that scored the same. To make a value the
-documents carry count towards relevance itself, declare a signal:
+To adjust document relevance scores using document attributes, define ranking signals:
 
 ```json
 "ranking": {
@@ -237,34 +203,11 @@ documents carry count towards relevance itself, declare a signal:
 }
 ```
 
-The score is multiplied by `1 + weight * shape`, where the shape is a number
-between zero and one: `saturation` reads a number as how far it is above the
-pivot, `decay` reads a timestamp as how long ago it was, halving every
-`halfLife` seconds. A product bought as often as the pivot is worth half of
-what the signal can give; one holding no value at all is left exactly as it
-matched.
+The score is multiplied by `1 + weight * shape`, where `shape` is a value between 0 and 1:
 
-Pick the pivot from the catalogue - roughly the count a product you would call
-popular has, not the count of the most popular one. The field has to be
-defined for sorting, which is where the value is read from. Nothing is written
-into the documents, so a signal can be changed, weighted differently or taken
-away without reindexing, and a search can carry its own to try one out first.
+- `saturation`: Scales a numeric value based on its distance from the `pivot`. A document with a value equal to the pivot receives half of the maximum boost.
+- `decay`: Evaluates a timestamp by how much time has elapsed, halving the score every `halfLife` seconds.
 
-## Update without overwriting someone else
+Documents with no value in the signal field retain their original match score.
 
-The response to a `PUT` or `GET` carries the version of the definition as an
-`ETag`. Send it back as `If-Match` when updating to be told that someone
-else changed the index in the meantime - `412 Precondition Failed` - rather
-than overwriting their change:
-
-```http
-PUT /v1alpha1/admin/indexes/products
-If-Match: "9f2c1a0b3d4e5f60"
-```
-
-## Where the request has to go
-
-Anywhere. Definitions are changed on the node holding the index, and any
-other node forwards the request there itself and answers with what the
-holder answered - the details are in the
-[admin API reference](../reference/admin-api.md).
+Choose a `pivot` value that represents a typical popular item in your catalog rather than the highest value. Fields used in signals must have sorting enabled. Signals do not rewrite stored documents, so you can add, modify, or remove them without reindexing.

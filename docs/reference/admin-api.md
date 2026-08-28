@@ -1,18 +1,16 @@
 # Admin API
 
-Management of indexes, under `/v1alpha1/admin`. Bodies are JSON.
+The Admin API manages indexes under the `/v1alpha1/admin` path. Request and response bodies use JSON.
 
-Putting documents into an index is not part of this API - it has its own,
-the [documents API](documents-api.md). Managing the keys that reach any of
-these is under `/v1alpha1/admin/keys`, in [Authentication](auth.md).
+To index documents, use the [Documents API](documents-api.md). To manage API keys, see [Authentication](auth.md).
 
-Every request here presents a credential. Which permission each endpoint
-needs, and why an index a key was granted nothing on answers `404` rather
-than `403`, are in [Authentication](auth.md).
+Every request requires credentials. For required permissions and information on why unauthorized indexes return `404 Not Found` instead of `403 Forbidden`, see [Authentication](auth.md).
 
 ## Endpoints
 
-```
+The Admin API provides the following endpoints:
+
+```text
 GET    /v1alpha1/admin/indexes                          # indexes the deployment holds
 GET    /v1alpha1/admin/indexes/{name}                   # definition and status
 PUT    /v1alpha1/admin/indexes/{name}                   # create or replace the definition
@@ -24,57 +22,32 @@ POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state
 GET    /v1alpha1/admin/indexers                         # which node writes which index
 ```
 
-Requests that modify an index - everything here except the reads and `pull` -
-run on the node holding that index; which node that is differs per index.
-Another node forwards the request there itself - as it arrived, credential
-included - and answers with what the holder answered, so a client needs to
-do nothing special. An index nothing holds is claimed by the first candidate
-its writes reach, which is how a create appoints a writer. When there is no
-candidate to forward to, or none set a `NODE_ADDRESS`, the request is
-refused with `409 Conflict`; a holder that does not answer is reported with
-`502 Bad Gateway`.
+Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
+
+When no node holds an index, the first candidate node that receives a write claims the index. If no candidate node is available to forward to, or if no candidate node sets `NODE_ADDRESS`, the server returns `409 Conflict`. If a holder node does not respond, the server returns `502 Bad Gateway`.
 
 ## Names and generations
 
-An index holds *generations*, and the documents and the definition belong to
-a generation rather than to the index. One of them is live: the index answers
-from it, and that is what a name without a generation means.
+An index holds generations. Documents and definitions belong to a generation rather than directly to the index. One generation is live, which means the index serves queries from it. An index name without a generation specifier refers to the live generation.
 
-`{name}` is therefore either of two things:
+The `{name}` parameter accepts two formats:
 
-| Written | Means |
-|---------|-------|
-| `products` | the index, answering from whichever generation is live |
-| `products@2` | generation `2` of `products`, whether or not it is live |
+| Name format | Description |
+|-------------|-------------|
+| `products` | The index, serving from the live generation. |
+| `products@2` | Generation `2` of `products`, whether live or not. |
 
-The `@` is reserved and appears in no name of its own, so a generation is
-only ever reachable through the index it belongs to. Which generations exist
-and which one is live is registry state shared by the deployment, not
-something each node decides.
+The `@` character is reserved and cannot appear in an index name. A generation is only reachable through its parent index. The registry state shared across the deployment tracks which generations exist and which generation is live.
 
-A definition that the documents already indexed were *not* indexed under - a
-field gaining `matching`, a changed analysis chain, an edited synonym set -
-cannot be rolled out by changing an index in place: the documents would go on
-being indexed the old way, and searches would quietly return less than they
-should. Roll it out instead by filling a new generation and promoting it, as
-in [Roll out a definition change](../how-to/roll-out-a-definition-change.md).
+Updating an index definition in place does not reindex existing documents. If a definition change affects indexing—such as adding `matching`, changing an analysis chain, or editing a synonym set—create and populate a new generation, then promote it. For step-by-step instructions, see [Roll out a definition change](../how-to/roll-out-a-definition-change.md).
 
-`DELETE` on an index removes it and every generation of it; on a generation it
-removes that one alone, and the generation an index answers from is refused
-with `index:generation:is_live` until another is promoted. Either way the index
-is taken out of the registry, so it is gone for the whole deployment rather
-than only for the answering node - the others remove their copies when they
-next read the registry. What the remote holds under it is not removed. Both
-answer `204 No Content`.
+A `DELETE` request on an index deletes the index and all of its generations. A `DELETE` request on a generation deletes only that generation. Deleting the live generation fails with `index:generation:is_live` until you promote another generation. Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. Deletion does not remove data held in remote storage. Both operations return `204 No Content`.
 
-`promote` makes the index answer from the named generation. It takes effect on
-the answering node at once and on every other within `INDEXES_REFRESH_INTERVAL`.
-Nothing a caller holds changes, which is also what makes it the way to undo a
-rollout: promote the generation that was answering before.
+The `promote` action configures the index to serve from the specified generation. The change takes effect immediately on the receiving node and within `INDEXES_REFRESH_INTERVAL` on all other nodes. To roll back a deployment, promote the previous generation.
 
-## The index resource
+## Index resource
 
-`GET` on an index, and every successful `PUT`, answer with the same shape:
+A `GET` request on an index endpoint and every successful `PUT` request return an index resource:
 
 ```json
 {
@@ -97,104 +70,74 @@ rollout: promote the generation that was answering before.
 }
 ```
 
-- `generation` is the one being described - the live one when the request
-  named the index alone.
-- `generations` lists every generation of the index, so reading it says what
-  could be promoted as well as what is answering now.
-- `version` identifies the definition and is also sent as an `ETag` header.
-  Send it back as `If-Match` on `PUT` to fail with a conflict instead of
-  overwriting a definition someone changed in the meantime.
-- `definition` is the definition in effect - see
-  [Field types](field-types.md) for its contents. Presets are stored
-  expanded, so a definition reads back as the chain a preset became rather
-  than the preset.
-- `status` is observed state, reported by the node answering and never
-  accepted as input.
+The resource contains the following fields:
 
-A `PUT` that creates something answers `201 Created`; one that updates it
-answers `200 OK`. The definition is desired state: it is sent in full and
-anything left out is removed. What the request creates depends on the name:
+- `name`: The name of the index.
+- `generation`: The generation described in the response. When the request specifies only the index name, this is the live generation.
+- `live`: A boolean indicating whether this generation is the live generation.
+- `version`: An identifier for the definition, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates.
+- `definition`: The active index definition. See [Field types](field-types.md). Presets are stored expanded; the response returns the expanded chain rather than the preset name.
+- `status`: The observed state reported by the answering node. The API does not accept this object as input.
+- `generations`: A list of all generations for the index, including name, live status, and creation timestamp (`createdAt`).
 
-| `PUT` on | Creates | Updates |
-|----------|---------|---------|
-| `products` | the index, with a first generation named `1` | the definition of the live generation |
-| `products@2` | generation `2` of an existing index | the definition of generation `2` |
+A `PUT` request that creates a resource returns `201 Created`. A `PUT` request that updates an existing resource returns `200 OK`. The request body must contain the full definition; any omitted settings are removed.
 
-A generation created this way holds no documents and is not live - the index
-goes on answering from the one it had. `PUT products@2` against an index that
-does not exist answers `404`: there is nothing to add a generation to, and an
-index is created by its own name so that which generation comes first stays
-the engine's to decide.
+The target of a `PUT` request depends on the name format:
 
-A definition written by a newer version of the API may hold settings this one
-has no name for. Reading such an index is refused rather than answered with
-the parts that fit, and updating it is refused as
-`index:definition:unrepresentable` rather than dropping what was left out -
-sending back what was read would otherwise delete settings the caller never
-saw. Both are `409 Conflict`, and neither is fixed by changing the request:
-use a node running a version that knows the definition.
+| `PUT` target | Create behavior | Update behavior |
+|--------------|-----------------|-----------------|
+| `products` | Creates the index with an initial generation named `1`. | Updates the definition of the live generation. |
+| `products@2` | Creates generation `2` under an existing index. | Updates the definition of generation `2`. |
+
+A newly created generation contains no documents and is not live; the index continues serving from the previous live generation. A `PUT products@2` request on a non-existent index returns `404 Not Found`.
+
+If an index definition contains settings from a newer API version that the current node does not recognize, reading the index returns `409 Conflict`. Updating such an index is rejected with `409 Conflict` and the error code `index:definition:unrepresentable`. To resolve these errors, send the request to a node running a version that supports the definition.
 
 ## Index states
 
-`status.state` says where the index is in its synchronization with the
-remote, as seen by the answering node:
+The `status.state` field indicates the remote synchronization state as observed by the answering node:
 
-| State | Meaning |
-|-------|---------|
+| State | Description |
+|-------|-------------|
 | `NEEDS_PULL` | A newer remote state exists and has not been pulled yet. |
-| `PULLING` | The remote state is being fetched. Becomes `USABLE` when done. |
-| `USABLE` | Serving searches. On a read only node this means likely up to date - as current as the last pull. |
-| `MODIFIED` | Has local changes not yet pushed. Only the node writing the index reaches this. |
-| `PUSHING` | Local changes are being pushed. Becomes `USABLE` when done. |
-| `UNSUPPORTED` | The definition needs something this version of the engine does not have. Written by a newer node; fixed by upgrading this one. |
-| `INCOMPATIBLE` | The Lucene files are too old for this build to open. Not fixed by upgrading - reindexing into a new generation is the only way back. |
-| `CLOSED` | Closed on this node. Asking for the index anew opens a fresh instance. |
+| `PULLING` | The node is fetching remote state. The state becomes `USABLE` when complete. |
+| `USABLE` | The index is serving searches. On a read-only node, data is as current as the last pull. |
+| `MODIFIED` | The index has local changes that are not yet pushed. Only writer nodes reach this state. |
+| `PUSHING` | The node is pushing local changes. The state becomes `USABLE` when complete. |
+| `UNSUPPORTED` | The definition requires engine features not present on this node version. Upgrade the node to resolve. |
+| `INCOMPATIBLE` | The Lucene files are too old for this build to open. Reindexing into a new generation is required. |
+| `CLOSED` | The index is closed on this node. A new request opens a fresh instance. |
 
-`status.readOnly` is whether this node can modify the index - only the node
-holding it can, and which node that is differs per index.
+The `status.readOnly` field indicates whether the answering node can modify the index. Only the node holding the index can modify it.
 
-`status.indexer` names that node, whichever node answers, with the address
-writes are forwarded to - absent when the node offered none. The field is
-absent when no node holds the index, when who does could not be read, or on a
-node storing locally, where `readOnly` already answers. The answer can lag a
-handover by a few seconds, the same way write forwarding does - see
-[Indexers](#indexers).
+The `status.indexer` object identifies the holder node and the address where writes are forwarded. This field is omitted if no node holds the index, if the holder could not be read, if the holder provided no address, or on nodes using local storage. Data in this field can lag behind a node handover by a few seconds. For more information, see [Indexers](#indexers).
 
 ## Lucene compatibility
 
-`status.luceneCompatibility` says how much longer the index can be read.
-Lucene opens an index created by the current major version and the one
-before it, and an index in storage outlives that window, so the version that
-created it is recorded and judged:
+The `status.luceneCompatibility` field indicates Lucene version compatibility. Lucene supports indexes created by the current major version and the preceding major version:
 
-| Value | Meaning |
-|-------|---------|
-| `CURRENT` | Created by the major in use, so it survives the next one too. |
-| `ENDING` | Readable now, dropped by the next Lucene major. Reindex it before upgrading the nodes across one. |
-| `UNREADABLE` | Too old to open. The index reports state `INCOMPATIBLE` and only reindexing brings the documents back. |
-| `UNKNOWN` | Nothing recorded a version and there is no commit to read one from, which is what an empty index looks like. |
+| Value | Description |
+|-------|-------------|
+| `CURRENT` | Created by the current major version. Compatible with the current and next Lucene major versions. |
+| `ENDING` | Readable by the current version, but unsupported by the next Lucene major version. Reindex before upgrading across major versions. |
+| `UNREADABLE` | Too old to open. The index reports the `INCOMPATIBLE` state and requires reindexing. |
+| `UNKNOWN` | No version was recorded and no commit exists to determine the version (for example, on an empty index). |
 
-`status.luceneCreatedMajor` is the recorded major, absent when it is
-`UNKNOWN`.
+The `status.luceneCreatedMajor` field contains the recorded Lucene major version. This field is omitted when compatibility is `UNKNOWN`.
 
 ## Actions
 
-`commit` pushes pending changes - documents and definition - to storage and
-answers the resulting status. `pull` fetches the latest remote state right
-away rather than waiting for the refresh interval, and answers the resulting
-status. Both act on the generation the name resolves to.
+The API provides index action endpoints:
 
-`promote` makes the index answer from the named generation, and answers with
-the index resource for it. It names a generation: `promote` on an index alone
-is refused with `index:generation:name_required`.
+- `commit`: Pushes pending changes (documents and definition) to storage and returns the resulting status.
+- `pull`: Fetches the latest remote state immediately instead of waiting for the refresh interval, and returns the resulting status.
+- `promote`: Configures the index to serve from the specified generation and returns the updated index resource. The request path must specify a generation name; calling `promote` without a generation returns `index:generation:name_required`.
 
-Nodes otherwise find indexes, generations and their changes on their own, on
-the interval set by `INDEXES_REFRESH_INTERVAL`.
+`commit` and `pull` act on the generation specified in the request path (or the live generation if omitted). Nodes automatically discover indexes, generations, and changes at the interval configured by `INDEXES_REFRESH_INTERVAL`.
 
 ## Indexers
 
-`GET /v1alpha1/admin/indexers` lists the nodes competing to write indexes and,
-per index some node writes, which node that is:
+`GET /v1alpha1/admin/indexers` returns the candidate nodes competing to write indexes and the active writer claim for each index:
 
 ```json
 {
@@ -209,31 +152,28 @@ per index some node writes, which node that is:
 }
 ```
 
-Any node answers, from its own read of the state the deployment shares - a
-node that only searches included. The answer therefore lags reality by a few
-seconds, the same way write forwarding does: a claim that just moved may still
-name the old node for a moment. Requires `indexes.read`, and a claim on an
-index the key was granted nothing on is left out, the same way listing the
-indexes leaves the index out.
+Any node can serve this endpoint from its local view of shared deployment state, including search-only nodes. The response can lag actual state by a few seconds.
 
-An index without a claim has no writer until a write for it appoints one, so
-it appears in no list rather than as an empty entry. `address` is where writes
-are forwarded and is absent when the node set no `NODE_ADDRESS`; `expiresAt`
-is when the entry lapses unless the node renews it, which is how a dead node's
-entries disappear. A node storing locally answers with both lists empty: it is
-the only node there is and writes everything, which `readOnly` already says.
-A node that cannot read the shared state answers `503` rather than pretending
-nothing writes.
+This endpoint requires the `indexes.read` permission. If a credential lacks permissions for an index, that index is omitted from the `claims` list.
+
+Indexes without an active claim are omitted from `claims` until a write operation assigns a writer. In candidate and claim entries:
+
+- `address`: The target address for write forwarding. Omitted if the node did not set `NODE_ADDRESS`.
+- `expiresAt`: The timestamp when the entry expires unless renewed by the node.
+
+On nodes using local storage, `candidates` and `claims` are empty. If a node cannot read shared state from storage, it returns `503 Service Unavailable`.
 
 ## Status codes
 
-| Status | When |
-|--------|------|
-| `400 Bad Request` | The body failed validation, carrying every problem found - see [Errors](errors.md). |
-| `401 Unauthorized` | No credential this node accepts - see [Authentication](auth.md). |
-| `403 Forbidden` | The key was not granted this on this index. |
-| `404 Not Found` | No index or generation by that name, including a `PUT` with `If-Match` on one that does not exist, and an index outside every pattern of the key. |
-| `409 Conflict` | The index cannot be modified right now - there is no node to forward the request to, or the index is synchronizing. Also a definition holding settings this version of the API cannot describe, an index needing engine features this node does not have, and a registry that could not be written. |
-| `412 Precondition Failed` | The version in `If-Match` is no longer the one in effect. |
-| `502 Bad Gateway` | The request was forwarded to the node writing the index and it did not answer. |
-| `503 Service Unavailable` | The request raced the index being closed to make room on this node - retrying opens it again. Also the indexers listing on a node that could not read who writes what; retrying once the storage answers is served. |
+The Admin API returns the following status codes:
+
+| Status code | Condition |
+|-------------|-----------|
+| `400 Bad Request` | The request body failed validation. The response body details each validation error. See [Errors](errors.md). |
+| `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
+| `403 Forbidden` | The credential does not have permission for the requested action on this index. |
+| `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, or the index falls outside the credential's allowed patterns. |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, the definition contains unrepresentable settings, the index requires unsupported engine features, or writing to the registry failed. |
+| `412 Precondition Failed` | The `If-Match` version does not match the current definition version. |
+| `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
+| `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

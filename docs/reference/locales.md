@@ -1,22 +1,19 @@
 # Locales
 
-The languages this build of the engine has rules for. A locale is named by
-its BCP 47 tag wherever a definition says what language a value is in - the
-`defaultLocale` and `locales` of a [locale specific
-field](field-types.md#properties-on-every-type), the `locale` of an analysis
-component, the chain of a [locale fallback](field-types.md#locale-fallback) -
-and by a search that reads locale specific fields in one.
+This reference lists the supported locales and their language analysis features.
 
-A tag that is not listed here is refused rather than ignored:
-`index:field:locales:unsupported_locale` for a field,
-`index:field:analyzer:unsupported_locale` for an analysis chain,
-`index:locale_fallback:unsupported_locale` for a fallback chain and
-`search:locale:unsupported` for a search. What each definition needs is
-recorded in its features as `locale.<tag>`, so a node built without a locale
-refuses an index that uses it instead of indexing the text as if it were
-English.
+A locale is identified by its BCP 47 tag. Locales are used in the following configurations:
+
+- The `defaultLocale` and `locales` properties of a [locale-specific field](field-types.md#properties-on-every-type).
+- The `locale` property of an analysis component.
+- The chain of a [locale fallback](field-types.md#locale-fallback).
+- A search query that reads locale-specific fields.
+
+`en` is the default locale when no locale is specified.
 
 ## Supported languages
+
+The following table lists the supported language tags and their analysis capabilities:
 
 | Tag | Language | Stopwords | Stemming | Own segmentation | Compound splitting |
 |-----|----------|-----------|----------|------------------|--------------------|
@@ -63,49 +60,44 @@ English.
 | `uk` | Ukrainian | yes | yes | | |
 | `zh` | Chinese | yes | yes | yes | |
 
-`en` is the locale assumed wherever nothing says otherwise.
+### Analysis features
 
-**Stopwords** and **stemming** are what the engine-built `matching` chain
-applies for the locale; a [custom chain](analysis.md#custom-chains) takes
-them by naming the locale on a `stopwords` or `stemming` component instead.
-Japanese and Korean drop the parts of speech that are grammar rather than
-meaning, which is what a stopword list does elsewhere and is why Korean needs
-no list of its own.
-
-What stemming means follows the language: Japanese reduces the long final
-vowel loanwords write both ways, Chinese stems the Latin words mixed into the
-text, and Korean and Thai have none because their words do not inflect.
-
-**Own segmentation** marks the languages whose words come from a
-dictionary rather than from Unicode, because the writing puts no spaces
-between them. Thai writes no spaces either and needs no entry here - the
-Unicode segmentation the engine already uses finds its words.
-
-**Compound splitting** marks the locales the engine ships decompounding data
-for, so `jakke` finds `regnjakke`. It needs the data to be present on the
-node - see [compound words](analysis.md#compound-words).
-
-Normalization comes with the locale wherever the language needs more than
-Unicode case folding for two spellings of a word to meet: the Turkish
-dotless ı, Greek accents, the articles elided onto the front of a word in
-Catalan, French, Irish and Italian, and the several Unicode forms of a
-letter in the Arabic, Indic and Cyrillic scripts.
+- **Stopwords**: The built-in `matching` analyzer chain applies stopwords for the locale. A [custom chain](analysis.md#custom-chains) applies them by specifying the locale on a `stopwords` component. Japanese and Korean drop grammatical parts of speech instead of using a separate stopword list.
+- **Stemming**: The built-in `matching` analyzer chain applies stemming for the locale. A custom chain applies stemming by specifying the locale on a `stemming` component. Stemming behavior varies by language:
+  - Japanese reduces elongated final vowels in loanwords.
+  - Chinese stems mixed Latin words.
+  - Korean and Thai do not have stemming rules because words do not inflect.
+- **Own segmentation**: Indicates languages that use a dictionary-based word segmenter instead of Unicode segmentation because words are written without spaces. Thai words are segmented using standard Unicode segmentation.
+- **Compound splitting**: Indicates locales that include decompounding data (for example, searching for `jakke` matches `regnjakke`). Decompounding requires decompounding data on the node. For more information, see [compound words](analysis.md#compound-words).
+- **Normalization**: Applied automatically when a language requires rules beyond Unicode case folding. Normalization covers the following cases:
+  - Turkish dotless `ı`.
+  - Greek accents.
+  - Elided articles in Catalan, French, Irish, and Italian.
+  - Distinct Unicode forms of letters in Arabic, Indic, and Cyrillic scripts.
 
 ## Varieties of a language
 
-`nb` and `nn` are how Norwegian is written, and both resolve to `no` when
-nothing holds the narrower tag: a field holding `no` answers a search for
-either. No other language here is split this way.
+`nb` (Norwegian Bokmål) and `nn` (Norwegian Nynorsk) both resolve to `no` (Norwegian) when a field does not specify the narrower tag. A field configured with `no` matches a search for either `nb` or `nn`. No other language is split this way.
 
-A tag is otherwise matched by dropping the subtags the available locales do
-not tell apart, so a browser sending `sv-SE` reads a field holding `sv`.
-What that means for a field holding several locales is in [Localize
-fields](../how-to/localize-fields.md).
+Other language tags match by dropping subtags that the available locales do not distinguish. For example, a search request specifying `sv-SE` matches a field configured with `sv`.
+
+For information about fields configured with multiple locales, see [Localize fields](../how-to/localize-fields.md).
 
 ## Sorting in a locale not listed here
 
-Collation comes from ICU, which knows every locale, so a `sort` with
-`"collation": "locale"` orders by the rules of whatever locale the value
-carries. The list above is about analysis - what a language does to text on
-its way into the index - and a language is only listed when there are real
-rules to apply, rather than claiming support for a fallback to nothing.
+Collation uses International Components for Unicode (ICU), which supports all locales. A `sort` definition with `"collation": "locale"` sorts values according to the rules of the locale assigned to the value.
+
+The supported languages table lists locales supported for text analysis during indexing. A locale is included only when the engine provides specific analysis rules for that language.
+
+## Errors
+
+The engine rejects unsupported locale tags. The following table lists the error codes returned when a tag is unsupported:
+
+| Error | Condition |
+| --- | --- |
+| `index:field:locales:unsupported_locale` | A field definition specifies an unsupported locale tag in `locales` or `defaultLocale`. |
+| `index:field:analyzer:unsupported_locale` | An analysis chain specifies an unsupported locale tag. |
+| `index:locale_fallback:unsupported_locale` | A fallback chain specifies an unsupported locale tag. |
+| `search:locale:unsupported` | A search query specifies an unsupported locale tag. |
+
+Each definition records its required locales in its features as `locale.<tag>`. A node built without a locale rejects an index that uses that locale instead of indexing the text as English.

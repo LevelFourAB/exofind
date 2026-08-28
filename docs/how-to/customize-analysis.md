@@ -1,113 +1,86 @@
-# Customize text analysis
+# Customizing text analysis
 
-How text is analyzed is decided per usage through `analyzer`, on a string
-field's `matching` or `autocomplete`. Leaving it out lets the engine build
-analysis from the locale and the usage, which is the right choice for most
-fields - reach for the steps below when a field needs something the default
-does not do.
+This guide shows you how to configure custom text analysis for string fields. Use this guide when a field requires analysis behavior that differs from the default engine analysis.
 
-## Start from a preset
+## Prerequisites
 
-A preset names a chain the engine expands:
+Before customizing text analysis, ensure you have:
+- A schema with string fields configured for `matching` or `autocomplete`.
 
-```json
-"sku": {
-  "type": "string",
-  "matching": {
-    "analyzer": { "preset": "preserve_terms" }
-  }
-}
-```
+## Steps
 
-- `preserve_terms` tokenizes and normalizes but keeps every word whole - for
-  names, codes and SKUs, where stemming `running` to `run` would be wrong.
-- `full_text` also drops stopwords, splits compounds and stems - for prose.
+1. Configure an analyzer on your field's `matching` or `autocomplete` setting:
+   - **Preset analyzer**: To use a predefined analyzer chain, specify a preset:
+     - `preserve_terms`: Tokenizes and normalizes, but keeps every word whole. Use this for names, codes, and SKUs, where stemming `running` to `run` is undesirable.
+     - `full_text`: Drops stopwords, splits compounds, and stems words. Use this for prose.
+     ```json
+     "sku": {
+       "type": "string",
+       "matching": {
+         "analyzer": { "preset": "preserve_terms" }
+       }
+     }
+     ```
+   - **Custom analyzer pipeline**: When neither preset fits, define a custom pipeline with `charFilters`, a `tokenizer`, and `filters`:
+     ```json
+     "matching": {
+       "analyzer": {
+         "custom": {
+           "charFilters": [ { "mapping": { "mappings": { "-": "" } } } ],
+           "tokenizer": { "whitespace": {} },
+           "filters": [ { "normalize": {} } ]
+         }
+       }
+     }
+     ```
+     If you omit the tokenizer, the engine selects the tokenizer for the locale of each value. The pipeline describes indexing, and the engine derives query analysis from it. For component details, see the [analysis reference](../reference/analysis.md).
+   - **Shared analyzer**: To share an analyzer across multiple fields, define the chain under `resources.analyzers` and reference it by name:
+     ```json
+     "resources": {
+       "analyzers": {
+         "prose": { "preset": "full_text" }
+       }
+     },
+     "fields": {
+       "description": { "type": "string", "matching": { "analyzer": { "named": "prose" } } },
+       "review":      { "type": "string", "matching": { "analyzer": { "named": "prose" } } }
+     }
+     ```
 
-A preset is expanded before it is stored, so reading the definition back
-shows the chain it became - what a preset means can then never shift under
-an index that already exists.
+2. Add custom stopword or synonym filters (optional):
+   - **Stopwords**: To share a stopword list across fields, define it under `resources.stopwords` and reference it in a filter:
+     ```json
+     "resources": {
+       "stopwords": { "brands": ["acme"] }
+     }
+     ```
+     ```json
+     "filters": [ { "stopwords": { "named": "brands" } } ]
+     ```
+     To inline a stopword list for a single field, use `words`. To use the stopword list for the locale of the value being analyzed, supply an empty `{ "stopwords": {} }`.
+   - **Synonyms**: Define synonym rules under `resources.synonyms` and reference them in a filter:
+     ```json
+     "resources": {
+       "synonyms": {
+         "cars": {
+           "rules": [
+             { "equivalent": ["car", "automobile"] },
+             { "mapping": { "from": ["ny"], "to": ["new york"] } }
+           ]
+         }
+       }
+     }
+     ```
+     ```json
+     "filters": [ { "synonyms": { "named": "cars" } } ]
+     ```
+     An `equivalent` rule makes each listed word match the others. A `mapping` rule is one-way: a value containing `ny` matches searches for `new york`, but not the reverse.
 
-## Spell out a custom chain
+3. Reindex existing documents:
+   Analysis configurations and synonym rules apply when values are indexed rather than when queried. Reindex existing documents so that they use the updated analysis settings.
 
-When neither preset fits, give the whole pipeline - char filters, a
-tokenizer and token filters:
+## Confirming the configuration
 
-```json
-"matching": {
-  "analyzer": {
-    "custom": {
-      "charFilters": [ { "mapping": { "mappings": { "-": "" } } } ],
-      "tokenizer": { "whitespace": {} },
-      "filters": [ { "normalize": {} } ]
-    }
-  }
-}
-```
+Read back the schema definition from the engine to verify the configuration.
 
-The chain describes the indexing side; the engine derives the querying side
-from it. Leaving the tokenizer out picks the right one for the locale of
-each value. Every component and its options are in the
-[analysis reference](../reference/analysis.md).
-
-## Share a chain between fields
-
-Name the chain once under `resources` and refer to it:
-
-```json
-"resources": {
-  "analyzers": {
-    "prose": { "preset": "full_text" }
-  }
-},
-"fields": {
-  "description": { "type": "string", "matching": { "analyzer": { "named": "prose" } } },
-  "review":      { "type": "string", "matching": { "analyzer": { "named": "prose" } } }
-}
-```
-
-## Share stopwords
-
-A stopword list that repeats across fields is named the same way, and used
-from the stopwords component of a chain:
-
-```json
-"resources": {
-  "stopwords": { "brands": ["acme"] }
-}
-```
-
-```json
-"filters": [ { "stopwords": { "named": "brands" } } ]
-```
-
-A list one field needs can still be inlined with `words`, and an empty
-`{ "stopwords": {} }` takes the list of the locale of the value being
-analyzed.
-
-## Add synonyms
-
-```json
-"resources": {
-  "synonyms": {
-    "cars": {
-      "rules": [
-        { "equivalent": ["car", "automobile"] },
-        { "mapping": { "from": ["ny"], "to": ["new york"] } }
-      ]
-    }
-  }
-}
-```
-
-```json
-"filters": [ { "synonyms": { "named": "cars" } } ]
-```
-
-An `equivalent` rule makes each of its words match the others; a `mapping`
-goes one way - a value containing `ny` also answers searches for `new york`,
-but not the reverse.
-
-Synonyms are applied when a value is indexed rather than when it is
-searched, so a changed set affects documents indexed from there on, like
-every other analysis change. Reindex the documents that should pick up the
-change.
+**Note:** The engine expands preset definitions into their full chains before storing them. Reading back the definition shows the expanded chain that was stored.

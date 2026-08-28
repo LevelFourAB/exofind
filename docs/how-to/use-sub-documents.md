@@ -1,33 +1,19 @@
-# Use sub-documents
+# Using sub-documents
 
-A sub-document is a value with fields of its own held inside another document:
-the variants of a product, the lines of an order, the opening hours of a
-place. Defining a field to hold them, indexing them, searching inside them,
-ordering and counting by them and changing them is what this guide walks
-through.
+This guide shows you how to define, index, query, and update sub-documents in an index. Use sub-documents when multiple fields inside an object must match together within a single value, such as product variants, order lines, or opening hours.
 
-What they are for is being matched one at a time. Fields beside each other
-cannot say which value goes with which - `colors: [red, blue]` next to
-`prices: [30, 10]` does not say that red is the expensive one - while a search
-over sub-documents asks for a variant that is *both* red and under 20 rather
-than a product that is red in one variant and cheap in another.
+If you only need structural grouping without matching multiple fields in the same item, use `"mode": "flattened"`. Flattened fields fold into the document under dotted paths and do not require a `nested` clause or join. For details on modes, see [`object` fields](../reference/field-types.md#object).
 
-The field is called `object` where the index is defined, holds sub-documents
-when its `mode` is `nested`, and is reached through the `nested` clause where
-it is searched. Below all three, every value is indexed as a document of its
-own and joined back to the document holding it, and three things the rest of
-this guide keeps running into follow from that: values are matched a value at
-a time, results are always documents, and a document is written and deleted
-along with its values.
+## Prerequisites
 
-Matching one value at a time is also the only reason to pay for any of it. An
-object that is only structure - values whose fields never have to hold
-together - takes `"mode": "flattened"` instead, which folds its fields into
-the document as ordinary fields under the dotted path, searched with no
-`nested` clause and no join. What each mode allows is listed in [`object`
-fields](../reference/field-types.md#object); this guide is about `nested`.
+Before you use sub-documents, ensure you have the following:
 
-## Define the field
+- A node with the `type.object` feature enabled. If you use usages beyond `filter` inside the object, the node also requires the `type.object.usages` feature.
+- An index where you can define fields, or permissions to create a new index.
+
+## 1. Define the object field
+
+To store sub-documents, define an object field with `"type": "object"`, `"multiple": true`, and `"mode": "nested"`:
 
 ```json
 "variants": {
@@ -43,37 +29,19 @@ fields](../reference/field-types.md#object); this guide is about `nested`.
 }
 ```
 
-`multiple` on the object is what makes it a list, and a list has to say its
-`mode` - flattened, `color = red` and `price < 20` could be satisfied by two
-different variants, so which way a list answers is never defaulted. A field
-without `multiple` holds one value, refuses a document giving it several with
-`index:update:not_multiple`, and is never a sub-document: a single value is
-one unit whichever way it is kept, so it always flattens and takes no `mode` -
-the shape for a group of fields that belong together, such as a `dimensions`
-holding a width and a height.
+Keep the following rules in mind when you configure the field:
 
-The fields inside are defined the way the index's own are, and may use
-`filter`, `matching`, `autocomplete`, `sort`, `facet`, `validation`,
-`required` and `multiple`. `required` means required in every value. Refused
-inside are the usages that only mean something for a document of the index -
-`primaryKey`, and `highlight`, which reads text back out of the document a
-fragment is shown for - as are `locales`, `stored`, objects inside objects and
-wildcard names. The object itself holds no value of its own, so `filter`,
-`sort`, `facet`, `locales` and `stored` on it are refused too.
+- Setting `multiple: true` makes the field a list. A list field must specify its `mode`. In flattened mode, conditions such as `color = red` and `price < 20` can match two different variants. Therefore, list fields do not have a default mode.
+- A field without `multiple: true` holds a single value, always flattens, and does not accept a `mode`. If a document provides multiple values for a non-multiple field, the engine rejects the document with `index:update:not_multiple`. Use non-multiple objects for grouped fields that represent a single unit, such as a `dimensions` object with `width` and `height`.
+- Define fields inside the object using the same options as top-level index fields. Inner fields support `filter`, `matching`, `autocomplete`, `sort`, `facet`, `validation`, `required`, and `multiple`. Setting `required: true` on an inner field makes that field required in every sub-document value.
+- Inner fields do not support top-level index features: `primaryKey`, `highlight`, `locales`, `stored`, nested objects inside objects, and wildcard field names.
+- The parent `object` field holds no direct value. Setting `filter`, `sort`, `facet`, `locales`, or `stored` on the parent object is rejected.
 
-An index with `nested` objects needs the `type.object` feature, and
-`type.object.usages` besides when anything beyond `filter` is used inside one,
-so a node without them refuses the index rather than indexing the values with
-none of what those usages write.
+**Note:** Adding a usage to an inner field on an index that already contains documents applies only to values indexed after the change. To apply the usage to existing documents, roll out the change to [a new generation](roll-out-a-definition-change.md).
 
-Giving an inner field a usage it did not have reaches only values indexed from
-then on, the same as anywhere else - on an index already holding documents,
-roll it out into [a new generation](roll-out-a-definition-change.md).
+## 2. Index documents with sub-documents
 
-## Index documents
-
-A value is written as a JSON object and a list of them as an array, in the
-same document as everything else:
+Write each sub-document as a JSON object, and write a list of sub-documents as a JSON array:
 
 ```http
 POST /v1alpha1/indexes/products/documents
@@ -82,32 +50,24 @@ Content-Type: application/x-ndjson
 {"id": "1", "name": "Rain jacket", "variants": [{"color": "red", "size": ["S", "M"], "price": 15.0}, {"color": "black", "price": 25.0}]}
 ```
 
-What a JSON object means depends on the field it was given to - the same shape
-is a locale map for one field and a geo point for another - so [the
-definition](../reference/documents-api.md#how-a-document-is-shaped) is what
-decides.
+The field definition determines how the engine interprets a JSON object. For details, see [How a document is shaped](../reference/documents-api.md#how-a-document-is-shaped).
 
-The values are validated the way a document is:
+The engine validates sub-document values using these rules:
 
-| Refused | Code |
-|---------|------|
+| Condition | Error code |
+| --- | --- |
 | A value that is not an object | `index:update:not_a_document` |
-| An object given to a field that is not one | `index:update:unexpected_document` |
-| A field the object does not declare | `index:update:field_not_found` |
+| An object provided for a field that is not an object | `index:update:unexpected_document` |
+| A field that the object does not declare | `index:update:field_not_found` |
 | A value missing an inner `required` field | `index:update:required_field_missing` |
 
-A document is written whole, so indexing one under a key it already holds
-replaces every value the field had, and deleting the document takes the values
-with it.
+Documents are written whole. Indexing a document with an existing key replaces all previous values in the object field. Deleting a parent document deletes all of its sub-documents.
 
-Values come back with results through the copy the index keeps of each
-document, and an object field cannot be `stored` on its own - an index defined
-with `"source": "none"` therefore answers without them.
+Search results return sub-documents from the document copy stored in the index. An object field cannot be set to `stored` on its own. If you define an index with `"source": "none"`, the engine returns search results without sub-document values.
 
-## Ask several things of one value
+## 3. Query sub-documents
 
-A `nested` clause names the object field as its `path` and holds the
-conditions that have to meet in a single value:
+To require multiple conditions to match within the same sub-document, add a `nested` clause to `query`. Set `path` to the name of the object field:
 
 ```json
 {
@@ -120,32 +80,15 @@ conditions that have to meet in a single value:
 }
 ```
 
-Fields inside go by their dotted path, and a path resolves only inside a
-`nested` clause for it: naming `variants.color` in `query` directly is refused
-with `index:query:nested:outside` and under another object's path with
-`index:query:nested:not_in_path`. A clause on a field of the index cannot sit
-inside one either.
+When building queries with `nested` clauses:
 
-Anything that runs against a single value may sit inside - `field`, `text`,
-`and`, `or`, `not` and `boost`. A `nested` within a `nested`, and a `knn`, are
-refused with `index:query:nested:unsupported_clause`. Empty `clauses` ask only
-that the document holds a value at all.
+- Reference inner fields by their dotted path (such as `variants.color`). Inner paths resolve only inside a `nested` clause that matches the path. Referencing `variants.color` directly in `query` fails with `index:query:nested:outside`. Referencing it under another object path fails with `index:query:nested:not_in_path`. Top-level index fields cannot appear inside a `nested` clause.
+- A `nested` clause supports clauses that run against a single value: `field`, `text`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `knn` clause inside a `nested` clause, fails with `index:query:nested:unsupported_clause`. An empty `clauses` array matches any document that contains at least one sub-document value.
+- Place `nested` clauses in `query` or `filters` based on how facet counts should behave:
+  - Page-level conditions (such as the main search box or "only in stock") belong in `query`. This narrows both the hits and the facet counts.
+  - User refinements belong in `filters`. A facet on a filtered field excludes that filter from its counts, keeping other filter values selectable. Place each facet field in a separate `filters` entry. For details, see [Facets](../reference/search-api.md#facets).
 
-Where a condition on values goes decides what the facet counts say, the same
-way it does for fields of the index. The scope of the page - the search box,
-"only in stock" - is a `nested` clause in `query`, narrowing every count
-along with the hits. A refinement the user ticked is a `nested` clause in
-`filters`, which a facet on the field it reads leaves out of its counts - so
-ticking `red` keeps the other colours pickable. Tick each facet's field as an
-entry of its own: an entry is excluded whole, so colour and price fused into
-one clause can only be left out together - see
-[Facets](../reference/search-api.md#facets).
-
-Results are documents unless asked otherwise. A hit carries the whole field,
-the values that matched and the ones that did not alike. A UI showing which
-variant answered asks for it with `matched`, which brings the values the
-search matched back beside each hit - see [Matched
-values](../reference/search-api.md#matched-values):
+By default, search results return entire documents with all sub-documents. To return only the sub-documents that matched the query, add the `matched` field to the request (see [Matched values](../reference/search-api.md#matched-values)):
 
 ```json
 {
@@ -158,24 +101,15 @@ values](../reference/search-api.md#matched-values):
 }
 ```
 
-Each value comes back whole. A tile that only shows the colour swatch asks
-for just that field of it, named by its dotted path the way fields inside an
-object always are: `"variants": { "fields": ["variants.color"] }`.
+The `matched` parameter returns each matching sub-document in full. To return only specific fields from each matched sub-document, specify the field paths: `"variants": { "fields": ["variants.color"] }`.
 
-A page that should show every matching variant as a tile of its own - not
-one tile per product - turns the hits into the values instead, with
-`"hits": { "path": "variants" }`. The total, the facets and the cursors are
-then all about values, and a `fields` beside the path cuts each value the
-same way; see [What a hit stands
-for](../reference/search-api.md#what-a-hit-stands-for).
+To return each matching sub-document as an individual search hit rather than returning one hit per document, set `"hits": { "path": "variants" }`. Totals, facets, and cursors then apply to individual sub-documents. You can also specify `fields` to limit which inner fields appear in each hit. For details, see [What a hit stands for](../reference/search-api.md#what-a-hit-stands-for).
 
-## Search text inside the values
+## 4. Search text inside sub-documents
 
-A `text` clause inside a `nested` clause covers the fields of the path when it
-names none, and its words have to be found in a single value the way the other
-clauses hold inside one. A `text` clause outside covers the fields of the
-index and nothing inside an object, so text that should reach both is an `or`
-of the two:
+To search text across inner fields, place a `text` clause inside a `nested` clause. If you do not specify a field, the clause searches all text fields in that object path. All words must match within the same sub-document value.
+
+A top-level `text` clause searches only top-level document fields. To search both top-level fields and sub-documents in the same query, combine them in an `or` clause:
 
 ```json
 "query": [
@@ -188,18 +122,13 @@ of the two:
 ]
 ```
 
-`score` says which of the values that matched decides what the document
-scores: `max` (default), `min`, `avg` or `total`. It means something only when
-something inside the clause ranks, which a filtering condition does not.
+Use `score` to define how matching sub-documents determine the parent document score: `max` (default), `min`, `avg`, or `total`. The `score` setting applies only when an inner clause scores results.
 
-Highlighting reads the text back out of the document a fragment is shown for,
-and a value is not that document, so an inner field cannot be highlighted -
-declaring it is refused. Highlight the document's own fields instead.
+Sub-document fields do not support highlighting. Highlighting extracts fragments from the parent document text, so configuring `highlight` on an inner field is rejected. Highlight top-level fields instead.
 
-## Order and count by a value
+## 5. Sort and facet by sub-document fields
 
-A sort and a facet name the dotted path directly, because what they say is
-about the document rather than about one value:
+To sort or calculate facets by sub-document fields, specify the dotted field path directly in `sort` or `facets`:
 
 ```json
 {
@@ -213,24 +142,17 @@ about the document rather than about one value:
 }
 ```
 
-Only the values the search matched take part in either, which is what the
-`nested` clauses every result had to satisfy say - clauses inside an `or`, a
-`not` or a `boost` take no part, and a search that asked nothing of the values
-reads all of them. A sort stands the document at the end of its values the
-order asks for, so ascending orders products by their cheapest red variant and
-descending by their most expensive. A facet counts documents the way every
-other facet does, so a product holding three red variants is one red product,
-and counting colours under a search for variants below 20 answers the colours
-of those variants rather than every colour of the products they belong to.
+Sorting and faceting evaluate only the sub-document values that match the `nested` query conditions. Clauses inside an `or`, `not`, or `boost` clause do not restrict which values participate. If the query does not filter sub-documents, all sub-document values participate.
 
-A `distance` sort inside an object is refused with
-`index:query:nested:sort_unsupported`.
+An ascending sort orders parent documents by their lowest matching value (for example, the cheapest red variant). A descending sort orders documents by their highest matching value (for example, the most expensive red variant).
 
-## Change some of the values
+Facets count parent documents. For example, a document with three red variants counts as one red document. When a query filters sub-documents by price, facet counts reflect only the colors of matching variants rather than all colors in those documents.
 
-`actions/update` changes a field at a time and replaces the field whole, so an
-update naming an object field leaves it holding the values that update gives
-and not the ones already there:
+Distance sorting (`distance`) is not supported inside an object and fails with `index:query:nested:sort_unsupported`.
+
+## 6. Update sub-document values
+
+To update sub-documents, send the complete list of sub-documents using the `actions/update` endpoint:
 
 ```http
 POST /v1alpha1/indexes/products/documents/actions/update
@@ -239,14 +161,9 @@ Content-Type: application/json
 {"documents": [{"id": "1", "variants": [{"color": "red", "price": 12.0}, {"color": "black", "price": 25.0}]}]}
 ```
 
-There is no path into a single value: `variants.color` is not a field of the
-index, and an update naming it is refused with `index:update:field_not_found`.
-Changing one variant means sending every variant the document should end up
-with.
+The `actions/update` endpoint replaces the entire object field value. You cannot update an individual sub-document directly. Naming an inner field such as `variants.color` in an update request fails with `index:update:field_not_found`. To change one sub-document, provide all sub-documents that the document must retain.
 
-Read them back first when the caller does not have them. The index keeps a
-copy of each document unless the definition turned it off, and a search brings
-the field back:
+If you do not have the existing sub-documents, retrieve them before updating:
 
 ```json
 {
@@ -255,43 +172,39 @@ the field back:
 }
 ```
 
-`fields` takes `variants` for every field inside each value, or a dotted path
-such as `variants.price` for one of them - the values still come back as
-values, cut down to what was asked for inside them. Finding the document by
-its key this way needs the key defined for `filter`.
+Set `fields` to `variants` to return all inner fields, or specify a dotted path such as `variants.price` to return a specific inner field. Retrieving a document by key with this method requires the key field to be configured with `filter`.
 
-An index whose [`source`](../reference/field-types.md#document-source) is
-`none` has no copy to read: it can filter, sort and count the values but not
-return them, and asking for them is refused with
-`index:query:source_not_kept`. Keep the copy on an index whose values have to
-be shown or updated.
+If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies and cannot return existing sub-documents. Requesting fields on such an index fails with `index:query:source_not_kept`. Retain source data on indexes where you need to retrieve or update sub-documents.
+
+## 7. Confirm the results
+
+To verify that the sub-documents are indexed and queryable, run a search request with a `nested` clause and the `matched` field:
+
+```http
+POST /v1alpha1/indexes/products/search
+Content-Type: application/json
+
+{
+  "query": [
+    { "type": "nested", "path": "variants", "clauses": [
+      { "field": "variants.color", "match": { "value": "red" } },
+      { "field": "variants.price", "match": { "type": "range", "lt": 20 } }
+    ] }
+  ],
+  "matched": { "fields": { "variants": {} } }
+}
+```
+
+Verify that the response returns the matching parent document and includes only the matching sub-document values under `matched`.
 
 ## What the values cost
 
-Each value is a Lucene document in the same block as the document holding it,
-so 100 000 products with five variants each are 600 000 documents. The block
-is written and deleted as one: changing a single variant rewrites the whole
-document, and removing the document removes its values. A search asking
-something of the values joins them back to their documents, which a condition
-on the document's own fields never has to do.
-
-Whether variants belong inside the document, in documents of their own, or
-rolled up onto the product is worth measuring rather than arguing about.
-`GroupingBenchmark` lays a catalogue out four ways and puts the same questions
-to each - see [Comparing ways of holding
-variants](benchmark-the-engine.md#comparing-ways-of-holding-variants).
+Each value is a Lucene document of its own, written in the same block as the document holding it. Changing one value rewrites the whole document, and a search asking something of the values joins them back to their documents. Before holding a large list this way, read [How sub-documents are stored](../explanation/document-blocks.md), and measure the layouts against your own data with [`GroupingBenchmark`](benchmark-the-engine.md#comparing-variant-layouts).
 
 ## Related
 
-- [`object` fields](../reference/field-types.md#object) - every property, and
-  what a field inside one may declare.
-- [The `nested` clause](../reference/search-api.md#nested) - the request
-  shape, along with [ordering
-  by](../reference/search-api.md#ordering-by-a-value-inside-an-object) and
-  [counting](../reference/search-api.md#counting-a-value-inside-an-object) a
-  value.
-- [Documents API](../reference/documents-api.md#how-a-document-is-shaped) -
-  the shape a document is written in, and what `actions/update` changes.
-- [Define an index](define-an-index.md) - the rest of a definition.
-- [Roll out a definition change](roll-out-a-definition-change.md) - reaching
-  values that are already indexed.
+- [`object` fields](../reference/field-types.md#object) - Property reference and supported inner field options.
+- [The `nested` clause](../reference/search-api.md#nested) - Reference documentation for nested queries, [ordering by](../reference/search-api.md#ordering-by-a-value-inside-an-object), and [counting](../reference/search-api.md#counting-a-value-inside-an-object) sub-document values.
+- [Documents API](../reference/documents-api.md#how-a-document-is-shaped) - Document payload format and updating documents.
+- [Define an index](define-an-index.md) - Complete index definition reference.
+- [Roll out a definition change](roll-out-a-definition-change.md) - Reindexing existing documents after schema changes.

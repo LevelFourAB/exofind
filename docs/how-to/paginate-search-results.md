@@ -1,62 +1,62 @@
-# Paginate search results
+# Paginating search results
 
-Where results start is said with at most one of `offset`, `after` and
-`before`. Which to use depends on what the client is - an infinite scroll,
-a pager with numbered pages, or an export walking everything.
+Use this guide to paginate search results for infinite scrolling, page navigation, or complete data exports.
 
-## Follow cursors
+To set where results start, specify at most one of `offset`, `after`, or `before` in your request. Choose the parameter based on your use case:
 
-Every response hands out opaque cursors: `next` continues past the window it
-came from, `previous` is the window preceding it. Send them back as `after`
-and `before`:
+- Use cursors (`after` and `before`) for infinite scrolling or walking every result.
+- Use `offset` to jump directly to a result index.
+- Use `pages` to render numbered pagination.
 
-```json
-{ "query": [ ... ], "limit": 20, "after": "AW8..." }
-```
+## Following cursors
 
-The cursors carry the position of the hit the window ended at rather than a
-count, so following them costs the same at any depth and is never capped.
-This is the right tool for infinite scroll and for walking every result.
+Cursors carry the position of the hit where the result window ended rather than a count. Following cursors costs the same at any depth and has no page depth cap. Use cursors for infinite scrolling and for walking every result.
 
-Two rules:
+To paginate with cursors:
 
-- A cursor is tied to the sort it was handed out under and refused under
-  another (`search:cursor:sort_mismatch`) - the position it carries means
-  nothing there. Changing the query while keeping the position is fine.
-- A response reached through a cursor leaves out `page.offset`, as nothing
-  was counted to know one.
+1. Send your initial search request with a `limit`.
+2. Find the opaque cursor strings in the response:
+   - `next` continues past the current result window.
+   - `previous` precedes the current result window.
+3. Send the cursor back in your next request using `after` or `before`:
 
-## Skip with an offset
+   ```json
+   { "query": [ ... ], "limit": 20, "after": "AW8..." }
+   ```
+
+When using cursors, keep the following behaviors in mind:
+
+- If you change the sort order, the server rejects the cursor with `search:cursor:sort_mismatch`. You can change the query while keeping the position.
+- If you reach a response through a cursor, the response omits `page.offset` because no results were counted to determine an offset.
+
+## Skipping with an offset
+
+To skip a specific number of results, set the `offset` parameter in your request:
 
 ```json
 { "query": [ ... ], "limit": 20, "offset": 40 }
 ```
 
-Skipping costs as much as ranking, so how deep an offset may reach is capped
-by `SEARCH_MAX_PAGE_DEPTH` (10000 by default) - a request past the cap is
-refused with `search:page:too_deep`. Following cursors is the way past it.
+Skipping costs as much as ranking, so the depth an offset can reach is capped by `SEARCH_MAX_PAGE_DEPTH` (10000 by default). If a request exceeds this cap, the server rejects the request with `search:page:too_deep`. To retrieve results past the cap, follow cursors instead.
 
-## Render numbered pages
+## Rendering numbered pages
 
-Ask for `"pages": {}`, with `max` optionally bounding how many entries come
-back:
+To render a user interface pager with numbered pages:
 
-```json
-{ "query": [ ... ], "limit": 20, "offset": 0, "pages": { "max": 9 } }
-```
+1. Add `"pages": {}` to your search request. If you want to limit how many page entries return, set the `max` field:
 
-The response's `page.pages` is split into `start`, `middle` and `end` runs
-so a pager renders `1 2 3 … 7` with the ellipses exactly where a run
-boundary falls. Each entry carries a cursor that fetches its page; a page's
-cursor is a count, so it keeps working whatever the sort and stays under the
-cap. Pages past the cap are simply never offered, so a pager never renders
-a jump that would be refused.
+   ```json
+   { "query": [ ... ], "limit": 20, "offset": 0, "pages": { "max": 9 } }
+   ```
 
-Asking for pages implies an exact total, as pages cannot be numbered against
-a lower bound. Numbered pages need a numbered position, so they combine with
-`offset` or a page's own cursor but not with `after`/`before`.
+   Requesting pages calculates an exact total match count because pages cannot be numbered against a lower bound. Numbered pages require a numbered position, so combine `pages` with `offset` or a page entry's cursor, but not with `after` or `before`.
 
-## Count without fetching
+2. Inspect the `page.pages` object in the response. The response splits entries into `start`, `middle`, and `end` runs so that you can render ellipses at run boundaries, such as `1 2 3 … 7`.
+3. Use the cursor in a page entry to fetch that page. A page cursor is a count, so it works across different sorts and stays under the depth cap. The server does not offer pages past the cap, preventing navigation to jumps that would be refused.
 
-A `limit` of `0` answers only how many documents match. The total is a cheap
-lower bound by default; `"total": "exact"` counts every match.
+## Counting matches without fetching
+
+To return only the number of matching documents without fetching results:
+
+1. Set `limit` to `0` in your request.
+2. If you need an exact count instead of the default lower bound, add `"total": "exact"` to the request.

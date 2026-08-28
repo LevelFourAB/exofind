@@ -1,19 +1,31 @@
-# Survive Lucene upgrades
+# Surviving Lucene upgrades
 
 Lucene reads an index created by its current major version and the one
-before it. An index in object storage outlives that window, so an index left
-alone across two major upgrades becomes unreadable - with its files intact.
-The engine tracks this and warns in time; this page is what to do with the
-warning. The background is in
-[Lucene compatibility](../explanation/lucene-compatibility.md).
+before it. An index left in object storage across two major upgrades becomes
+unreadable, even though its files are intact. The engine tracks this status and
+warns you in time.
 
-## Watch `luceneCompatibility`
+This guide shows you how to respond to compatibility warnings and reindex an
+index before you upgrade nodes across a major Lucene version. For background
+information, see [Lucene compatibility](../explanation/lucene-compatibility.md).
 
-Every index reports it in its status:
+## Prerequisites
+
+Before you begin:
+
+- Check that you have access to the admin API.
+- If your index uses `"source": "none"`, locate the original source documents.
+
+## Checking index compatibility
+
+Every index reports its compatibility state in its status. To check the status
+of an index, send the following request:
 
 ```http
 GET /v1alpha1/admin/indexes/products
 ```
+
+The response includes the compatibility status:
 
 ```json
 "status": {
@@ -23,34 +35,44 @@ GET /v1alpha1/admin/indexes/products
 }
 ```
 
-`CURRENT` needs nothing. `ENDING` is the warning: the index is readable now
-but the next Lucene major drops it. An `ENDING` index is also said once in
-the log of a node holding it, while there is still a readable copy to
-reindex from.
+A value of `CURRENT` requires no action. A value of `ENDING` warns you that the
+index is readable now, but the next major Lucene version drops support for it.
+A node holding an `ENDING` index also writes a warning once to its log while a
+readable copy is still available to reindex from.
 
-## Reindex an `ENDING` index before upgrading
+## Reindexing an index before upgrading
 
-Before upgrading the nodes across a Lucene major:
+Before you upgrade nodes across a major Lucene version, complete the following
+steps:
 
-1. List the indexes and note every one reporting `ENDING`.
-2. For each, add a generation carrying the same definition, and index the
-   documents into it. An index that keeps full documents can be reindexed
-   from itself; one with `"source": "none"` needs the documents from where
-   they originally came.
-3. Promote the new generation and delete the old one.
+1. List the indexes and identify every index that reports `ENDING`.
+2. Add a new generation with the same definition for each `ENDING` index.
+3. Index the documents into the new generation:
+   - If the index keeps full documents, reindex the documents from the index
+     itself.
+   - If the index uses `"source": "none"`, index the documents from their
+     original source.
+4. Promote the new generation and delete the old generation.
 
-This is the rollout in [Roll out a definition
-change](roll-out-a-definition-change.md), with the definition staying as it
-was. Indexing rewrites the files under the current major, so the new
-generation reports `CURRENT`, and callers never learn that it happened.
+This process follows the rollout procedure in [Roll out a definition
+change](roll-out-a-definition-change.md), keeping the definition unchanged.
 
-## If it is already too late
+## Confirming the result
 
-An index past the window reports state `INCOMPATIBLE` and
-`luceneCompatibility: "UNREADABLE"`. It is refused while pulling, before a
-single file is fetched, and cannot be opened on any current node - and
-unlike `UNSUPPORTED`, upgrading moves further away, not closer. The
-documents only come back by indexing them again from their original source
-into a new generation. If no such source exists, a node old enough to read
-the index can still be started against the same storage to read the documents
-out.
+Check the status of the new generation. Indexing rewrites the files under the
+current major version, so the new generation reports `CURRENT`, and callers
+never learn that the update happened.
+
+## Recovering an unreadable index
+
+If an index passes beyond the compatibility window, it reports `state` as
+`INCOMPATIBLE` and `luceneCompatibility` as `"UNREADABLE"`. The engine refuses
+the index during pulling before it fetches any files, and no current node can
+open the index. Unlike with `UNSUPPORTED`, upgrading nodes moves further away
+from compatibility.
+
+To recover the documents, use one of the following methods:
+
+- Index the documents again from their original source into a new generation.
+- If no original source exists, start a node with a Lucene version old enough to
+  read the index against the same storage, and read the documents out.

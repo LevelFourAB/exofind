@@ -1,108 +1,54 @@
 # Synchronization
 
-Two mechanisms keep an index in object storage consistent while nodes come
-and go: a leadership table that decides who *tries* to write each index, and
-conditional writes that stop anyone else from *succeeding*. They answer
-different questions and neither replaces the other.
+How does the system keep an index in object storage consistent when nodes join, leave, or fail? Two complementary mechanisms maintain consistency and coordinate writes:
+
+- **Leadership table:** A shared table that tracks node liveness and assigns index write responsibility.
+- **Conditional writes:** Atomic updates and epoch-scoped storage keys that prevent stale or concurrent writers from corrupting data.
+
+Neither mechanism replaces the other. The leadership table provides liveness and efficient resource use, while conditional writes enforce data safety.
 
 ## The manifest is what a synchronized index is
 
-A push writes the files of a pinned Lucene commit together with the index
-definition, and a *manifest* listing those files with their sizes and
-checksums. Whether there is anything to push or pull is decided by comparing
-manifests - not by comparing files, and not by the Lucene segment number
-alone, because a definition can be replaced without Lucene committing
-anything.
+A push writes the files of a pinned Lucene commit together with the index definition and a manifest. The manifest lists those files with their sizes and checksums. The system compares manifests to decide whether to push or pull data, rather than comparing files directly or relying on Lucene segment numbers, because an index definition can change without a new Lucene commit.
 
-Replacing the remote manifest is conditional: `If-Match` on the ETag of the
-manifest the writer last saw, or `If-None-Match: *` for the first write ever.
-A push built on a manifest the remote no longer holds fails instead of
-overwriting what another writer pushed. This is the safety mechanism - a
-node that wrongly still believes it writes an index can attempt a push, but
-storage refuses it. A candidate checks at startup that the storage actually
-enforces conditional writes, and refuses to run as one against storage that
-does not.
+Replacing the remote manifest requires a conditional write using an `If-Match` header on the ETag of the manifest the writer last saw, or `If-None-Match: *` for the initial write. If a push is based on a manifest that the remote storage no longer holds, the write fails instead of overwriting changes pushed by another writer. This conditional check provides safety: a node that erroneously assumes it is still the designated writer can attempt a push, but storage rejects it. At startup, candidate nodes verify that the storage backend enforces conditional writes and refuse to run against storage that does not.
 
 ## Why writes are scoped to epochs
 
-Lucene names its files by counting - two writer sessions can both produce a
-`_5.cfs` that have nothing to do with each other. If both uploaded under that
-name, the loser of the manifest race would have overwritten a file the
-winner's manifest references.
+Lucene names its files by sequential numbering. Two independent writer sessions can both produce a file named `_5.cfs`. If both sessions uploaded files using that name, a writer that fails the manifest race could overwrite a file referenced by the winning writer's manifest.
 
-So object keys are scoped: before its first upload a writer session claims an
-*epoch* by conditionally rewriting the manifest, then uploads everything
-under `e<epoch>/`. A session whose claim is refused never uploads at all.
-File names stay local; keys are remote.
+To prevent collisions, object keys are scoped to epochs. Before its first upload, a writer session claims an epoch by conditionally updating the manifest, and then uploads all files under `e<epoch>/`. If storage rejects the epoch claim, the session does not upload any files. File names remain local, while object keys are remote.
 
-A file that does not change keeps its key across epochs - the manifest
-records the key alongside the name. This is what makes a failover cheap: the
-new indexer re-uploads nothing that the previous one already pushed. After
-adopting a pulled manifest a session claims a fresh epoch of its own, because
-the adopted manifest may reference keys from the epoch it came from.
+Unchanged files retain their keys across epochs, and the manifest records each key alongside its corresponding file name. This mapping avoids re-uploading files that a previous indexer already pushed, making failovers efficient. After adopting a pulled manifest, a session claims a new epoch because the adopted manifest can reference keys from the epoch where it originated.
 
-Objects that no manifest references anymore are removed by diffing the old
-and new manifests on push. When that cleanup is interrupted, a listing sweep
-catches what is left - touching only objects older than a grace period, so
-it can never race an upload that has not made it into a manifest yet.
+When pushing an update, the system diffs the old and new manifests to identify and delete unreferenced objects. If this cleanup is interrupted, a periodic listing sweep removes any remaining unreferenced objects. The sweep only processes objects older than a grace period to avoid racing against uploads that are not yet recorded in a manifest.
 
 ## Leadership is liveness, not safety
 
-Which node writes which index is kept in one *leadership table* in the
-bucket: a claim per index naming its holder, next to an entry per candidate
-saying it is alive. The table is replaced whole, conditionally on its
-version like everything else, so two candidates changing it race for one
-write exactly one wins. Every candidate runs a round at a third of the claim
-duration (`INDEXER_LEASE_DURATION`): it renews its own entries, takes claims
-whose holder stopped renewing - crashed, hung, partitioned - and divides the
-indexes up, claiming free ones while it holds fewer than its fair share and
-handing one over per round while it holds more and another candidate holds
-less. The one handed over is the index the node's own recent writes say is
-the most idle - counted per name and halved every few minutes - so a busy
-index stays with the writer whose Lucene state is warm for it, and only the
-quiet ones pay the pull and reopen a handover costs. A claim lapsing is
-roughly how long a failover takes.
+The bucket maintains a single leadership table that tracks which node writes to each index. The table contains a claim entry for each index naming its holder, alongside an entry for each candidate node indicating that the candidate is alive. The table is updated as a whole, conditionally based on its version. If two candidates attempt concurrent updates, only one write succeeds.
 
-Even counts can still carry uneven load - one node holding every busy index,
-another every quiet one - so each claim also carries a coarse figure of how
-heavily its index is written: the bit length of that same decaying count,
-which only moves when the load roughly doubles. A node whose total sits well
-above the least loaded candidate marks one claim as *offered*; an
-under-loaded candidate answers by writing itself into the claim as taker,
-and the holder then hands the claim over. Only the holder ever moves a
-claim, so an index never changes hands without its writer choosing to, and
-the count balancing above finishes the exchange by moving an idle index
-back the other way. An index is only offered when its figure
-fits twice in the gap between the two totals - moving it has to narrow the
-gap, not hand it over - which is what keeps a single hot index from being
-traded back and forth between two otherwise idle nodes.
+Every candidate runs a coordination round at an interval equal to one-third of the claim duration (`INDEXER_LEASE_DURATION`). During a round, a candidate performs the following actions:
 
-Handing an index over is deliberate, and the order protects what was
-acknowledged: the claim is released only after everything the index still
-holds has been committed and pushed. The index first stops taking writes -
-a write arriving during that window is refused and retried by the caller -
-and once the flush has landed, a later round moves the claim: to the taker,
-or dropped for a candidate below its share to pick up. A successor that
-sees the index as its to write therefore always pulls a manifest that
-already carries the flush, so documents that were acknowledged but not yet
-committed survive a rebalance. A node shutting down keeps the same order
-for everything it holds: flush first, step out of the table after - and a
-flush that outlives the lease leaves the claims to lapse the way a crashed
-node's would, rather than free them mid-flush. Losing an index the
-uncertain way - claims lapsing before they could be renewed - pushes
-nothing, because a successor may already be writing; whatever was never
-pushed is dropped, and the conditional writes below are what keep even
-that from corrupting anything.
+- Renews its own entries.
+- Takes over claims whose holders stopped renewing due to crashes, hangs, or network partitions.
+- Rebalances index distribution by claiming unassigned indexes if it holds fewer than its fair share, or handing over an index if it holds more than its share while another candidate holds less.
 
-An index nothing holds does not wait for a round: the first write to reach a
-candidate claims it there and then, which is how a just-created index gets a
-writer and how a write lands somewhere useful the moment after a holder
-died.
+The candidate selects the most idle index for handover based on a write count that halves every few minutes. This keeps active indexes on writers with warm Lucene state, while quiet indexes absorb the cost of pulling and reopening data. The time required for a claim to lapse determines approximate failover duration.
 
-The table exists so that at most one node *spends effort* writing each
-index, and so the other nodes know where to forward its writes. It is not
-what protects the data: a clock can drift, a paused process can wake up
-convinced it still holds claims that lapsed. When that happens, the
-conditional manifest write and the epoch scoping above are what stand
-between the stale writer and corruption. The table keeps the system live;
-the conditional writes keep it safe. Keep both: neither alone is enough.
+Equal index counts can still result in uneven load, such as when one node holds all active indexes and another holds only idle ones. To balance load, each claim includes a write load metric equal to the bit length of the decaying write count, which increments when write traffic approximately doubles.
+
+When a node's load total substantially exceeds that of the least-loaded candidate, the node marks an index claim as offered. An underloaded candidate responds by recording itself as the taker in the claim, and the holder transfers the claim. Only the holder transfers a claim, ensuring an index changes hands only when its writer initiates the transfer. The count-balancing process completes the exchange by moving an idle index back in the opposite direction.
+
+A node offers an index only when the index load metric fits twice into the difference between the two nodes' totals. Moving the index must narrow the load gap rather than reverse it. This threshold prevents two nodes from repeatedly trading a single active index back and forth.
+
+Index handovers follow a strict order to protect acknowledged writes. A holder releases a claim only after committing and pushing all pending index data:
+
+1. The index stops accepting writes. Incoming writes during this transition are rejected, and the caller retries them.
+2. The holder flushes and pushes pending data to storage.
+3. In a subsequent round, the holder transfers the claim to the taker, or drops the claim for an under-capacity candidate to acquire.
+
+Because of this order, a successor node always pulls a manifest that includes the flush, preserving acknowledged documents across rebalances. A shutting-down node follows the same order for all held indexes: it flushes first, then removes itself from the table. If a flush exceeds the lease duration, the claims lapse instead of being released mid-flush. When a node loses a claim because the lease lapsed, it pushes nothing, because a successor might already be writing. The expired node drops unpushed data, while conditional writes prevent storage corruption.
+
+An unassigned index does not wait for a coordination round. The first candidate node that receives a write claims the index immediately. This ensures newly created indexes acquire writers immediately and routes writes promptly if a holder fails.
+
+The leadership table ensures that at most one node expends effort writing to each index, and informs other nodes where to forward writes. The table does not guarantee data safety. For example, clock drift or a paused process can cause a stale node to attempt writes after its claim has lapsed. Conditional manifest writes and epoch scoping prevent stale writers from corrupting data. The leadership table maintains system liveness, while conditional writes provide safety.
