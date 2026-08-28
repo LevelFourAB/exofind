@@ -32,7 +32,7 @@ GET    /v1alpha1/admin/registry/audit                   # compare the registry w
 POST   /v1alpha1/admin/registry/actions/repair          # register what the storage holds
 ```
 
-Requests that modify an index (all endpoints except read requests, `pull`, and the `settings` endpoints) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
+Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
 
 When no node holds an index, the first candidate node that receives a write claims the index. If no candidate node is available to forward to, or if no candidate node sets `NODE_ADDRESS`, the server returns `409 Conflict`. If a holder node does not respond, the server returns `502 Bad Gateway`.
 
@@ -142,7 +142,7 @@ If an index definition contains settings from a newer API version that the curre
 
 Search settings hold per-index configuration that affects how searches are answered, currently a `ranking` that replaces the ranking in the index definition.
 
-Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Any node that receives a search settings request serves it directly instead of forwarding it to the index holder node.
+Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Requests that modify search settings run on the node that holds the index, like other modifying requests; `GET` requests are served by whichever node receives them.
 
 A `GET` request returns the stored settings. If the index has no search settings and searches with its definition alone, the server returns `404 Not Found` with the error code `index:settings:not_found`:
 
@@ -166,7 +166,7 @@ A `PUT` request replaces the settings completely and returns them as stored. The
 
 A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
 
-A change takes effect for searches on the receiving node immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently.
+A change takes effect for searches on the node that holds the index immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently.
 
 Search settings outlive generations. A generation promoted after the settings were written can lack a field used for ranking; searches then skip that entry rather than fail, so a promotion never depends on rewriting settings first.
 

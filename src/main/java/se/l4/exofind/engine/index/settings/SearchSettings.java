@@ -11,6 +11,8 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.index.registry.IndexRegistry;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.logging.Log;
 import io.quarkus.runtime.StartupEvent;
@@ -22,16 +24,22 @@ import jakarta.inject.Singleton;
  * The search settings of the indexes as this node knows them.
  *
  * <p>Settings live in the storage rather than in the definitions, so a change
- * made on one node reaches every node without going through the index's writer
- * or waiting for a sync. Each node keeps its own copy per index and re-reads
- * it every {@code exofind.settings.refresh-interval}, which is also how long a
- * change can take to reach a node that is already serving the index - a search
- * on the node that stored the change sees it at once.
+ * made on one node reaches every node without waiting for an index sync. Each
+ * node keeps its own copy per index; every
+ * {@code exofind.settings.refresh-interval} it re-reads the registry - one
+ * object however many indexes there are - and asks the storage for an index's
+ * own object only when the registry's version hint says it changed, when the
+ * registry says nothing about it, or when {@code indexes.verify-interval} has
+ * passed since it last asked. The refresh interval is how long a change can
+ * take to reach a node already serving the index - a search on the node that
+ * stored the change sees it at once - and the verify interval bounds the
+ * staleness when a hint was lost.
  *
- * <p>Managing settings does not need the indexer role. Each index's settings
+ * <p>Writing settings needs no coordination of its own. Each index's settings
  * are a single object replaced conditionally on the version it was read at, so
  * a node that raced another is refused and tries again on top of what the
- * other wrote.
+ * other wrote. The version each write ends at is reported as a hint through
+ * {@link RegistryHints}, which is what lets the other nodes skip reading.
  *
  * <p>An object that needs features this build does not have is set aside whole
  * - the index searches with its definition alone - rather than applied in
@@ -59,7 +67,16 @@ public class SearchSettings {
 	private static final int IDLE_INTERVALS = 10;
 
 	private final SearchSettingsStorage storage;
+	private final IndexRegistry registry;
+	private final RegistryHints registryHints;
 	private final Duration refreshInterval;
+
+	/**
+	 * How long a copy may go without the object being asked for when the
+	 * registry's hint says it is current. Bounds the staleness of a copy
+	 * whose hint is stale or was lost.
+	 */
+	private final Duration verifyInterval;
 
 	private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
 	private final ScheduledExecutorService executor;
@@ -101,6 +118,23 @@ public class SearchSettings {
 		volatile long lastAccessNanos;
 
 		/**
+		 * The registry's version hint as it stood when the refresh last read
+		 * the object, which is what a later hint is compared against - a
+		 * hint that has not moved since the last read says the read would
+		 * find what the copy already holds. {@code null} until a refresh has
+		 * read under a hint. Deliberately not the copy's own version: a hint
+		 * that is simply wrong then costs one read, not one per interval.
+		 */
+		volatile String lastSeenHint;
+
+		/**
+		 * When the object was last read from the storage, whatever the read
+		 * answered, as {@link System#nanoTime()}. What the verify interval
+		 * is measured against.
+		 */
+		volatile long lastReadNanos;
+
+		/**
 		 * Lock held while deciding whether an access that found nothing may go
 		 * and read the storage, so a run of them causes one read rather than
 		 * one each.
@@ -115,11 +149,18 @@ public class SearchSettings {
 
 	public SearchSettings(
 		SearchSettingsStorage storage,
+		IndexRegistry registry,
+		RegistryHints registryHints,
 		@ConfigProperty(name = "exofind.settings.refresh-interval", defaultValue = "10s")
-		Duration refreshInterval
+		Duration refreshInterval,
+		@ConfigProperty(name = "indexes.verify-interval", defaultValue = "10m")
+		Duration verifyInterval
 	) {
 		this.storage = storage;
+		this.registry = registry;
+		this.registryHints = registryHints;
 		this.refreshInterval = refreshInterval;
+		this.verifyInterval = verifyInterval;
 
 		this.executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
 			var thread = new Thread(runnable, "search-settings");
@@ -232,7 +273,7 @@ public class SearchSettings {
 				throw new SearchSettingsVersionMismatchException(index);
 			}
 
-			return adopt(entry, settings, version);
+			return adopt(index, entry, settings, version);
 		}
 
 		for(var attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
@@ -252,7 +293,7 @@ public class SearchSettings {
 
 			var version = write(index, settings, current);
 			if(version != null) {
-				return adopt(entry, settings, version);
+				return adopt(index, entry, settings, version);
 			}
 		}
 
@@ -267,9 +308,19 @@ public class SearchSettings {
 		}
 	}
 
-	private Snapshot adopt(Entry entry, SearchSettingsStore settings, String version) {
+	private Snapshot adopt(String index, Entry entry, SearchSettingsStore settings, String version) {
 		var snapshot = decode(settings, version);
 		entry.cached = new Cached(snapshot);
+		entry.lastReadNanos = System.nanoTime();
+
+		/*
+		 * Reported so every other node learns of the version from the registry
+		 * it already reads. Seen as already acted on here - the write is what
+		 * the hint describes - so this node's next refresh does not read back
+		 * what it just stored.
+		 */
+		entry.lastSeenHint = version;
+		registryHints.reportSettings(index, version);
 
 		return snapshot;
 	}
@@ -298,7 +349,11 @@ public class SearchSettings {
 			throw SearchSettingsException.ioError(e);
 		}
 
-		entryOf(index).cached = new Cached(null);
+		var entry = entryOf(index);
+		entry.cached = new Cached(null);
+		entry.lastReadNanos = System.nanoTime();
+		entry.lastSeenHint = "";
+		registryHints.reportSettings(index, null);
 	}
 
 	private Entry entryOf(String index) {
@@ -326,10 +381,24 @@ public class SearchSettings {
 	/**
 	 * Bring this node's copy of every index it was recently asked about up to
 	 * date, and let go of the ones nobody asks about any more.
+	 *
+	 * <p>The registry is what says whether a copy is worth questioning: it is
+	 * re-read here - one conditional request whatever the number of indexes -
+	 * and an index's own object is read only when its hint moved since the
+	 * copy was last read, the registry says nothing about it, or the verify
+	 * interval has passed. Skipping on an unmoved hint is what turns the
+	 * steady state from one request per index per interval into none.
 	 */
 	void refresh() {
 		var idleNanos = refreshInterval.toNanos() * IDLE_INTERVALS;
 		var now = System.nanoTime();
+
+		if(entries.isEmpty()) {
+			// Nothing to keep current, so nothing to ask even the registry for
+			return;
+		}
+
+		registry.refresh();
 
 		for(var pair : entries.entrySet()) {
 			var entry = pair.getValue();
@@ -339,7 +408,19 @@ public class SearchSettings {
 				continue;
 			}
 
-			readInto(pair.getKey(), entry);
+			var hint = registry.get(pair.getKey())
+				.map(registered -> registered.settingsVersion())
+				.orElse(null);
+
+			if(hint != null
+				&& hint.equals(entry.lastSeenHint)
+				&& now - entry.lastReadNanos < verifyInterval.toNanos()) {
+				continue;
+			}
+
+			if(readInto(pair.getKey(), entry) && hint != null) {
+				entry.lastSeenHint = hint;
+			}
 		}
 	}
 
@@ -387,6 +468,7 @@ public class SearchSettings {
 				}
 			}
 
+			entry.lastReadNanos = System.nanoTime();
 			return true;
 		} catch(IOException e) {
 			logger.atWarn()

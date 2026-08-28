@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.locks.Lock;
@@ -425,6 +426,15 @@ public class ObjectStorageSync implements StateSync {
 		}
 
 		return true;
+	}
+
+	@Override
+	public OptionalLong syncedVersion() {
+		var manifest = lastSyncedManifest;
+
+		return manifest.hasVersion()
+			? OptionalLong.of(manifest.getVersion())
+			: OptionalLong.empty();
 	}
 
 	@Override

@@ -42,6 +42,7 @@ import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.IndexUsageFile;
 import se.l4.exofind.engine.index.state.LocalCopy;
@@ -88,6 +89,7 @@ public class Indexes {
 	private final NodeState nodeState;
 	private final StateSyncProvider syncProvider;
 	private final IndexRegistry registry;
+	private final RegistryHints registryHints;
 
 	private final Path indexRoot;
 
@@ -151,6 +153,21 @@ public class Indexes {
 	private final Duration refreshInterval;
 
 	/**
+	 * How long an open generation may go without its manifest being asked for
+	 * from the storage, when the registry's version hint says the copy is
+	 * current. The hint is what makes skipping the request safe enough; this
+	 * is what bounds the staleness when a hint is stale or was lost.
+	 */
+	private final Duration verifyInterval;
+
+	/**
+	 * When each open generation last had its manifest asked for, as
+	 * {@link System#nanoTime()}, toward {@link #verifyInterval}. Entries of
+	 * generations no longer open are dropped at the end of a refresh pass.
+	 */
+	private final ConcurrentHashMap<String, Long> lastManifestChecks;
+
+	/**
 	 * When the refresh loop last finished a pass, as {@link System#nanoTime()}.
 	 * Set before the first pass is scheduled, so that the time since a refresh
 	 * is measured from the node starting rather than from zero.
@@ -209,9 +226,11 @@ public class Indexes {
 		NodeState nodeState,
 		StateSyncProvider syncProvider,
 		IndexRegistry registry,
+		RegistryHints registryHints,
 		@ConfigProperty(name = "local.storage.directory") Path storageDirectory,
 		@ConfigProperty(name = "indexes.max-open") OptionalInt maxOpen,
 		@ConfigProperty(name = "indexes.refresh-interval", defaultValue = "30s") Duration refreshInterval,
+		@ConfigProperty(name = "indexes.verify-interval", defaultValue = "10m") Duration verifyInterval,
 		@ConfigProperty(name = "indexes.refresh-concurrency", defaultValue = "4") int refreshConcurrency,
 		@ConfigProperty(name = "indexes.close-grace-period", defaultValue = "10s") Duration closeGracePeriod,
 		@ConfigProperty(name = "indexes.commit.max-changes", defaultValue = "10000") int commitMaxChanges,
@@ -225,6 +244,9 @@ public class Indexes {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;
 		this.registry = registry;
+		this.registryHints = registryHints;
+		this.verifyInterval = verifyInterval;
+		this.lastManifestChecks = new ConcurrentHashMap<>();
 		this.lifecycleLock = new ReentrantLock();
 		this.nameLocks = new ConcurrentHashMap<>();
 		this.closeGracePeriod = closeGracePeriod;
@@ -595,7 +617,14 @@ public class Indexes {
 			 * for all of them, keeping the interval one between full passes.
 			 */
 			var pulls = new ArrayList<CompletableFuture<Void>>();
-			for(var index : indexes.asMap().values()) {
+			for(var entry : indexes.asMap().entrySet()) {
+				if(!needsManifestCheck(entry.getKey(), entry.getValue())) {
+					continue;
+				}
+
+				lastManifestChecks.put(entry.getKey(), System.nanoTime());
+
+				var index = entry.getValue();
 				pulls.add(CompletableFuture.runAsync(() -> {
 					try {
 						index.pull();
@@ -609,6 +638,8 @@ public class Indexes {
 			}
 
 			CompletableFuture.allOf(pulls.toArray(CompletableFuture[]::new)).join();
+
+			lastManifestChecks.keySet().retainAll(indexes.asMap().keySet());
 		} catch(RuntimeException e) {
 			/*
 			 * Letting this out would cancel the schedule, leaving the node on
@@ -626,6 +657,50 @@ public class Indexes {
 			lastRefreshNanos = System.nanoTime();
 			refreshing = false;
 		}
+	}
+
+	/**
+	 * Whether a refresh pass has reason to ask the storage about an open
+	 * generation. It always does when the index is not in step with the
+	 * remote, when the registry says nothing about the generation's manifest,
+	 * or when {@link #verifyInterval} has passed since it last asked - a hint
+	 * is only ever what makes skipping the request safe, never what makes it
+	 * wrong.
+	 *
+	 * <p>The skip is what turns the steady state of many open indexes from
+	 * one storage request each per pass into none: the registry, read once
+	 * per pass for all of them, already said nothing changed.
+	 */
+	private boolean needsManifestCheck(String name, Index index) {
+		if(index.getState() != IndexState.USABLE) {
+			return true;
+		}
+
+		var parsed = IndexName.parse(name);
+		var hint = registry.get(parsed.index())
+			.map(registered -> registered.manifestVersion(parsed.generation()))
+			.orElse(OptionalLong.empty());
+		if(hint.isEmpty()) {
+			return true;
+		}
+
+		/*
+		 * A copy that has never synchronized stands at nothing, which is what
+		 * a hint of zero - a generation the remote holds no manifest for -
+		 * matches, so an empty generation is not asked for over and over.
+		 */
+		if(hint.getAsLong() > index.getSyncedManifestVersion().orElse(0)) {
+			/*
+			 * A writer reported a version this copy is not at. A failed pull
+			 * lands here again on the next pass, as the copy stays behind the
+			 * hint until one succeeds.
+			 */
+			return true;
+		}
+
+		var lastCheck = lastManifestChecks.get(name);
+		return lastCheck == null
+			|| System.nanoTime() - lastCheck >= verifyInterval.toNanos();
 	}
 
 	/**
@@ -991,20 +1066,34 @@ public class Indexes {
 
 			recordOpened(index, dataPath);
 
+			var parsed = IndexName.parse(index);
 			var loaded = new Index(
 				nodeState,
 				index,
 				dataPath,
-				syncProvider.createSync(IndexName.parse(index), dataPath),
+				syncProvider.createSync(parsed, dataPath),
 				commitPolicy,
 				documentCache
 			);
+
+			/*
+			 * Every push reports its version, so the other nodes learn from
+			 * their next read of the registry that this generation moved -
+			 * or that it did not, which is what lets them skip asking for
+			 * its manifest.
+			 */
+			loaded.onPushed(version -> registryHints.reportManifest(
+				parsed.index(),
+				parsed.generation(),
+				version
+			));
 
 			/*
 			 * A freshly opened index starts out in NEEDS_PULL and can neither be
 			 * read nor modified until it has been pulled.
 			 */
 			loaded.pull();
+			lastManifestChecks.put(index, System.nanoTime());
 			return loaded;
 		} finally {
 			lock.unlock();

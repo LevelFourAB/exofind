@@ -302,10 +302,11 @@ public class IndexRegistry {
 		var now = Instant.now();
 		var created = new RegisteredIndex(
 			index,
-			Lists.immutable.of(new RegisteredIndex.Generation(generation, now)),
+			Lists.immutable.of(new RegisteredIndex.Generation(generation, now, null)),
 			generation,
 			now,
-			Sets.immutable.empty()
+			Sets.immutable.empty(),
+			null
 		);
 
 		change(indexes -> {
@@ -353,10 +354,11 @@ public class IndexRegistry {
 			return new RegisteredIndex(
 				entry.name(),
 				entry.generations().toList()
-					.with(new RegisteredIndex.Generation(generation, Instant.now())),
+					.with(new RegisteredIndex.Generation(generation, Instant.now(), null)),
 				entry.live(),
 				entry.createdAt(),
-				entry.requiredFeatures()
+				entry.requiredFeatures(),
+				entry.settingsVersion()
 			);
 		});
 
@@ -392,7 +394,8 @@ public class IndexRegistry {
 				entry.generations(),
 				generation,
 				entry.createdAt(),
-				entry.requiredFeatures()
+				entry.requiredFeatures(),
+				entry.settingsVersion()
 			);
 		});
 
@@ -441,7 +444,8 @@ public class IndexRegistry {
 				entry.generations().reject(g -> g.name().equals(generation)),
 				entry.live(),
 				entry.createdAt(),
-				entry.requiredFeatures()
+				entry.requiredFeatures(),
+				entry.settingsVersion()
 			);
 		});
 
@@ -472,6 +476,135 @@ public class IndexRegistry {
 		logger.atInfo()
 			.addKeyValue("index", index)
 			.log("Removed index");
+	}
+
+	/**
+	 * Fold version hints into the registry, so that every node can tell from
+	 * its next read of the registry that a settings object or a manifest
+	 * changed - or that it did not, which is what spares the read of it.
+	 *
+	 * <p>Hints are advisory, so this never fails a caller: an index or
+	 * generation the registry no longer holds is passed over, nothing is
+	 * written when no hint says anything new, and losing every race is
+	 * reported rather than thrown. A manifest hint only ever raises the stored
+	 * version - manifest versions only grow, so around a handover two writers
+	 * reporting out of order cannot leave the smaller one standing. Settings
+	 * versions carry no order and the later write wins; a wrong one costs one
+	 * extra read on each node, as the object itself stays the truth.
+	 *
+	 * @param hints
+	 * @return
+	 *   whether the registry now carries the hints - {@code false} when it
+	 *   could not be read or kept being changed by someone else, which the
+	 *   caller may retry or drop as it sees fit
+	 */
+	public boolean updateHints(ListIterable<VersionHint> hints) {
+		for(int attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+			if(!refresh()) {
+				return false;
+			}
+
+			var current = snapshot;
+			var merged = mergeHints(current.indexes(), hints);
+			if(merged == null) {
+				// Nothing the registry does not already say
+				return true;
+			}
+
+			String version;
+			try {
+				version = storage.write(RegistryCodec.toStored(merged), current.version());
+			} catch(IOException e) {
+				logger.atWarn()
+					.setCause(e)
+					.log("Could not write version hints; " + e.getMessage());
+
+				return false;
+			}
+
+			if(version != null) {
+				snapshot = Snapshot.of(
+					merged.toSortedListBy(RegisteredIndex::name).toImmutable(),
+					version
+				);
+
+				return true;
+			}
+		}
+
+		logger.atDebug()
+			.log("Version hints kept losing to concurrent registry changes, dropping them");
+
+		return false;
+	}
+
+	/**
+	 * The indexes with the hints folded in, or {@code null} when no hint says
+	 * anything the entries do not already.
+	 */
+	private static ListIterable<RegisteredIndex> mergeHints(
+		ListIterable<RegisteredIndex> indexes,
+		ListIterable<VersionHint> hints
+	) {
+		var merged = Maps.mutable.<String, RegisteredIndex>empty();
+		for(var index : indexes) {
+			merged.put(index.name(), index);
+		}
+
+		var changed = false;
+		for(var hint : hints) {
+			var entry = merged.get(hint.index());
+			if(entry == null) {
+				continue;
+			}
+
+			var updated = switch(hint) {
+				case VersionHint.Settings settings ->
+					settings.version().equals(entry.settingsVersion())
+						? null
+						: new RegisteredIndex(
+							entry.name(),
+							entry.generations(),
+							entry.live(),
+							entry.createdAt(),
+							entry.requiredFeatures(),
+							settings.version()
+						);
+				case VersionHint.Manifest manifest -> {
+					var generation = entry.generation(manifest.generation()).orElse(null);
+					if(generation == null
+						|| (generation.manifestVersion() != null
+							&& generation.manifestVersion() >= manifest.version())) {
+						yield null;
+					}
+
+					yield new RegisteredIndex(
+						entry.name(),
+						entry.generations().collect(g -> g == generation
+							? new RegisteredIndex.Generation(
+								g.name(),
+								g.createdAt(),
+								manifest.version()
+							)
+							: g
+						),
+						entry.live(),
+						entry.createdAt(),
+						entry.requiredFeatures(),
+						entry.settingsVersion()
+					);
+				}
+			};
+
+			if(updated != null) {
+				merged.put(entry.name(), updated);
+				changed = true;
+			}
+		}
+
+		return changed
+			? merged.valuesView().toSortedListBy(RegisteredIndex::name)
+			: null;
 	}
 
 	/**

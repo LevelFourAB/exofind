@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.Executors;
@@ -23,6 +24,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.LongConsumer;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.StoredField;
@@ -317,6 +319,14 @@ public class Index {
 	private String definitionVersion;
 
 	/**
+	 * Told after every push with the manifest version the push ended at, so
+	 * that the version can be reported onward as a hint. {@code null} when
+	 * nobody asked. Must return quickly - it is called while the push still
+	 * holds the sync lock.
+	 */
+	private volatile LongConsumer pushListener;
+
+	/**
 	 * Major Lucene version the index was created with, as far as this node can
 	 * tell. Empty until the index has been pulled, and for one that has nothing
 	 * recording a version and no commit to read one from.
@@ -515,6 +525,29 @@ public class Index {
 	 */
 	public boolean isSourceStored() {
 		return schema.isSourceStored();
+	}
+
+	/**
+	 * Have a listener told after every push, with the manifest version the
+	 * push ended at, which is how the version is reported onward as a hint.
+	 * One listener at a time, set when the index is opened.
+	 *
+	 * @param listener
+	 */
+	public void onPushed(LongConsumer listener) {
+		this.pushListener = listener;
+	}
+
+	/**
+	 * Get the version of the manifest this node's copy was last synchronized
+	 * at, whether it was pulled or pushed. Empty when nothing recorded one.
+	 * A copy already at the version a writer reported has no reason to ask
+	 * the remote for the manifest.
+	 *
+	 * @return
+	 */
+	public OptionalLong getSyncedManifestVersion() {
+		return sync.syncedVersion();
 	}
 
 	/**
@@ -906,6 +939,11 @@ public class Index {
 							: IndexState.MODIFIED;
 					}
 				}
+			}
+
+			var listener = pushListener;
+			if(listener != null) {
+				sync.syncedVersion().ifPresent(listener::accept);
 			}
 		} catch(SyncConflictException e) {
 			logger.atError()

@@ -77,6 +77,20 @@ message IndexEntry {
 	 * less than the entry says.
 	 */
 	repeated string required_features = 5;
+
+	/*
+	 * Version of the index's search settings object, as the node that last
+	 * wrote the settings saw them stored. The empty string means the index is
+	 * known to have no settings; unset means nothing is said.
+	 *
+	 * A hint, not truth: it spares a node reading the settings object when the
+	 * registry - which every node already reads - says nothing changed, and a
+	 * node reads the object itself at an interval regardless, so a hint that
+	 * is stale or lost costs extra reads or a bounded delay, never a wrong
+	 * answer. That is also why it needs no name in required_features, and why
+	 * an older node dropping it when it rewrites an entry is harmless.
+	 */
+	optional string settings_version = 6;
 }
 
 /*
@@ -99,4 +113,16 @@ message GenerationEntry {
 	 * When the generation was created, as milliseconds since the Unix epoch.
 	 */
 	optional int64 created_at = 2;
+
+	/*
+	 * Version of the generation's manifest, as its writer last pushed it.
+	 * Unset means nothing is said.
+	 *
+	 * A hint like settings_version on the index: a node holding a copy at this
+	 * version skips asking the storage for the manifest, and still asks at an
+	 * interval regardless. Manifest versions only grow, so a node folding this
+	 * in keeps the larger value rather than the newer write - two writers
+	 * reporting around a handover then cannot leave the smaller one standing.
+	 */
+	optional int64 manifest_version = 3;
 }

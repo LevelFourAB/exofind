@@ -13,6 +13,16 @@ A push writes the files of a pinned Lucene commit together with the index defini
 
 Replacing the remote manifest requires a conditional write using an `If-Match` header on the ETag of the manifest the writer last saw, or `If-None-Match: *` for the initial write. If a push is based on a manifest that the remote storage no longer holds, the write fails instead of overwriting changes pushed by another writer. This conditional check provides safety: a node that erroneously assumes it is still the designated writer can attempt a push, but storage rejects it. At startup, candidate nodes verify that the storage backend enforces conditional writes and refuse to run against storage that does not.
 
+## The registry carries change hints
+
+Nodes periodically poll storage for two objects: the manifest of each open index (to pull changes) and the search settings object of each served index. Both reads are conditional. However, checking quiet indexes still incurs one request per index per interval per node.
+
+To reduce polling requests, the registry includes version hints for each index. Every node already polls the registry regardless of how many indexes exist. For each index, the registry records the version of the most recent manifest push for each generation and the version of the stored settings object. A node skips storage requests if its local copy matches the hinted version, and fetches the object only when the hint changes. This design keeps steady-state request costs proportional to the number of nodes rather than the number of indexes.
+
+The node that updates an object also reports its hint. A manifest push reports the manifest version, and updating settings reports the settings version. Because both document writes and settings updates execute on the designated index writer, the writer always reports its own updates. The writer buffers hints for several seconds and applies them to the registry in a single conditional write. This batching avoids contending for the registry on every push. For entries that predate hints, the index writer reads storage and populates hints over multiple passes, avoiding request bursts during upgrades.
+
+Hints provide efficiency rather than authoritative state. Even if hints indicate no change, nodes verify every local copy directly against storage after at most `INDEXES_VERIFY_INTERVAL`. If a writer crashes before reporting a hint, or if an older node overwrites the registry without hints, the system experiences temporary staleness or extra requests, but never corrupted state. Like the leadership table, hints optimize performance while conditional reads and writes enforce safety.
+
 ## Why writes are scoped to epochs
 
 Lucene names its files by sequential numbering. Two independent writer sessions can both produce a file named `_5.cfs`. If both sessions uploaded files using that name, a writer that fails the manifest race could overwrite a file referenced by the winning writer's manifest.

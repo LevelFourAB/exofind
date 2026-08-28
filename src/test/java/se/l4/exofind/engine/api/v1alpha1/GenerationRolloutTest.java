@@ -47,11 +47,13 @@ import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
+import se.l4.exofind.engine.storage.StorageMode;
 import jakarta.ws.rs.core.UriInfo;
 
 /**
@@ -85,9 +87,11 @@ public class GenerationRolloutTest {
 			nodeState,
 			new NoopSyncProvider(),
 			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofSeconds(10),
 			0,
@@ -108,7 +112,10 @@ public class GenerationRolloutTest {
 
 		var searchSettings = new SearchSettings(
 			new InMemorySearchSettingsStorage(),
-			Duration.ofSeconds(10)
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
+			Duration.ofSeconds(10),
+			Duration.ofMinutes(10)
 		);
 
 		admin = new IndexResource(

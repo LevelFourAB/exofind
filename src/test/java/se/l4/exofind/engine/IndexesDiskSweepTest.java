@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.IndexUsage;
 import se.l4.exofind.engine.index.state.IndexUsageFile;
@@ -32,6 +33,7 @@ import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.Manifest;
 import se.l4.exofind.engine.index.state.ManifestFile;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.storage.StorageMode;
 
 /**
  * The sweep that bounds what local copies take on disk. Copies are made cold
@@ -276,16 +278,20 @@ public class IndexesDiskSweepTest {
 		var state = new NodeState(true);
 		state.updateOwnership(true);
 
+		var registry = new IndexRegistry(
+			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		);
+
 		var node = new Indexes(
 			state,
 			new NoopSyncProvider(),
-			new IndexRegistry(
-				new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
-				Duration.ofMinutes(5)
-			),
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofSeconds(10),
 			0,

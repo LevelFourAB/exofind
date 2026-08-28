@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.state;
 
 import java.nio.file.Path;
+import java.util.OptionalLong;
 
 import se.l4.exofind.engine.index.IndexName;
 
@@ -13,5 +14,10 @@ public class NoopSyncProvider implements StateSyncProvider {
 	@Override
 	public StateSync createSync(IndexName generation, Path dataPath) {
 		return NOOP_SYNC;
+	}
+
+	@Override
+	public OptionalLong remoteVersion(IndexName generation) {
+		return OptionalLong.empty();
 	}
 }

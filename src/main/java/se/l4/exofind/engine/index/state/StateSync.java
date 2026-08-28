@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 
 public interface StateSync {
@@ -33,6 +34,19 @@ public interface StateSync {
 	 * @return true if changes were pulled, false if no changes were available
 	 */
 	boolean pull() throws IOException;
+
+	/**
+	 * The version of the manifest this node last synchronized, whether it was
+	 * pulled or pushed. What it is compared against is the version another
+	 * writer reported, so a copy already at it need not ask the remote.
+	 *
+	 * <p>Empty when nothing recorded one: nothing has been synchronized yet,
+	 * the manifest predates versions, or the implementation keeps no state of
+	 * its own.
+	 *
+	 * @return
+	 */
+	OptionalLong syncedVersion();
 
 	/**
 	 * The major Lucene version the index was created with, as the last

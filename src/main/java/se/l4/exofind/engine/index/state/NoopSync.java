@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 
 /**
@@ -16,6 +17,11 @@ public class NoopSync implements StateSync {
 
 	@Override
 	public void push(Set<String> files) throws IOException {
+	}
+
+	@Override
+	public OptionalLong syncedVersion() {
+		return OptionalLong.empty();
 	}
 
 	/**

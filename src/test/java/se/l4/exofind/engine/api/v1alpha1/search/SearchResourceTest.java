@@ -38,6 +38,7 @@ import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
@@ -51,6 +52,7 @@ import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.storage.StorageMode;
 
 /**
  * Tests for searching over the API - that a request maps into a search, that
@@ -69,16 +71,20 @@ public class SearchResourceTest {
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
 
+		var registry = new IndexRegistry(
+			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		);
+
 		indexes = new Indexes(
 			nodeState,
 			new NoopSyncProvider(),
-			new IndexRegistry(
-				new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
-				Duration.ofMinutes(5)
-			),
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofSeconds(10),
 			0,
@@ -92,7 +98,10 @@ public class SearchResourceTest {
 
 		searchSettings = new SearchSettings(
 			new InMemorySearchSettingsStorage(),
-			Duration.ofSeconds(10)
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
+			Duration.ofSeconds(10),
+			Duration.ofMinutes(10)
 		);
 		resource = new SearchResource(indexes, searchSettings, 10_000);
 	}

@@ -53,7 +53,7 @@ Signals produce continuous scores, but ties can still occur. For example, a sear
 
 ## Updating ranking with search settings
 
-Signals and tie breakers are defined in the index definition. Because the definition travels with the index data, updating it requires the writer node, and other nodes receive changes only on their next pull. To update query-time settings faster, an index can use [search settings](../reference/admin-api.md#search-settings). Any node can modify search settings, and all nodes re-read them on their own refresh interval.
+Signals and tie breakers are defined in the index definition. Because the definition travels with the index data, updating it requires the writer node, and other nodes receive changes only on their next pull. To update query-time settings faster, an index can use [search settings](../reference/admin-api.md#search-settings). A search settings request can be sent to any node - it runs on the index's holder - and all nodes re-read the settings on their own refresh interval.
 
 When search settings define a `ranking` configuration, it completely replaces the `ranking` configuration from the index definition. The index definition provides the default ranking, and deleting search settings restores this default. Signals in a search request override both search settings and the index definition. The precedence order is search request, then search settings, then index definition.
 

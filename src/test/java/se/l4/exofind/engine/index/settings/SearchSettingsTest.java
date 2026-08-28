@@ -12,7 +12,11 @@ import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import se.l4.exofind.engine.index.registry.IndexRegistry;
+import se.l4.exofind.engine.index.registry.InMemoryRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.RankingConfig;
+import se.l4.exofind.engine.storage.StorageMode;
 
 public class SearchSettingsTest {
 	InMemorySearchSettingsStorage storage;
@@ -21,7 +25,27 @@ public class SearchSettingsTest {
 	@BeforeEach
 	void setup() {
 		storage = new InMemorySearchSettingsStorage();
-		settings = new SearchSettings(storage, Duration.ofSeconds(10));
+		settings = newSettings(storage);
+	}
+
+	/**
+	 * Settings over the given storage, with a registry of their own the way a
+	 * node without indexes has one, and a verify interval long enough that the
+	 * fallback never fires inside a test.
+	 */
+	private static SearchSettings newSettings(SearchSettingsStorage storage) {
+		var registry = new IndexRegistry(
+			new InMemoryRegistryStorage(),
+			Duration.ofMinutes(5)
+		);
+
+		return new SearchSettings(
+			storage,
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
+			Duration.ofSeconds(10),
+			Duration.ofMinutes(10)
+		);
 	}
 
 	private static SearchSettingsStore storeWith(String tieBreakerField) {
@@ -144,7 +168,7 @@ public class SearchSettingsTest {
 			}
 		};
 
-		var contended = new SearchSettings(alwaysLosing, Duration.ofSeconds(10));
+		var contended = newSettings(alwaysLosing);
 		var e = assertThrows(
 			SearchSettingsException.class,
 			() -> contended.put("books", storeWith("sales"), null)
@@ -177,7 +201,7 @@ public class SearchSettingsTest {
 
 	@Test
 	void testPutWithoutAStoreIsRefused() {
-		var without = new SearchSettings(new NoSearchSettingsStorage(), Duration.ofSeconds(10));
+		var without = newSettings(new NoSearchSettingsStorage());
 
 		var e = assertThrows(
 			SearchSettingsException.class,

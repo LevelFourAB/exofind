@@ -36,6 +36,7 @@ import se.l4.exofind.engine.index.GeoPoint;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -46,6 +47,7 @@ import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
+import se.l4.exofind.engine.storage.StorageMode;
 
 /**
  * Tests for putting documents into an index over the API - that the shape a
@@ -74,9 +76,11 @@ public class DocumentResourceTest {
 			nodeState,
 			new NoopSyncProvider(),
 			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofSeconds(10),
 			0,

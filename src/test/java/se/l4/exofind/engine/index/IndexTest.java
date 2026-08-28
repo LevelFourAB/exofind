@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.apache.lucene.util.Version;
@@ -978,6 +979,11 @@ public class IndexTest {
 		@Override
 		public OptionalInt luceneCreatedMajor() {
 			return OptionalInt.empty();
+		}
+
+		@Override
+		public OptionalLong syncedVersion() {
+			return OptionalLong.empty();
 		}
 	}
 }

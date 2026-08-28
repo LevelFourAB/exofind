@@ -46,6 +46,7 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
@@ -53,6 +54,7 @@ import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
+import se.l4.exofind.engine.storage.StorageMode;
 import jakarta.ws.rs.core.UriInfo;
 
 public class IndexResourceTest {
@@ -80,9 +82,11 @@ public class IndexResourceTest {
 			nodeState,
 			new NoopSyncProvider(),
 			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofSeconds(10),
 			0,
@@ -100,7 +104,10 @@ public class IndexResourceTest {
 		reindexJobs = TestReindexJobs.create(nodeState, indexes, registry, storageDirectory);
 		searchSettings = new SearchSettings(
 			new InMemorySearchSettingsStorage(),
-			Duration.ofSeconds(10)
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
+			Duration.ofSeconds(10),
+			Duration.ofMinutes(10)
 		);
 		resource = new IndexResource(
 			indexes, auth, new LocalIndexerOwnership(), reindexJobs, searchSettings

@@ -34,10 +34,15 @@ import jakarta.ws.rs.core.Response;
  * full, replacing what was stored, with the version returned as an
  * {@code ETag} that can be sent back as {@code If-Match}. Unlike a definition
  * they belong to the index name rather than to a generation - promoting a
- * generation keeps them - and changing them does not go through the index's
- * writer: each index's settings are one object replaced conditionally, so
- * whichever node receives the request serves it, and every other node picks
- * the change up within {@code exofind.settings.refresh-interval}.
+ * generation keeps them. Every other node picks a change up within
+ * {@code exofind.settings.refresh-interval}.
+ *
+ * <p>Changes run on the index's writer. Not because the object needs it - it
+ * is one object replaced conditionally, safe from any node - but because the
+ * writer is what reports the new version into the registry, and the node that
+ * writes both is the node whose crash between them is one story rather than
+ * two. A caller sends the request anywhere and it is passed along, the way
+ * document writes are.
  *
  * <p>The ranking is validated against the generation the name answers from
  * when it is stored. A generation promoted later may lack a field the settings
@@ -107,7 +112,7 @@ public class IndexSettingsResource {
 	@PUT
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.SETTINGS_WRITE)
-	@ServedBy(ServedBy.Node.ANY_NODE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public Response put(
 		@PathParam("name") String name,
 		@HeaderParam("If-Match") String ifMatch,
@@ -159,7 +164,7 @@ public class IndexSettingsResource {
 	 */
 	@DELETE
 	@RequiresPermission(Permission.SETTINGS_WRITE)
-	@ServedBy(ServedBy.Node.ANY_NODE)
+	@ServedBy(ServedBy.Node.INDEXER)
 	public Response delete(@PathParam("name") String name) {
 		indexes.getOrThrow(name);
 

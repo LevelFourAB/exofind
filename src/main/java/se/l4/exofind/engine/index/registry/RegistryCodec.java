@@ -86,7 +86,8 @@ public final class RegistryCodec {
 
 			generations.add(new RegisteredIndex.Generation(
 				generationName,
-				generation.hasCreatedAt() ? Instant.ofEpochMilli(generation.getCreatedAt()) : null
+				generation.hasCreatedAt() ? Instant.ofEpochMilli(generation.getCreatedAt()) : null,
+				generation.hasManifestVersion() ? generation.getManifestVersion() : null
 			));
 		}
 
@@ -106,7 +107,8 @@ public final class RegistryCodec {
 			generations.sortThisBy(RegisteredIndex.Generation::name).toImmutable(),
 			stored.hasLive() ? stored.getLive() : null,
 			stored.hasCreatedAt() ? Instant.ofEpochMilli(stored.getCreatedAt()) : null,
-			Sets.immutable.withAll(stored.getRequiredFeaturesList())
+			Sets.immutable.withAll(stored.getRequiredFeaturesList()),
+			stored.hasSettingsVersion() ? stored.getSettingsVersion() : null
 		));
 	}
 
@@ -144,6 +146,10 @@ public final class RegistryCodec {
 				stored.setCreatedAt(generation.createdAt().toEpochMilli());
 			}
 
+			if(generation.manifestVersion() != null) {
+				stored.setManifestVersion(generation.manifestVersion());
+			}
+
 			entry.addGenerations(stored);
 		}
 
@@ -163,6 +169,10 @@ public final class RegistryCodec {
 		 */
 		for(var feature : index.requiredFeatures().toSortedList()) {
 			entry.addRequiredFeatures(feature);
+		}
+
+		if(index.settingsVersion() != null) {
+			entry.setSettingsVersion(index.settingsVersion());
 		}
 
 		return entry.build();

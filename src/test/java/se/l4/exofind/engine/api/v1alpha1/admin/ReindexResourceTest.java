@@ -33,6 +33,7 @@ import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
@@ -40,6 +41,7 @@ import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
+import se.l4.exofind.engine.storage.StorageMode;
 import jakarta.ws.rs.core.UriInfo;
 
 /**
@@ -72,9 +74,11 @@ public class ReindexResourceTest {
 			nodeState,
 			new NoopSyncProvider(),
 			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofSeconds(10),
 			0,
@@ -96,7 +100,13 @@ public class ReindexResourceTest {
 			auth,
 			new LocalIndexerOwnership(),
 			reindexJobs,
-			new SearchSettings(new InMemorySearchSettingsStorage(), Duration.ofSeconds(10))
+			new SearchSettings(
+				new InMemorySearchSettingsStorage(),
+				registry,
+				new RegistryHints(registry, StorageMode.LOCAL),
+				Duration.ofSeconds(10),
+				Duration.ofMinutes(10)
+			)
 		);
 
 		uriInfo = mock(UriInfo.class);

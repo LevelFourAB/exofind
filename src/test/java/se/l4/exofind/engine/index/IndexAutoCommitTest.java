@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -234,6 +235,11 @@ public class IndexAutoCommitTest {
 		@Override
 		public OptionalInt luceneCreatedMajor() {
 			return OptionalInt.empty();
+		}
+
+		@Override
+		public OptionalLong syncedVersion() {
+			return OptionalLong.empty();
 		}
 	}
 }

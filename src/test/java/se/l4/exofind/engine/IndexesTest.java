@@ -27,8 +27,10 @@ import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.storage.StorageMode;
 
 public class IndexesTest {
 	@TempDir
@@ -74,9 +76,11 @@ public class IndexesTest {
 			nodeState(true),
 			new NoopSyncProvider(),
 			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
 			directory,
 			maxOpen,
 			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
 			4,
 			Duration.ofMillis(100),
 			0,
