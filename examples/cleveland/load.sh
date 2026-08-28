@@ -63,4 +63,4 @@ done
 echo "Committing"
 request -X POST "$NODE/v1alpha1/admin/indexes/$INDEX/actions/commit" -o /dev/null
 
-echo "Done - run 'npm run dev' in examples/ to search it"
+echo "Done - run 'mise run site' to search it"

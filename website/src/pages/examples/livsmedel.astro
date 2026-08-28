@@ -1,25 +1,15 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Swedish food search · Exofind</title>
-<meta name="description" content="2 606 Swedish foods searched with Exofind, showing what splitting compound words does to a search.">
-<link rel="icon" href="data:,">
-</head>
-<body>
+---
+import Example from '../../layouts/Example.astro';
 
-<div class="shell">
+/* The look every demo shares. This one adds nothing of its own to it. */
+import '../../examples/shared/exofind.css';
+---
 
-<header class="bar">
-	<a class="bar__mark" href="../">Exofind</a>
-	<span class="bar__index" id="index-name">livsmedel</span>
-	<span class="bar__spacer"></span>
-	<span class="bar__stat" id="size"></span>
-</header>
-
-<main class="page">
-
+<Example
+	title="Swedish food search"
+	description="2 606 Swedish foods searched with Exofind, showing what splitting compound words does to a search."
+	index="livsmedel"
+>
 	<section class="ask">
 		<p class="eyebrow">Livsmedelsverkets livsmedelsdatabas</p>
 		<div class="ask__field">
@@ -68,19 +58,13 @@
 		</section>
 	</div>
 
-
-</main>
-
-<footer class="foot">
-	<p>
+	<p slot="footer">
 		Values are per 100 grams, as published. Data from Livsmedelsverkets
 		livsmedelsdatabas under
 		<a href="https://creativecommons.org/licenses/by/4.0/deed.en">CC BY 4.0</a>.
 	</p>
-</footer>
+</Example>
 
-</div>
-
-<script type="module" src="./main.js"></script>
-</body>
-</html>
+<script>
+	import '../../examples/livsmedel/main.js';
+</script>

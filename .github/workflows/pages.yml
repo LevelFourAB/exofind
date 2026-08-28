@@ -1,0 +1,84 @@
+name: Pages
+
+# Building the website - the documentation in `docs/` and the demo pages - and
+# publishing it to GitHub Pages. A pull request is built but not published, so
+# that a change to the documentation is known to build before it is merged.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'website/**'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'website/**'
+      - '.github/workflows/pages.yml'
+  # Publishing on demand, for a deployment that has to be redone without the
+  # documentation having changed - a new demo node, for instance.
+  workflow_dispatch:
+
+# A push that supersedes another abandons its run, but a deployment that has
+# started is left to finish rather than leaving Pages half-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # mise.toml decides the Node release, the same as it decides the JDK the
+      # engine is built with. Only node is installed; nothing here builds Java.
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: node
+
+      - uses: actions/configure-pages@v5
+        id: pages
+
+      - name: Cache the npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('website/package-lock.json') }}
+          restore-keys: npm-
+
+      # `PUBLIC_EXOFIND_NODE` is the node the demo pages search. It is a
+      # repository variable rather than a value here, because it names a
+      # deployment rather than anything about this repository - and a demo
+      # page built without one searches localhost, which answers nobody.
+      #
+      # That node has to allow this origin through `QUARKUS_HTTP_CORS_ORIGINS`
+      # and hold each demo's index; `docs/how-to/run-a-demo-node.md` says what
+      # else it needs.
+      - name: Build the site
+        working-directory: website
+        env:
+          ASTRO_TELEMETRY_DISABLED: '1'
+          PUBLIC_EXOFIND_NODE: ${{ vars.EXOFIND_DEMO_NODE }}
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  # Only what is on main is published; a pull request stops at having built.
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

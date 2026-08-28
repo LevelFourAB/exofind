@@ -15,10 +15,19 @@ than summarized here:
 - The doc comment on the type itself - every rule below is explained where it
   is enforced, and that is where the whole argument lives.
 
+`website/` publishes `docs/` and the demo pages to GitHub Pages, reading the
+Markdown where it lies rather than holding a copy. A new document is a file in
+`docs/` and a line in `docs/README.md`, which is what the sidebar is built
+from; `website/README.md` covers the rest.
+
 ## Commands
 
 Common workflows are mise tasks: `mise run dev`, `build`, `test`, `verify`,
 `storage`, `storage:stop`. The toolchain versions live in `mise.toml`.
+
+`mise run site` serves the website - the documentation and the demo pages -
+and `site:build` builds it. Nothing there is part of the engine build; the
+engine needs no node.
 
 `mise run bench` runs the JMH benchmarks under `src/benchmark/java`, which
 compile only under the `benchmark` profile - see

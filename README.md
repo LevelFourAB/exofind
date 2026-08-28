@@ -27,8 +27,10 @@ Key features include:
   node works on all nodes, supports scoping by permissions and index
   patterns, and can be revoked without redeploying services.
 
-Full documentation is available in [`docs/`](docs/README.md), organized by
-[Diátaxis](https://diataxis.fr):
+Full documentation is available in [`docs/`](docs/README.md), and is published
+along with the demo pages at
+[levelfourab.github.io/exofind](https://levelfourab.github.io/exofind/). It is
+organized by [Diátaxis](https://diataxis.fr):
 
 - **[Tutorials](docs/README.md#tutorials)**: Run a node against local object
   storage and define your first index.
@@ -126,17 +128,18 @@ For a complete step-by-step walkthrough, see the
 
 ## Examples
 
-The [`examples/`](examples/README.md) directory contains sample applications
-that query real datasets through a running node. Each example includes an index
-definition, sample data, and a user interface sharing a single search client.
+Demo pages that search real datasets through a running node, one per thing
+worth showing. The datasets are in [`examples/`](examples/README.md) - an index
+definition, the documents and a script that loads them - and the pages that
+search them are part of the [website](website/README.md).
 
-To run the examples against a running node:
+To run them against a running node:
 
 ```shell
 mise run example:livsmedel     # loads 2 606 Swedish foods and commits
 mise run example:airports      # 8 799 airports, completed as you type
 mise run example:cleveland     # 30 000 museum objects, on a wall of thumbnails
-mise run examples              # serves the pages against that node
+mise run site                  # serves the pages against that node
 ```
 
 Searching the food dataset for `sås` matches 21 items when matching whole words

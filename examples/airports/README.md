@@ -5,7 +5,7 @@ completed as you type.
 
 ```shell
 ./load.sh                  # define the index, index the documents, commit
-cd .. && npm run dev       # serve the page against a node on localhost:8080
+mise run site              # serve the page against a node on localhost:8080
 ```
 
 ## What it shows

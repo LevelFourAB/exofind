@@ -1,0 +1,35 @@
+---
+/*
+ * What demos there are.
+ *
+ * This one is a page to read rather than a search interface, so it keeps the
+ * documentation layout - sidebar and all - and only the pages it links to run
+ * the width of the window. The list itself is `../../examples/demos.mjs`,
+ * which the sidebar and the front page read too.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+
+import DemoList from '../../components/DemoList.astro';
+import { REPO } from '../../site.mjs';
+---
+
+<StarlightPage
+	frontmatter={{
+		title: 'Demos',
+		description: 'Pages that search real data through an Exofind node, one per thing worth showing.',
+		tableOfContents: false
+	}}
+>
+	<p>
+		Each page searches a real dataset through a node, and is here to show one
+		thing the engine does.
+	</p>
+
+	<DemoList />
+
+	<p>
+		Every page searches the node this site was built for. The index
+		definitions and the scripts that load them are in
+		<a href={`${REPO}/tree/main/examples`}>examples/</a> in the repository.
+	</p>
+</StarlightPage>

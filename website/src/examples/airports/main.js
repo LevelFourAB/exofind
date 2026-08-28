@@ -10,9 +10,6 @@
  * what was typed rather than through analysis - which is what lets `ES` list
  * Sweden and `ord` find O'Hare.
  */
-import '../shared/exofind.css';
-import './main.css';
-
 import { createClient, resolveConfig, explain } from '../shared/client.js';
 import { readParams, writeParams } from '../shared/params.js';
 import {

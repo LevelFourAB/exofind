@@ -1,0 +1,144 @@
+---
+/*
+ * The front page.
+ *
+ * It is a page rather than a document in `docs/`, because what it says is
+ * addressed to someone who has not decided to read the documentation yet -
+ * and because the links it makes have to carry the path the site is served
+ * under, which a file read on GitHub cannot know.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+
+import DemoList from '../components/DemoList.astro';
+import { demo } from '../examples/demos.mjs';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+/*
+ * The demo the hero leads with. Someone who has read one sentence about the
+ * engine wants to see it search, not choose which search to see, so the
+ * button opens a demo rather than the catalogue - the widest dataset, and the
+ * one that shows the most in a single screen. Naming it here rather than
+ * writing the path is what makes a demo that is renamed or dropped a build
+ * failure instead of a link to nothing.
+ */
+const featured = demo('cleveland');
+
+const features = [
+	{
+		title: 'Object storage is the source of truth',
+		body: 'Wipe a node and it pulls the index back from the bucket. One node '
+			+ 'writes at a time, and conditional writes stop a stale writer from '
+			+ 'corrupting anything.'
+	},
+	{
+		title: 'Search is Lucene',
+		body: 'Full-text matching with typo tolerance and autocomplete, filtering, '
+			+ 'sorting, numbers, timestamps, geopoints, lists of nested objects, '
+			+ 'and k-nearest-neighbour vector search.'
+	},
+	{
+		title: 'Values carry their locale',
+		body: 'Analysis, segmentation and collation follow it, Chinese, Japanese '
+			+ 'and Korean included, without configuring an analyzer.'
+	},
+	{
+		title: 'Indexes are declared, not migrated',
+		body: 'You PUT the definition you want, so it can live in version control. '
+			+ 'A change that needs a reindex fills a new generation and promotes it '
+			+ 'while callers keep using the index by name.'
+	},
+	{
+		title: 'Keys are shared through the bucket',
+		body: 'A key made on one node works on all of them, is scoped by permission '
+			+ 'and index pattern, and is revoked without redeploying anything.'
+	},
+	{
+		title: 'Nodes are interchangeable',
+		body: 'They never talk to each other, need no persistent volume to be '
+			+ 'backed up, and answer every search from their own copy on disk.'
+	}
+];
+---
+
+<StarlightPage
+	frontmatter={{
+		title: 'Exofind',
+		description: 'A search engine that keeps its indexes in S3-compatible object storage.',
+		template: 'splash',
+		tableOfContents: false,
+		/*
+		 * The site is called what this page is called, and the layout would
+		 * otherwise join the two into "Exofind | Exofind".
+		 */
+		head: [{ tag: 'title', content: 'Exofind' }],
+		hero: {
+			tagline: 'A search engine that keeps its indexes in object storage. Nodes hold '
+				+ 'local copies, coordinate through the bucket alone, and answer searches '
+				+ 'from disk.',
+			actions: [
+				{ text: 'Get started', link: `${base}/tutorials/getting-started/`, icon: 'right-arrow', variant: 'primary' },
+				{ text: 'See it searching', link: `${base}/examples/${featured.name}/`, icon: 'magnifier', variant: 'secondary' },
+				{ text: 'GitHub', link: 'https://github.com/LevelFourAB/exofind', icon: 'external', variant: 'minimal' }
+			]
+		}
+	}}
+>
+	<p class="experimental">
+		Exofind is <strong>experimental</strong>. The API is <code>v1alpha1</code>
+		and changes without keeping compatibility.
+	</p>
+
+	<h2>What it does</h2>
+
+	<div class="features">
+		{features.map(feature => (
+			<div class="feature">
+				<h3>{feature.title}</h3>
+				<p>{feature.body}</p>
+			</div>
+		))}
+	</div>
+
+	<h2>See it searching</h2>
+
+	<p>
+		Each demo searches a real dataset through a node, and exists to show one
+		thing the engine can do.
+	</p>
+
+	<DemoList />
+
+	<h2>Where to go</h2>
+
+	<p>
+		Start with the <a href={`${base}/tutorials/getting-started/`}>getting started
+		tutorial</a> to run a node and define an index. The <a href={`${base}/how-to/define-an-index/`}>how-to
+		guides</a> solve one task at a time, the <a href={`${base}/reference/configuration/`}>reference</a>
+		states what is, and the <a href={`${base}/explanation/architecture/`}>explanation</a>
+		covers why the design is the way it is.
+	</p>
+</StarlightPage>
+
+<style>
+	.experimental {
+		border-inline-start: 3px solid var(--sl-color-orange);
+		padding-inline-start: 1rem;
+	}
+
+	.features {
+		display: grid;
+		gap: 1.5rem 2rem;
+		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+	}
+
+	.feature h3 {
+		font-size: var(--sl-text-lg);
+		margin-block: 0 0.4rem;
+	}
+
+	.feature p {
+		color: var(--sl-color-gray-2);
+		margin-block: 0;
+	}
+</style>

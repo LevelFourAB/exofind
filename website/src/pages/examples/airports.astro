@@ -1,25 +1,22 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Airport type-ahead · Exofind</title>
-<meta name="description" content="Every airport with an IATA code, completed as you type with Exofind - and the milliseconds each keystroke cost.">
-<link rel="icon" href="data:,">
-</head>
-<body>
+---
+import Example from '../../layouts/Example.astro';
 
-<div class="shell">
+/*
+ * The look every demo shares, then what this one adds to it. Both are asked
+ * for here, in that order, because that is the order they have to be applied
+ * in and the only place the two are named together - the bundler is free to
+ * inline one stylesheet and link the other, and then what wins is the order
+ * they were imported in rather than which one is more specific.
+ */
+import '../../examples/shared/exofind.css';
+import '../../examples/airports/main.css';
+---
 
-<header class="bar">
-	<a class="bar__mark" href="../">Exofind</a>
-	<span class="bar__index" id="index-name">airports</span>
-	<span class="bar__spacer"></span>
-	<span class="bar__stat" id="size"></span>
-</header>
-
-<main class="page">
-
+<Example
+	title="Airport type-ahead"
+	description="Every airport with an IATA code, completed as you type with Exofind - and the milliseconds each keystroke cost."
+	index="airports"
+>
 	<section class="ask">
 		<p class="eyebrow">OurAirports · every airport with an IATA code</p>
 		<div class="ask__field">
@@ -81,18 +78,13 @@
 		</section>
 	</div>
 
-</main>
-
-<footer class="foot">
-	<p>
+	<p slot="footer">
 		Elevations are in feet and distances are as the crow flies. Data from
 		<a href="https://ourairports.com/data/">OurAirports</a>, dedicated to
 		the public domain.
 	</p>
-</footer>
+</Example>
 
-</div>
-
-<script type="module" src="./main.js"></script>
-</body>
-</html>
+<script>
+	import '../../examples/airports/main.js';
+</script>

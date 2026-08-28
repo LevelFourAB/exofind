@@ -1,0 +1,69 @@
+---
+/*
+ * The shell every demo page shares.
+ *
+ * A demo is a page of this site rather than something next to it, so it is
+ * rendered by Starlight like everything else: the same header, with the site
+ * search and the light and dark toggle, the same footer, and the theme the
+ * reader picked. What the page holds is a search interface rather than prose,
+ * so the documentation sidebar is left off and the content is given the width
+ * that leaves.
+ *
+ * The interface itself goes in `.demo`, which is where its look is anchored -
+ * see `../examples/shared/exofind.css`. `not-content` is Starlight's way of
+ * being told to leave the prose styling off a subtree; without it every
+ * heading, list and link in a facet column would be typeset as an article.
+ *
+ * That stylesheet is asked for by the page rather than from here, because a
+ * page that adds a stylesheet of its own has to have this one applied first
+ * and its own imports are the only place the two are ordered against each
+ * other. A page that forgets it arrives with no demo styling at all.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+
+interface Props {
+	/** What the page is called, as the heading and before the site name. */
+	title: string;
+	/** One sentence, for a search result and a link preview. */
+	description: string;
+	/** The index the demo searches, shown under the heading. */
+	index: string;
+}
+
+const { title, description, index } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<StarlightPage
+	frontmatter={{ title, description, tableOfContents: false }}
+	hasSidebar={false}
+>
+	<div class="demo not-content">
+		<div class="demo__dateline">
+			<p class="demo__what">
+				<span class="demo__index" id="index-name">{index}</span>
+				<span class="demo__size" id="size"></span>
+			</p>
+			<p class="demo__away">
+				<a href={`${base}/examples/`}>All demos</a>
+				<a href={`${base}/tutorials/getting-started/`}>Documentation</a>
+			</p>
+		</div>
+
+		<slot />
+
+		<div class="demo__note"><slot name="footer" /></div>
+	</div>
+</StarlightPage>
+
+<style is:global>
+	/*
+	 * Wider than a page of documentation, because a facet column and a wall of
+	 * results need the room. Matching on the demo itself rather than on the
+	 * page having no sidebar is what keeps the width off the front page, which
+	 * has no sidebar either.
+	 */
+	:root:has(.demo) {
+		--sl-content-width: 78rem;
+	}
+</style>

@@ -7,8 +7,6 @@
  * hit is drawn from: it sits under the letters that were typed, so where it
  * stops is where the index cut the word.
  */
-import '../shared/exofind.css';
-
 import { createClient, resolveConfig, explain } from '../shared/client.js';
 import {
 	readParams,

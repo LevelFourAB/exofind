@@ -1,134 +1,98 @@
 /*
- * The look every example page shares: the tokens, the shell around the
- * content, and the controls that show a search - the field, the facets and the
- * hits. What one example alone needs lives beside that example instead.
+ * The look every demo shares: the controls that show a search - the field, the
+ * facets and the hits. What one demo alone needs lives beside that demo
+ * instead.
+ *
+ * Everything here hangs off `.demo`, the one element a demo page puts its
+ * search interface inside. That element is also marked `not-content`, which is
+ * how the documentation layout is told to leave prose styling off a thing that
+ * is not prose.
  */
-@import '@fontsource-variable/archivo/standard.css';
-@import '@fontsource/ibm-plex-mono/latin-400.css';
-@import '@fontsource/ibm-plex-mono/latin-500.css';
-@import '@fontsource/ibm-plex-mono/latin-ext-400.css';
-@import '@fontsource/ibm-plex-mono/latin-ext-500.css';
 
-:root {
-	color-scheme: light dark;
+/*
+ * The colours are the site's, under names that say what each one is for here.
+ * Aliasing rather than restating them is what makes a demo follow the theme
+ * picked in the site header, and leaves the whole site with one palette rather
+ * than two that drift apart. It is declared in `../../styles/site.css`.
+ */
+.demo {
+	--paper: var(--sl-color-gray-6);
+	--ink: var(--sl-color-white);
+	--ink-soft: var(--sl-color-gray-2);
+	--ink-2: var(--sl-color-gray-3);
+	--rule: var(--sl-color-gray-5);
+	--rule-strong: var(--sl-color-gray-4);
+	--signal: var(--sl-color-text-accent);
+	--signal-ground: var(--sl-color-accent-low);
 
+	--display: var(--sl-font);
+	--data: var(--sl-font-mono);
+
+	display: grid;
+	gap: 2.75rem;
+	align-content: start;
 	/*
-	 * A pale mineral ground rather than a white one, so the hairlines that
-	 * carry the layout stay visible without having to be dark.
+	 * A search interface is read by scanning rather than by the line, so it
+	 * keeps a tighter leading than the documentation around it.
 	 */
-	--ground: #e7eae6;
-	--paper: #f7f8f6;
-	--ink: #12171b;
-	--ink-soft: #3e474e;
-	--ink-2: #5c666e;
-	--rule: #ccd2cd;
-	--rule-strong: #a9b2ac;
-	--signal: #1d3fd6;
-	--signal-ground: #dfe3fa;
-
-	--display: 'Archivo Variable', system-ui, sans-serif;
-	--data: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
-
-	--gap: 1.5rem;
-	--measure: 78rem;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--ground: #0f1417;
-		--paper: #161c20;
-		--ink: #e4e8e4;
-		--ink-soft: #a6b0b5;
-		--ink-2: #8b969c;
-		--rule: #293237;
-		--rule-strong: #414c52;
-		--signal: #8fa8ff;
-		--signal-ground: #1b2440;
-	}
-}
-
-*, *::before, *::after { box-sizing: border-box; }
-
-body {
-	margin: 0;
-	background: var(--ground);
-	color: var(--ink);
-	font-family: var(--display);
-	font-stretch: 100%;
-	font-size: 15px;
 	line-height: 1.5;
-	-webkit-font-smoothing: antialiased;
+	color: var(--ink);
 }
 
-a { color: var(--signal); text-underline-offset: 0.2em; }
-
-:focus-visible {
+.demo :focus-visible {
 	outline: 2px solid var(--signal);
 	outline-offset: 2px;
 	border-radius: 1px;
 }
 
-/* --- shell ------------------------------------------------------------- */
+.demo a { color: var(--signal); text-underline-offset: 0.2em; }
 
-.shell {
-	min-height: 100dvh;
-	display: grid;
-	grid-template-rows: auto 1fr auto;
-}
+/* --- what is being searched -------------------------------------------- */
 
-.bar {
+/*
+ * Under the page title: on the left the index the page searches and how much
+ * is in it, which is what the node answers rather than what the page was
+ * written with; on the right the way back into the rest of the site, which a
+ * demo has no sidebar to reach.
+ */
+.demo__dateline {
 	display: flex;
 	align-items: baseline;
-	gap: 0.9rem;
+	justify-content: space-between;
+	gap: 0.5rem 1.5rem;
 	flex-wrap: wrap;
-	padding: 0.85rem var(--gap);
-	border-bottom: 1px solid var(--rule-strong);
 	font-family: var(--data);
 	font-size: 0.75rem;
 	color: var(--ink-2);
 }
 
-.bar__mark {
-	font-family: var(--display);
-	font-stretch: 122%;
-	font-weight: 800;
-	font-size: 0.85rem;
-	letter-spacing: 0.02em;
-	text-transform: uppercase;
-	color: var(--ink);
+.demo__what { font-variant-numeric: tabular-nums; }
+
+.demo__index::before { content: 'index '; color: var(--rule-strong); }
+
+/* The count arrives from the node, so it is absent until a node answers. */
+.demo__size:not(:empty)::before { content: ' · '; }
+
+.demo__away {
+	display: flex;
+	gap: 1rem;
+	white-space: nowrap;
+}
+
+.demo__away a {
+	color: var(--ink-2);
 	text-decoration: none;
+	border-bottom: 1px solid var(--rule-strong);
 }
 
-.bar__index::before { content: '/ '; color: var(--rule-strong); }
-.bar__spacer { flex: 1 1 3rem; }
-.bar__stat { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.demo__away a:hover { color: var(--ink); border-bottom-color: var(--ink); }
 
-.page {
-	width: 100%;
-	max-width: var(--measure);
-	margin: 0 auto;
-	padding: 2.5rem var(--gap) 3rem;
-	display: grid;
-	gap: 2.75rem;
-	align-content: start;
-}
-
-/*
- * The rule under the page runs the whole way across, so it reads as the edge
- * of the page rather than of the sentence; what is written under it keeps the
- * column the content above it is in.
- */
-.foot {
+/* Where the data came from, and under what terms. */
+.demo__note {
 	border-top: 1px solid var(--rule);
+	padding-top: 1.25rem;
 	color: var(--ink-2);
 	font-size: 0.82rem;
-}
-
-.foot p {
-	width: 100%;
-	max-width: var(--measure);
-	margin: 0 auto;
-	padding: 1.25rem var(--gap) 2.5rem;
 }
 
 /* --- headings and labels ----------------------------------------------- */
@@ -176,8 +140,14 @@ a { color: var(--signal); text-underline-offset: 0.2em; }
 	letter-spacing: -0.02em;
 	line-height: 1.1;
 	padding: 0 0 0.35rem;
-	outline: 0;
 }
+
+/*
+ * The field says it has focus by its own rule turning, so it is spared the
+ * ring everything else in a demo is given - two marks around one control read
+ * as an error rather than as focus.
+ */
+.demo .ask__input:focus-visible { outline: 0; }
 
 .ask__input::placeholder {
 	color: var(--rule-strong);

@@ -1,0 +1,76 @@
+/*
+ * The look of the whole site, in the variables Starlight themes with: the
+ * documentation, the front page and the demo pages alike. It began as the
+ * palette the demos were designed in, so that moving between reading about the
+ * engine and watching it search does not feel like moving between two
+ * projects.
+ *
+ * This is the only place a colour is written down. The demos give the same
+ * values names of their own in `../examples/shared/exofind.css`, but only by
+ * aliasing what is here - which is what makes a demo follow the theme the
+ * reader picked rather than the one the operating system is set to.
+ */
+@import '@fontsource-variable/archivo/standard.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-ext-400.css';
+@import '@fontsource/ibm-plex-mono/latin-ext-500.css';
+
+:root {
+	--sl-font: 'Archivo Variable', system-ui, sans-serif;
+	--sl-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #dfe3fa;
+	--sl-color-accent: #1d3fd6;
+	--sl-color-accent-high: #16309f;
+
+	--sl-color-white: #12171b;
+	--sl-color-gray-1: #1d242a;
+	--sl-color-gray-2: #3e474e;
+	--sl-color-gray-3: #5c666e;
+	--sl-color-gray-4: #a9b2ac;
+	--sl-color-gray-5: #ccd2cd;
+	--sl-color-gray-6: #e7eae6;
+	--sl-color-gray-7: #eff1ee;
+	--sl-color-black: #f7f8f6;
+}
+
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #1b2440;
+	--sl-color-accent: #3a5cf0;
+	--sl-color-accent-high: #b9c8ff;
+
+	--sl-color-white: #e4e8e4;
+	--sl-color-gray-1: #d3d9d5;
+	--sl-color-gray-2: #a6b0b5;
+	--sl-color-gray-3: #8b969c;
+	--sl-color-gray-4: #414c52;
+	--sl-color-gray-5: #293237;
+	--sl-color-gray-6: #161c20;
+	--sl-color-black: #0f1417;
+}
+
+/*
+ * Tables carry a lot of the reference documentation - every setting, every
+ * error code - so they are given a rule per row rather than being left to run
+ * together.
+ */
+.sl-markdown-content table {
+	border-collapse: collapse;
+	display: block;
+	overflow-x: auto;
+}
+
+.sl-markdown-content :is(th, td) {
+	border-block-end: 1px solid var(--sl-color-gray-5);
+	padding: 0.5rem 0.75rem;
+	text-align: start;
+	vertical-align: top;
+}
+
+.sl-markdown-content th {
+	font-weight: 600;
+	white-space: nowrap;
+}

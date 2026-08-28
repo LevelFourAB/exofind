@@ -57,8 +57,7 @@ mise.local.toml
 /examples/*/LivsmedelsDB.xlsx
 /examples/airports/*.csv
 
-# Example pages (Vite)
-/examples/node_modules/
-/examples/dist/
-
-wrangler.jsonc
+# Website (Astro)
+/website/node_modules/
+/website/dist/
+/website/.astro/

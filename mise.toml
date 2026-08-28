@@ -1,7 +1,7 @@
 [tools]
 java = "temurin-25"
 maven = "3.9.16"
-# Only the example pages need it - the engine itself builds without node
+# Only the website needs it - the engine itself builds without node
 node = "26"
 
 [tasks.dev]
@@ -93,12 +93,26 @@ run = "examples/airports/load.sh"
 description = "Load the Cleveland Museum example into a running node"
 run = "examples/cleveland/load.sh"
 
-[tasks.examples]
-description = "Serve the example pages against a node on localhost:8080"
-dir = "examples"
+[tasks.site]
+description = "Serve the documentation and the demo pages, against a node on localhost:8080"
+dir = "website"
+# Telemetry is off because the build has to work the same on a machine that has
+# never run Astro and in CI, neither of which should be writing to a
+# preferences directory to find that out.
+env = { ASTRO_TELEMETRY_DISABLED = "1" }
 run = ["npm install", "npm run dev"]
 
-[tasks."examples:build"]
-description = "Build the example pages into examples/dist"
-dir = "examples"
-run = ["npm install", "npm run build"]
+[tasks."site:build"]
+description = "Build the site into website/dist"
+dir = "website"
+# `PUBLIC_EXOFIND_NODE` decides which node the demo pages search; without one
+# they search localhost, which is what a local build wants and what the
+# deployment overrides.
+env = { ASTRO_TELEMETRY_DISABLED = "1" }
+run = ["npm ci", "npm run build"]
+
+[tasks."site:preview"]
+description = "Serve what site:build wrote, at the path the deployment serves it from"
+dir = "website"
+env = { ASTRO_TELEMETRY_DISABLED = "1" }
+run = "npm run preview"

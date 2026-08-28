@@ -13,9 +13,6 @@
  * same however deep it has gone. Which is worth having depends on the page
  * being built, so this one builds both from the same response.
  */
-import '../shared/exofind.css';
-import './main.css';
-
 import { createClient, resolveConfig, explain } from '../shared/client.js';
 import {
 	readParams,

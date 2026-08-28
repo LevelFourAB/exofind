@@ -1,9 +1,9 @@
 /*
  * Talking to a node over the search API, and working out which node that is.
  *
- * An example page is a static file that can be opened from a dev server, from
- * a deployment next to a node, or from a deployment somewhere else entirely,
- * so where to search is decided by the build - `VITE_EXOFIND_NODE`, or
+ * A demo page is a static file that can be opened from a dev server, from a
+ * deployment next to a node, or from a deployment somewhere else entirely, so
+ * where to search is decided by the build - `PUBLIC_EXOFIND_NODE`, or
  * localhost for a page nobody has given one. A deployment points at a node by
  * being built for it, and never by anything a reader or a link can change.
  */
@@ -24,7 +24,7 @@ export class SearchError extends Error {
  */
 export function resolveConfig(defaults) {
 	return {
-		node: trimSlash(import.meta.env.VITE_EXOFIND_NODE || 'http://localhost:8080'),
+		node: trimSlash(import.meta.env.PUBLIC_EXOFIND_NODE || 'http://localhost:8080'),
 		index: defaults.index
 	};
 }

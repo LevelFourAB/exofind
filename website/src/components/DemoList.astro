@@ -1,0 +1,67 @@
+---
+/*
+ * The demos as a list of cards.
+ *
+ * The front page and the demo catalogue both offer the same choice, so they
+ * offer it in the same shape rather than each having a look of its own. What
+ * is listed comes from `../examples/demos.mjs`, which the sidebar reads too.
+ */
+import { DEMOS } from '../examples/demos.mjs';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<ul class="demos not-content">
+	{DEMOS.map(entry => (
+		<li>
+			<a href={`${base}/examples/${entry.name}/`}>{entry.title}</a>
+			<p set:html={entry.summary} />
+			<p class="shows">{entry.shows.join(' · ')}</p>
+		</li>
+	))}
+</ul>
+
+<style>
+	.demos {
+		display: grid;
+		gap: 1.5rem;
+		grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.demos > li {
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.5rem;
+		padding: 1.25rem;
+	}
+
+	/* The card is what is clicked, so its name is a heading first and a link second. */
+	.demos a {
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-lg);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.demos a:hover {
+		color: var(--sl-color-text-accent);
+		text-decoration: underline;
+	}
+
+	.demos p {
+		color: var(--sl-color-gray-2);
+		margin-block: 0.5rem 0;
+	}
+
+	.demos :global(strong) {
+		color: var(--sl-color-white);
+	}
+
+	/* What the demo is there to show, in the words the documentation uses. */
+	.shows {
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-3);
+	}
+</style>

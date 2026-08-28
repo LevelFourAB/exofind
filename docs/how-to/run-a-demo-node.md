@@ -77,17 +77,17 @@ A public search endpoint consumes public compute resources. To limit costs and p
 
    Credentials are only read from the `Authorization` header. CORS controls which web origins can read search responses, not which actions are permitted.
 
-2. Build the example pages:
+2. Build the site that holds the demo pages:
 
    ```shell
-   VITE_EXOFIND_NODE=https://demo.example.com mise run examples:build
+   PUBLIC_EXOFIND_NODE=https://demo.example.com mise run site:build
    ```
 
-   The example pages determine the node endpoint from the `?api=` query parameter, connection panel settings, or the `VITE_EXOFIND_NODE` build variable. The pages do not transmit credentials. Pointing the connection panel to a standard node fails if that node does not allow anonymous requests.
+   The build decides which node the pages search. Nothing a reader or a link can change points a page somewhere else, and the pages send no credentials, so a deployment searches the one node it was built for.
 
 ## Verifying the setup
 
 To confirm that the public demo node functions correctly:
 
 1. Send a search request without an `Authorization` header to the demo node and confirm that it returns results for the granted indexes.
-2. Open the built example pages in a browser and confirm that search queries succeed without credentials.
+2. Open the built demo pages in a browser and confirm that search queries succeed without credentials.
