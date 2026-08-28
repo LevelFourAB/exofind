@@ -50,6 +50,27 @@ and demo pages do not use a prose column. On narrow viewports where the sidebar
 is hidden, the header replaces section links with a mobile menu while retaining
 the title and search.
 
+## Navigation
+
+[`src/components/Head.astro`](src/components/Head.astro) replaces the default
+head to add Astro's client router. Without it every link is a new document, and
+the browser shows a blank page while it lays the next one out. The router swaps
+the body instead, so the frame stays where it is.
+
+The demo pages are left out of it. A demo sets its interface up when its module
+is evaluated, and a module is evaluated once per document, so a demo routed to
+a second time would never be wired up. A page the router finds no marker in is
+navigated to the old way, which is why leaving the tag off those pages is the
+whole opt-out. A new page that sets itself up outside a custom element belongs
+in that exclusion too.
+
+[`src/transitions.js`](src/transitions.js) carries across what the swap would
+otherwise drop: the theme the reader picked, which a built document does not
+know, and the sidebar's scroll position and open groups. The search is kept by
+`transition:persist` in the header, because Starlight mounts it once per
+document. Everything else Starlight ships is a custom element, and those are
+built again from the markup that arrives.
+
 ## The demo pages
 
 Each demo consists of two parts under the same name:

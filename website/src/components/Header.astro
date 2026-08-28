@@ -19,6 +19,13 @@
  * Below the width the sidebar appears at the sections are dropped, and the
  * theme and the links with them - the mobile menu holds both, and the header
  * keeps only the title and the search.
+ *
+ * The search is kept across a routed navigation rather than rebuilt. Starlight
+ * mounts the search interface into it once the document has loaded, which on a
+ * routed page happens for the document the reader arrived in and never again -
+ * a rebuilt search would open on a dialog nothing had been put into. Every
+ * other control here is a custom element, and those are built again from the
+ * markup that arrives.
  */
 import config from 'virtual:starlight/user-config';
 
@@ -53,7 +60,7 @@ const searchable =
 	</div>
 
 	<div class="right-group sl-flex print:hidden">
-		{searchable && <div class="search sl-flex"><Search /></div>}
+		{searchable && <div class="search sl-flex" transition:persist><Search /></div>}
 
 		<div class="meta sl-hidden md:sl-flex">
 			<div class="social-icons sl-flex">

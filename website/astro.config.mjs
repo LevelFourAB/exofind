@@ -45,11 +45,14 @@ export default defineConfig({
 			customCss: ['./src/styles/site.css'],
 
 			/*
-			 * The header row carries a link into each part of the
-			 * documentation, and gathers the search with the rest of the
-			 * controls. Why, and what that costs, is on the component.
+			 * The head adds the client router, so that a click within the
+			 * documentation changes the content rather than the document. The
+			 * header row carries a link into each part of the documentation,
+			 * and gathers the search with the rest of the controls. Why each
+			 * is replaced, and what it costs, is on the component.
 			 */
 			components: {
+				Head: './src/components/Head.astro',
 				Header: './src/components/Header.astro'
 			},
 

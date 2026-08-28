@@ -1,0 +1,39 @@
+---
+/*
+ * Starlight's head, and the client router under it.
+ *
+ * Every link on a static site is a new document, and the browser paints
+ * nothing between tearing the old one down and laying the new one out. On a
+ * page whose stylesheet is 70 kB that gap is long enough to read as the page
+ * blanking, which is what a reader clicking through the sidebar sees. The
+ * router fetches the next page and swaps the body instead, so the frame stays
+ * where it is and only the content changes.
+ *
+ * The demo pages are left out. Each one wires its interface up when its module
+ * is evaluated, and a module is evaluated once per document - routed to, left,
+ * and routed back to, the second visit would find a page nobody had wired up.
+ * A document the router finds no marker in is navigated to the old way, so
+ * leaving the tag off those pages is the whole opt-out, in both directions.
+ *
+ * Two pieces of state do not survive a swap on their own, because Starlight
+ * settles both in the head of a document that is about to be replaced. What
+ * carries them is `../transitions.js`.
+ */
+import Default from '@astrojs/starlight/components/Head.astro';
+import { ClientRouter } from 'astro:transitions';
+
+import { DEMOS } from '../examples/demos.mjs';
+import { withBase } from '../site.mjs';
+
+const routed = !DEMOS.some(
+	entry => Astro.url.pathname.startsWith(withBase(`/examples/${entry.name}`))
+);
+---
+
+<Default />
+
+{routed && <ClientRouter />}
+
+<script>
+	import '../transitions.js';
+</script>
