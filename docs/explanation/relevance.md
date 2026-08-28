@@ -51,6 +51,17 @@ The choice of shape depends on what the signal measures. An unbounded count satu
 
 Signals produce continuous scores, but ties can still occur. For example, a search that only applies filters matches all returned documents equally. The index's `tieBreakers` setting defines fallback ordering rules. Exofind appends these tie breakers after the requested sort order and evaluates them in sequence until one resolves the tie between two documents. Tie breakers resolve ordering within ties without changing the primary sort order.
 
+## Updating ranking with search settings
+
+Signals and tie breakers are defined in the index definition. Because the definition travels with the index data, updating it requires the writer node, and other nodes receive changes only on their next pull. To update query-time settings faster, an index can use [search settings](../reference/admin-api.md#search-settings). Any node can modify search settings, and all nodes re-read them on their own refresh interval.
+
+When search settings define a `ranking` configuration, it completely replaces the `ranking` configuration from the index definition. The index definition provides the default ranking, and deleting search settings restores this default. Signals in a search request override both search settings and the index definition. The precedence order is search request, then search settings, then index definition.
+
+Search settings attach to the index name rather than to a specific index generation, so promoting a generation preserves your ranking tuning. This approach involves two trade-offs:
+
+- Nodes update independently, so two nodes can rank the same query differently for up to one refresh interval.
+- If a newer generation lacks a field configured in search settings, searches skip that ranking entry rather than failing.
+
 ## When relevance is not the order
 
 When a search request specifies an explicit `sort` parameter, Exofind orders results by that sort. Exofind does not calculate relevance scores or evaluate signals for explicit sorts. If an application provides a "sort by price" option, it must provide a way to switch back to relevance ordering by requesting a `score` sort. Exofind still appends tie breakers to explicit sort orders to resolve ties.
@@ -73,10 +84,10 @@ The following table summarizes where you configure each ranking component and wh
 | Field weights | Index definition (overridable per search) | Next search |
 | Whole-value match (`exact`) | Index definition | Newly indexed documents |
 | Boost clauses | Search request | Next search |
-| Signals | Index definition (overridable per search) | Next search |
-| Tie breakers | Index definition | Next search |
+| Signals | Index definition, replaceable by search settings (overridable per search) | Next search on the node serving it, within the settings refresh interval elsewhere |
+| Tie breakers | Index definition, replaceable by search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
 
-Exofind evaluates most ranking components at query time, making ranking adjustments fast to test: update the definition or search query and compare results immediately. Only `exact` requires reindexing documents. Changes to text analysis (how text is tokenized into words) require reindexing into a new index generation rather than modifying ranking configuration.
+Exofind evaluates most ranking components at query time, making ranking adjustments fast to test: update the definition, the search settings, or the search query and compare results immediately. Only `exact` requires reindexing documents. Changes to text analysis (how text is tokenized into words) require reindexing into a new index generation rather than modifying ranking configuration.
 
 ## Related
 

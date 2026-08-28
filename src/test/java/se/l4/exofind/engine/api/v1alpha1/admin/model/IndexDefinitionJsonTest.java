@@ -661,7 +661,8 @@ public class IndexDefinitionJsonTest {
 				false,
 				new IndexerInfo("node-1", "http://node-1:8080"),
 				LuceneCompatibility.CURRENT,
-				10
+				10,
+				null
 			),
 			List.of(new GenerationSummary("2", true, "2026-08-16T10:00:00Z"))
 		);
@@ -683,7 +684,7 @@ public class IndexDefinitionJsonTest {
 	@Test
 	public void testWriteIndexStatusWithoutLuceneVersion() throws Exception {
 		var status = new IndexStatus(
-			IndexState.NEEDS_PULL, true, null, LuceneCompatibility.UNKNOWN, null
+			IndexState.NEEDS_PULL, true, null, LuceneCompatibility.UNKNOWN, null, null
 		);
 
 		assertThat(

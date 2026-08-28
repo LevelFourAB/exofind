@@ -33,6 +33,8 @@ import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.ReindexJobs;
@@ -89,8 +91,13 @@ public class ReindexResourceTest {
 
 		reindexJobs = TestReindexJobs.create(nodeState, indexes, registry, storageDirectory);
 		resource = new ReindexResource(reindexJobs, auth);
-		indexResource =
-			new IndexResource(indexes, auth, new LocalIndexerOwnership(), reindexJobs);
+		indexResource = new IndexResource(
+			indexes,
+			auth,
+			new LocalIndexerOwnership(),
+			reindexJobs,
+			new SearchSettings(new InMemorySearchSettingsStorage(), Duration.ofSeconds(10))
+		);
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())

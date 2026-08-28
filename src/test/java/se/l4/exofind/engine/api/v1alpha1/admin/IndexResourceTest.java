@@ -46,6 +46,8 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
@@ -61,6 +63,7 @@ public class IndexResourceTest {
 	AuthContext auth;
 	IndexResource resource;
 	ReindexJobs reindexJobs;
+	SearchSettings searchSettings;
 	UriInfo uriInfo;
 
 	@BeforeEach
@@ -95,7 +98,13 @@ public class IndexResourceTest {
 		auth.set(Principal.unchecked());
 
 		reindexJobs = TestReindexJobs.create(nodeState, indexes, registry, storageDirectory);
-		resource = new IndexResource(indexes, auth, new LocalIndexerOwnership(), reindexJobs);
+		searchSettings = new SearchSettings(
+			new InMemorySearchSettingsStorage(),
+			Duration.ofSeconds(10)
+		);
+		resource = new IndexResource(
+			indexes, auth, new LocalIndexerOwnership(), reindexJobs, searchSettings
+		);
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())
@@ -170,7 +179,9 @@ public class IndexResourceTest {
 			))
 		)));
 
-		var withOwnership = new IndexResource(indexes, auth, ownership, reindexJobs);
+		var withOwnership = new IndexResource(
+			indexes, auth, ownership, reindexJobs, searchSettings
+		);
 		var info = (IndexInfo) withOwnership.get("books").getEntity();
 
 		assertThat(info.status().indexer(), is(notNullValue()));

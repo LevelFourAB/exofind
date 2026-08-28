@@ -163,7 +163,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 				}
 
 				var generations = new TreeMap<String, RegistryAuditReport.Stored>();
-				held.indexes().put(index, generations);
+				var unusableBefore = held.unusable().size();
 
 				for(var generation : listPrefixes(indexesPrefix + index + "/")) {
 					if(!IndexName.VALID_GENERATION_PATTERN.matcher(generation).matches()) {
@@ -177,6 +177,17 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 							? RegistryAuditReport.Stored.SYNCED
 							: RegistryAuditReport.Stored.INCOMPLETE
 					);
+				}
+
+				/*
+				 * A prefix with no generation under it holds nothing a node
+				 * could serve or a repair could restore. Deleting an index
+				 * leaves its settings object behind, and that object alone
+				 * keeping the prefix listable is not the index still being
+				 * held - so it is left out rather than reported forever.
+				 */
+				if(!generations.isEmpty() || held.unusable().size() > unusableBefore) {
+					held.indexes().put(index, generations);
 				}
 			}
 		} catch(SdkException e) {

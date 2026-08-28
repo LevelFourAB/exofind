@@ -105,6 +105,7 @@ The following table lists index management configuration variables:
 | `INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. | Unbounded |
 | `INDEXES_REFRESH_INTERVAL` | Interval at which the node checks storage for index and generation changes and pulls updates for open indexes. Also specifies how long promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
 | `INDEXES_REFRESH_CONCURRENCY` | Number of indexes refreshed concurrently. | `4` |
+| `EXOFIND_SETTINGS_REFRESH_INTERVAL` | Interval at which the node refreshes the search settings of the indexes it serves from storage. Changing or removing settings can take up to this interval to reach other nodes; the node that served the change applies it immediately. | `10s` |
 | `INDEXES_CLOSE_GRACE_PERIOD` | Grace period that an evicted index waits for in-flight requests before closing. | `10s` |
 
 ## Committing

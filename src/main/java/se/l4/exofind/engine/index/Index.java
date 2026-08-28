@@ -97,6 +97,9 @@ import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.IndexFeatures;
 import se.l4.exofind.engine.index.schema.IndexSchema;
+import se.l4.exofind.engine.index.schema.RankingConfig;
+import se.l4.exofind.engine.index.schema.RankingOverride;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.index.state.SyncIncompatibleException;
@@ -2989,6 +2992,84 @@ public class Index {
 	 * @throws IOException
 	 */
 	public SearchResult search(SearchRequest request) throws IOException {
+		return search(request, null);
+	}
+
+	/**
+	 * Version of the search settings whose skipped entries were last logged,
+	 * so a gap between the settings and this generation is said once per
+	 * version rather than once per search.
+	 */
+	private volatile String settingsVersionWarned;
+
+	/**
+	 * Compile the ranking of the search settings against this generation, or
+	 * {@code null} when there is none to put in force.
+	 */
+	private RankingOverride compileRankingOverride(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.ranking() == null) {
+			return null;
+		}
+
+		var override = schema.compileRankingOverride(settings.ranking());
+
+		if(override.skippedFields().notEmpty()
+			&& !settings.version().equals(settingsVersionWarned)) {
+			settingsVersionWarned = settings.version();
+
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.addKeyValue("fields", override.skippedFields().makeString(", "))
+				.log(
+					"The search settings rank by fields this generation cannot"
+						+ " answer for; skipping those entries"
+				);
+		}
+
+		return override;
+	}
+
+	/**
+	 * Validate a ranking arriving as search settings against this generation.
+	 * What passes here can still be skipped by a later generation - see
+	 * {@link IndexSchema#compileRankingOverride} - so this is the check for
+	 * storing settings, not for searching with them.
+	 *
+	 * @param ranking
+	 * @param location
+	 *   where the ranking sits in what the caller is validating
+	 * @return
+	 *   what stops the ranking, empty when this generation answers for all of
+	 *   it
+	 */
+	public ListIterable<ErrorMessage> validateSearchSettings(
+		RankingConfig ranking,
+		ObjectLocation location
+	) {
+		return schema.validateRankingConfig(ranking, location);
+	}
+
+	/**
+	 * Search this index with its search settings in force.
+	 *
+	 * <p>The settings belong to the index name while this instance is one
+	 * generation, so their ranking is compiled against this generation's schema
+	 * as the search runs - an entry naming a field this generation does not
+	 * have is skipped rather than failing the search, and logged once per
+	 * version of the settings rather than once per search.
+	 *
+	 * @param request
+	 *   what to look for, how to order it and how much to bring back
+	 * @param settings
+	 *   the search settings of the index, or {@code null} to search with the
+	 *   definition alone
+	 * @return
+	 *   what was found, never {@code null}
+	 * @throws IOException
+	 */
+	public SearchResult search(SearchRequest request, SearchSettings.Snapshot settings)
+		throws IOException
+	{
 		syncLock.readLock().lock();
 		try {
 			if(state == IndexState.CLOSED) {
@@ -3011,7 +3092,12 @@ public class Index {
 					);
 				}
 
-				var compiler = new QueryCompiler(schema, request.locale(), nestedParents);
+				var compiler = new QueryCompiler(
+					schema,
+					request.locale(),
+					nestedParents,
+					compileRankingOverride(settings)
+				);
 				var searched = request.query().newWithAll(request.filters());
 
 				/*

@@ -15,6 +15,9 @@ GET    /v1alpha1/admin/indexes                          # indexes the deployment
 GET    /v1alpha1/admin/indexes/{name}                   # definition and status
 PUT    /v1alpha1/admin/indexes/{name}                   # create or replace the definition
 DELETE /v1alpha1/admin/indexes/{name}                   # remove an index or a generation
+GET    /v1alpha1/admin/indexes/{name}/settings          # search settings as stored
+PUT    /v1alpha1/admin/indexes/{name}/settings          # replace the search settings
+DELETE /v1alpha1/admin/indexes/{name}/settings          # remove the search settings
 POST   /v1alpha1/admin/indexes/{name}/actions/promote   # answer for this generation
 POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
 POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state now
@@ -29,7 +32,7 @@ GET    /v1alpha1/admin/registry/audit                   # compare the registry w
 POST   /v1alpha1/admin/registry/actions/repair          # register what the storage holds
 ```
 
-Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
+Requests that modify an index (all endpoints except read requests, `pull`, and the `settings` endpoints) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
 
 When no node holds an index, the first candidate node that receives a write claims the index. If no candidate node is available to forward to, or if no candidate node sets `NODE_ADDRESS`, the server returns `409 Conflict`. If a holder node does not respond, the server returns `502 Bad Gateway`.
 
@@ -48,7 +51,7 @@ The `@` character is reserved and cannot appear in an index name. A generation i
 
 Updating an index definition in place does not reindex existing documents. If a definition change affects indexing—such as adding `matching`, changing an analysis chain, or editing a synonym set—create and populate a new generation, then promote it. For step-by-step instructions, see [Roll out a definition change](../how-to/roll-out-a-definition-change.md).
 
-A `DELETE` request on an index deletes the index and all of its generations. A `DELETE` request on a generation deletes only that generation. Deleting the live generation fails with `index:generation:is_live` until you promote another generation. Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. Deletion does not remove data held in remote storage. Both operations return `204 No Content`.
+A `DELETE` request on an index deletes the index and all of its generations. A `DELETE` request on a generation deletes only that generation. Deleting the live generation fails with `index:generation:is_live` until you promote another generation. Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. Deletion does not remove data held in remote storage—the generations and the [search settings](#search-settings) object alike—so an index created again under the same name picks its old settings back up. Both operations return `204 No Content`.
 
 The `promote` action configures the index to serve from the specified generation. The change takes effect immediately on the receiving node and within `INDEXES_REFRESH_INTERVAL` on all other nodes. To roll back a deployment, promote the previous generation.
 
@@ -135,6 +138,38 @@ To apply an incompatible definition change to existing documents, reindex them i
 
 If an index definition contains settings from a newer API version that the current node does not recognize, reading the index returns `409 Conflict`. Updating such an index is rejected with `409 Conflict` and the error code `index:definition:unrepresentable`. To resolve these errors, send the request to a node running a version that supports the definition.
 
+## Search settings
+
+Search settings hold per-index configuration that affects how searches are answered, currently a `ranking` that replaces the ranking in the index definition.
+
+Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Any node that receives a search settings request serves it directly instead of forwarding it to the index holder node.
+
+A `GET` request returns the stored settings. If the index has no search settings and searches with its definition alone, the server returns `404 Not Found` with the error code `index:settings:not_found`:
+
+```json
+{
+  "ranking": {
+    "tieBreakers": [ { "field": "sales", "direction": "descending" } ],
+    "signals": [ { "field": "sales", "saturation": { "pivot": 50 } } ]
+  },
+  "version": "9f2c1a0b3d4e5f60"
+}
+```
+
+The response contains the following fields:
+
+- `ranking`: The ranking searches run with instead of the definition's ranking, in the same shape as the definition's `ranking`. While present, it replaces the definition's ranking completely; an empty object turns ranking off. Supplying `signals` in a search request still replaces both. See [Relevance](../explanation/relevance.md).
+- `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
+- `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
+
+A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking.
+
+A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
+
+A change takes effect for searches on the receiving node immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently.
+
+Search settings outlive generations. A generation promoted after the settings were written can lack a field used for ranking; searches then skip that entry rather than fail, so a promotion never depends on rewriting settings first.
+
 ## Index states
 
 The `status.state` field indicates the remote synchronization state as observed by the answering node:
@@ -153,6 +188,8 @@ The `status.state` field indicates the remote synchronization state as observed 
 The `status.readOnly` field indicates whether the answering node can modify the index. Only the node holding the index can modify it.
 
 The `status.indexer` object identifies the holder node and the address where writes are forwarded. This field is omitted if no node holds the index, if the holder could not be read, if the holder provided no address, or on nodes using local storage. Data in this field can lag behind a node handover by a few seconds. For more information, see [Indexers](#indexers).
+
+The `status.settingsUnsupportedFeatures` field lists the capabilities the index's [search settings](#search-settings) use that the answering node does not have. It is present only when the node has set the settings aside and searches with the definition alone.
 
 ## Lucene compatibility
 
@@ -405,8 +442,8 @@ The Admin API returns the following status codes:
 | `400 Bad Request` | The request body failed validation. The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
-| `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, the index requires unsupported engine features, writing to the registry failed, or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
-| `412 Precondition Failed` | The `If-Match` version does not match the current definition version. |
+| `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, the index requires unsupported engine features, writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
+| `412 Precondition Failed` | The `If-Match` version does not match the current definition or search settings version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

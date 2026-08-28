@@ -47,6 +47,8 @@ import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
@@ -104,9 +106,16 @@ public class GenerationRolloutTest {
 			nodeState, indexes, registry, storageDirectory
 		);
 
-		admin = new IndexResource(indexes, auth, new LocalIndexerOwnership(), reindexJobs);
+		var searchSettings = new SearchSettings(
+			new InMemorySearchSettingsStorage(),
+			Duration.ofSeconds(10)
+		);
+
+		admin = new IndexResource(
+			indexes, auth, new LocalIndexerOwnership(), reindexJobs, searchSettings
+		);
 		documents = new DocumentResource(indexes, new ObjectMapper(), reindexJobs);
-		search = new SearchResource(indexes, 10_000);
+		search = new SearchResource(indexes, searchSettings, 10_000);
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())

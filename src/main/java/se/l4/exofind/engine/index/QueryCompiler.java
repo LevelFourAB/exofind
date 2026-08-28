@@ -28,6 +28,7 @@ import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.IndexSchema;
 import se.l4.exofind.engine.index.schema.RankingConfig;
+import se.l4.exofind.engine.index.schema.RankingOverride;
 import se.l4.exofind.engine.query.AndQuery;
 import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.DecaySignal;
@@ -178,10 +179,27 @@ public class QueryCompiler {
 	 */
 	private String nestedPath;
 
+	/**
+	 * Ranking to use in place of what the schema holds, or {@code null} when
+	 * the definition's ranking stands - the search settings of the index,
+	 * compiled against this generation.
+	 */
+	private final RankingOverride rankingOverride;
+
 	public QueryCompiler(IndexSchema schema, String locale, BitSetProducer nestedParents) {
+		this(schema, locale, nestedParents, null);
+	}
+
+	public QueryCompiler(
+		IndexSchema schema,
+		String locale,
+		BitSetProducer nestedParents,
+		RankingOverride rankingOverride
+	) {
 		this.schema = schema;
 		this.locale = locale;
 		this.nestedParents = nestedParents;
+		this.rankingOverride = rankingOverride;
 
 		this.encounter = new IndexEncounterImpl(
 			schema.getResources(),
@@ -523,7 +541,9 @@ public class QueryCompiler {
 	 * @return
 	 */
 	private ListIterable<RankingConfig.TieBreaker> tieBreakersNotIn(ListIterable<SortBy> sort) {
-		var tieBreakers = schema.getTieBreakers();
+		var tieBreakers = rankingOverride != null
+			? rankingOverride.tieBreakers()
+			: schema.getTieBreakers();
 		if(tieBreakers.isEmpty() || sort.isEmpty()) {
 			return tieBreakers;
 		}
@@ -588,7 +608,9 @@ public class QueryCompiler {
 		org.apache.lucene.search.Query query,
 		ListIterable<RankingSignal> signals
 	) {
-		var requested = signals == null ? schema.getSignals() : signals;
+		var requested = signals != null
+			? signals
+			: rankingOverride != null ? rankingOverride.signals() : schema.getSignals();
 		if(requested.isEmpty()) {
 			return query;
 		}

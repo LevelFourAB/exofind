@@ -622,45 +622,115 @@ public class IndexSchema {
 			return;
 		}
 
+		validateRankingConfig(
+			definition.getRanking(),
+			definition.getFieldsMap()::get,
+			ObjectLocation.root().forField("ranking"),
+			errors
+		);
+	}
+
+	/**
+	 * Validate a ranking against the fields this schema currently holds, for a
+	 * ranking that arrives apart from a definition - the search settings of the
+	 * index. The rules and the codes are the ones a definition's own ranking is
+	 * checked with.
+	 *
+	 * <p>Only says whether the ranking runs against this generation. Settings
+	 * outlive generations, so what passes here can still be skipped by a later
+	 * one - see {@link #compileRankingOverride}.
+	 *
+	 * @param ranking
+	 * @param location
+	 *   where the ranking sits in what the caller is validating, for the
+	 *   errors to point into it
+	 * @return
+	 *   what stops the ranking, empty when this generation answers for all of
+	 *   it
+	 */
+	public ListIterable<ErrorMessage> validateRankingConfig(
+		RankingConfig ranking,
+		ObjectLocation location
+	) {
+		var state = this.state;
+		var errors = Lists.mutable.<ErrorMessage>empty();
+
+		validateRankingConfig(
+			ranking,
+			name -> {
+				var field = state.fields.get(name);
+				return field == null ? null : field.getDef();
+			},
+			location,
+			errors
+		);
+
+		return errors;
+	}
+
+	private static void validateRankingConfig(
+		RankingConfig ranking,
+		java.util.function.Function<String, FieldDef> fields,
+		ObjectLocation base,
+		MutableList<ErrorMessage> errors
+	) {
 		var seen = Sets.mutable.<String>empty();
-		var breakers = definition.getRanking().getTieBreakersList();
+		var breakers = ranking.getTieBreakersList();
 		for(var i = 0; i < breakers.size(); i++) {
 			var breaker = breakers.get(i);
-			var location = ObjectLocation.root()
-				.forField("ranking")
-				.forField("tieBreakers")
-				.forIndex(i);
+			var location = base.forField("tieBreakers").forIndex(i);
 
-			var name = breaker.getField();
-			if(name.contains("*")) {
-				errors.add(TIE_BREAKER_WILDCARD_FIELD.toMessage(location, "name", name));
-				continue;
-			}
-
-			var field = definition.getFieldsMap().get(name);
-			if(field == null) {
-				errors.add(TIE_BREAKER_UNKNOWN_FIELD.toMessage(location, "name", name));
-				continue;
-			}
-
-			if(!field.hasSort()) {
-				errors.add(TIE_BREAKER_NOT_SORTABLE.toMessage(location, "name", name));
-			}
-
-			if(!seen.add(name)) {
-				errors.add(TIE_BREAKER_DUPLICATE_FIELD.toMessage(location, "name", name));
+			if(validateTieBreaker(breaker, fields, location, errors)
+				&& !seen.add(breaker.getField())) {
+				errors.add(
+					TIE_BREAKER_DUPLICATE_FIELD.toMessage(location, "name", breaker.getField())
+				);
 			}
 		}
 
-		var signals = definition.getRanking().getSignalsList();
+		var signals = ranking.getSignalsList();
 		for(var i = 0; i < signals.size(); i++) {
 			validateSignal(
-				definition,
 				signals.get(i),
-				ObjectLocation.root().forField("ranking").forField("signals").forIndex(i),
+				fields,
+				base.forField("signals").forIndex(i),
 				errors
 			);
 		}
+	}
+
+	/**
+	 * Check that a tie breaker names one field that can order documents.
+	 * Whether it repeats another is a rule across entries and stays with the
+	 * loop.
+	 *
+	 * @return
+	 *   whether the name resolved to a field at all, which is what decides if
+	 *   it can repeat one
+	 */
+	private static boolean validateTieBreaker(
+		RankingConfig.TieBreaker breaker,
+		java.util.function.Function<String, FieldDef> fields,
+		ObjectLocation location,
+		MutableList<ErrorMessage> errors
+	) {
+		var name = breaker.getField();
+		if(name.contains("*")) {
+			errors.add(TIE_BREAKER_WILDCARD_FIELD.toMessage(location, "name", name));
+			return false;
+		}
+
+		var field = fields.apply(name);
+		if(field == null) {
+			errors.add(TIE_BREAKER_UNKNOWN_FIELD.toMessage(location, "name", name));
+			return false;
+		}
+
+		if(!field.hasSort()) {
+			errors.add(TIE_BREAKER_NOT_SORTABLE.toMessage(location, "name", name));
+		}
+
+		return true;
 	}
 
 	/**
@@ -671,14 +741,14 @@ public class IndexSchema {
 	 * type has no meaning for, would rank by nothing at all - which looks like
 	 * a ranking that simply does not work rather than like a definition to fix.
 	 *
-	 * @param definition
 	 * @param signal
+	 * @param fields
 	 * @param location
 	 * @param errors
 	 */
-	private void validateSignal(
-		IndexDef definition,
+	private static void validateSignal(
 		RankingConfig.Signal signal,
+		java.util.function.Function<String, FieldDef> fields,
 		ObjectLocation location,
 		MutableList<ErrorMessage> errors
 	) {
@@ -723,7 +793,7 @@ public class IndexSchema {
 			return;
 		}
 
-		var field = definition.getFieldsMap().get(name);
+		var field = fields.apply(name);
 		if(field == null) {
 			errors.add(SIGNAL_UNKNOWN_FIELD.toMessage(location, "name", name));
 			return;
@@ -753,6 +823,60 @@ public class IndexSchema {
 				)
 			);
 		}
+	}
+
+	/**
+	 * Compile a ranking that arrived apart from a definition - the search
+	 * settings of the index - into what a search on this generation runs with.
+	 *
+	 * <p>An entry this generation cannot answer for is skipped rather than
+	 * failing the search: settings outlive generations, so an override written
+	 * against one can name a field the next does not have, and a search that
+	 * failed on it would make promoting a generation depend on the settings
+	 * having been rewritten first. What was skipped is carried on the result so
+	 * it can be reported.
+	 *
+	 * @param ranking
+	 * @return
+	 */
+	public RankingOverride compileRankingOverride(RankingConfig ranking) {
+		var state = this.state;
+		java.util.function.Function<String, FieldDef> fields = name -> {
+			var field = state.fields.get(name);
+			return field == null ? null : field.getDef();
+		};
+
+		var tieBreakers = Lists.mutable.<RankingConfig.TieBreaker>empty();
+		var signals = Lists.mutable.<RankingSignal>empty();
+		var skipped = Sets.mutable.<String>empty();
+
+		for(var breaker : ranking.getTieBreakersList()) {
+			var scratch = Lists.mutable.<ErrorMessage>empty();
+			validateTieBreaker(breaker, fields, ObjectLocation.root(), scratch);
+
+			if(scratch.isEmpty()) {
+				tieBreakers.add(breaker);
+			} else {
+				skipped.add(breaker.getField());
+			}
+		}
+
+		for(var signal : ranking.getSignalsList()) {
+			var scratch = Lists.mutable.<ErrorMessage>empty();
+			validateSignal(signal, fields, ObjectLocation.root(), scratch);
+
+			if(scratch.isEmpty()) {
+				signals.add(toSignal(signal));
+			} else {
+				skipped.add(signal.getField());
+			}
+		}
+
+		return new RankingOverride(
+			tieBreakers.toImmutable(),
+			signals.toImmutable(),
+			skipped.toSortedList()
+		);
 	}
 
 	/**

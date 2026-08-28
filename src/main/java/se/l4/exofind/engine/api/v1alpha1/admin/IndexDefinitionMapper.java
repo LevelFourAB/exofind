@@ -36,7 +36,6 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
 import se.l4.exofind.engine.index.schema.Int64FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
-import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
@@ -106,12 +105,6 @@ public class IndexDefinitionMapper {
 			.withArguments("name")
 			.withMessage(
 				"Analysis chain `{{name}}` in the resources can not be `named` - the resources are where names are defined"
-			);
-
-	private static final ErrorType INVALID_SIGNAL_SHAPE =
-		ErrorType.withCode("index:ranking:signal:invalid_shape")
-			.withMessage(
-				"A ranking signal has to be exactly one shape - `saturation`, or `decay`"
 			);
 
 	private static final ErrorType INVALID_SYNONYM_RULE =
@@ -247,32 +240,7 @@ public class IndexDefinitionMapper {
 		}
 
 		if(definition.ranking() != null) {
-			var ranking = RankingConfig.newBuilder();
-			if(definition.ranking().tieBreakers() != null) {
-				for(var tieBreaker : definition.ranking().tieBreakers()) {
-					var stored = RankingConfig.TieBreaker.newBuilder();
-					if(tieBreaker.field() != null) {
-						stored.setField(tieBreaker.field());
-					}
-					if(tieBreaker.direction() != null) {
-						stored.setDirection(
-							switch(tieBreaker.direction()) {
-								case ASCENDING ->
-									RankingConfig.TieBreaker.Direction.DIRECTION_ASCENDING;
-								case DESCENDING ->
-									RankingConfig.TieBreaker.Direction.DIRECTION_DESCENDING;
-							}
-						);
-					}
-					ranking.addTieBreakers(stored);
-				}
-			}
-			if(definition.ranking().signals() != null) {
-				for(var signal : definition.ranking().signals()) {
-					ranking.addSignals(toStored(signal));
-				}
-			}
-			builder.setRanking(ranking);
+			builder.setRanking(RankingMapper.toStored(definition.ranking()));
 		}
 
 		return builder.build();
@@ -975,40 +943,6 @@ public class IndexDefinitionMapper {
 	 * @param signal
 	 * @return
 	 */
-	private static RankingConfig.Signal toStored(IndexDefinition.Ranking.Signal signal) {
-		if(countGiven(signal.saturation(), signal.decay()) != 1) {
-			throw new EngineException(INVALID_SIGNAL_SHAPE);
-		}
-
-		var builder = RankingConfig.Signal.newBuilder();
-
-		if(signal.field() != null) {
-			builder.setField(signal.field());
-		}
-
-		if(signal.weight() != null) {
-			builder.setWeight(signal.weight());
-		}
-
-		if(signal.saturation() != null) {
-			var saturation = RankingConfig.Signal.Saturation.newBuilder();
-			if(signal.saturation().pivot() != null) {
-				saturation.setPivot(signal.saturation().pivot());
-			}
-			builder.setSaturation(saturation);
-		}
-
-		if(signal.decay() != null) {
-			var decay = RankingConfig.Signal.Decay.newBuilder();
-			if(signal.decay().halfLife() != null) {
-				decay.setHalfLifeSeconds(signal.decay().halfLife());
-			}
-			builder.setDecay(decay);
-		}
-
-		return builder.build();
-	}
-
 	private static int countGiven(Object... values) {
 		var count = 0;
 		for(var value : values) {
@@ -1042,25 +976,7 @@ public class IndexDefinitionMapper {
 
 		IndexDefinition.Ranking ranking = null;
 		if(definition.hasRanking()) {
-			var tieBreakers = definition.getRanking().getTieBreakersList().stream()
-				.map(tieBreaker -> new IndexDefinition.Ranking.TieBreaker(
-					tieBreaker.hasField() ? tieBreaker.getField() : null,
-					tieBreaker.hasDirection() ? toApi(tieBreaker.getDirection()) : null
-				))
-				.toList();
-
-			/*
-			 * Left out rather than rendered empty, so a definition that ranks
-			 * by nothing but how well documents match reads the way it did
-			 * before there were signals to declare.
-			 */
-			var signals = definition.getRanking().getSignalsList().isEmpty()
-				? null
-				: definition.getRanking().getSignalsList().stream()
-					.map(IndexDefinitionMapper::toApi)
-					.toList();
-
-			ranking = new IndexDefinition.Ranking(tieBreakers, signals);
+			ranking = RankingMapper.toApi(definition.getRanking());
 		}
 
 		IndexDefinition.LocaleFallback localeFallback = null;
@@ -1140,59 +1056,6 @@ public class IndexDefinitionMapper {
 		}
 
 		return new IndexDefinition.Resources.Synonyms(rules);
-	}
-
-	/**
-	 * Convert a stored ranking signal into the form used by the API.
-	 *
-	 * A shape this version does not know reads as a signal with none, the way
-	 * an unknown enum reads as unset - what the definition needs is named in
-	 * its features, so an index that carries one is refused before it is ever
-	 * rendered.
-	 *
-	 * @param signal
-	 * @return
-	 */
-	private static IndexDefinition.Ranking.Signal toApi(RankingConfig.Signal signal) {
-		IndexDefinition.Ranking.Signal.Saturation saturation = null;
-		if(signal.hasSaturation()) {
-			saturation = new IndexDefinition.Ranking.Signal.Saturation(
-				signal.getSaturation().hasPivot() ? signal.getSaturation().getPivot() : null
-			);
-		}
-
-		IndexDefinition.Ranking.Signal.Decay decay = null;
-		if(signal.hasDecay()) {
-			decay = new IndexDefinition.Ranking.Signal.Decay(
-				signal.getDecay().hasHalfLifeSeconds()
-					? signal.getDecay().getHalfLifeSeconds()
-					: null
-			);
-		}
-
-		return new IndexDefinition.Ranking.Signal(
-			signal.hasField() ? signal.getField() : null,
-			saturation,
-			decay,
-			signal.hasWeight() ? signal.getWeight() : null
-		);
-	}
-
-	/**
-	 * Convert a stored tie breaker direction, treating one this version does
-	 * not know as unset so that the rest of the definition still reads.
-	 *
-	 * @param direction
-	 * @return
-	 */
-	private static IndexDefinition.Ranking.TieBreaker.Direction toApi(
-		RankingConfig.TieBreaker.Direction direction
-	) {
-		return switch(direction) {
-			case DIRECTION_ASCENDING -> IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING;
-			case DIRECTION_DESCENDING -> IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING;
-			default -> null;
-		};
 	}
 
 	/**

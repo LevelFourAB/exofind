@@ -31,6 +31,9 @@ import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegistryAuditUnavailableException;
 import se.l4.exofind.engine.index.registry.RegistryException;
+import se.l4.exofind.engine.index.settings.SearchSettingsException;
+import se.l4.exofind.engine.index.settings.SearchSettingsNotFoundException;
+import se.l4.exofind.engine.index.settings.SearchSettingsVersionMismatchException;
 import se.l4.exofind.engine.index.state.IndexerLeadershipUnreadableException;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
@@ -103,6 +106,17 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			/*
 			 * The change to the keys is well formed but could not be stored,
 			 * which leaves the keys exactly as they were.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof SearchSettingsNotFoundException) {
+			return Response.Status.NOT_FOUND;
+		} else if(e instanceof SearchSettingsVersionMismatchException) {
+			// The settings changed after the caller read them
+			return Response.Status.PRECONDITION_FAILED;
+		} else if(e instanceof SearchSettingsException) {
+			/*
+			 * The change to the settings is well formed but could not be stored,
+			 * which leaves the stored settings exactly as they were.
 			 */
 			return Response.Status.CONFLICT;
 		} else if(e instanceof IndexDefinitionIncompatibleException) {

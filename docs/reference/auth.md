@@ -51,6 +51,7 @@ Exofind supports the following permissions:
 | `indexes.commit` | index | Commits and pushes pending changes. |
 | `indexes.pull` | index | Pulls the latest index state. |
 | `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. |
+| `settings.write` | index | Replaces or removes the search settings of an index. Kept apart from `indexes.write` so relevance tuning can be granted without the power to change what an index contains. Reading settings needs `indexes.read`. |
 | `keys.read` | deployment | Lists API keys. |
 | `keys.write` | deployment | Creates and revokes API keys. |
 | `registry.audit` | deployment | Compares the index registry with what the storage holds. |

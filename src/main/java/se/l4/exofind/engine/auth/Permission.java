@@ -33,6 +33,12 @@ public enum Permission {
 	INDEXES_PULL("indexes.pull", Scope.INDEX, Anonymous.REFUSED),
 	INDEXES_REINDEX("indexes.reindex", Scope.INDEX, Anonymous.REFUSED),
 
+	/*
+	 * Kept apart from `indexes.write` so relevance tuning can be granted
+	 * without the power to change what an index contains.
+	 */
+	SETTINGS_WRITE("settings.write", Scope.INDEX, Anonymous.REFUSED),
+
 	KEYS_READ("keys.read", Scope.DEPLOYMENT, Anonymous.REFUSED),
 	KEYS_WRITE("keys.write", Scope.DEPLOYMENT, Anonymous.REFUSED),
 

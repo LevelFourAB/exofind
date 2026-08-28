@@ -366,4 +366,43 @@ public class ObjectStorageRegistryAuditTest {
 		var read = registryStorage.read(null);
 		assertThat(read instanceof RegistryStorage.Read.Corrupt, is(true));
 	}
+
+	/**
+	 * Deleting an index leaves its search settings object behind, and that
+	 * object alone keeping the prefix listable is not the index still being
+	 * held - it is not reported and a repair restores nothing from it.
+	 */
+	@Test
+	public void testPrefixHoldingOnlySettingsIsNotAnIndex() throws IOException {
+		putIndexObject("books/settings.ef.bin", "settings");
+
+		var report = audit.audit();
+		assertThat(report.indexes(), emptyIterable());
+		assertThat(report.unusable(), emptyIterable());
+
+		assertThat(audit.repair(true).isEmpty(), is(true));
+	}
+
+	/**
+	 * Beside real generations the settings object changes nothing - it is a
+	 * content key rather than a generation prefix.
+	 */
+	@Test
+	public void testSettingsObjectBesideGenerationsChangesNothing() throws IOException {
+		putManifest("books", "1");
+		putIndexObject("books/settings.ef.bin", "settings");
+
+		var report = audit.audit();
+		assertThat(
+			report.indexes().collect(RegistryAuditReport.AuditedIndex::name),
+			contains("books")
+		);
+		assertThat(report.indexes().getFirst().generations(), contains(
+			new RegistryAuditReport.AuditedGeneration("1", false, RegistryAuditReport.Stored.SYNCED)
+		));
+
+		var result = audit.repair(true);
+		assertThat(result.createdIndexes(), contains("books"));
+		assertThat(result.addedGenerations(), contains("books@1"));
+	}
 }

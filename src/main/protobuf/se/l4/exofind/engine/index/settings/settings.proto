@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+/*
+ * Named so that the descriptor holder does not take the name of the engine
+ * class that reads these messages.
+ */
+option java_outer_classname = "SearchSettingsProto";
+
+package se.l4.exofind.engine.index.settings;
+
+import "se/l4/exofind/engine/index/schema/definitions.proto";
+
+/*
+ * This file is the format the search settings of an index are stored in - one
+ * object per index in the same storage the generations live in - so it has to
+ * stay readable for as long as the index does. The same rules as for an index
+ * definition apply: scalars are `optional` so unset can be told apart from the
+ * zero value, and a field number is never reused.
+ *
+ * Settings change what a search answers, so a node that read only part of an
+ * object would search differently from one that read all of it. Every
+ * capability an object uses is therefore named in `required_features`, and a
+ * node that does not know a name there sets the whole object aside rather than
+ * applying the part it understands.
+ */
+
+/*
+ * SearchSettingsStore is how searches of one index behave, kept apart from the
+ * definition of what its documents were indexed as.
+ *
+ * The definition rides the sync manifest and every change to it goes through
+ * the index's writer; these settings are one object replaced conditionally on
+ * the version the writer read, so any node changes them and every node picks
+ * the change up on its own refresh. They are scoped to the index name rather
+ * than to a generation, which is what lets a promotion keep them.
+ */
+message SearchSettingsStore {
+	/*
+	 * Ranking that replaces the definition's whole, when present. An empty
+	 * config is a real value - it turns the definition's ranking off - while
+	 * an absent one leaves it in force.
+	 */
+	optional se.l4.exofind.engine.index.schema.RankingConfig ranking = 1;
+
+	/*
+	 * Names of the capabilities this object uses, written by whichever version
+	 * of the engine last stored it.
+	 *
+	 * Unknown fields survive being parsed, so a node reading settings from a
+	 * newer version sees a field it has no code for and would quietly search
+	 * without it. Listing what an object needs turns that into something a
+	 * node can check: one that does not know a name here searches with the
+	 * definition alone instead of honouring half of what was written.
+	 */
+	repeated string required_features = 2;
+}

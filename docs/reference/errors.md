@@ -59,6 +59,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:definition:*` | Stored index definition incompatible with this API version | `index:definition:unrepresentable` |
 | `index:generation:*` | Generation usage or deletion error | `index:generation:already_exists`, `index:generation:is_live`, `index:generation:name_required`, `index:generation:not_creatable` |
 | `index:registry:*` | Index or generation registry storage failure | `index:registry:conflict`, `index:registry:io_error` |
+| `index:settings:*` | Search settings lookup or storage failure | `index:settings:not_found`, `index:settings:version_mismatch`, `index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable` |
 | `index:update:*` | Document indexing failure | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
 | `index:source:*` | Stored document source copy unavailable | `index:source:not_kept`, `index:source:unreadable` |
 | `index:query:*` | Query refers to unavailable index features or fields | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept` |
@@ -84,3 +85,5 @@ The following error codes require specific handling in client applications:
 - `index:source:not_kept`: Returned when attempting a partial document update on an index where `source` is `none`, or on a document indexed when `source` was `none`. Resend the entire document.
 - `index:generation:is_live`: Returned when attempting to delete the live generation for an index. Promote another generation before deleting the live generation.
 - `index:unsupported`: Returned with HTTP `409` when the index requires engine features that the node does not support. Send the request to a node running a version that supports the required features.
+- `index:settings:version_mismatch`: Returned with HTTP `412` when a `PUT` of search settings carries an `If-Match` version the stored settings are no longer at. Read the settings again and rebuild the change on the version that comes back.
+- `index:settings:conflict`: Returned with HTTP `409` when the search settings kept being changed by other writers while the change was being stored. The stored settings are unchanged; retry the request.

@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import se.l4.exofind.engine.index.IndexState;
@@ -25,6 +27,10 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
  * @param luceneCreatedMajor
  *   major Lucene version the index was created with, or {@code null} when
  *   nothing recorded one and the index has no commit to read it from
+ * @param settingsUnsupportedFeatures
+ *   names of what the index's search settings need that the answering node
+ *   does not have. Only present when the node has set the settings aside and
+ *   searches with the definition alone
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record IndexStatus(
@@ -32,6 +38,7 @@ public record IndexStatus(
 	boolean readOnly,
 	IndexerInfo indexer,
 	LuceneCompatibility luceneCompatibility,
-	Integer luceneCreatedMajor
+	Integer luceneCreatedMajor,
+	List<String> settingsUnsupportedFeatures
 ) {
 }

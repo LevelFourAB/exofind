@@ -38,6 +38,8 @@ import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
+import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FacetConfig;
 import se.l4.exofind.engine.index.schema.FieldDef;
@@ -59,6 +61,7 @@ public class SearchResourceTest {
 	Path storageDirectory;
 
 	Indexes indexes;
+	SearchSettings searchSettings;
 	SearchResource resource;
 
 	@BeforeEach
@@ -87,7 +90,11 @@ public class SearchResourceTest {
 			Duration.ofHours(1)
 		);
 
-		resource = new SearchResource(indexes, 10_000);
+		searchSettings = new SearchSettings(
+			new InMemorySearchSettingsStorage(),
+			Duration.ofSeconds(10)
+		);
+		resource = new SearchResource(indexes, searchSettings, 10_000);
 	}
 
 	@AfterEach
@@ -1001,7 +1008,7 @@ public class SearchResourceTest {
 	public void testCursorsGoPastTheOffsetCap() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, 10);
+		var shallow = new SearchResource(indexes, searchSettings, 10);
 
 		var first = shallow.search(
 			"many",
@@ -1186,7 +1193,7 @@ public class SearchResourceTest {
 	public void testPagesPastTheCapAreNeverOffered() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, 10);
+		var shallow = new SearchResource(indexes, searchSettings, 10);
 
 		var response = shallow.search(
 			"many",

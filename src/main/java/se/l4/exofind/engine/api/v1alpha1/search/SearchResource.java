@@ -17,6 +17,8 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.index.IndexException;
+import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchResult;
 import jakarta.ws.rs.Consumes;
@@ -48,13 +50,16 @@ public class SearchResource {
 		.withMessage("The index `{{index}}` could not be searched");
 
 	private final Indexes indexes;
+	private final SearchSettings searchSettings;
 	private final int maxPageDepth;
 
 	public SearchResource(
 		Indexes indexes,
+		SearchSettings searchSettings,
 		@ConfigProperty(name = "search.max-page-depth", defaultValue = "10000") int maxPageDepth
 	) {
 		this.indexes = indexes;
+		this.searchSettings = searchSettings;
 		this.maxPageDepth = maxPageDepth;
 	}
 
@@ -76,9 +81,15 @@ public class SearchResource {
 		var index = indexes.getOrThrow(name);
 		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth);
 
+		/*
+		 * Settings belong to the index name, so a search naming one generation
+		 * runs with the same settings the bare name does.
+		 */
+		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
+
 		SearchResult result;
 		try {
-			result = index.search(mapped.request());
+			result = index.search(mapped.request(), settings);
 		} catch(IOException e) {
 			throw new IndexException(IO_ERROR, e, "index", name);
 		}

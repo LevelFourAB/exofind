@@ -1310,7 +1310,9 @@ public class Indexes {
 	 * <p>The index is taken out of the registry, which is what makes it gone for
 	 * the deployment rather than only for this node; every node removes its own
 	 * copy when it next reads the registry. What the remote holds under it is
-	 * left as it is.
+	 * left as it is - the generations and the search settings object alike - so
+	 * an index created again under the same name picks its old settings back
+	 * up, the way its generations can be found again.
 	 *
 	 * @param name
 	 *   the index, or one generation of it as {@code index@generation}

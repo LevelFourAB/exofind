@@ -24,6 +24,7 @@ import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.ws.rs.Consumes;
@@ -93,17 +94,20 @@ public class IndexResource {
 	private final AuthContext auth;
 	private final IndexerOwnership ownership;
 	private final ReindexJobs reindexJobs;
+	private final SearchSettings searchSettings;
 
 	public IndexResource(
 		Indexes indexes,
 		AuthContext auth,
 		IndexerOwnership ownership,
-		ReindexJobs reindexJobs
+		ReindexJobs reindexJobs,
+		SearchSettings searchSettings
 	) {
 		this.indexes = indexes;
 		this.auth = auth;
 		this.ownership = ownership;
 		this.reindexJobs = reindexJobs;
+		this.searchSettings = searchSettings;
 	}
 
 	/**
@@ -457,12 +461,25 @@ public class IndexResource {
 	private IndexStatus toStatus(Index index) {
 		var createdMajor = index.getLuceneCreatedMajor();
 
+		/*
+		 * Settings this node has set aside are part of how the index answers
+		 * right now, so the names of what stops them are status rather than
+		 * something only the settings endpoint knows.
+		 */
+		var settingsUnsupported = searchSettings
+			.get(IndexName.parse(index.getId()).index())
+			.map(SearchSettings.Snapshot::unsupportedFeatures)
+			.filter(features -> features.notEmpty())
+			.map(features -> features.toList())
+			.orElse(null);
+
 		return new IndexStatus(
 			index.getState(),
 			index.isReadOnly(),
 			indexerOf(IndexName.parse(index.getId()).index()),
 			index.getLuceneCompatibility(),
-			createdMajor.isPresent() ? createdMajor.getAsInt() : null
+			createdMajor.isPresent() ? createdMajor.getAsInt() : null,
+			settingsUnsupported
 		);
 	}
 

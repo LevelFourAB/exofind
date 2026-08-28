@@ -20,6 +20,10 @@ import se.l4.exofind.engine.index.registry.ObjectStorageRegistryAudit;
 import se.l4.exofind.engine.index.registry.ObjectStorageRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryAudit;
 import se.l4.exofind.engine.index.registry.RegistryStorage;
+import se.l4.exofind.engine.index.settings.LocalSearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.NoSearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.ObjectStorageSearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.SearchSettingsStorage;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
@@ -61,6 +65,12 @@ public class StorageProviders {
 	 * registry.
 	 */
 	private static final String LOCAL_KEYS_FILE = "keys.ef.bin";
+
+	/**
+	 * Directory the search settings of a node storing locally are kept in,
+	 * one file per index, beside the registry.
+	 */
+	private static final String LOCAL_SETTINGS_DIRECTORY = "settings";
 
 	/**
 	 * Read the mode the deployment named, and say once what it means.
@@ -334,6 +344,52 @@ public class StorageProviders {
 				);
 
 			return new NoKeyStorage();
+		}
+	}
+
+	/**
+	 * Where this node keeps the search settings of the indexes.
+	 *
+	 * <p>A node that named the object storage but cannot use it for settings
+	 * falls back to searching with the definitions alone. That is the ranking
+	 * every index shipped with rather than half of somebody's tuning, so a node
+	 * that cannot reach the settings answers plainer than the others, never
+	 * differently wrong - and it is not the same as storing locally, where
+	 * there is a store and it works.
+	 */
+	@Produces
+	@Singleton
+	public SearchSettingsStorage searchSettingsStorage(
+		StorageMode mode,
+		Instance<ObjectStorage> storage,
+		@ConfigProperty(name = "local.storage.directory") Path storageDirectory
+	) {
+		if(mode == StorageMode.LOCAL) {
+			return new LocalSearchSettingsStorage(
+				storageDirectory.resolve(LOCAL_SETTINGS_DIRECTORY)
+			);
+		}
+
+		/*
+		 * Resolved outside the fallback: a node that cannot open the storage at
+		 * all is misconfigured rather than cut off from its settings, and saying
+		 * so as lost settings would report the wrong problem for a node that is
+		 * about to refuse to start anyway.
+		 */
+		var objectStorage = storage.get();
+
+		try {
+			return new ObjectStorageSearchSettingsStorage(objectStorage);
+		} catch(RuntimeException e) {
+			logger.atWarn()
+				.setCause(e)
+				.log(
+					"Object storage is configured but could not be used for search"
+						+ " settings, so this node searches with the definitions alone; "
+						+ e.getMessage()
+				);
+
+			return new NoSearchSettingsStorage();
 		}
 	}
 
