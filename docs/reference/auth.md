@@ -41,6 +41,7 @@ Exofind supports the following permissions:
 | Permission | Scope | Description |
 |------------|-------|-------------|
 | `search` | index | Executes search queries using `POST /v1alpha1/indexes/{name}/search`. |
+| `documents.read` | index | Reads documents back out of an index using `GET /v1alpha1/indexes/{name}/documents`. |
 | `documents.write` | index | Adds documents to an index. |
 | `documents.delete` | index | Deletes documents by key or by query. |
 | `indexes.read` | index | Lists indexes, reads index definitions and status, and views writer node assignments. |
@@ -79,7 +80,7 @@ Roles provide shorthand sets of permissions when creating keys:
 | Role | Permissions |
 |------|-------------|
 | `reader` | `search`, `indexes.read` |
-| `writer` | `search`, `indexes.read`, `documents.write`, `documents.delete`, `indexes.commit` |
+| `writer` | `search`, `indexes.read`, `documents.read`, `documents.write`, `documents.delete`, `indexes.commit` |
 | `admin` | All permissions, including key management (`keys.read`, `keys.write`) |
 
 When a key is created, roles are expanded into their constituent permissions. Only the resulting permissions are stored in the key. Existing keys do not change permissions if role definitions change in later software versions. The `writer` role does not include `indexes.write` and cannot modify index definitions.

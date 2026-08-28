@@ -36,15 +36,20 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.MultiBits;
 import org.apache.lucene.index.MultiReader;
+import org.apache.lucene.index.MultiTerms;
+import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.CollectionTerminatedException;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorable;
@@ -57,6 +62,7 @@ import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.search.join.QueryBitSetProducer;
 import org.apache.lucene.search.join.ToChildBlockJoinQuery;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
@@ -491,6 +497,19 @@ public class Index {
 	 */
 	public boolean isReadOnly() {
 		return !nodeState.isIndexer(indexName);
+	}
+
+	/**
+	 * Get whether this index keeps a copy of each document as it was given.
+	 *
+	 * <p>Says what the definition asks for now rather than what every document
+	 * in the index has: turning the copies on does not write them for the
+	 * documents that are already there.
+	 *
+	 * @return
+	 */
+	public boolean isSourceStored() {
+		return schema.isSourceStored();
 	}
 
 	/**
@@ -2550,6 +2569,210 @@ public class Index {
 		} finally {
 			syncLock.readLock().unlock();
 		}
+	}
+
+	/**
+	 * Read documents back out of this index, in the order of their primary
+	 * keys, so that a caller can take out everything the index holds without
+	 * knowing what to ask for.
+	 *
+	 * <p>The order is the order of the primary key terms: what a whole number
+	 * key counts as, and the UTF-8 bytes of a text one. It depends on the keys
+	 * alone, so it is the same whatever order the documents were indexed in,
+	 * and merges, removals and pulls do not move a document within it. That is
+	 * what lets a caller stop and pick up again from the key it last read,
+	 * without a token standing for a position.
+	 *
+	 * <p>One call answers from one searcher, so what it hands over is the
+	 * index at one moment - the last commit, as a search reads it, rather than
+	 * everything written so far. Between two calls it is not: a document indexed
+	 * under a key the reading has already passed is never handed over, and one
+	 * changed after it was read is handed over as it was. Reading an index
+	 * that is being written and needing everything means tracking the changes
+	 * alongside - see {@link #beginChangeTracking()}.
+	 *
+	 * <p>How much one call reads is the caller's to bound. Reading holds the
+	 * index against a pull for as long as it runs, so a caller wanting
+	 * everything asks for many bounded reads rather than one unbounded one.
+	 *
+	 * @param after
+	 *   the key to carry on after, which is not itself handed over, or
+	 *   {@code null} to start at the first document - a key nothing is indexed
+	 *   under carries on from where it would have been
+	 * @param limit
+	 *   how many documents to read at most
+	 * @param receiver
+	 *   handed each document as it is read, in order
+	 * @return
+	 *   how many documents were handed over, which is fewer than {@code limit}
+	 *   only at the end of the index
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key, without which the documents
+	 *   have no order to be read in
+	 * @throws IndexSourceNotKeptException
+	 *   if the index keeps no copy of its documents, where what came back
+	 *   would be what the fields happen to be stored as rather than the
+	 *   documents
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 * @throws IOException
+	 */
+	public int scanDocuments(
+		Object after,
+		int limit,
+		DocumentReceiver receiver
+	) throws IOException {
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				throw new IndexClosedException(id);
+			}
+
+			var primaryKeyField = primaryKeyField();
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceNotKeptException(id);
+			}
+
+			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
+			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+			encounter.updateValue(primaryKeyField.getName(), primaryKeyField.getDef());
+
+			try(var handle = searcherManager.acquire()) {
+				var searcher = handle.getSearcher();
+				var reader = searcher.getIndexReader();
+
+				/*
+				 * One merged view over the segments, which is what puts the
+				 * keys of the whole index in one order - the terms of a single
+				 * segment are only sorted among themselves.
+				 */
+				var terms = MultiTerms.getTerms(reader, encounter.name(FieldNames.PRIMARY_KEY));
+				if(terms == null) {
+					return 0;
+				}
+
+				var keys = terms.iterator();
+				if(! seek(keys, after, primaryKeyField, encounter)) {
+					return 0;
+				}
+
+				var liveDocs = MultiBits.getLiveDocs(reader);
+				var storedFields = searcher.storedFields();
+				var documents = DocumentReader.everyVariant(schema, Sets.immutable.<String>empty());
+
+				var read = 0;
+				PostingsEnum postings = null;
+
+				while(read < limit) {
+					postings = keys.postings(postings, PostingsEnum.NONE);
+
+					var doc = documentOf(postings, liveDocs);
+					if(doc != NO_DOCUMENT) {
+						receiver.accept(
+							documents.read(documentCache.read(searcher, storedFields, doc, null))
+						);
+
+						read++;
+					}
+
+					if(keys.next() == null) {
+						break;
+					}
+				}
+
+				return read;
+			}
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Handed each document a {@link Index#scanDocuments scan} reads, as it is
+	 * read.
+	 */
+	@FunctionalInterface
+	public interface DocumentReceiver {
+		/**
+		 * Take one document. Throwing stops the scan, which hands the failure
+		 * back to whoever asked for it.
+		 *
+		 * @param document
+		 * @throws IOException
+		 */
+		void accept(Document document) throws IOException;
+	}
+
+	/**
+	 * Put a walk over the primary keys on the first key a scan is to read.
+	 *
+	 * @param keys
+	 * @param after
+	 *   the key the scan carries on after, or {@code null} to start at the
+	 *   first
+	 * @return
+	 *   whether there is a key to read, which is {@code false} for an empty
+	 *   index and for a scan that carried on past the last key
+	 */
+	private static boolean seek(
+		TermsEnum keys,
+		Object after,
+		Field primaryKeyField,
+		IndexEncounter encounter
+	) throws IOException {
+		if(after == null) {
+			return keys.next() != null;
+		}
+
+		var from = primaryKeyField.getType()
+			.createPrimaryKeyTerm(encounter, after)
+			.bytes();
+
+		/*
+		 * A key that is there is stepped past, as it was read by the call that
+		 * ended on it; a key that is not leaves the walk on the one that would
+		 * have followed it, which is where a scan carrying on from a document
+		 * that has since been removed belongs.
+		 */
+		return switch(keys.seekCeil(from)) {
+			case END -> false;
+			case FOUND -> keys.next() != null;
+			case NOT_FOUND -> true;
+		};
+	}
+
+	/**
+	 * What {@link #documentOf} answers for a key nothing is indexed under any
+	 * more.
+	 */
+	private static final int NO_DOCUMENT = -1;
+
+	/**
+	 * Get the document a primary key names, from everything the key is written
+	 * on.
+	 *
+	 * <p>A key is written on more than the document itself. The values of its
+	 * object fields carry it too, as they are Lucene documents of their own in
+	 * the same block; and a version of the document that was replaced or
+	 * removed keeps it until a merge drops the segment it sits in. Of all of
+	 * them only one block is live - replacing a document removes the whole of
+	 * the previous one - and a block is written with its document last, so the
+	 * highest live one is the document.
+	 */
+	private static int documentOf(PostingsEnum postings, Bits liveDocs) throws IOException {
+		var found = NO_DOCUMENT;
+
+		for(
+			var doc = postings.nextDoc();
+			doc != DocIdSetIterator.NO_MORE_DOCS;
+			doc = postings.nextDoc()
+		) {
+			if(liveDocs == null || liveDocs.get(doc)) {
+				found = doc;
+			}
+		}
+
+		return found;
 	}
 
 	/**

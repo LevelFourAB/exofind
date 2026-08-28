@@ -105,6 +105,8 @@ The change tracking design requires no changes to the registry format. A deploym
 
 ## What this does not do
 
-Populating a new generation requires indexing documents into it. Because Exofind preserves every document in its original form (see [the source API reference](../reference/documents-api.md)), you do not need to send source documents again when rebuilding from an existing generation.
+`GET /v1alpha1/indexes/{name}/documents` reads the stored documents of a generation back out in primary key order (see [the documents API reference](../reference/documents-api.md)). Its newline-delimited output is what the indexing endpoint takes back in, so you can fill a new generation from the one it replaces without going back to the system the documents first came from.
 
-However, the engine does not automatically execute the rebuild process. Filling the new generation, replaying the change log, and promoting the generation are driven externally through the documents API and the registry.
+The engine does not drive the rebuild. Reading the old generation, writing into the new one, replaying the change log, and promoting the generation are all driven from outside.
+
+Because a read that resumes is not one moment, documents can change behind the read while it runs. What changes behind it is what the change log records and replays.

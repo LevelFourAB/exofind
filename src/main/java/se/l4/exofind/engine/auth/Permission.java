@@ -21,6 +21,7 @@ import org.eclipse.collections.api.map.MapIterable;
 public enum Permission {
 	SEARCH("search", Scope.INDEX, Anonymous.ALLOWED),
 
+	DOCUMENTS_READ("documents.read", Scope.INDEX, Anonymous.REFUSED),
 	DOCUMENTS_WRITE("documents.write", Scope.INDEX, Anonymous.REFUSED),
 	DOCUMENTS_DELETE("documents.delete", Scope.INDEX, Anonymous.REFUSED),
 

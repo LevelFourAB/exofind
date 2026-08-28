@@ -28,13 +28,15 @@ public enum Role {
 	READER(Permission.SEARCH, Permission.INDEXES_READ),
 
 	/**
-	 * Everything a reader may do, plus putting documents in, taking them out
-	 * and committing. What a pipeline that loads data holds - it deliberately
-	 * cannot change a definition, so a runaway loader cannot reshape a schema.
+	 * Everything a reader may do, plus putting documents in, reading them back
+	 * out, taking them out and committing. What a pipeline that loads data
+	 * holds - it deliberately cannot change a definition, so a runaway loader
+	 * cannot reshape a schema.
 	 */
 	WRITER(
 		Permission.SEARCH,
 		Permission.INDEXES_READ,
+		Permission.DOCUMENTS_READ,
 		Permission.DOCUMENTS_WRITE,
 		Permission.DOCUMENTS_DELETE,
 		Permission.INDEXES_COMMIT

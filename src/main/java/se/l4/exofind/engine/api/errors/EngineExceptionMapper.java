@@ -24,6 +24,7 @@ import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexOutOfDateException;
 import se.l4.exofind.engine.index.IndexReadonlyException;
+import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
@@ -104,6 +105,7 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 		} else if(e instanceof IndexFieldNotFoundException
 			|| e instanceof IndexFieldUsageException
 			|| e instanceof IndexSourceRequiredException
+			|| e instanceof IndexSourceNotKeptException
 			|| e instanceof IndexInvalidQueryTypeException
 			|| e instanceof IndexInvalidQueryValueException
 			|| e instanceof IndexInvalidCursorException) {
