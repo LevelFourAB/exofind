@@ -1,10 +1,16 @@
 ---
 /*
- * The demos as a list of cards.
+ * The demos as a list of rows.
  *
  * The front page and the demo catalogue both offer the same choice, so they
  * offer it in the same shape rather than each having a look of its own. What
  * is listed comes from `../examples/demos.mjs`, which the sidebar reads too.
+ *
+ * A row rather than a card, because what separates one demo from the next is
+ * what it shows rather than how much room it takes: the sentence runs the
+ * width of the prose, the capabilities are listed under it, and the way in is
+ * at the end of the line where the rest of the site puts a label. The rule
+ * over each row is the same rule that starts a section of the manual.
  */
 import { DEMOS } from '../examples/demos.mjs';
 
@@ -14,9 +20,14 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 <ul class="demos not-content">
 	{DEMOS.map(entry => (
 		<li>
-			<a href={`${base}/examples/${entry.name}/`}>{entry.title}</a>
-			<p set:html={entry.summary} />
-			<p class="shows">{entry.shows.join(' · ')}</p>
+			<a class="demo-row" href={`${base}/examples/${entry.name}/`}>
+				<h3>{entry.title}</h3>
+				<span class="open">Open demo</span>
+				<p set:html={entry.summary} />
+				<ul class="shows">
+					{entry.shows.map(shown => <li>{shown}</li>)}
+				</ul>
+			</a>
 		</li>
 	))}
 </ul>
@@ -24,71 +35,100 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 <style>
 	.demos {
 		display: grid;
-		gap: 1.5rem;
-		grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
 		list-style: none;
 		margin: 0;
 		padding: 0;
 	}
 
-	.demos > li {
-		border: 1px solid var(--sl-color-gray-5);
-		border-radius: 0.5rem;
-		padding: 1.25rem;
-		position: relative;
-	}
-
-	.demos > li:hover {
-		border-color: var(--sl-color-text-accent);
-	}
-
-	/* The card is what is clicked, so its name is a heading first and a link second. */
-	.demos a {
-		color: var(--sl-color-white);
-		font-size: var(--sl-text-lg);
-		font-weight: 600;
+	.demo-row {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: inherit;
+		display: grid;
+		gap: 0.3125rem 2.5rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		padding-block: 1.25rem;
 		text-decoration: none;
 	}
 
-	/*
-	 * The name is the only link, but the whole card is the target: this covers
-	 * the card with the link's own box, so a pointer anywhere in the card
-	 * follows it and assistive technology still reads one link named by the
-	 * demo. The card carries the keyboard focus ring for the same reason.
-	 */
-	.demos a::after {
-		content: '';
-		inset: 0;
-		position: absolute;
+	.demos > li:last-child .demo-row {
+		border-block-end: 1px solid var(--sl-color-gray-5);
 	}
 
-	.demos > li:hover a,
-	.demos > li:focus-within a {
+	.demo-row h3 {
+		font-size: 1.25rem;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		line-height: 1.3;
+		margin: 0;
+	}
+
+	.demo-row:hover h3 {
 		color: var(--sl-color-text-accent);
-		text-decoration: underline;
 	}
 
-	.demos a:focus-visible {
-		outline: none;
-	}
-
-	.demos > li:has(a:focus-visible) {
-		outline: 2px solid var(--sl-color-text-accent);
-		outline-offset: 2px;
-	}
-
-	.demos p {
+	.demo-row p {
 		color: var(--sl-color-gray-2);
-		margin-block: 0.5rem 0;
+		grid-column: 1;
+		margin: 0;
+		max-width: 68ch;
 	}
 
-	.demos :global(strong) {
+	/* The word the sentence turns on, marked the way a demo marks a match. */
+	.demo-row :global(strong) {
+		box-shadow: inset 0 -2px 0 var(--sl-color-text-accent);
 		color: var(--sl-color-white);
+		font-weight: 600;
 	}
 
 	/* What the demo is there to show, in the words the documentation uses. */
 	.shows {
-		font-size: var(--sl-text-sm);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3125rem 0.375rem;
+		grid-column: 1;
+		list-style: none;
+		margin: 0.4375rem 0 0;
+		padding: 0;
+	}
+
+	.shows li {
+		border: 1px solid var(--sl-color-gray-5);
 		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		line-height: 1.5;
+		padding: 0.125rem 0.375rem;
+	}
+
+	.open {
+		align-self: start;
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		grid-column: 2;
+		grid-row: 1 / span 2;
+		letter-spacing: 0.16em;
+		line-height: 1.2;
+		padding-block-start: 0.4375rem;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	.demo-row:hover .open {
+		color: var(--sl-color-text-accent);
+	}
+
+	/* The label has nowhere to go beside the title on a narrow window. */
+	@media (max-width: 34rem) {
+		.demo-row {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.open {
+			grid-column: 1;
+			grid-row: auto;
+			padding-block-start: 0.5rem;
+		}
 	}
 </style>

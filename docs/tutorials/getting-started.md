@@ -16,7 +16,7 @@ Before you begin, ensure you have the following tools installed:
 **Note:** Exofind is experimental and its API is `v1alpha1`. It can change
 without backward compatibility.
 
-## 1. Starting the container
+## Starting the container
 
 The Exofind container image is published to GitHub Packages. The `main-latest`
 tag represents the newest development build. For production deployments, pin a
@@ -56,7 +56,7 @@ curl http://localhost:8080/q/health/ready
 The readiness endpoint answers without requiring an API key once the node reads
 its index registry.
 
-## 2. Creating an API key
+## Creating an API key
 
 The root key allows you to bootstrap real API keys. Create an administrative API
 key that has permissions across all indexes:
@@ -97,7 +97,7 @@ example string with the `credential` value from your response:
 export EXOFIND_KEY="exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH"
 ```
 
-## 3. Defining an index
+## Defining an index
 
 Send a definition for a new index named `books`:
 
@@ -129,7 +129,7 @@ the index status, and an `ETag` header:
 Each field defines its allowed operations: `title` enables matching and sorting,
 `published` enables filtering, and `id` serves as the primary key.
 
-## 4. Indexing documents
+## Indexing documents
 
 Add documents to the `books` index:
 
@@ -162,7 +162,7 @@ curl -X POST http://localhost:8080/v1alpha1/admin/indexes/books/actions/commit \
   -H "Authorization: Bearer $EXOFIND_KEY"
 ```
 
-## 5. Searching the index
+## Searching the index
 
 Search for documents matching the text `spring`:
 
@@ -213,7 +213,7 @@ curl http://localhost:8080/v1alpha1/indexes/books/search \
 Because the index definition does not enable filtering on `title`, the server
 rejects the query with the error `index:query:usage_not_enabled`.
 
-## 6. Managing data persistence and cleaning up
+## Managing data persistence and cleaning up
 
 Stop and restart the container to verify that data persists:
 

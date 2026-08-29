@@ -18,7 +18,7 @@ Before you begin, ensure that you have:
 - Network access to the HTTP port of each node.
 - A metrics backend or collector endpoint ready to receive data.
 
-## 1. Inspect exposed node metrics
+## Inspect exposed node metrics
 
 Exofind exposes Prometheus metrics by default on the standard HTTP port at
 `/q/metrics`.
@@ -33,7 +33,7 @@ Exofind exposes Prometheus metrics by default on the standard HTTP port at
 Prometheus exposition runs continuously and consumes no extra resources until
 scraped.
 
-## 2. Choose a histogram mode
+## Choose a histogram mode
 
 Exofind publishes histogram buckets rather than precomputed quantiles. Buckets
 from multiple series or nodes can be summed directly, whereas quantiles cannot
@@ -52,10 +52,11 @@ To track search latency per index, set
 `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM=true`. This turns one search histogram
 into one per index, so a deployment holding 500 indexes multiplies that meter by
 500. Two things make it affordable: a backend that stores native histograms, or
-a collector that collapses the index label as described in step 4. Without
+a collector that collapses the index label, as described in "Control index
+label cardinality". Without
 either, leave it `false`.
 
-## 3. Configure metrics collection
+## Configure metrics collection
 
 Choose either pull collection with Grafana Alloy or push collection with
 OpenTelemetry Protocol (OTLP).
@@ -120,7 +121,7 @@ variables on each node:
    export QUARKUS_MICROMETER_EXPORT_OTLP_HEADERS="Authorization=Bearer <token>"
    ```
 
-## 4. Control index label cardinality
+## Control index label cardinality
 
 A deployment with 500 indexes produces roughly 2,500 per-index gauge series per
 node, compared to approximately 250 node-level timer series and 400 JVM/HTTP
@@ -186,7 +187,7 @@ the engine level:
 2. Adjust `EXOFIND_METRICS_INDEX_INTERVAL` (default `30s`) to control how
    frequently per-index metrics and disk checks update.
 
-## 5. Set up alerts
+## Set up alerts
 
 Configure alerts in your monitoring backend for these core operational signals:
 

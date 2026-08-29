@@ -11,7 +11,7 @@ Before handling errors, ensure your client can:
 - Make HTTP requests to an Exofind endpoint under `/v1alpha1`.
 - Parse JSON response bodies.
 
-## 1. Read the error body and match on the code
+## Read the error body and match on the code
 
 Every failed request returns an `application/json` payload with a top-level `code`, a human-readable `message`, and an `errors` array.
 
@@ -38,7 +38,7 @@ An error response uses the following structure:
 }
 ```
 
-## 2. Locate refused input using path and arguments
+## Locate refused input using path and arguments
 
 When a request fails validation or contains bad field definitions, use the `errors` array to show your caller exactly what was refused.
 
@@ -46,7 +46,7 @@ When a request fails validation or contains bad field definitions, use the `erro
 2. Read the `path` property to locate the specific field or position in your payload that caused the failure. If `path` is absent or `null`, the error applies to the request as a whole.
 3. Read the `arguments` map to retrieve the specific values associated with the error code. Arguments are formatted as strings so you can construct custom, localized error messages without parsing English text.
 
-## 3. Decide how to handle each HTTP status code
+## Decide how to handle each HTTP status code
 
 Categorize the failure by HTTP status code to determine whether to fix the request, retry, or reload state:
 
@@ -62,7 +62,7 @@ Categorize the failure by HTTP status code to determine whether to fix the reque
 - **Re-read and rebuild (`412`)**:
   - `412 Precondition Failed`: The version in your `If-Match` header no longer matches the stored `ETag`. Fetch the latest version of the resource (`GET`), apply your intended changes onto the new version, and send the update with the new `ETag`.
 
-## 4. Retry safely based on request idempotency
+## Retry safely based on request idempotency
 
 When a network timeout occurs or the server returns `502` or `503`, determine whether the request expresses desired state before repeating it:
 
@@ -70,7 +70,7 @@ When a network timeout occurs or the server returns `502` or `503`, determine wh
 - **Document removals**: Removing a document by primary key states desired state. Resending the removal after a timeout is safe.
 - **Partial document updates**: `POST /v1alpha1/indexes/{name}/documents/actions/update` describes modifications to an existing document rather than full state. Do not blindly repeat partial updates if a request times out; verify the document's state first.
 
-## 5. Recover from refused document batches
+## Recover from refused document batches
 
 Documents are taken in the order you sent them, and the first document the index refuses fails the request. The documents before it are already in the index and are committed with everything else.
 

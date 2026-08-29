@@ -1,0 +1,44 @@
+---
+/*
+ * The page title, with the part of the manual it belongs to over it.
+ *
+ * The label is the first word on the page and it starts on the same line as
+ * the title, the lede and every heading under them. It says which of the four
+ * kinds of documentation the reader has landed in, which matters most to
+ * someone who arrived from a search result rather than from the sidebar - and
+ * on a narrow window, where the sidebar is behind a button, it is the only
+ * thing that says it at all.
+ *
+ * A page in no section - the front page, a demo, anything not listed in
+ * `docs/README.md` - is titled without a label rather than with an empty one.
+ */
+import { sectionOf } from '../nav.mjs';
+
+/*
+ * What Starlight calls the top of a page. The skip link, the first entry of
+ * the table of contents and the anchor a routed navigation returns to all
+ * point at it, so the title has to keep carrying it. Starlight holds it as a
+ * constant that its package does not export.
+ */
+const PAGE_TITLE_ID = '_top';
+
+const section = sectionOf(Astro.locals.starlightRoute.sidebar);
+---
+
+{section && <p class="doc-eyebrow">{section}</p>}
+
+<h1 id={PAGE_TITLE_ID}>{Astro.locals.starlightRoute.entry.data.title}</h1>
+
+<style>
+	h1 {
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-h1);
+		line-height: var(--sl-line-height-headings);
+		margin-top: 0.875rem;
+	}
+
+	/* The label and the title are one block, not two the panel spaces apart. */
+	.doc-eyebrow + h1 {
+		margin-top: 0.5rem;
+	}
+</style>

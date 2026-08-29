@@ -61,6 +61,27 @@ export function sectionsOf(sidebar) {
 	return sections;
 }
 
+/**
+ * What section of the manual a page is in, or `null` when it is in none - the
+ * front page and the demo pages are rendered without a sidebar, and a page
+ * that is not listed in `docs/README.md` is in no section either.
+ *
+ * This is the label over a page title. Unlike the header, it names every
+ * section, the tutorials included: what the header leaves out to spend its
+ * room elsewhere, a reader still has to be told they are reading.
+ *
+ * @param {any[]} sidebar `Astro.locals.starlightRoute.sidebar`
+ * @returns {string | null}
+ */
+export function sectionOf(sidebar) {
+	for(const entry of sidebar) {
+		if(entry.type !== 'group') continue;
+		if(linksIn(entry).some(link => link.isCurrent)) return entry.label;
+	}
+
+	return null;
+}
+
 /** Every link under a sidebar entry, however deeply it is grouped. */
 function linksIn(entry) {
 	return entry.type === 'link' ? [entry] : entry.entries.flatMap(linksIn);

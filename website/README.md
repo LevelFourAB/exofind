@@ -50,6 +50,44 @@ and demo pages do not use a prose column. On narrow viewports where the sidebar
 is hidden, the header replaces section links with a mobile menu while retaining
 the title and search.
 
+## The look
+
+[`src/styles/site.css`](src/styles/site.css) holds the theme, and it is nearly
+all of it. Astro applies it before Starlight declares its cascade layers, so
+every rule in that file outranks the component it restyles no matter how
+specific either one is. That is what lets one stylesheet do the work of three
+dozen component overrides, and it is why a rule that stops working after a
+Starlight upgrade is usually a renamed class rather than a specificity problem.
+
+Four components are replaced for markup that CSS cannot reach:
+
+- [`ThemeSelect.astro`](src/components/ThemeSelect.astro) shows Auto, Light and
+  Dark as three cells rather than as a dropdown. It reads and writes the same
+  `starlight-theme` entry Starlight's own control uses, so the inline script
+  that settles the theme before the first paint keeps working.
+- [`PageTitle.astro`](src/components/PageTitle.astro) labels a title with the
+  part of the manual the page is in, which `src/nav.mjs` works out from the
+  sidebar.
+- [`Hero.astro`](src/components/Hero.astro) lays the front page hero out on the
+  same line the documentation starts on, and labels it with the site name.
+- [`DemoList.astro`](src/components/DemoList.astro) is the shared list of demos
+  for the front page and the catalogue.
+
+Two things about it are worth knowing before changing it:
+
+- Section headings are numbered with a CSS counter, and the on-this-page list
+  repeats the numbers. There is nothing to write in the Markdown.
+- Everything a page says starts on one line, and the column to the left of it
+  holds the section numerals and the ends of the rules under them. Blocks that
+  start wide - a heading, an aside, prev/next, the colophon - do it with a
+  negative margin and push their own text back with padding. Write those
+  selectors with the child combinator: a descendant selector also finds the
+  labels nested inside an aside or the pager and drags them out of their boxes.
+
+Editing this file is the one change the dev server does not pick up. Starlight
+loads it through a virtual module that Vite does not invalidate, so a change
+shows up only after `mise run site` is restarted, or in `mise run site:build`.
+
 ## Navigation
 
 [`src/components/Head.astro`](src/components/Head.astro) replaces the default

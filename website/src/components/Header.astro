@@ -20,6 +20,11 @@
  * theme and the links with them - the mobile menu holds both, and the header
  * keeps only the title and the search.
  *
+ * The theme control is three cells rather than a dropdown, and why is on
+ * `./ThemeSelect.astro`. It arrives here through the virtual module rather
+ * than by being imported by name, because the mobile menu shows the same
+ * control and both have to be the same one.
+ *
  * The search is kept across a routed navigation rather than rebuilt. Starlight
  * mounts the search interface into it once the document has loaded, which on a
  * routed page happens for the document the reader arrived in and never again -
@@ -124,10 +129,19 @@ const searchable =
 		gap: 1rem;
 	}
 
+	/* The hairline that separates what leaves the site from what changes it. */
 	.social-icons::after {
 		content: '';
-		height: 2rem;
+		height: 1.375rem;
 		border-inline-end: 1px solid var(--sl-color-gray-5);
+	}
+
+	.social-icons :global(a) {
+		color: var(--sl-color-gray-2);
+	}
+
+	.social-icons :global(a:hover) {
+		color: var(--sl-color-white);
 	}
 
 	/*

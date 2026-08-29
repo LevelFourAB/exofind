@@ -9,6 +9,17 @@
  * values names of their own in `../examples/shared/exofind.css`, but only by
  * aliasing what is here - which is what makes a demo follow the theme the
  * reader picked rather than the one the operating system is set to.
+ *
+ * The documentation is set as a manual rather than as a web page: hairline
+ * rules instead of boxes, square corners, labels in the mono face at one small
+ * size, one blue, and no filled surface but the primary action. The
+ * arrangement is one axis - see "The axis" below - and everything after it is
+ * a part of the page hung off that axis.
+ *
+ * Starlight's own styles are in cascade layers and this file is not in one, so
+ * every rule here wins over the component it restyles whatever its
+ * specificity. That is what lets a theme be written as one stylesheet instead
+ * of as three dozen component overrides.
  */
 @import '@fontsource-variable/archivo/standard.css';
 @import '@fontsource/ibm-plex-mono/latin-400.css';
@@ -17,47 +28,518 @@
 @import '@fontsource/ibm-plex-mono/latin-ext-500.css';
 
 :root {
+	/*
+	 * Each colour is written once, for both themes, and which half is used is
+	 * decided by `color-scheme`. Starlight settles that before first paint by
+	 * stamping `data-theme` on the root, and its reset turns that attribute
+	 * into a `color-scheme`; the rule under this block covers the case where
+	 * the inline script does not run, so a reader whose system is set to light
+	 * is not handed the dark palette by a script that failed.
+	 */
+	--sl-color-accent-low: light-dark(#dfe3fa, #1b2440);
+	--sl-color-accent: light-dark(#1d3fd6, #3a5cf0);
+	--sl-color-accent-high: light-dark(#16309f, #b9c8ff);
+
+	--sl-color-white: light-dark(#12171b, #e4e8e4);
+	--sl-color-gray-1: light-dark(#1d242a, #d3d9d5);
+	--sl-color-gray-2: light-dark(#3e474e, #a6b0b5);
+	--sl-color-gray-3: light-dark(#5c666e, #8b969c);
+	--sl-color-gray-4: light-dark(#a9b2ac, #414c52);
+	--sl-color-gray-5: light-dark(#ccd2cd, #293237);
+	--sl-color-gray-6: light-dark(#e7eae6, #161c20);
+	/* The dark palette has no seventh step; it repeats the sixth. */
+	--sl-color-gray-7: light-dark(#eff1ee, #161c20);
+	--sl-color-black: light-dark(#f7f8f6, #0f1417);
+
+	/*
+	 * The theme draws with rules rather than with fills, so the header, the
+	 * sidebar and the page are one surface and every hairline is one grey.
+	 * Text on the one filled thing there is - the primary action - is the
+	 * paper colour of whichever theme is showing.
+	 */
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--sl-color-black);
+	--sl-color-bg-sidebar: var(--sl-color-black);
+	--sl-color-bg-inline-code: var(--sl-color-gray-6);
+	--sl-color-bg-accent: var(--sl-color-accent);
+	--sl-color-hairline: var(--sl-color-gray-5);
+	--sl-color-hairline-light: var(--sl-color-gray-5);
+	--sl-color-hairline-shade: var(--sl-color-gray-5);
+	--sl-color-text-invert: var(--sl-color-black);
+
 	--sl-font: 'Archivo Variable', system-ui, sans-serif;
 	--sl-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
 
 	--sl-content-width: 58rem;
-}
+	--sl-content-gap-y: 1.125rem;
 
-:root[data-theme='light'] {
-	--sl-color-accent-low: #dfe3fa;
-	--sl-color-accent: #1d3fd6;
-	--sl-color-accent-high: #16309f;
+	/* The manual's own sizes, rather than the ones Starlight ships with. */
+	--sl-text-h1: 2.0625rem;
+	--sl-text-h2: 1.375rem;
+	--sl-text-h3: 1.0625rem;
 
-	--sl-color-white: #12171b;
-	--sl-color-gray-1: #1d242a;
-	--sl-color-gray-2: #3e474e;
-	--sl-color-gray-3: #5c666e;
-	--sl-color-gray-4: #a9b2ac;
-	--sl-color-gray-5: #ccd2cd;
-	--sl-color-gray-6: #e7eae6;
-	--sl-color-gray-7: #eff1ee;
-	--sl-color-black: #f7f8f6;
-}
+	/*
+	 * The axis.
+	 *
+	 * Every word on every page starts at the same place: the eyebrow, the
+	 * title, the lede, the prose, the tables, and the hero on the front page
+	 * with its buttons. This is the column to the left of that line, and it
+	 * holds the section numerals and the ends of the rules that run under
+	 * them. Nothing else reaches back into it to look important.
+	 *
+	 * Three blocks start wide, so that their rule spans the whole width the
+	 * page has, and then push their own text back onto the axis: the aside,
+	 * prev/next, and the colophon.
+	 *
+	 * There is no column below the width the sidebar appears at - a 3.5rem
+	 * gutter is a seventh of a phone screen - and the numeral ends the
+	 * heading's line there instead. A demo page has no column either: it is a
+	 * search interface rather than a manual page, and it is laid out by
+	 * `../examples/shared/exofind.css`.
+	 */
+	--doc-margin: 0rem;
 
-:root[data-theme='dark'] {
-	--sl-color-accent-low: #1b2440;
-	--sl-color-accent: #3a5cf0;
-	--sl-color-accent-high: #b9c8ff;
-
-	--sl-color-white: #e4e8e4;
-	--sl-color-gray-1: #d3d9d5;
-	--sl-color-gray-2: #a6b0b5;
-	--sl-color-gray-3: #8b969c;
-	--sl-color-gray-4: #414c52;
-	--sl-color-gray-5: #293237;
-	--sl-color-gray-6: #161c20;
-	--sl-color-black: #0f1417;
+	/* One blue, and the readable half of it in each palette. */
+	--sl-color-text-accent: var(--sl-color-accent);
 }
 
 /*
- * Tables carry a lot of the reference documentation - every setting, every
- * error code - so they are given a rule per row rather than being left to run
- * together.
+ * Without the attribute there is no theme to follow but the system's, so the
+ * root is told to accept either and `light-dark()` above answers to that.
+ */
+:root:not([data-theme]) {
+	color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--sl-color-text-accent: var(--sl-color-accent-high);
+	}
+}
+
+:root[data-theme='dark'] {
+	--sl-color-text-accent: var(--sl-color-accent-high);
+}
+
+@media (min-width: 50rem) {
+	:root {
+		--sl-nav-height: 3.5rem;
+		--sl-menu-button-size: 2.75rem;
+
+		--sl-text-h1: 2.625rem;
+		--sl-text-h2: 1.5625rem;
+		--sl-text-h3: 1.125rem;
+	}
+
+	:root:not(:has(.demo)) {
+		--doc-margin: 3.5rem;
+	}
+}
+
+/*
+ * From the width the on-this-page list appears at, the page is three columns
+ * and the prose is given whatever the other two do not need. Starlight shares
+ * the window out from the prose width alone, which on a window only a little
+ * wider than the list's own breakpoint leaves the list a column too narrow to
+ * read - so the prose is capped at what is left once both columns have the
+ * width the navigation sidebar has.
+ */
+@media (min-width: 72rem) {
+	[data-has-toc] {
+		--sl-content-width: min(58rem, calc(100vw - 2 * var(--sl-sidebar-width)));
+	}
+}
+
+/* ----------------------------------------------------------------------- */
+/* The eyebrow: the one label style the whole site shares.                  */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * It fails a twelve pixel floor, and it is kept anyway: it is the label the
+ * demos are built on - `.eyebrow` in `../examples/shared/exofind.css` - and a
+ * site with two label sizes reads as two sites.
+ *
+ * The class is the demos'; the rules below hang the same look off the
+ * documentation furniture that has no class of its own.
+ */
+.doc-eyebrow,
+.sidebar-content ul.top-level > li > details > summary .large,
+.right-sidebar-panel h2,
+main footer .pagination-links a > span:not(.link-title),
+.starlight-aside__title {
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.16em;
+	line-height: 1.2;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+	font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------------- */
+/* The header                                                              */
+/* ----------------------------------------------------------------------- */
+
+/* The site name is read as a name, not as the page's one accent. */
+.site-title {
+	color: var(--sl-color-white);
+	font-size: 1.0625rem;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+/*
+ * A field rather than a rounded button: square, ruled, and with the shortcut
+ * set in the mono the rest of the furniture uses. Below the width it becomes a
+ * box it is an icon, and there it is a target a thumb can hit.
+ */
+button[data-open-modal] {
+	border-radius: 0;
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	height: 2.75rem;
+}
+
+@media (min-width: 50rem) {
+	button[data-open-modal] {
+		background: none;
+		border-color: var(--sl-color-gray-5);
+		font-size: 0.8125rem;
+		height: 2.125rem;
+		padding-inline: 0.625rem 0.5rem;
+	}
+
+	button[data-open-modal]:hover {
+		border-color: var(--sl-color-gray-4);
+		color: var(--sl-color-white);
+	}
+}
+
+button[data-open-modal] > kbd {
+	background: none;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0;
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	padding-inline: 0.3125rem;
+}
+
+button[data-open-modal] kbd {
+	font-family: var(--sl-font-mono);
+}
+
+/* The search dialog is the same paper, ruled rather than shadowed. */
+site-search dialog {
+	background-color: var(--sl-color-black);
+	border-color: var(--sl-color-gray-5);
+	box-shadow: none;
+}
+
+/*
+ * The menu button on a narrow window is an icon on the page rather than a
+ * filled disc floating over it, and it is as wide as a thumb.
+ */
+starlight-menu-button button,
+starlight-menu-button[aria-expanded='true'] button {
+	background: none;
+	border-radius: 0;
+	box-shadow: none;
+	color: var(--sl-color-gray-2);
+}
+
+/* ----------------------------------------------------------------------- */
+/* The sidebar                                                             */
+/* ----------------------------------------------------------------------- */
+
+.sidebar-pane {
+	border-inline-end-color: var(--sl-color-gray-5);
+}
+
+.sidebar-content {
+	gap: 1.625rem;
+	padding-block-start: 1.875rem;
+}
+
+/*
+ * A section that is not the one being read is one line. The manual is
+ * forty-odd pages, and a column that lists every one of them at once cannot be
+ * read at a glance; which section is open is set where the sidebar is built,
+ * in `../sidebar.mjs`.
+ */
+.sidebar-content summary {
+	padding-inline: 0;
+}
+
+.sidebar-content ul.top-level > li + li {
+	margin-top: 1.625rem;
+}
+
+.sidebar-content ul.top-level > li > details > summary:hover .large,
+.sidebar-content ul.top-level > li > details[open] > summary .large {
+	color: var(--sl-color-white);
+}
+
+.sidebar-content .caret {
+	color: var(--sl-color-gray-4);
+	font-size: 1rem;
+}
+
+/*
+ * A section long enough to be divided - the how-to guides are - holds
+ * sub-sections, and those are headings rather than second eyebrows: the
+ * eyebrow says which of the four kinds of documentation the column is showing,
+ * and there is one of those per section.
+ */
+.sidebar-content ul ul .large {
+	color: var(--sl-color-white);
+	font-size: 0.875rem;
+	font-weight: 600;
+}
+
+/* One sub-section is set apart from the next; the pages within one are not. */
+.sidebar-content ul ul > li:not(:has(> a)) + li {
+	margin-block-start: 0.875rem;
+}
+
+/*
+ * The pages hang off a hairline, and only the pages. A sub-section heading is
+ * where a list starts rather than an item in one, so it stands on the same
+ * line as its section's eyebrow with nothing beside it - however deeply
+ * Starlight has nested it.
+ */
+.sidebar-content ul ul li {
+	border-inline-start: 0;
+	margin-inline-start: 0;
+	padding-inline-start: 0;
+}
+
+.sidebar-content ul ul li:has(> a) {
+	border-inline-start: 1px solid var(--sl-color-gray-5);
+}
+
+/*
+ * Where the reader is, that hairline turns into the signal and thickens - the
+ * same mark the demos put under a matched word - rather than the page being
+ * filled in.
+ */
+.sidebar-content ul ul li:has(> a[aria-current='page']) {
+	border-inline-start: 2px solid var(--sl-color-text-accent);
+}
+
+.sidebar-content a {
+	border-radius: 0;
+	line-height: 1.45;
+	padding: 0.25rem 0 0.25rem 0.875rem;
+}
+
+.sidebar-content ul ul li:has(> a[aria-current='page']) > a {
+	padding-inline-start: 0.8125rem;
+}
+
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+	background: none;
+	color: var(--sl-color-text-accent);
+	font-weight: 600;
+}
+
+/* ----------------------------------------------------------------------- */
+/* The article, and the column beside it                                   */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Everything a page says starts here. The panel Starlight puts the title in
+ * and the panel it puts the content in are both moved onto the axis, so the
+ * eyebrow, the title and the first paragraph line up with the headings that
+ * follow them.
+ */
+main .sl-container {
+	padding-inline-start: var(--doc-margin);
+}
+
+/* The two panels are one page, not two boxes stacked. */
+main .content-panel + .content-panel {
+	border-top: 0;
+	padding-block-start: 0;
+}
+
+.sl-markdown-content {
+	counter-reset: doc-section;
+}
+
+/*
+ * The opening paragraph of a reference page or a guide says what the page is
+ * for, so it is set larger than the prose under it.
+ */
+.sl-markdown-content > p:first-child {
+	font-size: 1.125rem;
+	line-height: 1.65;
+	max-width: 66ch;
+}
+
+/*
+ * Prose is held to a line a reader can come back from. A heading and an aside
+ * are not: both draw a rule that says where a part of the page begins, and a
+ * rule that stops short of the column reads as a mistake rather than as a
+ * measure.
+ */
+.sl-markdown-content > :is(p, dl, blockquote) {
+	max-width: 70ch;
+}
+
+/*
+ * A list at the top of the page starts where the prose starts: its markers sit
+ * on the axis rather than a browser's indent inside it, and what each item
+ * says is indented from its own marker in the usual way. A list nested inside
+ * an item keeps the indent, because there it is what says the list is nested.
+ *
+ * The child combinator is what keeps this off the lists inside an aside, a
+ * table cell or a demo.
+ */
+.sl-markdown-content > :is(ul, ol):not(.not-content) {
+	counter-reset: doc-item;
+	list-style: none;
+	padding-inline-start: 0;
+}
+
+.sl-markdown-content > :is(ul, ol):not(.not-content) > li {
+	padding-inline-start: 1.75rem;
+	position: relative;
+}
+
+/*
+ * The marker is drawn rather than left to the browser, because a browser
+ * places its own outside the item and the width it leaves for it is not a
+ * width this can name - which is the difference between a marker that lands on
+ * the axis and one that hangs a few pixels into the margin.
+ */
+.sl-markdown-content > :is(ul, ol):not(.not-content) > li::before {
+	color: var(--sl-color-gray-3);
+	inset-inline-start: 0;
+	position: absolute;
+}
+
+.sl-markdown-content > ul:not(.not-content) > li::before {
+	content: '\2022';
+}
+
+/* Set in the prose face at the prose size, so it sits on the same baseline. */
+.sl-markdown-content > ol:not(.not-content) > li::before {
+	content: counter(doc-item) '.';
+	counter-increment: doc-item;
+	font-variant-numeric: tabular-nums;
+}
+
+.sl-markdown-content li > p:not(:where(.not-content *)) {
+	max-width: 70ch;
+}
+
+.sl-markdown-content
+	li:not(:has(:is(.expressive-code, pre, table))):not(:where(.not-content *)) {
+	max-width: 70ch;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+	text-underline-offset: 0.2em;
+}
+
+.sl-markdown-content a:hover:not(:where(.not-content *)) {
+	color: var(--sl-color-text-accent);
+}
+
+.sl-markdown-content code:not(:where(.not-content *)) {
+	border-radius: 0;
+	color: var(--sl-color-gray-1);
+}
+
+/* ----------------------------------------------------------------------- */
+/* Numbered sections                                                       */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Each H2 carries its number, and the on-this-page list repeats it, so a
+ * heading and its entry read as the same thing. The count is a CSS counter, so
+ * there is nothing to write in the Markdown and nothing to renumber when a
+ * section is moved; it numbers the how-to guides and the front page too, which
+ * is what makes the site read as one manual.
+ *
+ * The child combinator is deliberate. A descendant selector would also find
+ * the headings inside an aside or a card and hang those into the margin.
+ */
+.sl-markdown-content > h2 {
+	align-items: baseline;
+	border-block-start: 1px solid var(--sl-color-gray-5);
+	counter-increment: doc-section;
+	display: flex;
+	font-weight: 600;
+	gap: 0.75rem;
+	letter-spacing: -0.015em;
+	line-height: 1.2;
+	margin-block-start: 2.25rem;
+	padding-block-start: 1rem;
+}
+
+.sl-markdown-content > h2::before {
+	color: var(--sl-color-gray-3);
+	content: counter(doc-section, decimal-leading-zero);
+	font-family: var(--sl-font-mono);
+	font-size: 0.75rem;
+	font-variant-numeric: tabular-nums;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	/* The numeral ends the line rather than hanging beside a column there is no room for. */
+	margin-inline-start: auto;
+	order: 1;
+}
+
+.sl-markdown-content > h3 {
+	font-weight: 600;
+	letter-spacing: -0.005em;
+	margin-block-start: 1.75rem;
+}
+
+@media (min-width: 50rem) {
+	/*
+	 * The heading starts wide, so its rule runs under the numeral and out to
+	 * the edge of the column the page has, and pushes its own words back onto
+	 * the axis.
+	 */
+	.sl-markdown-content > h2 {
+		display: block;
+		margin-block-start: 3.25rem;
+		margin-inline-start: calc(-1 * var(--doc-margin));
+		padding-block-start: 1.375rem;
+		padding-inline-start: var(--doc-margin);
+		position: relative;
+	}
+
+	.sl-markdown-content > h2::before {
+		font-size: 0.8125rem;
+		inset-block-start: 1.625rem;
+		inset-inline-start: 0;
+		margin-inline-start: 0;
+		position: absolute;
+	}
+
+	.sl-markdown-content > h3 {
+		margin-block-start: 2.125rem;
+	}
+}
+
+/* ----------------------------------------------------------------------- */
+/* Tables: the reference section is mostly these                           */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Every setting, every error code and every meter is a row, so a table is
+ * given a rule per row rather than being left to run together, and the head is
+ * the same label the rest of the furniture uses. On a narrow window the
+ * columns are kept and the table is scrolled rather than folded into stacked
+ * pairs: a variable and its default are read against each other, and stacking
+ * puts them on separate lines.
  */
 .sl-markdown-content table {
 	border-collapse: collapse;
@@ -67,28 +549,399 @@
 
 .sl-markdown-content :is(th, td) {
 	border-block-end: 1px solid var(--sl-color-gray-5);
-	padding: 0.5rem 0.75rem;
+	padding: 0.6875rem 1rem 0.6875rem 0;
 	text-align: start;
 	vertical-align: top;
 }
 
 .sl-markdown-content th {
-	font-weight: 600;
+	border-block-end-color: var(--sl-color-gray-4);
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.16em;
+	line-height: 1.2;
+	padding-block-end: 0.5rem;
+	text-transform: uppercase;
 	white-space: nowrap;
 }
 
+.sl-markdown-content td {
+	color: var(--sl-color-gray-2);
+	font-size: 0.90625rem;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.6;
+}
+
+/* The first column names the thing the row is about, so it is set as one. */
+.sl-markdown-content td:first-child {
+	color: var(--sl-color-white);
+	font-family: var(--sl-font-mono);
+	font-size: 0.8125rem;
+	white-space: nowrap;
+	width: 1%;
+}
+
 .sl-markdown-content :is(th, td) code {
+	background: none;
 	overflow-wrap: break-word;
+	padding: 0;
 }
 
-.sl-markdown-content > :is(p, dl, blockquote, h1, h2, h3, h4, h5, h6, .starlight-aside) {
-	max-width: 70ch;
+.sl-markdown-content td:first-child code {
+	color: inherit;
+	font-size: inherit;
 }
 
-.sl-markdown-content li > p {
-	max-width: 70ch;
+/*
+ * Below the width the sidebar appears at there is not enough room for every
+ * column, and the table is scrolled rather than squeezed: given no floor, the
+ * name of a variable holds its line and what is said about it is pressed into
+ * two words a line. The floor is what turns that into a sideways scroll.
+ */
+@media (max-width: 49.999rem) {
+	.sl-markdown-content :is(th, td):not(:first-child) {
+		min-width: 13rem;
+	}
 }
 
-.sl-markdown-content li:not(:has(:is(.expressive-code, pre, table))) {
-	max-width: 70ch;
+/* ----------------------------------------------------------------------- */
+/* Asides                                                                  */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Not a card with a coloured edge: a rule above and below, the label in the
+ * numeral column, and the text where the text always is. It is the one other
+ * thing that uses that column.
+ */
+.sl-markdown-content > .starlight-aside {
+	background: none;
+	border-block: 1px solid var(--sl-color-gray-5);
+	border-inline-start: 0;
+	color: var(--sl-color-text);
+	margin-inline-start: calc(-1 * var(--doc-margin));
+	padding: 0.875rem 0;
+	padding-inline-start: var(--doc-margin);
+}
+
+.starlight-aside__title {
+	color: var(--sl-color-text-accent);
+}
+
+.starlight-aside__icon {
+	display: none;
+}
+
+.starlight-aside__title + .starlight-aside__content {
+	margin-top: 0.375rem;
+}
+
+.starlight-aside__content {
+	font-size: 0.9375rem;
+}
+
+.starlight-aside__content a {
+	color: var(--sl-color-text-accent);
+}
+
+@media (min-width: 50rem) {
+	.sl-markdown-content > .starlight-aside {
+		display: grid;
+		grid-template-columns: var(--doc-margin) minmax(0, 1fr);
+		padding-inline-start: 0;
+	}
+
+	.starlight-aside__title {
+		padding-block-start: 0.3125rem;
+		padding-inline-end: 0.5rem;
+	}
+
+	.starlight-aside__title + .starlight-aside__content {
+		margin-top: 0;
+	}
+}
+
+/* ----------------------------------------------------------------------- */
+/* Code blocks                                                             */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Expressive Code is told its border, its corners and its frame colours by
+ * Starlight, which reads them from the palette above, so a code block follows
+ * the theme on its own. What it decides for itself is the surface the code
+ * sits on and the shadow under the frame, and both are answered here: the
+ * quieter of the two papers, and no shadow, because nothing on the page is
+ * lifted off it.
+ */
+.expressive-code {
+	--ec-codeBg: var(--sl-color-gray-7);
+	--ec-frm-shdCol: transparent;
+	--ec-frm-frameBoxShdCssVal: none;
+}
+
+.sl-markdown-content pre:not(:where(.not-content *)) {
+	border-color: var(--sl-color-gray-5);
+	border-radius: 0;
+}
+
+/* ----------------------------------------------------------------------- */
+/* On this page                                                            */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * The list is fixed to the window rather than laid out in its column, so the
+ * width it is given is a share of the window and not of the column - which
+ * leaves it wider than the column once the prose is as wide as it is here, and
+ * writes a long sub-heading off the edge of the screen. It is given the
+ * column's own width instead: what is left beside the prose and the sidebar,
+ * shared with the margin on the other side of the article.
+ */
+.right-sidebar {
+	border-inline-start-color: var(--sl-color-gray-5);
+	width: calc(
+		var(--sl-sidebar-width) + (100vw - var(--sl-content-width) - 2 * var(--sl-sidebar-width)) / 2
+	);
+}
+
+.right-sidebar-panel {
+	padding-block-start: 1.5rem;
+}
+
+/* A list of headings is read down rather than across, so it stops widening. */
+.right-sidebar-panel .sl-container {
+	max-width: 15rem;
+	width: 100%;
+}
+
+.right-sidebar-panel h2 {
+	margin-bottom: 0.75rem;
+}
+
+/*
+ * The numbers are the headings' own, so an entry and the heading it points at
+ * read as one thing. Two kinds of entry are not a numbered section and carry
+ * no numeral: the first one, which Starlight makes for the page itself rather
+ * than for a section, and the entries under a section, which are its
+ * sub-headings.
+ *
+ * Every entry keeps the numeral column even when it is empty, so that what is
+ * written in an unnumbered one starts on the same line as the rest and is not
+ * squeezed into a column a numeral wide. A sub-heading is indented past that
+ * line by how deep it is, which is what Starlight puts `--depth` on the list
+ * for.
+ */
+.right-sidebar-panel starlight-toc nav > ul {
+	border-inline-start: 1px solid var(--sl-color-gray-5);
+	counter-reset: doc-section;
+}
+
+.right-sidebar-panel starlight-toc nav > ul > li + li {
+	counter-increment: doc-section;
+}
+
+.right-sidebar-panel starlight-toc a {
+	border-inline-start: 1px solid transparent;
+	border-radius: 0;
+	color: var(--sl-color-gray-3);
+	display: grid;
+	gap: 0.375rem;
+	grid-template-columns: 1.375rem minmax(0, 1fr);
+	line-height: 1.5;
+	margin-inline-start: -1px;
+	padding-block: 0.1875rem;
+	padding-inline: calc(0.75rem + 1rem * var(--depth, 0)) 0;
+}
+
+.right-sidebar-panel starlight-toc a::before {
+	color: var(--sl-color-gray-3);
+	content: '';
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.right-sidebar-panel starlight-toc nav > ul > li + li > a::before {
+	content: counter(doc-section, decimal-leading-zero);
+}
+
+.right-sidebar-panel starlight-toc a:hover {
+	border-inline-start-color: var(--sl-color-gray-4);
+	color: var(--sl-color-white);
+}
+
+.right-sidebar-panel starlight-toc a[aria-current='true'],
+.right-sidebar-panel starlight-toc a[aria-current='true']::before {
+	color: var(--sl-color-text-accent);
+}
+
+.right-sidebar-panel starlight-toc a[aria-current='true'] {
+	border-inline-start: 2px solid var(--sl-color-text-accent);
+	margin-inline-start: -2px;
+}
+
+/* The same list on a narrow window, where it is a dropdown under the header. */
+mobile-starlight-toc .toggle,
+mobile-starlight-toc .dropdown {
+	background-color: var(--sl-color-black);
+	border-radius: 0;
+}
+
+mobile-starlight-toc nav {
+	background-color: var(--sl-color-black);
+	border-top-color: var(--sl-color-gray-5);
+}
+
+/* ----------------------------------------------------------------------- */
+/* What comes after the article                                            */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Prev/next first and the colophon under it, which is the order they are read
+ * in and the reverse of the order Starlight writes them in.
+ */
+main footer .meta {
+	border-block-start: 1px solid var(--sl-color-gray-5);
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.75rem;
+	margin-block-start: 0;
+	margin-inline-start: calc(-1 * var(--doc-margin));
+	order: 2;
+	padding-block: 0.875rem 0;
+	padding-inline-start: var(--doc-margin);
+}
+
+/*
+ * A page built rather than read from `docs/` has nothing to say here - no
+ * source to edit and no date it was last changed - and a rule with nothing
+ * under it is worse than no rule.
+ */
+main footer .meta:not(:has(*)) {
+	display: none;
+}
+
+main footer .meta a {
+	border-block-end: 1px solid var(--sl-color-gray-4);
+	color: var(--sl-color-gray-3);
+}
+
+main footer .meta a:hover {
+	border-block-end-color: var(--sl-color-text-accent);
+	color: var(--sl-color-text-accent);
+}
+
+main footer .meta a svg {
+	display: none;
+}
+
+/*
+ * The rule spans the numeral column, and what is written under it does not.
+ * The two are split by a hairline rather than being two bordered cards, and a
+ * page with only a next link keeps it on the side it is read from.
+ */
+main footer .pagination-links:has(a) {
+	border-block-start: 1px solid var(--sl-color-gray-5);
+	gap: 0;
+	grid-template-columns: 1fr 1fr;
+	margin-block-start: 3.5rem;
+	margin-inline-start: calc(-1 * var(--doc-margin));
+}
+
+main footer .pagination-links a {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	display: grid;
+	gap: 0.375rem;
+	padding: 1.125rem 1.25rem 1.125rem 0;
+}
+
+main footer .pagination-links a[rel='prev'] {
+	padding-inline-start: var(--doc-margin);
+}
+
+main footer .pagination-links a[rel='next'] {
+	border-inline-start: 1px solid var(--sl-color-gray-5);
+	grid-column: 2;
+	padding: 1.125rem 0 1.125rem 1.25rem;
+}
+
+main footer .pagination-links a:hover {
+	border-color: var(--sl-color-gray-5);
+}
+
+main footer .pagination-links a svg {
+	display: none;
+}
+
+main footer .pagination-links .link-title {
+	color: var(--sl-color-white);
+	font-family: var(--sl-font);
+	font-size: 1rem;
+	font-weight: 500;
+	letter-spacing: -0.005em;
+	line-height: 1.3;
+	text-transform: none;
+}
+
+main footer .pagination-links a:hover .link-title {
+	color: var(--sl-color-text-accent);
+}
+
+/* ----------------------------------------------------------------------- */
+/* Headings, buttons and the rest of the square corners                    */
+/* ----------------------------------------------------------------------- */
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+	font-stretch: 104%;
+}
+
+h1:not(:where(.not-content *)) {
+	font-weight: 700;
+	letter-spacing: -0.025em;
+	line-height: 1.08;
+}
+
+.sl-link-button {
+	border-radius: 0;
+	font-size: 0.9375rem;
+	font-weight: 500;
+	gap: 0.5625rem;
+	padding: 0.6875rem 1.125rem;
+}
+
+.sl-link-button.primary {
+	background: var(--sl-color-accent);
+	border-color: var(--sl-color-accent);
+	color: var(--sl-color-black);
+}
+
+.sl-link-button.primary:hover {
+	background: var(--sl-color-accent-high);
+	border-color: var(--sl-color-accent-high);
+	color: var(--sl-color-black);
+}
+
+.sl-link-button.secondary {
+	border-color: var(--sl-color-gray-4);
+	color: var(--sl-color-white);
+}
+
+.sl-link-button.secondary:hover {
+	border-color: var(--sl-color-text-accent);
+	color: var(--sl-color-text-accent);
+}
+
+.sl-link-button.minimal {
+	color: var(--sl-color-gray-2);
+	padding-inline: 0.375rem;
+}
+
+.sl-link-button.minimal:hover {
+	color: var(--sl-color-text-accent);
+}
+
+.sl-link-button svg {
+	font-size: 0.9375rem;
 }

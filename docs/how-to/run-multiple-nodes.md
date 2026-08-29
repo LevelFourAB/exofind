@@ -9,7 +9,7 @@ Before you begin, ensure that you have:
 - An object storage bucket that enforces conditional writes.
 - Multiple node processes configured with access to the same bucket.
 
-## 1. Start reader nodes
+## Start reader nodes
 
 Reader nodes discover indexes in the bucket, pull them locally, and answer search queries from local copies.
 
@@ -19,7 +19,7 @@ To add search capacity:
 2. (Optional) Set `EXOFIND_INDEXES_REFRESH_INTERVAL` to adjust how often the node checks the bucket for updates. The default is `30s`. Lower values provide fresher reads at the cost of more storage traffic. You can also trigger the `pull` action on a node to fetch the latest state of an index immediately.
 3. (Optional) Set `EXOFIND_INDEXES_MAX_OPEN` to limit how many open indexes a node keeps in memory at once. When the limit is reached, the node closes the least recently used indexes and reopens them when requested.
 
-## 2. Configure and start writer candidates
+## Configure and start writer candidates
 
 Writer candidate nodes divide indexes among themselves using a leadership table in the bucket. Each index is held and written by one candidate at a time. If a candidate stops renewing its lease, other candidates take over its indexes.
 
@@ -41,7 +41,7 @@ To configure writer candidates:
 
    **Note:** When upgrading to a release that changes candidate coordination, upgrade all candidate nodes at the same time. Candidates on different versions do not corrupt data, but they can contest index leases and cause churn.
 
-## 3. Route client traffic
+## Route client traffic
 
 Clients do not need to know which node holds a specific index.
 

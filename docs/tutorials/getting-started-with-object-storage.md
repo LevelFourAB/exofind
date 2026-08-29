@@ -17,7 +17,7 @@ Before you begin, ensure you have the following tools installed:
 **Note:** Exofind is experimental and its API is `v1alpha1`. It can change
 without backward compatibility.
 
-## 1. Creating the configuration files
+## Creating the configuration files
 
 In an empty directory, create two configuration files: `s3-config.json` and
 `docker-compose.yml`.
@@ -100,7 +100,7 @@ service:
   indexes, not the only copy. `EXOFIND_STORAGE_LOCAL_DIRECTORY` defaults to
   `/data` in the image.
 
-## 2. Starting the storage and creating the bucket
+## Starting the storage and creating the bucket
 
 The bucket must exist before the Exofind node starts. Start SeaweedFS:
 
@@ -118,7 +118,7 @@ SeaweedFS provides a filer web UI at [http://localhost:8888](http://localhost:88
 After the bucket is created, you can browse bucket contents at
 `http://localhost:8888/buckets/exofind/`.
 
-## 3. Starting the node
+## Starting the node
 
 Start the Exofind node:
 
@@ -140,7 +140,7 @@ writes (`If-Match` on `PUT`). It refuses to run as an indexer against storage
 that does not support them, preventing concurrent writers from corrupting an
 index. Both SeaweedFS and Amazon S3 enforce conditional writes.
 
-## 4. Creating an API key
+## Creating an API key
 
 Create an administrative API key with permissions across all indexes:
 
@@ -183,7 +183,7 @@ example string with the `credential` value from your response:
 export EXOFIND_KEY="exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH"
 ```
 
-## 5. Defining an index
+## Defining an index
 
 Send a definition for a new index named `books`:
 
@@ -215,7 +215,7 @@ index status, and an `ETag` header:
 The index definition is saved to the bucket and is visible in the filer UI at
 `http://localhost:8888/buckets/exofind/`.
 
-## 6. Indexing documents and committing
+## Indexing documents and committing
 
 Add documents to the `books` index:
 
@@ -250,7 +250,7 @@ on the node that received them. After the commit, changes are searchable locally
 and available to every other node that reads from the bucket. The node also
 commits automatically after 10 000 changes or 5 seconds, whichever comes first.
 
-## 7. Searching the index
+## Searching the index
 
 Search for documents matching the text `spring`:
 
@@ -288,7 +288,7 @@ curl http://localhost:8080/v1alpha1/indexes/books/search \
 
 Only the published book matches the query.
 
-## 8. Recovering the index after deleting local storage
+## Recovering the index after deleting local storage
 
 In `object` mode, the bucket is the source of truth. The node holds only a local
 copy that it can rebuild at any time.
@@ -323,7 +323,7 @@ Any additional node configured with the same storage settings operates the same
 way. Search nodes that are not indexer candidates discover committed changes
 within `EXOFIND_INDEXES_REFRESH_INTERVAL` (`30s` by default).
 
-## 9. Cleaning up
+## Cleaning up
 
 To stop all services and remove all containers and volumes, including the
 SeaweedFS bucket:

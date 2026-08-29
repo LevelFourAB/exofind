@@ -11,7 +11,7 @@ Before you model dynamic attributes, ensure you have the following:
 - An index where you can configure fields, or permissions to create a new index.
 - A catalogue system that defines and manages attribute names for your items.
 
-## 1. Define typed wildcard namespaces
+## Define typed wildcard namespaces
 
 To accept attribute names that you do not define in advance, add field names that contain `*` to your index definition. Because a pattern carries one type and set of usages, group dynamic attributes into namespaces by data type:
 
@@ -44,7 +44,7 @@ The engine resolves wildcard field names using these rules:
 - Wildcard fields cannot serve as the primary key (`index:field:invalid_name:primary_key_wildcard`).
 - Wildcard fields cannot be set to `required`.
 
-## 2. Index documents with dynamic attributes
+## Index documents with dynamic attributes
 
 Write dynamic attributes under their matching namespace prefix:
 
@@ -59,7 +59,7 @@ New attribute names require no definition updates or reindexing. When a document
 
 When a pattern sets `"multiple": true`, you can provide a single value or an array of values for that attribute.
 
-## 3. Filter, facet, and sort by concrete attribute names
+## Filter, facet, and sort by concrete attribute names
 
 To filter, facet, or sort by a dynamic attribute, specify its full name in the search request:
 
@@ -85,7 +85,7 @@ Queries on dynamic attributes support the following operations:
 - **Faceting:** Faceting by an attribute name calculates counts for that specific field. Because each attribute has a distinct field path, selecting a filter such as `attr.color = red` leaves facet counts for other colors intact while narrowing other facets.
 - **Sorting:** Sorting works on any namespace pattern configured with `sort`.
 
-## 4. Make attributes searchable in the search box
+## Make attributes searchable in the search box
 
 A general `text` search clause that specifies no `fields` searches all searchable fields in the index, but skips wildcard patterns.
 
@@ -103,7 +103,7 @@ To make dynamic attributes searchable in the main search box:
 }
 ```
 
-## 5. Update attributes with partial updates
+## Update attributes with partial updates
 
 To update or remove individual attributes without rewriting the entire document, use the `actions/update` endpoint:
 

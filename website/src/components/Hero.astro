@@ -1,0 +1,92 @@
+---
+/*
+ * The front page hero.
+ *
+ * Starlight's own hero is a centred two-column block built around an image,
+ * with the title in the middle of the window and the buttons under it. There
+ * is no image here and nothing on the front page is centred: the manual's axis
+ * runs through the whole site, so the label, the headline, the sentence under
+ * it and the buttons all start on the line every heading and every paragraph
+ * of the documentation starts on.
+ *
+ * The label over the headline is the product name, so the headline itself is
+ * free to be the one line that says what the thing is rather than repeating
+ * the name of the site the reader is already on.
+ *
+ * Everything it renders comes from the `hero` block in the page's frontmatter,
+ * which is `../pages/index.astro`. The image and the raw HTML that Starlight's
+ * hero accepts are not carried over: this site's front page has never used
+ * either, and a hero that silently drops one would be worse than one that does
+ * not offer it.
+ */
+import { LinkButton } from '@astrojs/starlight/components';
+
+/*
+ * What Starlight calls the top of a page - see `./PageTitle.astro`, which
+ * carries the same identifier on the pages that have a title rather than a
+ * hero.
+ */
+const PAGE_TITLE_ID = '_top';
+
+const { data } = Astro.locals.starlightRoute.entry;
+const { title = data.title, tagline, actions = [] } = data.hero || {};
+
+/* The name the site is called, which the headline no longer has to be. */
+const eyebrow = Astro.locals.starlightRoute.siteTitle;
+---
+
+<div class="hero">
+	<p class="doc-eyebrow">{eyebrow}</p>
+	<h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
+	{tagline && <div class="tagline" set:html={tagline} />}
+
+	{actions.length > 0 && (
+		<div class="actions">
+			{actions.map(({ attrs: { class: className, ...attrs } = {}, icon, link: href, text, variant }) => (
+				<LinkButton {href} {variant} icon={icon?.name} class:list={[className]} {...attrs}>
+					{text}
+					{icon?.html && <Fragment set:html={icon.html} />}
+				</LinkButton>
+			))}
+		</div>
+	)}
+</div>
+
+<style>
+	.hero {
+		padding-block: 3rem 1.25rem;
+	}
+
+	h1 {
+		color: var(--sl-color-white);
+		font-size: clamp(2.25rem, calc(0.5rem + 5vw), var(--sl-text-6xl));
+		font-stretch: 104%;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+		line-height: 1.03;
+		margin-block-start: 0.875rem;
+		max-width: 21ch;
+		text-wrap: balance;
+	}
+
+	.tagline {
+		color: var(--sl-color-gray-2);
+		font-size: clamp(1rem, calc(0.5rem + 1vw), 1.1875rem);
+		line-height: 1.6;
+		margin-block-start: 1.375rem;
+		max-width: 62ch;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-block-start: 2.125rem;
+	}
+
+	@media (min-width: 50rem) {
+		.hero {
+			padding-block: 4.75rem 1.25rem;
+		}
+	}
+</style>

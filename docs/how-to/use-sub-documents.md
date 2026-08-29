@@ -11,7 +11,7 @@ Before you use sub-documents, ensure you have the following:
 - A node with the `type.object` feature enabled. If you use usages beyond `filter` inside the object, the node also requires the `type.object.usages` feature.
 - An index where you can define fields, or permissions to create a new index.
 
-## 1. Define the object field
+## Define the object field
 
 To store sub-documents, define an object field with `"type": "object"`, `"multiple": true`, and `"mode": "nested"`:
 
@@ -39,7 +39,7 @@ Keep the following rules in mind when you configure the field:
 
 **Note:** Adding a usage to an inner field on an index that already contains documents applies only to values indexed after the change. To apply the usage to existing documents, roll out the change to [a new generation](roll-out-a-definition-change.md).
 
-## 2. Index documents with sub-documents
+## Index documents with sub-documents
 
 Write each sub-document as a JSON object, and write a list of sub-documents as a JSON array:
 
@@ -65,7 +65,7 @@ Documents are written whole. Indexing a document with an existing key replaces a
 
 Search results return sub-documents from the document copy stored in the index. An object field cannot be set to `stored` on its own. If you define an index with `"source": "none"`, the engine returns search results without sub-document values.
 
-## 3. Query sub-documents
+## Query sub-documents
 
 To require multiple conditions to match within the same sub-document, add a `nested` clause to `query`. Set `path` to the name of the object field:
 
@@ -125,7 +125,7 @@ To let each document decide whether it comes back as itself or as its sub-docume
 
 For details, see [Expanding only some documents](../reference/search-api.md#expanding-only-some-documents).
 
-## 4. Search text inside sub-documents
+## Search text inside sub-documents
 
 To search text across inner fields, place a `text` clause inside a `nested` clause. If you do not specify a field, the clause searches all text fields in that object path. All words must match within the same sub-document value.
 
@@ -146,7 +146,7 @@ Use `score` to define how matching sub-documents determine the parent document s
 
 Sub-document fields do not support highlighting. Highlighting extracts fragments from the parent document text, so configuring `highlight` on an inner field is rejected. Highlight top-level fields instead.
 
-## 5. Sort and facet by sub-document fields
+## Sort and facet by sub-document fields
 
 To sort or calculate facets by sub-document fields, specify the dotted field path directly in `sort` or `facets`:
 
@@ -170,7 +170,7 @@ Facets count parent documents. For example, a document with three red variants c
 
 Distance sorting (`distance`) is not supported inside an object and fails with `index:query:nested:sort_unsupported`.
 
-## 6. Update sub-document values
+## Update sub-document values
 
 To update sub-documents, send an update request using the `actions/update` endpoint:
 
@@ -202,7 +202,7 @@ Set `fields` to `variants` to return all inner fields, or specify a dotted path 
 
 If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies and cannot return existing sub-documents. Requesting fields on such an index fails with `index:query:source_not_kept`. Retain source data on indexes where you need to retrieve or update sub-documents.
 
-## 7. Confirm the results
+## Confirm the results
 
 To verify that the sub-documents are indexed and queryable, run a search request with a `nested` clause and the `matched` field:
 

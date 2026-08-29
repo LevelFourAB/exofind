@@ -27,6 +27,13 @@ const SUBSECTION = /^###\s+(.+?)\s*$/;
  * inside that one, so a section long enough to need dividing is divided in the
  * index rather than here. A heading that lists no document is left out.
  *
+ * Sections arrive collapsed, so that only the one being read is open: the
+ * manual is forty-odd pages, and a column that lists every one of them at once
+ * is a column nobody reads. Starlight opens whichever group holds the current
+ * page regardless of this, and remembers any the reader opens themselves.
+ * Sub-sections are left open, because a reader who has opened a section is
+ * looking at what is in it.
+ *
  * @param {URL} index the `README.md` that lists the documentation
  * @returns Starlight sidebar groups, one per section that lists documents
  * @throws {Error} if the index lists no document at all
@@ -71,7 +78,10 @@ export function sidebarFrom(index) {
 		}
 	}
 
-	const listing = groups.map(pruned).filter(candidate => candidate !== null);
+	const listing = groups
+		.map(pruned)
+		.filter(candidate => candidate !== null)
+		.map(group => ({ ...group, collapsed: true }));
 
 	if(listing.length === 0) {
 		throw new Error(`No documents listed in ${index.pathname}`);

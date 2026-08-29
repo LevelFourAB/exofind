@@ -1,0 +1,153 @@
+---
+/*
+ * The light and dark control, as three cells rather than a dropdown.
+ *
+ * Starlight offers the same three choices in a select, where the one in force
+ * is a word behind a caret. The state is the thing being shown here, so it is
+ * shown: three cells, one of them pressed. Auto is a cell of its own rather
+ * than the absence of one, because it is where a reader who has chosen nothing
+ * already is and it is a choice they can come back to - a two-cell control
+ * offers no way back to it once either has been pressed.
+ *
+ * What is stored, and under what key, is Starlight's: the same
+ * `starlight-theme` entry, holding `light`, `dark`, or nothing for auto. That
+ * is what the inline script in Starlight's theme provider reads before the
+ * first paint, so a reader's choice still arrives without a flash of the other
+ * theme. Nothing here runs before paint; it only marks which cell is pressed.
+ *
+ * The element is built again after a routed navigation, because the router
+ * replaces the body - which is why the pressed cell is worked out in the
+ * constructor rather than written into the page at build time.
+ */
+import { Icon } from '@astrojs/starlight/components';
+
+const themes = [
+	{ value: 'auto', icon: 'laptop', label: Astro.locals.t('themeSelect.auto') },
+	{ value: 'light', icon: 'sun', label: Astro.locals.t('themeSelect.light') },
+	{ value: 'dark', icon: 'moon', label: Astro.locals.t('themeSelect.dark') }
+] as const;
+---
+
+<exofind-theme-select>
+	<div class="themes" role="group" aria-label={Astro.locals.t('themeSelect.accessibleLabel')}>
+		{themes.map(theme => (
+			<button type="button" value={theme.value} aria-pressed="false" title={theme.label}>
+				<Icon name={theme.icon} size="0.9375rem" />
+				<span class="sr-only">{theme.label}</span>
+			</button>
+		))}
+	</div>
+</exofind-theme-select>
+
+<script>
+	type Theme = 'auto' | 'dark' | 'light';
+
+	/** Where Starlight keeps the choice, and the key its inline script reads. */
+	const KEY = 'starlight-theme';
+
+	/** Anything that is not one of the two settled themes is auto. */
+	const parse = (value: unknown): Theme => (value === 'dark' || value === 'light' ? value : 'auto');
+
+	/** What the system asks for, which is what auto follows. */
+	const preferred = (): 'dark' | 'light' =>
+		matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+
+	const load = (): Theme => parse(typeof localStorage !== 'undefined' && localStorage.getItem(KEY));
+
+	function store(theme: Theme): void {
+		/*
+		 * Auto is stored as nothing rather than as the word, so that the theme
+		 * provider's inline script reads it as no choice having been made.
+		 */
+		if(typeof localStorage !== 'undefined') {
+			localStorage.setItem(KEY, theme === 'auto' ? '' : theme);
+		}
+	}
+
+	/** Show the theme on the page, and on every control that offers it. */
+	function apply(theme: Theme): void {
+		document.documentElement.dataset.theme = theme === 'auto' ? preferred() : theme;
+
+		for(const control of document.querySelectorAll('exofind-theme-select button')) {
+			control.setAttribute(
+				'aria-pressed',
+				String(control instanceof HTMLButtonElement && control.value === theme)
+			);
+		}
+	}
+
+	/*
+	 * A window is shown the header's control and the mobile menu's at once, so
+	 * both are marked when either is pressed, and both follow a system that
+	 * changes while auto is in force.
+	 */
+	matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+		if(load() === 'auto') apply('auto');
+	});
+
+	class ExofindThemeSelect extends HTMLElement {
+		constructor() {
+			super();
+
+			apply(load());
+
+			this.addEventListener('click', event => {
+				const pressed = (event.target as HTMLElement | null)?.closest('button');
+				if(!(pressed instanceof HTMLButtonElement)) return;
+
+				const theme = parse(pressed.value === 'auto' ? '' : pressed.value);
+				store(theme);
+				apply(theme);
+			});
+		}
+	}
+
+	customElements.define('exofind-theme-select', ExofindThemeSelect);
+</script>
+
+<style>
+	/*
+	 * Ruled and square, with one hairline between each pair of cells, and the
+	 * pressed one carrying the only ground the header holds.
+	 */
+	.themes {
+		display: flex;
+		border: 1px solid var(--sl-color-gray-5);
+	}
+
+	.themes button {
+		align-items: center;
+		background: none;
+		border: 0;
+		color: var(--sl-color-gray-3);
+		cursor: pointer;
+		display: flex;
+		height: 1.625rem;
+		justify-content: center;
+		padding: 0;
+		width: 1.875rem;
+	}
+
+	.themes button + button {
+		border-inline-start: 1px solid var(--sl-color-gray-5);
+	}
+
+	.themes button:hover {
+		color: var(--sl-color-white);
+	}
+
+	.themes button[aria-pressed='true'] {
+		background: var(--sl-color-accent-low);
+		color: var(--sl-color-text-accent);
+	}
+
+	/*
+	 * The mobile menu shows the same control with room to spare, and a row of
+	 * cells that only just miss the mark is the one thing a documentation menu
+	 * is actually operated for on a phone.
+	 */
+	:global(.mobile-preferences) .themes button {
+		height: 2.75rem;
+		width: 3rem;
+	}
+</style>

@@ -10,7 +10,7 @@ Before generating an API client, ensure you have:
 - An OpenAPI code generator that supports OpenAPI 3.1.0, such as `@openapitools/openapi-generator-cli`.
 - An Exofind API key to authenticate requests.
 
-## 1. Obtaining the OpenAPI document
+## Obtaining the OpenAPI document
 
 You can fetch the OpenAPI document from a running node or read it from a local engine build.
 
@@ -19,7 +19,7 @@ You can fetch the OpenAPI document from a running node or read it from a local e
 
 The document uses OpenAPI specification version `3.1.0`. Ensure your generator supports OpenAPI 3.1.
 
-## 2. Generating the client code
+## Generating the client code
 
 Run your generator against the document URL or the local file path.
 
@@ -33,7 +33,7 @@ To target a different programming language, replace `typescript-fetch` with the 
 
 The generated methods are named after the `operationId` of each operation, such as `search`, `add`, `scan`, `audit`, and `reindex`. Operations are grouped by tag, and each tag links to the reference page that describes it in full.
 
-## 3. Configuring the server address and authentication
+## Configuring the server address and authentication
 
 Configure your generated client instance with the deployment host and API credential:
 
@@ -42,7 +42,7 @@ Configure your generated client instance with the deployment host and API creden
 
 Exofind endpoints do not read credentials from query parameters or cookies. Operations in the OpenAPI document do not declare security requirements directly, so generated clients do not attach credentials automatically. You must configure the default authorization header on the client instance.
 
-## 4. Regenerating after engine upgrades
+## Regenerating after engine upgrades
 
 Regenerate your client code after upgrading your Exofind deployment.
 

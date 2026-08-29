@@ -43,13 +43,13 @@ const features = [
 			+ 'and Korean included. There is no analyzer to configure.'
 	},
 	{
-		title: 'Indexes are declared, not migrated',
+		title: 'Indexes are declared and support generations',
 		body: 'You PUT the definition you want, so it can live in version control. '
 			+ 'A change that needs a reindex fills a new generation and promotes it '
 			+ 'while callers keep using the index by name.'
 	},
 	{
-		title: 'Keys are shared through the bucket',
+		title: 'Auth keys are shared through the bucket',
 		body: 'A key made on one node works on all of them, is scoped by permission '
 			+ 'and index pattern, and is revoked without redeploying anything.'
 	},
@@ -57,6 +57,35 @@ const features = [
 		title: 'Nodes are interchangeable',
 		body: 'They never talk to each other, need no persistent volume to be '
 			+ 'backed up, and answer every search from their own copy on disk.'
+	}
+];
+
+/*
+ * The four kinds of documentation, each entered at the page a reader who has
+ * only read the front page should start it at. They are the sections of
+ * `docs/README.md` and they say what each kind is for, which is what tells a
+ * reader with a question which of the four to open.
+ */
+const doors = [
+	{
+		title: 'Tutorials',
+		body: 'Run a node and define an index.',
+		href: `${base}/tutorials/getting-started/`
+	},
+	{
+		title: 'How-to guides',
+		body: 'Solve one task at a time.',
+		href: `${base}/how-to/define-an-index/`
+	},
+	{
+		title: 'Reference',
+		body: 'API references, field types and other details.',
+		href: `${base}/reference/configuration/`
+	},
+	{
+		title: 'Explanation',
+		body: 'Covers why the design is the way it is.',
+		href: `${base}/explanation/architecture/`
 	}
 ];
 ---
@@ -72,10 +101,15 @@ const features = [
 		 * otherwise join the two into "Exofind | Exofind".
 		 */
 		head: [{ tag: 'title', content: 'Exofind' }],
+		/*
+		 * One line says what the engine is, and the sentence under it says how
+		 * it works. The name of the site is the label over the headline rather
+		 * than the headline itself - see `../components/Hero.astro` - which is
+		 * what leaves the headline free to be the pitch.
+		 */
 		hero: {
-			tagline: 'A search engine that keeps its indexes in object storage. Nodes hold '
-				+ 'local copies, coordinate through the bucket alone, and answer searches '
-				+ 'from disk.',
+			title: 'Delightful search built on object storage',
+			tagline: 'Type-ahead search, good locale support and defaults that make search easier. Data is stored on object storage, nodes hold local copies and coordinate through a bucket.',
 			actions: [
 				{ text: 'Get started', link: `${base}/tutorials/getting-started/`, icon: 'right-arrow', variant: 'primary' },
 				{ text: 'See it searching', link: `${base}/examples/${featured.name}/`, icon: 'magnifier', variant: 'secondary' },
@@ -84,11 +118,6 @@ const features = [
 		}
 	}}
 >
-	<p class="experimental">
-		Exofind is <strong>experimental</strong>. The API is <code>v1alpha1</code>
-		and changes without keeping compatibility.
-	</p>
-
 	<h2>What it does</h2>
 
 	<div class="features not-content">
@@ -111,23 +140,19 @@ const features = [
 
 	<h2>Where to go</h2>
 
-	<p>
-		Start with the <a href={`${base}/tutorials/getting-started/`}>getting started
-		tutorial</a> to run a node and define an index. The <a href={`${base}/how-to/define-an-index/`}>how-to
-		guides</a> solve one task at a time, the <a href={`${base}/reference/configuration/`}>reference</a>
-		states what is, and the <a href={`${base}/explanation/architecture/`}>explanation</a>
-		covers why the design is the way it is.
-	</p>
+	<div class="doors not-content">
+		{doors.map(door => (
+			<a class="door" href={door.href}>
+				<h3>{door.title}</h3>
+				<p>{door.body}</p>
+			</a>
+		))}
+	</div>
 </StarlightPage>
 
 <style>
-	.experimental {
-		border-inline-start: 3px solid var(--sl-color-orange);
-		padding-inline-start: 1rem;
-	}
-
 	/*
-	 * The grid opts out of the prose styling - `not-content` - because that
+	 * The grids opt out of the prose styling - `not-content` - because that
 	 * styling puts a top margin on every block that follows another one, and
 	 * here the blocks are cells rather than paragraphs: the margin lands on
 	 * every cell but the first and drops the rest of the row below it. The
@@ -137,21 +162,71 @@ const features = [
 	.features {
 		align-items: start;
 		display: grid;
-		gap: 1.5rem 2rem;
+		gap: 1.875rem 2.5rem;
 		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 	}
 
-	/* Opting out of the prose styling means the heading carries its own. */
-	.feature h3 {
-		color: var(--sl-color-white);
-		font-size: var(--sl-text-lg);
-		font-weight: 600;
-		line-height: var(--sl-line-height-headings);
-		margin-block: 0 0.4rem;
+	/*
+	 * Each block is counted and ruled rather than boxed, which is the same
+	 * mark the numbered sections of the manual carry - six things the engine
+	 * does, read as six rather than as a wall.
+	 */
+	.feature,
+	.door {
+		align-content: start;
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		display: grid;
+		gap: 0.375rem;
+		padding-block-start: 0.8125rem;
+		text-decoration: none;
 	}
 
-	.feature p {
-		color: var(--sl-color-gray-2);
+	.features {
+		counter-reset: feature;
+	}
+
+	.feature::before {
+		color: var(--sl-color-gray-3);
+		content: counter(feature, decimal-leading-zero);
+		counter-increment: feature;
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+		letter-spacing: 0.1em;
+	}
+
+	/* Opting out of the prose styling means the heading carries its own. */
+	.feature h3,
+	.door h3 {
+		color: var(--sl-color-white);
+		font-size: 1.0625rem;
+		font-weight: 600;
+		letter-spacing: -0.005em;
+		line-height: 1.3;
 		margin-block: 0;
+	}
+
+	.feature p,
+	.door p {
+		color: var(--sl-color-gray-2);
+		font-size: 0.90625rem;
+		line-height: 1.6;
+		margin-block: 0;
+	}
+
+	/* Four ways in, side by side, and one line each about what is behind them. */
+	.doors {
+		display: grid;
+		gap: 1.875rem 2.5rem;
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+	}
+
+	.door h3 {
+		font-size: 1rem;
+	}
+
+	.door:hover h3 {
+		color: var(--sl-color-text-accent);
 	}
 </style>
