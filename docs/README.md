@@ -51,6 +51,9 @@ The documentation includes the following how-to guides.
 - [Use sub-documents](how-to/use-sub-documents.md): Hold a list of values that
   are documents of their own, ask several things of one of them, and order,
   count, and change them.
+- [Model dynamic attributes](how-to/model-dynamic-attributes.md): Hold
+  attributes the definition does not name in advance, filter and count by them,
+  and change them one at a time.
 - [Localize fields](how-to/localize-fields.md): Hold values in several languages
   and search them by locale.
 - [Customize text analysis](how-to/customize-analysis.md): Configure presets,

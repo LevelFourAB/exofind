@@ -138,7 +138,7 @@ When you configure `sort`, `facet`, or `matching` on nested fields, the matching
 
 ### Cover many names with one field
 
-A field name can contain a wildcard `*` to define multiple fields at once, such as `metadata.*`. The `*` matches exactly one name segment. When patterns overlap, the pattern with the longer literal prefix takes precedence. For full matching rules, see [Field types](../reference/field-types.md#wildcard-fields).
+A field name can contain a wildcard `*` to define multiple fields at once, such as `metadata.*`. The `*` matches exactly one name segment. When patterns overlap, the pattern with the longer literal prefix takes precedence. For full matching rules, see [Field types](../reference/field-types.md#wildcard-fields). Every distinct name a pattern accepts becomes a field of its own in the index, and `facet` and `sort` keep per-field structures on top of that, so the set of names must stay bounded and owned by the catalogue rather than by whatever document arrives. To hold attributes that are not named in advance, see [Model dynamic attributes](model-dynamic-attributes.md).
 
 ### Decide how much of a document is kept
 
