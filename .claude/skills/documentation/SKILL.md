@@ -3,7 +3,7 @@ name: documentation
 description: House rules for writing or revising documentation in this repo — Javadoc, protobuf comments, body comments, and the Diátaxis prose under docs/. Load before writing a doc comment on a new public type or method, editing an existing one, adding a comment inside a method or a .proto file, or adding to docs/; also when reviewing someone else's comments or prose, or when asked to "document", "add docs", "write doc comments" or "clean up comments".
 ---
 
-# Documentation & comment guidelines
+# Documentation and comment guidelines
 
 Documentation in this codebase is written for a stranger arriving in 6–12
 months, and every location has exactly one reader. A doc comment on an exported
@@ -22,9 +22,10 @@ of the contract. Rationale, alternatives considered, and benchmarks are valuable
 surface.
 
 The sections below are ordered as a working sequence: §1–§4 decide what a
-comment may contain, §5–§9 what it must contain and how it reads per surface,
-§10–§12 the cutting pass. Sections 5 and 11 are the two to reread when a comment
-feels finished but long.
+comment may contain, §5–§10 what it must contain and how it reads per surface,
+§11–§14 the cutting pass. Sections 5 and 13 are the two to reread when a comment
+feels finished but long. Section 12 is the one to reread when a comment says the
+right things and still reads badly.
 
 ---
 
@@ -53,8 +54,9 @@ function, it does not belong there.
 
 // GOOD — describes the contract
 /**
- * A bounded, in-memory key/value store with LRU eviction. Safe for
- * concurrent use from multiple threads.
+ * A bounded, in-memory key/value store with LRU eviction.
+ *
+ * <p>Safe for concurrent use from multiple threads.
  */
 ```
 
@@ -82,14 +84,16 @@ modes to be helpful.
 
 - **Doc comments are always Reference.** Austere, complete, impersonal. No
   encouragement, no rationale, no tutorial voice, no "you'll probably want to".
-- **Tutorial and How-to** live in `/docs`. They may address the reader as "you"
-  and may state goals.
+  The reader is never addressed as "you" here; §10 is where that voice belongs.
+- **Tutorial and How-to** live in `docs/`. They address the reader as "you" and
+  state goals. See §10.
 - **Explanation** is where rationale, history, and trade-offs live. Link to it
   from a doc comment rather than inlining it.
 
 Sparing exception: a short trailing paragraph (or `@apiNote`) may carry one
-piece of rationale when it changes how a consumer uses the API — e.g. "This is
-O(n) in the number of subscribers; prefer {@link #publishBatch} above ~100."
+piece of rationale when it changes how a consumer uses the API — for example,
+"This is O(n) in the number of subscribers; prefer {@link #publishBatch} above
+~100."
 
 ---
 
@@ -124,7 +128,7 @@ return, `Duration` instead of a long of milliseconds. A doc comment reading
 ## 5. Say the things that are actually missing
 
 Cutting the filler exists to make room for these. Include every item that
-applies; a doc comment that omits them is incomplete no matter how long it is.
+applies; a doc comment that omits them is incomplete no matter how long it is:
 
 - **Errors** — which failures, as which exception types, and whether a caller
   is expected to catch them
@@ -155,6 +159,8 @@ Write the example for the common case, not the exhaustive case.
 ---
 
 ## 7. Javadoc specifics
+
+Follow these rules when writing Javadoc:
 
 - One-sentence summary first, then a blank line (`<p>` opens each later
   paragraph). The first sentence appears alone in package and class listings,
@@ -194,14 +200,16 @@ static Duration parseDuration(String s)
 The protos under `src/main/protobuf` are a storage format, not an API. Their
 reader is someone judging, possibly years later, whether a stored value can
 still be read or a schema change is compatible — the boundary test still
-applies, but the boundary is what is written to disk, not what the engine
-currently does with it.
+applies, but the boundary is the disk format, not what the engine currently
+does with a stored value.
+
+Follow these rules for protobuf comments:
 
 - A file-level comment states the compatibility rules the file lives under,
   the way `definitions.proto` does.
-- Document what presence means. When a message being set is what turns a
-  capability on, or an absent scalar means the engine chooses the default, say
-  so on the field — that contract is invisible in the schema itself.
+- Document what presence means. When setting a message turns a capability on,
+  or an absent scalar means the engine chooses the default, say so on the
+  field — that contract is invisible in the schema itself.
 - Give units, encodings and value spaces on the field: a `string` that is a
   BCP 47 tag, an `int64` that is epoch milliseconds. The type says none of it.
 - A `reserved` number keeps a comment saying what it used to mean; the
@@ -244,11 +252,57 @@ batch.reset();
 
 ---
 
-## 10. Prohibited language
+## 10. Prose in `docs/`
+
+The Markdown under `docs/` is the one surface that addresses a reader directly.
+Match the file you are editing; these are the rules it already follows.
+
+**Voice:**
+
+- Address the reader as "you". Never "we", "our" or "the user" for the reader.
+- Use the active voice and the present tense: "the server returns an error".
+- Write short sentences. One idea per sentence. Break a long sentence in two.
+- Use "they" as the singular pronoun for a person.
+- Do not write "please" in an instruction.
+
+**Structure:**
+
+- Give the document one H1. Use H2 and H3 below it and do not skip a level.
+- Use sentence case in a heading: a capital on the first word and on proper
+  nouns only.
+- Start a section with what it is about, not with history.
+- A task heading starts with a gerund, such as "Installing the CLI". A
+  reference heading names the thing.
+- Keep a paragraph to three sentences where you can.
+- Use a numbered list for ordered steps and a bulleted list for everything
+  else. Start a step with its verb: "Run", "Open", "Copy".
+- Keep the items of one list parallel in grammar and in length.
+- Introduce a list, a table or a code block with a sentence ending in a colon.
+
+The website builds its sidebar from `docs/README.md`, so a new document is a
+file under `docs/` and a line there.
+
+---
+
+## 11. Prohibited language
 
 **Filler and hedging.** `note that`, `it's important to`, `simply`, `just`,
 `basically`, `essentially`, `of course`, `arguably`, `under the hood`,
-`in order to` (use "to"), `at the end of the day`.
+`in order to` (use "to"), `at the end of the day`. The ban on `just` is the
+minimizing sense; the temporal one, "a document you just indexed", is a
+different word and is fine.
+
+**Inflated words.** Prefer the plain one: "use" over "utilize", "start" over
+"initiate", "about" over "regarding", "before" over "prior to".
+
+**Latin abbreviations.** Write "for example" and "that is". Never `e.g.` or
+`i.e.`.
+
+**Future tense for present behaviour.** The code does it now. "The server
+returns an error", not "will return".
+
+**Unexpanded abbreviations.** Expand on first use in a file, then use the short
+form. Use one name for a thing everywhere.
 
 **Self-narration.** Any phrasing that reports the author's decision process
 rather than the code's behaviour: `the only thing that`, `the honest option`,
@@ -266,7 +320,69 @@ rejected in a consumer doc. There is no alternative in the reader's world.
 
 ---
 
-## 11. Revision pass
+## 12. Sentence shapes that give the writing away
+
+The rules above decide what a comment says. These decide how it reads. Each
+shape below is grammatical and often accurate, and each is a default a language
+model reaches for rather than a choice a writer made. They cluster: once one
+appears in a file, the rest follow, and the file stops reading as though a
+person wrote it. Every one has a plain replacement.
+
+**The trailing significance clause.** A fact, a comma, then a relative clause
+saying why the fact matters. It is the most common shape in this codebase.
+Make it its own sentence, or cut it.
+
+```java
+// BAD
+// The claim is released only then, which is what keeps the successor from
+// pulling a manifest the flush had not written yet.
+
+// GOOD
+// The claim is released only then. A successor that pulled earlier would read
+// a manifest the flush had not written.
+```
+
+**The cleft.** "The registry is what decides ..." for "The registry decides
+...". A cleft emphasizes a word that needs no emphasis. Write subject, verb,
+object.
+
+**Antithesis nobody asked for.** "X rather than Y", "not X but Y", where Y is
+not what the reader expected. Keep a contrast only when the reader would
+otherwise assume Y, and delete it when it is there to sound considered.
+
+```java
+// BAD  — nobody thought a delete was node-local
+// Taken out of the registry, so it is gone for the deployment rather than
+// only for this node.
+
+// GOOD
+// Taken out of the registry, so every node loses it.
+```
+
+**Significance padding in a tag.** `@param name` reading "name of the index,
+which is what callers use from here on". A tag states the value and stops. See
+§4, and prefer no tag to an empty one — an `@return` or `@param` with no text
+is worse than absent.
+
+**The closing restatement.** A last sentence that says the paragraph again in
+other words: "The two halves together are what make it safe." Delete it. The
+reader has read the paragraph.
+
+**The triple.** Three parallel clauses where two carry the information and the
+third carries rhythm. Keep the two that differ.
+
+**Clauses stacked on dashes.** One dash is a pause. Two make the reader hold a
+clause open while reading another. Break the sentence.
+
+Grep a file you wrote or are reviewing. A hit is a candidate, not a verdict:
+
+```bash
+grep -nE ', which (is|was|are) what|\bis what\b|\brather than\b|@(return|param [a-zA-Z]+)\s*$' Foo.java
+```
+
+---
+
+## 13. Revision pass
 
 Drafting is not the problem; cutting is. After writing any doc comment, run
 this checklist and edit accordingly.
@@ -274,7 +390,7 @@ this checklist and edit accordingly.
 1. Does the reader learn anything the signature does not already tell them? If
    not, delete the whole comment.
 2. Is every sentence still true if the body is rewritten from scratch? Delete or
-   demote the ones that aren't.
+   demote the ones that are not.
 3. Which single sentence can be deleted with the least loss? Delete it. Repeat
    until the next deletion would cost real information.
 4. Is any sentence about the author rather than the reader? Move it to the
@@ -282,12 +398,15 @@ this checklist and edit accordingly.
 5. Check §5. Which required facts are missing? Add them.
 6. Would a consumer be surprised by anything in production — an error type, a
    blocking call, a mutation, a cost? If so it is undocumented.
+7. Hunt the shapes in §12. Rewrite each hit as a plain sentence, or cut it.
+8. Count the clauses in the longest sentence. If it has more than two, split it
+   into two sentences.
 
 Target: shorter than the first draft and containing strictly more information.
 
 ---
 
-## 12. Worked corrections
+## 14. Worked corrections
 
 ```java
 // BEFORE
@@ -305,7 +424,7 @@ public static Client create(Config config)
 
 // AFTER
 /**
- * Returns a Client configured by {@code config}.
+ * Returns a {@link Client} configured by {@code config}.
  *
  * <p>The returned Client is safe for concurrent use and holds a connection
  * pool; callers must {@link Client#close() close} it. Creation does not
@@ -330,4 +449,25 @@ optional int64 timeout = 3;
  * default; zero stored explicitly means no limit.
  */
 optional int64 timeout = 3;
+```
+
+The next one says the right things. It fails on §12 alone: a significance
+clause, a cleft and a contrast nobody asked for, in one sentence.
+
+```java
+// BEFORE
+/**
+ * <p>The store is one object read and replaced as a whole. Replacing it is
+ * conditional on the version the writer last read, so two nodes changing keys
+ * at the same time can not lose one another's change - which is what lets any
+ * node manage keys rather than only the one holding the indexer role.
+ */
+
+// AFTER
+/**
+ * The store is one object, read and replaced as a whole.
+ *
+ * <p>A replace is conditional on the version the writer last read, so a
+ * concurrent change is rejected instead of lost. Any node can manage keys.
+ */
 ```
