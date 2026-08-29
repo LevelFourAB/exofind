@@ -1,6 +1,6 @@
 # Updating parts of documents
 
-This guide shows you how to update specific fields, nested object values, and locale variants in existing documents without resending the entire document.
+This guide shows you how to update specific fields, nested object values, and locale variants in existing documents without resending the entire document. You can change documents in a batch, or change one document by its key.
 
 The single rule that governs all partial updates is that the path replaces exactly what it names and leaves everything around it unchanged. How deeply you name decides how much you replace.
 
@@ -156,6 +156,22 @@ Before you update parts of documents, ensure you have:
    }
    ```
 
+8. Change one document by its key:
+
+   To change a single document, send a `PATCH` request to `/v1alpha1/indexes/{name}/documents/{key}`. The body is one change object holding paths only, because the URL names the document.
+
+   ```http
+   PATCH /v1alpha1/indexes/products/documents/1
+   Content-Type: application/json
+
+   {
+     "price": 34.50,
+     "variants[sku=V-2].price": 29.0
+   }
+   ```
+
+   The request returns `204 No Content` when the document is changed. A key nothing is indexed under returns `404` with `index:document:not_found` instead of creating a document. Every path means what it means in a batch, so you can move between the two forms without rewriting the change.
+
 ## Confirming the result
 
 To verify your updates, read the documents back with `GET /v1alpha1/indexes/{name}/documents`, which answers in primary key order. A change is searchable only once the index commits. For more information, see [Make a write visible to search](make-writes-visible.md).
@@ -207,6 +223,8 @@ The update endpoint validates paths and returns specific error codes when a path
 | `request:update:add_reaches_inside` | A path attempted to set a sub-field on an appended item (for example, `variants[].price`). | Provide the complete object when appending with `[]`. |
 | `request:update:not_an_object` | A dot path reached into a field that does not contain objects. | Check the field type definition in the index schema. |
 | `index:source:not_kept` | The index does not store document sources (`source: none`). | Reindex with source storage enabled to use partial updates. |
+| `index:document:not_found` | A `PATCH` named a key nothing is indexed under. | Index the document whole first, or check the key in the URL. |
+| `request:update:key_conflicting` | The body of a `PATCH` gave the primary key field a value other than the key in the URL. | Remove the primary key from the body, or give it the key the URL names. |
 
 ## Related
 

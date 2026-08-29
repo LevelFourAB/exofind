@@ -31,6 +31,7 @@ import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -260,6 +261,108 @@ public class DocumentUpdateResourceTest {
 				new UpdateRequest(List.of(document("id", "1", "name", "jam")))
 			)
 		);
+	}
+
+	@Test
+	public void oneDocumentIsChangedByTheKeyInThePathAndNothingElseIsTouched()
+		throws IOException {
+		var index = catalogue();
+
+		var response = resource.patch("catalogue", "1", document("price", 9.5));
+
+		assertThat(response.getStatus(), is(204));
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(stored.get("price"), is(9.5));
+		assertThat(stored.get("name"), is("Blueberry jam"));
+		assertThat(stored.get("id"), is("1"));
+
+		assertThat(index.getDocument("2").get("price"), is(12.0));
+	}
+
+	@Test
+	public void aChangeNamingNothingLeavesTheDocumentAsItIs() throws IOException {
+		var index = catalogue();
+
+		resource.patch("catalogue", "1", document());
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(stored.get("id"), is("1"));
+		assertThat(stored.get("name"), is("Blueberry jam"));
+		assertThat(stored.get("price"), is(24.5));
+	}
+
+	@Test
+	public void aChangeWithoutABodyIsRefused() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.patch("catalogue", "1", null)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:missing_body"));
+	}
+
+	/**
+	 * The path is what names the document, so a body giving the same key is
+	 * saying what the path already says.
+	 */
+	@Test
+	public void aBodyRepeatingTheKeyOfThePathIsTaken() throws IOException {
+		var index = catalogue();
+
+		resource.patch("catalogue", "1", document("id", "1", "price", 9.5));
+
+		index.commit();
+		assertThat(index.getDocument("1").get("price"), is(9.5));
+	}
+
+	@Test
+	public void aBodyNamingAnotherDocumentThanThePathIsRefused() throws IOException {
+		var index = catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.patch("catalogue", "1", document("id", "2", "price", 9.5))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:update:key_conflicting"));
+
+		index.commit();
+		assertThat(index.getDocument("1").get("price"), is(24.5));
+		assertThat(index.getDocument("2").get("price"), is(12.0));
+	}
+
+	@Test
+	public void aKeyNothingIsIndexedUnderIsNotFound() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			IndexDocumentNotFoundException.class,
+			() -> resource.patch("catalogue", "404", document("price", 1.0))
+		);
+
+		assertThat(e.getCode(), is("index:document:not_found"));
+	}
+
+	@Test
+	public void aChangeThatLeavesOneDocumentUnacceptableIsRefused() throws IOException {
+		var index = catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.patch("catalogue", "1", document("price", "not a number"))
+		);
+
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("price"));
+
+		index.commit();
+		assertThat(index.getDocument("1").get("price"), is(24.5));
 	}
 
 	private static Map<String, Object> document(Object... keysAndValues) {

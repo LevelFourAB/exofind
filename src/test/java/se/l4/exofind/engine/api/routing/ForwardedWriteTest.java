@@ -482,13 +482,32 @@ public class ForwardedWriteTest {
 		assertThat(forwarded.body().length, is(0));
 	}
 
+	@Test
+	@Order(8)
+	void aChangeToOneDocumentForwardsWithItsBody() {
+		answer = new Answer(204, Map.of(), new byte[0]);
+
+		asRoot()
+			.contentType("application/json")
+			.body("{\"title\": \"A new title\"}")
+			.when().patch("/v1alpha1/indexes/books/documents/1")
+			.then().statusCode(204);
+
+		var forwarded = received.poll();
+		assertThat(forwarded, is(notNullValue()));
+		assertThat(forwarded.method(), is("PATCH"));
+		assertThat(forwarded.uri().getPath(), is("/v1alpha1/indexes/books/documents/1"));
+		assertThat(new String(forwarded.body(), StandardCharsets.UTF_8),
+			is("{\"title\": \"A new title\"}"));
+	}
+
 	/**
 	 * What the indexer refuses arrives refused as it said it, not wrapped in
 	 * an answer of this node's own - the caller is talking to the indexer,
 	 * however many nodes stand in between.
 	 */
 	@Test
-	@Order(8)
+	@Order(9)
 	void whatTheIndexerAnsweredIsRelayedRefusalsIncluded() {
 		answer = Answer.json(409, "{\"code\": \"index:version_mismatch\"}");
 
@@ -508,7 +527,7 @@ public class ForwardedWriteTest {
 	 * found the indexer is refused instead.
 	 */
 	@Test
-	@Order(9)
+	@Order(10)
 	void aRequestAlreadyPassedAlongOnceIsRefusedRatherThanPassedAgain() {
 		asRoot()
 			.contentType("application/json")
@@ -527,7 +546,7 @@ public class ForwardedWriteTest {
 	 * nodes each reach their own holder.
 	 */
 	@Test
-	@Order(10)
+	@Order(11)
 	void writesToDifferentIndexesReachDifferentHolders() throws Exception {
 		var second = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		var secondReceived = new ConcurrentLinkedQueue<Received>();
@@ -590,7 +609,7 @@ public class ForwardedWriteTest {
 	 * does not compete, so someone that does has to be found.
 	 */
 	@Test
-	@Order(11)
+	@Order(12)
 	void aWriteToAnIndexNothingHoldsIsSentToACandidate() {
 		writeLeadership(Map.of(), Map.of("stand-in", indexerAddress()));
 
@@ -613,7 +632,7 @@ public class ForwardedWriteTest {
 	 * finding out the long way.
 	 */
 	@Test
-	@Order(12)
+	@Order(13)
 	void aWriteToAnIndexTheDeploymentDoesNotHoldIsAnsweredWhereItLands() {
 		writeLeadership(Map.of(), Map.of("stand-in", indexerAddress()));
 
@@ -628,7 +647,7 @@ public class ForwardedWriteTest {
 	}
 
 	@Test
-	@Order(13)
+	@Order(14)
 	void anIndexerThatDoesNotAnswerIsABadGateway() throws IOException {
 		int deadPort;
 		try(var socket = new ServerSocket(0)) {

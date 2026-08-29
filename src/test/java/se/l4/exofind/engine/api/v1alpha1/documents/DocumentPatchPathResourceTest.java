@@ -392,6 +392,29 @@ public class DocumentPatchPathResourceTest {
 		assertThat(skus(index.getDocument("2")), contains("W-1"));
 	}
 
+	/**
+	 * A path means the same when the document is named by the path of the
+	 * request rather than by a key in the change.
+	 */
+	@Test
+	public void aChangeSentForOneDocumentTakesTheSamePaths() throws IOException {
+		var index = catalogue();
+
+		resource.patch(
+			"catalogue",
+			"1",
+			document("variants[sku=V-2].price", 29.0, "title[sv]", "Blabarssylt II")
+		);
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(price(variant(stored, "V-2")), is(29.0));
+		assertThat(price(variant(stored, "V-1")), is(10.0));
+		assertThat(inLocale(stored, "title", "sv"), is("Blabarssylt II"));
+		assertThat(inLocale(stored, "title", "en"), is("Blueberry jam"));
+	}
+
 	private void update(Map<String, Object> change) {
 		resource.update("catalogue", null, new UpdateRequest(List.of(change)));
 	}

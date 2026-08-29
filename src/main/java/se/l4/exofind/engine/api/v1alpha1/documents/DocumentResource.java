@@ -12,8 +12,10 @@ import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -45,6 +47,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.DocumentPatch;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
@@ -52,6 +55,7 @@ import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -71,9 +75,11 @@ import jakarta.ws.rs.core.StreamingOutput;
  * nothing was indexed under is not an error.
  *
  * A change to some of the fields of a document says something else, which is
- * why it has an endpoint of its own: it describes what to change about a
+ * why it has endpoints of its own: it describes what to change about a
  * document rather than what should be there, so it needs the document to
- * already be there and is refused when it is not.
+ * already be there and is refused when it is not. One change is sent for one
+ * document by its key, and the batch takes the same changes with the key in
+ * each of them.
  *
  * What is indexed or removed takes effect for searches when the index is
  * committed, which is also what pushes it to the remote. The indexer commits on
@@ -175,6 +181,17 @@ public class DocumentResource {
 			.withArguments("key")
 			.withMessage(
 				"Nothing is indexed under the key `{{key}}`, so there is nothing to change"
+			);
+
+	private static final ErrorType CHANGE_MISSING_BODY = ErrorType
+		.withCode("request:missing_body")
+		.withMessage("A change is required");
+
+	private static final ErrorType UPDATE_KEY_CONFLICTING =
+		ErrorType.withCode("request:update:key_conflicting")
+			.withArguments("key", "name")
+			.withMessage(
+				"The document to change is the one the path names, `{{key}}`, so `{{name}}` in the body cannot name another"
 			);
 
 	private static final ErrorType DELETE_TARGET_REQUIRED =
@@ -644,6 +661,204 @@ public class DocumentResource {
 
 		missingKeys.add(key);
 		return false;
+	}
+
+	/**
+	 * Change some of the fields of the document indexed under a primary key.
+	 *
+	 * The key arrives as text and is read as the type of the key field, the way
+	 * a removal reads it, so the body says only what to change.
+	 *
+	 * @param name
+	 * @param key
+	 * @param body
+	 *   the places to change, keyed by path, meaning what one change of the
+	 *   batch means
+	 * @return
+	 *   no content, the document having been changed - a key nothing is indexed
+	 *   under is answered as not found instead
+	 */
+	@PATCH
+	@Path("/{key}")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.DOCUMENTS_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
+	@Operation(
+		operationId = "updateDocument",
+		summary = "Update fields of one document",
+		description = """
+			Changes named parts of one document, leaving the rest of it as it \
+			is. The body is one change object, meaning exactly what one entry \
+			of `POST /documents/actions/update` means, with the primary key \
+			given by the path instead of by the body: every key is a path \
+			naming a place in the document, the place is replaced by what the \
+			key maps to, a key set to `null` empties it, and a place no key \
+			names is left alone.
+
+			The body may name the primary key field, as long as it gives the \
+			key the path already names.
+
+			Unlike indexing, this describes a change rather than desired \
+			state, so a key nothing is indexed under is answered `404` rather \
+			than creating a document. The changed document is validated as a \
+			whole.
+
+			Requires the `documents.write` permission, an index that declares \
+			a primary key, and an index that keeps document sources."""
+	)
+	@APIResponse(
+		responseCode = "204",
+		description = "The document was changed."
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The change was rejected by validation, the key cannot be read as \
+			the type of the key field (`index:query:invalid_value`), the body \
+			names the primary key field as another document \
+			(`request:update:key_conflicting`), the index declares no primary \
+			key (`index:no_primary_key`), or the index keeps no document \
+			sources (`index:source:not_kept`) - resend the whole document in \
+			that case.
+
+			A path is refused for the same reasons as in the batch, reported \
+			by the same `request:update:*` codes.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "401",
+		description = "The request carries no credential this node accepts.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "403",
+		description = "The API key does not have the `documents.write` permission.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			Nothing is indexed under the key (`index:document:not_found`), no \
+			index has this name, or the key has no grant covering it.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			No node is available to write the index, the index is \
+			synchronizing, or the generation is being filled by a reindex \
+			job.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "502",
+		description = "The index writer did not respond to the forwarded request.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = "The request raced the index being closed. Send it again.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public Response patch(
+		@Parameter(
+			description = """
+				Name of the index to write to, optionally naming one \
+				generation as `books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		@Parameter(
+			description = """
+				Primary key of the document to change, read as the type of the \
+				key field - so a numeric key is written the way a document \
+				writes it.""",
+			example = "1"
+		)
+		@PathParam("key") String key,
+		@RequestBody(
+			description = """
+				The places to change, keyed by path. A path with a value \
+				replaces what it names, a path set to `null` empties it, and a \
+				place no path names is left as it is.""",
+			required = true,
+			content = @Content(
+				schema = @Schema(type = SchemaType.OBJECT, implementation = Object.class),
+				examples = @ExampleObject(
+					name = "change",
+					value = """
+						{ "price": 34.50, "variants[sku=V-2].price": 29.0 }"""
+				)
+			)
+		)
+		Map<String, Object> body
+	) {
+		if(body == null) {
+			throw new ValidationException(CHANGE_MISSING_BODY.toMessage(ObjectLocation.root()));
+		}
+
+		var index = writable(name);
+		var primaryKey = index.parsePrimaryKey(key);
+		var keyField = index.getPrimaryKey().orElseThrow().getName();
+
+		var patch = withKey(DocumentMapper.toPatch(index, body), keyField, primaryKey);
+
+		try {
+			if(!index.updateDocument(patch)) {
+				throw new IndexDocumentNotFoundException(key);
+			}
+		} catch(IOException e) {
+			throw new IndexException(IO_ERROR, e, "index", name);
+		}
+
+		return Response.noContent().build();
+	}
+
+	/**
+	 * Give a patch the primary key the path named, so that the document to
+	 * change is the one the path names.
+	 *
+	 * @throws ValidationException
+	 *   if the body names the key field as another document, which would leave
+	 *   the path and the body naming two - the merge reads what the path names
+	 *   and the write goes where the merged document says
+	 */
+	private static DocumentPatch withKey(
+		DocumentPatch patch,
+		String keyField,
+		Object primaryKey
+	) {
+		for(var change : patch.changes()) {
+			if(!change.field().equals(keyField)) {
+				continue;
+			}
+
+			var given = change.values().notEmpty() ? change.values().getFirst().value() : null;
+			if(change.inner() != null
+				|| !(change.selector() instanceof DocumentPatch.Selector.All)
+				|| !String.valueOf(primaryKey).equals(String.valueOf(given))) {
+				throw new ValidationException(
+					UPDATE_KEY_CONFLICTING.toMessage(
+						ObjectLocation.root().forField(keyField),
+						"key", String.valueOf(primaryKey),
+						"name", keyField
+					)
+				);
+			}
+
+			return patch;
+		}
+
+		return new DocumentPatch(
+			patch.changes().toList().with(
+				new DocumentPatch.Change(
+					keyField,
+					DocumentPatch.Selector.ALL,
+					null,
+					Lists.immutable.of(new Document.Value(keyField, primaryKey))
+				)
+			).toImmutable()
+		);
 	}
 
 	/**

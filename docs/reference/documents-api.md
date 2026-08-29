@@ -95,13 +95,17 @@ The endpoint returns status `200 OK` with the count of indexed documents:
 
 ## Changing some of the fields
 
+You can change one document by its key in the URL path, or change several documents in a batch. Both forms describe the change the same way, and both require an index that declares a primary key and keeps document sources.
+
+### Change documents in a batch
+
 ```
 POST /v1alpha1/indexes/{name}/documents/actions/update
 ```
 
 Updates specific fields of existing documents in the index.
 
-### Query parameters
+#### Query parameters
 
 The request supports the following query parameters:
 
@@ -109,7 +113,7 @@ The request supports the following query parameters:
 | --- | --- | --- | --- |
 | `missing` | string | `fail` | Behavior when a document key does not exist. Allowed values are `fail` (fails the request) and `skip` (skips missing documents and lists them in the response). |
 
-### Request headers
+#### Request headers
 
 The request supports the following headers:
 
@@ -117,7 +121,7 @@ The request supports the following headers:
 | --- | --- |
 | `Content-Type` | Set to `application/json` or `application/x-ndjson`. |
 
-### Request body
+#### Request body
 
 The body contains change objects. Each object must include the primary key. Every other key is a path naming a place in the document, and the value is what that place becomes.
 
@@ -134,7 +138,7 @@ The following example uses `Content-Type: application/json`:
 
 You can also send updates using `Content-Type: application/x-ndjson` with one change object per line.
 
-### Paths
+#### Paths
 
 A path is a field name, and may carry a selector in brackets and a field inside the value the selector picks:
 
@@ -155,7 +159,7 @@ Paths follow these rules:
 - Inside brackets, a backslash stands for the character after it, which is how a selector holds a `]` of its own.
 - A field inside a list of objects requires a selector saying which value. Without one, the request returns `request:update:value_required`.
 
-### Update behavior
+#### Update behavior
 
 Path changes apply as follows:
 
@@ -173,7 +177,7 @@ Updates follow these rules:
 - Every change to one document is applied and validated as a whole. If validation fails, the request is rejected and the document remains unchanged.
 - The whole document is rewritten in the index either way, so a change to one sub-document costs what rewriting the document costs. For more information, see [How sub-documents are stored](../explanation/document-blocks.md).
 
-### Constraints and errors
+#### Constraints and errors
 
 - If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. For more information, see the [Admin API](admin-api.md).
 - If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
@@ -195,7 +199,7 @@ The following error codes report a path the endpoint cannot use:
 | `request:update:value_required` | The path reaches into a list of objects without saying which value. |
 | `request:update:no_match` | The selector names no value the document holds. |
 
-### Response
+#### Response
 
 The endpoint returns status `200 OK` with the count of updated documents and any missing keys:
 
@@ -207,6 +211,48 @@ When called with `?missing=skip`:
 
 ```json
 { "updated": 1998, "missing": ["sku-9", "sku-40"] }
+```
+
+### Change one document by key
+
+```
+PATCH /v1alpha1/indexes/{name}/documents/{key}
+```
+
+Changes named parts of the single document indexed under the specified key.
+
+#### Path parameters
+
+The request requires the following path parameters:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | string | Name of the index. |
+| `key` | string | Primary key of the document to change. Parsed according to the key field type. |
+
+#### Request body
+
+The body is a single change object, meaning what one entry of the batch means. The key comes from the URL path, so the body holds paths only:
+
+```json
+{ "price": 34.50, "variants[sku=V-2].price": 29.0, "discount": null }
+```
+
+Paths and update behavior are the same as in the batch. The body may repeat the primary key field as long as it gives the key the path already names; a different value returns `request:update:key_conflicting`.
+
+#### Errors
+
+- `index:document:not_found`: Nothing is indexed under the key. The endpoint returns status `404` and creates nothing, because a change describes what to change about a document rather than what should be there.
+- `request:update:key_conflicting`: The body names the primary key field as another document than the path does.
+- `index:query:invalid_value`: The key cannot be parsed as the defined key field type.
+- The `request:update:*` path codes, `index:no_primary_key` and `index:source:not_kept` mean here what they mean in the batch.
+
+#### Response
+
+The endpoint returns status `204 No Content`. The batch action remains the only form that reports a count.
+
+```
+PATCH /v1alpha1/indexes/foods/documents/1
 ```
 
 ## Reading documents
@@ -423,9 +469,9 @@ The API uses the following HTTP status codes:
 | Status code | Condition |
 | --- | --- |
 | `200` | The documents were indexed, read, updated, or deleted successfully. |
-| `204` | The document was removed by key in the URL path. |
+| `204` | The document was changed or removed by key in the URL path. |
 | `400` | A document or key was rejected by validation, the index definition lacks a primary key or stored source, the limit parameter was invalid, or the request body could not be parsed. |
-| `404` | No index with the specified name exists on this node. |
+| `404` | No index with the specified name exists on this node, or a `PATCH` named a key nothing is indexed under (`index:document:not_found`). |
 | `409` | No node is available to forward the request to (`indexer:unavailable`), or the index is currently synchronizing. |
 | `502` | The node holding the index writer did not respond to the forwarded request. |
 | `503` | The index was closed to free resources; repeating the request reopens the index. |

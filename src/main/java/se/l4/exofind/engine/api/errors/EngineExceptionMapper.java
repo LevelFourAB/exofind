@@ -15,6 +15,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexClosedException;
 import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
+import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.IndexInvalidCursorException;
@@ -150,6 +151,13 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			 */
 			return Response.Status.BAD_REQUEST;
 		} else if(e instanceof IndexNotFoundException) {
+			return Response.Status.NOT_FOUND;
+		} else if(e instanceof IndexDocumentNotFoundException) {
+			/*
+			 * A request that named one document by its key and the index holds
+			 * none - the key in the path names nothing, the same as a name no
+			 * index answers to.
+			 */
 			return Response.Status.NOT_FOUND;
 		} else if(e instanceof IndexVersionMismatchException) {
 			// The definition changed after the caller read it
