@@ -372,9 +372,16 @@ public class SearchRequestMapperTest {
 	}
 
 	private static SearchRequest withSignals(List<Signal> signals) {
+		return withSignals(signals, null);
+	}
+
+	private static SearchRequest withSignals(
+		List<Signal> signals,
+		SearchRequest.SignalsMode mode
+	) {
 		return new SearchRequest(
 			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-			signals
+			signals, mode, null
 		);
 	}
 
@@ -387,10 +394,53 @@ public class SearchRequestMapperTest {
 	}
 
 	@Test
-	public void testAnEmptySignalListRanksByNothing() {
+	public void testAnEmptySignalListIsKept() {
 		var mapped = SearchRequestMapper.toEngine(withSignals(List.of()), MAX_DEPTH, MAX_WINDOW);
 
-		assertThat(mapped.request().signals().isEmpty(), is(true));
+		assertThat(mapped.request().signals().signals().isEmpty(), is(true));
+	}
+
+	@Test
+	public void testSignalsAreAddedToTheIndexRankingWhenNoModeIsGiven() {
+		var mapped = SearchRequestMapper.toEngine(
+			withSignals(List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null))),
+			MAX_DEPTH, MAX_WINDOW
+		);
+
+		assertThat(
+			mapped.request().signals().mode(),
+			is(se.l4.exofind.engine.query.SearchRequest.Signals.Mode.ADD)
+		);
+	}
+
+	@Test
+	public void testSignalsReplaceTheIndexRankingWhenAskedTo() {
+		var mapped = SearchRequestMapper.toEngine(
+			withSignals(
+				List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null)),
+				SearchRequest.SignalsMode.REPLACE
+			),
+			MAX_DEPTH, MAX_WINDOW
+		);
+
+		assertThat(
+			mapped.request().signals().mode(),
+			is(se.l4.exofind.engine.query.SearchRequest.Signals.Mode.REPLACE)
+		);
+	}
+
+	@Test
+	public void testASignalsModeWithoutSignalsIsReported() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withSignals(null, SearchRequest.SignalsMode.REPLACE),
+				MAX_DEPTH, MAX_WINDOW
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:signal:mode_without_signals"));
+		assertThat(pathsOf(e), contains("/signalsMode"));
 	}
 
 	@Test
@@ -406,7 +456,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(
-			mapped.request().signals(),
+			mapped.request().signals().signals(),
 			contains(
 				new SaturationSignal("purchases", 50.0, 0.5f),
 				new DecaySignal("published", Duration.ofDays(7), 1f)

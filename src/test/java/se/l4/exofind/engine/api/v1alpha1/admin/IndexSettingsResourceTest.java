@@ -212,11 +212,15 @@ public class IndexSettingsResourceTest {
 	}
 
 	private List<Object> ids(List<Signal> signals) {
+		return ids(signals, null);
+	}
+
+	private List<Object> ids(List<Signal> signals, SearchRequest.SignalsMode mode) {
 		var response = search.search(
 			"products",
 			new SearchRequest(
 				null, null, null, null, null, null, null, null, null, null, null, null,
-				null, null, null, signals
+				null, null, null, signals, mode, null
 			)
 		);
 
@@ -250,13 +254,47 @@ public class IndexSettingsResourceTest {
 	}
 
 	/**
-	 * Signals a search brings replace whatever ranks the index, settings
-	 * included - an empty list ranks by how well documents match alone.
+	 * A search replacing the signals puts aside whatever ranks the index,
+	 * settings included - an empty list then ranks by how well documents match
+	 * alone.
 	 */
 	@Test
-	public void testSignalsOfTheSearchWinOverTheSettings() {
+	public void testSignalsOfTheSearchWinOverTheSettingsWhenTheyReplaceThem() {
 		products();
 
+		rankBySalesInSettings();
+
+		assertThat(ids(), contains("3", "2", "1"));
+		assertThat(
+			ids(List.of(), SearchRequest.SignalsMode.REPLACE),
+			contains("1", "2", "3")
+		);
+	}
+
+	/**
+	 * The ranking of the settings survives a search that brings signals of its
+	 * own, which is what keeps a personalized search under the ranking the
+	 * index owns.
+	 */
+	@Test
+	public void testSettingsStillRankASearchThatAddsItsOwnSignals() {
+		products();
+
+		rankBySalesInSettings();
+
+		// No document holds a view count, so this signal reorders nothing itself
+		var added = List.of(new Signal("views", new Signal.Saturation(50d), null, null));
+
+		assertThat(ids(added), contains("3", "2", "1"));
+
+		// Replacing drops the settings, leaving the signal that says nothing
+		assertThat(
+			ids(added, SearchRequest.SignalsMode.REPLACE),
+			contains("1", "2", "3")
+		);
+	}
+
+	private void rankBySalesInSettings() {
 		resource.put(
 			"products",
 			null,
@@ -274,9 +312,6 @@ public class IndexSettingsResourceTest {
 				null
 			)
 		);
-
-		assertThat(ids(), contains("3", "2", "1"));
-		assertThat(ids(List.of()), contains("1", "2", "3"));
 	}
 
 	@Test

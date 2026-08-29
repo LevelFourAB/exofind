@@ -90,7 +90,7 @@ public class RankingSignalSearchTest extends AbstractIndexTest {
 					Query.text("sneaker"),
 					Query.field("id", Matchers.equalTo("none"))
 				)
-				.withSignals()
+				.withSignals(SearchRequest.Signals.replace())
 				.build()
 		);
 
@@ -117,7 +117,7 @@ public class RankingSignalSearchTest extends AbstractIndexTest {
 		var plain = index.search(
 			SearchRequest.create()
 				.withQuery(Query.field("id", Matchers.equalTo("popular")))
-				.withSignals()
+				.withSignals(SearchRequest.Signals.replace())
 				.build()
 		);
 
@@ -150,7 +150,7 @@ public class RankingSignalSearchTest extends AbstractIndexTest {
 		var plain = index.search(
 			SearchRequest.create()
 				.withQuery(Query.text("runner"))
-				.withSignals()
+				.withSignals(SearchRequest.Signals.replace())
 				.build()
 		);
 
@@ -184,13 +184,17 @@ public class RankingSignalSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
-	public void testASearchRanksByItsOwnSignalsInsteadOfTheIndexes() throws IOException {
+	public void testASearchRanksByItsOwnSignalsInsteadOfTheIndexesWhenItReplacesThem() throws IOException {
 		var index = products(purchases(50));
 
 		var result = index.search(
 			SearchRequest.create()
 				.withQuery(Query.text("runner"))
-				.withSignals(RankingSignal.decay("published", Duration.ofDays(7)))
+				.withSignals(
+					SearchRequest.Signals.replace(
+						RankingSignal.decay("published", Duration.ofDays(7))
+					)
+				)
 				.build()
 		);
 
@@ -202,13 +206,72 @@ public class RankingSignalSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testASearchAddsItsOwnSignalsToTheIndexes() throws IOException {
+		var index = products(purchases(50));
+
+		var added = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("id", Matchers.equalTo("popular")))
+				.withSignals(RankingSignal.decay("published", Duration.ofDays(365)))
+				.build()
+		);
+
+		var plain = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("id", Matchers.equalTo("popular")))
+				.withSignals(SearchRequest.Signals.replace())
+				.build()
+		);
+
+		/*
+		 * `popular` was bought exactly as often as the index's pivot and was
+		 * published exactly one half life ago, so each signal is worth 1.5 and
+		 * both of them are read. A search replacing the ranking would have
+		 * scored it 1.5 times the plain match.
+		 */
+		assertThat(
+			(double) added.hits().get(0).score(),
+			is(closeTo(plain.hits().get(0).score() * 2.25, PRECISION))
+		);
+	}
+
+	@Test
+	public void testASignalStandsInForTheIndexesOnTheSameField() throws IOException {
+		var index = products(purchases(50));
+
+		var added = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("id", Matchers.equalTo("popular")))
+				.withSignals(RankingSignal.saturation("purchases", 50).withWeight(0.5f))
+				.build()
+		);
+
+		var plain = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("id", Matchers.equalTo("popular")))
+				.withSignals(SearchRequest.Signals.replace())
+				.build()
+		);
+
+		/*
+		 * Both signals read `purchases` at its pivot, so the one the search
+		 * brought is worth 1.25 on its own. Two of them compounded would have
+		 * been 1.875, and the index's alone 1.5.
+		 */
+		assertThat(
+			(double) added.hits().get(0).score(),
+			is(closeTo(plain.hits().get(0).score() * 1.25, PRECISION))
+		);
+	}
+
+	@Test
 	public void testASearchCanRankByNothingAtAll() throws IOException {
 		var index = products(purchases(50));
 
 		var result = index.search(
 			SearchRequest.create()
 				.withQuery(Query.text("runner"))
-				.withSignals()
+				.withSignals(SearchRequest.Signals.replace())
 				.build()
 		);
 

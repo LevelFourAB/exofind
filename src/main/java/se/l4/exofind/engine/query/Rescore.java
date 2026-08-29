@@ -42,8 +42,10 @@ import org.eclipse.collections.api.list.ImmutableList;
  *   Weigh one against another by wrapping it in a {@link BoostQuery}
  * @param signals
  *   the values of the documents themselves to take into the second score,
- *   read the way {@link SearchRequest#signals()} reads them. Applied to every
- *   result in the window, whether or not it satisfied a boost
+ *   shaped the way a {@link RankingSignal} always is. These are the whole of
+ *   what the second pass reads - the ranking of the index belongs to the first
+ *   pass and is never applied again here. Applied to every result in the
+ *   window, whether or not it satisfied a boost
  * @param weight
  *   how much the second score counts against the first
  */

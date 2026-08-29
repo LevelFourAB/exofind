@@ -36,7 +36,8 @@ All request properties are optional. An empty request matches all documents in t
 | `filters` | Array | `[]` | Refinement clauses, specified as `field` clauses or `nested` clauses. Filters narrow hits, but facets on the filtered field exclude their own filter entries from counts by default (see [Facets](#facets)). Unsupported clause types return `search:filter:clause_invalid`. Clauses that score results return `search:filter:scores`. |
 | `facets` | Array | `[]` | Fields to aggregate match counts for. See [Facets](#facets). If omitted, no facet counts are calculated. |
 | `sort` | Array | `[{"type": "score"}]` | Order in which results are returned. If omitted, results are sorted by relevance score in descending order. |
-| `signals` | Array | Index ranking signals | Document ranking signals used to adjust relevance scoring. See [Signals](#signals). If omitted, uses the ranking signals configured on the index. |
+| `signals` | Array | Index ranking signals | Document ranking signals used to adjust relevance scoring. Added to the signals configured on the index unless `signalsMode` says otherwise. See [Signals](#signals). If omitted, uses the ranking signals configured on the index. |
+| `signalsMode` | String | `add` | How `signals` meets the ranking configured on the index: `add` ranks by both, `replace` ranks by `signals` alone. Supplying this without `signals` returns `search:signal:mode_without_signals`. See [Signals](#signals). |
 | `rescore` | Object | None | Reorders the best results of a search in a second pass without changing which documents matched. See [Rescoring](#rescoring). |
 | `locale` | String | Field defaults | BCP-47 locale tag used to read and return locale-specific fields. Matches the closest declared locale on each field (for example, `sv-SE` falls back to `sv`). If no matching variant exists, uses the field default. |
 | `fields` | Array | All stored fields | Document fields to return with each result. Fields inside an [`object`](field-types.md#object) are specified by dotted path and returned nested inside the object. Requesting unretrievable fields returns an error (see [Document source](field-types.md#document-source)). The primary key is always included. |
@@ -262,7 +263,21 @@ Signals modify relevance scores by evaluating document field values:
 ]
 ```
 
-When specified in the search request, `signals` replaces all ranking signals defined on the index. An empty array ranks results solely by text match score.
+A search request adds its signals to the ranking configured on the index. The `signalsMode` property controls this:
+
+| Value | Behavior |
+|---|---|
+| `add` (default) | Ranks by the index's signals and the request's signals together. A request signal that names the same field as an index signal replaces that index signal instead of compounding with it. |
+| `replace` | Ranks by the request's signals alone. An empty array then ranks results solely by text match score. |
+
+Use `add` to layer a per-request signal, such as user affinity, on top of ranking the index owns. A later change to the index's ranking then still reaches these searches. Use `replace` to try out a complete ranking before adopting it:
+
+```json
+"signals": [ { "field": "brandAffinity", "saturation": { "pivot": 5 } } ],
+"signalsMode": "add"
+```
+
+Omitting `signals` leaves the search to the index's ranking, whatever `signalsMode` says. Supplying `signalsMode` without `signals` returns `search:signal:mode_without_signals`.
 
 Signals apply only when results are ordered by relevance. Providing an explicit `sort` overrides signal ordering.
 

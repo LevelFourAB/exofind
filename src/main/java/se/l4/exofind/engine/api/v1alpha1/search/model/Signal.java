@@ -13,9 +13,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * { "field": "published", "decay": { "halfLife": 2592000 }, "weight": 0.5 }
  * </pre>
  *
- * A search carrying signals ranks by those instead of the ones the index
- * declares, which is how a ranking is tried out before it is adopted. An empty
- * list ranks by how well documents match alone.
+ * A search carrying signals ranks by those and the ones the index declares
+ * together, unless its {@code signalsMode} asks to replace them - which is how
+ * a ranking is tried out before it is adopted.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """

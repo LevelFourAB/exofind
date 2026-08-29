@@ -37,8 +37,9 @@ public record SearchSettingsDefinition(
 		The ranking searches run with instead of the definition's, in the same \
 		shape as the definition's `ranking`. While present it replaces the \
 		definition's ranking completely; an empty object turns ranking off. \
-		Supplying `signals` in a search request still replaces both. Validated \
-		against the generation the index name answers from, using the same \
+		A search request adds its own `signals` to whichever of the two is in \
+		force, or replaces them with `signalsMode`. Validated against the \
+		generation the index name answers from, using the same \
 		`index:ranking:*` codes that validate a definition's ranking.""")
 	IndexDefinition.Ranking ranking,
 

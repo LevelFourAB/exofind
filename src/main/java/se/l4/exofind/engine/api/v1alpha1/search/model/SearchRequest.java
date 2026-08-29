@@ -212,16 +212,32 @@ public record SearchRequest(
 
 	/**
 	 * The values of the documents themselves to take into their relevance,
-	 * left out to rank by the ones the index declares. Given, they replace
-	 * those - an empty list ranks by how well documents match alone. Only read
-	 * where relevance is the ordering, so a search that gives a {@code sort}
-	 * of its own is unaffected.
+	 * left out to rank by the ones the index declares. Given, they are added
+	 * to those unless {@code signalsMode} says otherwise. Only read where
+	 * relevance is the ordering, so a search that gives a {@code sort} of its
+	 * own is unaffected.
 	 */
 	@Schema(description = """
-		Document ranking signals used to adjust relevance scoring. See \
+		Document ranking signals used to adjust relevance scoring. Added to \
+		the signals configured on the index unless `signalsMode` says \
+		otherwise. See \
 		[Signals](https://exofind.dev/reference/search-api/#signals). \
 		If omitted, uses the ranking signals configured on the index.""")
 	List<Signal> signals,
+
+	/**
+	 * How {@code signals} meets the ranking of the index, left out for
+	 * {@code add}. Refused without {@code signals}.
+	 */
+	@Schema(
+		description = """
+			How `signals` meets the ranking configured on the index: `"add"` \
+			ranks by both, with a signal here standing in for one on the same \
+			field; `"replace"` ranks by `signals` alone. Supplying this \
+			without `signals` returns `search:signal:mode_without_signals`.""",
+		defaultValue = "add"
+	)
+	SignalsMode signalsMode,
 
 	/**
 	 * A second pass reordering the best results, left out to answer in the
@@ -257,8 +273,59 @@ public record SearchRequest(
 	) {
 		this(
 			query, filters, facets, sort, locale, fields, highlight, matched, hits, limit, offset,
-			after, before, pages, total, signals, null
+			after, before, pages, total, signals, null, null
 		);
+	}
+
+	/**
+	 * A search adding whatever signals it brings to the ranking of the index.
+	 */
+	public SearchRequest(
+		List<Clause> query,
+		List<Clause> filters,
+		List<Facet> facets,
+		List<Sort> sort,
+		String locale,
+		List<String> fields,
+		Highlight highlight,
+		Matched matched,
+		Hits hits,
+		Integer limit,
+		Integer offset,
+		String after,
+		String before,
+		Pages pages,
+		Total total,
+		List<Signal> signals,
+		Rescore rescore
+	) {
+		this(
+			query, filters, facets, sort, locale, fields, highlight, matched, hits, limit, offset,
+			after, before, pages, total, signals, null, rescore
+		);
+	}
+
+	/**
+	 * How the signals of a search meet the ranking configured on the index.
+	 */
+	@Schema(description = """
+		How search request signals meet the ranking configured on the index: \
+		`"add"` ranks by both; `"replace"` ranks by the request's signals \
+		alone.""")
+	public enum SignalsMode {
+		/**
+		 * Rank by both. A signal naming a field the index also ranks by stands
+		 * in for the index's.
+		 */
+		@JsonProperty("add")
+		ADD,
+
+		/**
+		 * Rank by the signals of the request alone. An empty list then ranks by
+		 * how well documents match and nothing else.
+		 */
+		@JsonProperty("replace")
+		REPLACE
 	}
 
 	/**

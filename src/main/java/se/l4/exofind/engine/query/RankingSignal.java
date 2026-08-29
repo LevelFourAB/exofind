@@ -27,10 +27,10 @@ import java.time.Duration;
  * relevance is the ordering - a search that sorts by a field of its own reads
  * the field, not the score, and is left alone.
  *
- * An index declares the signals every search of it ranks by; a search giving
- * its own replaces them, which is how a ranking is tried out before it is
- * adopted. The type is the name a shape goes by outside the engine, so it is
- * never renamed or reused.
+ * An index declares the signals every search of it ranks by. A search giving
+ * its own adds them to that ranking, or replaces it - see
+ * {@link SearchRequest.Signals}. The type is the name a shape goes by outside
+ * the engine, so it is never renamed or reused.
  */
 public sealed interface RankingSignal permits SaturationSignal, DecaySignal {
 	/**

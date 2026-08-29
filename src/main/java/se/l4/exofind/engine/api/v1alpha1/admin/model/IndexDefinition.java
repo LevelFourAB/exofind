@@ -310,7 +310,7 @@ public record IndexDefinition(
 			Document values multiplied into relevance, each applied in turn. \
 			Evaluated at search time without reindexing, and only where \
 			relevance is the ordering. A search that carries its own `signals` \
-			replaces these.""")
+			adds to these, or replaces them with `signalsMode`.""")
 		List<Signal> signals
 	) {
 		/**

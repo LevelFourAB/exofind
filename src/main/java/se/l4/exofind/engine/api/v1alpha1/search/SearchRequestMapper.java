@@ -132,6 +132,12 @@ public class SearchRequestMapper {
 		ErrorType.withCode("search:signal:weight_invalid")
 			.withMessage("The `weight` of a ranking signal can not be less than nothing");
 
+	private static final ErrorType SIGNAL_MODE_WITHOUT_SIGNALS =
+		ErrorType.withCode("search:signal:mode_without_signals")
+			.withMessage(
+				"`signalsMode` says how the signals of a search meet the ranking of the index - give `signals` as well, or leave it out"
+			);
+
 	private static final ErrorType RESCORE_WINDOW_REQUIRED =
 		ErrorType.withCode("search:rescore:window_required")
 			.withMessage("How many of the best results a second pass reaches is required");
@@ -460,7 +466,7 @@ public class SearchRequestMapper {
 		var position = resolvePosition(body, fingerprint, errors);
 
 		var query = toClauses(body.query(), "/query", errors);
-		var signals = toSignals(body.signals(), "/signals", errors);
+		var signals = toRequestSignals(body, errors);
 		var filters = toFilters(body.filters(), errors);
 		var facets = toFacets(body.facets(), errors);
 		var highlight = toHighlight(body.highlight(), errors);
@@ -1261,19 +1267,60 @@ public class SearchRequestMapper {
 	}
 
 	/**
-	 * Convert the signals of a request into the ones the engine ranks by.
+	 * Convert the signals of a request into the ones the engine ranks by,
+	 * together with how they meet the ranking of the index.
 	 *
-	 * Absent and empty are different answers here: no signals at all leaves the
-	 * search to the ranking of the index, while an empty list is a search
-	 * saying to rank by how well documents match and nothing else.
+	 * <p>Absent and empty are different answers. A request holding no signals
+	 * at all leaves the search to the ranking of the index. An empty list under
+	 * {@code replace} is a search saying to rank by how well documents match
+	 * and nothing else, while an empty list under {@code add} adds nothing to
+	 * the ranking of the index.
 	 *
-	 * @param signals
-	 * @param at
-	 *   where the signals sit in the request, which is what the problems found
-	 *   in them point at
+	 * @param body
 	 * @param errors
 	 * @return
 	 *   the signals, or {@code null} to rank by the ones the index declares
+	 */
+	private static se.l4.exofind.engine.query.SearchRequest.Signals toRequestSignals(
+		SearchRequest body,
+		MutableList<ErrorMessage> errors
+	) {
+		if(body.signals() == null) {
+			if(body.signalsMode() != null) {
+				errors.add(
+					SIGNAL_MODE_WITHOUT_SIGNALS.toMessage(Location.create("/signalsMode"))
+				);
+			}
+
+			return null;
+		}
+
+		return new se.l4.exofind.engine.query.SearchRequest.Signals(
+			toSignalsMode(body.signalsMode()),
+			toSignals(body.signals(), "/signals", errors)
+		);
+	}
+
+	private static se.l4.exofind.engine.query.SearchRequest.Signals.Mode toSignalsMode(
+		SearchRequest.SignalsMode mode
+	) {
+		return switch(mode) {
+			case null -> se.l4.exofind.engine.query.SearchRequest.Signals.Mode.ADD;
+			case ADD -> se.l4.exofind.engine.query.SearchRequest.Signals.Mode.ADD;
+			case REPLACE -> se.l4.exofind.engine.query.SearchRequest.Signals.Mode.REPLACE;
+		};
+	}
+
+	/**
+	 * Convert a list of signals of a request into the ones the engine reads.
+	 *
+	 * @param signals
+	 * @param at
+	 *   where the signals sit in the request, which is where the problems found
+	 *   in them point
+	 * @param errors
+	 * @return
+	 *   the signals, or {@code null} when the list was absent
 	 */
 	private static ImmutableList<RankingSignal> toSignals(
 		List<Signal> signals,

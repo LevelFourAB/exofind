@@ -55,7 +55,11 @@ Signals produce continuous scores, but ties can still occur. For example, a sear
 
 Signals and tie breakers are defined in the index definition. Because the definition travels with the index data, updating it requires the writer node, and other nodes receive changes only on their next pull. To update query-time settings faster, an index can use [search settings](../reference/admin-api.md#search-settings). A search settings request can be sent to any node - it runs on the index's holder - and all nodes re-read the settings on their own refresh interval.
 
-When search settings define a `ranking` configuration, it completely replaces the `ranking` configuration from the index definition. The index definition provides the default ranking, and deleting search settings restores this default. Signals in a search request override both search settings and the index definition. The precedence order is search request, then search settings, then index definition.
+When search settings define a `ranking` configuration, it completely replaces the `ranking` configuration from the index definition. The index definition provides the default ranking, and deleting search settings restores this default.
+
+The index and the search request own different layers of the same ranking. Whichever ranking is in force on the index is the base layer, and a search request adds its own `signals` on top of it. A request signal that names the same field as an index signal replaces that index signal, so a search moves one weight without resending the rest. Setting `signalsMode` to `replace` drops the index layer entirely, which is how you try out a complete ranking before adopting it.
+
+Layering keeps the two parties separable. A per-request signal about the person searching does not take the merchant's configured ranking off the search, and a later change to that ranking still reaches personalized searches.
 
 Tuning proceeds in small steps - one weight, one pivot - so search settings also accept a change that names only the part it moves, described the same way a change to part of a document is. See [Changing part of the search settings](../reference/admin-api.md#changing-part-of-the-search-settings).
 
@@ -106,7 +110,7 @@ The following table summarizes where you configure each ranking component and wh
 | Whole-value match (`exact`) | Index definition | Newly indexed documents |
 | Boost clauses | Search request | Next search |
 | Second-pass rescoring (`rescore`) | Search request | Next search |
-| Signals | Index definition, replaceable by search settings (overridable per search) | Next search on the node serving it, within the settings refresh interval elsewhere |
+| Signals | Index definition, replaceable by search settings (a search adds its own on top) | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Tie breakers | Index definition, replaceable by search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Index-time synonyms | Index definition | Newly indexed documents |
 | Query-time synonyms | Search settings | Next search on the node serving it, within the settings refresh interval elsewhere |

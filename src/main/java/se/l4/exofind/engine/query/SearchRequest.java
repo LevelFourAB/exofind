@@ -82,10 +82,9 @@ import org.eclipse.collections.api.set.ImmutableSet;
  * @param total
  *   how far the total is counted, see {@link Total}
  * @param signals
- *   the values of the documents themselves to take into their relevance,
- *   replacing the ones the index declares - which is how a ranking is tried
- *   out before it is adopted. {@code null} ranks by what the index declares,
- *   empty by how well documents match alone. Only read where relevance is the
+ *   the values of the documents themselves to take into their relevance, and
+ *   how they meet the ones the index ranks by - see {@link Signals}.
+ *   {@code null} ranks by the index's alone. Only read where relevance is the
  *   ordering, so a search that sorts by a field is unaffected
  * @param rescore
  *   a second pass reordering the best results, or {@code null} to answer in
@@ -109,7 +108,7 @@ public record SearchRequest(
 	SortKey after,
 	SortKey before,
 	Total total,
-	ImmutableList<RankingSignal> signals,
+	Signals signals,
 	Rescore rescore
 ) {
 	/**
@@ -373,6 +372,75 @@ public record SearchRequest(
 		}
 	}
 
+	/**
+	 * The values of the documents themselves a search ranks by, and how they
+	 * meet the ones the index ranks by.
+	 *
+	 * <p>An index declares a ranking, which its search settings can replace.
+	 * A search bringing signals of its own adds them to that ranking unless it
+	 * asks for {@link Mode#REPLACE}, so an affinity boost about the person
+	 * searching leaves the ranking of the index in force.
+	 *
+	 * <pre>
+	 * SearchRequest.create()
+	 *   .withQuery(Query.text("running shoes"))
+	 *   .withSignals(RankingSignal.saturation("brandAffinity", 5))
+	 *   .build()
+	 * </pre>
+	 *
+	 * @param mode
+	 *   how these meet the signals the index ranks by, {@code null} for
+	 *   {@link Mode#ADD}
+	 * @param signals
+	 *   the signals themselves, {@code null} for none
+	 */
+	public record Signals(Mode mode, ImmutableList<RankingSignal> signals) {
+		/**
+		 * How the signals a search brings meet the ones the index ranks by.
+		 */
+		public enum Mode {
+			/**
+			 * Rank by both. A signal on a field the index also ranks by stands
+			 * in for the index's, so a search moves one weight and leaves the
+			 * rest of the ranking alone.
+			 */
+			ADD,
+
+			/**
+			 * Rank by these alone, leaving the signals of the index out.
+			 * Bringing none then ranks by how well documents match and nothing
+			 * else.
+			 */
+			REPLACE
+		}
+
+		public Signals {
+			if(mode == null) {
+				mode = Mode.ADD;
+			}
+
+			if(signals == null) {
+				signals = Lists.immutable.empty();
+			}
+		}
+
+		/**
+		 * Rank by the given signals together with the ones the index declares.
+		 */
+		public static Signals add(RankingSignal... signals) {
+			return new Signals(Mode.ADD, Lists.immutable.of(signals));
+		}
+
+		/**
+		 * Rank by the given signals alone, leaving out the ones the index
+		 * declares. Called with nothing, this ranks by how well documents
+		 * match and nothing else.
+		 */
+		public static Signals replace(RankingSignal... signals) {
+			return new Signals(Mode.REPLACE, Lists.immutable.of(signals));
+		}
+	}
+
 	public SearchRequest {
 		if(query == null) {
 			query = Lists.immutable.empty();
@@ -498,7 +566,7 @@ public record SearchRequest(
 		SortKey after,
 		SortKey before,
 		Total total,
-		ImmutableList<RankingSignal> signals
+		Signals signals
 	) {
 		this(
 			query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
@@ -585,7 +653,7 @@ public record SearchRequest(
 		SortKey after,
 		SortKey before,
 		Total total,
-		ImmutableList<RankingSignal> signals,
+		Signals signals,
 		Rescore rescore
 	) {
 		/**
@@ -959,37 +1027,44 @@ public record SearchRequest(
 		}
 
 		/**
-		 * Set the values of the documents themselves to rank by, replacing the
-		 * ones the index declares. Giving none at all ranks by how well
-		 * documents match alone, which is how a search opts out of the ranking
-		 * of the index.
+		 * Add the given values of the documents themselves to the ones the
+		 * index ranks by, replacing any signals set before.
 		 *
 		 * @param signals
-		 * @return
 		 */
 		public Builder withSignals(RankingSignal... signals) {
-			return new Builder(
-				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
-				after, before, total,
-				Lists.immutable.of(signals),
-				rescore
+			return withSignals(Signals.add(signals));
+		}
+
+		/**
+		 * Add the given values of the documents themselves to the ones the
+		 * index ranks by, replacing any signals set before.
+		 *
+		 * @param signals
+		 *   the signals, or {@code null} to rank by the ones the index declares
+		 */
+		public Builder withSignals(Iterable<? extends RankingSignal> signals) {
+			return withSignals(
+				signals == null
+					? null
+					: new Signals(
+						Signals.Mode.ADD,
+						Lists.immutable.<RankingSignal>ofAll(signals)
+					)
 			);
 		}
 
 		/**
-		 * Set the values of the documents themselves to rank by, replacing the
-		 * ones the index declares.
+		 * Set the values of the documents themselves to rank by, and how they
+		 * meet the ones the index ranks by, replacing any signals set before.
 		 *
 		 * @param signals
 		 *   the signals, or {@code null} to rank by the ones the index declares
-		 * @return
 		 */
-		public Builder withSignals(Iterable<? extends RankingSignal> signals) {
+		public Builder withSignals(Signals signals) {
 			return new Builder(
 				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
-				after, before, total,
-				signals == null ? null : Lists.immutable.<RankingSignal>ofAll(signals),
-				rescore
+				after, before, total, signals, rescore
 			);
 		}
 

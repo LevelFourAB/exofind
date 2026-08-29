@@ -47,6 +47,7 @@ import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.RankingSignal;
 import se.l4.exofind.engine.query.SaturationSignal;
 import se.l4.exofind.engine.query.ScoreSort;
+import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
@@ -600,21 +601,22 @@ public class QueryCompiler {
 	 * Multiply the values the documents themselves carry into the score of a
 	 * compiled search.
 	 *
-	 * The signals of the index are what a search ranks by unless it brought its
-	 * own, which replace them whole - trying out a ranking means running the
-	 * one being tried, not it added to the one in place. Every shape is
-	 * bounded, so a signal lifts a document by at most its weight, and a
-	 * document holding no value for one is left exactly as it matched.
+	 * <p>The index ranks by the signals its search settings hold, or by the
+	 * ones its definition declares. A search bringing signals of its own adds
+	 * them to that ranking, or replaces it - see
+	 * {@link SearchRequest.Signals}. Every shape is bounded, so a signal lifts
+	 * a document by at most its weight, and a document holding no value for one
+	 * is left exactly as it matched.
 	 *
-	 * Only meaningful where relevance is the ordering: a search sorting by a
+	 * <p>Only meaningful where relevance is the ordering: a search sorting by a
 	 * field of its own reads the field rather than the score, so the caller
 	 * leaves the query as it is.
 	 *
 	 * @param query
 	 *   the compiled search
 	 * @param signals
-	 *   the signals the search asked to rank by, or {@code null} to rank by
-	 *   the ones the index declares
+	 *   the signals the search brought, or {@code null} to rank by the ones the
+	 *   index declares
 	 * @return
 	 *   the query, wrapped when anything ranks by a value, and unchanged when
 	 *   nothing does
@@ -628,11 +630,58 @@ public class QueryCompiler {
 	 */
 	public org.apache.lucene.search.Query applySignals(
 		org.apache.lucene.search.Query query,
-		ListIterable<RankingSignal> signals
+		SearchRequest.Signals signals
 	) {
-		var requested = signals != null
-			? signals
-			: rankingOverride != null ? rankingOverride.signals() : schema.getSignals();
+		var declared = rankingOverride != null
+			? rankingOverride.signals()
+			: schema.getSignals();
+
+		return rankBy(query, layered(declared, signals));
+	}
+
+	/**
+	 * Work out the signals one search ranks by, from the ones the index
+	 * declares and the ones the search brought.
+	 *
+	 * <p>A brought signal stands in for a declared one on the same field. Two
+	 * shapes reading one value would compound into a lift neither weight
+	 * bounds. Naming the field lets a search move one weight and leave the rest
+	 * of the ranking alone.
+	 */
+	private static ListIterable<RankingSignal> layered(
+		ListIterable<RankingSignal> declared,
+		SearchRequest.Signals signals
+	) {
+		if(signals == null) {
+			return declared;
+		}
+
+		if(signals.mode() == SearchRequest.Signals.Mode.REPLACE) {
+			return signals.signals();
+		}
+
+		if(signals.signals().isEmpty()) {
+			return declared;
+		}
+
+		var brought = signals.signals().collect(RankingSignal::field).toSet();
+		return declared
+			.reject(signal -> brought.contains(signal.field()))
+			.toList()
+			.withAll(signals.signals());
+	}
+
+	/**
+	 * Multiply the given signals into the score of a compiled search, reading
+	 * nothing beside them.
+	 *
+	 * @return
+	 *   the query, unchanged when there is nothing to read
+	 */
+	private org.apache.lucene.search.Query rankBy(
+		org.apache.lucene.search.Query query,
+		ListIterable<RankingSignal> requested
+	) {
 		if(requested.isEmpty()) {
 			return query;
 		}
@@ -680,8 +729,7 @@ public class QueryCompiler {
 	 *   the clauses that lift what satisfies them, empty to lift nothing
 	 * @param signals
 	 *   the values of the documents to multiply in, empty to read none. Unlike
-	 *   {@link #applySignals(org.apache.lucene.search.Query, ListIterable)}
-	 *   this never falls back to the signals of the index
+	 *   {@link #applySignals} this never reads the signals of the index
 	 * @return
 	 * @throws IndexFieldNotFoundException
 	 *   if a clause or a signal names a field the index does not have
@@ -710,7 +758,7 @@ public class QueryCompiler {
 			base = builder.build();
 		}
 
-		return applySignals(base, signals);
+		return rankBy(base, signals);
 	}
 
 	/**

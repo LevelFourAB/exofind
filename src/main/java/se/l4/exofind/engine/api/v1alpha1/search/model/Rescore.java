@@ -57,10 +57,14 @@ public record Rescore(
 
 	/**
 	 * The values of the documents themselves to take into the second score.
+	 * These are the whole of what the second pass reads, so the ranking of the
+	 * index is never applied again here.
 	 */
 	@Schema(description = """
-		Document values taken into the second score, read the same way as \
-		top-level `signals`. Applied to every result in the window.""")
+		Document values taken into the second score, written the same way as \
+		top-level `signals`. Applied to every result in the window. The \
+		ranking configured on the index belongs to the first pass and is not \
+		applied again here, so `signalsMode` does not affect these.""")
 	List<Signal> signals,
 
 	/**
