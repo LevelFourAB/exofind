@@ -17,6 +17,7 @@ PUT    /v1alpha1/admin/indexes/{name}                   # create or replace the 
 DELETE /v1alpha1/admin/indexes/{name}                   # remove an index or a generation
 GET    /v1alpha1/admin/indexes/{name}/settings          # search settings as stored
 PUT    /v1alpha1/admin/indexes/{name}/settings          # replace the search settings
+PATCH  /v1alpha1/admin/indexes/{name}/settings          # change part of the search settings
 DELETE /v1alpha1/admin/indexes/{name}/settings          # remove the search settings
 POST   /v1alpha1/admin/indexes/{name}/actions/promote   # answer for this generation
 POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
@@ -159,7 +160,7 @@ A `GET` request returns the stored settings. If the index has no search settings
 The response contains the following fields:
 
 - `ranking`: The ranking searches run with instead of the definition's ranking, in the same shape as the definition's `ranking`. While present, it replaces the definition's ranking completely; an empty object turns ranking off. Supplying `signals` in a search request still replaces both. See [Relevance](../explanation/relevance.md).
-- `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
+- `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
 
 A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking.
@@ -169,6 +170,66 @@ A `DELETE` request removes the settings, returning the index to its definition's
 A change takes effect for searches on the node that holds the index immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently.
 
 Search settings outlive generations. A generation promoted after the settings were written can lack a field used for ranking; searches then skip that entry rather than fail, so a promotion never depends on rewriting settings first.
+
+### Changing part of the search settings
+
+```text
+PATCH /v1alpha1/admin/indexes/{name}/settings
+```
+
+A `PATCH` request changes named parts of the search settings instead of replacing all of them.
+
+The request body is a single change object where each key is a path naming a location in the settings:
+
+```json
+{
+  "ranking.signals[field=sales].weight": 2.0,
+  "ranking.tieBreakers": null
+}
+```
+
+The change object applies the following update rules:
+
+- A path with a value replaces the target value.
+- A path set to `null` clears the target value.
+- An omitted path leaves the existing value unchanged.
+
+These are the rules a change object follows in [Changing some of the fields](documents-api.md#changing-some-of-the-fields) of a document, so a change is described the same way for both.
+
+Paths use dot-joined field names. A path element can include a bracket selector (`[...]`) to pick list entries by what they hold rather than by position:
+
+| Path | Description |
+|---|---|
+| `ranking` | The whole ranking object. |
+| `ranking.signals` | The whole list of signals. |
+| `ranking.signals[]` | A new signal added to the list. |
+| `ranking.signals[field=sales]` | List entries whose `field` value equals `sales`. |
+| `ranking.signals[field=sales].weight` | The `weight` field inside those matching signal entries. |
+
+Inside bracket selectors, a backslash (`\`) escapes characters, such as `\]`. Objects along a path are created if they do not exist, but lists are not created.
+
+A successful request returns `200 OK` with the search settings as stored and their new version in the `ETag` header.
+
+The endpoint enforces the following rules:
+
+- The server validates the merged ranking against the generation the index name answers from, using the same `index:ranking:*` error codes as a `PUT` request.
+- An index with no stored settings is modified as if it had empty settings.
+- Without an `If-Match` header, a change that conflicts with a concurrent update rebuilds on the newer version up to three times before returning `409 Conflict` with `index:settings:conflict`.
+- With an `If-Match` header, a version mismatch returns `412 Precondition Failed` without retrying.
+- If the stored settings contain capabilities that the answering node cannot describe, the request returns `409 Conflict` with `index:settings:unrepresentable`.
+
+The endpoint returns `400 Bad Request` with one of the following `request:update:*` error codes if a path cannot be applied. These are the codes the [Documents API](documents-api.md#constraints-and-errors) reports for the same paths:
+
+| Code | Condition |
+|---|---|
+| `request:update:path_invalid` | The key is not a valid path. |
+| `request:update:path_unknown_field` | The path names a field that search settings do not have. |
+| `request:update:no_match` | The selector matches no stored entry in the list. |
+| `request:update:selector_not_supported` | The path specifies a selector on a field that is not a list. |
+| `request:update:value_required` | The path targets a list without specifying an entry selector. |
+| `request:update:not_an_object` | The path reaches inside a value that is not an object. |
+| `request:update:add_reaches_inside` | The path sets a field on an entry being added (for example, `ranking.signals[].weight`). |
+| `request:update:value_invalid` | The path specifies a value that the target field cannot hold. |
 
 ## Index states
 
@@ -439,11 +500,11 @@ The Admin API returns the following status codes:
 
 | Status code | Condition |
 |-------------|-----------|
-| `400 Bad Request` | The request body failed validation. The response body details each validation error. See [Errors](errors.md). |
+| `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`request:update:*`). The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
 | `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, the index requires unsupported engine features, writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, a `PATCH` targeted search settings the node cannot describe (`index:settings:unrepresentable`), the index requires unsupported engine features, writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition or search settings version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

@@ -29,6 +29,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.api.auth.AuthContext;
+import se.l4.exofind.engine.api.errors.UnrepresentableStateException;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.FieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
@@ -124,7 +125,7 @@ public class IndexSettingsResourceTest {
 		admin = new IndexResource(
 			indexes, auth, new LocalIndexerOwnership(), reindexJobs, searchSettings
 		);
-		resource = new IndexSettingsResource(indexes, searchSettings);
+		resource = new IndexSettingsResource(indexes, new ObjectMapper(), searchSettings);
 		documents = new DocumentResource(indexes, new ObjectMapper(), reindexJobs);
 		search = new SearchResource(indexes, searchSettings, 10_000);
 
@@ -139,8 +140,9 @@ public class IndexSettingsResourceTest {
 	}
 
 	/**
-	 * The definition of products: an id, and a sales count defined for
-	 * sorting - which is what a ranking can read.
+	 * The definition of products: an id, and two counts defined for sorting -
+	 * which is what a ranking can read. Two, so that a change can name one
+	 * entry of a ranking and be seen to leave the other alone.
 	 */
 	private static IndexDefinition definition(boolean withSales) {
 		var fields = new LinkedHashMap<String, FieldDefinition>();
@@ -153,6 +155,13 @@ public class IndexSettingsResourceTest {
 		if(withSales) {
 			fields.put(
 				"sales",
+				new Int64FieldDefinition(
+					null, null, null, true, null, null,
+					new FieldDefinition.Sort(null, null), null, null
+				)
+			);
+			fields.put(
+				"views",
 				new Int64FieldDefinition(
 					null, null, null, true, null, null,
 					new FieldDefinition.Sort(null, null), null, null
@@ -448,6 +457,297 @@ public class IndexSettingsResourceTest {
 
 		var status = ((IndexInfo) admin.get("products").getEntity()).status();
 		assertThat(status.settingsUnsupportedFeatures(), contains("pin_rules"));
+	}
+
+	/**
+	 * A change to part of the settings, taking the paths in the order they are
+	 * written here.
+	 */
+	private static Map<String, Object> change(Object... pathsAndValues) {
+		var changes = new LinkedHashMap<String, Object>();
+		for(var i = 0; i < pathsAndValues.length; i += 2) {
+			changes.put((String) pathsAndValues[i], pathsAndValues[i + 1]);
+		}
+
+		return changes;
+	}
+
+	private SearchSettingsInfo patch(String name, String ifMatch, Object... pathsAndValues) {
+		return (SearchSettingsInfo) resource
+			.patch(name, ifMatch, change(pathsAndValues))
+			.getEntity();
+	}
+
+	/**
+	 * Settings ranking by both counts, so a change can name one of the two.
+	 */
+	private static SearchSettingsDefinition rankByBothCounts() {
+		return new SearchSettingsDefinition(
+			new IndexDefinition.Ranking(
+				null,
+				List.of(
+					new IndexDefinition.Ranking.Signal(
+						"sales",
+						new IndexDefinition.Ranking.Signal.Saturation(50d),
+						null,
+						1f
+					),
+					new IndexDefinition.Ranking.Signal(
+						"views",
+						new IndexDefinition.Ranking.Signal.Saturation(10d),
+						null,
+						1f
+					)
+				)
+			)
+		);
+	}
+
+	/**
+	 * Relevance tuning moves one weight at a time, which is what a change to
+	 * part of the settings is for: everything the change does not name is
+	 * still stored afterwards.
+	 */
+	@Test
+	public void testPatchChangesOneSignalAndLeavesTheOther() {
+		products();
+		resource.put("products", null, rankByBothCounts());
+
+		var info = patch("products", null, "ranking.signals[field=views].weight", 3.0);
+
+		var signals = info.ranking().signals();
+		assertThat(signals.size(), is(2));
+		assertThat(signals.get(0).field(), is("sales"));
+		assertThat(signals.get(0).weight(), is(1f));
+		assertThat(signals.get(0).saturation().pivot(), is(50d));
+		assertThat(signals.get(1).field(), is("views"));
+		assertThat(signals.get(1).weight(), is(3f));
+	}
+
+	@Test
+	public void testPatchClearsOneSignalWithNull() {
+		products();
+		resource.put("products", null, rankByBothCounts());
+
+		var info = patch("products", null, "ranking.signals[field=sales]", null);
+
+		assertThat(info.ranking().signals().size(), is(1));
+		assertThat(info.ranking().signals().get(0).field(), is("views"));
+	}
+
+	@Test
+	public void testPatchAddsASignal() {
+		products();
+		resource.put(
+			"products",
+			null,
+			new SearchSettingsDefinition(
+				new IndexDefinition.Ranking(
+					null,
+					List.of(new IndexDefinition.Ranking.Signal(
+						"sales",
+						new IndexDefinition.Ranking.Signal.Saturation(50d),
+						null,
+						null
+					))
+				)
+			)
+		);
+
+		var info = patch(
+			"products",
+			null,
+			"ranking.signals[]",
+			Map.of("field", "views", "saturation", Map.of("pivot", 10))
+		);
+
+		assertThat(
+			info.ranking().signals().stream().map(IndexDefinition.Ranking.Signal::field).toList(),
+			contains("sales", "views")
+		);
+	}
+
+	/**
+	 * An index searching with its definition alone is changed as if it had
+	 * empty settings, so the first change does not have to be a whole one.
+	 */
+	@Test
+	public void testPatchOfAnIndexWithoutSettingsStartsFromEmptyOnes() {
+		products();
+
+		var info = patch(
+			"products",
+			null,
+			"ranking",
+			Map.of("tieBreakers", List.of(Map.of("field", "sales", "direction", "descending")))
+		);
+
+		assertThat(info.ranking().tieBreakers().get(0).field(), is("sales"));
+		assertThat(ids(), contains("3", "2", "1"));
+	}
+
+	@Test
+	public void testPatchClearingTheRankingReturnsTheIndexToItsDefinition() {
+		products();
+		resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		);
+		assertThat(ids(), contains("3", "2", "1"));
+
+		var info = patch("products", null, "ranking", null);
+
+		assertThat(info.ranking(), is(nullValue()));
+		assertThat(ids(), contains("1", "2", "3"));
+
+		// Cleared rather than removed, so the settings still have a version
+		assertThat(
+			((SearchSettingsInfo) resource.get("products").getEntity()).version(),
+			is(info.version())
+		);
+	}
+
+	/**
+	 * The result of a change is validated against the generation the index
+	 * name answers from, with the codes that validate a whole one.
+	 */
+	@Test
+	public void testPatchIsValidatedAgainstTheGeneration() {
+		products();
+		resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> patch("products", null, "ranking.tieBreakers[field=sales].field", "missing")
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:unknown_field"));
+	}
+
+	/**
+	 * A path naming nothing is refused rather than answered with settings that
+	 * do not hold the change it asked for.
+	 */
+	@Test
+	public void testPatchOfAFieldTheSettingsDoNotHaveIsRefused() {
+		products();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> patch("products", null, "rankign", Map.of())
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:update:path_unknown_field"));
+	}
+
+	@Test
+	public void testPatchNamingNoStoredEntryIsRefused() {
+		products();
+		resource.put("products", null, rankByBothCounts());
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> patch("products", null, "ranking.signals[field=missing].weight", 2.0)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:update:no_match"));
+	}
+
+	@Test
+	public void testPatchGivingAFieldAValueItCannotHoldIsRefused() {
+		products();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> patch("products", null, "ranking.signals", "not a list")
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:update:value_invalid"));
+	}
+
+	@Test
+	public void testPatchWithAStaleVersionIsRefused() {
+		products();
+
+		var first = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		).getEntity();
+
+		patch("products", null, "ranking.tieBreakers[field=sales].direction", "ascending");
+
+		assertThrows(
+			SearchSettingsVersionMismatchException.class,
+			() -> patch(
+				"products",
+				"\"" + first.version() + "\"",
+				"ranking.tieBreakers[field=sales].direction", "descending"
+			)
+		);
+	}
+
+	@Test
+	public void testPatchWithTheCurrentVersionIsTaken() {
+		products();
+
+		var first = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		).getEntity();
+
+		var second = patch(
+			"products",
+			"\"" + first.version() + "\"",
+			"ranking.tieBreakers[field=sales].direction", "ascending"
+		);
+
+		assertThat(second.version(), not(is(first.version())));
+		assertThat(
+			second.ranking().tieBreakers().get(0).direction(),
+			is(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		);
+	}
+
+	/**
+	 * Settings holding a feature this build has no name for are set aside
+	 * rather than searched with, so a change built on top of them would be
+	 * built on half an object and store the half back.
+	 */
+	@Test
+	public void testPatchOfSettingsThisNodeCannotDescribeIsRefused() {
+		products();
+
+		storage.set(
+			"products",
+			storage(rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING))
+				.toBuilder()
+				.addRequiredFeatures("pin_rules")
+				.build()
+		);
+
+		var e = assertThrows(
+			UnrepresentableStateException.class,
+			() -> patch("products", null, "ranking.tieBreakers[field=sales].direction", "ascending")
+		);
+
+		assertThat(e.getCode(), is("index:settings:unrepresentable"));
+	}
+
+	@Test
+	public void testPatchWithoutABodyIsRefused() {
+		products();
+
+		assertThrows(
+			ValidationException.class,
+			() -> resource.patch("products", null, null)
+		);
 	}
 
 	/**

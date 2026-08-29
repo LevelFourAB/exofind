@@ -57,6 +57,8 @@ Signals and tie breakers are defined in the index definition. Because the defini
 
 When search settings define a `ranking` configuration, it completely replaces the `ranking` configuration from the index definition. The index definition provides the default ranking, and deleting search settings restores this default. Signals in a search request override both search settings and the index definition. The precedence order is search request, then search settings, then index definition.
 
+Tuning proceeds in small steps - one weight, one pivot - so search settings also accept a change that names only the part it moves, described the same way a change to part of a document is. See [Changing part of the search settings](../reference/admin-api.md#changing-part-of-the-search-settings).
+
 Search settings attach to the index name rather than to a specific index generation, so promoting a generation preserves your ranking tuning. This approach involves two trade-offs:
 
 - Nodes update independently, so two nodes can rank the same query differently for up to one refresh interval.
