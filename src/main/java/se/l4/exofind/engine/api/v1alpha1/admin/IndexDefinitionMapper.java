@@ -22,6 +22,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.VectorFieldDefinition;
 import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.AnalyzerDef;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
 import se.l4.exofind.engine.index.schema.CharFilterDef;
@@ -61,6 +62,13 @@ import se.l4.exofind.engine.index.schema.VectorFieldTypeDef;
  * becomes the usages it stands for - see {@link FieldRoles}. Reading a
  * definition back therefore shows the chain and the usages rather than the
  * names.
+ *
+ * Locale tags are canonicalized on the way in, so that everything below this
+ * class - the variants of a field, the features a definition requires, the
+ * comparison that decides whether a change is compatible - sees one spelling
+ * of a tag. Case carries no meaning in a tag, and two spellings of one locale
+ * would otherwise become two variants of a field. Reading a definition back
+ * shows the canonical spelling.
  *
  * {@link #toStored(IndexDefinition)} builds a whole stored definition from what
  * the API model holds, so anything this version can not describe would be
@@ -238,7 +246,9 @@ public class IndexDefinitionMapper {
 		if(definition.localeFallback() != null) {
 			var fallback = IndexDef.LocaleFallbackConfig.newBuilder();
 			if(definition.localeFallback().chain() != null) {
-				fallback.addAllChain(definition.localeFallback().chain());
+				for(var locale : definition.localeFallback().chain()) {
+					fallback.addChain(Locales.canonical(locale));
+				}
 			}
 			builder.setLocaleFallback(fallback);
 		}
@@ -272,10 +282,12 @@ public class IndexDefinitionMapper {
 		if(field.locales() != null) {
 			var locales = FieldDef.LocaleConfig.newBuilder();
 			if(field.locales().defaultLocale() != null) {
-				locales.setDefaultLocale(field.locales().defaultLocale());
+				locales.setDefaultLocale(Locales.canonical(field.locales().defaultLocale()));
 			}
 			if(field.locales().locales() != null) {
-				locales.addAllLocales(field.locales().locales());
+				for(var locale : field.locales().locales()) {
+					locales.addLocales(Locales.canonical(locale));
+				}
 			}
 			if(field.locales().fallback() != null) {
 				locales.setFallback(
@@ -823,7 +835,7 @@ public class IndexDefinitionMapper {
 		if(filter.stemming() != null) {
 			var stemming = TokenFilterDef.Stemming.newBuilder();
 			if(filter.stemming().locale() != null) {
-				stemming.setLocale(filter.stemming().locale());
+				stemming.setLocale(Locales.canonical(filter.stemming().locale()));
 			}
 			builder.setStemming(stemming);
 		}
@@ -869,7 +881,7 @@ public class IndexDefinitionMapper {
 		if(filter.decompound() != null) {
 			var decompound = TokenFilterDef.Decompound.newBuilder();
 			if(filter.decompound().locale() != null) {
-				decompound.setLocale(filter.decompound().locale());
+				decompound.setLocale(Locales.canonical(filter.decompound().locale()));
 			}
 			builder.setDecompound(decompound);
 		}
@@ -890,7 +902,7 @@ public class IndexDefinitionMapper {
 		if(stopwords.locale() != null) {
 			builder.setLocale(
 				TokenFilterDef.Stopwords.LocaleWords.newBuilder()
-					.setLocale(stopwords.locale())
+					.setLocale(Locales.canonical(stopwords.locale()))
 			);
 		}
 

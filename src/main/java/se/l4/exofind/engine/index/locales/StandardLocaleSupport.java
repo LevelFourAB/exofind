@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.index.locales;
 
+import java.io.Reader;
 import java.util.Locale;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -36,6 +37,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	private final ThreadLocal<Collator> collator;
 
 	private final Supplier<CharArraySet> stopWords;
+	private final UnaryOperator<Reader> rewriter;
 	private final Supplier<Tokenizer> tokenizer;
 	private final UnaryOperator<TokenStream> normalizer;
 	private final UnaryOperator<TokenStream> stemmer;
@@ -44,6 +46,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	private StandardLocaleSupport(
 		String tag,
 		Supplier<CharArraySet> stopWords,
+		UnaryOperator<Reader> rewriter,
 		Supplier<Tokenizer> tokenizer,
 		UnaryOperator<TokenStream> normalizer,
 		UnaryOperator<TokenStream> stemmer,
@@ -60,6 +63,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * the first use of the locale rather than to loading this class.
 		 */
 		this.stopWords = once(() -> fold(stopWords.get()));
+		this.rewriter = rewriter;
 		this.tokenizer = tokenizer;
 		this.normalizer = normalizer;
 		this.stemmer = stemmer;
@@ -124,6 +128,11 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	}
 
 	@Override
+	public Reader rewrite(Reader reader) {
+		return rewriter == null ? reader : rewriter.apply(reader);
+	}
+
+	@Override
 	public Tokenizer createTokenizer() {
 		return tokenizer == null
 			? LocaleSupport.super.createTokenizer()
@@ -163,12 +172,13 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	 * @return
 	 */
 	public static Builder of(String tag) {
-		return new Builder(tag, () -> CharArraySet.EMPTY_SET, null, null, null, null);
+		return new Builder(tag, () -> CharArraySet.EMPTY_SET, null, null, null, null, null);
 	}
 
 	public record Builder(
 		String tag,
 		Supplier<CharArraySet> stopWords,
+		UnaryOperator<Reader> rewriter,
 		Supplier<Tokenizer> tokenizer,
 		UnaryOperator<TokenStream> normalizer,
 		UnaryOperator<TokenStream> stemmer,
@@ -193,7 +203,22 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * @return
 		 */
 		public Builder withStopWords(Supplier<CharArraySet> stopWords) {
-			return new Builder(tag, stopWords, tokenizer, normalizer, stemmer, decompounder);
+			return new Builder(
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
+		}
+
+		/**
+		 * Set how this locale's text is rewritten before it is cut into words,
+		 * see {@link LocaleSupport#rewrite(Reader)}.
+		 *
+		 * @param rewriter
+		 * @return
+		 */
+		public Builder withRewriter(UnaryOperator<Reader> rewriter) {
+			return new Builder(
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
 		}
 
 		/**
@@ -204,7 +229,9 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * @return
 		 */
 		public Builder withTokenizer(Supplier<Tokenizer> tokenizer) {
-			return new Builder(tag, stopWords, tokenizer, normalizer, stemmer, decompounder);
+			return new Builder(
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
 		}
 
 		/**
@@ -215,7 +242,9 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * @return
 		 */
 		public Builder withNormalizer(UnaryOperator<TokenStream> normalizer) {
-			return new Builder(tag, stopWords, tokenizer, normalizer, stemmer, decompounder);
+			return new Builder(
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
 		}
 
 		/**
@@ -225,7 +254,9 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * @return
 		 */
 		public Builder withStemmer(UnaryOperator<TokenStream> stemmer) {
-			return new Builder(tag, stopWords, tokenizer, normalizer, stemmer, decompounder);
+			return new Builder(
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
 		}
 
 		/**
@@ -236,12 +267,14 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * @return
 		 */
 		public Builder withDecompounder(Decompounder decompounder) {
-			return new Builder(tag, stopWords, tokenizer, normalizer, stemmer, decompounder);
+			return new Builder(
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
 		}
 
 		public StandardLocaleSupport build() {
 			return new StandardLocaleSupport(
-				tag, stopWords, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 	}

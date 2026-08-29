@@ -21,6 +21,7 @@ The following table lists the supported language tags and their analysis capabil
 | `bg` | Bulgarian | yes | yes | | |
 | `bn` | Bengali | yes | yes | | |
 | `ca` | Catalan | yes | yes | | |
+| `ckb` | Central Kurdish (Sorani) | yes | yes | | |
 | `cs` | Czech | yes | yes | | |
 | `da` | Danish | yes | yes | | yes |
 | `de` | German | yes | yes | | yes |
@@ -45,6 +46,7 @@ The following table lists the supported language tags and their analysis capabil
 | `lt` | Lithuanian | yes | yes | | |
 | `lv` | Latvian | yes | yes | | |
 | `nb` | Norwegian Bokmål | yes | yes | | yes |
+| `ne` | Nepali | yes | yes | | |
 | `nl` | Dutch | yes | yes | | yes |
 | `nn` | Norwegian Nynorsk | yes | yes | | yes |
 | `no` | Norwegian | yes | yes | | yes |
@@ -60,6 +62,7 @@ The following table lists the supported language tags and their analysis capabil
 | `tr` | Turkish | yes | yes | | |
 | `uk` | Ukrainian | yes | yes | | |
 | `zh` | Chinese | yes | yes | yes | |
+| `zh-Hant` | Chinese (Traditional) | yes | yes | yes | |
 
 ### Analysis features
 
@@ -76,12 +79,17 @@ The following table lists the supported language tags and their analysis capabil
   - Greek accents.
   - Elided articles in Catalan, French, Irish, and Italian.
   - Distinct Unicode forms of letters in Arabic, Indic, and Cyrillic scripts.
+- **Script rewriting**: `zh-Hant` rewrites Traditional characters as their Simplified forms before the text is segmented, because the Chinese word model holds the Simplified forms only. A value indexed as `zh-Hant` produces the same terms as the same sentence written in Simplified and indexed as `zh`. Character positions are unchanged, so highlights point at the text as it was sent.
 
 ## Varieties of a language
 
-`nb` (Norwegian Bokmål) and `nn` (Norwegian Nynorsk) both resolve to `no` (Norwegian) when a field does not specify the narrower tag. A field configured with `no` matches a search for either `nb` or `nn`. No other language is split this way.
+`nb` (Norwegian Bokmål) and `nn` (Norwegian Nynorsk) both resolve to `no` (Norwegian) when a field does not specify the narrower tag. A field configured with `no` matches a search for either `nb` or `nn`.
+
+Chinese is split by script rather than by written form. `zh-TW`, `zh-HK` and `zh-MO` resolve to `zh-Hant`, because those regions write Traditional without stating it in the tag. A field that holds only `zh` still answers a search for them, because there is no closer variant to read. To index both scripts separately, configure the field with both `zh` and `zh-Hant`.
 
 Other language tags match by dropping subtags that the available locales do not distinguish. For example, a search request specifying `sv-SE` matches a field configured with `sv`.
+
+Case carries no meaning in a tag. `zh-hant`, `ZH-HANT` and `zh-Hant` all name the same locale, and a definition stores whichever spelling you send as the canonical one, `zh-Hant`. Reading the definition back returns the canonical spelling.
 
 For information about fields configured with multiple locales, see [Localize fields](../how-to/localize-fields.md).
 

@@ -18,6 +18,9 @@ import org.apache.lucene.analysis.bn.BengaliAnalyzer;
 import org.apache.lucene.analysis.bn.BengaliNormalizationFilter;
 import org.apache.lucene.analysis.bn.BengaliStemFilter;
 import org.apache.lucene.analysis.ca.CatalanAnalyzer;
+import org.apache.lucene.analysis.ckb.SoraniAnalyzer;
+import org.apache.lucene.analysis.ckb.SoraniNormalizationFilter;
+import org.apache.lucene.analysis.ckb.SoraniStemFilter;
 import org.apache.lucene.analysis.cn.smart.HMMChineseTokenizer;
 import org.apache.lucene.analysis.cn.smart.SmartChineseAnalyzer;
 import org.apache.lucene.analysis.cz.CzechAnalyzer;
@@ -67,6 +70,7 @@ import org.apache.lucene.analysis.lt.LithuanianAnalyzer;
 import org.apache.lucene.analysis.lv.LatvianAnalyzer;
 import org.apache.lucene.analysis.lv.LatvianStemFilter;
 import org.apache.lucene.analysis.morfologik.MorfologikFilter;
+import org.apache.lucene.analysis.ne.NepaliAnalyzer;
 import org.apache.lucene.analysis.nl.DutchAnalyzer;
 import org.apache.lucene.analysis.no.NorwegianAnalyzer;
 import org.apache.lucene.analysis.no.NorwegianLightStemFilter;
@@ -109,6 +113,7 @@ import org.tartarus.snowball.ext.FinnishStemmer;
 import org.tartarus.snowball.ext.HungarianStemmer;
 import org.tartarus.snowball.ext.IrishStemmer;
 import org.tartarus.snowball.ext.LithuanianStemmer;
+import org.tartarus.snowball.ext.NepaliStemmer;
 import org.tartarus.snowball.ext.RomanianStemmer;
 import org.tartarus.snowball.ext.RussianStemmer;
 import org.tartarus.snowball.ext.SerbianStemmer;
@@ -197,6 +202,18 @@ public final class Locales {
 			.withStopWords(CatalanAnalyzer.getDefaultStopSet())
 			.withNormalizer(stream -> new ElisionFilter(stream, CATALAN_ARTICLES))
 			.withStemmer(stream -> new SnowballFilter(stream, new CatalanStemmer())));
+
+		/*
+		 * Sorani writes Kurdish in the Arabic script, where several of its
+		 * letters have a second Unicode form and the ezafe is marked with a
+		 * vowel sign that text writes as often as it leaves out. Regularizing
+		 * both makes the spellings of a word meet. The stopword list is
+		 * written in the forms that come out of it.
+		 */
+		register(locales, StandardLocaleSupport.of("ckb")
+			.withStopWords(SoraniAnalyzer.getDefaultStopSet())
+			.withNormalizer(SoraniNormalizationFilter::new)
+			.withStemmer(SoraniStemFilter::new));
 
 		register(locales, StandardLocaleSupport.of("cs")
 			.withStopWords(CzechAnalyzer.getDefaultStopSet())
@@ -375,6 +392,15 @@ public final class Locales {
 			.withStopWords(LatvianAnalyzer.getDefaultStopSet())
 			.withStemmer(LatvianStemFilter::new));
 
+		/*
+		 * Nepali writes Devanagari, so the same Indic normalization Hindi
+		 * needs runs before its stopword list and stemmer see a word.
+		 */
+		register(locales, StandardLocaleSupport.of("ne")
+			.withStopWords(NepaliAnalyzer.getDefaultStopSet())
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(stream -> new SnowballFilter(stream, new NepaliStemmer())));
+
 		register(locales, StandardLocaleSupport.of("nl")
 			.withStopWords(DutchAnalyzer.getDefaultStopSet())
 			.withStemmer(stream -> new SnowballFilter(stream, new DutchStemmer()))
@@ -507,6 +533,19 @@ public final class Locales {
 			.withTokenizer(HMMChineseTokenizer::new)
 			.withStemmer(PorterStemFilter::new));
 
+		/*
+		 * Traditional Chinese is the same language written in the older forms
+		 * of the characters. The model holds no entry for those forms, and
+		 * text written in them comes out one token per character. The text is
+		 * rewritten as Simplified before it is segmented, so both ways of
+		 * writing reach the same words and the same terms.
+		 */
+		register(locales, StandardLocaleSupport.of("zh-Hant")
+			.withStopWords(SmartChineseAnalyzer.getDefaultStopSet())
+			.withRewriter(SimplifiedHanCharFilter::new)
+			.withTokenizer(HMMChineseTokenizer::new)
+			.withStemmer(PorterStemFilter::new));
+
 		return locales.toImmutable();
 	}
 
@@ -573,14 +612,20 @@ public final class Locales {
 	 *
 	 * Only for tags that name a variety of a language registered in its own
 	 * right, which is what makes answering with the wider one the same
-	 * language rather than a different one. Norwegian is the only such split
-	 * here: `nb` and `nn` are how `no` is written, so a field holding `no`
-	 * answers a search for either.
+	 * language rather than a different one. Two languages are split this way.
+	 * `nb` and `nn` are how `no` is written, so a field holding `no` answers a
+	 * search for either. Chinese splits by script instead: a tag naming
+	 * Taiwan, Hong Kong or Macao says Traditional without spelling out
+	 * `zh-Hant`, and dropping the region alone would land on the Simplified
+	 * `zh`.
 	 */
-	private static final ImmutableMap<String, String> BROADER = Maps.immutable.of(
+	private static final ImmutableMap<String, String> BROADER = Maps.immutable.ofAll(Map.of(
 		"nb", "no",
-		"nn", "no"
-	);
+		"nn", "no",
+		"zh-TW", "zh-Hant",
+		"zh-HK", "zh-Hant",
+		"zh-MO", "zh-Hant"
+	));
 
 	/**
 	 * Get the support for a locale.
@@ -590,7 +635,36 @@ public final class Locales {
 	 * @return
 	 */
 	public static Optional<LocaleSupport> get(String locale) {
-		return Optional.ofNullable(SUPPORTED.get(locale));
+		if(locale == null) {
+			return Optional.empty();
+		}
+
+		var support = SUPPORTED.get(locale);
+		return support != null
+			? Optional.of(support)
+			: Optional.ofNullable(SUPPORTED.get(canonical(locale)));
+	}
+
+	/**
+	 * Get a tag as BCP-47 writes it: a lowercase language, a titlecase script,
+	 * an uppercase region. Case carries no meaning in a tag, so {@code zh-hant}
+	 * and {@code zh-Hant} are one tag and have to become one spelling before
+	 * either is stored, compared or turned into a feature name.
+	 *
+	 * A tag no language can be read out of comes back as it was given, so that
+	 * whatever refuses it reports what was written.
+	 *
+	 * @param locale
+	 *   BCP-47 tag
+	 * @return
+	 */
+	public static String canonical(String locale) {
+		if(locale == null || locale.isEmpty()) {
+			return locale;
+		}
+
+		var canonical = Locale.forLanguageTag(locale).toLanguageTag();
+		return UNDETERMINED.equals(canonical) ? locale : canonical;
 	}
 
 	/**
@@ -681,7 +755,12 @@ public final class Locales {
 	 * @return
 	 */
 	public static boolean isSupported(String locale) {
-		return SUPPORTED.containsKey(locale);
+		if(locale == null) {
+			return false;
+		}
+
+		return SUPPORTED.containsKey(locale)
+			|| SUPPORTED.containsKey(canonical(locale));
 	}
 
 	/**

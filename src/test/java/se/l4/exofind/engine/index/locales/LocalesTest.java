@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
 
 import java.io.IOException;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.eclipse.collections.api.factory.Sets;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +50,10 @@ public class LocalesTest {
 		Map.entry("bn", List.of("মানুষেরা", "মানুষ")),
 		Map.entry("fa", List.of("کتابها", "کتاب")),
 		Map.entry("hi", List.of("लड़के", "लड़का")),
+		// The plural is a suffix - keṭāharū is the plural of keṭā
+		Map.entry("ne", List.of("केटाहरू", "केटा")),
+		// The definite plural is a suffix - kitêbekan is the books
+		Map.entry("ckb", List.of("کتێبەکان", "کتێب")),
 		// Indonesian inflects with prefixes - membaca is to read, baca read
 		Map.entry("id", List.of("membaca", "baca")),
 		// The conjugated verb reduces to its dictionary form
@@ -61,6 +67,7 @@ public class LocalesTest {
 		 * words mixed into Chinese text.
 		 */
 		Map.entry("zh", List.of("running", "run")),
+		Map.entry("zh-Hant", List.of("running", "run")),
 		Map.entry("ca", List.of("portes", "porta")),
 		Map.entry("cs", List.of("ženám", "žena")),
 		Map.entry("da", List.of("husene", "hus")),
@@ -111,7 +118,7 @@ public class LocalesTest {
 	 * holds the punctuation its tokenizer emits. Both have tests of their
 	 * own below.
 	 */
-	private static final List<String> NO_WORD_LIST = List.of("ko", "zh");
+	private static final List<String> NO_WORD_LIST = List.of("ko", "zh", "zh-Hant");
 
 	private List<String> terms(String locale, String value) {
 		var support = Locales.get(locale).orElseThrow();
@@ -145,6 +152,36 @@ public class LocalesTest {
 		}
 
 		return terms;
+	}
+
+	/**
+	 * Where each term of a value started and ended, as the same chain reports
+	 * it to a highlighter.
+	 */
+	private List<Integer> offsets(String locale, String value) {
+		var support = Locales.get(locale).orElseThrow();
+
+		var analyzer = Analyzers.matching(
+			StringFieldTypeDef.TextUsageConfig.getDefaultInstance(),
+			ResourcesDef.getDefaultInstance(),
+			support,
+			AnalyzerMode.INDEXING
+		);
+
+		var offsets = new ArrayList<Integer>();
+		try(var stream = analyzer.tokenStream("field", value)) {
+			var offset = stream.addAttribute(OffsetAttribute.class);
+			stream.reset();
+			while(stream.incrementToken()) {
+				offsets.add(offset.startOffset());
+				offsets.add(offset.endOffset());
+			}
+			stream.end();
+		} catch(IOException e) {
+			throw new UncheckedIOException(e);
+		}
+
+		return offsets;
 	}
 
 	/**
@@ -401,6 +438,113 @@ public class LocalesTest {
 	@Test
 	public void testChineseDropsPunctuation() {
 		assertThat(terms("zh", "你好，世界"), is(contains("你好", "世界")));
+	}
+
+	/**
+	 * Traditional and Simplified are the same words written differently, so
+	 * the same sentence in either comes out as the same terms.
+	 */
+	@Test
+	public void testTraditionalChineseReachesTheSameTermsAsSimplified() {
+		assertThat(
+			terms("zh-Hant", "我們去臺灣旅行"),
+			is(terms("zh", "我们去台湾旅行"))
+		);
+		assertThat(
+			terms("zh-Hant", "資訊科技管理學院"),
+			is(terms("zh", "资讯科技管理学院"))
+		);
+	}
+
+	/**
+	 * The model that finds Chinese words holds the Simplified forms only.
+	 * Without the rewriting it matches nothing in Traditional text and falls
+	 * back to one token per character, so a search for a word finds no
+	 * document holding it.
+	 */
+	@Test
+	public void testTraditionalChineseIsSegmentedIntoWords() {
+		assertThat(terms("zh-Hant", "資訊科技"), is(contains("资讯", "科技")));
+	}
+
+	/**
+	 * Highlighting reports where a term sat in the text as it was given, so
+	 * rewriting the characters may not move anything.
+	 */
+	@Test
+	public void testTraditionalChineseKeepsTheOffsetsOfTheText() {
+		var text = "我們去臺灣旅行";
+
+		assertThat(
+			offsets("zh-Hant", text),
+			is(offsets("zh", "我们去台湾旅行"))
+		);
+
+		for(var offset : offsets("zh-Hant", text)) {
+			assertThat(offset, is(lessThanOrEqualTo(text.length())));
+		}
+	}
+
+	/**
+	 * A tag says the same thing however it is cased, so a definition naming
+	 * `zh-hant` names the locale registered as `zh-Hant`.
+	 */
+	@Test
+	public void testATagIsFoundWhateverItsCase() {
+		assertThat(Locales.isSupported("zh-hant"), is(true));
+		assertThat(
+			Locales.get("ZH-HANT").orElseThrow().getLocale(),
+			is("zh-Hant")
+		);
+		assertThat(Locales.canonical("zh-hant"), is("zh-Hant"));
+	}
+
+	/**
+	 * A tag holding no language comes back as it was given, so that whatever
+	 * refuses it reports what was written rather than `und`.
+	 */
+	@Test
+	public void testATagWithNoLanguageIsLeftAsWritten() {
+		assertThat(Locales.canonical("!!!"), is("!!!"));
+		assertThat(Locales.isSupported("!!!"), is(false));
+	}
+
+	/**
+	 * Every registered tag has to be spelled the way BCP-47 canonicalizes it.
+	 * A tag stored in any other spelling would be rewritten on its way into a
+	 * definition and then match nothing this build offers.
+	 */
+	@Test
+	public void testEverySupportedTagIsSpelledCanonically() {
+		forEverySupportedLocale(locale ->
+			assertThat(Locales.canonical(locale), is(locale))
+		);
+	}
+
+	/**
+	 * Taiwan, Hong Kong and Macao write Traditional without saying so in the
+	 * tag. Dropping the region alone would land on Simplified Chinese.
+	 */
+	@Test
+	public void testAChineseRegionResolvesToTheScriptItWrites() {
+		var held = Sets.immutable.of("zh", "zh-Hant");
+
+		assertThat(Locales.resolve("zh-TW", held), is(Optional.of("zh-Hant")));
+		assertThat(Locales.resolve("zh-HK", held), is(Optional.of("zh-Hant")));
+		assertThat(Locales.resolve("zh-MO", held), is(Optional.of("zh-Hant")));
+		assertThat(Locales.resolve("zh-CN", held), is(Optional.of("zh")));
+	}
+
+	/**
+	 * A field that holds Chinese in one script answers a search in the other,
+	 * because there is no closer variant to read.
+	 */
+	@Test
+	public void testAChineseRegionFallsBackToTheOnlyScriptHeld() {
+		var held = Sets.immutable.of("zh");
+
+		assertThat(Locales.resolve("zh-TW", held), is(Optional.of("zh")));
+		assertThat(Locales.resolve("zh-Hant", held), is(Optional.of("zh")));
 	}
 
 	/**

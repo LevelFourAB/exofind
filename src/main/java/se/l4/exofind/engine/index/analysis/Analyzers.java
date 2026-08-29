@@ -287,7 +287,12 @@ public final class Analyzers {
 					case FILTER_NOT_SET -> throw unknownComponent();
 				};
 			}
-			return result;
+
+			/*
+			 * Last, so a chain that strips markup strips it before the locale
+			 * rewrites what is left.
+			 */
+			return locale.rewrite(result);
 		}
 
 		/**

@@ -168,4 +168,6 @@ Analysis uses Lucene language components for stopwords, stemming, tokenization, 
 
 Icelandic stems by looking each word up in a full form list instead, because its inflection is too irregular for a rule-based stemmer. The list is locale data, so a node only supports `is` when the data is installed. For more information, see [configuration](configuration.md#locale-data).
 
+Traditional Chinese (`zh-Hant`) rewrites characters into their Simplified forms before segmentation, because the Chinese word model holds the Simplified forms only. The rewriting runs after any character filters in the chain, so a chain that strips markup strips it first.
+
 For supported locale tags and component configurations, see the [locale reference](locales.md). Validation fails if an index definition specifies an unsupported locale tag.

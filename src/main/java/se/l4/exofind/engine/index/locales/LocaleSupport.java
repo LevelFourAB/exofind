@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.index.locales;
 
+import java.io.Reader;
 import java.util.Locale;
 
 import org.apache.lucene.analysis.CharArraySet;
@@ -40,6 +41,26 @@ public interface LocaleSupport {
 	 * @return
 	 */
 	CharArraySet getStopWords();
+
+	/**
+	 * Wrap the text of a value so that a locale written in more than one way
+	 * comes out in the one its rules are written for, before anything is cut
+	 * into words.
+	 *
+	 * Most locales need nothing. Traditional Chinese is rewritten as
+	 * Simplified, because its segmenter finds words by looking them up and
+	 * holds only the Simplified forms. A token filter runs too late, once the
+	 * words have already been found.
+	 *
+	 * Runs after the char filters a chain declares, so markup is stripped
+	 * before the text is rewritten.
+	 *
+	 * @param reader
+	 * @return
+	 */
+	default Reader rewrite(Reader reader) {
+		return reader;
+	}
 
 	/**
 	 * Create the tokenizer that splits this locale's text into words, used

@@ -218,6 +218,63 @@ public class IndexDefinitionMapperTest {
 		assertThat(api.fields().get("title"), is(field));
 	}
 
+	/**
+	 * Case carries no meaning in a locale tag. Two spellings of one tag would
+	 * become two variants of the field, and a feature name the node offering
+	 * the locale does not recognize, so the stored definition holds the
+	 * canonical spelling however the tag was written.
+	 */
+	@Test
+	public void testLocaleTagsAreStoredCanonically() {
+		var field = new StringFieldDefinition(
+			null,
+			null, null, null, null,
+			new FieldDefinition.Locales("EN", List.of("zh-hant", "PT-br"), null),
+			null, null, null,
+			null, null, null,
+			null
+		);
+
+		var stored = IndexDefinitionMapper.toStored(withFields(Map.of("title", field)));
+
+		var storedField = stored.getFieldsOrThrow("title");
+		assertThat(storedField.getLocales().getDefaultLocale(), is("en"));
+		assertThat(
+			storedField.getLocales().getLocalesList(),
+			is(List.of("zh-Hant", "pt-BR"))
+		);
+
+		IndexDefinitionMapper.checkRepresentable(stored);
+	}
+
+	/**
+	 * A tag holding no language is stored as written, so that the validation
+	 * refusing it names what was sent.
+	 */
+	@Test
+	public void testAnUnreadableLocaleTagIsStoredAsWritten() {
+		var definition = new IndexDefinition(
+			null, null, null, null, null,
+			new IndexDefinition.LocaleFallback(List.of("not a tag"))
+		);
+
+		var stored = IndexDefinitionMapper.toStored(definition);
+
+		assertThat(stored.getLocaleFallback().getChainList(), is(List.of("not a tag")));
+	}
+
+	@Test
+	public void testLocaleFallbackIsStoredCanonically() {
+		var definition = new IndexDefinition(
+			null, null, null, null, null,
+			new IndexDefinition.LocaleFallback(List.of("DA", "en-us"))
+		);
+
+		var stored = IndexDefinitionMapper.toStored(definition);
+
+		assertThat(stored.getLocaleFallback().getChainList(), is(List.of("da", "en-US")));
+	}
+
 	@Test
 	public void testLocaleFallbackRoundTrips() {
 		var definition = new IndexDefinition(
