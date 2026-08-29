@@ -429,7 +429,7 @@ public class SearchRequestJsonTest {
 
 		var request = mapper.readValue(json, SearchRequest.class);
 
-		assertThat(request.hits(), is(new SearchRequest.Hits("variants", null)));
+		assertThat(request.hits(), is(new SearchRequest.Hits("variants", null, null)));
 	}
 
 	@Test
@@ -444,7 +444,7 @@ public class SearchRequestJsonTest {
 
 		assertThat(
 			request.hits(),
-			is(new SearchRequest.Hits("variants", List.of("variants.color")))
+			is(new SearchRequest.Hits("variants", List.of("variants.color"), null))
 		);
 	}
 

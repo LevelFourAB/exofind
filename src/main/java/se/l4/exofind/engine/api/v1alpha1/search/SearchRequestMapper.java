@@ -339,6 +339,18 @@ public class SearchRequestMapper {
 			.withArguments("field", "path")
 			.withMessage("Field `{{field}}` is not inside `{{path}}` - the fields of the values are named by their dotted paths");
 
+	private static final ErrorType HITS_WHEN_CLAUSE_INVALID =
+		ErrorType.withCode("search:hits:when_clause_invalid")
+			.withMessage("Which documents answer as their values is said with `field` and `nested` clauses - a clause that scopes the whole search belongs in the query");
+
+	private static final ErrorType HITS_WHEN_SCORES =
+		ErrorType.withCode("search:hits:when_scores")
+			.withMessage("Which documents answer as their values is decided without ranking - clauses that score belong in the query");
+
+	private static final ErrorType HITS_WHEN_FIELD_SORT =
+		ErrorType.withCode("search:hits:when_field_sort")
+			.withMessage("Hits chosen per document by `when` hold documents and values at once, which no one field is read at - order them by score");
+
 	/**
 	 * The longest a fragment may aim to be. The engine reads whole stored
 	 * values to cut fragments from, so the cap is what keeps a request from
@@ -407,12 +419,10 @@ public class SearchRequestMapper {
 		/*
 		 * What a hit stands for is part of what a cursor names a position in,
 		 * so it fingerprints with the sort - a cursor taken among values never
-		 * resumes among documents, or the other way around.
+		 * resumes among documents, among a mix of the two, or the other way
+		 * around.
 		 */
-		var fingerprint = SearchCursor.fingerprintOf(
-			sort,
-			hits == null ? null : hits.path()
-		);
+		var fingerprint = SearchCursor.fingerprintOf(sort, hits);
 
 		var position = resolvePosition(body, fingerprint, errors);
 
@@ -882,6 +892,10 @@ public class SearchRequestMapper {
 	 * picks the nearest documents and has no per-value reading, and a
 	 * distance sort reads a document. Whether the path itself can answer as
 	 * hits is the index's to judge, when the request runs.
+	 *
+	 * A {@code when} narrows that further: its page holds document hits and
+	 * value hits together, and a field sort would have to be read at whichever
+	 * level a hit came from, so only score orders it.
 	 */
 	private static se.l4.exofind.engine.query.SearchRequest.Hits toHits(
 		SearchRequest body,
@@ -907,11 +921,18 @@ public class SearchRequestMapper {
 
 		refuseKnn(body.query(), "/query", errors);
 
+		var when = toWhen(body.hits().when(), errors);
+
 		if(body.sort() != null) {
 			for(var i = 0; i < body.sort().size(); i++) {
-				if(body.sort().get(i) instanceof Sort.Distance) {
+				var step = body.sort().get(i);
+				if(step instanceof Sort.Distance) {
 					errors.add(
 						HITS_DISTANCE_SORT.toMessage(Location.create("/sort/" + i))
+					);
+				} else if(step instanceof Sort.Field && when.notEmpty()) {
+					errors.add(
+						HITS_WHEN_FIELD_SORT.toMessage(Location.create("/sort/" + i))
 					);
 				}
 			}
@@ -956,8 +977,54 @@ public class SearchRequestMapper {
 
 		return new se.l4.exofind.engine.query.SearchRequest.Hits(
 			path,
-			inside.toImmutable()
+			inside.toImmutable(),
+			when
 		);
+	}
+
+	/**
+	 * Map which documents answer as their values, or collect what is wrong
+	 * with the ask. The shapes allowed are the ones a filter allows, and for
+	 * the same reason: the clause decides what a document answers as, which is
+	 * not something ranking has an opinion about.
+	 */
+	private static ImmutableList<Query> toWhen(
+		List<Clause> when,
+		MutableList<ErrorMessage> errors
+	) {
+		if(when == null) {
+			return Lists.immutable.empty();
+		}
+
+		var result = Lists.mutable.<Query>empty();
+		for(var i = 0; i < when.size(); i++) {
+			var path = "/hits/when/" + i;
+			var clause = when.get(i);
+
+			if(clause == null) {
+				errors.add(REQUIRED.toMessage(Location.create(path)));
+				continue;
+			}
+
+			if(!(clause instanceof Clause.Field) && !(clause instanceof Clause.Nested)) {
+				errors.add(HITS_WHEN_CLAUSE_INVALID.toMessage(Location.create(path)));
+				continue;
+			}
+
+			var mapped = toClause(clause, path, errors);
+			if(mapped == null) {
+				continue;
+			}
+
+			if(mapped.scores()) {
+				errors.add(HITS_WHEN_SCORES.toMessage(Location.create(path)));
+				continue;
+			}
+
+			result.add(mapped);
+		}
+
+		return result.toImmutable();
 	}
 
 	/**

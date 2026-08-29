@@ -13,8 +13,17 @@ import se.l4.exofind.engine.index.Document;
  * @param hits
  *   the results asked for, in the order they were asked for
  * @param total
- *   how many documents matched in total, which is more than the number of hits
- *   whenever a limit was reached
+ *   how many hits there are in total, which is more than the number of hits
+ *   returned whenever a limit was reached. Counted in whatever the search
+ *   answers with, so a document that answered with several of its values
+ *   counts once per value
+ * @param documents
+ *   how many documents matched, which is the number the facets are counted
+ *   in, or {@code null} when that is the same number as {@code total}. Only a
+ *   search that expands some of its documents and not others answers both, and
+ *   only there does the difference between "how many results" and "how many
+ *   products" need saying. A document told to expand that holds no matching
+ *   value counts here while answering with no hit at all
  * @param facets
  *   the counts per value the search asked for, keyed by the name of each
  *   facet. Empty when the search asked for none
@@ -25,6 +34,7 @@ import se.l4.exofind.engine.index.Document;
 public record SearchResult(
 	ImmutableList<Hit> hits,
 	Total total,
+	Total documents,
 	ImmutableMap<String, Facet> facets,
 	Relaxed relaxed
 ) {
@@ -37,13 +47,22 @@ public record SearchResult(
 	public SearchResult(
 		ImmutableList<Hit> hits,
 		Total total,
+		ImmutableMap<String, Facet> facets,
+		Relaxed relaxed
+	) {
+		this(hits, total, null, facets, relaxed);
+	}
+
+	public SearchResult(
+		ImmutableList<Hit> hits,
+		Total total,
 		ImmutableMap<String, Facet> facets
 	) {
-		this(hits, total, facets, null);
+		this(hits, total, null, facets, null);
 	}
 
 	public SearchResult(ImmutableList<Hit> hits, Total total) {
-		this(hits, total, null, null);
+		this(hits, total, null, null, null);
 	}
 
 	/**
@@ -65,7 +84,10 @@ public record SearchResult(
 	 *   how well the hit matched. Only means something when the search held a
 	 *   clause that scores, see {@link Query#scores()}. A hit standing for a
 	 *   value scores what its document scored plus what the value itself
-	 *   scored under the {@code nested} clauses of its path
+	 *   scored under the {@code nested} clauses of its path - and what its
+	 *   document scored alone where only the documents the search's
+	 *   {@link SearchRequest.Hits#when()} names answer with their values, so
+	 *   that both kinds of hit on the page are ranked by the same number
 	 * @param document
 	 *   the fields that were asked for, as they were given - for a hit
 	 *   standing for a value, the fields of the document holding it
@@ -201,7 +223,7 @@ public record SearchResult(
 	}
 
 	/**
-	 * How many documents matched.
+	 * How many matched, in whichever unit the count is of.
 	 *
 	 * Counting every match costs more the more there are, so a search that
 	 * only needs a page of results is allowed to stop counting once it knows
@@ -210,7 +232,7 @@ public record SearchResult(
 	 * is quietly wrong.
 	 *
 	 * @param count
-	 *   the number of documents that matched
+	 *   the number that matched
 	 * @param exact
 	 *   if the count is the whole number rather than at least that many
 	 */

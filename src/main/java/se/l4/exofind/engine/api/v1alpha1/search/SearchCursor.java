@@ -226,7 +226,7 @@ sealed interface SearchCursor {
 	 * @return
 	 */
 	static int fingerprintOf(ListIterable<? extends SortBy> sort) {
-		return fingerprintOf(sort, null);
+		return fingerprint(sort, null);
 	}
 
 	/**
@@ -236,22 +236,47 @@ sealed interface SearchCursor {
 	 * A search whose hits are the values of an object field keys its
 	 * positions on values, so a cursor taken there names nothing among
 	 * documents and the other way around - even under a sort that reads the
-	 * same. The path is part of the fingerprint so cursors never cross that
-	 * line, and a search whose hits are documents fingerprints exactly as it
-	 * did before there was a line to cross.
+	 * same. A search that expands only the documents its {@code when} names
+	 * keys them on a mix of the two, which is a third line to cross: the same
+	 * path expanded for every document numbers its hits differently. All three
+	 * are told apart here, and a search whose hits are documents fingerprints
+	 * exactly as it did before there was a line to cross.
+	 *
+	 * The clauses of a {@code when} are not read. They change which hits there
+	 * are rather than the shape of the key naming one, the way the filters of
+	 * a search do.
 	 *
 	 * @param sort
-	 * @param hitsPath
-	 *   the object field whose values the hits stand for, or {@code null} for
-	 *   hits that are documents
+	 * @param hits
+	 *   what the hits of the search stand for, or {@code null} for documents
 	 * @return
 	 */
-	static int fingerprintOf(ListIterable<? extends SortBy> sort, String hitsPath) {
+	static int fingerprintOf(
+		ListIterable<? extends SortBy> sort,
+		se.l4.exofind.engine.query.SearchRequest.Hits hits
+	) {
+		if(hits == null) {
+			return fingerprint(sort, null);
+		}
+
+		return fingerprint(
+			sort,
+			(hits.isEveryDocument() ? "values:" : "mixed:") + hits.path()
+		);
+	}
+
+	/**
+	 * Fingerprint a sort under a prefix naming what its hits stand for.
+	 */
+	private static int fingerprint(
+		ListIterable<? extends SortBy> sort,
+		String prefix
+	) {
 		var description = new StringBuilder();
 
-		if(hitsPath != null) {
-			// The separator below follows, so the prefix reads `values:<path>|`
-			description.append("values:").append(hitsPath);
+		if(prefix != null) {
+			// The separator below follows, so the prefix reads `<prefix>|`
+			description.append(prefix);
 		}
 
 		if(sort.isEmpty()) {

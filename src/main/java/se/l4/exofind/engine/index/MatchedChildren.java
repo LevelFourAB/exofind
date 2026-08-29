@@ -317,10 +317,12 @@ final class MatchedChildren {
 	 *   name of the object field the values belong to, for telling its
 	 *   children apart from the children of other paths
 	 * @param docIds
-	 *   Lucene ids of the values to answer for, in any order. Every one has to
-	 *   be a value of the path
+	 *   Lucene ids of the hits to answer for, in any order. Ids that are values
+	 *   of the path are located; an id that is a document of the index is not,
+	 *   which is how a page holding both kinds of hit tells them apart
 	 * @return
-	 *   where each value sits, keyed by its Lucene id
+	 *   where each value sits, keyed by its Lucene id, holding nothing for an
+	 *   id that is a document of the index
 	 * @throws IOException
 	 */
 	static IntObjectMap<Location> locate(
@@ -368,6 +370,16 @@ final class MatchedChildren {
 
 			for(var i = from; i < position; i++) {
 				var value = ordered[i] - context.docBase;
+
+				/*
+				 * A document of the index sits at the end of its own block, so
+				 * it is the next set bit from itself. It is a hit standing for
+				 * itself and has no position among anything.
+				 */
+				if(parentBits.get(value)) {
+					continue;
+				}
+
 				var parent = parentBits.nextSetBit(value);
 
 				/*

@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
@@ -1510,7 +1511,7 @@ public class SearchRequestMapperTest {
 	@Test
 	public void testHitsMapThePath() {
 		var mapped = SearchRequestMapper.toEngine(
-			withHits(null, null, null, null, new SearchRequest.Hits("variants", null)),
+			withHits(null, null, null, null, new SearchRequest.Hits("variants", null, null)),
 			MAX_DEPTH
 		);
 
@@ -1534,7 +1535,8 @@ public class SearchRequestMapperTest {
 				null, null, null, null,
 				new SearchRequest.Hits(
 					"variants",
-					List.of("variants.color", "variants.price")
+					List.of("variants.color", "variants.price"),
+					null
 				)
 			),
 			MAX_DEPTH
@@ -1553,7 +1555,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(
 				withHits(
 					null, null, null, null,
-					new SearchRequest.Hits("variants", List.of())
+					new SearchRequest.Hits("variants", List.of(), null)
 				),
 				MAX_DEPTH
 			)
@@ -1572,7 +1574,8 @@ public class SearchRequestMapperTest {
 					null, null, null, null,
 					new SearchRequest.Hits(
 						"variants",
-						List.of("color", "badges.label")
+						List.of("color", "badges.label"),
+						null
 					)
 				),
 				MAX_DEPTH
@@ -1597,7 +1600,7 @@ public class SearchRequestMapperTest {
 		var e = assertThrows(
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
-				withHits(null, null, null, null, new SearchRequest.Hits(" ", null)),
+				withHits(null, null, null, null, new SearchRequest.Hits(" ", null, null)),
 				MAX_DEPTH
 			)
 		);
@@ -1617,7 +1620,7 @@ public class SearchRequestMapperTest {
 				withHits(
 					null, null, null,
 					new SearchRequest.Matched(fields),
-					new SearchRequest.Hits("variants", null)
+					new SearchRequest.Hits("variants", null, null)
 				),
 				MAX_DEPTH
 			)
@@ -1639,7 +1642,7 @@ public class SearchRequestMapperTest {
 					null, null,
 					new SearchRequest.Highlight(fields),
 					null,
-					new SearchRequest.Hits("variants", null)
+					new SearchRequest.Hits("variants", null, null)
 				),
 				MAX_DEPTH
 			)
@@ -1663,7 +1666,7 @@ public class SearchRequestMapperTest {
 						))
 					),
 					null, null, null,
-					new SearchRequest.Hits("variants", null)
+					new SearchRequest.Hits("variants", null, null)
 				),
 				MAX_DEPTH
 			)
@@ -1682,7 +1685,7 @@ public class SearchRequestMapperTest {
 					null,
 					List.of(new Sort.Distance("location", 59.3, 18.1)),
 					null, null,
-					new SearchRequest.Hits("variants", null)
+					new SearchRequest.Hits("variants", null, null)
 				),
 				MAX_DEPTH
 			)
@@ -1690,5 +1693,128 @@ public class SearchRequestMapperTest {
 
 		assertThat(codesOf(e), contains("search:hits:distance_sort"));
 		assertThat(pathsOf(e), contains("/sort/0"));
+	}
+
+	@Test
+	public void testWhichDocumentsExpandIsMapped() {
+		var mapped = SearchRequestMapper.toEngine(
+			withHits(
+				null, null, null, null,
+				new SearchRequest.Hits(
+					"variants",
+					null,
+					List.of(new Clause.Field("split", new Matcher.Equals(true)))
+				)
+			),
+			MAX_DEPTH
+		);
+
+		assertThat(mapped.request().hits().when().size(), is(1));
+		assertThat(
+			mapped.request().hits().when().getFirst(),
+			is(instanceOf(FieldQuery.class))
+		);
+		assertThat(
+			((FieldQuery) mapped.request().hits().when().getFirst()).field(),
+			is("split")
+		);
+
+		/*
+		 * The same path expanded for every document numbers its hits
+		 * differently, so a cursor never crosses between the two.
+		 */
+		var everyDocument = SearchRequestMapper.toEngine(
+			withHits(null, null, null, null, new SearchRequest.Hits("variants", null, null)),
+			MAX_DEPTH
+		);
+		assertThat(mapped.fingerprint(), is(not(everyDocument.fingerprint())));
+	}
+
+	@Test
+	public void testAWideClauseDecidingWhichDocumentsExpandIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null, null, null,
+					new SearchRequest.Hits(
+						"variants",
+						null,
+						List.of(new Clause.Or(List.of(
+							new Clause.Field("split", new Matcher.Equals(true))
+						)))
+					)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:when_clause_invalid"));
+		assertThat(pathsOf(e), contains("/hits/when/0"));
+	}
+
+	@Test
+	public void testARankingClauseDecidingWhichDocumentsExpandIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null, null, null,
+					new SearchRequest.Hits(
+						"variants",
+						null,
+						List.of(new Clause.Nested(
+							"variants",
+							List.of(new Clause.Text(
+								"waterproof", null, null, null, null, null, null, null
+							)),
+							null
+						))
+					)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:when_scores"));
+		assertThat(pathsOf(e), contains("/hits/when/0"));
+	}
+
+	@Test
+	public void testExpandingSomeDocumentsWithAFieldSortIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null,
+					List.of(new Sort.Field("variants.price", null)),
+					null, null,
+					new SearchRequest.Hits(
+						"variants",
+						null,
+						List.of(new Clause.Field("split", new Matcher.Equals(true)))
+					)
+				),
+				MAX_DEPTH
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:when_field_sort"));
+		assertThat(pathsOf(e), contains("/sort/0"));
+	}
+
+	@Test
+	public void testAFieldSortIsKeptWhenEveryDocumentExpands() {
+		var mapped = SearchRequestMapper.toEngine(
+			withHits(
+				null,
+				List.of(new Sort.Field("variants.price", null)),
+				null, null,
+				new SearchRequest.Hits("variants", null, null)
+			),
+			MAX_DEPTH
+		);
+
+		assertThat(mapped.request().sort().size(), is(1));
 	}
 }

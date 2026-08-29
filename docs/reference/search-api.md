@@ -491,10 +491,13 @@ Setting `hits` causes each matched value of a `nested` [`object` field](field-ty
 
 When `hits` is configured, totals count matching nested values, facets count value hits, and pagination cursors step through values. Targeting a field that is not a `nested` object returns `index:query:hits:not_object`.
 
+Adding `when` narrows expansion to the documents it matches, leaving the rest as document hits. See [Expanding only some documents](#expanding-only-some-documents).
+
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `path` | String | Required | Dotted path of the nested object field whose matched values become hits. |
 | `fields` | Array | All object fields | Dotted field paths inside the nested object to return in `value`. |
+| `when` | Array | All matching documents | Clauses selecting which documents expand into value hits; other matching documents return as document hits. See [Expanding only some documents](#expanding-only-some-documents). |
 
 Field names in `fields` must be prefixed by `path` (`search:hits:field_not_inside`) and exist in the index (`index:query:field_not_found`). If document source is `none`, specifying `fields` returns `index:query:source_not_kept`.
 
@@ -523,6 +526,28 @@ Setting `hits` cannot be combined with:
 - `highlight` (`search:hits:with_highlight`)
 - `knn` clauses (`search:hits:with_knn`)
 
+### Expanding only some documents
+
+Specifying `when` restricts value expansion to documents that match the `when` clauses. All other matching documents return as document hits, returning both hit types in a single result page:
+
+```json
+"hits": {
+  "path": "variants",
+  "when": [ { "field": "splitVariants", "match": { "value": true } } ]
+}
+```
+
+The `when` array accepts `field` and `nested` clauses combined with an implicit `AND`. Scoring clauses are not permitted. Unsupported clause types return `search:hits:when_clause_invalid`; clauses that score return `search:hits:when_scores`. Both errors point to `/hits/when/<index>` in the request body. If `when` is omitted, every matching document expands.
+
+When `when` is configured:
+
+- **Sorting**: Mixed result pages can only be sorted by `score`. Field sorts return `search:hits:when_field_sort` (pointing to `/sort/<index>`), or `index:query:hits:when_sort_unsupported` when calling the engine directly. Distance sorts return `search:hits:distance_sort`.
+- **Scoring**: Every hit receives its parent document relevance score. Nested value clause scores are not added.
+- **Facets**: Facet counts aggregate matching documents rather than hits.
+- **Totals**: The `total` property counts hits, counting expanded documents once per matching nested value. The response includes a `documents` object with `count` and `exact` fields reporting the total count of matching documents.
+- **Empty nested values**: A document that matches `when` but contains no matching values under `path` returns no hit. It is not returned as a document hit. The document still contributes to `documents` and facet counts.
+- **Pagination cursors**: Cursors are keyed by hit type (document hits, value hits, or mixed hits). A cursor generated for a query using `when` is rejected by queries without `when`, and vice versa.
+
 ## Response
 
 ```json
@@ -544,7 +569,8 @@ Setting `hits` cannot be combined with:
 | Property | Type | Description |
 |---|---|---|
 | `hits` | Array | Array of hit objects matching the query. Each hit contains `id`, `score` (omitted if the search computed no scores), `document` fields, and optional `highlights`, `matched`, `index`, or `value` properties. |
-| `total` | Object | Match count object containing `count` (integer) and `exact` (boolean indicating whether `count` is exact or a lower bound). |
+| `total` | Object | Match count object containing `count` (integer) and `exact` (boolean indicating whether `count` is exact or a lower bound). Counted in whatever the search returns, so a document expanded by `hits.when` counts once per value. |
+| `documents` | Object | Total count of matching documents, in the same shape as `total`. Present only when `hits.when` is set; omitted otherwise. |
 | `facets` | Object | Map of facet names to facet results. Omitted if `facets` was not requested. |
 | `page` | Object | Pagination state containing `limit`, `offset` (omitted when navigating via cursor), and optional `next` and `previous` cursor strings. |
 | `relaxed` | Object | Details of dropped terms when query relaxation was applied. Omitted if the query was not relaxed. |
@@ -682,7 +708,7 @@ Properties of a score step (`detail` and each entry in `children`):
 - **Field names**: Field names in the explanation tree correspond to schema names in the index definition rather than internal engine names.
 - **Query relaxation**: When zero results trigger query relaxation, `relaxed` is included and the explanation tree reflects the relaxed query that executed.
 - **Ranking signals**: Signals appear under a dedicated step with one child per signal, specifying the field, function shape, weight, and value read from the document. A missing signal value contributes a factor of `1`.
-- **Value hits**: When `hits.path` targets a nested object field, each value is explained individually by specifying its zero-based position in `index`. See [What a hit stands for](#what-a-hit-stands-for).
+- **Value hits**: When `hits.path` targets a nested object field, each value is explained individually by specifying its zero-based position in `index`. With `hits.when` set, `index` is read only for documents that `when` matches; a document that returns as itself is explained as a document, whatever `index` says. See [What a hit stands for](#what-a-hit-stands-for).
 - **Alternatives that did not match**: Within an `or` clause that matched, only the alternatives that matched appear as steps. An `or` that matched nothing is reported as one non-matching step for the clause itself.
 
 ### Errors

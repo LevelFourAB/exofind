@@ -105,6 +105,26 @@ The `matched` parameter returns each matching sub-document in full. To return on
 
 To return each matching sub-document as an individual search hit rather than returning one hit per document, set `"hits": { "path": "variants" }`. Totals, facets, and cursors then apply to individual sub-documents. You can also specify `fields` to limit which inner fields appear in each hit. For details, see [What a hit stands for](../reference/search-api.md#what-a-hit-stands-for).
 
+To let each document decide whether it comes back as itself or as its sub-documents:
+
+1. Index a filterable boolean field on the document, such as `splitVariants`. Switching a document between the two modes is a field update and needs no reindex.
+2. Name that field in a `when` clause inside the `hits` block:
+
+   ```json
+   "hits": {
+     "path": "variants",
+     "when": [ { "field": "splitVariants", "match": { "value": true } } ]
+   }
+   ```
+
+3. Note the following changes to search results:
+   - Documents that match `when` return one hit per matching sub-document. Other matching documents return as a single document hit, so one result page can contain both kinds.
+   - Results can be sorted only by `score`.
+   - Facets count matching documents rather than sub-documents.
+   - The response includes a `documents` object that counts matching documents alongside `total` hits.
+
+For details, see [Expanding only some documents](../reference/search-api.md#expanding-only-some-documents).
+
 ## 4. Search text inside sub-documents
 
 To search text across inner fields, place a `text` clause inside a `nested` clause. If you do not specify a field, the clause searches all text fields in that object path. All words must match within the same sub-document value.

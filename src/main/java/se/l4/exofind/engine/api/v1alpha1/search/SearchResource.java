@@ -389,6 +389,12 @@ public class SearchResource {
 		return new SearchResponse(
 			hits,
 			new SearchResponse.Total(result.total().count(), result.total().exact()),
+			result.documents() == null
+				? null
+				: new SearchResponse.Total(
+					result.documents().count(),
+					result.documents().exact()
+				),
 			toFacetsJson(mapped.request(), result),
 			toPage(mapped, result),
 			toRelaxedJson(result.relaxed()),

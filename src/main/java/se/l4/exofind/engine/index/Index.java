@@ -42,6 +42,7 @@ import org.apache.lucene.index.MultiBits;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.MultiTerms;
 import org.apache.lucene.index.PostingsEnum;
+import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.Term;
@@ -3159,6 +3160,13 @@ public class Index {
 				 * results the search would have brought back.
 				 */
 				var hitsPath = request.hits() == null ? null : request.hits().path();
+
+				/*
+				 * A page that expands only some of its documents holds hits of
+				 * both kinds, and every question below that reads one hit at a
+				 * time has to ask which kind it has.
+				 */
+				var mixed = hitsPath != null && !request.hits().isEveryDocument();
 				if(hitsPath != null) {
 					compiler.hitsObjectField(hitsPath);
 					valueFieldsReturnable(hitsPath, request.hits().fields());
@@ -3172,11 +3180,16 @@ public class Index {
 				 * document may be ordered by off the clauses of the search, so
 				 * the order is decided by the same values the search matched.
 				 * Hits that are the values themselves are ordered by their own
-				 * fields instead.
+				 * fields instead, and a page holding both kinds by score alone.
 				 */
-				var sort = hitsPath == null
-					? compiler.compileSort(request.sort(), searched)
-					: compiler.compileChildSort(request.sort(), hitsPath);
+				Sort sort;
+				if(hitsPath == null) {
+					sort = compiler.compileSort(request.sort(), searched);
+				} else if(mixed) {
+					sort = compiler.compileMixedSort(request.sort(), hitsPath);
+				} else {
+					sort = compiler.compileChildSort(request.sort(), hitsPath);
+				}
 
 				/*
 				 * Resolved before anything runs, so a field that can not be
@@ -3234,7 +3247,7 @@ public class Index {
 					Faceted counted = null;
 
 					long count;
-					if(withFacets && searched.isEmpty()) {
+					if(withFacets && searched.isEmpty() && !mixed) {
 						/*
 						 * Nothing narrows the search, so its facets and total
 						 * are the ones counting keeps per reader - collecting
@@ -3243,10 +3256,15 @@ public class Index {
 						 */
 						counted = countFacets(searcher, compiler, request, searched, assembled, null);
 						count = counted.total();
-					} else if(withFacets) {
+					} else if(withFacets && !mixed) {
 						matches = searcher.search(query, new FacetsCollectorManager());
 						count = matchCount(matches);
 					} else {
+						/*
+						 * A mixed search counts its hits here whatever it asks
+						 * for besides: the collection its facets need is of
+						 * documents, and this number is of hits.
+						 */
 						count = searcher.count(query);
 					}
 
@@ -3259,7 +3277,7 @@ public class Index {
 							assembled = assemble(compiler, request, searched);
 							query = assembled.hits();
 
-							if(withFacets) {
+							if(withFacets && !mixed) {
 								matches = searcher.search(query, new FacetsCollectorManager());
 								count = matchCount(matches);
 							} else {
@@ -3275,9 +3293,17 @@ public class Index {
 					return new SearchResult(
 						Lists.immutable.empty(),
 						new SearchResult.Total(
-							counted == null ? count : counted.total(),
+							counted == null || mixed ? count : counted.total(),
 							true
 						),
+						mixed
+							? new SearchResult.Total(
+								counted == null
+									? searcher.count(assembled.documents())
+									: counted.total(),
+								true
+							)
+							: null,
 						counted == null ? null : counted.counts(),
 						relaxed
 					);
@@ -3405,8 +3431,18 @@ public class Index {
 				var stored = docIds;
 				if(hitsPath != null) {
 					locations = MatchedChildren.locate(searcher, nestedParents, hitsPath, docIds);
+
+					/*
+					 * A hit that was located is a value and is read from the
+					 * document above it; one that was not is a document and is
+					 * read from itself.
+					 */
 					var parents = IntSets.mutable.empty();
-					locations.forEachValue(location -> parents.add(location.parent()));
+					for(var docId : docIds) {
+						var location = locations.get(docId);
+						parents.add(location == null ? docId : location.parent());
+					}
+
 					stored = parents.toArray();
 				}
 
@@ -3483,6 +3519,26 @@ public class Index {
 					for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
 						var scoreDoc = topDocs.scoreDocs[i];
 						var location = locations.get(scoreDoc.doc);
+
+						if(location == null) {
+							/*
+							 * A document the search was told not to expand,
+							 * answering as itself among the values of the ones
+							 * it was.
+							 */
+							var itself = reader.read(page.get(scoreDoc.doc));
+							hits.add(
+								new SearchResult.Hit(
+									primaryKey.map(field -> itself.get(field.getName())).orElse(null),
+									Float.isNaN(scoreDoc.score) ? 0f : scoreDoc.score,
+									itself,
+									SortKeys.keyOf(scoreDoc, backwards),
+									null,
+									null
+								)
+							);
+							continue;
+						}
 
 						var withSource = decoded.get(location.parent());
 						if(withSource == null) {
@@ -3586,17 +3642,36 @@ public class Index {
 				 * than were asked for, so an exact total that was not reached
 				 * on the way is counted on its own - unless the facets already
 				 * collected every match, in which case their count is the
-				 * whole number for free.
+				 * whole number for free. What a mixed search counted for its
+				 * facets is a number of documents and answers below instead:
+				 * the total is of hits, which is the unit the page moves in.
 				 */
-				if(faceted != null) {
+				if(faceted != null && !mixed) {
 					total = new SearchResult.Total(faceted.total(), true);
 				} else if(request.total() == SearchRequest.Total.EXACT && !total.exact()) {
 					total = new SearchResult.Total(searcher.count(query), true);
 				}
 
+				/*
+				 * How many documents a mixed page's hits came from, which its
+				 * facets are counted in and its total is not. Free where the
+				 * facets already collected every document, and a count of the
+				 * query already in hand otherwise.
+				 */
+				SearchResult.Total documents = null;
+				if(mixed) {
+					documents = new SearchResult.Total(
+						faceted == null
+							? searcher.count(assembled.documents())
+							: faceted.total(),
+						true
+					);
+				}
+
 				return new SearchResult(
 					hits.toImmutable(),
 					total,
+					documents,
 					faceted == null ? null : faceted.counts(),
 					relaxed
 				);
@@ -3626,8 +3701,10 @@ public class Index {
 	 *   the key of the document, as the type of the key field holds it
 	 * @param valueIndex
 	 *   which value of the request's {@code hits} path to explain, counted the
-	 *   way a hit reports its position. Read only by a search whose hits are
-	 *   values
+	 *   way a hit reports its position. Read only where the document answers
+	 *   with its values - never for a search whose hits are documents, and
+	 *   never for a document the request's {@code when} leaves as a hit of its
+	 *   own, which is explained as the document it answers as
 	 * @param settings
 	 *   the search settings of the index, or {@code null} to explain under the
 	 *   definition alone
@@ -3687,8 +3764,13 @@ public class Index {
 				var searched = request.query().newWithAll(request.filters());
 
 				var hitsPath = request.hits() == null ? null : request.hits().path();
+				org.apache.lucene.search.Query expands = null;
 				if(hitsPath != null) {
 					compiler.hitsObjectField(hitsPath);
+
+					if(!request.hits().isEveryDocument()) {
+						expands = compiler.compile(request.hits().when());
+					}
 				}
 
 				var assembled = assemble(compiler, request, searched);
@@ -3720,7 +3802,7 @@ public class Index {
 
 				var explanation = searcher.explain(
 					ranked.query(),
-					explained(searcher, primaryKey, hitsPath, valueIndex)
+					explained(searcher, primaryKey, hitsPath, expands, valueIndex)
 				);
 
 				return new SearchExplanation(
@@ -3745,6 +3827,11 @@ public class Index {
 	 * @param hitsPath
 	 *   the object field the hits are values of, or {@code null} when they are
 	 *   documents
+	 * @param expands
+	 *   the compiled condition deciding which documents answer with their
+	 *   values, or {@code null} where every document does. A document the
+	 *   condition leaves out is a hit standing for itself, and is explained as
+	 *   one however the position was given
 	 * @param valueIndex
 	 *   position of the value among the document's values of the path
 	 * @return
@@ -3754,6 +3841,7 @@ public class Index {
 		IndexSearcher searcher,
 		Object primaryKey,
 		String hitsPath,
+		org.apache.lucene.search.Query expands,
 		int valueIndex
 	) throws IOException {
 		var primaryKeyField = primaryKeyField();
@@ -3784,6 +3872,10 @@ public class Index {
 			return document;
 		}
 
+		if(expands != null && !matches(searcher, expands, document)) {
+			return document;
+		}
+
 		var value = MatchedChildren.child(
 			searcher,
 			nestedParents,
@@ -3802,6 +3894,41 @@ public class Index {
 		}
 
 		return value;
+	}
+
+	/**
+	 * Get whether one Lucene document matches a query, asked of the document
+	 * rather than of the index: the query is run over the segment holding it
+	 * and stopped as soon as it is reached or passed.
+	 *
+	 * @param searcher
+	 * @param query
+	 * @param docId
+	 *   Lucene id of the document, over the searcher's reader
+	 * @return
+	 * @throws IOException
+	 */
+	private static boolean matches(
+		IndexSearcher searcher,
+		org.apache.lucene.search.Query query,
+		int docId
+	) throws IOException {
+		var reader = searcher.getIndexReader();
+		var context = reader.leaves().get(ReaderUtil.subIndex(docId, reader.leaves()));
+
+		var weight = searcher.createWeight(
+			searcher.rewrite(query),
+			ScoreMode.COMPLETE_NO_SCORES,
+			1f
+		);
+
+		var scorer = weight.scorer(context);
+		if(scorer == null) {
+			return false;
+		}
+
+		var wanted = docId - context.docBase;
+		return scorer.iterator().advance(wanted) == wanted;
 	}
 
 	/**
@@ -4171,9 +4298,14 @@ public class Index {
 	 * when something still needs them - a search every facet of which is
 	 * answered that way pays a count for its total instead of a collection.
 	 *
-	 * A search whose hits are values counts differently enough - the counts
-	 * are of values, and nothing per reader answers those - that it is counted
-	 * apart, in {@link #countValueFacets}.
+	 * A search whose hits are the values of an object field, whatever the
+	 * document, counts differently enough - the counts are of values, and
+	 * nothing per reader answers those - that it is counted apart, in
+	 * {@link #countValueFacets}. A search that expands only some of its
+	 * documents is counted here: its page holds hits of both kinds, and the
+	 * only count that describes all of them is of the documents they came
+	 * from. A colour holding twelve products holds twelve however many of them
+	 * chose to answer as their variants.
 	 *
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
@@ -4193,7 +4325,7 @@ public class Index {
 		Assembled assembled,
 		FacetsCollector whole
 	) throws IOException {
-		if(request.hits() != null) {
+		if(request.hits() != null && request.hits().isEveryDocument()) {
 			return countValueFacets(searcher, compiler, request, clauses, assembled, whole);
 		}
 
@@ -4266,7 +4398,7 @@ public class Index {
 					if(scope == null) {
 						scope = FacetMatches.of(
 							searcher.search(
-								assemble(compiler, request, scoped).hits(),
+								assemble(compiler, request, scoped).documents(),
 								new FacetsCollectorManager()
 							)
 						);
@@ -4568,9 +4700,10 @@ public class Index {
 	 *   facet scopes and value hits are built from
 	 * @param hits
 	 *   the query matching what the search answers with, one match per hit:
-	 *   the same query as {@code documents} when hits are documents, and the
-	 *   matched values of the request's path when they are values. Ranking is
-	 *   not applied - see {@link #ranked}
+	 *   the same query as {@code documents} when hits are documents, the
+	 *   matched values of the request's path when they are values, and the two
+	 *   together where only the documents a {@code when} names answer with
+	 *   their values. Ranking is not applied - see {@link #ranked}
 	 */
 	private record Assembled(
 		org.apache.lucene.search.Query documents,
@@ -4604,8 +4737,64 @@ public class Index {
 
 		return new Assembled(
 			documents,
-			valueHits(compiler, request, documents, clauses, false)
+			hitsOf(compiler, request, documents, clauses, false)
 		);
+	}
+
+	/**
+	 * Compile the query whose matches are the hits of a search that answers
+	 * with values: every matching document's values, or - where the request
+	 * says which documents expand - the values of those and the documents
+	 * themselves for the rest.
+	 *
+	 * The two kinds of hit are matched by branches of one query, so a search
+	 * that holds both still ranks and pages in a single pass. They can never
+	 * both answer for one document: a document either satisfies {@code when},
+	 * and is then only reachable through the join below it, or it does not,
+	 * and is then a hit of its own.
+	 *
+	 * @param compiler
+	 * @param request
+	 *   the request, read for the path its hits are values of and for which
+	 *   documents answer with them
+	 * @param documents
+	 *   the documents of the search, compiled - ranked or not, which is the
+	 *   caller's to decide
+	 * @param clauses
+	 *   the clauses of the search, for the conditions they put on the values
+	 * @param scores
+	 *   whether each hit scores - see {@link #valueHits}. A document hit
+	 *   scores what it scored as a document either way
+	 * @return
+	 */
+	private org.apache.lucene.search.Query hitsOf(
+		QueryCompiler compiler,
+		SearchRequest request,
+		org.apache.lucene.search.Query documents,
+		ListIterable<Query> clauses,
+		boolean scores
+	) {
+		var when = request.hits().when();
+		if(when.isEmpty()) {
+			return valueHits(compiler, request, documents, clauses, scores);
+		}
+
+		var expands = compiler.compile(when);
+
+		var expanded = new BooleanQuery.Builder()
+			.add(documents, scores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER)
+			.add(expands, BooleanClause.Occur.FILTER)
+			.build();
+
+		var itself = new BooleanQuery.Builder()
+			.add(documents, scores ? BooleanClause.Occur.MUST : BooleanClause.Occur.FILTER)
+			.add(expands, BooleanClause.Occur.MUST_NOT)
+			.build();
+
+		return new BooleanQuery.Builder()
+			.add(valueHits(compiler, request, expanded, clauses, scores), BooleanClause.Occur.SHOULD)
+			.add(itself, BooleanClause.Occur.SHOULD)
+			.build();
 	}
 
 	/**
@@ -4637,7 +4826,18 @@ public class Index {
 		boolean scores
 	) {
 		var path = request.hits().path();
-		var valueScores = scores && compiler.matchedValuesScore(path, clauses);
+		var everyDocument = request.hits().isEveryDocument();
+
+		/*
+		 * A page holding value hits beside document hits has to rank the two
+		 * against each other, and only what their documents scored is a number
+		 * both of them have. Adding what the value scored on top would put
+		 * every expanded document above an equally relevant one that answered
+		 * as itself - an ordering decided by how a result is displayed rather
+		 * than by how well it matched.
+		 */
+		var valueScores = scores && everyDocument
+			&& compiler.matchedValuesScore(path, clauses);
 
 		/*
 		 * Ordering by a field visits every match, which is the walk the
@@ -4652,9 +4852,10 @@ public class Index {
 		 * and skips evaluating the conditions a second time from the document
 		 * side, which is most of what a search that has to visit every value
 		 * pays. With scores the join is what carries the document's score
-		 * down, so it stays.
+		 * down, so it stays, and so it does where only some documents expand:
+		 * dropping the join would drop the condition that picked them.
 		 */
-		if(!scores && onPathAlone(clauses, path)) {
+		if(!scores && everyDocument && onPathAlone(clauses, path)) {
 			return compiler.compileMatchedValues(path, clauses, false, keepPathClause);
 		}
 
@@ -4712,8 +4913,11 @@ public class Index {
 	 * For a search whose hits are values, the signals are applied to the
 	 * documents and the block join is rebuilt to carry scores down: a hit then
 	 * scores what its document scored - signals included - plus what the value
-	 * itself scored under the clauses that rank on the path. A search where
-	 * nothing scores keeps the plain query.
+	 * itself scored under the clauses that rank on the path. Where only some
+	 * documents answer with their values, a hit scores what its document
+	 * scored and nothing else, so that the two kinds of hit on the page are
+	 * ranked by the same number. A search where nothing scores keeps the plain
+	 * query.
 	 *
 	 * @param compiler
 	 * @param request
@@ -4745,7 +4949,7 @@ public class Index {
 
 		return new Ranked(
 			scores
-				? valueHits(compiler, request, documents, clauses, true)
+				? hitsOf(compiler, request, documents, clauses, true)
 				: assembled.hits(),
 			scores
 		);

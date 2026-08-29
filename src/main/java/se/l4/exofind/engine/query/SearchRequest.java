@@ -266,10 +266,20 @@ public record SearchRequest(
 	 * {@link SearchResult.Hit#index()} - several hits share an {@code id}
 	 * whenever several values of one document matched.
 	 *
+	 * With {@code when} given, only the documents satisfying it answer as their
+	 * values; every other document answers as itself, so one page holds both
+	 * kinds of hit. The total then counts hits - a document that expanded
+	 * counts once per value - while the facets and
+	 * {@link SearchResult#documents()} count documents. Every hit scores what
+	 * its document scored, so what a document answers as never decides where
+	 * it ranks.
+	 *
 	 * A search whose hits are values can not also ask for {@code highlight} or
 	 * {@code matched} - once the hits are the matched values, {@code matched}
 	 * would ask a hit about itself - and can only be ordered by score or by
-	 * fields inside the path.
+	 * fields inside the path. Ordering by a field is refused as soon as
+	 * {@code when} is given, as a page holding both kinds of hit has no one
+	 * level to read a sort field at.
 	 *
 	 * @param path
 	 *   name of the object field whose matched values are the hits. The field
@@ -280,8 +290,19 @@ public record SearchRequest(
 	 *   empty for all of them. A name that is not a field inside the object,
 	 *   or one on an index that keeps no copy of its documents, is refused
 	 *   when the search runs
+	 * @param when
+	 *   the clauses a document has to satisfy to answer as its values, empty
+	 *   for all of them. Only {@link FieldQuery field} and {@link NestedQuery
+	 *   nested} clauses may sit here, and none of them may rank: which hit a
+	 *   document answers as says nothing about how well it matched. A document
+	 *   satisfying these with no matching value under {@code path} answers with
+	 *   nothing at all
 	 */
-	public record Hits(String path, ImmutableSet<String> fields) {
+	public record Hits(
+		String path,
+		ImmutableSet<String> fields,
+		ImmutableList<Query> when
+	) {
 		public Hits {
 			if(path == null || path.isBlank()) {
 				throw new IllegalArgumentException(
@@ -292,16 +313,56 @@ public record SearchRequest(
 			if(fields == null) {
 				fields = Sets.immutable.empty();
 			}
+
+			if(when == null) {
+				when = Lists.immutable.empty();
+			}
+
+			for(var clause : when) {
+				if(!(clause instanceof FieldQuery) && !(clause instanceof NestedQuery)) {
+					throw new IllegalArgumentException(
+						"Which documents answer as their values is a field or nested clause - a `"
+							+ clause.type() + "` clause scopes the whole search and belongs in the query"
+					);
+				}
+
+				if(clause.scores()) {
+					throw new IllegalArgumentException(
+						"Which documents answer as their values is decided without ranking - clauses that score belong in the query"
+					);
+				}
+			}
 		}
 
 		/**
-		 * Bring back the values whole.
+		 * Bring back the values whole, of every document the search matches.
 		 *
 		 * @param path
 		 *   name of the object field whose matched values are the hits
 		 */
 		public Hits(String path) {
-			this(path, null);
+			this(path, null, null);
+		}
+
+		/**
+		 * Bring back the named fields of the values, of every document the
+		 * search matches.
+		 *
+		 * @param path
+		 *   name of the object field whose matched values are the hits
+		 * @param fields
+		 *   the fields of each value to bring back, empty for all of them
+		 */
+		public Hits(String path, ImmutableSet<String> fields) {
+			this(path, fields, null);
+		}
+
+		/**
+		 * Get whether hits of this search stand for values whatever the
+		 * document, rather than only for the documents {@code when} names.
+		 */
+		public boolean isEveryDocument() {
+			return when.isEmpty();
 		}
 	}
 

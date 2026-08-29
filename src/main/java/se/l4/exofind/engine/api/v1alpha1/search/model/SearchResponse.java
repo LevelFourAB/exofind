@@ -25,10 +25,28 @@ public record SearchResponse(
 	List<Hit> hits,
 
 	/**
-	 * How many documents matched in total.
+	 * How many hits there are in total, counted in whatever the search
+	 * answers with - so a document that answered with several of its values
+	 * counts once per value.
 	 */
-	@Schema(description = "How many documents matched in total.")
+	@Schema(description = """
+		How many hits matched in total, counted in whatever the search answers \
+		with: a document that expanded into values counts once per value.""")
 	Total total,
+
+	/**
+	 * How many documents matched, which is what the facets are counted in,
+	 * left out entirely when that is the same number as {@code total}. Only a
+	 * search whose `hits` names a `when` answers both.
+	 */
+	@Schema(description = """
+		How many documents matched, which is what the facets are counted in. \
+		Present only for a search whose `hits` names a `when`, where some \
+		documents expand into values and the rest do not; omitted otherwise, \
+		where it would be the same number as `total`. A document that `when` \
+		expands with no matching value under `path` counts here while \
+		answering with no hit.""")
+	Total documents,
 
 	/**
 	 * The counts per value the request asked for, keyed by the name of each
@@ -473,14 +491,14 @@ public record SearchResponse(
 	}
 
 	/**
-	 * How many documents matched.
+	 * How many matched, in whichever unit the count is of.
 	 */
-	@Schema(description = "How many documents matched.")
+	@Schema(description = "How many matched, in whichever unit the count is of.")
 	public record Total(
 		/**
-		 * The number of documents that matched.
+		 * The number that matched.
 		 */
-		@Schema(description = "The number of documents that matched.", examples = "128")
+		@Schema(description = "The number that matched.", examples = "128")
 		long count,
 
 		/**

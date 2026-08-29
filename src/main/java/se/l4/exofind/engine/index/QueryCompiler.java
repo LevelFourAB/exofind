@@ -137,6 +137,15 @@ public class QueryCompiler {
 			+ "a field inside it, which `{{name}}` is not"
 		);
 
+	private static final ErrorType HITS_WHEN_SORT_UNSUPPORTED = ErrorType
+		.withCode("index:query:hits:when_sort_unsupported")
+		.withArguments("path")
+		.withMessage(
+			"Hits that stand for the values of `{{path}}` only for the documents "
+			+ "`when` names hold documents and values at once, which no one field "
+			+ "is read at - order them by score"
+		);
+
 	/**
 	 * The kinds of ordering that can read a value out of the objects of one
 	 * document and order the document by it. Anything else - a distance from an
@@ -1836,6 +1845,47 @@ public class QueryCompiler {
 	 *   with {@code index:query:hits:sort_unsupported} for a step no value of
 	 *   the path can answer
 	 */
+	/**
+	 * Compile the order hits come back in for a search that answers with the
+	 * values of one object field only for the documents it was told to expand.
+	 *
+	 * Such a page holds documents and values together, and the two are
+	 * different Lucene documents holding different fields: a field of the
+	 * index is not part of a value, and a field inside the path is not on a
+	 * document. There is no level to read a sort field at, so only score
+	 * orders these hits.
+	 *
+	 * @param sort
+	 * @param path
+	 *   name of the object field the expanded documents answer with the values
+	 *   of
+	 * @return
+	 *   the order, or {@code null} to leave the best matches first
+	 * @throws IndexException
+	 *   with {@code index:query:hits:when_sort_unsupported} for any step that
+	 *   is not the score
+	 */
+	public Sort compileMixedSort(ListIterable<SortBy> sort, String path) {
+		if(sort.isEmpty()) {
+			return null;
+		}
+
+		var fields = Lists.mutable.<SortField>empty();
+		for(var entry : sort) {
+			if(!(entry instanceof ScoreSort score)) {
+				throw new IndexException(HITS_WHEN_SORT_UNSUPPORTED, "path", path);
+			}
+
+			fields.add(new SortField(
+				null,
+				SortField.Type.SCORE,
+				score.order() == SortBy.Order.ASCENDING
+			));
+		}
+
+		return new Sort(fields.toArray(new SortField[0]));
+	}
+
 	public Sort compileChildSort(ListIterable<SortBy> sort, String path) {
 		if(sort.isEmpty()) {
 			return null;

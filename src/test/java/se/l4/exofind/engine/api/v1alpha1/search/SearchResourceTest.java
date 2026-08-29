@@ -759,6 +759,76 @@ public class SearchResourceTest {
 		assertThat(response.hits().get(0).matched(), is(nullValue()));
 	}
 
+	/**
+	 * A catalogue where one product is marked to answer as its variants and
+	 * the other is not, which is what makes a page hold hits of both kinds.
+	 */
+	private void splitProducts() throws IOException {
+		var index = indexes.create(
+			"split",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", string().build())
+				.putFields(
+					"split",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setBoolean(
+								BooleanFieldTypeDef.getDefaultInstance()
+							)
+						)
+						.setFilter(FilterConfig.getDefaultInstance())
+						.build()
+				)
+				.putFields(
+					"variants",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields(
+										"color",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							)
+						)
+						.setMultiple(true)
+						.build()
+				)
+				.build()
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Trail Runner"),
+				new Document.Value("split", true),
+				new Document.Value("variants", new Document(
+					new Document.Value("color", "red")
+				)),
+				new Document.Value("variants", new Document(
+					new Document.Value("color", "blue")
+				))
+			)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "City Sneaker"),
+				new Document.Value("split", false),
+				new Document.Value("variants", new Document(
+					new Document.Value("color", "red")
+				))
+			)
+		);
+
+		index.commit();
+	}
+
 	private static SearchRequest valueHits(
 		List<Clause> query,
 		Integer limit,
@@ -766,9 +836,62 @@ public class SearchResourceTest {
 	) {
 		return new SearchRequest(
 			query, null, null, null, null, null, null, null,
-			new SearchRequest.Hits("variants", null),
+			new SearchRequest.Hits("variants", null, null),
 			limit, null, after, null, null, null, null
 		);
+	}
+
+	@Test
+	public void testExpandingOnlySomeDocumentsAnswersBothKindsOfHit()
+		throws IOException
+	{
+		splitProducts();
+
+		var response = resource.search(
+			"split",
+			new SearchRequest(
+				null, null, null, null, null, null, null, null,
+				new SearchRequest.Hits(
+					"variants",
+					null,
+					List.of(new Clause.Field("split", new Matcher.Equals(true)))
+				),
+				null, null, null, null, null, null, null
+			)
+		);
+
+		var json = new ObjectMapper()
+			.convertValue(response, new TypeReference<Map<String, Object>>() {});
+
+		/*
+		 * The Trail Runner answers with its two variants and the City Sneaker
+		 * with itself, which the wire tells apart by `index` and `value`.
+		 */
+		assertThat(
+			response.hits().stream()
+				.map(hit -> hit.id() + "/" + hit.index())
+				.toList(),
+			containsInAnyOrder("1/0", "1/1", "2/null")
+		);
+
+		// The total is of hits and the documents they came from is beside it
+		assertThat(response.total().count(), is(3L));
+		assertThat(response.documents().count(), is(2L));
+		assertThat(json.containsKey("documents"), is(true));
+	}
+
+	@Test
+	public void testDocumentsIsLeftOutWhereItWouldRepeatTheTotal()
+		throws IOException
+	{
+		products();
+
+		var json = new ObjectMapper().convertValue(
+			resource.search("products", request(null)),
+			new TypeReference<Map<String, Object>>() {}
+		);
+
+		assertThat(json.containsKey("documents"), is(false));
 	}
 
 	@Test
@@ -779,7 +902,7 @@ public class SearchResourceTest {
 			"products",
 			new SearchRequest(
 				null, null, null, null, null, null, null, null,
-				new SearchRequest.Hits("variants", List.of("variants.color")),
+				new SearchRequest.Hits("variants", List.of("variants.color"), null),
 				1, null, null, null, null, null, null
 			)
 		);

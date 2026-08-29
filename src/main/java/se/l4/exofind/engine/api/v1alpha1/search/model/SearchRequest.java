@@ -512,16 +512,25 @@ public record SearchRequest(
 	 * the fields of the index still say which documents take part, and
 	 * `nested` clauses on the path still say which of their values matched.
 	 *
+	 * With `when` given as well, only the documents satisfying it answer as
+	 * their values and every other document answers as itself, so one page
+	 * holds both kinds of hit. The total then counts hits, a document that
+	 * expanded counting once per value, while the facets count documents.
+	 *
 	 * A search whose hits are values can not also ask for `matched` or
 	 * `highlight`, hold a `knn` clause, or sort by distance or by a field of
-	 * the index - it is ordered by score or by fields inside the path.
+	 * the index - it is ordered by score or by fields inside the path. With
+	 * `when` given it is ordered by score alone.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
 		Makes each matched value of a `nested` object field a hit of its own \
 		instead of a document hit. Totals count matching nested values, facets \
-		count value hits, and pagination cursors step through values. Cannot \
-		be combined with `matched` (`search:hits:with_matched`), `highlight` \
+		count value hits, and pagination cursors step through values. With \
+		`when`, only the documents it matches expand and the rest stay \
+		document hits, totals count hits of both kinds and facets count \
+		documents. Cannot be combined with `matched` \
+		(`search:hits:with_matched`), `highlight` \
 		(`search:hits:with_highlight`) or `knn` clauses \
 		(`search:hits:with_knn`). See [What a hit stands \
 		for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""")
@@ -553,7 +562,26 @@ public record SearchRequest(
 			(`search:hits:field_not_inside`) and exist in the index \
 			(`index:query:field_not_found`). On an index whose `source` is \
 			`none`, naming any field returns `index:query:source_not_kept`.""")
-		List<String> fields
+		List<String> fields,
+
+		/**
+		 * The clauses a document has to satisfy to answer as its values,
+		 * left out for all of them. Only `field` and `nested` clauses may
+		 * sit here, and none of them may rank.
+		 *
+		 * A document satisfying these with no matching value under `path`
+		 * answers with nothing at all - it is neither expanded nor kept as a
+		 * document hit.
+		 */
+		@Schema(description = """
+			Clauses deciding which documents expand into value hits; every \
+			other matching document stays a document hit. Combined with an \
+			implicit `AND`, and specified as `field` or `nested` clauses. If \
+			omitted, every matching document expands. Unsupported clause \
+			types return `search:hits:when_clause_invalid`; clauses that \
+			score return `search:hits:when_scores`. Sorting by a field is \
+			refused while this is set (`search:hits:when_field_sort`).""")
+		List<Clause> when
 	) {
 	}
 
