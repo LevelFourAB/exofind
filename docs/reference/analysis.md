@@ -78,7 +78,7 @@ The following token filters are available:
 | `asciiFolding` | `preserveOriginal` (boolean, default: `false`) | Converts non-ASCII characters to ASCII equivalents. If set to `true`, preserves the original non-ASCII token alongside the folded token. |
 | `edgeNgram` | `minGram` (integer, default: `1`), `maxGram` (integer, default: `20`) | Generates prefix n-grams for tokens within the specified character lengths. |
 | `ngram` | `minGram` (integer), `maxGram` (integer) | Generates substring n-grams for tokens within the specified character lengths. |
-| `synonyms` | `named` (string, required) | Expands tokens with synonyms from a synonym set defined in `resources`. Applied when a value is indexed. |
+| `synonyms` | `named` (string, required) | Expands tokens with synonyms from a synonym set defined in `resources`. Applied when a value is indexed, not when the text of a search is analyzed. See [Applying a synonym set to a field](#applying-a-synonym-set-to-a-field). |
 | `decompound` | `locale` (string, optional) | Splits compound words into parts and retains the original compound word. See [Compound words](#compound-words). If omitted, uses the dictionary for the locale of the value. Applied at index time. |
 
 ## Resources
@@ -116,6 +116,35 @@ A synonym rule specifies one of the following structures:
 - `mapping`: A one-way mapping object containing `from` and `to` arrays. A value containing a term in `from` matches searches for terms in `to`, but terms in `to` do not match searches for `from`.
 
 A synonym set in `resources` is applied when a value is indexed and so reaches only documents indexed after it. A set can instead be applied to the text of a search through the index's search settings, which reaches documents already indexed and needs no reindex. For more information, see [Synonyms](./admin-api.md#synonyms) in the admin API reference.
+
+### Applying a synonym set to a field
+
+A field uses a synonym set only when a `synonyms` filter appears in a custom chain on its `matching` or `autocomplete` usage. A preset expands to a fixed chain and accepts no extra filters. A custom chain can be shared under `resources.analyzers`. Each usage opts in separately.
+
+```json
+"description": {
+  "type": "string",
+  "matching": {
+    "analyzer": {
+      "custom": {
+        "filters": [
+          { "normalize": {} },
+          { "synonyms": { "named": "cars" } },
+          { "stemming": {} }
+        ]
+      }
+    }
+  }
+}
+```
+
+The filter matches rule terms against the tokens as they are at its position in the chain, and the engine never analyzes the rule terms. Place the filter:
+
+- After `normalize`, and write the terms in normalized form.
+- Before `stemming`, and write whole words.
+- Before any `stopwords` filter that removes a word a rule matches.
+
+The engine leaves the filter out of the query side of the chain, so an index-time set widens the indexed value while a search matches the words that were typed.
 
 ## Compound words
 

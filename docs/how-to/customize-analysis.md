@@ -58,7 +58,7 @@ Before customizing text analysis, ensure you have:
      "filters": [ { "stopwords": { "named": "brands" } } ]
      ```
      To inline a stopword list for a single field, use `words`. To use the stopword list for the locale of the value being analyzed, supply an empty `{ "stopwords": {} }`.
-   - **Synonyms**: Define synonym rules under `resources.synonyms` and reference them in a filter:
+   - **Synonyms**: Define synonym rules under `resources.synonyms`:
      ```json
      "resources": {
        "synonyms": {
@@ -71,10 +71,24 @@ Before customizing text analysis, ensure you have:
        }
      }
      ```
+     A field uses the set only when a `synonyms` filter appears in a custom chain on its `matching` or `autocomplete` usage, because a preset accepts no extra filters:
      ```json
-     "filters": [ { "synonyms": { "named": "cars" } } ]
+     "description": {
+       "type": "string",
+       "matching": {
+         "analyzer": {
+           "custom": {
+             "filters": [
+               { "normalize": {} },
+               { "synonyms": { "named": "cars" } },
+               { "stemming": {} }
+             ]
+           }
+         }
+       }
+     }
      ```
-     An `equivalent` rule makes each listed word match the others. A `mapping` rule is one-way: a value containing `ny` matches searches for `new york`, but not the reverse. Synonym sets in `resources` apply when values are indexed. To apply synonyms to search text without reindexing, see [change synonyms without reindexing](./change-synonyms-without-reindexing.md).
+     An `equivalent` rule makes each listed word match the others. A `mapping` rule is one-way, so a value containing `ny` matches searches for `new york` but not the reverse. Write the rule terms in the form the tokens have where the filter sits, which is lowercase after `normalize` and whole words before `stemming`. For the full placement rules, see [applying a synonym set to a field](../reference/analysis.md#applying-a-synonym-set-to-a-field). Synonym sets in `resources` apply when values are indexed. For synonyms on search text, see [change synonyms without reindexing](./change-synonyms-without-reindexing.md).
 
 3. Reindex existing documents:
    Analysis configurations and synonym rules in `resources` apply when values are indexed rather than when queried. Reindex existing documents so that they use the updated analysis settings. To apply synonyms to search text without reindexing, see [change synonyms without reindexing](./change-synonyms-without-reindexing.md).

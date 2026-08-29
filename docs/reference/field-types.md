@@ -96,7 +96,7 @@ The `matching` and `autocomplete` objects support the following configuration pr
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `analyzer` | string | Locale-derived | Specifies the text analyzer name. See [Analysis](analysis.md). If omitted, the engine generates an analyzer based on the field usage and locale. |
+| `analyzer` | object | Locale-derived | Specifies how the text of this usage is analyzed. Carries exactly one of `preset`, `custom`, and `named`. See [Analysis](analysis.md). If omitted, the engine generates an analyzer based on the field usage and locale. |
 | `weight` | number | `1` | Relative score weight of hits in this field when querying across multiple fields. |
 | `highlight` | object | None | Enables highlighted snippet extraction in search responses. See [Highlighting](search-api.md#highlighting). Text is stored for highlighting regardless of the `stored` property. Highlighting targets `matching` when defined; `highlight` on `autocomplete` takes effect only when `matching` is omitted. |
 | `typoTolerance` | object | None | Enables typo tolerance. Sub-properties: `minLengthOneTypo` (integer, default `5`), `minLengthTwoTypos` (integer, default `9`), `prefixLength` (integer, default `1`), and `numbers` (object, default omitted). In `autocomplete`, two typos are permitted only when `minLengthTwoTypos` is explicitly set. Digit-only words require exact matches unless `numbers: {}` is set. Mixed alphanumeric words follow standard length thresholds. |
