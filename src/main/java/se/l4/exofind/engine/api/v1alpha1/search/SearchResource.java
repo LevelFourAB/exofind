@@ -61,7 +61,7 @@ import jakarta.ws.rs.core.MediaType;
 	description = "Finds documents in an index.",
 	externalDocs = @ExternalDocumentation(
 		description = "Search API reference",
-		url = "https://levelfourab.github.io/exofind/reference/search-api/"
+		url = "https://exofind.dev/reference/search-api/"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

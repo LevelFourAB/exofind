@@ -58,7 +58,7 @@ import jakarta.ws.rs.core.MediaType;
 	description = "Compares the index registry with what storage holds, and repairs it.",
 	externalDocs = @ExternalDocumentation(
 		description = "Registry reference",
-		url = "https://levelfourab.github.io/exofind/reference/admin-api/#registry"
+		url = "https://exofind.dev/reference/admin-api/#registry"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

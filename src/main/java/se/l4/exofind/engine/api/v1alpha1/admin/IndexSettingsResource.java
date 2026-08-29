@@ -65,7 +65,7 @@ import jakarta.ws.rs.core.Response;
 	description = "Per-index ranking, kept apart from the index definition.",
 	externalDocs = @ExternalDocumentation(
 		description = "Search settings reference",
-		url = "https://levelfourab.github.io/exofind/reference/admin-api/#search-settings"
+		url = "https://exofind.dev/reference/admin-api/#search-settings"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

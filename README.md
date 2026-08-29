@@ -28,8 +28,7 @@ Key features include:
   patterns, and can be revoked without redeploying services.
 
 Full documentation is available in [`docs/`](docs/README.md), and is published
-along with the demo pages at
-[levelfourab.github.io/exofind](https://levelfourab.github.io/exofind/). It is
+along with the demo pages at [exofind.dev](https://exofind.dev/). It is
 organized by [Diátaxis](https://diataxis.fr):
 
 - **[Tutorials](docs/README.md#tutorials)**: Run the published image with

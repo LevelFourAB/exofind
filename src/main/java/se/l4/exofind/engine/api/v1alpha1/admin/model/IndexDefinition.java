@@ -70,7 +70,7 @@ public record IndexDefinition(
 		Tie-breaking rules and ranking signals. Omitted for no opinion beyond \
 		how well documents match. Replaced entirely while an index has \
 		[search \
-		settings](https://levelfourab.github.io/exofind/reference/admin-api/#search-settings).""")
+		settings](https://exofind.dev/reference/admin-api/#search-settings).""")
 	Ranking ranking,
 
 	@Schema(description = """
@@ -290,7 +290,7 @@ public record IndexDefinition(
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
 		Tie-breaking rules and signal score multipliers. See \
-		[Relevance](https://levelfourab.github.io/exofind/explanation/relevance/).""")
+		[Relevance](https://exofind.dev/explanation/relevance/).""")
 	public record Ranking(
 		/**
 		 * The tie breakers, applied in order until one of them tells two

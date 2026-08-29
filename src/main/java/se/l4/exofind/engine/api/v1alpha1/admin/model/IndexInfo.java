@@ -34,7 +34,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 	An index together with the definition and status of one of its \
 	generations - the one the request named, or the live one when it named the \
 	index alone. See [Index \
-	resource](https://levelfourab.github.io/exofind/reference/admin-api/#index-resource).""")
+	resource](https://exofind.dev/reference/admin-api/#index-resource).""")
 public record IndexInfo(
 	@Schema(description = "Name of the index.", examples = "products")
 	String name,

@@ -105,7 +105,7 @@ import jakarta.ws.rs.core.StreamingOutput;
 	description = "Reads, creates, updates and deletes the documents of an index.",
 	externalDocs = @ExternalDocumentation(
 		description = "Documents API reference",
-		url = "https://levelfourab.github.io/exofind/reference/documents-api/"
+		url = "https://exofind.dev/reference/documents-api/"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

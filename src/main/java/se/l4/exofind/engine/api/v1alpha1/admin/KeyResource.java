@@ -54,7 +54,7 @@ import jakarta.ws.rs.core.Response;
 	description = "Creates, lists and revokes the API keys of the deployment.",
 	externalDocs = @ExternalDocumentation(
 		description = "Authentication reference",
-		url = "https://levelfourab.github.io/exofind/reference/auth/"
+		url = "https://exofind.dev/reference/auth/"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

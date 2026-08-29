@@ -25,7 +25,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 	Text data. The ways a string can be searched are opt-in, each enabled by \
 	including its configuration; an empty object enables it with engine \
 	defaults. See \
-	[`string`](https://levelfourab.github.io/exofind/reference/field-types/#string).""")
+	[`string`](https://exofind.dev/reference/field-types/#string).""")
 public record StringFieldDefinition(
 	/**
 	 * What the field is for, expanded into the usages that serve it before the
@@ -157,7 +157,7 @@ public record StringFieldDefinition(
 		@Schema(description = """
 			How the text is analyzed. Omitted, the engine generates an \
 			analyzer from the field usage and locale. See \
-			[Analysis](https://levelfourab.github.io/exofind/reference/analysis/).""")
+			[Analysis](https://exofind.dev/reference/analysis/).""")
 		AnalyzerDefinition analyzer,
 
 		/**
@@ -203,7 +203,7 @@ public record StringFieldDefinition(
 			Omitted, the engine decides by the locale of the value. Supported \
 			only when the engine builds the chain - a chain given through \
 			`analyzer` says itself whether it splits. See [Compound \
-			words](https://levelfourab.github.io/exofind/reference/analysis/#compound-words).""")
+			words](https://exofind.dev/reference/analysis/#compound-words).""")
 		Decompound decompound,
 
 		/**

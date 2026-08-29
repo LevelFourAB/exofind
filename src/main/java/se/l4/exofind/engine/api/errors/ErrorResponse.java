@@ -30,7 +30,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		namespaces such as `index:field:invalid_name`, are stable across API \
 		versions, and are never renamed or reused, so clients match on `code` \
 		rather than on `message`. See \
-		[Errors](https://levelfourab.github.io/exofind/reference/errors/)."""
+		[Errors](https://exofind.dev/reference/errors/)."""
 )
 public record ErrorResponse(
 	@Schema(

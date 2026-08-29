@@ -12,7 +12,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
 	How one hit scores under a search. See \
-	[Explaining a result](https://levelfourab.github.io/exofind/reference/search-api/#explaining-a-result).""")
+	[Explaining a result](https://exofind.dev/reference/search-api/#explaining-a-result).""")
 public record ExplainResponse(
 	/**
 	 * Whether the hit satisfies the search.

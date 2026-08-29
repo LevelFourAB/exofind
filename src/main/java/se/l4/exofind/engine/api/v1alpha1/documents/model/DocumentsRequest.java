@@ -32,7 +32,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 	Documents to index. Each document carries its own primary key, so indexing \
 	one under an existing key replaces it; on an index that declares no \
 	primary key, every request adds a new document. See [How a document is \
-	shaped](https://levelfourab.github.io/exofind/reference/documents-api/#how-a-document-is-shaped).""")
+	shaped](https://exofind.dev/reference/documents-api/#how-a-document-is-shaped).""")
 public record DocumentsRequest(
 	@Schema(
 		description = """

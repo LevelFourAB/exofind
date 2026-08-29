@@ -19,7 +19,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  */
 @Schema(description = """
 	What a key should be allowed to do. See \
-	[Permissions](https://levelfourab.github.io/exofind/reference/auth/#permissions).""")
+	[Permissions](https://exofind.dev/reference/auth/#permissions).""")
 public record KeyDefinition(
 	@Schema(
 		description = """

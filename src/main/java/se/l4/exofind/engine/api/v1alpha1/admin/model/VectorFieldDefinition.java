@@ -30,7 +30,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 	search clause. Vectors are supplied in document payloads - the engine never \
 	produces them - and vector fields support no `filter`, `sort`, `facet` or \
 	`locales`. See [Search by \
-	vector](https://levelfourab.github.io/exofind/how-to/search-by-vector/).""")
+	vector](https://exofind.dev/how-to/search-by-vector/).""")
 public record VectorFieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,

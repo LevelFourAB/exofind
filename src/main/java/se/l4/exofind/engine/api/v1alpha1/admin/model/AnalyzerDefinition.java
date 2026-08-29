@@ -35,7 +35,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 	derives the querying side from it. Components that select words by locale, \
 	such as stopwords and stemming, follow the locale of the value being \
 	analyzed unless they name one. See \
-	[Analysis](https://levelfourab.github.io/exofind/reference/analysis/).""")
+	[Analysis](https://exofind.dev/reference/analysis/).""")
 public record AnalyzerDefinition(
 	/**
 	 * A named chain the engine expands: {@code preserve_terms} tokenizes and
@@ -330,7 +330,7 @@ public record AnalyzerDefinition(
 			Splits compound words into their parts, keeping the whole word \
 			alongside them, so a search for a part finds the compounds built \
 			from it. Applied when a value is indexed. See [Compound \
-			words](https://levelfourab.github.io/exofind/reference/analysis/#compound-words).""")
+			words](https://exofind.dev/reference/analysis/#compound-words).""")
 		Decompound decompound
 	) {
 		@JsonInclude(JsonInclude.Include.NON_NULL)

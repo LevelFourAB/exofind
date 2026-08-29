@@ -36,7 +36,7 @@ import se.l4.exofind.engine.reindex.ReindexJob;
  */
 @Schema(description = """
 	One reindex job as its durable record stands. See [Job record and \
-	phases](https://levelfourab.github.io/exofind/reference/admin-api/#job-record-and-phases).""")
+	phases](https://exofind.dev/reference/admin-api/#job-record-and-phases).""")
 public record ReindexInfo(
 	@Schema(description = "Name of the index the job belongs to.", examples = "products")
 	String index,

@@ -49,7 +49,7 @@ import jakarta.ws.rs.core.Response;
 	description = "Fills a new generation from an existing one, inside the engine.",
 	externalDocs = @ExternalDocumentation(
 		description = "Reindex reference",
-		url = "https://levelfourab.github.io/exofind/reference/admin-api/#reindex"
+		url = "https://exofind.dev/reference/admin-api/#reindex"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

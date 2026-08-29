@@ -8,13 +8,15 @@
  */
 
 /** Origin the site is served from. */
-export const SITE = 'https://levelfourab.github.io';
+export const SITE = 'https://exofind.dev';
 
 /**
- * Path the site is rooted at. GitHub Pages serves a project site under the
- * repository name, so every absolute URL on the site starts with this.
+ * Path the site is rooted at, without a trailing slash. Empty, because the
+ * custom domain serves the site from its root rather than under a repository
+ * name. `astro.config.mjs` passes `/` in its place, which is how Astro spells
+ * the same thing.
  */
-export const BASE = '/exofind';
+export const BASE = '';
 
 /** The repository, for edit links and for links to files the site does not hold. */
 export const REPO = 'https://github.com/LevelFourAB/exofind';

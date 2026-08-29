@@ -45,7 +45,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	A search condition, structured as a tagged union where `type` selects the \
 	clause type. If `type` is omitted, the clause defaults to a `field` clause \
 	containing `field` and `match`. See \
-	[Clauses](https://levelfourab.github.io/exofind/reference/search-api/#clauses).""")
+	[Clauses](https://exofind.dev/reference/search-api/#clauses).""")
 public sealed interface Clause
 	permits Clause.Field, Clause.Text, Clause.Knn, Clause.Nested, Clause.And, Clause.Or,
 		Clause.Not, Clause.Boost {
@@ -93,7 +93,7 @@ public sealed interface Clause
 			operate within a single field and match terms exactly as typed, \
 			regardless of a field's `typoTolerance`. Fields defined only for \
 			`autocomplete` do not support phrase matching. See \
-			[`text`](https://levelfourab.github.io/exofind/reference/search-api/#text)."""
+			[`text`](https://exofind.dev/reference/search-api/#text)."""
 	)
 	record Text(
 		/**
@@ -179,7 +179,7 @@ public sealed interface Clause
 			description = """
 				Query relaxation strategy applied only when the query returns \
 				zero matches. See [Finding something rather than \
-				nothing](https://levelfourab.github.io/exofind/reference/search-api/#finding-something-rather-than-nothing).""",
+				nothing](https://exofind.dev/reference/search-api/#finding-something-rather-than-nothing).""",
 			defaultValue = "unmatched"
 		)
 		Matcher.Text.Relax relax,
@@ -285,11 +285,11 @@ public sealed interface Clause
 		name = "NestedClause",
 		description = """
 			Matches documents where a single element of a `nested` \
-			[object field](https://levelfourab.github.io/exofind/reference/field-types/#object) \
+			[object field](https://exofind.dev/reference/field-types/#object) \
 			satisfies all child clauses. A `nested` clause on a flattened \
 			object field returns `index:query:nested:flattened`; on a \
 			non-object field it returns an error. See \
-			[`nested`](https://levelfourab.github.io/exofind/reference/search-api/#nested)."""
+			[`nested`](https://exofind.dev/reference/search-api/#nested)."""
 	)
 	record Nested(
 		/**

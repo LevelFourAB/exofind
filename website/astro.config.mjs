@@ -13,7 +13,9 @@ const docsRoot = new URL('../docs/', import.meta.url);
 
 export default defineConfig({
 	site: SITE,
-	base: BASE,
+	// Astro wants a path where `BASE` holds a prefix to concatenate, and the
+	// root is the one place the two spellings differ: `/` here, empty there.
+	base: BASE || '/',
 
 	/*
 	 * The documentation lives in `docs/` and is read from the repository as

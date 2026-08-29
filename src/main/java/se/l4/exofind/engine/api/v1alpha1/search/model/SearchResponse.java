@@ -16,7 +16,7 @@ import se.l4.exofind.engine.index.Document;
  * What a search found, as it is answered over the API.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = "The results of a search. See [Response](https://levelfourab.github.io/exofind/reference/search-api/#response).")
+@Schema(description = "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response).")
 public record SearchResponse(
 	/**
 	 * The results asked for, in the order they were asked for.

@@ -39,7 +39,7 @@ import jakarta.ws.rs.core.MediaType;
 	description = "Which node writes which index.",
 	externalDocs = @ExternalDocumentation(
 		description = "Indexers reference",
-		url = "https://levelfourab.github.io/exofind/reference/admin-api/#indexers"
+		url = "https://exofind.dev/reference/admin-api/#indexers"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

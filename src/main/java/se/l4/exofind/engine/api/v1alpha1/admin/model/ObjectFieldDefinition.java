@@ -55,7 +55,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 	`filter`, `sort`, `facet`, `locales` or `stored`, and its name may not use \
 	wildcards. Values are returned in search results only on an index that \
 	keeps document sources. See \
-	[`object`](https://levelfourab.github.io/exofind/reference/field-types/#object).""")
+	[`object`](https://exofind.dev/reference/field-types/#object).""")
 public record ObjectFieldDefinition(
 	@Schema(description = "Not supported on an object field; setting it is refused.")
 	Boolean primaryKey,

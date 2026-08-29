@@ -28,7 +28,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 	Field-level changes to documents already in an index. The updated document \
 	is validated as a whole, so a change that fails validation is rejected and \
 	leaves the document unchanged. See [Update \
-	behavior](https://levelfourab.github.io/exofind/reference/documents-api/#update-behavior).""")
+	behavior](https://exofind.dev/reference/documents-api/#update-behavior).""")
 public record UpdateRequest(
 	@Schema(
 		description = """

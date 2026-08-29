@@ -66,7 +66,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	opt-in: an empty configuration object enables a usage with engine \
 	defaults, and only explicitly configured properties are stored, so \
 	defaults stay owned by the engine across upgrades. See [Field \
-	types](https://levelfourab.github.io/exofind/reference/field-types/).""")
+	types](https://exofind.dev/reference/field-types/).""")
 public sealed interface FieldDefinition
 	permits StringFieldDefinition, BooleanFieldDefinition, VectorFieldDefinition,
 		Int32FieldDefinition, Int64FieldDefinition, FloatFieldDefinition,
@@ -83,7 +83,7 @@ public sealed interface FieldDefinition
 		usages. The combination is expanded into the definition before it is \
 		stored, and anything set beside the role is kept as given. Which roles \
 		a type accepts is listed under [Field \
-		roles](https://levelfourab.github.io/exofind/reference/field-types/#field-roles).""";
+		roles](https://exofind.dev/reference/field-types/#field-roles).""";
 
 	String PRIMARY_KEY_DESCRIPTION = """
 		Marks the field as the unique document identifier. Documents with \
@@ -262,7 +262,7 @@ public sealed interface FieldDefinition
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
 		Configures locale-specific field values. See [Localize \
-		fields](https://levelfourab.github.io/exofind/how-to/localize-fields/).""")
+		fields](https://exofind.dev/how-to/localize-fields/).""")
 	record Locales(
 		/**
 		 * The locale assumed for a value that does not carry one (BCP-47).

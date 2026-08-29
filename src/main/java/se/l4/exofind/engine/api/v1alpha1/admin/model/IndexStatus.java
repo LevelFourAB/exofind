@@ -38,7 +38,7 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
 @Schema(description = """
 	The state of an index as the answering node observes it. Reported by the \
 	engine and never accepted as input. See [Index \
-	states](https://levelfourab.github.io/exofind/reference/admin-api/#index-states).""")
+	states](https://exofind.dev/reference/admin-api/#index-states).""")
 public record IndexStatus(
 	@Schema(description = """
 		Where the index is in its synchronization with remote storage. \

@@ -28,7 +28,7 @@ import se.l4.exofind.engine.index.Document;
 	One part of the documents an index holds. A single request reads from a \
 	point-in-time snapshot and sees committed data only, so uncommitted writes \
 	are not visible. See [Reading \
-	documents](https://levelfourab.github.io/exofind/reference/documents-api/#reading-documents).""")
+	documents](https://exofind.dev/reference/documents-api/#reading-documents).""")
 public record ScanResponse(
 	/*
 	 * Typed as an array of free-form objects rather than by the engine's

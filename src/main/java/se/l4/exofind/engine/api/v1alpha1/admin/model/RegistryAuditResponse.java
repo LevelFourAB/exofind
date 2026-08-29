@@ -23,7 +23,7 @@ import se.l4.exofind.engine.index.registry.RegistryAuditReport;
 @Schema(description = """
 	The registry compared with what remote storage holds. Reported by the \
 	engine and never accepted as input. See \
-	[Audit](https://levelfourab.github.io/exofind/reference/admin-api/#audit).""")
+	[Audit](https://exofind.dev/reference/admin-api/#audit).""")
 public record RegistryAuditResponse(
 	@Schema(description = """
 		The state of the registry object. `PRESENT`: it was read. `ABSENT`: \

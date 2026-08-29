@@ -46,7 +46,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	union where `type` selects the matcher type. If `type` is omitted, the \
 	matcher defaults to `equals`. Specifying a matcher the target field type \
 	does not support returns an error. See \
-	[Matchers](https://levelfourab.github.io/exofind/reference/search-api/#matchers).""")
+	[Matchers](https://exofind.dev/reference/search-api/#matchers).""")
 public sealed interface Matcher
 	permits Matcher.Equals, Matcher.In, Matcher.Any, Matcher.Prefix, Matcher.Under,
 		Matcher.Range, Matcher.Ranges, Matcher.Text, Matcher.Distance {
@@ -129,7 +129,7 @@ public sealed interface Matcher
 		description = """
 			Matches values at or below the specified path in a hierarchical \
 			tree. Requires a field configured with \
-			[`hierarchy`](https://levelfourab.github.io/exofind/reference/field-types/#string). \
+			[`hierarchy`](https://exofind.dev/reference/field-types/#string). \
 			Path segments must match complete levels, so `Men/Sho` matches \
 			nothing where a `prefix` matcher would have matched the shoes."""
 	)
@@ -379,7 +379,7 @@ public sealed interface Matcher
 			description = """
 				Query relaxation strategy applied only when the query returns \
 				zero matches. See [Finding something rather than \
-				nothing](https://levelfourab.github.io/exofind/reference/search-api/#finding-something-rather-than-nothing).""",
+				nothing](https://exofind.dev/reference/search-api/#finding-something-rather-than-nothing).""",
 			defaultValue = "unmatched"
 		)
 		Relax relax

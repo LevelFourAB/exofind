@@ -25,7 +25,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 	targeting a field without sorting enabled returns \
 	`index:query:usage_not_enabled`; a signal function the field type does not \
 	support returns `index:invalid-query-type`. See \
-	[Signals](https://levelfourab.github.io/exofind/reference/search-api/#signals).""")
+	[Signals](https://exofind.dev/reference/search-api/#signals).""")
 public record Signal(
 	/**
 	 * Name of the field to read the value from, as it is called in the

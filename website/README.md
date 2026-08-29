@@ -118,11 +118,16 @@ disabling the indexer role, and setting `QUARKUS_HTTP_CORS_ORIGINS`, see
 
 ## Where the site is served from
 
-`src/site.mjs` defines the site origin and base path. GitHub Pages serves the
-project site under the repository name, so absolute URLs start with `/exofind`.
-Astro applies this prefix automatically to generated links. Custom URLs use
-`import.meta.env.BASE_URL`, and the remark plugin uses the same constant when
-rewriting Markdown links.
+`src/site.mjs` defines the site origin and base path, and nothing else decides
+either. GitHub Pages serves the site from the custom domain `exofind.dev`, so
+the base path is empty and absolute URLs start at the root.
+
+The base path is a separate constant from the origin because links are built in
+three places. Astro applies the base to the links it generates, page components
+read `import.meta.env.BASE_URL` for the URLs they write themselves, and the
+remark plugin imports `BASE` directly, because it rewrites Markdown links before
+Astro sees them. Serving the site under a path again is a change to `BASE`
+alone.
 
 ## Commands
 

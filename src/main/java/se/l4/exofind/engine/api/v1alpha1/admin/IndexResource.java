@@ -88,7 +88,7 @@ import jakarta.ws.rs.core.UriInfo;
 	description = "Defines, reads and deletes indexes and their generations.",
 	externalDocs = @ExternalDocumentation(
 		description = "Admin API reference",
-		url = "https://levelfourab.github.io/exofind/reference/admin-api/"
+		url = "https://exofind.dev/reference/admin-api/"
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)

@@ -25,7 +25,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @Schema(description = """
 	The search settings of an index as they are stored, together with what the \
 	answering node makes of them. See [Search \
-	settings](https://levelfourab.github.io/exofind/reference/admin-api/#search-settings).""")
+	settings](https://exofind.dev/reference/admin-api/#search-settings).""")
 public record SearchSettingsInfo(
 	@Schema(description = """
 		The ranking searches run with instead of the definition's. Omitted \

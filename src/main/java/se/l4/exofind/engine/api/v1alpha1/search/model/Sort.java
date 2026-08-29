@@ -36,7 +36,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	where `type` defaults to a `field` sort when omitted. If `order` is \
 	omitted, score sorts default to descending and field sorts to ascending. \
 	Configured index tie-breaker sorts are appended after the requested sorts. \
-	See [Sorts](https://levelfourab.github.io/exofind/reference/search-api/#sorts).""")
+	See [Sorts](https://exofind.dev/reference/search-api/#sorts).""")
 public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	/**
 	 * Which way values are ordered.
@@ -59,7 +59,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		description = """
 			Sorts by field value. The target field must have sorting enabled. \
 			A field inside a `nested` \
-			[object](https://levelfourab.github.io/exofind/reference/field-types/#object) \
+			[object](https://exofind.dev/reference/field-types/#object) \
 			is named by its dotted path, and only the nested values that the \
 			query's `nested` clauses matched are considered."""
 	)

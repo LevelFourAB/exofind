@@ -72,7 +72,7 @@ public record SearchRequest(
 		Refinement clauses, specified as `field` clauses or `nested` \
 		clauses. Filters narrow hits, but facets on the filtered field \
 		exclude their own filter entries from counts by default (see \
-		[Facets](https://levelfourab.github.io/exofind/reference/search-api/#facets)). \
+		[Facets](https://exofind.dev/reference/search-api/#facets)). \
 		Unsupported clause types return `search:filter:clause_invalid`. \
 		Clauses that score results return `search:filter:scores`.""")
 	List<Clause> filters,
@@ -83,7 +83,7 @@ public record SearchRequest(
 	 */
 	@Schema(description = """
 		Fields to aggregate match counts for. See \
-		[Facets](https://levelfourab.github.io/exofind/reference/search-api/#facets). \
+		[Facets](https://exofind.dev/reference/search-api/#facets). \
 		If omitted, no facet counts are calculated.""")
 	List<Facet> facets,
 
@@ -117,10 +117,10 @@ public record SearchRequest(
 	 */
 	@Schema(description = """
 		Document fields to return with each result. Fields inside an \
-		[`object`](https://levelfourab.github.io/exofind/reference/field-types/#object) \
+		[`object`](https://exofind.dev/reference/field-types/#object) \
 		are specified by dotted path and returned nested inside the object. \
 		Requesting unretrievable fields returns an error (see [Document \
-		source](https://levelfourab.github.io/exofind/reference/field-types/#document-source)). \
+		source](https://exofind.dev/reference/field-types/#document-source)). \
 		The primary key is always included.""")
 	List<String> fields,
 
@@ -129,7 +129,7 @@ public record SearchRequest(
 	 */
 	@Schema(description = """
 		Fields to return highlighted snippets for. See \
-		[Highlighting](https://levelfourab.github.io/exofind/reference/search-api/#highlighting).""")
+		[Highlighting](https://exofind.dev/reference/search-api/#highlighting).""")
 	Highlight highlight,
 
 	/**
@@ -139,7 +139,7 @@ public record SearchRequest(
 	@Schema(description = """
 		Nested object fields for which to return matched values with each \
 		hit. See [Matched \
-		values](https://levelfourab.github.io/exofind/reference/search-api/#matched-values).""")
+		values](https://exofind.dev/reference/search-api/#matched-values).""")
 	Matched matched,
 
 	/**
@@ -150,7 +150,7 @@ public record SearchRequest(
 	@Schema(description = """
 		Specifies an object field whose matched values return as individual \
 		hits instead of full documents. See [What a hit stands \
-		for](https://levelfourab.github.io/exofind/reference/search-api/#what-a-hit-stands-for).""")
+		for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""")
 	Hits hits,
 
 	/**
@@ -219,7 +219,7 @@ public record SearchRequest(
 	 */
 	@Schema(description = """
 		Document ranking signals used to adjust relevance scoring. See \
-		[Signals](https://levelfourab.github.io/exofind/reference/search-api/#signals). \
+		[Signals](https://exofind.dev/reference/search-api/#signals). \
 		If omitted, uses the ranking signals configured on the index.""")
 	List<Signal> signals
 ) {
@@ -309,7 +309,7 @@ public record SearchRequest(
 		 */
 		@Schema(description = """
 			Array of range bucket definitions. See [Range \
-			buckets](https://levelfourab.github.io/exofind/reference/search-api/#range-buckets). \
+			buckets](https://exofind.dev/reference/search-api/#range-buckets). \
 			Cannot be combined with `limit` or `order` \
 			(`search:facet:ranges_conflicting`).""")
 		List<Range> ranges,
@@ -323,7 +323,7 @@ public record SearchRequest(
 		@Schema(description = """
 			Starting path level for hierarchical fields. See [Counting down \
 			a \
-			tree](https://levelfourab.github.io/exofind/reference/search-api/#counting-down-a-tree). \
+			tree](https://exofind.dev/reference/search-api/#counting-down-a-tree). \
 			Defaults to the root.""")
 		String path,
 
@@ -452,7 +452,7 @@ public record SearchRequest(
 		scoring clauses, so non-scoring filter clauses produce no highlights. \
 		Highlighted text is not HTML-escaped, and text beyond the first 10,000 \
 		characters of a field value is not evaluated. See \
-		[Highlighting](https://levelfourab.github.io/exofind/reference/search-api/#highlighting).""")
+		[Highlighting](https://exofind.dev/reference/search-api/#highlighting).""")
 	public record Highlight(
 		/**
 		 * The fields to return fragments for, keyed by the name a field has
@@ -484,7 +484,7 @@ public record SearchRequest(
 		Requests the matched values of `nested` object fields with each hit. \
 		Cannot be combined with `hits` (`search:hits:with_matched`). See \
 		[Matched \
-		values](https://levelfourab.github.io/exofind/reference/search-api/#matched-values).""")
+		values](https://exofind.dev/reference/search-api/#matched-values).""")
 	public record Matched(
 		/**
 		 * The object fields to answer for, keyed by the name a field has in
@@ -524,7 +524,7 @@ public record SearchRequest(
 		be combined with `matched` (`search:hits:with_matched`), `highlight` \
 		(`search:hits:with_highlight`) or `knn` clauses \
 		(`search:hits:with_knn`). See [What a hit stands \
-		for](https://levelfourab.github.io/exofind/reference/search-api/#what-a-hit-stands-for).""")
+		for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""")
 	public record Hits(
 		/**
 		 * Name of the object field whose matched values are the hits, as it
