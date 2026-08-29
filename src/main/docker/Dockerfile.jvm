@@ -53,8 +53,8 @@ COPY --chown=exofind:exofind target/quarkus-app/quarkus/ quarkus/
 
 # The decompounding data, read from disk rather than the jar. The directory
 # carries its own attribution file, so the licensing travels with the data.
-COPY --chown=exofind:exofind decompound-data/ decompound-data/
-ENV EXOFIND_DECOMPOUND_DIRECTORY=/app/decompound-data
+COPY --chown=exofind:exofind locale-data/ locale-data/
+ENV EXOFIND_LOCALE_DATA_DIRECTORY=/app/locale-data
 
 # Where the node writes: copies of the indexes in object mode, and the indexes,
 # the registry and the keys themselves in local mode. Mount a volume here, or a

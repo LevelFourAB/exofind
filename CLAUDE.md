@@ -128,6 +128,13 @@ Everything else is caught by the compiler, a test or validation. These are not:
   stale, every fork dies, and the runner still exits zero - the failure shows
   only as benchmarks missing from the results. How to build clean without
   losing the built indexes is in `docs/how-to/benchmark-the-engine.md`.
+- **A `.fst` under `locale-data/` is only readable by the Lucene that wrote
+  it, and the engine reads nothing else** - the `.txt.gz` beside it is what
+  the file was built from, not a fallback. A Lucene upgrade without a rebuild
+  leaves a data set whose absence is quiet: a locale that decompounds simply
+  stops splitting and indexes compounds whole. `DecompounderTest` and
+  `LemmatizerTest` open every shipped transducer to turn that into a build
+  failure; the fix is to rebuild them, per `tools/locale-data/README.md`.
 - **The default matching chain rewrites words** - stemmed, decompounded, by
   locale - so a test that hand-picks words to sit a certain number of letters
   or typos apart is measuring the distance between what analysis leaves of
@@ -146,7 +153,13 @@ Everything else is caught by the compiler, a test or validation. These are not:
   and turning it on reaches no indexed document, so it needs a branch in
   `DefinitionCompatibility` too.
 - A locale: an entry in `Locales`, which registers `locale.<tag>` as a feature
-  on its own.
+  on its own. A locale whose analysis comes from `locale-data/` rather than
+  from the jar - Icelandic - is registered only where the data is installed,
+  so the node that cannot analyze the language refuses definitions naming it
+  instead of indexing the text unanalyzed. `tools/locale-data/` regenerates
+  the files. A word list or lemma lookup is shipped twice: the `.fst` the
+  engine memory maps, and the text it was built from, which nothing reads at
+  runtime.
 - An indexable type: a case in `documents.proto` and in `DocumentSource`, or
   documents of it cannot be kept.
 

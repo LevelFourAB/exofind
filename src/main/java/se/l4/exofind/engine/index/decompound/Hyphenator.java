@@ -18,7 +18,7 @@ import java.util.Map;
  * Built once from its patterns and read-only from there on, so an instance is
  * safe to use from several threads.
  */
-final class Hyphenator {
+public final class Hyphenator {
 	/**
 	 * A node of the pattern trie. The values of a pattern whose letters end
 	 * at this node sit on the node; a digit at position {@code i} of a
@@ -31,7 +31,7 @@ final class Hyphenator {
 
 	private final Node root = new Node();
 
-	Hyphenator(List<String> patterns) {
+	public Hyphenator(List<String> patterns) {
 		for(var pattern : patterns) {
 			add(pattern);
 		}

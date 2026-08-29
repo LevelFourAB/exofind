@@ -77,6 +77,11 @@ public class LocalesTest {
 		Map.entry("gl", List.of("casas", "casa")),
 		Map.entry("hu", List.of("házak", "ház")),
 		Map.entry("hy", List.of("երեխաներ", "երեխա")),
+		/*
+		 * Icelandic changes the stem as often as the ending - the plural of
+		 * bók is bækur - so its forms are looked up rather than cut.
+		 */
+		Map.entry("is", List.of("hestinum", "hestur")),
 		Map.entry("it", List.of("ragazzi", "ragazzo")),
 		Map.entry("lt", List.of("namai", "namas")),
 		Map.entry("lv", List.of("grāmatas", "grāmata")),
@@ -296,6 +301,27 @@ public class LocalesTest {
 	@Test
 	public void testGreekDropsAccentedStopwords() {
 		assertThat(terms("el", "από"), is(empty()));
+	}
+
+	/**
+	 * Icelandic is stemmed by looking each form up, which is what reaches the
+	 * plurals no ending describes - bók to bækur, maður to menn - and the
+	 * vowel the stem changes to before a dative plural.
+	 */
+	@Test
+	public void testIcelandicBringsIrregularFormsToTheSameTerm() {
+		assertThat(terms("is", "bækur"), is(terms("is", "bók")));
+		assertThat(terms("is", "menn"), is(terms("is", "maður")));
+		assertThat(terms("is", "börnum"), is(terms("is", "barn")));
+	}
+
+	/**
+	 * A word the lookup does not hold comes out as it was written. A rule
+	 * stemmer would cut it at a guess; there is no guess to make here.
+	 */
+	@Test
+	public void testIcelandicLeavesAnUnknownWordAlone() {
+		assertThat(terms("is", "blorkurinn"), contains("blorkurinn"));
 	}
 
 	@Test

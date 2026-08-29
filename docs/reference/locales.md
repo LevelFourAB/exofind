@@ -38,6 +38,7 @@ The following table lists the supported language tags and their analysis capabil
 | `hu` | Hungarian | yes | yes | | |
 | `hy` | Armenian | yes | yes | | |
 | `id` | Indonesian | yes | yes | | |
+| `is` | Icelandic | yes | yes | | yes |
 | `it` | Italian | yes | yes | | |
 | `ja` | Japanese | yes | yes | yes | |
 | `ko` | Korean | | | yes | |
@@ -69,6 +70,7 @@ The following table lists the supported language tags and their analysis capabil
   - Korean and Thai do not have stemming rules because words do not inflect.
 - **Own segmentation**: Indicates languages that use a dictionary-based word segmenter instead of Unicode segmentation because words are written without spaces. Thai words are segmented using standard Unicode segmentation.
 - **Compound splitting**: Indicates locales that include decompounding data (for example, searching for `jakke` matches `regnjakke`). Decompounding requires decompounding data on the node. For more information, see [compound words](analysis.md#compound-words).
+- **Locale data**: Icelandic reads its stopwords, stemming, and compound parts from the [locale data directory](configuration.md#locale-data) rather than from components built into the engine. A node without the data reports Icelandic as unsupported.
 - **Normalization**: Applied automatically when a language requires rules beyond Unicode case folding. Normalization covers the following cases:
   - Turkish dotless `ı`.
   - Greek accents.
@@ -87,7 +89,7 @@ For information about fields configured with multiple locales, see [Localize fie
 
 Collation uses International Components for Unicode (ICU), which supports all locales. A `sort` definition with `"collation": "locale"` sorts values according to the rules of the locale assigned to the value.
 
-The supported languages table lists locales supported for text analysis during indexing. A locale is included only when the engine provides specific analysis rules for that language.
+The supported languages table lists locales supported for text analysis during indexing. A locale is included only when the engine provides specific analysis rules for that language. Icelandic is supported only on a node that has its locale data installed.
 
 ## Errors
 

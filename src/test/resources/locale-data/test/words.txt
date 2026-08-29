@@ -1,0 +1,17 @@
+# Parts the test grammar may split a compound into. `Vinter` is capitalized
+# on purpose - entries are folded when the transducer is built, so it has to
+# meet a lowercase token anyway.
+#
+# The engine reads `words.fst` beside this file, not this file. Rebuild it
+# after any change here:
+#
+#   java -cp "$(cat target/classpath.txt)" tools/locale-data/Convert.java \
+#       fst-words src/test/resources/locale-data/test/words.fst \
+#       src/test/resources/locale-data/test/words.txt
+#
+# See tools/locale-data/README.md for where that classpath comes from.
+regn
+jakke
+Vinter
+hus
+bil

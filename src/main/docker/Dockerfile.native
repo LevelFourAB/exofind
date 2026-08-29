@@ -28,8 +28,8 @@ COPY --chown=1001:root target/*-runner /work/application
 # The decompounding data, read from disk rather than the executable. The
 # directory carries its own attribution file, so the licensing travels with
 # the data.
-COPY --chown=1001:root decompound-data/ decompound-data/
-ENV EXOFIND_DECOMPOUND_DIRECTORY=/work/decompound-data
+COPY --chown=1001:root locale-data/ locale-data/
+ENV EXOFIND_LOCALE_DATA_DIRECTORY=/work/locale-data
 
 EXPOSE 8080
 USER 1001

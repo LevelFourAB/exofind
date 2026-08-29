@@ -397,6 +397,61 @@ public class LocaleSearchTest extends AbstractIndexTest {
 	}
 
 	/**
+	 * Icelandic reads its stemming and its compound parts from locale data
+	 * rather than from anything Lucene ships. A search for the dictionary
+	 * form of a word the document holds inflected, and a search for the
+	 * second half of a compound the document holds whole, are both that data
+	 * working through the whole indexing and search path.
+	 */
+	@Test
+	public void testIcelandicIsStemmedAndSplitEndToEnd() throws IOException {
+		var index = create(
+			"icelandic",
+			IndexDef.newBuilder()
+				.putFields("id", string(StringFieldTypeDef.newBuilder()).setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(
+								StringFieldTypeDef.TextUsageConfig.getDefaultInstance()
+							)
+					)
+						.setLocales(
+							FieldDef.LocaleConfig.newBuilder().setDefaultLocale("is")
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Hestarnir fengu nýjan tölvupóst", "is")
+			)
+		);
+		index.commit();
+
+		var inflected = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("hestur"))
+				.withLocale("is")
+				.build()
+		);
+
+		assertThat(ids(inflected), contains("1"));
+
+		var part = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("póstur"))
+				.withLocale("is")
+				.build()
+		);
+
+		assertThat(ids(part), contains("1"));
+	}
+
+	/**
 	 * A required field is satisfied by a value in any locale - being required
 	 * is about the document saying something for the field, not about saying
 	 * it in every language.

@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index.locales;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.sameInstance;
 
 import java.io.IOException;
@@ -12,9 +13,8 @@ import java.util.List;
 
 import org.apache.lucene.analysis.core.KeywordTokenizer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.util.fst.NoOutputs;
 import org.junit.jupiter.api.Test;
-
-import se.l4.exofind.engine.index.decompound.Decompounder;
 
 /**
  * Pins the decompounding data the build ships: every locale registered with
@@ -47,7 +47,7 @@ public class DecompounderTest {
 
 	@Test
 	public void testShippedLocalesHaveData() {
-		for(var tag : List.of("da", "de", "nl", "sv", "no", "nb", "nn")) {
+		for(var tag : List.of("da", "de", "is", "nl", "sv", "no", "nb", "nn")) {
 			assertThat(
 				tag + " should decompound",
 				Locales.get(tag).orElseThrow().isDecompoundingSupported(),
@@ -69,6 +69,24 @@ public class DecompounderTest {
 		assertThat(
 			parts("de", "winterjacke"),
 			hasItems("winterjacke", "winter", "jacke")
+		);
+	}
+
+	/**
+	 * Icelandic joins a compound at a genitive rather than at a bare stem -
+	 * tölva enters tölvupóstur as tölvu - so the word list holds the genitive
+	 * forms and the parts come out in them. The stemming that follows the
+	 * split is what brings them back to the form they are looked up under.
+	 */
+	@Test
+	public void testIcelandic() throws IOException {
+		assertThat(
+			parts("is", "tölvupóstur"),
+			hasItems("tölvupóstur", "tölvu", "póstur")
+		);
+		assertThat(
+			parts("is", "barnabókasafn"),
+			hasItems("barnabókasafn", "barna", "safn")
 		);
 	}
 
@@ -114,6 +132,25 @@ public class DecompounderTest {
 			parts("de", "arbeitszimmer"),
 			hasItems("arbeitszimmer", "zimmer")
 		);
+	}
+
+	/**
+	 * Every shipped word list is readable as the transducer the engine memory
+	 * maps, which is the only form it reads. A transducer written by a
+	 * different version of Lucene is not readable, and a locale without one
+	 * stops splitting compounds and indexes them whole rather than failing.
+	 * Failing here is what turns that into a build error.
+	 */
+	@Test
+	public void testShippedWordListsAreReadableTransducers() throws IOException {
+		for(var data : List.of("da", "de", "is", "nb", "nl", "nn", "sv")) {
+			try(var fst = LocaleData.forName(data)
+				.readFst("words.fst", NoOutputs.getSingleton())
+				.orElseThrow(() -> new AssertionError(data + " should ship words.fst"))
+			) {
+				assertThat(data + " should hold words", fst.fst().getBytesReader(), is(notNullValue()));
+			}
+		}
 	}
 
 	/**

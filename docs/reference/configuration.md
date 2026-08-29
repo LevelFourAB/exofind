@@ -50,13 +50,43 @@ The following table lists object storage configuration variables:
 | `EXOFIND_STORAGE_REMOTE_BUCKET` | Bucket where indexes are stored. | Required |
 | `EXOFIND_STORAGE_REMOTE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
 
-## Decompounding data
+## Locale data
 
-The following table lists decompounding configuration variables:
+The following table lists locale data configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_DECOMPOUND_DIRECTORY` | Directory holding per-locale data to split compound words. For more information, see [Analysis](analysis.md#compound-words). Provide one directory per locale containing `patterns.txt` and `words.txt`, optionally gzipped. If a locale directory is missing, compound words are indexed whole. | `decompound-data` under the working directory |
+| `EXOFIND_LOCALE_DATA_DIRECTORY` | Directory holding language data that is not built into the engine. | `locale-data` under the working directory |
+
+`EXOFIND_LOCALE_DATA_DIRECTORY` contains one subdirectory per locale, named after the locale tag. For what the data is used for, see [compound words](analysis.md#compound-words) and the [locale reference](locales.md).
+
+The engine reads only the following files from a locale directory:
+
+| File | Format | May be gzipped |
+|------|--------|----------------|
+| `patterns.txt` | Text, hyphenation patterns | Yes |
+| `stopwords.txt` | Text, one word per line | Yes |
+| `words.fst` | Binary transducer of compound parts | No |
+| `stemming.fst` | Binary transducer, word form to dictionary form | No |
+
+The engine reads no other files. `words.txt.gz` and `stemming.txt.gz` exist in the project repository as source files to build the `.fst` files. They are not read at runtime and are not part of a deployment.
+
+### File requirements and missing file behavior
+
+- **Compound splitting:** Requires both `patterns.txt` and `words.fst`. If either file is missing, the engine indexes compound words whole and reports no error.
+- **Lookup stemming:** `stemming.fst` is required for locales that use lookup stemming instead of a built-in stemmer. Icelandic (`is`) is the only locale that requires this file. Without this file, the node reports the locale as unsupported and rejects index definitions naming it.
+
+The node determines supported locales at startup. Data installed while a node runs takes effect at the next restart.
+
+### Resource use
+
+The engine reads `.fst` files through a memory map. They cost almost no heap and load in no measurable time. Icelandic is the largest dataset and costs about 1.5 MB of heap.
+
+The engine loads a locale's data the first time an index uses that locale, and holds it until the node stops.
+
+### Version compatibility
+
+A `.fst` file can only be read by the version of Lucene that wrote it. Each Exofind release ships compatible files in the `locale-data` directory of the distribution. If you point a node at a data directory from a different release, the node fails when the locale is first used. The file is never read incorrectly.
 
 ## Indexer role
 

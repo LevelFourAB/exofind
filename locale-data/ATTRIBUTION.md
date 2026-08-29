@@ -1,17 +1,28 @@
-# Decompounding data
+# Locale data
 
-The files in this directory drive the splitting of compound words at
-indexing. Each data set holds a hyphenation grammar (`patterns.txt.gz`, one
-Liang pattern per line) and a word list of compound parts (`words.txt.gz`,
-one word per line), both derived from the sources below with the converters
-in `tools/decompound/`. This file is the attribution for those sources and
-ships wherever the data does.
+The files in this directory drive the language analysis that is not built
+into the engine. Each data set holds a hyphenation grammar
+(`patterns.txt.gz`, one Liang pattern per line) and a word list of compound
+parts (`words.txt.gz`, one word per line) for splitting compound words;
+Icelandic adds a form-to-lemma lookup (`stemming.txt.gz`, a form and the
+form to answer with per line, tab separated) and a stopword list
+(`stopwords.txt.gz`). All of them are derived from the sources below with
+the converters in `tools/locale-data/`. This file is the attribution for
+those sources and ships wherever the data does.
 
 Conversion keeps the sources' linguistic content: patterns are extracted
-from the TeX `\patterns` blocks unchanged, and word lists are filtered to
+from the TeX `\patterns` blocks unchanged, word lists are filtered to
 single words of three letters or more in the word classes compounds are
-built from (nouns, adjectives, verbs and their compounding stems). All
-sources were retrieved on 2026-08-16.
+built from (nouns, adjectives, verbs and their compounding stems), and the
+Icelandic lookup and stopword list are the source's own form-to-lemma pairs
+and closed word classes.
+
+Sources were retrieved on 2026-08-16, except the Icelandic ones, retrieved
+on 2026-08-29.
+
+The Icelandic data is share-alike, unlike everything else here. It is
+distributed as data files rather than inside the engine's jar, and adapting
+it further carries the CC BY-SA 4.0 terms with it.
 
 ## da - Danish
 
@@ -49,6 +60,30 @@ CC0 1.0.
 
 - <https://dumps.wikimedia.org/wikidatawiki/entities/latest-lexemes.json.gz>
 - SHA-256 `2933e168ab15bb86bf6db6787d5de18c22b780dbcfd141fb50051509ff6ea802`
+
+## is - Icelandic
+
+**Grammar**: Icelandic hyphenation patterns from hyph-utf8 (`hyph-is.tex`,
+patterns of 1988, CTAN upload of 2004), Copyright (C) 1988, 2004 Jörgen
+Pind, Institute of Lexicography, University of Iceland, under LPPL 1.2 or
+later. As LPPL requires of a modified redistribution, this converted form
+carries a different name (`patterns.txt`) and differs from the original by
+the conversion described above; the original is at the URL below.
+
+- <https://raw.githubusercontent.com/hyphenation/tex-hyphen/master/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-is.tex>
+- SHA-256 `2707969ebe34a9ddfd861aaef40619e75ac78453718a56401aed91c5cbdcfcec`
+
+**Words, stemming and stopwords**: Beygingarlýsing íslensks nútímamáls
+(BÍN), Sigrún's format (`SHsnid.csv`), published by Stofnun Árna
+Magnússonar í íslenskum fræðum under CC BY-SA 4.0. Editor Kristín
+Bjarnadóttir. Cite as: Beygingarlýsing íslensks nútímamáls. Kristín
+Bjarnadóttir, ritstjóri. Stofnun Árna Magnússonar í íslenskum fræðum.
+
+The download page asks for the terms to be accepted before the file is
+taken, at <https://bin.arnastofnun.is/gogn/mimisbrunnur/>.
+
+- <https://bin.arnastofnun.is/django/api/nidurhal/?file=SHsnid.csv.zip>
+- SHA-256 `fd34885f9863d8e6ad5f490f018697d6cf3a3659d4618beb6d11134a97942b61`
 
 ## nb, nn - Norwegian Bokmål and Nynorsk
 

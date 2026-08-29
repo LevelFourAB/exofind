@@ -5,12 +5,14 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 
-import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.TokenFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
+import org.apache.lucene.util.IntsRefBuilder;
+import org.apache.lucene.util.fst.FST;
+import org.apache.lucene.util.fst.Util;
 
 /**
  * Splits compound tokens into their parts: every token passes through
@@ -24,13 +26,26 @@ import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
  * both the grammar and the list is what keeps arbitrary substrings out; it
  * also means a compound whose boundary the grammar misses stays whole rather
  * than being split wrongly.
+ *
+ * The word list is a transducer over the code points of each word, spelled the
+ * way the tokens reaching this filter are spelled - folded, not as the
+ * language writes - because a part is looked up exactly as it was cut out of
+ * the token.
+ *
+ * A filter walks that transducer with scratch space of its own and is used
+ * from one thread, as a token stream is; the transducer and the
+ * {@link Hyphenator} behind it are shared.
  */
-final class DecompoundTokenFilter extends TokenFilter {
+public final class DecompoundTokenFilter extends TokenFilter {
 	private final Hyphenator hyphenator;
-	private final CharArraySet words;
+	private final FST<Object> words;
 	private final int minWordSize;
 	private final int minPartSize;
 	private final int maxPartSize;
+
+	private final FST.Arc<Object> arc = new FST.Arc<>();
+	private final FST.BytesReader reader;
+	private final IntsRefBuilder scratch = new IntsRefBuilder();
 
 	private final CharTermAttribute termAtt = addAttribute(CharTermAttribute.class);
 	private final OffsetAttribute offsetAtt = addAttribute(OffsetAttribute.class);
@@ -40,10 +55,10 @@ final class DecompoundTokenFilter extends TokenFilter {
 	private final Deque<String> parts = new ArrayDeque<>();
 	private State state;
 
-	DecompoundTokenFilter(
+	public DecompoundTokenFilter(
 		TokenStream input,
 		Hyphenator hyphenator,
-		CharArraySet words,
+		FST<Object> words,
 		int minWordSize,
 		int minPartSize,
 		int maxPartSize
@@ -51,6 +66,7 @@ final class DecompoundTokenFilter extends TokenFilter {
 		super(input);
 		this.hyphenator = hyphenator;
 		this.words = words;
+		this.reader = words.getBytesReader();
 		this.minWordSize = minWordSize;
 		this.minPartSize = minPartSize;
 		this.maxPartSize = maxPartSize;
@@ -81,7 +97,24 @@ final class DecompoundTokenFilter extends TokenFilter {
 		return true;
 	}
 
-	private void decompose() {
+	/**
+	 * Get whether the word list holds the word written in the given range of
+	 * the buffer.
+	 */
+	private boolean contains(char[] buffer, int offset, int length) throws IOException {
+		var input = Util.toUTF32(buffer, offset, length, scratch);
+
+		words.getFirstArc(arc);
+		for(var i = 0; i < input.length; i++) {
+			if(words.findTargetArc(input.ints[input.offset + i], arc, arc, reader) == null) {
+				return false;
+			}
+		}
+
+		return arc.isFinal();
+	}
+
+	private void decompose() throws IOException {
 		var buffer = termAtt.buffer();
 		var length = termAtt.length();
 
@@ -119,9 +152,9 @@ final class DecompoundTokenFilter extends TokenFilter {
 					break;
 				}
 
-				if(words.contains(buffer, points[i], partLength)) {
+				if(contains(buffer, points[i], partLength)) {
 					found.add(new String(buffer, points[i], partLength));
-				} else if(words.contains(buffer, points[i], partLength - 1)) {
+				} else if(contains(buffer, points[i], partLength - 1)) {
 					// A part with a linking letter on the end
 					found.add(new String(buffer, points[i], partLength - 1));
 				}

@@ -116,8 +116,6 @@ import org.tartarus.snowball.ext.SwedishStemmer;
 import org.tartarus.snowball.ext.TamilStemmer;
 import org.tartarus.snowball.ext.TurkishStemmer;
 
-import se.l4.exofind.engine.index.decompound.Decompounder;
-
 import morfologik.stemming.Dictionary;
 
 /**
@@ -137,10 +135,16 @@ import morfologik.stemming.Dictionary;
  * that glues compounds into one word also names its {@link Decompounder}
  * data, shipped with the engine rather than by Lucene.
  *
- * A language is only listed when Lucene has real rules for it - segmentation,
+ * A language is only listed when there are real rules for it - segmentation,
  * a stopword list or a stemmer. Any locale can still be sorted by its own
  * collation through ICU, but claiming `locale.xx` support for analysis that
- * would fall back to nothing would promise more than it delivers.
+ * would fall back to nothing would promise more than it delivers. That is why
+ * a locale whose analysis comes from {@link LocaleData} rather than from the
+ * jar is listed only where the data is installed: the node that cannot analyze
+ * the language says so, and a definition naming the locale is refused there
+ * rather than indexed unanalyzed. Which locales those are is decided once,
+ * when this class is first used, so data installed after a node has started
+ * is not picked up until it restarts.
  */
 public final class Locales {
 	private static final ImmutableMap<String, LocaleSupport> SUPPORTED = build();
@@ -299,6 +303,23 @@ public final class Locales {
 		register(locales, StandardLocaleSupport.of("id")
 			.withStopWords(IndonesianAnalyzer.getDefaultStopSet())
 			.withStemmer(IndonesianStemFilter::new));
+
+		/*
+		 * Icelandic inflects further than a rule stemmer reaches - a noun has
+		 * eight forms before the definite article is suffixed onto any of
+		 * them, and the stem vowel changes as often as the ending does - so
+		 * words are looked up in a full form list instead. That list, the
+		 * stopwords and the compound parts are all locale data rather than
+		 * something Lucene ships, which is why the locale is registered only
+		 * where the data is there to read.
+		 */
+		var icelandic = Lemmatizer.forData("is");
+		if(icelandic.isAvailable()) {
+			register(locales, StandardLocaleSupport.of("is")
+				.withStopWords(() -> stopWords("is"))
+				.withStemmer(icelandic::stem)
+				.withDecompounder(Decompounder.forData("is")));
+		}
 
 		register(locales, StandardLocaleSupport.of("it")
 			.withStopWords(ItalianAnalyzer.getDefaultStopSet())
@@ -486,6 +507,16 @@ public final class Locales {
 			.withStemmer(PorterStemFilter::new));
 
 		return locales.toImmutable();
+	}
+
+	/**
+	 * Read the stopword list of a locale data set, for the locales whose list
+	 * is not one Lucene ships.
+	 */
+	private static CharArraySet stopWords(String name) {
+		var words = new CharArraySet(1 << 10, false);
+		LocaleData.forName(name).read("stopwords.txt", words::add);
+		return CharArraySet.unmodifiableSet(words);
 	}
 
 	private static void register(

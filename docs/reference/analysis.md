@@ -119,7 +119,7 @@ Synonyms apply at index time. Modifying a synonym set only affects documents ind
 
 ## Compound words
 
-The engine-built `matching` chain automatically decompounds words for the following locales: `da`, `de`, `nl`, `no`, `nb`, `nn`, and `sv`.
+The engine-built `matching` chain automatically decompounds words for the following locales: `da`, `de`, `is`, `nl`, `no`, `nb`, `nn`, and `sv`.
 
 Decompounding splits a word where hyphenation rules allow and matches parts against the locale dictionary. The engine indexes both the constituent parts and the complete compound word.
 
@@ -129,12 +129,14 @@ Japanese and Korean handle compound segmentation through their tokenizers rather
 
 To disable automatic decompounding for a usage, set `"decompound": "none"`. This setting does not affect Japanese or Korean tokenizer segmentation. A custom analyzer chain does not split compound words unless you include the `decompound` token filter.
 
-Decompounding dictionaries are stored on the filesystem in the directory specified by `EXOFIND_DECOMPOUND_DIRECTORY`. For more information, see [configuration](configuration.md).
+Decompounding dictionaries are stored on the filesystem in the directory specified by `EXOFIND_LOCALE_DATA_DIRECTORY`. For more information, see [configuration](configuration.md).
 
 If a node lacks dictionary data for a locale required by an index definition, the node rejects the index definition during validation.
 
 ## Locales
 
 Analysis uses Lucene language components for stopwords, stemming, tokenization, and locale-specific normalization (such as Turkish dotless ı or Greek accents).
+
+Icelandic stems by looking each word up in a full form list instead, because its inflection is too irregular for a rule-based stemmer. The list is locale data, so a node only supports `is` when the data is installed. For more information, see [configuration](configuration.md#locale-data).
 
 For supported locale tags and component configurations, see the [locale reference](locales.md). Validation fails if an index definition specifies an unsupported locale tag.

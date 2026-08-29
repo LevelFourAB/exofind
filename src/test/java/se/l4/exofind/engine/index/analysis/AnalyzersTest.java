@@ -16,7 +16,7 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.junit.jupiter.api.Test;
 
-import se.l4.exofind.engine.index.decompound.Decompounder;
+import se.l4.exofind.engine.index.locales.Decompounder;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.locales.StandardLocaleSupport;

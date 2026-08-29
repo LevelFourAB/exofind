@@ -13,8 +13,6 @@ import com.ibm.icu.text.Collator;
 import com.ibm.icu.text.Normalizer2;
 import com.ibm.icu.util.ULocale;
 
-import se.l4.exofind.engine.index.decompound.Decompounder;
-
 /**
  * A {@link LocaleSupport} assembled from the pieces that differ per locale.
  *
@@ -37,7 +35,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	 */
 	private final ThreadLocal<Collator> collator;
 
-	private final CharArraySet stopWords;
+	private final Supplier<CharArraySet> stopWords;
 	private final Supplier<Tokenizer> tokenizer;
 	private final UnaryOperator<TokenStream> normalizer;
 	private final UnaryOperator<TokenStream> stemmer;
@@ -45,7 +43,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 
 	private StandardLocaleSupport(
 		String tag,
-		CharArraySet stopWords,
+		Supplier<CharArraySet> stopWords,
 		Supplier<Tokenizer> tokenizer,
 		UnaryOperator<TokenStream> normalizer,
 		UnaryOperator<TokenStream> stemmer,
@@ -56,11 +54,41 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		this.collator = ThreadLocal.withInitial(
 			() -> Collator.getInstance(ULocale.forLanguageTag(tag))
 		);
-		this.stopWords = fold(stopWords);
+		/*
+		 * Held behind a supplier because a list read from locale data is only
+		 * on disk when the locale is offered at all, and reading it belongs to
+		 * the first use of the locale rather than to loading this class.
+		 */
+		this.stopWords = once(() -> fold(stopWords.get()));
 		this.tokenizer = tokenizer;
 		this.normalizer = normalizer;
 		this.stemmer = stemmer;
 		this.decompounder = decompounder;
+	}
+
+	/**
+	 * Wrap a supplier so that it runs once however many threads ask for the
+	 * value.
+	 */
+	private static <T> Supplier<T> once(Supplier<T> supplier) {
+		return new Supplier<>() {
+			private volatile T value;
+
+			@Override
+			public T get() {
+				var current = value;
+				if(current != null) {
+					return current;
+				}
+
+				synchronized(this) {
+					if(value == null) {
+						value = supplier.get();
+					}
+					return value;
+				}
+			}
+		};
 	}
 
 	/**
@@ -92,7 +120,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 
 	@Override
 	public CharArraySet getStopWords() {
-		return stopWords;
+		return stopWords.get();
 	}
 
 	@Override
@@ -135,12 +163,12 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	 * @return
 	 */
 	public static Builder of(String tag) {
-		return new Builder(tag, CharArraySet.EMPTY_SET, null, null, null, null);
+		return new Builder(tag, () -> CharArraySet.EMPTY_SET, null, null, null, null);
 	}
 
 	public record Builder(
 		String tag,
-		CharArraySet stopWords,
+		Supplier<CharArraySet> stopWords,
 		Supplier<Tokenizer> tokenizer,
 		UnaryOperator<TokenStream> normalizer,
 		UnaryOperator<TokenStream> stemmer,
@@ -153,6 +181,18 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * @return
 		 */
 		public Builder withStopWords(CharArraySet stopWords) {
+			return withStopWords(() -> stopWords);
+		}
+
+		/**
+		 * Set the words that carry no meaning in this locale, read when the
+		 * locale is first used rather than now. For a list that comes from
+		 * {@link LocaleData} instead of from the jar.
+		 *
+		 * @param stopWords
+		 * @return
+		 */
+		public Builder withStopWords(Supplier<CharArraySet> stopWords) {
 			return new Builder(tag, stopWords, tokenizer, normalizer, stemmer, decompounder);
 		}
 
