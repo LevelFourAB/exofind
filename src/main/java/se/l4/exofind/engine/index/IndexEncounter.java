@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index;
 import java.util.Locale;
 import java.util.Optional;
 
+import se.l4.exofind.engine.index.analysis.SynonymOverlay;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
@@ -48,6 +49,18 @@ public interface IndexEncounter {
 	 *   never {@code null}, empty when the index shares nothing
 	 */
 	ResourcesDef getResources();
+
+	/**
+	 * Get the synonym sets the search settings of the index widen a search
+	 * with. Nothing outside a search has them, so indexing sees an overlay that
+	 * widens nothing.
+	 *
+	 * @return
+	 *   never {@code null}
+	 */
+	default SynonymOverlay getQuerySynonyms() {
+		return SynonymOverlay.none();
+	}
 
 	/**
 	 * Get if the value is the primary key.

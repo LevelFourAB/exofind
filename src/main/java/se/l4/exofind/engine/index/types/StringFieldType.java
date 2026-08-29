@@ -7,8 +7,6 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField;
@@ -36,6 +34,7 @@ import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryVisitor;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SynonymQuery;
 import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
@@ -49,7 +48,6 @@ import org.apache.lucene.util.automaton.Operations;
 import org.eclipse.collections.api.collection.MutableCollection;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
-import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.impl.factory.Lists;
 
 import se.l4.exofind.engine.errors.ErrorMessage;
@@ -67,6 +65,7 @@ import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
 import se.l4.exofind.engine.index.analysis.AnalyzerChains;
 import se.l4.exofind.engine.index.analysis.AnalyzerMode;
 import se.l4.exofind.engine.index.analysis.Analyzers;
+import se.l4.exofind.engine.index.analysis.TokenGraph;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
@@ -1148,7 +1147,7 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
-	 * Build the query each word of the text asks of this field, in the order
+	 * Build the query each part of the text asks of this field, in the order
 	 * the words were typed.
 	 *
 	 * The text is analyzed the same way the values of the field were, so that
@@ -1156,6 +1155,10 @@ public class StringFieldType implements FieldType {
 	 * where {@link AnalyzerMode#QUERYING} differs from indexing, as a field
 	 * that indexed every prefix of a value must not cut the query into
 	 * prefixes again.
+	 *
+	 * A part is one word wherever nothing widened the text. Where the search
+	 * settings widen it, a rule standing for several words makes one part of
+	 * the words it stands for - see {@link TokenGraph}.
 	 *
 	 * The last word of a text of several, when it may still be half typed, is
 	 * asked of the autocomplete usage when the definition holds one beside
@@ -1178,13 +1181,24 @@ public class StringFieldType implements FieldType {
 		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos = null;
 		var maxEdits = MAX_EDITS;
 
+		/*
+		 * Only the matching usage holds positions worth reading; an
+		 * autocomplete usage stacks every prefix of a word at one position, so
+		 * a rule of several words is asked of it as words rather than as a
+		 * phrase.
+		 */
+		var positioned = stringType.hasMatching();
+
 		if(stringType.hasMatching()) {
 			name = encounter.name(FieldNames.MATCHING);
-			analyzer = Analyzers.matching(
-				stringType.getMatching(),
-				encounter.getResources(),
-				localeSupport,
-				AnalyzerMode.QUERYING
+			analyzer = queryAnalyzer(
+				encounter,
+				Analyzers.matching(
+					stringType.getMatching(),
+					encounter.getResources(),
+					localeSupport,
+					AnalyzerMode.QUERYING
+				)
 			);
 			prefixLast = matcher.prefix() == TextMatcher.Prefix.LAST_TOKEN;
 
@@ -1205,11 +1219,14 @@ public class StringFieldType implements FieldType {
 			 * not a prefix query over them.
 			 */
 			name = encounter.name(FieldNames.AUTOCOMPLETE);
-			analyzer = Analyzers.autocomplete(
-				stringType.getAutocomplete(),
-				encounter.getResources(),
-				localeSupport,
-				AnalyzerMode.QUERYING
+			analyzer = queryAnalyzer(
+				encounter,
+				Analyzers.autocomplete(
+					stringType.getAutocomplete(),
+					encounter.getResources(),
+					localeSupport,
+					AnalyzerMode.QUERYING
+				)
 			);
 			prefixLast = false;
 
@@ -1228,25 +1245,192 @@ public class StringFieldType implements FieldType {
 			throw new IndexFieldUsageException(encounter.getFieldName(), "matching");
 		}
 
-		var tokens = analyze(encounter, analyzer, name, matcher.text());
+		var segments = analyze(encounter, analyzer, name, matcher.text());
 
-		var completedLast = prefixLast && tokens.size() > 1 && !encounter.isForHighlighting()
-			? completedLastWord(encounter, matcher, tokens.size())
+		var completedLast = prefixLast && segments.size() > 1 && !encounter.isForHighlighting()
+			? completedLastWord(encounter, matcher, segments.size())
 			: null;
 
-		var words = Lists.mutable.<Query>empty();
-		for(var i = 0; i < tokens.size(); i++) {
-			var term = new Term(name, tokens.get(i));
-			var isLast = i == tokens.size() - 1;
+		var parts = Lists.mutable.<Query>empty();
+		for(var i = 0; i < segments.size(); i++) {
+			var isLast = i == segments.size() - 1;
 
-			words.add(
+			parts.add(
 				isLast && completedLast != null
 					? completedLast
-					: tokenQuery(term, prefixLast && isLast, typos, maxEdits)
+					: segmentQuery(
+						name,
+						segments.get(i),
+						prefixLast && isLast,
+						typos,
+						maxEdits,
+						positioned
+					)
 			);
 		}
 
-		return words.toImmutable();
+		return parts.toImmutable();
+	}
+
+	/**
+	 * Build the query one part of the text asks for.
+	 *
+	 * <p>A part of one position is a word, or a choice between the words
+	 * analysis stacked there - a {@link SynonymQuery}, which counts the choice
+	 * as one word however rare each of its terms happens to be, so that a
+	 * document found through a synonym is scored like one found through the
+	 * word that was typed. Where the choice cannot be one term query - a word
+	 * still being typed, or one whose mistakes are forgiven - the terms are
+	 * asked for one at a time instead.
+	 *
+	 * <p>A part of several positions is a choice between readings of the same
+	 * stretch of text, each read as a phrase where the field holds positions
+	 * and as its words where it does not.
+	 *
+	 * @param name
+	 *   what the field is written under
+	 * @param segment
+	 * @param prefix
+	 *   if the last word of the part may still be half typed
+	 * @param typos
+	 *   what mistakes are allowed, {@code null} for none
+	 * @param maxEdits
+	 *   the most mistakes to forgive
+	 * @param positioned
+	 *   whether the field holds positions a phrase can be read from
+	 * @return
+	 */
+	private static Query segmentQuery(
+		String name,
+		TokenGraph.Segment segment,
+		boolean prefix,
+		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
+		int maxEdits,
+		boolean positioned
+	) {
+		if(segment.isSingleWord()) {
+			var words = distinct(segment.words());
+
+			if(words.size() == 1) {
+				return boosted(
+					tokenQuery(new Term(name, words.get(0).text()), prefix, typos, maxEdits),
+					words.get(0).boost()
+				);
+			}
+
+			if(!prefix && typos == null) {
+				var builder = new SynonymQuery.Builder(name);
+				for(var word : words) {
+					builder.addTerm(new Term(name, word.text()), word.boost());
+				}
+
+				return builder.build();
+			}
+
+			var builder = new BooleanQuery.Builder();
+			for(var word : words) {
+				builder.add(
+					boosted(
+						tokenQuery(new Term(name, word.text()), prefix, typos, maxEdits),
+						word.boost()
+					),
+					BooleanClause.Occur.SHOULD
+				);
+			}
+
+			return builder.build();
+		}
+
+		var builder = new BooleanQuery.Builder();
+		for(var alternative : segment.alternatives()) {
+			builder.add(
+				boosted(
+					readingQuery(name, alternative, prefix, positioned),
+					weightOf(alternative)
+				),
+				BooleanClause.Occur.SHOULD
+			);
+		}
+
+		return builder.build();
+	}
+
+	/**
+	 * Build the query one reading of a part asks for: its words in the order
+	 * and at the distances the reading puts them, or the words on their own
+	 * where the field holds no positions to read them at.
+	 */
+	private static Query readingQuery(
+		String name,
+		TokenGraph.Alternative alternative,
+		boolean prefix,
+		boolean positioned
+	) {
+		var terms = alternative.terms();
+
+		if(terms.size() == 1) {
+			return tokenQuery(new Term(name, terms.get(0).term().text()), prefix, null, 0);
+		}
+
+		if(!positioned) {
+			var builder = new BooleanQuery.Builder();
+			for(var placed : terms) {
+				builder.add(
+					tokenQuery(new Term(name, placed.term().text()), false, null, 0),
+					BooleanClause.Occur.MUST
+				);
+			}
+
+			return builder.build();
+		}
+
+		/*
+		 * Spans rather than a phrase, because a reading can end in a word that
+		 * is still being typed, which a PhraseQuery has no place for.
+		 */
+		return spanReading(name, alternative, prefix);
+	}
+
+	/**
+	 * What a reading counts, which is what its least generous word counts - a
+	 * reading is only as much of a synonym as the most distant word in it.
+	 */
+	private static float weightOf(TokenGraph.Alternative alternative) {
+		var weight = 1f;
+		for(var placed : alternative.terms()) {
+			weight = Math.min(weight, placed.term().boost());
+		}
+
+		return weight;
+	}
+
+	private static Query boosted(Query query, float boost) {
+		return boost == 1f ? query : new BoostQuery(query, boost);
+	}
+
+	/**
+	 * The words of a part with each word kept once, worth the most generous of
+	 * what its copies were worth.
+	 *
+	 * <p>Two rules can add the same word, and a rule can add the word that was
+	 * typed. Asking for it twice would count a document holding it twice.
+	 */
+	private static ImmutableList<TokenGraph.Term> distinct(
+		ListIterable<TokenGraph.Term> words
+	) {
+		var best = new LinkedHashMap<String, Float>();
+		for(var word : words) {
+			best.merge(word.text(), word.boost(), Math::max);
+		}
+
+		if(best.size() == words.size()) {
+			return words.toList().toImmutable();
+		}
+
+		var distinct = Lists.mutable.<TokenGraph.Term>empty();
+		best.forEach((text, boost) -> distinct.add(new TokenGraph.Term(text, boost)));
+
+		return distinct.toImmutable();
 	}
 
 	/**
@@ -1279,16 +1463,16 @@ public class StringFieldType implements FieldType {
 	 * with the forgiveness a word still being typed gets - see
 	 * {@link #MAX_EDITS_WHILE_TYPING}.
 	 *
-	 * @param matchingWordCount
-	 *   how many words the matching chain cut the text into
+	 * @param matchingParts
+	 *   how many parts the matching chain cut the text into
 	 * @return
 	 *   the query for the last word, or {@code null} when the field has no
-	 *   autocomplete usage or the chains disagree on the words of the text
+	 *   autocomplete usage or the chains disagree on the parts of the text
 	 */
 	private static Query completedLastWord(
 		IndexEncounter encounter,
 		TextMatcher matcher,
-		int matchingWordCount
+		int matchingParts
 	) {
 		var stringType = encounter.getFieldType().getString();
 		if(!stringType.hasAutocomplete()) {
@@ -1297,15 +1481,18 @@ public class StringFieldType implements FieldType {
 
 		var usage = stringType.getAutocomplete();
 		var name = encounter.name(FieldNames.AUTOCOMPLETE);
-		var analyzer = Analyzers.autocomplete(
-			usage,
-			encounter.getResources(),
-			encounter.getLocaleSupport(),
-			AnalyzerMode.QUERYING
+		var analyzer = queryAnalyzer(
+			encounter,
+			Analyzers.autocomplete(
+				usage,
+				encounter.getResources(),
+				encounter.getLocaleSupport(),
+				AnalyzerMode.QUERYING
+			)
 		);
 
-		var tokens = analyze(encounter, analyzer, name, matcher.text());
-		if(tokens.size() != matchingWordCount) {
+		var segments = analyze(encounter, analyzer, name, matcher.text());
+		if(segments.size() != matchingParts) {
 			return null;
 		}
 
@@ -1316,7 +1503,7 @@ public class StringFieldType implements FieldType {
 			maxEdits = typos.hasMinLengthTwoTypos() ? MAX_EDITS : MAX_EDITS_WHILE_TYPING;
 		}
 
-		return tokenQuery(new Term(name, tokens.getLast()), false, typos, maxEdits);
+		return segmentQuery(name, segments.getLast(), false, typos, maxEdits, false);
 	}
 
 	/**
@@ -1330,6 +1517,10 @@ public class StringFieldType implements FieldType {
 	 * worth reading - an autocomplete field stacks every prefix of a word at
 	 * one position - so a field without matching refuses the phrase.
 	 *
+	 * A phrase counts a word the search settings added as it counts the word
+	 * that was typed: what a phrase asks is where the words sit, and there is
+	 * no place in that for weighing one position against another.
+	 *
 	 * @param encounter
 	 * @param matcher
 	 * @return
@@ -1341,80 +1532,65 @@ public class StringFieldType implements FieldType {
 		}
 
 		var name = encounter.name(FieldNames.MATCHING);
-		var analyzer = Analyzers.matching(
-			stringType.getMatching(),
-			encounter.getResources(),
-			encounter.getLocaleSupport(),
-			AnalyzerMode.QUERYING
+		var analyzer = queryAnalyzer(
+			encounter,
+			Analyzers.matching(
+				stringType.getMatching(),
+				encounter.getResources(),
+				encounter.getLocaleSupport(),
+				AnalyzerMode.QUERYING
+			)
 		);
 
-		var positions = analyzePositions(encounter, analyzer, name, matcher.text());
-		if(positions.isEmpty()) {
+		var segments = analyze(encounter, analyzer, name, matcher.text());
+		if(segments.isEmpty()) {
 			// Nothing survived analysis, the same answer a text of stopwords gets
 			return new MatchNoDocsQuery();
 		}
 
 		var prefixLast = matcher.prefix() == TextMatcher.Prefix.LAST_TOKEN;
 
-		if(positions.size() == 1) {
+		if(segments.size() == 1 && segments.get(0).isSingleWord()) {
 			// A phrase of one word is that word, half typed or not
-			return positionQuery(name, positions.get(0), prefixLast);
+			return segmentQuery(name, segments.get(0), prefixLast, null, 0, true);
 		}
 
-		if(!prefixLast && matcher.slop() == 0) {
-			return exactPhrase(name, positions);
+		if(!prefixLast
+			&& matcher.slop() == 0
+			&& segments.allSatisfy(TokenGraph.Segment::isSingleWord)) {
+			return exactPhrase(name, segments);
 		}
 
-		return spanPhrase(name, positions, prefixLast, matcher.slop());
-	}
-
-	/**
-	 * Build the query a phrase of a single position asks: one word, or a
-	 * choice between the variants analysis stacked there.
-	 */
-	private static Query positionQuery(
-		String name,
-		PositionedTerms position,
-		boolean prefix
-	) {
-		if(position.terms().size() == 1) {
-			return tokenQuery(new Term(name, position.terms().get(0)), prefix, null, 0);
-		}
-
-		var builder = new BooleanQuery.Builder();
-		for(var term : position.terms()) {
-			builder.add(
-				tokenQuery(new Term(name, term), prefix, null, 0),
-				BooleanClause.Occur.SHOULD
-			);
-		}
-
-		return builder.build();
+		return spanPhrase(name, segments, prefixLast, matcher.slop());
 	}
 
 	/**
 	 * Build a phrase of whole words. A position holding a single term goes
 	 * into a {@link PhraseQuery}; one where analysis stacked variants - a
-	 * filter that keeps an original alongside its folded form - needs
-	 * {@link MultiPhraseQuery}, which accepts any of them at that position.
+	 * filter that keeps an original alongside its folded form, or a rule that
+	 * added a word - needs {@link MultiPhraseQuery}, which accepts any of them
+	 * at that position.
 	 */
-	private static Query exactPhrase(String name, ListIterable<PositionedTerms> positions) {
-		if(positions.allSatisfy(p -> p.terms().size() == 1)) {
+	private static Query exactPhrase(String name, ListIterable<TokenGraph.Segment> segments) {
+		if(segments.allSatisfy(segment -> segment.words().size() == 1)) {
 			var builder = new PhraseQuery.Builder();
-			for(var position : positions) {
-				builder.add(new Term(name, position.terms().get(0)), position.position());
+			for(var segment : segments) {
+				builder.add(
+					new Term(name, segment.words().get(0).text()),
+					segment.position()
+				);
 			}
 
 			return builder.build();
 		}
 
 		var builder = new MultiPhraseQuery.Builder();
-		for(var position : positions) {
+		for(var segment : segments) {
 			builder.add(
-				position.terms()
-					.collect(term -> new Term(name, term))
+				segment.words()
+					.collect(word -> new Term(name, word.text()))
 					.toArray(new Term[0]),
-				position.position()
+				segment.position()
 			);
 		}
 
@@ -1422,21 +1598,21 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
-	 * Build a phrase as spans, which is what the two things a
+	 * Build a phrase as spans, which is what the three things a
 	 * {@link PhraseQuery} has no place for need: a last word that may still be
-	 * half typed, and a distance the words may be moved apart while staying in
-	 * the order they were typed.
+	 * half typed, a distance the words may be moved apart while staying in the
+	 * order they were typed, and a part standing for several words at once.
 	 *
-	 * Each position is a term - or a choice between the variants analysis
-	 * stacked there - with the holes of dropped stopwords kept as gaps. The
-	 * slop is counted across the phrase as a whole, so it is the number of
-	 * other words that may sit anywhere between its words, and a document
-	 * whose words sit closer together scores above one where they are further
-	 * apart.
+	 * Each part is a term, a choice between the variants analysis stacked
+	 * there, or a choice between readings of several words, with the holes of
+	 * dropped stopwords kept as gaps. The slop is counted across the phrase as
+	 * a whole, so it is the number of other words that may sit anywhere
+	 * between its words, and a document whose words sit closer together scores
+	 * above one where they are further apart.
 	 */
 	private static Query spanPhrase(
 		String name,
-		ListIterable<PositionedTerms> positions,
+		ListIterable<TokenGraph.Segment> segments,
 		boolean prefixLast,
 		int slop
 	) {
@@ -1444,88 +1620,125 @@ public class StringFieldType implements FieldType {
 		builder.setSlop(slop);
 
 		// Measured from the first surviving word, as phrase positions are relative
-		var next = positions.get(0).position();
-		var last = positions.size() - 1;
+		var next = segments.get(0).position();
+		var last = segments.size() - 1;
 
 		for(var i = 0; i <= last; i++) {
-			var position = positions.get(i);
-			if(position.position() > next) {
-				builder.addGap(position.position() - next);
+			var segment = segments.get(i);
+			if(segment.position() > next) {
+				builder.addGap(segment.position() - next);
 			}
 
-			var isLast = i == last && prefixLast;
-			var variants = position.terms().collect(
-				term -> isLast
-					? (SpanQuery) new SpanMultiTermQueryWrapper<>(
-						new PrefixQuery(new Term(name, term))
-					)
-					: new SpanTermQuery(new Term(name, term))
-			);
+			builder.addClause(spanSegment(name, segment, i == last && prefixLast));
 
-			builder.addClause(
-				variants.size() == 1
-					? variants.get(0)
-					: new SpanOrQuery(variants.toArray(new SpanQuery[0]))
-			);
-
-			next = position.position() + 1;
+			next = segment.position() + segment.length();
 		}
 
 		return builder.build();
 	}
 
 	/**
-	 * The terms query analysis put at one position - several when a filter
-	 * kept an original alongside a rewritten form of it.
+	 * Build the span one part of a phrase stands for.
 	 */
-	private record PositionedTerms(int position, ImmutableList<String> terms) {
+	private static SpanQuery spanSegment(
+		String name,
+		TokenGraph.Segment segment,
+		boolean prefix
+	) {
+		if(segment.isSingleWord()) {
+			var variants = segment.words()
+				.collect(word -> spanTerm(new Term(name, word.text()), prefix));
+
+			return variants.size() == 1
+				? variants.get(0)
+				: new SpanOrQuery(variants.toArray(new SpanQuery[0]));
+		}
+
+		var readings = segment.alternatives()
+			.collect(alternative -> spanReading(name, alternative, prefix));
+
+		return readings.size() == 1
+			? readings.get(0)
+			: new SpanOrQuery(readings.toArray(new SpanQuery[0]));
 	}
 
 	/**
-	 * Run text through an analyzer keeping the positions of what comes out,
-	 * for queries where the place a word sits matters and not only which words
-	 * there are.
+	 * Build the span one reading of several words stands for: the words in the
+	 * order the reading puts them, with the holes it leaves kept as gaps.
+	 */
+	private static SpanQuery spanReading(
+		String name,
+		TokenGraph.Alternative alternative,
+		boolean prefix
+	) {
+		var terms = alternative.terms();
+		if(terms.size() == 1) {
+			return spanTerm(new Term(name, terms.get(0).term().text()), prefix);
+		}
+
+		var builder = new SpanNearQuery.Builder(name, true);
+		builder.setSlop(0);
+
+		var next = terms.get(0).offset();
+		for(var i = 0; i < terms.size(); i++) {
+			var placed = terms.get(i);
+			if(placed.offset() > next) {
+				builder.addGap(placed.offset() - next);
+			}
+
+			builder.addClause(spanTerm(
+				new Term(name, placed.term().text()),
+				prefix && i == terms.size() - 1
+			));
+
+			next = placed.offset() + 1;
+		}
+
+		return builder.build();
+	}
+
+	private static SpanQuery spanTerm(Term term, boolean prefix) {
+		return prefix
+			? new SpanMultiTermQueryWrapper<>(new PrefixQuery(term))
+			: new SpanTermQuery(term);
+	}
+
+	/**
+	 * Get the analyzer to read the text of a search with: the one the field's
+	 * usage defines, widened by whatever the search settings of the index add
+	 * to that field. Values are never read through it - what a rule adds is a
+	 * word to search for, not a word a document holds.
+	 *
+	 * @param encounter
+	 * @param base
+	 *   the analyzer the usage defines
+	 * @return
+	 */
+	private static Analyzer queryAnalyzer(IndexEncounter encounter, Analyzer base) {
+		return encounter.getQuerySynonyms().wrap(base, encounter.getFieldName());
+	}
+
+	/**
+	 * Run the text of a search through an analyzer, as the parts a query is
+	 * built from.
 	 *
 	 * @param encounter
 	 * @param analyzer
 	 * @param name
+	 *   what the field is written under
 	 * @param text
 	 * @return
+	 * @throws IndexException
+	 *   if the text could not be analyzed
 	 */
-	private static ImmutableList<PositionedTerms> analyzePositions(
+	private static ImmutableList<TokenGraph.Segment> analyze(
 		IndexEncounter encounter,
 		Analyzer analyzer,
 		String name,
 		String text
 	) {
-		var positions = Lists.mutable.<PositionedTerms>empty();
-
 		try(var stream = analyzer.tokenStream(name, text)) {
-			var term = stream.addAttribute(CharTermAttribute.class);
-			var increment = stream.addAttribute(PositionIncrementAttribute.class);
-
-			var position = -1;
-			MutableList<String> current = null;
-
-			stream.reset();
-			while(stream.incrementToken()) {
-				var inc = increment.getPositionIncrement();
-				if(current == null || inc > 0) {
-					if(current != null) {
-						positions.add(new PositionedTerms(position, current.toImmutable()));
-					}
-
-					position += Math.max(1, inc);
-					current = Lists.mutable.empty();
-				}
-
-				current.add(term.toString());
-			}
-			stream.end();
-
-			if(current != null) {
-				positions.add(new PositionedTerms(position, current.toImmutable()));
-			}
+			return TokenGraph.read(stream);
 		} catch(IOException e) {
 			throw new IndexException(
 				ANALYSIS_FAILED,
@@ -1533,8 +1746,6 @@ public class StringFieldType implements FieldType {
 				"name", encounter.getFieldName()
 			);
 		}
-
-		return positions.toImmutable();
 	}
 
 	/**
@@ -1819,42 +2030,6 @@ public class StringFieldType implements FieldType {
 		}
 
 		return automaton;
-	}
-
-	/**
-	 * Run text through an analyzer and collect the terms it produced.
-	 *
-	 * @param encounter
-	 * @param analyzer
-	 * @param name
-	 * @param text
-	 * @return
-	 */
-	private static ImmutableList<String> analyze(
-		IndexEncounter encounter,
-		Analyzer analyzer,
-		String name,
-		String text
-	) {
-		var tokens = Lists.mutable.<String>empty();
-
-		try(var stream = analyzer.tokenStream(name, text)) {
-			var term = stream.addAttribute(CharTermAttribute.class);
-
-			stream.reset();
-			while(stream.incrementToken()) {
-				tokens.add(term.toString());
-			}
-			stream.end();
-		} catch(IOException e) {
-			throw new IndexException(
-				ANALYSIS_FAILED,
-				e,
-				"name", encounter.getFieldName()
-			);
-		}
-
-		return tokens.toImmutable();
 	}
 
 	@Override

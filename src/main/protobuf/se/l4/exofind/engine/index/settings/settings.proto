@@ -45,6 +45,16 @@ message SearchSettingsStore {
 	optional se.l4.exofind.engine.index.schema.RankingConfig ranking = 1;
 
 	/*
+	 * Synonym sets applied to the text of a search, by name.
+	 *
+	 * The sets a definition holds widen a value as it is indexed, so a rule
+	 * added to one reaches only the documents indexed after it. These widen
+	 * the search instead, which is what lets a rule take effect over documents
+	 * that were indexed long before it.
+	 */
+	map<string, QuerySynonyms> synonyms = 3;
+
+	/*
 	 * Names of the capabilities this object uses, written by whichever version
 	 * of the engine last stored it.
 	 *
@@ -55,4 +65,41 @@ message SearchSettingsStore {
 	 * definition alone instead of honouring half of what was written.
 	 */
 	repeated string required_features = 2;
+}
+
+/*
+ * A synonym set applied to what a search asks for rather than to what a
+ * document was indexed as.
+ *
+ * The rules are the ones an index-time set holds, so a set can be moved from
+ * one side to the other without being rewritten. The side it is applied on is
+ * the whole difference: an index-time set reaches only the documents indexed
+ * after it, a query-time one reaches every document already there.
+ *
+ * The rules are applied after the analysis chain of the field has had the
+ * text, so the terms of the rules are read through that chain as well: a term
+ * the chain leaves nothing of, such as a stopword, matches nothing.
+ */
+message QuerySynonyms {
+	/*
+	 * The rules of the set. Absent, or holding no rules, widens nothing.
+	 */
+	optional se.l4.exofind.engine.index.schema.ResourcesDef.SynonymsResource set = 1;
+
+	/*
+	 * The fields the set is applied to, named as a search names them. Empty
+	 * applies it to every field a search reads as text, which is what a set
+	 * written for a whole catalogue means.
+	 */
+	repeated string fields = 2;
+
+	/*
+	 * What a term the rules added counts against the term that was typed, as a
+	 * multiplier on the score it contributes. Absent means the engine default.
+	 *
+	 * Below one, a document holding the word that was typed ranks above one
+	 * holding only a synonym of it. Exactly one makes the two count the same,
+	 * the way an index-time set does.
+	 */
+	optional float boost = 3;
 }

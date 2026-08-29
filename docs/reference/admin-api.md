@@ -141,7 +141,7 @@ If an index definition contains settings from a newer API version that the curre
 
 ## Search settings
 
-Search settings hold per-index configuration that affects how searches are answered, currently a `ranking` that replaces the ranking in the index definition.
+Search settings hold per-index configuration that affects how searches are answered, including ranking rules and synonym sets.
 
 Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Requests that modify search settings run on the node that holds the index, like other modifying requests; `GET` requests are served by whichever node receives them.
 
@@ -160,6 +160,7 @@ A `GET` request returns the stored settings. If the index has no search settings
 The response contains the following fields:
 
 - `ranking`: The ranking searches run with instead of the definition's ranking, in the same shape as the definition's `ranking`. While present, it replaces the definition's ranking completely; an empty object turns ranking off. Supplying `signals` in a search request still replaces both. See [Relevance](../explanation/relevance.md).
+- `synonyms`: Synonym sets applied to the text of a search, keyed by set name. See [Synonyms](#synonyms).
 - `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
 
@@ -170,6 +171,62 @@ A `DELETE` request removes the settings, returning the index to its definition's
 A change takes effect for searches on the node that holds the index immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently.
 
 Search settings outlive generations. A generation promoted after the settings were written can lack a field used for ranking; searches then skip that entry rather than fail, so a promotion never depends on rewriting settings first.
+
+### Synonyms
+
+Search settings can configure query-time synonym sets under the `synonyms` field. Query-time synonym sets widen what a search asks for at query time, unlike index-time synonym sets defined in `resources.synonyms` of an index definition which widen document values during indexing.
+
+Query-time synonym sets differ from index-time synonym sets in the following ways:
+
+- **Target**: Query-time sets widen the search query. Index-time sets widen the indexed document values.
+- **Scope**: Query-time sets apply to every document already in the index. Index-time sets apply only to documents indexed after the definition change.
+- **Rollout**: Storing search settings takes effect immediately on the answering node and within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds) on other nodes, without requiring a new generation or reindexing.
+- **Rules**: Do not put the same rule in both search settings and an index definition. A rule applied during indexing and again during search counts twice.
+
+The `synonyms` field is an object keyed by set name:
+
+```json
+{
+  "synonyms": {
+    "merch": {
+      "rules": [
+        { "equivalent": ["trainers", "sneakers"] },
+        { "mapping": { "from": ["ny"], "to": ["new york"] } }
+      ],
+      "fields": ["name", "description"],
+      "boost": 0.8
+    }
+  }
+}
+```
+
+A synonym set contains the following fields:
+
+- `rules`: The rules of the set, using the same shape as `resources.synonyms` in an index definition: `equivalent` (a list of interchangeable terms) or `mapping` (one-way `from` and `to` terms).
+- `fields`: An optional list of field names the set applies to, named as a search names them. If omitted, the set applies to every field searched as text (any field with a `matching` or an `autocomplete` usage).
+- `boost`: A positive number specifying what a term added by the rules counts against the typed term. Default `0.8`. Values below `1` rank a document holding the typed term above one holding only a synonym. A value of `1` weighs synonyms and typed terms equally.
+
+Rules apply after the field's analysis chain processes the text, and rule terms are analyzed through that same chain. Rules match the analyzed form of terms (such as stems produced by a stemmer). If an analysis chain leaves nothing of a term (such as a stopword or punctuation), that term matches nothing and the rule is omitted from the set while remaining rules still apply. Sets are evaluated per field and locale.
+
+A rule can stand for several words, such as `ny` and `new york`:
+
+- On a field with `matching` usage, the engine searches for the words in sequence, matching documents where the words appear next to each other.
+- On a field with `autocomplete` usage, the engine requires all words in the reading to be present.
+- In phrase searches, a phrase written with one side of a rule matches a document containing the other side.
+
+The engine scores query-time synonyms as follows:
+
+- Words added by a rule are counted together with the typed word as a single term, so a document matched through a rare synonym is not scored based on that synonym's rarity.
+- `boost` weighs added terms against the typed term. Boost is not applied inside phrase searches.
+- A whole-value match (`exact` setting of a text usage) is never widened.
+- On an `autocomplete` usage, a rule takes effect only after the word is typed in full. Partial prefixes do not trigger whole-word synonym rules.
+
+The server validates synonym sets against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
+
+- `index:settings:synonyms:unknown_field`: The set is applied to a field that does not exist in the index.
+- `index:settings:synonyms:field_not_text`: The set is applied to a field that is not searched as text.
+- `index:settings:synonyms:invalid_boost`: The `boost` value is not a positive number.
+- `index:settings:synonyms:invalid_rule`: A rule is not exactly one kind (`equivalent` or `mapping`).
 
 ### Changing part of the search settings
 
@@ -205,6 +262,12 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `ranking.signals[]` | A new signal added to the list. |
 | `ranking.signals[field=sales]` | List entries whose `field` value equals `sales`. |
 | `ranking.signals[field=sales].weight` | The `weight` field inside those matching signal entries. |
+| `synonyms` | The whole synonyms object. |
+| `synonyms.<name>` | A synonym set by name. |
+| `synonyms.<name>.boost` | The boost value of a synonym set. |
+| `synonyms.<name>.fields` | The list of target fields for a synonym set. |
+| `synonyms.<name>.rules` | The list of rules for a synonym set. |
+| `synonyms.<name>.rules[]` | A new rule added to a synonym set. |
 
 Inside bracket selectors, a backslash (`\`) escapes characters, such as `\]`. Objects along a path are created if they do not exist, but lists are not created.
 

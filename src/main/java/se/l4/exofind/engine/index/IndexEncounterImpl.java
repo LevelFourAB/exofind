@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index;
 import java.util.Locale;
 import java.util.Optional;
 
+import se.l4.exofind.engine.index.analysis.SynonymOverlay;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -12,6 +13,7 @@ import se.l4.exofind.engine.index.schema.SortConfig;
 public class IndexEncounterImpl implements IndexEncounter {
 	private final ResourcesDef resources;
 	private final boolean highlightsInPostings;
+	private final SynonymOverlay querySynonyms;
 
 	private Optional<Locale> locale;
 	private LocaleSupport localeSupport;
@@ -22,9 +24,23 @@ public class IndexEncounterImpl implements IndexEncounter {
 	private boolean forHighlighting;
 
 	public IndexEncounterImpl(ResourcesDef resources, boolean highlightsInPostings) {
+		this(resources, highlightsInPostings, SynonymOverlay.none());
+	}
+
+	public IndexEncounterImpl(
+		ResourcesDef resources,
+		boolean highlightsInPostings,
+		SynonymOverlay querySynonyms
+	) {
 		this.resources = resources;
 		this.highlightsInPostings = highlightsInPostings;
+		this.querySynonyms = querySynonyms;
 		this.locale = Optional.empty();
+	}
+
+	@Override
+	public SynonymOverlay getQuerySynonyms() {
+		return querySynonyms;
 	}
 
 	@Override

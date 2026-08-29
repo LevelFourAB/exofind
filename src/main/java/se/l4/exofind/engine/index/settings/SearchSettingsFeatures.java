@@ -29,8 +29,18 @@ public final class SearchSettingsFeatures {
 	 */
 	public static final String RANKING = "ranking";
 
+	/**
+	 * The object carries synonym sets applied to the text of a search.
+	 *
+	 * <p>A node without this name would search for the words as they were
+	 * typed while its peers also search for what the rules make of them, which
+	 * is a different set of documents rather than a different order of them.
+	 */
+	public static final String QUERY_SYNONYMS = "query_synonyms";
+
 	private static final ImmutableSet<String> SUPPORTED = Sets.immutable.of(
-		RANKING
+		RANKING,
+		QUERY_SYNONYMS
 	);
 
 	private SearchSettingsFeatures() {
@@ -49,6 +59,10 @@ public final class SearchSettingsFeatures {
 
 		if(settings.hasRanking()) {
 			features.add(RANKING);
+		}
+
+		if(!settings.getSynonymsMap().isEmpty()) {
+			features.add(QUERY_SYNONYMS);
 		}
 
 		return features.toSortedList();

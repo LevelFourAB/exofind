@@ -25,6 +25,7 @@ import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.collections.api.tuple.Pair;
 
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.index.analysis.SynonymOverlay;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.IndexSchema;
@@ -203,14 +204,15 @@ public class QueryCompiler {
 	private IdentityHashMap<Query, String> clausePaths;
 
 	public QueryCompiler(IndexSchema schema, String locale, BitSetProducer nestedParents) {
-		this(schema, locale, nestedParents, null);
+		this(schema, locale, nestedParents, null, SynonymOverlay.none());
 	}
 
 	public QueryCompiler(
 		IndexSchema schema,
 		String locale,
 		BitSetProducer nestedParents,
-		RankingOverride rankingOverride
+		RankingOverride rankingOverride,
+		SynonymOverlay querySynonyms
 	) {
 		this.schema = schema;
 		this.locale = locale;
@@ -219,7 +221,8 @@ public class QueryCompiler {
 
 		this.encounter = new IndexEncounterImpl(
 			schema.getResources(),
-			schema.isHighlightingInPostings()
+			schema.isHighlightingInPostings(),
+			querySynonyms
 		);
 	}
 

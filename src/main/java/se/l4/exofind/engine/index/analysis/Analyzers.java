@@ -49,9 +49,12 @@ import se.l4.exofind.engine.index.schema.TokenFilterDef;
  * every prefix of a token, and the text a user typed must not be cut into
  * prefixes again, so at query time it becomes a cut to the longest prefix
  * that was indexed. Synonyms widen what a value is indexed as, and widening
- * the query as well would count the same synonym twice, so at query time the
- * component drops away - and decompounding, which widens a value with the
- * parts of its compounds, drops away on the query side for the same reason.
+ * the query with the same set would count the same synonym twice, so at query
+ * time the component drops away - and decompounding, which widens a value with
+ * the parts of its compounds, drops away on the query side for the same
+ * reason. A set that is meant to widen the query instead is not part of a
+ * chain at all: it is carried by the search settings of the index and added
+ * after these analyzers by {@link SynonymOverlay}.
  *
  * A component that takes a locale and has none set uses the locale of the
  * value being analyzed, which is what lets one chain serve a field whose
@@ -448,7 +451,9 @@ public final class Analyzers {
 		 * Widen tokens with their synonyms when indexing. A value containing
 		 * one word of a rule is indexed under the others too, so a search for
 		 * any of them finds the document; the query side leaves the component
-		 * out and searches what was typed.
+		 * out and searches what was typed. A rule that has to reach the
+		 * documents already indexed belongs in the search settings instead -
+		 * see {@link SynonymOverlay}.
 		 */
 		private TokenStream synonyms(TokenFilterDef.Synonyms config, TokenStream stream) {
 			if(mode == AnalyzerMode.QUERYING) {

@@ -82,6 +82,9 @@ The documentation includes the following how-to guides.
 - [Reindex into a new generation](how-to/reindex-into-a-new-generation.md):
   Have the engine fill the new generation from the one it replaces, instead
   of sending every document again.
+- [Change synonyms without reindexing](how-to/change-synonyms-without-reindexing.md):
+  Make a synonym take effect over a catalogue that is already indexed, and
+  decide which side of the search a set belongs on.
 - [Survive Lucene upgrades](how-to/survive-lucene-upgrades.md): Notice an index
   nearing the end of its readable life and reindex it in time.
 

@@ -722,44 +722,14 @@ public class IndexDefinitionMapper {
 
 		if(resources.synonyms() != null) {
 			for(var entry : resources.synonyms().entrySet()) {
-				builder.putSynonyms(entry.getKey(), toStored(entry.getKey(), entry.getValue()));
-			}
-		}
-
-		return builder.build();
-	}
-
-	private static ResourcesDef.SynonymsResource toStored(
-		String name,
-		IndexDefinition.Resources.Synonyms synonyms
-	) {
-		var builder = ResourcesDef.SynonymsResource.newBuilder();
-
-		if(synonyms.rules() != null) {
-			for(var rule : synonyms.rules()) {
-				if(countGiven(rule.equivalent(), rule.mapping()) != 1) {
-					throw new EngineException(INVALID_SYNONYM_RULE, "name", name);
-				}
-
-				var stored = ResourcesDef.SynonymsResource.Rule.newBuilder();
-				if(rule.equivalent() != null) {
-					stored.setEquivalent(
-						ResourcesDef.SynonymsResource.Rule.Equivalent.newBuilder()
-							.addAllTerms(rule.equivalent())
-					);
-				}
-				if(rule.mapping() != null) {
-					var mapping = ResourcesDef.SynonymsResource.Rule.Mapping.newBuilder();
-					if(rule.mapping().from() != null) {
-						mapping.addAllFrom(rule.mapping().from());
-					}
-					if(rule.mapping().to() != null) {
-						mapping.addAllTo(rule.mapping().to());
-					}
-					stored.setMapping(mapping);
-				}
-
-				builder.addRules(stored);
+				builder.putSynonyms(
+					entry.getKey(),
+					SynonymsMapper.toStored(
+						entry.getKey(),
+						entry.getValue().rules(),
+						INVALID_SYNONYM_RULE
+					)
+				);
 			}
 		}
 
@@ -1030,7 +1000,12 @@ public class IndexDefinitionMapper {
 		if(!resources.getSynonymsMap().isEmpty()) {
 			synonyms = new TreeMap<>();
 			for(var entry : resources.getSynonymsMap().entrySet()) {
-				synonyms.put(entry.getKey(), toApi(entry.getValue()));
+				synonyms.put(
+					entry.getKey(),
+					new IndexDefinition.Resources.Synonyms(
+						SynonymsMapper.toApi(entry.getValue())
+					)
+				);
 			}
 		}
 
@@ -1039,31 +1014,6 @@ public class IndexDefinitionMapper {
 		}
 
 		return new IndexDefinition.Resources(analyzers, stopwords, synonyms);
-	}
-
-	private static IndexDefinition.Resources.Synonyms toApi(
-		ResourcesDef.SynonymsResource resource
-	) {
-		var rules = new ArrayList<IndexDefinition.Resources.Synonyms.Rule>();
-
-		for(var rule : resource.getRulesList()) {
-			List<String> equivalent = null;
-			if(rule.hasEquivalent()) {
-				equivalent = List.copyOf(rule.getEquivalent().getTermsList());
-			}
-
-			IndexDefinition.Resources.Synonyms.Rule.Mapping mapping = null;
-			if(rule.hasMapping()) {
-				mapping = new IndexDefinition.Resources.Synonyms.Rule.Mapping(
-					List.copyOf(rule.getMapping().getFromList()),
-					List.copyOf(rule.getMapping().getToList())
-				);
-			}
-
-			rules.add(new IndexDefinition.Resources.Synonyms.Rule(equivalent, mapping));
-		}
-
-		return new IndexDefinition.Resources.Synonyms(rules);
 	}
 
 	/**

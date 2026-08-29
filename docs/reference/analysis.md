@@ -78,7 +78,7 @@ The following token filters are available:
 | `asciiFolding` | `preserveOriginal` (boolean, default: `false`) | Converts non-ASCII characters to ASCII equivalents. If set to `true`, preserves the original non-ASCII token alongside the folded token. |
 | `edgeNgram` | `minGram` (integer, default: `1`), `maxGram` (integer, default: `20`) | Generates prefix n-grams for tokens within the specified character lengths. |
 | `ngram` | `minGram` (integer), `maxGram` (integer) | Generates substring n-grams for tokens within the specified character lengths. |
-| `synonyms` | `named` (string, required) | Expands tokens with synonyms from a synonym set defined in `resources`. Applied at index time. |
+| `synonyms` | `named` (string, required) | Expands tokens with synonyms from a synonym set defined in `resources`. Applied when a value is indexed. |
 | `decompound` | `locale` (string, optional) | Splits compound words into parts and retains the original compound word. See [Compound words](#compound-words). If omitted, uses the dictionary for the locale of the value. Applied at index time. |
 
 ## Resources
@@ -115,7 +115,7 @@ A synonym rule specifies one of the following structures:
 - `equivalent`: An array of equivalent terms. Each term matches all other terms in the array. Multi-word terms match words in sequence.
 - `mapping`: A one-way mapping object containing `from` and `to` arrays. A value containing a term in `from` matches searches for terms in `to`, but terms in `to` do not match searches for `from`.
 
-Synonyms apply at index time. Modifying a synonym set only affects documents indexed after the modification.
+A synonym set in `resources` is applied when a value is indexed and so reaches only documents indexed after it. A set can instead be applied to the text of a search through the index's search settings, which reaches documents already indexed and needs no reindex. For more information, see [Synonyms](./admin-api.md#synonyms) in the admin API reference.
 
 ## Compound words
 

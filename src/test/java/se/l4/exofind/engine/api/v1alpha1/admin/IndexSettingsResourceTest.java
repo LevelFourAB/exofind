@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
@@ -40,10 +41,12 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.documents.DocumentResource;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchResource;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Signal;
 import se.l4.exofind.engine.auth.Principal;
+import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -179,7 +182,8 @@ public class IndexSettingsResourceTest {
 			new IndexDefinition.Ranking(
 				List.of(new IndexDefinition.Ranking.TieBreaker("sales", direction)),
 				null
-			)
+			),
+			null
 		);
 	}
 
@@ -264,7 +268,8 @@ public class IndexSettingsResourceTest {
 						null,
 						null
 					))
-				)
+				),
+				null
 			)
 		);
 
@@ -389,7 +394,8 @@ public class IndexSettingsResourceTest {
 					new IndexDefinition.Ranking(
 						List.of(new IndexDefinition.Ranking.TieBreaker("missing", null)),
 						null
-					)
+					),
+					null
 				)
 			)
 		);
@@ -499,7 +505,8 @@ public class IndexSettingsResourceTest {
 						1f
 					)
 				)
-			)
+			),
+			null
 		);
 	}
 
@@ -550,7 +557,8 @@ public class IndexSettingsResourceTest {
 						null,
 						null
 					))
-				)
+				),
+				null
 			)
 		);
 
@@ -748,6 +756,286 @@ public class IndexSettingsResourceTest {
 			ValidationException.class,
 			() -> resource.patch("products", null, null)
 		);
+	}
+
+	/**
+	 * A shop whose documents were indexed with no synonyms at all, which is
+	 * what the sets below widen after the fact.
+	 */
+	private void shoes() {
+		var fields = new LinkedHashMap<String, FieldDefinition>();
+		fields.put(
+			"id",
+			new StringFieldDefinition(
+				null, true, null, null, null, null, null, null, null, null, null, null, null
+			)
+		);
+		fields.put(
+			"name",
+			new StringFieldDefinition(
+				null, null, null, null, null, null, null, null, null, null,
+				new StringFieldDefinition.TextUsage(
+					null, null, null, null, null, null, null
+				),
+				null, null
+			)
+		);
+
+		admin.put("shoes", null, null, false, uriInfo, new IndexDefinition(
+			null, null, fields, null, null, null
+		));
+
+		documents.add("shoes", new DocumentsRequest(List.of(
+			Map.of("id", "1", "name", "running sneakers"),
+			Map.of("id", "2", "name", "leather trainers")
+		)));
+		admin.commit("shoes");
+	}
+
+	/**
+	 * Settings holding one set of equivalent words, applied to every field.
+	 */
+	private static SearchSettingsDefinition equivalent(String... terms) {
+		return new SearchSettingsDefinition(
+			null,
+			Map.of(
+				"merch",
+				new SearchSettingsDefinition.QuerySynonyms(
+					List.of(new IndexDefinition.Resources.Synonyms.Rule(
+						List.of(terms),
+						null
+					)),
+					null,
+					null
+				)
+			)
+		);
+	}
+
+	private List<Object> names(String text) {
+		var response = search.search(
+			"shoes",
+			new SearchRequest(
+				List.of(new Clause.Text(text, null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null, null, null, null,
+				null, null, null, null
+			)
+		);
+
+		return response.hits().stream().map(SearchResponse.Hit::id).toList();
+	}
+
+	@Test
+	public void testSynonymsWidenSearchesWithoutTouchingTheDefinition() {
+		shoes();
+
+		var before = (IndexInfo) admin.get("shoes").getEntity();
+		assertThat(names("trainers"), contains("2"));
+
+		resource.put("shoes", null, equivalent("trainers", "sneakers"));
+
+		assertThat(names("trainers"), containsInAnyOrder("1", "2"));
+
+		// The documents were never touched, and neither was the definition
+		var after = (IndexInfo) admin.get("shoes").getEntity();
+		assertThat(after.version(), is(before.version()));
+	}
+
+	@Test
+	public void testGetAnswersTheSynonymsThatWereStored() {
+		shoes();
+
+		resource.put("shoes", null, equivalent("trainers", "sneakers"));
+
+		var info = (SearchSettingsInfo) resource.get("shoes").getEntity();
+		var set = info.synonyms().get("merch");
+
+		assertThat(set.rules().get(0).equivalent(), contains("trainers", "sneakers"));
+		assertThat(set.fields(), is(nullValue()));
+		assertThat(set.boost(), is(nullValue()));
+	}
+
+	@Test
+	public void testSynonymsOnAnUnknownFieldAreRefused() {
+		shoes();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put(
+				"shoes",
+				null,
+				new SearchSettingsDefinition(
+					null,
+					Map.of(
+						"merch",
+						new SearchSettingsDefinition.QuerySynonyms(
+							List.of(new IndexDefinition.Resources.Synonyms.Rule(
+								List.of("trainers", "sneakers"),
+								null
+							)),
+							List.of("missing"),
+							null
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:synonyms:unknown_field"));
+	}
+
+	/**
+	 * A field nothing is searched as text in would be widened by a set that
+	 * could never take effect, which reads as a set that does not work rather
+	 * than as settings to fix.
+	 */
+	@Test
+	public void testSynonymsOnAFieldThatIsNotTextAreRefused() {
+		shoes();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put(
+				"shoes",
+				null,
+				new SearchSettingsDefinition(
+					null,
+					Map.of(
+						"merch",
+						new SearchSettingsDefinition.QuerySynonyms(
+							List.of(new IndexDefinition.Resources.Synonyms.Rule(
+								List.of("trainers", "sneakers"),
+								null
+							)),
+							List.of("id"),
+							null
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:synonyms:field_not_text"));
+	}
+
+	@Test
+	public void testSynonymsWithABoostOfNothingAreRefused() {
+		shoes();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put(
+				"shoes",
+				null,
+				new SearchSettingsDefinition(
+					null,
+					Map.of(
+						"merch",
+						new SearchSettingsDefinition.QuerySynonyms(
+							List.of(new IndexDefinition.Resources.Synonyms.Rule(
+								List.of("trainers", "sneakers"),
+								null
+							)),
+							null,
+							0f
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:synonyms:invalid_boost"));
+	}
+
+	@Test
+	public void testSynonymRuleOfNoClearKindIsRefused() {
+		shoes();
+
+		var e = assertThrows(
+			EngineException.class,
+			() -> resource.put(
+				"shoes",
+				null,
+				new SearchSettingsDefinition(
+					null,
+					Map.of(
+						"merch",
+						new SearchSettingsDefinition.QuerySynonyms(
+							List.of(new IndexDefinition.Resources.Synonyms.Rule(null, null)),
+							null,
+							null
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(e.getCode(), is("index:settings:synonyms:invalid_rule"));
+	}
+
+	/**
+	 * A change to part of the settings reaches into a set by name, which is
+	 * what tuning one weight of a merchandising rule looks like.
+	 */
+	@Test
+	public void testPatchChangesOneSynonymSet() {
+		shoes();
+
+		resource.put("shoes", null, equivalent("trainers", "sneakers"));
+
+		var info = patch("shoes", null, "synonyms.merch.boost", 0.5f);
+
+		assertThat(info.synonyms().get("merch").boost(), is(0.5f));
+		assertThat(
+			info.synonyms().get("merch").rules().get(0).equivalent(),
+			contains("trainers", "sneakers")
+		);
+
+		// And the widening is still in force
+		assertThat(names("trainers"), containsInAnyOrder("1", "2"));
+	}
+
+	/**
+	 * A rule is added to a set the way a signal is added to a ranking, which is
+	 * what growing a merchandising set one rule at a time looks like.
+	 */
+	@Test
+	public void testPatchAddsASynonymRule() {
+		shoes();
+
+		resource.put("shoes", null, equivalent("trainers", "sneakers"));
+
+		var info = patch(
+			"shoes",
+			null,
+			"synonyms.merch.rules[]",
+			Map.of("equivalent", List.of("leather", "suede"))
+		);
+
+		var rules = info.synonyms().get("merch").rules();
+		assertThat(rules.size(), is(2));
+		assertThat(rules.get(1).equivalent(), contains("leather", "suede"));
+
+		assertThat(names("suede"), contains("2"));
+	}
+
+	/**
+	 * Settings are the state a caller wants, so storing a ranking alone leaves
+	 * an index with no synonym sets rather than with the ones it had.
+	 */
+	@Test
+	public void testStoringSettingsWithoutSynonymsClearsThem() {
+		shoes();
+
+		resource.put("shoes", null, equivalent("trainers", "sneakers"));
+		assertThat(names("trainers"), containsInAnyOrder("1", "2"));
+
+		resource.put("shoes", null, new SearchSettingsDefinition(null, null));
+
+		assertThat(names("trainers"), contains("2"));
+
+		var info = (SearchSettingsInfo) resource.get("shoes").getEntity();
+		assertThat(info.synonyms(), is(nullValue()));
 	}
 
 	/**

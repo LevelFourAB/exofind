@@ -61,7 +61,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:definition:*` | Stored index definition incompatible with this API version | `index:definition:unrepresentable` |
 | `index:generation:*` | Generation usage or deletion error | `index:generation:already_exists`, `index:generation:is_live`, `index:generation:name_required`, `index:generation:not_creatable` |
 | `index:registry:*` | Index or generation registry storage failure | `index:registry:conflict`, `index:registry:io_error` |
-| `index:settings:*` | Search settings lookup or storage failure | `index:settings:not_found`, `index:settings:version_mismatch`, `index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable` |
+| `index:settings:*` | Search settings lookup or storage failure | `index:settings:not_found`, `index:settings:version_mismatch`, `index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`, `index:settings:synonyms:unknown_field`, `index:settings:synonyms:field_not_text`, `index:settings:synonyms:invalid_boost`, `index:settings:synonyms:invalid_rule` |
 | `index:update:*` | Document indexing failure | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
 | `index:source:*` | Stored document source copy unavailable | `index:source:not_kept`, `index:source:unreadable` |
 | `index:query:*` | Query refers to unavailable index features or fields | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept` |
@@ -95,5 +95,9 @@ The following error codes require specific handling in client applications:
 - `index:settings:version_mismatch`: Returned with HTTP `412` when a `PUT` or `PATCH` of search settings carries an `If-Match` version the stored settings are no longer at. Read the settings again and rebuild the change on the version that comes back.
 - `index:settings:conflict`: Returned with HTTP `409` when the search settings kept being changed by other writers while the change was being stored. The stored settings are unchanged; retry the request.
 - `index:settings:unrepresentable`: Returned with HTTP `409` when a `PATCH` of search settings targets settings written by a newer version with capabilities this node does not have. A change built on top of them would discard the parts the node cannot describe. Send the request to a node that supports the settings, or replace the settings with a `PUT`.
+- `index:settings:synonyms:unknown_field`: Returned with HTTP `400` when storing search settings with a synonym set applied to a field the index does not have in the generation the index name answers from.
+- `index:settings:synonyms:field_not_text`: Returned with HTTP `400` when storing search settings with a synonym set applied to a field that is not searched as text in the generation the index name answers from.
+- `index:settings:synonyms:invalid_boost`: Returned with HTTP `400` when storing search settings with a synonym set where the boost is not a positive number.
+- `index:settings:synonyms:invalid_rule`: Returned with HTTP `400` when storing search settings with a synonym rule that is not exactly one kind (equivalent words, or a one-way mapping).
 - `index:explain:document_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when no document is indexed under the `key` query parameter.
 - `index:explain:value_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when that document holds no value of the search's `hits` path at the `index` query parameter.

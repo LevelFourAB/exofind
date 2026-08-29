@@ -74,10 +74,10 @@ Before customizing text analysis, ensure you have:
      ```json
      "filters": [ { "synonyms": { "named": "cars" } } ]
      ```
-     An `equivalent` rule makes each listed word match the others. A `mapping` rule is one-way: a value containing `ny` matches searches for `new york`, but not the reverse.
+     An `equivalent` rule makes each listed word match the others. A `mapping` rule is one-way: a value containing `ny` matches searches for `new york`, but not the reverse. Synonym sets in `resources` apply when values are indexed. To apply synonyms to search text without reindexing, see [change synonyms without reindexing](./change-synonyms-without-reindexing.md).
 
 3. Reindex existing documents:
-   Analysis configurations and synonym rules apply when values are indexed rather than when queried. Reindex existing documents so that they use the updated analysis settings.
+   Analysis configurations and synonym rules in `resources` apply when values are indexed rather than when queried. Reindex existing documents so that they use the updated analysis settings. To apply synonyms to search text without reindexing, see [change synonyms without reindexing](./change-synonyms-without-reindexing.md).
 
 ## Confirming the configuration
 

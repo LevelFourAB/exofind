@@ -1,5 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import java.util.List;
+import java.util.Map;
+
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -18,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   the ranking searches run with instead of the definition's. An empty object
  *   turns the definition's ranking off; left out - together with everything
  *   else - the settings say nothing and the definition stands
+ * @param synonyms
+ *   synonym sets applied to the text of a search, by name
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
@@ -32,6 +37,60 @@ public record SearchSettingsDefinition(
 		Supplying `signals` in a search request still replaces both. Validated \
 		against the generation the index name answers from, using the same \
 		`index:ranking:*` codes that validate a definition's ranking.""")
-	IndexDefinition.Ranking ranking
+	IndexDefinition.Ranking ranking,
+
+	@Schema(description = """
+		Synonym sets applied to the text of a search, by name. Unlike the sets \
+		in an index definition, which widen a value as it is indexed, these \
+		widen what a search asks for - so a rule added here reaches documents \
+		that were indexed long before it.""")
+	Map<String, QuerySynonyms> synonyms
 ) {
+	/**
+	 * A synonym set applied to what a search asks for.
+	 *
+	 * <p>The rules are the ones an index definition holds in its resources, so
+	 * a set can be moved between the two sides without being rewritten. They
+	 * are applied after the analysis chain of the field has had the text, so
+	 * the terms of the rules are read through that chain as well: a term the
+	 * chain leaves nothing of, such as a stopword, matches nothing.
+	 *
+	 * @param rules
+	 *   the rules of the set
+	 * @param fields
+	 *   the fields the set is applied to, or {@code null} for every field a
+	 *   search reads as text
+	 * @param boost
+	 *   what a term the rules added counts against the term that was typed, or
+	 *   {@code null} for the engine default
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		A synonym set applied to what a search asks for, rather than to values \
+		as they are indexed.""")
+	public record QuerySynonyms(
+		@Schema(description = """
+			The rules of the set, in the same shape as the rules of a set in \
+			an index definition's `resources`.""")
+		List<IndexDefinition.Resources.Synonyms.Rule> rules,
+
+		@Schema(description = """
+			The fields the set is applied to, named as a search names them. \
+			Omitted applies it to every field a search reads as text. A name \
+			the generation the index answers from does not have is refused \
+			here; a generation promoted later that lacks it makes searches \
+			skip the field rather than fail.""")
+		List<String> fields,
+
+		@Schema(
+			description = """
+				What a term the rules added counts against the term that was \
+				typed. Below `1` a document holding the word that was typed \
+				ranks above one holding only a synonym of it; `1` makes the \
+				two count the same. Defaults to `0.8`.""",
+			examples = "0.8"
+		)
+		Float boost
+	) {
+	}
 }

@@ -59,6 +59,10 @@ When search settings define a `ranking` configuration, it completely replaces th
 
 Tuning proceeds in small steps - one weight, one pivot - so search settings also accept a change that names only the part it moves, described the same way a change to part of a document is. See [Changing part of the search settings](../reference/admin-api.md#changing-part-of-the-search-settings).
 
+Search settings also carry [synonym sets](../reference/admin-api.md#synonyms) that widen what a search asks for. Synonyms are a relevance decision because the words a rule adds are counted together with the word that was typed as one term. Consequently, a document found through a rare synonym is not scored by how rare the synonym is. The set's boost weighs an added word against the typed one.
+
+The two sides have different costs. An index-time set reaches only documents indexed after it, whereas a query-time set reaches everything already in the index. Putting the same rule on both sides counts it twice.
+
 Search settings attach to the index name rather than to a specific index generation, so promoting a generation preserves your ranking tuning. This approach involves two trade-offs:
 
 - Nodes update independently, so two nodes can rank the same query differently for up to one refresh interval.
@@ -88,6 +92,8 @@ The following table summarizes where you configure each ranking component and wh
 | Boost clauses | Search request | Next search |
 | Signals | Index definition, replaceable by search settings (overridable per search) | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Tie breakers | Index definition, replaceable by search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
+| Index-time synonyms | Index definition | Newly indexed documents |
+| Query-time synonyms | Search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
 
 Exofind evaluates most ranking components at query time, making ranking adjustments fast to test: update the definition, the search settings, or the search query and compare results immediately. Only `exact` requires reindexing documents. Changes to text analysis (how text is tokenized into words) require reindexing into a new index generation rather than modifying ranking configuration.
 

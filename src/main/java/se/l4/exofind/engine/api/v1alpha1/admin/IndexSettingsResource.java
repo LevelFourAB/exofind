@@ -1,7 +1,9 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -37,6 +39,7 @@ import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.settings.QuerySynonyms;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.settings.SearchSettingsException;
 import se.l4.exofind.engine.index.settings.SearchSettingsFeatures;
@@ -109,6 +112,13 @@ public class IndexSettingsResource {
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` reaches into the field `{{field}}`, which search settings do not have"
+		);
+
+	private static final ErrorType INVALID_SYNONYM_RULE = ErrorType
+		.withCode("index:settings:synonyms:invalid_rule")
+		.withArguments("name")
+		.withMessage(
+			"Synonym set `{{name}}` has a rule that is not exactly one kind - equivalent words, or a one way mapping"
 		);
 
 	private static final ErrorType INVALID_VALUE = ErrorType
@@ -526,7 +536,7 @@ public class IndexSettingsResource {
 			var snapshot = searchSettings.read(stored).orElse(null);
 
 			var base = snapshot == null
-				? new SearchSettingsDefinition(null)
+				? new SearchSettingsDefinition(null, null)
 				: describable(snapshot);
 
 			var changed = read(ObjectPatch.applyTo(mapper.valueToTree(base), body, mapper));
@@ -579,7 +589,66 @@ public class IndexSettingsResource {
 			builder.setRanking(ranking);
 		}
 
+		if(definition.synonyms() != null) {
+			for(var entry : definition.synonyms().entrySet()) {
+				builder.putSynonyms(entry.getKey(), toStored(entry.getKey(), entry.getValue()));
+			}
+
+			var errors = index.validateSearchSettings(
+				builder.getSynonymsMap(),
+				ObjectLocation.root().forField("synonyms")
+			);
+			if(errors.notEmpty()) {
+				throw new ValidationException(errors);
+			}
+		}
+
 		return SearchSettingsFeatures.describe(builder.build());
+	}
+
+	private static QuerySynonyms toStored(
+		String name,
+		SearchSettingsDefinition.QuerySynonyms synonyms
+	) {
+		var builder = QuerySynonyms.newBuilder()
+			.setSet(SynonymsMapper.toStored(name, synonyms.rules(), INVALID_SYNONYM_RULE));
+
+		if(synonyms.fields() != null) {
+			builder.addAllFields(synonyms.fields());
+		}
+		if(synonyms.boost() != null) {
+			builder.setBoost(synonyms.boost());
+		}
+
+		return builder.build();
+	}
+
+	private static SearchSettingsDefinition.QuerySynonyms toApi(QuerySynonyms synonyms) {
+		return new SearchSettingsDefinition.QuerySynonyms(
+			SynonymsMapper.toApi(synonyms.getSet()),
+			synonyms.getFieldsCount() == 0 ? null : List.copyOf(synonyms.getFieldsList()),
+			synonyms.hasBoost() ? synonyms.getBoost() : null
+		);
+	}
+
+	/**
+	 * Read the synonym sets of stored settings as the API describes them,
+	 * {@code null} when there are none - which is what the settings are sent
+	 * back as, so that describing them and storing them again is a round trip.
+	 */
+	private static Map<String, SearchSettingsDefinition.QuerySynonyms> toApi(
+		SearchSettingsStore stored
+	) {
+		if(stored.getSynonymsMap().isEmpty()) {
+			return null;
+		}
+
+		var synonyms = new TreeMap<String, SearchSettingsDefinition.QuerySynonyms>();
+		for(var entry : stored.getSynonymsMap().entrySet()) {
+			synonyms.put(entry.getKey(), toApi(entry.getValue()));
+		}
+
+		return synonyms;
 	}
 
 	/**
@@ -604,12 +673,21 @@ public class IndexSettingsResource {
 		IndexDefinition.Ranking ranking = stored.hasRanking()
 			? RankingMapper.toApi(stored.getRanking())
 			: null;
+		var synonyms = toApi(stored);
 
 		SearchSettingsStore roundTripped;
 		try {
 			var builder = SearchSettingsStore.newBuilder();
 			if(ranking != null) {
 				builder.setRanking(RankingMapper.toStored(ranking));
+			}
+			if(synonyms != null) {
+				for(var entry : synonyms.entrySet()) {
+					builder.putSynonyms(
+						entry.getKey(),
+						toStored(entry.getKey(), entry.getValue())
+					);
+				}
 			}
 
 			roundTripped = SearchSettingsFeatures.describe(builder.build());
@@ -627,7 +705,7 @@ public class IndexSettingsResource {
 			throw new UnrepresentableStateException(UNREPRESENTABLE);
 		}
 
-		return new SearchSettingsDefinition(ranking);
+		return new SearchSettingsDefinition(ranking, synonyms);
 	}
 
 	/**
@@ -793,6 +871,7 @@ public class IndexSettingsResource {
 			snapshot.stored().hasRanking()
 				? RankingMapper.toApi(snapshot.stored().getRanking())
 				: null,
+			toApi(snapshot.stored()),
 			unquote(snapshot.version()),
 			snapshot.unsupportedFeatures().isEmpty()
 				? null

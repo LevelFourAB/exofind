@@ -93,6 +93,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.analysis.SynonymOverlay;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.DefinitionCompatibility;
@@ -102,6 +103,7 @@ import se.l4.exofind.engine.index.schema.IndexFeatures;
 import se.l4.exofind.engine.index.schema.IndexSchema;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.index.schema.RankingOverride;
+import se.l4.exofind.engine.index.settings.QuerySynonyms;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
@@ -3146,6 +3148,76 @@ public class Index {
 	}
 
 	/**
+	 * Validate synonym sets arriving as search settings against this
+	 * generation. What passes here can still be skipped by a later generation -
+	 * see {@link SynonymOverlay#compile} - so this is the check for storing
+	 * settings, not for searching with them.
+	 *
+	 * @param synonyms
+	 *   the sets as they would be stored, by name
+	 * @param location
+	 *   where the sets sit in what the caller is validating
+	 * @return
+	 *   what stops the sets, empty when this generation answers for all of them
+	 */
+	public ListIterable<ErrorMessage> validateSearchSettings(
+		Map<String, QuerySynonyms> synonyms,
+		ObjectLocation location
+	) {
+		return SynonymOverlay.validate(synonyms, schema, location);
+	}
+
+	/**
+	 * The overlay last compiled, and what it was compiled from. Building the
+	 * automaton of a set walks every rule of it through the analyzer of every
+	 * field it applies to, which is work a search should do once for a version
+	 * of the settings rather than once each.
+	 */
+	private record CompiledSynonyms(
+		String settingsVersion,
+		String definitionVersion,
+		SynonymOverlay overlay
+	) {
+	}
+
+	private volatile CompiledSynonyms compiledSynonyms;
+
+	/**
+	 * Compile the synonym sets of the search settings against this generation.
+	 */
+	private SynonymOverlay compileSynonymOverlay(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.synonyms().isEmpty()) {
+			return SynonymOverlay.none();
+		}
+
+		var compiled = compiledSynonyms;
+		if(compiled != null
+			&& compiled.settingsVersion().equals(settings.version())
+			&& compiled.definitionVersion().equals(definitionVersion)) {
+			return compiled.overlay();
+		}
+
+		var overlay = SynonymOverlay.compile(settings.synonyms(), schema);
+		compiledSynonyms = new CompiledSynonyms(
+			settings.version(),
+			definitionVersion,
+			overlay
+		);
+
+		if(overlay.skippedFields().notEmpty()) {
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.addKeyValue("fields", overlay.skippedFields().makeString(", "))
+				.log(
+					"The search settings widen fields this generation cannot"
+						+ " answer for; leaving those fields as they are"
+				);
+		}
+
+		return overlay;
+	}
+
+	/**
 	 * Search this index with its search settings in force.
 	 *
 	 * <p>The settings belong to the index name while this instance is one
@@ -3192,7 +3264,8 @@ public class Index {
 					schema,
 					request.locale(),
 					nestedParents,
-					compileRankingOverride(settings)
+					compileRankingOverride(settings),
+					compileSynonymOverlay(settings)
 				);
 				var searched = request.query().newWithAll(request.filters());
 
@@ -3816,7 +3889,8 @@ public class Index {
 					schema,
 					request.locale(),
 					nestedParents,
-					compileRankingOverride(settings)
+					compileRankingOverride(settings),
+					compileSynonymOverlay(settings)
 				);
 				compiler.markClauses(request.query(), request.filters());
 

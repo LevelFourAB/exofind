@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.settings;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -90,6 +91,9 @@ public class SearchSettings {
 	 * @param ranking
 	 *   the ranking to search with instead of the definition's, or
 	 *   {@code null} when the object carries none or could not be honoured
+	 * @param synonyms
+	 *   the synonym sets to widen the text of a search with, by name; empty
+	 *   when the object carries none or could not be honoured
 	 * @param unsupportedFeatures
 	 *   what the object needs that this build does not have, sorted; empty
 	 *   when it is in force
@@ -98,6 +102,7 @@ public class SearchSettings {
 	public record Snapshot(
 		SearchSettingsStore stored,
 		RankingConfig ranking,
+		Map<String, QuerySynonyms> synonyms,
 		ListIterable<String> unsupportedFeatures,
 		String version
 	) {
@@ -493,6 +498,7 @@ public class SearchSettings {
 		return new Snapshot(
 			stored,
 			unsupported.isEmpty() && stored.hasRanking() ? stored.getRanking() : null,
+			unsupported.isEmpty() ? stored.getSynonymsMap() : Map.of(),
 			unsupported,
 			version
 		);
