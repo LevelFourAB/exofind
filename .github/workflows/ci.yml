@@ -2,10 +2,31 @@ name: CI
 
 # Every branch is built, so that a branch is known to compile and pass its
 # tests before anyone opens a pull request for it.
+#
+# The paths below are read by neither the build nor a test, so a commit that
+# only changes them is not built. The website has its own workflow that builds
+# it on a pull request. The list names what to ignore, so a new source directory
+# is built without an edit here. A run is skipped only when every path in the
+# commit is ignored. Actions does not resolve YAML anchors, so the list appears
+# twice.
 on:
   push:
     branches: ['**']
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+      - 'examples/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/workflows/pages.yml'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+      - 'examples/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/workflows/pages.yml'
 
 # A branch that is pushed to again abandons the run for the commit it replaced;
 # main does not, because its runs publish an image and the one for the older
@@ -48,7 +69,9 @@ jobs:
 
   # Merges to main are published so that a deployment can follow main without
   # waiting for a release. `main-latest` moves, `main-<rev>` does not, so a
-  # deployment that has to be reproducible pins the second.
+  # deployment that has to be reproducible pins the second. A merge of the
+  # ignored paths publishes nothing; the image from the merge before it still
+  # matches main.
   image:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
