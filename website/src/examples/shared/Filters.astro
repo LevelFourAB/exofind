@@ -1,0 +1,42 @@
+---
+/*
+ * The facet column of a demo, and the line that folds it away.
+ *
+ * A demo puts its facet groups inside this component instead of writing an
+ * `<aside>` of its own. Wide enough, the column sits beside the results and
+ * this adds nothing to it. Narrower than that, `.split` stacks and a column of
+ * facets above the results is a page of facets that has to be scrolled past
+ * before a single hit is reached - so the facets are folded behind one line
+ * that says how many of them are in use.
+ *
+ * Whether the fold applies at all is settled in the stylesheet, at the width
+ * `.split` stops being two columns at; the script only opens and closes it.
+ * See `./exofind.css` for the look and `./filters.js` for the behaviour.
+ *
+ * One per page: the panel is addressed by a fixed id, which is what lets the
+ * button say what it opens.
+ */
+---
+
+<div class="filters">
+	<button
+		class="filters__toggle"
+		type="button"
+		aria-expanded="false"
+		aria-controls="filters-panel"
+	>
+		<span class="filters__label">Filters</span>
+		<span class="filters__on" hidden></span>
+		<span class="filters__mark" aria-hidden="true"></span>
+	</button>
+
+	<aside class="filters__panel" id="filters-panel" aria-label="Filters">
+		<slot />
+
+		<button class="filters__done" type="button">Show results</button>
+	</aside>
+</div>
+
+<script>
+	import './filters.js';
+</script>

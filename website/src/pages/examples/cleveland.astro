@@ -1,5 +1,6 @@
 ---
 import Example from '../../layouts/Example.astro';
+import Filters from '../../examples/shared/Filters.astro';
 
 /*
  * The look every demo shares, then what this one adds to it. Both are asked
@@ -44,7 +45,7 @@ import '../../examples/cleveland/main.css';
 	</section>
 
 	<div class="split">
-		<aside class="filters">
+		<Filters>
 			<div class="filters__group">
 				<h2 class="eyebrow">Department</h2>
 				<div id="departments"></div>
@@ -65,7 +66,7 @@ import '../../examples/cleveland/main.css';
 				<div id="on-view"></div>
 			</div>
 			<button class="clear" type="button" id="clear" hidden>Clear filters</button>
-		</aside>
+		</Filters>
 
 		<section class="results">
 			<div class="controls">

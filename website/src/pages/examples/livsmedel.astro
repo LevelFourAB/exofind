@@ -1,5 +1,6 @@
 ---
 import Example from '../../layouts/Example.astro';
+import Filters from '../../examples/shared/Filters.astro';
 
 /* The look every demo shares. This one adds nothing of its own to it. */
 import '../../examples/shared/exofind.css';
@@ -37,7 +38,7 @@ import '../../examples/shared/exofind.css';
 	</section>
 
 	<div class="split">
-		<aside class="filters">
+		<Filters>
 			<div class="filters__group">
 				<h2 class="eyebrow">Group</h2>
 				<div id="groups"></div>
@@ -51,7 +52,7 @@ import '../../examples/shared/exofind.css';
 				<div id="protein"></div>
 			</div>
 			<button class="clear" type="button" id="clear" hidden>Clear filters</button>
-		</aside>
+		</Filters>
 
 		<section class="results">
 			<ul class="hits" id="hits"></ul>

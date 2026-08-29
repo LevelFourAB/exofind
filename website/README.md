@@ -103,6 +103,13 @@ Demo pages require two conventions that the build does not check automatically:
 - Import `shared/exofind.css` before the demo stylesheet in the page component
   rather than in the layout. Because the bundler can inline one stylesheet and
   link another, import order determines CSS precedence.
+- Put the facet groups inside
+  [`shared/Filters.astro`](src/examples/shared/Filters.astro), one group per
+  `<div class="filters__group">`. The component folds the facets behind a single
+  line on narrow viewports, and counts a group as filtering when it holds a
+  ticked box, a range bucket other than `Any`, or a pressed button. A page that
+  writes its own `<aside>` instead stacks the whole facet column above the first
+  result on a phone.
 
 ## Which node the demos search
 
