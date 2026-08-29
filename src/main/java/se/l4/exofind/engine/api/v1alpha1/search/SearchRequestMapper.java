@@ -12,6 +12,7 @@ import org.eclipse.collections.api.map.MapIterable;
 
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Signal;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
@@ -130,6 +131,36 @@ public class SearchRequestMapper {
 	private static final ErrorType SIGNAL_WEIGHT_INVALID =
 		ErrorType.withCode("search:signal:weight_invalid")
 			.withMessage("The `weight` of a ranking signal can not be less than nothing");
+
+	private static final ErrorType RESCORE_WINDOW_REQUIRED =
+		ErrorType.withCode("search:rescore:window_required")
+			.withMessage("How many of the best results a second pass reaches is required");
+
+	private static final ErrorType RESCORE_WINDOW_INVALID =
+		ErrorType.withCode("search:rescore:window_invalid")
+			.withMessage(
+				"The `window` of a rescore has to be at least one result and at most the configured maximum"
+			);
+
+	private static final ErrorType RESCORE_WINDOW_TOO_SMALL =
+		ErrorType.withCode("search:rescore:window_too_small")
+			.withMessage(
+				"A rescore has to reach the results being returned - widen `window`, or ask for an earlier page"
+			);
+
+	private static final ErrorType RESCORE_EMPTY =
+		ErrorType.withCode("search:rescore:empty")
+			.withMessage("A rescore has to hold a boost or a signal to reorder by");
+
+	private static final ErrorType RESCORE_WEIGHT_INVALID =
+		ErrorType.withCode("search:rescore:weight_invalid")
+			.withMessage("The `weight` of a rescore can not be less than nothing");
+
+	private static final ErrorType RESCORE_WITH_HITS =
+		ErrorType.withCode("search:rescore:hits_unsupported")
+			.withMessage(
+				"A search whose hits are the values of an object field can not rescore - a second pass scores documents"
+			);
 
 	private static final ErrorType REQUIRED = ErrorType.withCode("search:required")
 		.withMessage("A value is required here");
@@ -389,16 +420,18 @@ public class SearchRequestMapper {
 	 *   body - which matches everything, the way an empty request does
 	 * @param maxPageDepth
 	 *   how deep into the results offset paging may reach
+	 * @param maxRescoreWindow
+	 *   how many results a second pass may reach
 	 * @return
 	 * @throws ValidationException
 	 *   when the request is not one that can be run, carrying every problem
 	 *   found
 	 */
-	public static Mapped toEngine(SearchRequest body, int maxPageDepth) {
+	public static Mapped toEngine(SearchRequest body, int maxPageDepth, int maxRescoreWindow) {
 		if(body == null) {
 			body = new SearchRequest(
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-				null, null
+				null, null, null
 			);
 		}
 
@@ -427,7 +460,7 @@ public class SearchRequestMapper {
 		var position = resolvePosition(body, fingerprint, errors);
 
 		var query = toClauses(body.query(), "/query", errors);
-		var signals = toSignals(body.signals(), errors);
+		var signals = toSignals(body.signals(), "/signals", errors);
 		var filters = toFilters(body.filters(), errors);
 		var facets = toFacets(body.facets(), errors);
 		var highlight = toHighlight(body.highlight(), errors);
@@ -466,6 +499,15 @@ public class SearchRequestMapper {
 		if(position.offset() != null && (long) position.offset() + limit > maxPageDepth) {
 			errors.add(PAGE_TOO_DEEP.toMessage(Location.create(""), "max", maxPageDepth));
 		}
+
+		var rescore = toRescore(
+			body.rescore(),
+			hits,
+			limit,
+			position.offset(),
+			maxRescoreWindow,
+			errors
+		);
 
 		if(errors.notEmpty()) {
 			throw new ValidationException(errors);
@@ -506,6 +548,10 @@ public class SearchRequestMapper {
 
 		if(hits != null) {
 			request = request.withHits(hits);
+		}
+
+		if(rescore != null) {
+			request = request.withRescore(rescore);
 		}
 
 		return new Mapped(request.build(), fingerprint, pagesMax);
@@ -1222,12 +1268,16 @@ public class SearchRequestMapper {
 	 * saying to rank by how well documents match and nothing else.
 	 *
 	 * @param signals
+	 * @param at
+	 *   where the signals sit in the request, which is what the problems found
+	 *   in them point at
 	 * @param errors
 	 * @return
 	 *   the signals, or {@code null} to rank by the ones the index declares
 	 */
 	private static ImmutableList<RankingSignal> toSignals(
 		List<Signal> signals,
+		String at,
 		MutableList<ErrorMessage> errors
 	) {
 		if(signals == null) {
@@ -1236,7 +1286,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<RankingSignal>empty();
 		for(var i = 0; i < signals.size(); i++) {
-			var path = "/signals/" + i;
+			var path = at + "/" + i;
 			var signal = signals.get(i);
 
 			if(signal == null) {
@@ -1292,6 +1342,101 @@ public class SearchRequestMapper {
 		}
 
 		return result.toImmutable();
+	}
+
+	/**
+	 * Convert the second pass of a request into the one the engine runs.
+	 *
+	 * <p>The window has to cover the page being returned. A page reached from
+	 * a cursor has no number to check against it, and is past the window in any
+	 * case - the second pass reorders from the first result, which a cursor has
+	 * already moved beyond.
+	 *
+	 * @param rescore
+	 *   the second pass as received, or {@code null} for none
+	 * @param hits
+	 *   what the hits of the search stand for, {@code null} for documents
+	 * @param limit
+	 *   how many results the page holds
+	 * @param offset
+	 *   how many results the page skips, or {@code null} for a position taken
+	 *   from a cursor
+	 * @param max
+	 *   how many results a second pass may reach
+	 * @param errors
+	 * @return
+	 *   the second pass, or {@code null} when the search runs none
+	 */
+	private static se.l4.exofind.engine.query.Rescore toRescore(
+		Rescore rescore,
+		se.l4.exofind.engine.query.SearchRequest.Hits hits,
+		int limit,
+		Integer offset,
+		int max,
+		MutableList<ErrorMessage> errors
+	) {
+		if(rescore == null) {
+			return null;
+		}
+
+		if(hits != null) {
+			errors.add(RESCORE_WITH_HITS.toMessage(Location.create("/rescore")));
+			return null;
+		}
+
+		var valid = true;
+
+		if(rescore.window() == null) {
+			errors.add(RESCORE_WINDOW_REQUIRED.toMessage(Location.create("/rescore/window")));
+			valid = false;
+		} else if(rescore.window() < 1 || rescore.window() > max) {
+			errors.add(
+				RESCORE_WINDOW_INVALID.toMessage(Location.create("/rescore/window"), "max", max)
+			);
+			valid = false;
+		} else if(offset != null && (long) offset + limit > rescore.window()) {
+			errors.add(
+				RESCORE_WINDOW_TOO_SMALL.toMessage(
+					Location.create("/rescore/window"),
+					"window", rescore.window()
+				)
+			);
+			valid = false;
+		}
+
+		if(rescore.weight() != null
+			&& (!(rescore.weight() >= 0) || !Float.isFinite(rescore.weight()))) {
+			errors.add(RESCORE_WEIGHT_INVALID.toMessage(Location.create("/rescore/weight")));
+			valid = false;
+		}
+
+		/*
+		 * Read off what was asked for rather than off what survived being
+		 * mapped, so a boost that is refused for its own reason does not also
+		 * report the second pass as holding nothing.
+		 */
+		if((rescore.boost() == null || rescore.boost().isEmpty())
+			&& (rescore.signals() == null || rescore.signals().isEmpty()))
+		{
+			errors.add(RESCORE_EMPTY.toMessage(Location.create("/rescore")));
+			valid = false;
+		}
+
+		var boost = toClauses(rescore.boost(), "/rescore/boost", errors);
+		var signals = toSignals(rescore.signals(), "/rescore/signals", errors);
+
+		if(!valid || errors.notEmpty()) {
+			return null;
+		}
+
+		return new se.l4.exofind.engine.query.Rescore(
+			rescore.window(),
+			boost,
+			signals,
+			rescore.weight() == null
+				? se.l4.exofind.engine.query.Rescore.DEFAULT_WEIGHT
+				: rescore.weight()
+		);
 	}
 
 	private static SortBy.Order toOrder(Sort.Order order) {

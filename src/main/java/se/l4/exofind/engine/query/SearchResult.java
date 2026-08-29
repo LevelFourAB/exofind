@@ -30,13 +30,20 @@ import se.l4.exofind.engine.index.Document;
  * @param relaxed
  *   what the search let go of to find anything, or {@code null} when it found
  *   what was asked for. See {@link Relaxed}
+ * @param windowEnd
+ *   where the window a {@link Rescore} reordered ended, in the order the
+ *   ranking put the results in - or {@code null} when the search rescored
+ *   nothing, or ran out of results inside the window. The hits of a rescored
+ *   window sit in an order no key names, so this is the position a caller
+ *   continues from to reach the results below it
  */
 public record SearchResult(
 	ImmutableList<Hit> hits,
 	Total total,
 	Total documents,
 	ImmutableMap<String, Facet> facets,
-	Relaxed relaxed
+	Relaxed relaxed,
+	SortKey windowEnd
 ) {
 	public SearchResult {
 		if(facets == null) {
@@ -47,10 +54,20 @@ public record SearchResult(
 	public SearchResult(
 		ImmutableList<Hit> hits,
 		Total total,
+		Total documents,
 		ImmutableMap<String, Facet> facets,
 		Relaxed relaxed
 	) {
-		this(hits, total, null, facets, relaxed);
+		this(hits, total, documents, facets, relaxed, null);
+	}
+
+	public SearchResult(
+		ImmutableList<Hit> hits,
+		Total total,
+		ImmutableMap<String, Facet> facets,
+		Relaxed relaxed
+	) {
+		this(hits, total, null, facets, relaxed, null);
 	}
 
 	public SearchResult(
@@ -58,11 +75,11 @@ public record SearchResult(
 		Total total,
 		ImmutableMap<String, Facet> facets
 	) {
-		this(hits, total, null, facets, null);
+		this(hits, total, null, facets, null, null);
 	}
 
 	public SearchResult(ImmutableList<Hit> hits, Total total) {
-		this(hits, total, null, null, null);
+		this(hits, total, null, null, null, null);
 	}
 
 	/**

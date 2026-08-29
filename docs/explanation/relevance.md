@@ -68,6 +68,21 @@ Search settings attach to the index name rather than to a specific index generat
 - Nodes update independently, so two nodes can rank the same query differently for up to one refresh interval.
 - If a newer generation lacks a field configured in search settings, searches skip that ranking entry rather than failing.
 
+## Reordering the best results in a second pass
+
+Every other ranking control takes part in retrieval: a boost that lifts a document also decides whether the document is retrieved at all. That behavior is correct for a signal about the documents, but wrong for a signal about the person searching. For example, a shopper who looks at one brand should see that brand ranked higher among relevant results, but should never see a poor match promoted onto the first page.
+
+The [`rescore`](../reference/search-api.md#rescoring) block draws that boundary. The first pass retrieves and ranks every match by relevance. The second pass scores only the best results within a specified window and adds the second score to the first-pass score. Results below the window keep the order relevance gave them. Because boosts inside the window apply only to documents that already matched, they reorder what is already relevant and reach nothing else.
+
+The window is also where per-request work that is too expensive for every match belongs, such as evaluating user affinity boosts. Scoring a window of a few hundred results costs a fixed amount per search, regardless of the size of the index.
+
+Ranking a window instead of a complete result set leads to several specific behaviors:
+
+- Facets and totals come from the first pass, so rescoring never changes a count.
+- Rescoring never changes which documents matched the query.
+- Paging inside the window counts results instead of carrying a cursor position, because a reordered window contains no position that a first-pass key can name. See [Paging a rescored search](../reference/search-api.md#paging-a-rescored-search).
+- Numbered pages stop at the window boundary, while cursors past the window continue in the order relevance ranked them.
+
 ## When relevance is not the order
 
 When a search request specifies an explicit `sort` parameter, Exofind orders results by that sort. Exofind does not calculate relevance scores or evaluate signals for explicit sorts. If an application provides a "sort by price" option, it must provide a way to switch back to relevance ordering by requesting a `score` sort. Exofind still appends tie breakers to explicit sort orders to resolve ties.
@@ -90,6 +105,7 @@ The following table summarizes where you configure each ranking component and wh
 | Field weights | Index definition (overridable per search) | Next search |
 | Whole-value match (`exact`) | Index definition | Newly indexed documents |
 | Boost clauses | Search request | Next search |
+| Second-pass rescoring (`rescore`) | Search request | Next search |
 | Signals | Index definition, replaceable by search settings (overridable per search) | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Tie breakers | Index definition, replaceable by search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Index-time synonyms | Index definition | Newly indexed documents |
@@ -100,5 +116,5 @@ Exofind evaluates most ranking components at query time, making ranking adjustme
 ## Related
 
 - [Field types](../reference/field-types.md#ranking) - Reference for `ranking`, `signals`, and field-level settings.
-- [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `signals`, and `sort` parameters.
+- [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `signals`, `rescore`, and `sort` parameters.
 - [Search an index](../how-to/search-an-index.md) - How-to guide for constructing search queries.

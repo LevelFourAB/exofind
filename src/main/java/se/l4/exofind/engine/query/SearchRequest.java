@@ -87,6 +87,12 @@ import org.eclipse.collections.api.set.ImmutableSet;
  *   out before it is adopted. {@code null} ranks by what the index declares,
  *   empty by how well documents match alone. Only read where relevance is the
  *   ordering, so a search that sorts by a field is unaffected
+ * @param rescore
+ *   a second pass reordering the best results, or {@code null} to answer in
+ *   the order the ranking gave. Read under the same rule the signals are, and
+ *   refused for a search whose hits are the values of an object field. A
+ *   search continuing from {@code after} or {@code before} has left the window
+ *   behind, so the second pass does not reach it
  */
 public record SearchRequest(
 	ImmutableList<Query> query,
@@ -103,7 +109,8 @@ public record SearchRequest(
 	SortKey after,
 	SortKey before,
 	Total total,
-	ImmutableList<RankingSignal> signals
+	ImmutableList<RankingSignal> signals,
+	Rescore rescore
 ) {
 	/**
 	 * How many results are returned when nothing else is asked for.
@@ -454,6 +461,49 @@ public record SearchRequest(
 				"A search that continues from a hit says where it starts, so an offset can not also be given"
 			);
 		}
+
+		if(rescore != null && hits != null) {
+			throw new IllegalArgumentException(
+				"A search whose hits are matched values can not rescore - a second pass scores documents"
+			);
+		}
+
+		if(rescore != null
+			&& after == null
+			&& before == null
+			&& (long) offset + limit > rescore.window())
+		{
+			throw new IllegalArgumentException(
+				"A rescore has to reach the results being returned - its window is shorter than offset plus limit"
+			);
+		}
+	}
+
+	/**
+	 * A search that answers in the order its ranking gave, without a second
+	 * pass over the best of them.
+	 */
+	public SearchRequest(
+		ImmutableList<Query> query,
+		ImmutableList<Query> filters,
+		ImmutableList<Facet> facets,
+		ImmutableList<SortBy> sort,
+		ImmutableSet<String> fields,
+		ImmutableMap<String, Highlight> highlight,
+		ImmutableMap<String, Matched> matched,
+		Hits hits,
+		String locale,
+		int limit,
+		int offset,
+		SortKey after,
+		SortKey before,
+		Total total,
+		ImmutableList<RankingSignal> signals
+	) {
+		this(
+			query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
+			after, before, total, signals, null
+		);
 	}
 
 	/**
@@ -479,7 +529,8 @@ public record SearchRequest(
 			after,
 			before,
 			total,
-			signals
+			signals,
+			rescore
 		);
 	}
 
@@ -504,6 +555,7 @@ public record SearchRequest(
 			null,
 			null,
 			Total.ESTIMATE,
+			null,
 			null
 		);
 	}
@@ -533,7 +585,8 @@ public record SearchRequest(
 		SortKey after,
 		SortKey before,
 		Total total,
-		ImmutableList<RankingSignal> signals
+		ImmutableList<RankingSignal> signals,
+		Rescore rescore
 	) {
 		/**
 		 * Set the clauses a document has to satisfy, replacing any set before.
@@ -544,7 +597,7 @@ public record SearchRequest(
 		public Builder withQuery(Query... query) {
 			return new Builder(
 				Lists.immutable.of(query),
-				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -557,7 +610,7 @@ public record SearchRequest(
 		public Builder withQuery(Iterable<? extends Query> query) {
 			return new Builder(
 				Lists.immutable.<Query>ofAll(query),
-				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -570,7 +623,7 @@ public record SearchRequest(
 		public Builder addQuery(Query clause) {
 			return new Builder(
 				query.newWith(clause),
-				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -588,7 +641,7 @@ public record SearchRequest(
 			return new Builder(
 				query,
 				Lists.immutable.of(filters),
-				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -606,7 +659,7 @@ public record SearchRequest(
 			return new Builder(
 				query,
 				Lists.immutable.<Query>ofAll(filters),
-				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -620,7 +673,7 @@ public record SearchRequest(
 			return new Builder(
 				query,
 				filters.newWith(filter),
-				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -635,7 +688,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters,
 				Lists.immutable.of(facets),
-				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -650,7 +703,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters,
 				Lists.immutable.<Facet>ofAll(facets),
-				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -664,7 +717,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters,
 				facets.newWith(facet),
-				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -678,7 +731,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets,
 				Lists.immutable.of(sort),
-				fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -692,7 +745,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets,
 				Lists.immutable.<SortBy>ofAll(sort),
-				fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -706,7 +759,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort,
 				Sets.immutable.of(fields),
-				highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -720,7 +773,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort,
 				Sets.immutable.ofAll(fields),
-				highlight, matched, hits, locale, limit, offset, after, before, total, signals
+				highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -739,7 +792,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields,
 				copied.toImmutable(),
-				matched, hits, locale, limit, offset, after, before, total, signals
+				matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -756,7 +809,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields,
 				highlight.newWithKeyValue(field, options),
-				matched, hits, locale, limit, offset, after, before, total, signals
+				matched, hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -787,7 +840,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields, highlight,
 				copied.toImmutable(),
-				hits, locale, limit, offset, after, before, total, signals
+				hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -805,7 +858,7 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields, highlight,
 				matched.newWithKeyValue(field, options),
-				hits, locale, limit, offset, after, before, total, signals
+				hits, locale, limit, offset, after, before, total, signals, rescore
 			);
 		}
 
@@ -832,7 +885,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withHits(Hits hits) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		/**
@@ -856,7 +909,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withLocale(String locale) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		/**
@@ -866,7 +919,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withLimit(int limit) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		/**
@@ -876,7 +929,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withOffset(int offset) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		/**
@@ -889,7 +942,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withAfter(SortKey after) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		/**
@@ -902,7 +955,7 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withBefore(SortKey before) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		/**
@@ -918,7 +971,8 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
 				after, before, total,
-				Lists.immutable.of(signals)
+				Lists.immutable.of(signals),
+				rescore
 			);
 		}
 
@@ -934,7 +988,23 @@ public record SearchRequest(
 			return new Builder(
 				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
 				after, before, total,
-				signals == null ? null : Lists.immutable.<RankingSignal>ofAll(signals)
+				signals == null ? null : Lists.immutable.<RankingSignal>ofAll(signals),
+				rescore
+			);
+		}
+
+		/**
+		 * Set the second pass over the best results, replacing any set before.
+		 *
+		 * @param rescore
+		 *   the second pass, or {@code null} to answer in the order the ranking
+		 *   gave
+		 * @return
+		 */
+		public Builder withRescore(Rescore rescore) {
+			return new Builder(
+				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
+				after, before, total, signals, rescore
 			);
 		}
 
@@ -945,13 +1015,13 @@ public record SearchRequest(
 		 * @return
 		 */
 		public Builder withTotal(Total total) {
-			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals);
+			return new Builder(query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset, after, before, total, signals, rescore);
 		}
 
 		public SearchRequest build() {
 			return new SearchRequest(
 				query, filters, facets, sort, fields, highlight, matched, hits, locale, limit, offset,
-				after, before, total, signals
+				after, before, total, signals, rescore
 			);
 		}
 	}

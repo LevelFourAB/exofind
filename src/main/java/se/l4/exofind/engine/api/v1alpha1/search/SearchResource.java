@@ -55,6 +55,11 @@ import jakarta.ws.rs.core.MediaType;
  * error code rather than answered slowly. Following `next`/`previous` is the
  * way past the cap: those cursors carry the hit a window ended at rather than
  * a count, so continuing from one costs the same at any depth.
+ *
+ * A search that rescores is the exception. Inside the window a second pass
+ * reorders, no key names a position, and the two cursors count results instead
+ * - bounded by the window, which is far shallower than the cap. The cursor
+ * leaving the window carries a hit again.
  */
 @Tag(
 	name = "Search",
@@ -75,16 +80,20 @@ public class SearchResource {
 	private final Indexes indexes;
 	private final SearchSettings searchSettings;
 	private final int maxPageDepth;
+	private final int maxRescoreWindow;
 
 	public SearchResource(
 		Indexes indexes,
 		SearchSettings searchSettings,
 		@ConfigProperty(name = "exofind.search.max-page-depth", defaultValue = "10000")
-		int maxPageDepth
+		int maxPageDepth,
+		@ConfigProperty(name = "exofind.search.max-rescore-window", defaultValue = "1000")
+		int maxRescoreWindow
 	) {
 		this.indexes = indexes;
 		this.searchSettings = searchSettings;
 		this.maxPageDepth = maxPageDepth;
+		this.maxRescoreWindow = maxRescoreWindow;
 	}
 
 	/**
@@ -174,7 +183,7 @@ public class SearchResource {
 		var started = System.nanoTime();
 
 		var index = indexes.getOrThrow(name);
-		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth);
+		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth, maxRescoreWindow);
 
 		/*
 		 * Settings belong to the index name, so a search naming one generation
@@ -308,7 +317,7 @@ public class SearchResource {
 		SearchRequest body
 	) {
 		var index = indexes.getOrThrow(name);
-		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth);
+		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth, maxRescoreWindow);
 
 		// Settings belong to the index name, the way they do for a search
 		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
@@ -544,6 +553,15 @@ public class SearchResource {
 		 * turns out to point past the end answers an empty window rather
 		 * than being wrong to hand out.
 		 */
+		/*
+		 * A second pass reorders the window it covers, and no key names a
+		 * position in that order - so inside it the two cursors count results
+		 * instead. The one continuing past the window is a key again: it is the
+		 * position the first pass left off at, which is where the results below
+		 * the window carry on from.
+		 */
+		var rescore = request.rescore();
+
 		String previous = null;
 		String next = null;
 
@@ -561,6 +579,22 @@ public class SearchResource {
 				} else if(request.before() != null) {
 					previous = full ? first : null;
 					next = last;
+				} else if(rescore != null) {
+					if(request.offset() > 0) {
+						previous = new SearchCursor.Offset(
+							fingerprint,
+							Math.max(0, request.offset() - limit)
+						).encode();
+					}
+
+					var nextOffset = (long) request.offset() + limit;
+					if(nextOffset >= rescore.window()) {
+						next = result.windowEnd() == null
+							? null
+							: new SearchCursor.Keyset(fingerprint, result.windowEnd()).encode();
+					} else if(nextOffset < result.total().count()) {
+						next = new SearchCursor.Offset(fingerprint, (int) nextOffset).encode();
+					}
 				} else {
 					if(request.offset() > 0) {
 						previous = first;
@@ -580,8 +614,17 @@ public class SearchResource {
 			}
 		}
 
+		/*
+		 * Numbered pages stop where the second pass does. A page past the
+		 * window is refused rather than answered in another order, so offering
+		 * its number would offer an error.
+		 */
+		var numbered = rescore == null
+			? result.total().count()
+			: Math.min(result.total().count(), rescore.window());
+
 		var pages = mapped.pagesMax() != null
-			? toPages(fingerprint, limit, request.offset(), result.total().count(), mapped.pagesMax())
+			? toPages(fingerprint, limit, request.offset(), numbered, mapped.pagesMax())
 			: null;
 
 		return new SearchResponse.Page(limit, offset, previous, next, pages);

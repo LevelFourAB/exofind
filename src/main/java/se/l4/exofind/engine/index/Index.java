@@ -56,6 +56,7 @@ import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.QueryRescorer;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
@@ -120,6 +121,7 @@ import se.l4.exofind.engine.query.NestedQuery;
 import se.l4.exofind.engine.query.NotQuery;
 import se.l4.exofind.engine.query.OrQuery;
 import se.l4.exofind.engine.query.Query;
+import se.l4.exofind.engine.query.Rescore;
 import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchExplanation;
@@ -3422,6 +3424,18 @@ public class Index {
 					(long) request.offset() + request.limit(),
 					Integer.MAX_VALUE
 				);
+
+				/*
+				 * A second pass reorders its window from the first result, so
+				 * the whole window is ranked however few of it the page shows.
+				 * The request has already been refused if the page reaches past
+				 * it, which is what keeps this from shrinking `wanted`.
+				 */
+				var rescore = rescoring(request);
+				if(rescore != null && wanted > 0) {
+					wanted = rescore.window();
+				}
+
 				if(wanted == 0) {
 					/*
 					 * Nothing to rank and nothing to read. A search with a limit
@@ -3512,15 +3526,17 @@ public class Index {
 				var backwards = request.before() != null;
 				var position = backwards ? request.before() : request.after();
 
-				var topDocs = topDocs(
+				var window = rank(
 					searcher,
-					ranked.query(),
+					compiler,
+					ranked,
+					rescore,
 					sort,
 					wanted,
 					position,
-					backwards,
-					ranked.scores()
+					backwards
 				);
+				var topDocs = window.topDocs();
 
 				/*
 				 * Nothing was found, so the search is run again with a word let
@@ -3541,15 +3557,17 @@ public class Index {
 						query = assembled.hits();
 						ranked = ranked(compiler, request, assembled, searched);
 
-						topDocs = topDocs(
+						window = rank(
 							searcher,
-							ranked.query(),
+							compiler,
+							ranked,
+							rescore,
 							sort,
 							wanted,
 							position,
-							backwards,
-							ranked.scores()
+							backwards
 						);
+						topDocs = window.topDocs();
 					}
 				}
 
@@ -3606,7 +3624,18 @@ public class Index {
 					names.add(FieldNames.SOURCE);
 				}
 
-				var docIds = new int[Math.max(0, topDocs.scoreDocs.length - request.offset())];
+				/*
+				 * Where the page ends among what was ranked. A second pass
+				 * ranks its whole window so that it reorders from the first
+				 * result, which leaves results ranked that the page does not
+				 * show.
+				 */
+				var pageEnd = (int) Math.min(
+					topDocs.scoreDocs.length,
+					(long) request.offset() + request.limit()
+				);
+
+				var docIds = new int[Math.max(0, pageEnd - request.offset())];
 				for(var i = 0; i < docIds.length; i++) {
 					docIds[i] = topDocs.scoreDocs[request.offset() + i].doc;
 				}
@@ -3710,7 +3739,7 @@ public class Index {
 						.map(Field::getObjectKey)
 						.orElse(null);
 
-					for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
+					for(var i = request.offset(); i < pageEnd; i++) {
 						var scoreDoc = topDocs.scoreDocs[i];
 						var location = locations.get(scoreDoc.doc);
 
@@ -3792,7 +3821,7 @@ public class Index {
 						);
 					}
 				} else {
-					for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
+					for(var i = request.offset(); i < pageEnd; i++) {
 						var scoreDoc = topDocs.scoreDocs[i];
 
 						Document document;
@@ -3880,7 +3909,8 @@ public class Index {
 					total,
 					documents,
 					faceted == null ? null : faceted.counts(),
-					relaxed
+					relaxed,
+					window.end()
 				);
 			}
 		} finally {
@@ -5161,6 +5191,101 @@ public class Index {
 				? hitsOf(compiler, request, documents, clauses, true)
 				: assembled.hits(),
 			scores
+		);
+	}
+
+	/**
+	 * Get the second pass a search runs, or {@code null} when it runs none.
+	 *
+	 * A rescore reorders what relevance ranked, so a search ordered by a field
+	 * of its own has nothing for it to reorder - the same rule the signals
+	 * follow. A search continuing from a key is past the window: its position
+	 * names a place in the order the first pass ranked, and reordering the
+	 * results around it would answer from an order that key never named.
+	 */
+	private static Rescore rescoring(SearchRequest request) {
+		if(request.rescore() == null
+			|| !request.sort().isEmpty()
+			|| request.after() != null
+			|| request.before() != null)
+		{
+			return null;
+		}
+
+		return request.rescore();
+	}
+
+	/**
+	 * The page Lucene ranked, and where its rescored window ended.
+	 */
+	private record Window(TopDocs topDocs, SortKey end) {
+	}
+
+	/**
+	 * Rank a page of results, reordering the best of them when the search asked
+	 * for a second pass.
+	 *
+	 * @param searcher
+	 * @param compiler
+	 *   the compiler that compiled the search, still pointed at its locale
+	 * @param ranked
+	 *   what ranks the search, already applied to its query
+	 * @param rescore
+	 *   the second pass, or {@code null} for none
+	 * @param sort
+	 *   the order to return results in, {@code null} for the best matches first
+	 * @param wanted
+	 *   how many results to rank, the whole window when there is a second pass
+	 * @param position
+	 *   the hit to continue from, or {@code null} to start at the beginning
+	 * @param backwards
+	 *   if the results are the ones before the position rather than after it
+	 * @return
+	 * @throws IOException
+	 */
+	private Window rank(
+		IndexSearcher searcher,
+		QueryCompiler compiler,
+		Ranked ranked,
+		Rescore rescore,
+		Sort sort,
+		int wanted,
+		SortKey position,
+		boolean backwards
+	) throws IOException {
+		var topDocs = topDocs(
+			searcher,
+			ranked.query(),
+			sort,
+			wanted,
+			position,
+			backwards,
+			ranked.scores()
+		);
+
+		if(rescore == null || topDocs.scoreDocs.length == 0) {
+			return new Window(topDocs, null);
+		}
+
+		/*
+		 * Read before the second pass reorders the window. Lucene can only
+		 * resume from a position in the order it ranked, so the results below
+		 * the window are reached from where the first pass left off - which the
+		 * rescored order no longer holds anywhere.
+		 */
+		var end = topDocs.scoreDocs.length < wanted
+			? null
+			: SortKeys.keyOf(topDocs.scoreDocs[topDocs.scoreDocs.length - 1], false);
+
+		return new Window(
+			QueryRescorer.rescore(
+				searcher,
+				topDocs,
+				compiler.compileRescore(rescore.boost(), rescore.signals()),
+				rescore.weight(),
+				topDocs.scoreDocs.length
+			),
+			end
 		);
 	}
 

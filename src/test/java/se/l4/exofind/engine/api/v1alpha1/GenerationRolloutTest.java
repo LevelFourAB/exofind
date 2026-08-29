@@ -122,7 +122,7 @@ public class GenerationRolloutTest {
 			indexes, auth, new LocalIndexerOwnership(), reindexJobs, searchSettings
 		);
 		documents = new DocumentResource(indexes, new ObjectMapper(), reindexJobs);
-		search = new SearchResource(indexes, searchSettings, 10_000);
+		search = new SearchResource(indexes, searchSettings, 10_000, 1_000);
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())

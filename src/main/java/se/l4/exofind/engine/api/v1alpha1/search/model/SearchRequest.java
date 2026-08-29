@@ -221,8 +221,46 @@ public record SearchRequest(
 		Document ranking signals used to adjust relevance scoring. See \
 		[Signals](https://exofind.dev/reference/search-api/#signals). \
 		If omitted, uses the ranking signals configured on the index.""")
-	List<Signal> signals
+	List<Signal> signals,
+
+	/**
+	 * A second pass reordering the best results, left out to answer in the
+	 * order the ranking gave. Read under the same rule the signals are, and
+	 * refused together with {@code hits}.
+	 */
+	@Schema(description = """
+		Reorders the best results in a second pass. See \
+		[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""")
+	Rescore rescore
 ) {
+	/**
+	 * A search that answers in the order its ranking gave, without a second
+	 * pass over the best of them.
+	 */
+	public SearchRequest(
+		List<Clause> query,
+		List<Clause> filters,
+		List<Facet> facets,
+		List<Sort> sort,
+		String locale,
+		List<String> fields,
+		Highlight highlight,
+		Matched matched,
+		Hits hits,
+		Integer limit,
+		Integer offset,
+		String after,
+		String before,
+		Pages pages,
+		Total total,
+		List<Signal> signals
+	) {
+		this(
+			query, filters, facets, sort, locale, fields, highlight, matched, hits, limit, offset,
+			after, before, pages, total, signals, null
+		);
+	}
+
 	/**
 	 * How far the total of a search is counted.
 	 */

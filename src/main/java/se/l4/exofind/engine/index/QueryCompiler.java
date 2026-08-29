@@ -668,6 +668,52 @@ public class QueryCompiler {
 	}
 
 	/**
+	 * Compile the query a second pass scores the best results of a search
+	 * with.
+	 *
+	 * <p>Nothing here narrows. The clauses sit beside a match of everything as
+	 * alternatives, so a result none of them reached still scores, and the
+	 * signals still read it. What the query answers for a document is added to
+	 * what the first pass gave it.
+	 *
+	 * @param boost
+	 *   the clauses that lift what satisfies them, empty to lift nothing
+	 * @param signals
+	 *   the values of the documents to multiply in, empty to read none. Unlike
+	 *   {@link #applySignals(org.apache.lucene.search.Query, ListIterable)}
+	 *   this never falls back to the signals of the index
+	 * @return
+	 * @throws IndexFieldNotFoundException
+	 *   if a clause or a signal names a field the index does not have
+	 * @throws IndexFieldUsageException
+	 *   if a clause or a signal names a field that was not defined for what it
+	 *   asks of it
+	 * @throws IndexInvalidQueryTypeException
+	 *   if a clause or a signal means nothing for the type of the field it
+	 *   names
+	 */
+	public org.apache.lucene.search.Query compileRescore(
+		ListIterable<Query> boost,
+		ListIterable<RankingSignal> signals
+	) {
+		org.apache.lucene.search.Query base;
+		if(boost.isEmpty()) {
+			base = new MatchAllDocsQuery();
+		} else {
+			var builder = new BooleanQuery.Builder();
+			builder.add(new MatchAllDocsQuery(), BooleanClause.Occur.SHOULD);
+
+			for(var clause : boost) {
+				builder.add(compile(clause), BooleanClause.Occur.SHOULD);
+			}
+
+			base = builder.build();
+		}
+
+		return applySignals(base, signals);
+	}
+
+	/**
 	 * Get what a signal makes of the value it reads. A new shape is a record in
 	 * {@link RankingSignals}, an entry in its {@code permits} and a branch
 	 * here.

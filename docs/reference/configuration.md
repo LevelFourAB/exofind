@@ -214,6 +214,7 @@ The following table lists search configuration variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | Maximum result depth allowed for offset-based pagination. Requests exceeding this depth are rejected with `search:page:too_deep`, and page numbers past the limit are not returned. Cursor-based pagination using `next` and `previous` is not capped. | `10000` |
+| `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | Maximum number of results a `rescore` block may score a second time. Requests asking for a larger window are rejected with `search:rescore:window_invalid`. Every result in the window is scored again on every request, so this caps what one search costs. | `1000` |
 
 ## Logging
 

@@ -37,6 +37,7 @@ All request properties are optional. An empty request matches all documents in t
 | `facets` | Array | `[]` | Fields to aggregate match counts for. See [Facets](#facets). If omitted, no facet counts are calculated. |
 | `sort` | Array | `[{"type": "score"}]` | Order in which results are returned. If omitted, results are sorted by relevance score in descending order. |
 | `signals` | Array | Index ranking signals | Document ranking signals used to adjust relevance scoring. See [Signals](#signals). If omitted, uses the ranking signals configured on the index. |
+| `rescore` | Object | None | Reorders the best results of a search in a second pass without changing which documents matched. See [Rescoring](#rescoring). |
 | `locale` | String | Field defaults | BCP-47 locale tag used to read and return locale-specific fields. Matches the closest declared locale on each field (for example, `sv-SE` falls back to `sv`). If no matching variant exists, uses the field default. |
 | `fields` | Array | All stored fields | Document fields to return with each result. Fields inside an [`object`](field-types.md#object) are specified by dotted path and returned nested inside the object. Requesting unretrievable fields returns an error (see [Document source](field-types.md#document-source)). The primary key is always included. |
 | `highlight` | Object | None | Fields to return highlighted snippets for. See [Highlighting](#highlighting). |
@@ -266,6 +267,50 @@ When specified in the search request, `signals` replaces all ranking signals def
 Signals apply only when results are ordered by relevance. Providing an explicit `sort` overrides signal ordering.
 
 Targeting an unknown field returns `index:query:field_not_found`. Targeting a field without sorting enabled returns `index:query:usage_not_enabled`. Specifying a signal function unsupported by the field type returns `index:invalid-query-type`.
+
+## Rescoring
+
+Rescoring reorders the best results of a search in a second pass without changing which documents matched.
+
+The first pass ranks every match by relevance. The best `window` results of that pass are scored again by the boosts and signals in the `rescore` block. The final score is `first + weight * second`. Results below `window` keep their first-pass relevance score.
+
+```json
+"rescore": {
+  "window": 200,
+  "boost": [ { "field": "brand", "match": { "value": "aurora" } } ],
+  "signals": [ { "field": "purchases", "saturation": { "pivot": 50 } } ],
+  "weight": 0.5
+}
+```
+
+The `rescore` block is configured in the search request only. It is not stored on the index or in search settings. Facets and total counts are computed during the first pass; rescoring does not change facet counts or totals.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `window` | Integer | Required | Number of best results to score a second time. Must be at least `offset` plus `limit`, and at most `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` (default `1000`). |
+| `boost` | Array | `[]` | Clauses that lift results satisfying them. Clauses do not filter or narrow search hits. Wrap a clause in [`boost`](#boost) to adjust its weight. |
+| `signals` | Array | `[]` | Document values taken into the second score, using the same syntax as top-level [`signals`](#signals). Applied to every result in the window. |
+| `weight` | Number | `1` | Multiplier applied to the second-pass score before adding it to the first-pass score. Must be a finite number greater than or equal to `0`. |
+
+Rescoring rules and error conditions:
+
+- The `rescore` block must contain at least one `boost` or `signals` entry. An empty block returns `search:rescore:empty`.
+- Omitting `window` returns `search:rescore:window_required`.
+- Setting `window` below `1` or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` returns `search:rescore:window_invalid`.
+- Setting `weight` below `0` or to a non-finite number returns `search:rescore:weight_invalid`.
+- Specifying `rescore` on a search with [`hits`](#what-a-hit-stands-for) returns `search:rescore:hits_unsupported`.
+- Rescoring applies only when results are ordered by relevance. Providing an explicit `sort` overrides rescoring.
+- The [`explain` endpoint](#explaining-a-result) ignores `rescore` and explains only the first-pass score.
+
+### Paging a rescored search
+
+The window is ranked from the first result on every request. Paging works differently inside and below the window:
+
+- Inside the window, the `next` and `previous` cursors count results rather than encoding positions. The response reports an `offset` for these pages.
+- The `next` cursor from the last page in the window continues below the window. Results there keep the order relevance gave them and receive no second-pass scoring.
+- Send the same `rescore` block with each pagination request. Cursors carry positions, not the search that produced them.
+- Numbered `pages` stop at the window.
+- A request whose `offset` plus `limit` reaches past the window returns `search:rescore:window_too_small`.
 
 ## Facets
 
@@ -641,7 +686,7 @@ The following request properties are read:
 - `signals`
 - `hits.path`
 
-The following request properties are ignored: `limit`, `offset`, `after`, `before`, `sort`, `facets`, `highlight`, `matched`, `fields`, and `total`. If the search request specifies a field sort, the endpoint still computes and explains the relevance score.
+The following request properties are ignored: `limit`, `offset`, `after`, `before`, `sort`, `facets`, `highlight`, `matched`, `fields`, `rescore`, and `total`. If the search request specifies a field sort, the endpoint still computes and explains the relevance score. Because `rescore` is ignored, the explained score is the one the first pass gave, without the second pass.
 
 ### Response
 
@@ -734,3 +779,4 @@ Properties of a score step (`detail` and each entry in `children`):
 - `next` and `previous` cursors encode result positions rather than count offsets. Cursor navigation is uncapped by depth. Cursors are bound to the sort configuration of the original query; using a cursor with a different sort returns `search:cursor:sort_mismatch`.
 - Cursors inside `pages` encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
 - `pages` can be combined with `offset` or page cursors, but cannot be combined with `after` or `before`.
+- A search carrying a `rescore` block pages by counting inside the window and by cursor below it. See [Paging a rescored search](#paging-a-rescored-search).

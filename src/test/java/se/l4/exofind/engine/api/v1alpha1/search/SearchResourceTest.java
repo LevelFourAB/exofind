@@ -32,6 +32,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
@@ -104,7 +105,7 @@ public class SearchResourceTest {
 			Duration.ofSeconds(10),
 			Duration.ofMinutes(10)
 		);
-		resource = new SearchResource(indexes, searchSettings, 10_000);
+		resource = new SearchResource(indexes, searchSettings, 10_000, 1_000);
 	}
 
 	@AfterEach
@@ -1141,7 +1142,7 @@ public class SearchResourceTest {
 	public void testCursorsGoPastTheOffsetCap() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, searchSettings, 10);
+		var shallow = new SearchResource(indexes, searchSettings, 10, 1_000);
 
 		var first = shallow.search(
 			"many",
@@ -1326,7 +1327,7 @@ public class SearchResourceTest {
 	public void testPagesPastTheCapAreNeverOffered() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, searchSettings, 10);
+		var shallow = new SearchResource(indexes, searchSettings, 10, 1_000);
 
 		var response = shallow.search(
 			"many",
@@ -1428,5 +1429,90 @@ public class SearchResourceTest {
 		}
 
 		return null;
+	}
+
+	private static Rescore boostingCode(int window, String code) {
+		return new Rescore(
+			window,
+			List.of(new Clause.Field("code", new Matcher.Equals(code))),
+			null,
+			null
+		);
+	}
+
+	private static SearchRequest paged(int limit, Integer offset, String cursor, Rescore rescore) {
+		return new SearchRequest(
+			null, null, null, null, null, null, null, null, null, limit, offset, cursor, null, null,
+			null, null, rescore
+		);
+	}
+
+	@Test
+	public void testASecondPassPagesTheWindowByCounting() throws IOException {
+		many(25);
+
+		var first = resource.search("many", paged(5, null, null, boostingCode(10, "C-0007")));
+
+		// The whole window is reordered, however few of it the page shows
+		assertThat(ids(first), contains("7", "0", "1", "2", "3"));
+
+		var second = resource.search(
+			"many",
+			paged(5, null, first.page().next(), boostingCode(10, "C-0007"))
+		);
+
+		/*
+		 * No key names a position in a reordered window, so the cursor counts
+		 * results - which the page reports as an offset the way an asked-for
+		 * one is.
+		 */
+		assertThat(second.page().offset(), is(5));
+		assertThat(ids(second), contains("4", "5", "6", "8", "9"));
+	}
+
+	@Test
+	public void testTheLastPageOfAWindowContinuesPastIt() throws IOException {
+		many(25);
+
+		var second = resource.search("many", paged(5, 5, null, boostingCode(10, "C-0007")));
+		assertThat(second.page().next(), is(notNullValue()));
+
+		var below = resource.search(
+			"many",
+			paged(5, null, second.page().next(), boostingCode(10, "C-0007"))
+		);
+
+		// Past the window the results are keyed again, and the second pass is behind
+		assertThat(below.page().offset(), is(nullValue()));
+		assertThat(ids(below), is(idsInRange(10, 15)));
+	}
+
+	@Test
+	public void testNumberedPagesStopAtTheWindow() throws IOException {
+		many(25);
+
+		var response = resource.search(
+			"many",
+			new SearchRequest(
+				null, null, null, null, null, null, null, null, null, 5, 0, null, null,
+				new SearchRequest.Pages(null),
+				null, null,
+				boostingCode(10, "C-0007")
+			)
+		);
+
+		// Every match is counted, and only the window can be numbered
+		assertThat(response.total(), is(new SearchResponse.Total(25, true)));
+		assertThat(response.page().pages().count(), is(2L));
+	}
+
+	@Test
+	public void testAWindowShorterThanThePageIsRefused() throws IOException {
+		many(25);
+
+		assertThrows(
+			ValidationException.class,
+			() -> resource.search("many", paged(5, 20, null, boostingCode(10, "C-0007")))
+		);
 	}
 }
