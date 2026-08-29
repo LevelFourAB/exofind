@@ -4,7 +4,7 @@
 *
 
 !target/quarkus-app
-!decompound-data
+!locale-data
 
 # The native executable, which Dockerfile.native takes from the same build.
 !target/*-runner
