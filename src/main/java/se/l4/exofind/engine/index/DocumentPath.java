@@ -16,31 +16,45 @@ import se.l4.exofind.engine.index.schema.Field;
  * price                    the field itself
  * title[sv]                one locale variant of a locale specific field
  * tags[]                   a value added to the ones the field holds
+ * variants[V-2]            the object value whose key reads as `V-2`
  * variants[sku=V-2]        the object values whose `sku` reads as `V-2`
  * variants[sku=V-2].price  one field inside those values
  * </pre>
  *
- * <p>Inside brackets, a backslash escapes the character after it, which is how
- * a selector holds a {@code ]} of its own.
+ * <p>A selector holding an unescaped {@code =} names a field inside the value
+ * and what it reads as; one holding none is a single word, and what that word
+ * means is decided by the field it was given to - a locale tag on a locale
+ * specific field, a key on an object field. Only the first unescaped {@code =}
+ * splits, so a later one belongs to the value.
  *
- * <p>What a selector means is decided by the field it was given to, so the text
- * between the brackets is carried as it was written rather than as what it
- * resolves to. A path without brackets carries its whole name in
- * {@link #field()}, dots included: whether {@code dimensions.width} names a
- * field of that name or the field {@code width} inside the object
- * {@code dimensions} is a question for the definition of the index, which this
- * does not read.
+ * <p>Inside brackets, a backslash escapes the character after it, which is how
+ * a selector holds a {@code ]} of its own, and how a single word holds an
+ * {@code =} without becoming the other shape.
+ *
+ * <p>A path without brackets carries its whole name in {@link #field()}, dots
+ * included: whether {@code dimensions.width} names a field of that name or the
+ * field {@code width} inside the object {@code dimensions} is a question for
+ * the definition of the index, which this does not read.
  *
  * @param field
  *   the name before the brackets
- * @param selector
- *   the text between the brackets, {@code null} when the path has none and
- *   empty when they hold nothing
+ * @param selectorField
+ *   the name before the {@code =} of a selector, {@code null} when the
+ *   selector is a single word or the path has no selector
+ * @param selectorValue
+ *   what the selector asks for - the text after the {@code =}, or the single
+ *   word. {@code null} when the path has no selector and empty when the
+ *   brackets hold nothing
  * @param inner
  *   the name after the brackets, {@code null} when the path ends at the
  *   selector
  */
-public record DocumentPath(String field, String selector, String inner) {
+public record DocumentPath(
+	String field,
+	String selectorField,
+	String selectorValue,
+	String inner
+) {
 	private static final ErrorType MALFORMED = ErrorType
 		.withCode("request:update:path_invalid")
 		.withArguments("path", "reason")
@@ -57,7 +71,12 @@ public record DocumentPath(String field, String selector, String inner) {
 	public static DocumentPath parse(String text) {
 		var bracket = text.indexOf('[');
 		if(bracket < 0) {
-			return new DocumentPath(name(text, text, "a field name is required"), null, null);
+			return new DocumentPath(
+				name(text, text, "a field name is required"),
+				null,
+				null,
+				null
+			);
 		}
 
 		var field = name(
@@ -66,12 +85,20 @@ public record DocumentPath(String field, String selector, String inner) {
 			"a selector needs a field before it"
 		);
 
+		/*
+		 * The two halves are collected as one buffer until an unescaped `=`
+		 * says there are two, at which point what has been read so far is the
+		 * name and the rest is the value. A second `=` belongs to the value, so
+		 * only the first one splits.
+		 */
 		var selector = new StringBuilder();
+		String selectorField = null;
 		var at = bracket + 1;
 		while(at < text.length() && text.charAt(at) != ']') {
 			/*
 			 * A backslash stands for the character after it, so that a value
-			 * holding a `]` can be told from the one that closes the selector.
+			 * holding a `]` can be told from the one that closes the selector,
+			 * and a single word holding an `=` from a name and a value.
 			 */
 			if(text.charAt(at) == '\\') {
 				at++;
@@ -79,6 +106,21 @@ public record DocumentPath(String field, String selector, String inner) {
 				if(at >= text.length()) {
 					throw malformed(text, "the path ends in a backslash");
 				}
+			} else if(text.charAt(at) == '='
+				&& selectorField == null
+				&& selector.length() > 0) {
+				/*
+				 * Nothing before the `=` is not a name, so it stays part of a
+				 * single word rather than becoming an empty one.
+				 */
+				selectorField = name(
+					selector.toString(),
+					text,
+					"a `=` needs a field before it"
+				);
+				selector.setLength(0);
+				at++;
+				continue;
 			}
 
 			selector.append(text.charAt(at));
@@ -91,7 +133,7 @@ public record DocumentPath(String field, String selector, String inner) {
 
 		var rest = text.substring(at + 1);
 		if(rest.isEmpty()) {
-			return new DocumentPath(field, selector.toString(), null);
+			return new DocumentPath(field, selectorField, selector.toString(), null);
 		}
 
 		if(rest.charAt(0) != '.') {
@@ -100,6 +142,7 @@ public record DocumentPath(String field, String selector, String inner) {
 
 		return new DocumentPath(
 			field,
+			selectorField,
 			selector.toString(),
 			name(rest.substring(1), text, "a `.` needs a field after it")
 		);
@@ -141,17 +184,19 @@ public record DocumentPath(String field, String selector, String inner) {
 	public String toString() {
 		var text = new StringBuilder(field);
 
-		if(selector != null) {
+		if(selectorValue != null) {
 			text.append('[');
-			for(var i = 0; i < selector.length(); i++) {
-				var c = selector.charAt(i);
-				if(c == ']' || c == '\\') {
-					text.append('\\');
-				}
 
-				text.append(c);
+			if(selectorField != null) {
+				/*
+				 * A field name holds no `=` or `]`, so it is written as it is,
+				 * and the `=` after it is what makes the value's own `=`
+				 * signs ordinary text.
+				 */
+				text.append(selectorField).append('=');
 			}
 
+			escape(text, selectorValue, selectorField == null);
 			text.append(']');
 		}
 
@@ -160,5 +205,23 @@ public record DocumentPath(String field, String selector, String inner) {
 		}
 
 		return text.toString();
+	}
+
+	/**
+	 * Write the text of a selector so that reading it back gives what went in.
+	 *
+	 * @param equals
+	 *   whether an {@code =} has to be escaped, which it does exactly where an
+	 *   unescaped one would split the selector in two
+	 */
+	private static void escape(StringBuilder text, String value, boolean equals) {
+		for(var i = 0; i < value.length(); i++) {
+			var c = value.charAt(i);
+			if(c == ']' || c == '\\' || (equals && c == '=')) {
+				text.append('\\');
+			}
+
+			text.append(c);
+		}
 	}
 }

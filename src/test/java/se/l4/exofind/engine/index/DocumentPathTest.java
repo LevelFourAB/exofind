@@ -18,7 +18,8 @@ public class DocumentPathTest {
 		var path = DocumentPath.parse("price");
 
 		assertThat(path.field(), is("price"));
-		assertThat(path.selector(), is(nullValue()));
+		assertThat(path.selectorField(), is(nullValue()));
+		assertThat(path.selectorValue(), is(nullValue()));
 		assertThat(path.inner(), is(nullValue()));
 	}
 
@@ -40,33 +41,75 @@ public class DocumentPathTest {
 		var path = DocumentPath.parse("variants[]");
 
 		assertThat(path.field(), is("variants"));
-		assertThat(path.selector(), is(""));
+		assertThat(path.selectorField(), is(nullValue()));
+		assertThat(path.selectorValue(), is(""));
 		assertThat(path.inner(), is(nullValue()));
 	}
 
+	/**
+	 * A selector with no {@code =} is one word, and which of the two things a
+	 * word can mean is left to the field it was given to.
+	 */
 	@Test
-	public void aSelectorIsCarriedAsItWasWritten() {
+	public void aSelectorWithoutAnEqualsIsOneWord() {
 		var path = DocumentPath.parse("title[sv]");
 
 		assertThat(path.field(), is("title"));
-		assertThat(path.selector(), is("sv"));
+		assertThat(path.selectorField(), is(nullValue()));
+		assertThat(path.selectorValue(), is("sv"));
 	}
 
 	@Test
-	public void aFieldAfterASelectorIsTheFieldInsideTheValue() {
+	public void anEqualsSplitsASelectorIntoAFieldAndWhatItReads() {
 		var path = DocumentPath.parse("variants[sku=V-2].price");
 
 		assertThat(path.field(), is("variants"));
-		assertThat(path.selector(), is("sku=V-2"));
+		assertThat(path.selectorField(), is("sku"));
+		assertThat(path.selectorValue(), is("V-2"));
 		assertThat(path.inner(), is("price"));
+	}
+
+	/**
+	 * Only the first splits, so a value is free to hold as many as it likes.
+	 */
+	@Test
+	public void aSecondEqualsBelongsToTheValue() {
+		var path = DocumentPath.parse("variants[sku=a=b]");
+
+		assertThat(path.selectorField(), is("sku"));
+		assertThat(path.selectorValue(), is("a=b"));
+	}
+
+	/**
+	 * Nothing before the {@code =} is not a field name, so the selector stays
+	 * one word rather than becoming an empty name.
+	 */
+	@Test
+	public void anEqualsAtTheStartIsPartOfTheWord() {
+		var path = DocumentPath.parse("variants[=V-2]");
+
+		assertThat(path.selectorField(), is(nullValue()));
+		assertThat(path.selectorValue(), is("=V-2"));
 	}
 
 	@Test
 	public void aBackslashStandsForTheCharacterAfterIt() {
 		var path = DocumentPath.parse("variants[sku=a\\]b].price");
 
-		assertThat(path.selector(), is("sku=a]b"));
+		assertThat(path.selectorField(), is("sku"));
+		assertThat(path.selectorValue(), is("a]b"));
 		assertThat(path.inner(), is("price"));
+	}
+
+	/**
+	 * An escaped {@code =} is text, which is what lets one word hold one.
+	 */
+	@Test
+	public void anEscapedEqualsDoesNotSplit() {
+		var path = DocumentPath.parse("variants[a\\=b]");
+
+		assertThat(path.selectorField(), is(nullValue()));
+		assertThat(path.selectorValue(), is("a=b"));
 	}
 
 	@Test
@@ -76,7 +119,11 @@ public class DocumentPathTest {
 			"dimensions.width",
 			"variants[]",
 			"title[sv]",
+			"variants[V-2]",
+			"variants[V-2].price",
+			"variants[a\\=b]",
 			"variants[sku=V-2].price",
+			"variants[sku=a=b]",
 			"variants[sku=a\\]b].price"
 		}) {
 			assertThat(DocumentPath.parse(text).toString(), is(text));

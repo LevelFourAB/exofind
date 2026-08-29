@@ -180,6 +180,14 @@ public class Index {
 				"Field `{{name}}` holds documents, but the value given is not one"
 			);
 
+	private static final ErrorType ERROR_OBJECT_KEY_DUPLICATE =
+		ErrorType.withCode("index:update:object:key_duplicate")
+			.withArguments("name", "key", "value")
+			.withMessage(
+				"Field `{{name}}` names `{{key}}` as what tells its values apart, but the "
+				+ "document gives two values reading `{{value}}` for it"
+			);
+
 	private static final ErrorType ERROR_UNEXPECTED_DOCUMENT =
 		ErrorType.withCode("index:update:unexpected_document")
 			.withArguments("name")
@@ -1530,6 +1538,14 @@ public class Index {
 			var childDocs = Lists.mutable.<org.apache.lucene.document.Document>empty();
 			var childCounts = Maps.mutable.<String, Integer>empty();
 
+			/*
+			 * What every value of a keyed object field read for its key, so a
+			 * document giving two values the same one is refused. Nothing else
+			 * checks, and every place that names a value by its key relies on
+			 * the name reaching one value.
+			 */
+			var keysSeen = Sets.mutable.<Pair<String, String>>empty();
+
 			for(Document.Value value : doc.fields()) {
 				var field = schema.getField(value.name());
 				if(field.isEmpty()) {
@@ -1597,6 +1613,32 @@ public class Index {
 							)
 						);
 						continue;
+					}
+
+					var key = field0.getObjectKey();
+					if(key != null) {
+						/*
+						 * A value with no key at all is left to the required
+						 * check inside it, which points at the field rather
+						 * than at a duplicate that is not there.
+						 */
+						var reads = subDocument.get(key);
+						if(reads != null
+							&& !keysSeen.add(
+								Tuples.pair(value.name(), String.valueOf(reads))
+							)) {
+							errors.add(
+								ERROR_OBJECT_KEY_DUPLICATE.toMessage(
+									ObjectLocation.root()
+										.forField(value.name())
+										.forIndex(position),
+									"name", value.name(),
+									"key", key,
+									"value", String.valueOf(reads)
+								)
+							);
+							continue;
+						}
 					}
 
 					if(field0.isNestedObject()) {
@@ -3516,6 +3558,10 @@ public class Index {
 							name -> name.substring(hitsPath.length() + 1)
 						);
 
+					var hitsKey = schema.getField(hitsPath)
+						.map(Field::getObjectKey)
+						.orElse(null);
+
 					for(var i = request.offset(); i < topDocs.scoreDocs.length; i++) {
 						var scoreDoc = topDocs.scoreDocs[i];
 						var location = locations.get(scoreDoc.doc);
@@ -3561,10 +3607,22 @@ public class Index {
 						 * position.
 						 */
 						Document value = null;
+						String valueKey = null;
 						if(withSource.source() != null) {
 							var all = withSource.source().getAll(hitsPath);
 							if(location.ordinal() < all.size()
 								&& all.get(location.ordinal()) instanceof Document valueDoc) {
+								/*
+								 * Read before cutting, so that a search asking
+								 * for some of the fields inside still gets the
+								 * key - it says which value the hit is, not
+								 * what the hit shows.
+								 */
+								if(hitsKey != null) {
+									var reads = valueDoc.get(hitsKey);
+									valueKey = reads == null ? null : String.valueOf(reads);
+								}
+
 								value = inside == null
 									? valueDoc
 									: cut(valueDoc, inside);
@@ -3575,6 +3633,7 @@ public class Index {
 							new SearchResult.Hit(
 								primaryKey.map(field -> document.get(field.getName())).orElse(null),
 								location.ordinal(),
+								valueKey,
 								Float.isNaN(scoreDoc.score) ? 0f : scoreDoc.score,
 								document,
 								value,

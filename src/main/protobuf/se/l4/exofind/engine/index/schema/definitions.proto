@@ -537,6 +537,20 @@ message ObjectFieldTypeDef {
 	 * where a single value is always flattened.
 	 */
 	optional Mode mode = 2;
+
+	/*
+	 * Name of a field in `fields` that identifies a value among the others,
+	 * so a value can be pointed at by what it is rather than by where it sits.
+	 * Absent means values are only addressable by position.
+	 *
+	 * Set only together with `multiple`, and only naming a field that is
+	 * `required`, not `multiple`, and of type string, int32 or int64 - a key
+	 * is compared as the text it was written as. Two values of one document
+	 * reading the same here are refused when the document is indexed, so a
+	 * key set on a definition is unique across every document written under
+	 * it and no other.
+	 */
+	optional string key = 3;
 }
 
 /*

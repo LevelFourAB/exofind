@@ -113,7 +113,8 @@ public record SearchResponse(
 				none. A value hit carries the key of the document holding it, \
 				so several hits share an `id` when several values of one \
 				document matched - the identity of such a hit is `id` together \
-				with `index`.""",
+				with `key`, or with `index` on a field that declares no \
+				key.""",
 			examples = "9781234567890"
 		)
 		Object id,
@@ -126,8 +127,23 @@ public record SearchResponse(
 		@Schema(description = """
 			Zero-based position of the value this hit stands for in the \
 			parent document's value array. Present only when the search asked \
-			for value hits.""")
+			for value hits. A reindex is free to reorder values, so this names \
+			the same value only for as long as the document is not written \
+			again - `key` is what does not move.""")
 		Integer index,
+
+		/**
+		 * What the value this hit stands for reads for the key its field
+		 * declares. Present only for a value hit on a field declaring a key,
+		 * on an index that keeps its documents.
+		 */
+		@Schema(description = """
+			What the value this hit stands for reads for the `key` its object \
+			field declares. Two values of one document never read the same, so \
+			`id` and `key` name one value and go on naming it after a reindex. \
+			Omitted for a document hit, for a field that declares no key, and \
+			on an index whose `source` is `none`.""")
+		String key,
 
 		/**
 		 * How well the hit matched, left out when the search computed no

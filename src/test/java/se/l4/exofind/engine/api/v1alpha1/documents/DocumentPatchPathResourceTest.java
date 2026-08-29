@@ -225,6 +225,138 @@ public class DocumentPatchPathResourceTest {
 		assertThat(price(variant(index.getDocument("1"), "V]4")), is(44.0));
 	}
 
+	/**
+	 * A field that declares a key takes the key on its own, which is the whole
+	 * of what a caller has to know to point at a value.
+	 */
+	@Test
+	public void aFieldOfOneObjectValueIsChangedByItsKeyAlone() throws IOException {
+		var index = catalogue();
+
+		update(document("id", "1", "variants[V-2].price", 29.0));
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(price(variant(stored, "V-2")), is(29.0));
+		assertThat(price(variant(stored, "V-1")), is(10.0));
+		assertThat(variant(stored, "V-2").get("color"), is("green"));
+	}
+
+	@Test
+	public void namingOneObjectValueByItsKeyReplacesItWhole() throws IOException {
+		var index = catalogue();
+
+		update(
+			document(
+				"id", "1",
+				"variants[V-2]", Map.of("sku", "V-2", "price", 29.0, "color", "yellow")
+			)
+		);
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(variant(stored, "V-2").get("color"), is("yellow"));
+		assertThat(skus(stored), contains("V-1", "V-2", "V-3"));
+	}
+
+	@Test
+	public void anObjectValueNamedByItsKeyWithoutBeingGivenAnythingIsRemoved()
+		throws IOException
+	{
+		var index = catalogue();
+
+		update(document("id", "1", "variants[V-2]", null));
+
+		index.commit();
+
+		assertThat(skus(index.getDocument("1")), contains("V-1", "V-3"));
+	}
+
+	/**
+	 * The key is compared as text, so the digits a number was written as are
+	 * what a path names it by.
+	 */
+	@Test
+	public void aKeyNamesNoMoreThanOneValue() throws IOException {
+		var index = catalogue();
+
+		update(
+			document(
+				"id", "1",
+				"variants[]", Map.of("sku", "V-4", "price", 40.0, "color", "blue")
+			)
+		);
+		update(document("id", "1", "variants[V-4].price", 99.0));
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(price(variant(stored, "V-4")), is(99.0));
+		assertThat(price(variant(stored, "V-1")), is(10.0));
+	}
+
+	@Test
+	public void aKeyNamingNoValueOfTheDocumentIsRefused() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> update(document("id", "1", "variants[V-404].price", 1.0))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:update:no_match"));
+	}
+
+	/**
+	 * The path points at itself the way it was written, without the name of
+	 * the key field the definition supplied.
+	 */
+	@Test
+	public void aRefusedKeyPathIsNamedTheWayItWasWritten() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> update(document("id", "1", "variants[V-404].price", 1.0))
+		);
+
+		assertThat(e.getErrors().get(0).getArguments().get("path"), is("variants[V-404].price"));
+	}
+
+	@Test
+	public void aKeyOnAFieldThatDeclaresNoneIsRefused() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> update(document("id", "1", "dimensions[W-1].width", 1.0))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:update:key_not_declared"));
+	}
+
+	/**
+	 * An escaped {@code =} is text, so a key holding one is still one word.
+	 */
+	@Test
+	public void aBackslashLetsAKeyHoldTheEqualsThatWouldSplitIt() throws IOException {
+		var index = catalogue();
+
+		update(
+			document(
+				"id", "1",
+				"variants[]", Map.of("sku", "V=4", "price", 40.0, "color", "red")
+			)
+		);
+		update(document("id", "1", "variants[V\\=4].price", 44.0));
+
+		index.commit();
+
+		assertThat(price(variant(index.getDocument("1"), "V=4")), is(44.0));
+	}
+
 	@Test
 	public void aSelectorThatNamesNoValueOfTheDocumentIsRefused() throws IOException {
 		catalogue();
@@ -507,10 +639,12 @@ public class DocumentPatchPathResourceTest {
 							FieldTypeDef.newBuilder().setObject(
 								ObjectFieldTypeDef.newBuilder()
 									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+									.setKey("sku")
 									.putFields(
 										"sku",
 										string()
 											.setFilter(FilterConfig.getDefaultInstance())
+											.setRequired(true)
 											.build()
 									)
 									.putFields(

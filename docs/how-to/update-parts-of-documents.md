@@ -12,6 +12,8 @@ Before you update parts of documents, ensure you have:
 - An index configured to store document sources (`source` is not set to `none`).
 - The `documents.write` permission for the index.
 
+The examples below use a `products` index whose `variants` object field declares `"key": "sku"`. Where a field declares no key, use the `field=value` selector form shown alongside each example.
+
 ## Steps
 
 1. Replace a whole field:
@@ -35,7 +37,7 @@ Before you update parts of documents, ensure you have:
 
 2. Change a field inside a specific nested object:
 
-   To update a field inside one object in a list of objects, use a selector path formatted as `field[match_field=match_value].inner_field`.
+   To update a field inside one object in a list of objects, use a selector path. When a field definition declares a `key`, use the key on its own without a field name or `=`, as `field[key_value].inner_field` (such as `variants[V-2].price`). Otherwise, use the `field[match_field=match_value].inner_field` form. For how to declare a key on an object field, see [Object](../reference/field-types.md#object) in the field types reference.
 
    ```http
    POST /v1alpha1/indexes/products/documents/actions/update
@@ -45,7 +47,7 @@ Before you update parts of documents, ensure you have:
      "documents": [
        {
          "id": "1",
-         "variants[sku=V-2].price": 29.0
+         "variants[V-2].price": 29.0
        }
      ]
    }
@@ -53,7 +55,14 @@ Before you update parts of documents, ensure you have:
 
    Paths use selectors instead of array positions so that updates do not depend on array order or break when items are added, removed, or reordered. A caller that sends only what changed does not know the positions in the first place.
 
-   Selectors compare the text form of a value, so a value held as the number `2` matches the selector `2`. If a selector value contains a closing bracket, escape it with a backslash, as in `variants[sku=a\]b]`. JSON escapes the backslash itself, so that key is written `"variants[sku=a\\]b]"` in the request body.
+   Because keys are unique inside a document, a key path names at most one value. The `field=value` form can match several values and updates all of them. The `field=value` form keeps working on a keyed field and can name any child field, not only the key. Using a key path on a field that declares no `key` returns `request:update:key_not_declared`.
+
+   Selectors compare the text form of a value, so a value held as the number `2` matches the selector `2`. When a selector value contains special characters, escape them with a backslash:
+   - A closing bracket `]` must be escaped in both forms, as in `variants[a\]b]` or `variants[sku=a\]b]`.
+   - An equals sign `=` needs escaping only in the key form (`variants[V\=4]`), because an unescaped `=` splits the selector into a field name and a value.
+   - Only the first unescaped `=` splits, so `variants[sku=a=b]` names the value whose `sku` reads `a=b`.
+
+   Because JSON escapes the backslash itself, write these in request bodies with double backslashes, as in `"variants[sku=a\\]b]"` and `"variants[V\\=4]"`.
 
 3. Replace or remove an entire nested object:
 
@@ -67,8 +76,8 @@ Before you update parts of documents, ensure you have:
      "documents": [
        {
          "id": "1",
-         "variants[sku=V-2]": { "sku": "V-2", "price": 29.0 },
-         "variants[sku=V-3]": null
+         "variants[V-2]": { "sku": "V-2", "price": 29.0 },
+         "variants[V-3]": null
        }
      ]
    }
@@ -143,7 +152,7 @@ Before you update parts of documents, ensure you have:
    Content-Type: application/x-ndjson
 
    {"id": "1", "price": 34.50}
-   {"id": "2", "variants[sku=W-1].price": 15.00}
+   {"id": "2", "variants[W-1].price": 15.00}
    {"id": "999", "price": 10.00}
    ```
 
@@ -166,7 +175,7 @@ Before you update parts of documents, ensure you have:
 
    {
      "price": 34.50,
-     "variants[sku=V-2].price": 29.0
+     "variants[V-2].price": 29.0
    }
    ```
 
@@ -203,7 +212,7 @@ The response returns the first document in full, with your changes applied:
 ## Limits
 
 - **Full document rewrites:** Partial updates save network payload size and client-side bookkeeping, but they do not reduce index write cost. The underlying index rewrites the entire Lucene document block when applying updates. For more information, see [How sub-documents are stored](../explanation/document-blocks.md).
-- **Selector matches:** A selector that matches no value returns the error `request:update:no_match` and does not create a new object. If a selector matches multiple objects, the update applies to all matched objects.
+- **Selector matches:** A selector that matches no value returns the error `request:update:no_match` and does not create a new object. When a key path is refused, the error names the path the way it was written (for example, `variants[V-404].price`), not the resolved `field=value` form. A key path names at most one value, whereas the `field=value` form updates all matching objects if multiple objects match.
 - **Document source requirement:** The index must store document sources. If `source` is set to `none`, update requests fail with `index:source:not_kept`.
 
 ## Troubleshooting
@@ -213,6 +222,7 @@ The update endpoint validates paths and returns specific error codes when a path
 | Error code | Cause | Action |
 | --- | --- | --- |
 | `request:update:no_match` | The selector matched no value in the document. | Ensure the document contains an object with the specified field and value before updating, or append a new item using `[]`. |
+| `request:update:key_not_declared` | A key path was used on a field that does not declare a `key`. | Declare a `key` in the object field definition, or use the `field=value` selector syntax (for example, `variants[sku=V-2].price`). |
 | `request:update:value_required` | A dot path reached into a list of objects without a selector. | Add a selector to identify which object in the list to update (for example, `variants[sku=V-2].price`). |
 | `request:update:path_invalid` | The path string is malformed or has unclosed brackets. | Check the syntax of brackets, dots, and backslash escape characters in the path. |
 | `request:update:path_unknown_field` | The top-level field name does not exist in the index definition. | Verify the field name against the index schema. |
@@ -229,6 +239,7 @@ The update endpoint validates paths and returns specific error codes when a path
 ## Related
 
 - [Documents API](../reference/documents-api.md) - Path syntax, request schemas, response formats, and error codes.
+- [Field types](../reference/field-types.md) - Field type definitions, settings, and declaring a key on object fields.
 - [Indexing documents](index-documents.md) - Send whole documents, load a dataset, and remove documents.
 - [Using sub-documents](use-sub-documents.md) - Hold a list of values that are documents of their own, and search inside them.
 - [Localizing fields](localize-fields.md) - Hold values in several languages and search them by locale.

@@ -184,6 +184,7 @@ public class FieldRoles {
 			field.sort(),
 			field.facet(),
 			field.mode(),
+			field.key(),
 			expandFields(field.fields(), context)
 		);
 	}

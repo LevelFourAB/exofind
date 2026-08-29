@@ -1,5 +1,8 @@
 package se.l4.exofind.engine.index.types;
 
+import java.util.Locale;
+import java.util.Set;
+
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.Query;
 import org.eclipse.collections.api.collection.MutableCollection;
@@ -34,6 +37,13 @@ import se.l4.exofind.engine.query.matchers.Matcher;
  * {@code Index}, so the two field-producing methods here are never reached;
  * what this class owns is judging the definition.
  *
+ * A list of values may name one of its own fields as its {@code key}, which is
+ * what a value is called rather than where it sits. Two values of one document
+ * reading the same under it are refused when the document is indexed, and that
+ * refusal is what everything reading a key relies on - an update path naming
+ * one value, a value hit saying which value it is. What the name may point at
+ * is {@link #validateKey}.
+ *
  * In the nested mode the fields inside are held to the usages that work
  * across a join to the document a value belongs to. Filtering, matching,
  * sorting and faceting all do: a value says whether its document matches, how
@@ -46,6 +56,16 @@ import se.l4.exofind.engine.query.matchers.Matcher;
  * values are independent and no one of them stands for the document.
  */
 public class ObjectFieldType implements FieldType {
+	/**
+	 * The types a {@code key} may name. Every one of them reads back as the
+	 * text it was written as, which is what a key is compared by.
+	 */
+	private static final Set<FieldTypeDef.TypeCase> KEY_TYPES = Set.of(
+		FieldTypeDef.TypeCase.STRING,
+		FieldTypeDef.TypeCase.INT32,
+		FieldTypeDef.TypeCase.INT64
+	);
+
 	private static final ErrorType NO_FIELDS = ErrorType
 		.withCode("index:field:object:no_fields")
 		.withMessage("An object needs at least one field");
@@ -90,6 +110,27 @@ public class ObjectFieldType implements FieldType {
 		.withCode("index:field:object:mode_without_multiple")
 		.withMessage(
 			"A single object is always flattened, so `mode` only applies together with `multiple`"
+		);
+
+	private static final ErrorType KEY_WITHOUT_MULTIPLE = ErrorType
+		.withCode("index:field:object:key_without_multiple")
+		.withMessage(
+			"A single object has no other value to be told apart from, so `key` only "
+			+ "applies together with `multiple`"
+		);
+
+	private static final ErrorType KEY_NOT_FOUND = ErrorType
+		.withCode("index:field:object:key_not_found")
+		.withArguments("key")
+		.withMessage(
+			"`key` names `{{key}}`, which is not one of the fields the object holds"
+		);
+
+	private static final ErrorType KEY_NOT_VALID = ErrorType
+		.withCode("index:field:object:key_not_valid")
+		.withArguments("key", "reason")
+		.withMessage(
+			"`key` names `{{key}}`, which can not say which value is which: {{reason}}"
 		);
 
 	private static final ErrorType FLATTENED_SORT = ErrorType
@@ -149,6 +190,10 @@ public class ObjectFieldType implements FieldType {
 			errors.add(MODE_WITHOUT_MULTIPLE.toMessage(location.forField("mode")));
 		}
 
+		if(objectType.hasKey()) {
+			validateKey(location.forField("key"), def, objectType, errors);
+		}
+
 		var flattenedList = def.getMultiple()
 			&& objectType.getMode() != ObjectFieldTypeDef.Mode.MODE_NESTED;
 
@@ -164,6 +209,64 @@ public class ObjectFieldType implements FieldType {
 		}
 
 		return errors;
+	}
+
+	/**
+	 * Judge the field a {@code key} names, which has to be able to say which
+	 * value is which for every value the field will ever hold.
+	 *
+	 * <p>That asks three things of it. It has to exist, or the key names
+	 * nothing. It has to be required and hold one value, or a value can arrive
+	 * with no key or with several and there is no one thing it is called. And
+	 * it has to be a type whose values read back as the text they were written
+	 * as, because a key is compared as text wherever it is used - a
+	 * {@code double} that holds {@code 1} and reads back {@code 1.0} would be
+	 * a name that answers to neither spelling.
+	 */
+	private static void validateKey(
+		ObjectLocation location,
+		FieldDef def,
+		ObjectFieldTypeDef objectType,
+		MutableCollection<ErrorMessage> errors
+	) {
+		var key = objectType.getKey();
+
+		if(!def.getMultiple()) {
+			errors.add(KEY_WITHOUT_MULTIPLE.toMessage(location));
+			return;
+		}
+
+		var keyField = objectType.getFieldsMap().get(key);
+		if(keyField == null) {
+			errors.add(KEY_NOT_FOUND.toMessage(location, "key", key));
+			return;
+		}
+
+		if(!keyField.getRequired()) {
+			errors.add(KEY_NOT_VALID.toMessage(
+				location,
+				"key", key,
+				"reason", "it is not `required`, so a value could arrive without one"
+			));
+		}
+
+		if(keyField.getMultiple()) {
+			errors.add(KEY_NOT_VALID.toMessage(
+				location,
+				"key", key,
+				"reason", "it is `multiple`, so a value could hold several"
+			));
+		}
+
+		if(!KEY_TYPES.contains(keyField.getType().getTypeCase())) {
+			errors.add(KEY_NOT_VALID.toMessage(
+				location,
+				"key", key,
+				"reason", "a key is compared as text, which `"
+					+ keyField.getType().getTypeCase().name().toLowerCase(Locale.ROOT)
+					+ "` values do not read back as"
+			));
+		}
 	}
 
 	private static void validateInner(

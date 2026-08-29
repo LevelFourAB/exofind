@@ -441,6 +441,23 @@ public class Field {
 	}
 
 	/**
+	 * Get the field inside a value of this object field that says which value
+	 * it is. Two values of one document may not read the same here, so a value
+	 * can be pointed at by what it is rather than by where it sits.
+	 *
+	 * @return
+	 *   the name a value goes by inside the object, or {@code null} when the
+	 *   field is not an object or declares no key
+	 */
+	public String getObjectKey() {
+		if(!isObject() || !def.getType().getObject().hasKey()) {
+			return null;
+		}
+
+		return def.getType().getObject().getKey();
+	}
+
+	/**
 	 * Get the locale a value of this field is in when it does not carry one.
 	 * Only meaningful for a locale specific field.
 	 *

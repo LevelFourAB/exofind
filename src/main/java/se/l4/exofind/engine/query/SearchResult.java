@@ -75,11 +75,19 @@ public record SearchResult(
 	 *   no primary key. A hit standing for a value carries the key of the
 	 *   document holding it, so several hits share an {@code id} whenever
 	 *   several values of one document matched - the identity of such a hit is
-	 *   {@code id} together with {@code index}
+	 *   {@code id} together with {@code valueKey} where the field declares a
+	 *   key, and with {@code index} where it does not
 	 * @param index
 	 *   for a hit standing for a value: the position of the value in the
 	 *   field's value array as the document gave it, counted from zero.
 	 *   {@code null} for a hit standing for a document
+	 * @param valueKey
+	 *   for a hit standing for a value of a field that declares a key: what
+	 *   that value reads for it. Unlike {@code index} this names the same
+	 *   value after a reindex, positions being free to move. {@code null} for
+	 *   a hit standing for a document, for a field declaring no key, and for
+	 *   an index that keeps no copy of its documents, which is where the key
+	 *   is read from
 	 * @param score
 	 *   how well the hit matched. Only means something when the search held a
 	 *   clause that scores, see {@link Query#scores()}. A hit standing for a
@@ -112,6 +120,7 @@ public record SearchResult(
 	public record Hit(
 		Object id,
 		Integer index,
+		String valueKey,
 		float score,
 		Document document,
 		Document value,
@@ -140,7 +149,7 @@ public record SearchResult(
 			ImmutableMap<String, ImmutableList<String>> highlights,
 			ImmutableMap<String, Matched> matched
 		) {
-			this(id, null, score, document, null, key, highlights, matched);
+			this(id, null, null, score, document, null, key, highlights, matched);
 		}
 	}
 

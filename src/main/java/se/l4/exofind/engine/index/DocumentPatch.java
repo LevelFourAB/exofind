@@ -20,10 +20,15 @@ import se.l4.exofind.engine.errors.ValidationException;
  *
  * <p>A place is replaced whole, so what a change leaves alone is decided by how
  * deeply it reaches. A change to {@code variants} replaces every value of the
- * field; a change to {@code variants[sku=V-2]} replaces one of them and leaves
- * the others; a change to {@code variants[sku=V-2].price} replaces one field
- * inside that value and leaves the rest of it. The same holds across locales:
- * {@code title} replaces every variant, {@code title[sv]} replaces one.
+ * field; a change to {@code variants[sku=V-2]} replaces the values reading
+ * {@code V-2} for {@code sku} and leaves the others; a change to
+ * {@code variants[sku=V-2].price} replaces one field inside those values and
+ * leaves the rest of them. The same holds across locales: {@code title}
+ * replaces every variant, {@code title[sv]} replaces one.
+ *
+ * <p>A field that declares a key is addressed by the key alone -
+ * {@code variants[V-2]} - and that names at most one value, a document holding
+ * two values under one key being refused when it is indexed.
  *
  * <p>Changes are applied in the order they are held, so two changes to the same
  * place leave what the later one gives it.
@@ -78,6 +83,23 @@ public record DocumentPatch(ListIterable<Change> changes) {
 		 *   held as a number matches the digits that were written
 		 */
 		record Matching(String field, String value) implements Selector {
+		}
+
+		/**
+		 * The object value going by one key, for a field that declares which
+		 * of its inner fields is the key.
+		 *
+		 * <p>Picks out values the way {@link Matching} does, and differs in
+		 * what it may pick out: a document holding two values under one key is
+		 * refused when it is indexed, so this names at most one value.
+		 *
+		 * @param field
+		 *   name of the key field inside the value, resolved from the
+		 *   definition rather than written in the path
+		 * @param value
+		 *   the key, compared as text
+		 */
+		record ByKey(String field, String value) implements Selector {
 		}
 	}
 
@@ -179,7 +201,12 @@ public record DocumentPatch(ListIterable<Change> changes) {
 					&& inLocale.locale().equals(value.locale()));
 				values.addAllIterable(change.values());
 			}
-			case Selector.Matching matching -> applyToMatching(values, change, matching);
+			case Selector.Matching matching -> applyToMatching(
+				values, change, matching.field(), matching.value()
+			);
+			case Selector.ByKey byKey -> applyToMatching(
+				values, change, byKey.field(), byKey.value()
+			);
 		}
 	}
 
@@ -209,12 +236,15 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	}
 
 	/**
-	 * Change every object value a selector picks out.
+	 * Change every object value whose field {@code inside} reads as
+	 * {@code reads}, which is at most one value where that field is a declared
+	 * key and any number of them where it is not.
 	 */
 	private static void applyToMatching(
 		MutableList<Document.Value> values,
 		Change change,
-		Selector.Matching matching
+		String inside,
+		String reads
 	) {
 		var matched = false;
 
@@ -227,7 +257,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 
 			if(!value.name().equals(change.field())
 				|| !(value.value() instanceof Document object)
-				|| !holds(object, matching)) {
+				|| !holds(object, inside, reads)) {
 				continue;
 			}
 
@@ -258,10 +288,10 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	/**
 	 * Get whether an object value holds what a selector asks of it.
 	 */
-	private static boolean holds(Document object, Selector.Matching matching) {
+	private static boolean holds(Document object, String inside, String reads) {
 		for(var value : object.fields()) {
-			if(value.name().equals(matching.field())
-				&& matching.value().equals(String.valueOf(value.value()))) {
+			if(value.name().equals(inside)
+				&& reads.equals(String.valueOf(value.value()))) {
 				return true;
 			}
 		}
@@ -293,14 +323,30 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	}
 
 	/**
-	 * Write the path a change names, for saying which one failed.
+	 * Write the path a change names, for saying which one failed. A change
+	 * naming a value by its key points at itself the way it was written,
+	 * without the name of the key field the definition supplied.
 	 */
 	private static String pathOf(Change change) {
-		var selector = change.selector() instanceof Selector.Matching matching
-			? matching.field() + '=' + matching.value()
-			: null;
+		var path = switch(change.selector()) {
+			case Selector.Matching matching -> new DocumentPath(
+				change.field(), matching.field(), matching.value(), change.inner()
+			);
+			case Selector.ByKey byKey -> new DocumentPath(
+				change.field(), null, byKey.value(), change.inner()
+			);
+			case Selector.InLocale inLocale -> new DocumentPath(
+				change.field(), null, inLocale.locale(), change.inner()
+			);
+			case Selector.Added ignored -> new DocumentPath(
+				change.field(), null, "", change.inner()
+			);
+			case Selector.All ignored -> new DocumentPath(
+				change.field(), null, null, change.inner()
+			);
+		};
 
-		return new DocumentPath(change.field(), selector, change.inner()).toString();
+		return path.toString();
 	}
 
 	/**

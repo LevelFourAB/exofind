@@ -4,7 +4,10 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.util.function.UnaryOperator;
 
 import org.junit.jupiter.api.Test;
 
@@ -283,6 +286,111 @@ public class ObjectFieldTest {
 	}
 
 	@Test
+	public void testKeyNamesAFieldInsideTheValue() {
+		var schema = new IndexSchema();
+		schema.setDefinition(definition(keyed()).build());
+
+		assertThat(schema.getField("variants").get().getObjectKey(), is("sku"));
+	}
+
+	@Test
+	public void testFieldWithoutAKeyHasNone() {
+		var schema = new IndexSchema();
+		schema.setDefinition(definition(variants()).build());
+
+		assertThat(schema.getField("variants").get().getObjectKey(), is(nullValue()));
+	}
+
+	@Test
+	public void testSingleObjectRefusesAKey() {
+		var single = FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setObject(
+					ObjectFieldTypeDef.newBuilder()
+						.putFields("sku", string().setRequired(true).build())
+						.setKey("sku")
+				)
+			);
+
+		assertRefused(definition(single), "index:field:object:key_without_multiple");
+	}
+
+	@Test
+	public void testKeyNamingNoFieldOfTheObjectIsRefused() {
+		assertRefused(
+			definition(keyed(builder -> builder.setKey("nothing"))),
+			"index:field:object:key_not_found"
+		);
+	}
+
+	/**
+	 * A value arriving without a key would have no name to go by, so the key
+	 * field carries the requirement rather than every write checking for it.
+	 */
+	@Test
+	public void testKeyNamingAFieldThatIsNotRequiredIsRefused() {
+		assertRefused(
+			definition(keyed(builder -> builder.putFields(
+				"sku",
+				string().setRequired(false).build()
+			))),
+			"index:field:object:key_not_valid"
+		);
+	}
+
+	@Test
+	public void testKeyNamingAMultipleFieldIsRefused() {
+		assertRefused(
+			definition(keyed(builder -> builder.putFields(
+				"sku",
+				string().setRequired(true).setMultiple(true).build()
+			))),
+			"index:field:object:key_not_valid"
+		);
+	}
+
+	/**
+	 * A key is compared as the text it was written as, and a double does not
+	 * read back as one - {@code 1} comes back {@code 1.0} and answers to
+	 * neither spelling.
+	 */
+	@Test
+	public void testKeyNamingATypeThatDoesNotReadBackAsTextIsRefused() {
+		assertRefused(
+			definition(keyed(builder -> builder.putFields(
+				"sku",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setDouble(DoubleFieldTypeDef.getDefaultInstance())
+					)
+					.setRequired(true)
+					.build()
+			))),
+			"index:field:object:key_not_valid"
+		);
+	}
+
+	@Test
+	public void testKeyMayNameAnIntegerField() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(keyed(builder -> builder.putFields(
+				"sku",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setInt64(Int64FieldTypeDef.getDefaultInstance())
+					)
+					.setRequired(true)
+					.build()
+			))).build()
+		);
+
+		assertThat(schema.getField("variants").get().getObjectKey(), is("sku"));
+	}
+
+	@Test
 	public void testFlattenedListRefusesInnerSort() {
 		var flattened = FieldDef.newBuilder()
 			.setType(
@@ -430,6 +538,31 @@ public class ObjectFieldTest {
 						.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 				)
 			)
+			.setMultiple(true);
+	}
+
+	/**
+	 * A list of objects naming {@code sku} as what tells its values apart.
+	 */
+	private static FieldDef.Builder keyed() {
+		return keyed(builder -> builder);
+	}
+
+	/**
+	 * The same, with the object part changed - to break the key, or to give
+	 * the key field another type.
+	 */
+	private static FieldDef.Builder keyed(
+		UnaryOperator<ObjectFieldTypeDef.Builder> change
+	) {
+		var object = ObjectFieldTypeDef.newBuilder()
+			.putFields("sku", string().setRequired(true).build())
+			.putFields("color", string().setFilter(FilterConfig.getDefaultInstance()).build())
+			.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+			.setKey("sku");
+
+		return FieldDef.newBuilder()
+			.setType(FieldTypeDef.newBuilder().setObject(change.apply(object)))
 			.setMultiple(true);
 	}
 

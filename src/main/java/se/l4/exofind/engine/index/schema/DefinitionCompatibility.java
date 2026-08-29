@@ -527,6 +527,18 @@ public class DefinitionCompatibility {
 			errors.add(setting(location, name, "mode"));
 		}
 
+		if(!before.getKey().equals(after.getKey())) {
+			/*
+			 * A key is only an identity because every document was refused
+			 * unless its values read differently under it. Documents indexed
+			 * before the key was named, or under another one, went through no
+			 * such check - so naming a value by the new key could pick out
+			 * several of them, and a change meant for one would silently reach
+			 * them all.
+			 */
+			errors.add(setting(location, name, "key"));
+		}
+
 		checkFields(
 			location,
 			name,

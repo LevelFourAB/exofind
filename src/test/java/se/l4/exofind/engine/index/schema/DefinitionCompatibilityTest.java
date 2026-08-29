@@ -655,6 +655,80 @@ public class DefinitionCompatibilityTest {
 			.build();
 	}
 
+	/**
+	 * Documents indexed before the key was named went through no check that
+	 * their values read differently under it, so a key naming a value could
+	 * reach more than one of them.
+	 */
+	@Test
+	public void namingWhatTellsTheValuesOfAnObjectApartIsIncompatible() {
+		var current = base()
+			.putFields("variants", keyedObject(null))
+			.build();
+
+		var incoming = base()
+			.putFields("variants", keyedObject("sku"))
+			.build();
+
+		assertThat(codes(current, incoming), contains("index:definition:setting_changed"));
+	}
+
+	@Test
+	public void changingWhatTellsTheValuesOfAnObjectApartIsIncompatible() {
+		var current = base()
+			.putFields("variants", keyedObject("sku"))
+			.build();
+
+		var incoming = base()
+			.putFields("variants", keyedObject("code"))
+			.build();
+
+		assertThat(codes(current, incoming), contains("index:definition:setting_changed"));
+	}
+
+	@Test
+	public void keepingTheSameKeyIsCompatible() {
+		var current = base()
+			.putFields("variants", keyedObject("sku"))
+			.build();
+
+		assertThat(codes(current, current), is(empty()));
+	}
+
+	private static FieldDef keyedObject(String key) {
+		var object = ObjectFieldTypeDef.newBuilder()
+			.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+			.putFields(
+				"sku",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setString(StringFieldTypeDef.getDefaultInstance())
+					)
+					.setRequired(true)
+					.build()
+			)
+			.putFields(
+				"code",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setString(StringFieldTypeDef.getDefaultInstance())
+					)
+					.setRequired(true)
+					.build()
+			);
+
+		if(key != null) {
+			object.setKey(key);
+		}
+
+		return FieldDef.newBuilder()
+			.setMultiple(true)
+			.setType(FieldTypeDef.newBuilder().setObject(object))
+			.build();
+	}
+
 	@Test
 	public void changingRankingAndMetadataIsCompatible() {
 		var current = base()

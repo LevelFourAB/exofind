@@ -172,7 +172,7 @@ Distance sorting (`distance`) is not supported inside an object and fails with `
 
 ## 6. Update sub-document values
 
-To update sub-documents, send the complete list of sub-documents using the `actions/update` endpoint:
+To update sub-documents, send an update request using the `actions/update` endpoint:
 
 ```http
 POST /v1alpha1/indexes/products/documents/actions/update
@@ -181,9 +181,15 @@ Content-Type: application/json
 {"documents": [{"id": "1", "variants": [{"color": "red", "price": 12.0}, {"color": "black", "price": 25.0}]}]}
 ```
 
-The `actions/update` endpoint replaces the entire object field value. You cannot update an individual sub-document directly. Naming an inner field such as `variants.color` in an update request fails with `index:update:field_not_found`. To change one sub-document, provide all sub-documents that the document must retain.
+Naming the field alone still replaces every value in the object field. To update sub-documents individually, use selector paths:
 
-If you do not have the existing sub-documents, retrieve them before updating:
+- A selector path such as `variants[sku=V-2].price` changes one field inside one value.
+- A path such as `variants[sku=V-2]` replaces a value whole. Mapping it to `null` removes that value from the list.
+- If the object field definition declares a `key`, the path takes the key on its own as `variants[V-2]`.
+
+A bare dotted inner path without a selector (such as `variants.color`) is refused with `request:update:value_required` on a list of objects. For details on updating sub-documents with selector paths, see [Update parts of documents](update-parts-of-documents.md).
+
+When replacing the whole list, if you do not have the existing sub-documents, retrieve them before updating:
 
 ```json
 {

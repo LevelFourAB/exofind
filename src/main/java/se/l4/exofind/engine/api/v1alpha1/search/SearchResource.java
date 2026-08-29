@@ -372,6 +372,7 @@ public class SearchResource {
 				new SearchResponse.Hit(
 					hit.id(),
 					hit.index(),
+					hit.valueKey(),
 					scores ? hit.score() : null,
 					hit.value(),
 					hit.document(),

@@ -40,6 +40,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * value is one unit either way and is always flattened, so {@code mode} is
  * refused on it.
  *
+ * A list of values may name one of its own fields as its {@code key}, which is
+ * what a value is called rather than where it sits: an update path names one
+ * value as {@code variants[V-2]}, and a value hit answers with the key beside
+ * the position. Two values of one document may not read the same under it.
+ *
  * The fields inside can filter, match, complete, facet, validate and be
  * required or multiple; sorting works when values are single units - a
  * flattened single object, or through the values of a nested one. Refused are
@@ -53,8 +58,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 	Structured object values holding nested field definitions, referenced by \
 	dot notation such as `variants.price`. An object field itself configures no \
 	`filter`, `sort`, `facet`, `locales` or `stored`, and its name may not use \
-	wildcards. Values are returned in search results only on an index that \
-	keeps document sources. See \
+	wildcards. A list of values may name a `key` that identifies each of them. \
+	Values are returned in search results only on an index that keeps document \
+	sources. See \
 	[`object`](https://exofind.dev/reference/field-types/#object).""")
 public record ObjectFieldDefinition(
 	@Schema(description = "Not supported on an object field; setting it is refused.")
@@ -96,6 +102,21 @@ public record ObjectFieldDefinition(
 		(`index:field:object:mode_required`) and refused when it is not \
 		(`index:field:object:mode_without_multiple`).""")
 	Mode mode,
+
+	/**
+	 * The field inside a value that says which value it is. Only allowed
+	 * together with {@code multiple}.
+	 */
+	@Schema(description = """
+		Name of a field inside the value that identifies it, so a value can be \
+		pointed at by what it is rather than by where it sits - `variants[V-2]` \
+		in an update path, and `key` on a value hit. Only allowed together with \
+		`multiple` (`index:field:object:key_without_multiple`), has to name one \
+		of `fields` (`index:field:object:key_not_found`), and that field has to \
+		be `required`, not `multiple`, and of type `string`, `int32` or `int64` \
+		(`index:field:object:key_not_valid`). Two values of one document reading \
+		the same are refused with `index:update:object:key_duplicate`.""")
+	String key,
 
 	/**
 	 * The fields a value holds, keyed by their name inside the value.

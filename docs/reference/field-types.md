@@ -149,7 +149,9 @@ Represents structured object values containing nested field definitions. Nested 
   "type": "object",
   "multiple": true,
   "mode": "nested",
+  "key": "sku",
   "fields": {
+    "sku": { "type": "string", "filter": {}, "required": true },
     "color": { "type": "string", "filter": {}, "required": true },
     "price": { "type": "double", "filter": {} }
   }
@@ -160,6 +162,7 @@ Represents structured object values containing nested field definitions. Nested 
 |---|---|---|---|
 | `fields` | object | None | Map of child field names to field definitions. Child fields cannot use the `object` type. |
 | `mode` | string | None | Storage mode for multiple objects. Required when `multiple: true`. Must be omitted when `multiple: false`. Values: `"flattened"` or `"nested"`. |
+| `key` | string | None | Names a child field as the identity of an object value. Supported in both `"flattened"` and `"nested"` modes. |
 
 ### Object modes
 
@@ -167,6 +170,23 @@ Represents structured object values containing nested field definitions. Nested 
 - `nested`: Retains each object instance as an isolated sub-document. Queried using the [`nested` clause](search-api.md#nested). Supports retrieving matched object instances (see [Matched values](search-api.md#matched-values)) or returning matched sub-documents as independent hits (see [What a hit stands for](search-api.md#what-a-hit-stands-for)). See [Use sub-documents](../how-to/use-sub-documents.md).
 
 Single object fields (`multiple: false`) are always indexed as flattened objects.
+
+### Object keys
+
+The `key` property names one of the object's child fields as the unique identifier for each object value in an array.
+
+Definition rules:
+- `key` requires `multiple: true`. Configuring `key` when `multiple` is `false` or omitted is rejected with `index:field:object:key_without_multiple`.
+- `key` must name a field defined in `fields`. If the child field does not exist, the engine returns `index:field:object:key_not_found`.
+- The named child field must have `required: true`, must not be `multiple`, and must be of type `string`, `int32`, or `int64`. Other field configurations are rejected with `index:field:object:key_not_valid`.
+
+Uniqueness rule:
+- Key values must be unique within a single document. If a document contains duplicate key values for the same object field, indexing is rejected with `index:update:object:key_duplicate`. Different documents can use the same key value.
+
+Modifying `key`:
+- Adding, removing, or changing `key` on an index that contains documents is rejected by definition compatibility (`index:definition:setting_changed`, naming `key`). Modifying `key` requires reindexing into a new generation.
+
+For targeting object values by key in update operations, see [Update parts of documents](../how-to/update-parts-of-documents.md). For reading `key` on search value hits, see [What a hit stands for](search-api.md#what-a-hit-stands-for).
 
 ### Constraints and restrictions
 
@@ -182,12 +202,17 @@ Single object fields (`multiple: false`) are always indexed as flattened objects
 |---|---|
 | `index:field:object:mode_required` | `multiple: true` is set on an `object` field without specifying `mode`. |
 | `index:field:object:mode_without_multiple` | `mode` is specified on an `object` field where `multiple` is `false` or omitted. |
+| `index:field:object:key_without_multiple` | `key` is specified on an `object` field where `multiple` is `false` or omitted. |
+| `index:field:object:key_not_found` | `key` names a child field that is not defined in `fields`. |
+| `index:field:object:key_not_valid` | The child field named by `key` is not `required: true`, has `multiple: true`, or is not of type `string`, `int32`, or `int64`. |
 | `index:field:object:flattened_sort` | `sort` is configured on a child field inside a `flattened` object field. |
+| `index:update:object:key_duplicate` | A document contains multiple object values with the same key value. |
 
 ### Feature requirements
 
 - `nested` objects require the `type.object` feature flag, and `type.object.usages` when configuring child usages beyond `filter`.
 - `flattened` objects require the `type.object.flattened` feature flag.
+- Setting `key` on an `object` field requires the `type.object.key` feature flag.
 
 ## Wildcard fields
 

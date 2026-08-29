@@ -373,6 +373,10 @@ public class IndexDefinitionMapper {
 			);
 		}
 
+		if(field.key() != null) {
+			builder.setKey(field.key());
+		}
+
 		return builder.build();
 	}
 
@@ -1347,6 +1351,7 @@ public class IndexDefinitionMapper {
 					sort,
 					facet,
 					mode,
+					type.getObject().hasKey() ? type.getObject().getKey() : null,
 					fields
 				);
 			}

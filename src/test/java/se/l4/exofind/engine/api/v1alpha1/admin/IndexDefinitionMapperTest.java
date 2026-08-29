@@ -447,6 +447,7 @@ public class IndexDefinitionMapperTest {
 			null, null, true, null, null,
 			null, null, null,
 			ObjectFieldDefinition.Mode.NESTED,
+			null,
 			Map.of(
 				"color", new StringFieldDefinition(
 					null, null, true, null, null, null,
@@ -487,6 +488,7 @@ public class IndexDefinitionMapperTest {
 			null, null, true, null, null,
 			null, null, null,
 			ObjectFieldDefinition.Mode.FLATTENED,
+			null,
 			Map.of(
 				"color", new StringFieldDefinition(
 					null, null, null, null, null, null,
@@ -510,10 +512,60 @@ public class IndexDefinitionMapperTest {
 	}
 
 	@Test
+	public void testObjectFieldWithKeyRoundTrip() {
+		var field = new ObjectFieldDefinition(
+			null, null, true, null, null,
+			null, null, null,
+			ObjectFieldDefinition.Mode.NESTED,
+			"sku",
+			Map.of(
+				"sku", new StringFieldDefinition(
+					null, null, true, null, null, null,
+					new FieldDefinition.Filter(), null, null,
+					null, null, null,
+					null
+				)
+			)
+		);
+
+		var stored = IndexDefinitionMapper.toStored(withFields(Map.of("variants", field)));
+
+		var storedField = stored.getFieldsOrThrow("variants");
+		assertThat(storedField.getType().getObject().getKey(), is("sku"));
+
+		var api = IndexDefinitionMapper.toApi(stored);
+		assertThat(api.fields().get("variants"), is(field));
+	}
+
+	@Test
+	public void testObjectFieldWithoutKeyLeavesItUnset() {
+		var field = new ObjectFieldDefinition(
+			null, null, true, null, null,
+			null, null, null,
+			ObjectFieldDefinition.Mode.NESTED,
+			null,
+			Map.of(
+				"sku", new StringFieldDefinition(
+					null, null, true, null, null, null,
+					new FieldDefinition.Filter(), null, null,
+					null, null, null,
+					null
+				)
+			)
+		);
+
+		var stored = IndexDefinitionMapper.toStored(withFields(Map.of("variants", field)));
+
+		assertThat(stored.getFieldsOrThrow("variants").getType().getObject().hasKey(), is(false));
+		assertThat(IndexDefinitionMapper.toApi(stored).fields().get("variants"), is(field));
+	}
+
+	@Test
 	public void testObjectFieldWithoutModeRoundTrip() {
 		var field = new ObjectFieldDefinition(
 			null, null, null, null, null,
 			null, null, null,
+			null,
 			null,
 			Map.of(
 				"width", new DoubleFieldDefinition(
@@ -1449,6 +1501,7 @@ public class IndexDefinitionMapperTest {
 				"author",
 				new ObjectFieldDefinition(
 					null, null, null, null, null, null, null, null,
+					null,
 					null,
 					Map.of("name", string(null, null, null))
 				)

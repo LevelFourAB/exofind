@@ -61,6 +61,14 @@ public class DocumentMapper {
 			"`{{path}}` matches on a field inside `{{field}}`, whose values are not objects"
 		);
 
+	private static final ErrorType KEY_NOT_DECLARED = ErrorType
+		.withCode("request:update:key_not_declared")
+		.withArguments("path", "field")
+		.withMessage(
+			"`{{path}}` names a value of `{{field}}` by a key, which the field declares "
+			+ "none of - name a field inside the value instead, as `{{field}}[field=value]`"
+		);
+
 	private static final ErrorType LOCALE_UNKNOWN = ErrorType
 		.withCode("request:update:locale_unknown")
 		.withArguments("path", "field", "locale")
@@ -89,10 +97,10 @@ public class DocumentMapper {
 
 	private static final ErrorType VALUE_REQUIRED = ErrorType
 		.withCode("request:update:value_required")
-		.withArguments("path", "field")
+		.withArguments("path", "field", "how")
 		.withMessage(
 			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "
-			+ "as `{{field}}[field=value]`"
+			+ "as {{how}}"
 		);
 
 	private DocumentMapper() {
@@ -135,7 +143,7 @@ public class DocumentMapper {
 	private static DocumentPatch.Change toChange(Index index, String text, Object value) {
 		var path = DocumentPath.parse(text);
 
-		if(path.selector() == null) {
+		if(path.selectorValue() == null) {
 			return withoutSelector(index, text, value);
 		}
 
@@ -145,13 +153,24 @@ public class DocumentMapper {
 			)
 		);
 
-		if(path.selector().isEmpty()) {
+		if(path.selectorValue().isEmpty() && path.selectorField() == null) {
 			return added(index, field, path, text, value);
 		}
 
-		var equals = path.selector().indexOf('=');
-		if(equals > 0) {
-			return matching(index, field, path, text, value, equals);
+		/*
+		 * What a selector means is the field's to say, not the path's. An
+		 * object field is never locale specific - `locales` is refused on one -
+		 * so a single word is a key on an object and a locale tag everywhere
+		 * else, with nothing to tell apart.
+		 */
+		if(field.isObject()) {
+			return matching(index, field, path, text, value);
+		}
+
+		if(path.selectorField() != null) {
+			throw new ValidationException(
+				MATCH_NOT_AN_OBJECT.toMessage(at(text), "path", text, "field", field.getName())
+			);
 		}
 
 		return inLocale(index, field, path, text, value);
@@ -220,27 +239,36 @@ public class DocumentMapper {
 	}
 
 	/**
-	 * Map a path naming the object values that hold a value for one of their
-	 * own fields.
+	 * Map a path naming object values, either by a field inside them or by the
+	 * key the definition declares.
 	 */
 	private static DocumentPatch.Change matching(
 		Index index,
 		Field field,
 		DocumentPath path,
 		String text,
-		Object value,
-		int equals
+		Object value
 	) {
-		if(!field.isObject()) {
-			throw new ValidationException(
-				MATCH_NOT_AN_OBJECT.toMessage(at(text), "path", text, "field", field.getName())
+		DocumentPatch.Selector selector;
+		if(path.selectorField() != null) {
+			selector = new DocumentPatch.Selector.Matching(
+				path.selectorField(),
+				path.selectorValue()
 			);
-		}
+		} else {
+			var key = field.getObjectKey();
+			if(key == null) {
+				throw new ValidationException(
+					KEY_NOT_DECLARED.toMessage(
+						at(text),
+						"path", text,
+						"field", field.getName()
+					)
+				);
+			}
 
-		var selector = new DocumentPatch.Selector.Matching(
-			path.selector().substring(0, equals),
-			path.selector().substring(equals + 1)
-		);
+			selector = new DocumentPatch.Selector.ByKey(key, path.selectorValue());
+		}
 
 		if(path.inner() != null) {
 			return insideObject(index, field, selector, path.inner(), text, value);
@@ -281,13 +309,13 @@ public class DocumentMapper {
 		 * written, because that is the locale the values are held under - a
 		 * field holding `no` takes a change written for `nb-NO`.
 		 */
-		var locale = field.resolveLocale(path.selector()).orElseThrow(
+		var locale = field.resolveLocale(path.selectorValue()).orElseThrow(
 			() -> new ValidationException(
 				LOCALE_UNKNOWN.toMessage(
 					at(text),
 					"path", text,
 					"field", field.getName(),
-					"locale", path.selector()
+					"locale", path.selectorValue()
 				)
 			)
 		);
@@ -317,11 +345,16 @@ public class DocumentMapper {
 	) {
 		if(selector == null) {
 			if(object.isMultiple()) {
+				var key = object.getObjectKey();
+
 				throw new ValidationException(
 					VALUE_REQUIRED.toMessage(
 						at(text),
 						"path", text,
-						"field", object.getName()
+						"field", object.getName(),
+						"how", key == null
+							? "`" + object.getName() + "[field=value]`"
+							: "`" + object.getName() + "[" + key + " of the value]`"
 					)
 				);
 			}

@@ -149,14 +149,16 @@ A path is a field name, and may carry a selector in brackets and a field inside 
 | `tags[]` | A value added to the ones the field holds. |
 | `variants[sku=V-2]` | The object values whose `sku` field reads as `V-2`. |
 | `variants[sku=V-2].price` | The `price` field inside those values. |
+| `variants[V-2]` | The object value whose key reads as `V-2`. |
+| `variants[V-2].price` | The `price` field inside that value. |
 | `dimensions.width` | The `width` field inside a single object value. |
 
 Paths follow these rules:
 
-- A selector in brackets holds a BCP 47 tag on a locale-specific field, and `field=value` on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`.
+- A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `request:update:key_not_declared` on a field declaring no key.
 - Empty brackets add a value, which requires a field declared `multiple`. Nothing is matched, so no value is replaced.
-- `field=value` compares the text form of the value. A value held as the number `2` matches the selector `2`.
-- Inside brackets, a backslash stands for the character after it, which is how a selector holds a `]` of its own.
+- `field=value` compares the text form of the value. Only the first unescaped `=` splits. A value held as the number `2` matches the selector `2`.
+- Inside brackets, a backslash stands for the character after it, which is how a selector holds a `]` of its own. An `=` needs a backslash only in the key form.
 - A field inside a list of objects requires a selector saying which value. Without one, the request returns `request:update:value_required`.
 
 #### Update behavior
@@ -171,7 +173,7 @@ Path changes apply as follows:
 
 Updates follow these rules:
 
-- The path replaces exactly what it names, and leaves everything around it. `variants` replaces every value of the field, `variants[sku=V-2]` replaces one of them, and `variants[sku=V-2].price` replaces one field inside that value.
+- The path replaces exactly what it names, and leaves everything around it. `variants` replaces every value of the field. The `field=value` form replaces every value it matches, while a key path names at most one because keys are unique within a document. `variants[sku=V-2].price` replaces one field inside those values.
 - A value replaced in place keeps its position in the list. An added value goes last.
 - Multiple updates to the same document in a single batch apply in the order provided.
 - Every change to one document is applied and validated as a whole. If validation fails, the request is rejected and the document remains unchanged.
@@ -197,6 +199,7 @@ The following error codes report a path the endpoint cannot use:
 | `request:update:add_reaches_inside` | The path reaches inside a value that is being added. |
 | `request:update:not_an_object` | The path reaches inside a field whose values are not objects. |
 | `request:update:value_required` | The path reaches into a list of objects without saying which value. |
+| `request:update:key_not_declared` | The path uses a key selector on a field that declares no key. |
 | `request:update:no_match` | The selector names no value the document holds. |
 
 #### Response

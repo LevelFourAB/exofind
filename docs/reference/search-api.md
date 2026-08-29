@@ -507,16 +507,20 @@ Hit response structure:
 {
   "id": "9781234567890",
   "index": 2,
+  "key": "V-2",
   "score": 8.42,
-  "value": { "color": "red", "size": "M", "price": 19.5 },
+  "value": { "sku": "V-2", "color": "red", "size": "M", "price": 19.5 },
   "document": { "name": "Trail Tee", "brand": "Ridge" }
 }
 ```
 
 - `id`: Primary key of the parent document. Multiple hits share an `id` when a document contains multiple matching values.
-- `index`: Zero-based array index of the value in the parent document. The unique identifier of a value hit is `id` combined with `index`.
+- `index`: Zero-based array index of the value in the parent document. Present on every value hit.
+- `key`: What the value reads for the key when the object field declares a `key`. Present even when `hits.fields` does not ask for the key child field. Omitted for document hits, for fields with no key, and on an index whose source is `none`. See the [`object`](field-types.md#object) section of the field types reference for how to declare a key.
 - `value`: The matched nested value object. Omitted if document source is `none`.
 - `document`: Selected fields of the parent document per the search request's `fields` property.
+
+The identity of a value hit is `id` combined with `key` where a key is declared, and `id` combined with `index` otherwise. The `key` survives a reindex, while `index` does not because reindexing can reorder values. Cursors over value hits still step by position.
 
 Value hit scoring combines the parent document score (including signals) with the nested value's clause score. `sort` can order by `score` or by fields within the nested object path. Specifying index root fields in `sort` returns `index:query:hits:sort_unsupported`; specifying distance sort returns `search:hits:distance_sort`. Index tie-breaker sorts are ignored.
 
@@ -568,7 +572,7 @@ When `when` is configured:
 
 | Property | Type | Description |
 |---|---|---|
-| `hits` | Array | Array of hit objects matching the query. Each hit contains `id`, `score` (omitted if the search computed no scores), `document` fields, and optional `highlights`, `matched`, `index`, or `value` properties. |
+| `hits` | Array | Array of hit objects matching the query. Each hit contains `id`, `score` (omitted if the search computed no scores), `document` fields, and optional `highlights`, `matched`, `index`, `key`, or `value` properties. |
 | `total` | Object | Match count object containing `count` (integer) and `exact` (boolean indicating whether `count` is exact or a lower bound). Counted in whatever the search returns, so a document expanded by `hits.when` counts once per value. |
 | `documents` | Object | Total count of matching documents, in the same shape as `total`. Present only when `hits.when` is set; omitted otherwise. |
 | `facets` | Object | Map of facet names to facet results. Omitted if `facets` was not requested. |

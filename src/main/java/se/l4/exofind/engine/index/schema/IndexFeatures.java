@@ -91,6 +91,16 @@ public final class IndexFeatures {
 	public static final String TYPE_OBJECT_FLATTENED = "type.object.flattened";
 
 	/**
+	 * An object field names one of its own fields as what tells its values
+	 * apart. Named because a node without it drops the name and goes on
+	 * indexing: it would take a document holding two values under one key,
+	 * which the definition promises can not happen, and then answer a change
+	 * naming a value by that key as if the path were unknown. Both are the
+	 * index quietly meaning something else depending on who wrote to it.
+	 */
+	public static final String TYPE_OBJECT_KEY = "type.object.key";
+
+	/**
 	 * The index keeps documents as they were given.
 	 *
 	 * Named because a node without it would store only the fields that ask to
@@ -328,6 +338,7 @@ public final class IndexFeatures {
 			TYPE_OBJECT,
 			TYPE_OBJECT_USAGES,
 			TYPE_OBJECT_FLATTENED,
+			TYPE_OBJECT_KEY,
 			TYPE_INT32,
 			TYPE_INT64,
 			TYPE_FLOAT,
@@ -551,6 +562,10 @@ public final class IndexFeatures {
 					== ObjectFieldTypeDef.Mode.MODE_NESTED;
 
 				features.add(nested ? TYPE_OBJECT : TYPE_OBJECT_FLATTENED);
+
+				if(field.getType().getObject().hasKey()) {
+					features.add(TYPE_OBJECT_KEY);
+				}
 
 				// The fields inside need their own features besides this one
 				for(var inner : field.getType().getObject().getFieldsMap().values()) {

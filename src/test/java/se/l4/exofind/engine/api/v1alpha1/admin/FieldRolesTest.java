@@ -278,6 +278,7 @@ public class FieldRolesTest {
 			null, null, null, null, null,
 			null, null, null,
 			null,
+			null,
 			Map.of("inner", string(Role.TITLE))
 		));
 		var field = (StringFieldDefinition) object.fields().get("inner");
@@ -318,6 +319,7 @@ public class FieldRolesTest {
 			null, null, true, null, null,
 			null, null, null,
 			mode,
+			null,
 			Map.of("inner", inner)
 		);
 	}
