@@ -159,6 +159,8 @@ Matches the `k` nearest documents by vector distance in a specified field:
 - `k`: Number of nearest documents to return.
 - `filter`: Array of filter clauses that documents must satisfy before nearest-neighbor evaluation.
 
+To search a vector field inside a nested object, place the `knn` clause inside a [`nested`](#nested) clause for that path. See [Searching vectors inside a nested path](#searching-vectors-inside-a-nested-path).
+
 ### `fuse`
 
 Matches documents across several rankings, scored and merged by rank:
@@ -221,7 +223,7 @@ Matches documents where a single element of a `nested` [`object` field](field-ty
 - `clauses`: Array of clauses evaluated within a single nested object value. An empty array matches any document where the object field is present.
 - `score`: Scoring mode for aggregating matching nested values: `"max"` (default), `"min"`, `"avg"`, or `"total"`.
 
-A `nested` clause must target a `nested` object field path. Using a `nested` clause on a flattened object field returns `index:query:nested:flattened`. Using a `nested` clause on a non-object field returns an error. Child clauses may include `field`, `text`, `and`, `or`, `not`, and `boost`. Including a root-level clause such as another `nested`, `knn` or `fuse` clause returns `index:query:nested:unsupported_clause`.
+A `nested` clause must target a `nested` object field path. Using a `nested` clause on a flattened object field returns `index:query:nested:flattened`. Using a `nested` clause on a non-object field returns an error. Child clauses may include `field`, `text`, `knn`, `and`, `or`, `not`, and `boost`. Including a root-level clause such as another `nested` or a `fuse` clause returns `index:query:nested:unsupported_clause`.
 
 A `text` clause inside a `nested` clause searches across all fields in the nested path when `fields` is omitted:
 
@@ -230,6 +232,25 @@ A `text` clause inside a `nested` clause searches across all fields in the neste
   { "type": "text", "text": "waterproof leather" }
 ] }
 ```
+
+#### Searching vectors inside a nested path
+
+A `knn` clause inside a `nested` clause searches a vector field defined within that nested path:
+
+```json
+{ "type": "nested", "path": "chunks", "clauses": [
+  { "type": "knn", "field": "chunks.embedding", "vector": [0.1, 0.2], "k": 20,
+    "filter": [ { "field": "chunks.lang", "match": { "value": "en" } } ] }
+] }
+```
+
+- `k` counts nested values rather than documents. A document that contains multiple nearest values occupies multiple positions in `k`.
+- The `knn` `filter` names fields inside the path and narrows candidate values before the nearest are picked.
+- Clauses placed beside the `nested` clause narrow afterwards and can return fewer than `k` results.
+- Naming a field of the index inside the `nested` clause returns `index:query:nested:not_in_path`.
+- Naming a nested vector field outside a `nested` clause returns `index:query:nested:outside`.
+
+To return matched nested values as individual hits, set [`hits`](#what-a-hit-stands-for) to the nested path.
 
 ### `and`, `or`, `not`
 
@@ -635,7 +656,9 @@ Setting `hits` cannot be combined with:
 
 - `matched` (`search:hits:with_matched`)
 - `highlight` (`search:hits:with_highlight`)
-- `knn` clauses (`search:hits:with_knn`)
+- `knn` clauses on a field of the index (`search:hits:with_knn`)
+
+A `knn` clause inside a `nested` clause for the same path is allowed, and makes the nearest values the hits. See [Searching vectors inside a nested path](#searching-vectors-inside-a-nested-path).
 
 ### Expanding only some documents
 

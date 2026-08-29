@@ -192,6 +192,7 @@ For targeting object values by key in update operations, see [Update parts of do
 
 - **Supported child field options:** `filter`, `matching`, `autocomplete`, `facet`, `validation`, `required`, and `multiple`. Setting `required: true` on a child field requires that field in every object instance.
 - **Sorting on child fields:** Supported in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)). Rejected in `flattened` mode with `index:field:object:flattened_sort`.
+- **Vector child fields:** In `nested` mode, search a child `vector` field with a `knn` clause inside a `nested` clause for the path (see [Searching vectors inside a nested path](search-api.md#searching-vectors-inside-a-nested-path)).
 - **Unsupported options:** `primaryKey`, `highlight`, `locales`, `stored`, wildcard field names, and nested `object` types cannot be used inside object fields.
 - **Top-level object options:** An `object` field cannot configure `filter`, `sort`, `facet`, `locales`, or `stored`, and cannot use wildcard characters in its name.
 - **Document source requirement:** Object fields are returned in search results only when full documents are preserved in [Document source](#document-source).

@@ -900,6 +900,11 @@ public class QueryCompiler {
 	 * another reading. Holding nothing that ranks leaves the document scored
 	 * by the rest of the search, the way any filter does.
 	 *
+	 * A {@code knn} inside the clause picks the {@code k} nearest values, not
+	 * the {@code k} nearest documents. The clause runs against values
+	 * throughout, and the join afterwards cannot add back what the top-k left
+	 * out.
+	 *
 	 * @param clause
 	 * @return
 	 */
@@ -1058,9 +1063,14 @@ public class QueryCompiler {
 	/**
 	 * Check that everything inside a {@code nested} clause is something that
 	 * can run against a single value. A clause that only means something for
-	 * the documents of the index - another {@code nested}, or a {@code knn}
-	 * picking the nearest documents - is refused before compiling starts,
-	 * because there are no such documents to run it against.
+	 * the documents of the index - another {@code nested}, or a {@code fuse}
+	 * merging rankings of them - is refused before compiling starts, because
+	 * there are no such documents to run it against.
+	 *
+	 * A {@code knn} is allowed. The vector field it names is one inside the
+	 * path, held by the values and by no document of the index, so picking the
+	 * nearest is a walk over values - see {@link #compileNested} for what its
+	 * {@code k} then counts.
 	 *
 	 * @param clauses
 	 */
@@ -1072,6 +1082,9 @@ public class QueryCompiler {
 				}
 				case TextQuery q -> {
 					// Covers the fields of the path, one value at a time
+				}
+				case KnnQuery q -> {
+					// Picks the nearest of the values, which hold the vector
 				}
 				case AndQuery q -> requireNestedSupported(q.clauses());
 				case OrQuery q -> requireNestedSupported(q.clauses());

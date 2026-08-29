@@ -61,7 +61,20 @@ public class IndexCodec extends Lucene104Codec {
 			return super.getKnnVectorsFormatForField(field);
 		}
 
-		var schemaField = schema.getField(parsed.field());
+		/*
+		 * A field inside an object is looked up before a root field, because a
+		 * wildcard field of the index can spell a name shaped like one inside an
+		 * object. The query compiler resolves a name in the same order.
+		 *
+		 * Missing the lookup is silent: the field falls through to the stock
+		 * format, losing the HNSW parameters and the quantization it was defined
+		 * with, and holding its dimensions to Lucene's ceiling instead of the
+		 * one validation allows.
+		 */
+		var schemaField = schema.getNestedField(parsed.field())
+			.map(IndexSchema.NestedField::field)
+			.or(() -> schema.getField(parsed.field()));
+
 		if(schemaField.isEmpty()
 			|| schemaField.get().getDef().getType().getTypeCase() != FieldTypeDef.TypeCase.VECTOR) {
 			return super.getKnnVectorsFormatForField(field);

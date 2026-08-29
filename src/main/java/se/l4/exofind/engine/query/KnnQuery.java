@@ -19,6 +19,15 @@ import org.eclipse.collections.api.list.ImmutableList;
  * {@link BoostQuery} adds the two rankings together - the plain Lucene form of
  * a hybrid search.
  *
+ * Inside a {@link NestedQuery} the clause names a vector field of that path and
+ * picks the {@code k} nearest values. A document holding several of them takes
+ * up several of the {@code k}.
+ *
+ * The filter there names fields inside the path, as every clause inside a
+ * {@code nested} clause does. A condition on a field of the index is written
+ * beside the {@code nested} clause and applies after the nearest are picked, so
+ * it can leave fewer than {@code k} results.
+ *
  * @param field
  *   name of the vector field, as it is called in the definition of the index
  * @param vector

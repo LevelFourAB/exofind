@@ -1873,6 +1873,29 @@ public class SearchRequestMapperTest {
 		assertThat(pathsOf(e), contains("/query/0", "/query/1/clauses/1"));
 	}
 
+	/**
+	 * The refusal is of a {@code knn} on a field of the index. One inside a
+	 * {@code nested} clause searches the values, which is what the hits are.
+	 */
+	@Test
+	public void testHitsWithKnnInsideANestedClauseAreKept() {
+		var request = SearchRequestMapper.toEngine(
+			withHits(
+				List.of(new Clause.Nested(
+					"variants",
+					List.of(new Clause.Knn("variants.embedding", new float[] { 1f }, 5, null)),
+					null
+				)),
+				null, null, null,
+				new SearchRequest.Hits("variants", null, null)
+			),
+			MAX_DEPTH, MAX_WINDOW
+		);
+
+		assertThat(request.request().hits().path(), is("variants"));
+		assertThat(request.request().query().size(), is(1));
+	}
+
 	@Test
 	public void testHitsWithADistanceSortAreRefused() {
 		var e = assertThrows(

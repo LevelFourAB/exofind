@@ -89,6 +89,64 @@ The `filter` parameter restricts candidate documents before nearest neighbours a
 
 If you place filter conditions outside the `knn` clause, the engine identifies the `k` nearest neighbours across the whole index first and then filters those results. On narrow filters, this post-filtering can return few or no documents.
 
+## Search chunks inside a document
+
+To index and search documents that are too long for a single embedding, store them as a list of chunks.
+
+1. Define the chunks as a [nested `object` field](../reference/field-types.md#object) with a vector inside:
+
+   ```json
+   "chunks": {
+     "type": "object",
+     "multiple": true,
+     "mode": "nested",
+     "fields": {
+       "text": { "type": "string" },
+       "lang": { "type": "string", "filter": {} },
+       "embedding": { "type": "vector", "dimensions": 768 }
+     }
+   }
+   ```
+
+2. Search the chunks by placing a `knn` clause inside a [`nested`](../reference/search-api.md#nested) clause:
+
+   ```json
+   {
+     "query": [
+       { "type": "nested", "path": "chunks", "clauses": [
+         { "type": "knn", "field": "chunks.embedding", "vector": [0.01, -0.2], "k": 20 }
+       ] }
+     ]
+   }
+   ```
+
+   Because `k` counts chunks rather than documents, ask for more chunks than the number of documents you want returned.
+
+3. Return the chunks themselves as hits by setting [`hits`](../reference/search-api.md#what-a-hit-stands-for) to the same path:
+
+   ```json
+   {
+     "query": [
+       { "type": "nested", "path": "chunks", "clauses": [
+         { "type": "knn", "field": "chunks.embedding", "vector": [0.01, -0.2], "k": 20 }
+       ] }
+     ],
+     "hits": { "path": "chunks" },
+     "fields": ["title"]
+   }
+   ```
+
+   Each hit returns the chunk `value` and its parent `document` fields.
+
+4. Narrow candidate chunks before selecting nearest neighbours by adding a `filter` on inner fields inside the `knn` clause:
+
+   ```json
+   { "type": "knn", "field": "chunks.embedding", "vector": [0.01, -0.2], "k": 20,
+     "filter": [ { "field": "chunks.lang", "match": { "value": "en" } } ] }
+   ```
+
+The `filter` names inner fields only. Place a condition on a field of the index, such as a tenant or a publication state, beside the `nested` clause. Such a condition applies after the nearest chunks are picked, so raise `k` to cover what it removes.
+
 ## Combine with a text search
 
 To perform a hybrid search, combine text and vector rankings inside a [`fuse`](../reference/search-api.md#fuse) clause:
@@ -158,5 +216,6 @@ Vector distance computations use the JVM vector module, which is enabled in the 
 - [`vector` fields](../reference/field-types.md#vector) - Complete field property reference.
 - [The `knn` clause](../reference/search-api.md#knn) - Search clause syntax and options.
 - [The `fuse` clause](../reference/search-api.md#fuse) - Merging several rankings by rank.
+- [Use sub-documents](use-sub-documents.md) - Holding a list of objects, which is how a document is held as chunks.
 - [Search an index](search-an-index.md) - General search request configuration.
 - [Roll out a definition change](roll-out-a-definition-change.md) - Procedures for updating field definitions and models.

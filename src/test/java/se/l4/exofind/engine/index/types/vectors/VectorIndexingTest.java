@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,6 +22,7 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.schema.VectorFieldTypeDef;
 import se.l4.exofind.engine.query.Query;
@@ -333,6 +335,66 @@ public class VectorIndexingTest extends AbstractIndexTest {
 		var result = search(index, Query.knn("emb_title", NEAR_X, 1));
 
 		assertThat(ids(result), contains("1"));
+	}
+
+	/**
+	 * A vector inside an object is written into the child document its value
+	 * became, under its dotted path, and the codec has to find it there to
+	 * write it as the definition asks. Held wide on purpose: the stock format
+	 * stops at 1024 dimensions, so a field the codec did not resolve would be
+	 * refused as it is written rather than quietly written another way.
+	 */
+	@Test
+	public void testWideVectorInsideAnObjectIsWrittenAsDefined() throws IOException {
+		var index = create(
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"chunks",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields(
+										"embedding",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setVector(
+													VectorFieldTypeDef.newBuilder()
+														.setDimensions(1536)
+														.setQuantization(
+															VectorFieldTypeDef.Quantization
+																.QUANTIZATION_INT8
+														)
+												)
+											)
+											.build()
+									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							)
+						)
+						.setMultiple(true)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value(
+					"chunks",
+					new Document(new Document.Value("embedding", wide(1536, 0)))
+				),
+				new Document.Value(
+					"chunks",
+					new Document(new Document.Value("embedding", wide(1536, 500)))
+				)
+			)
+		);
+		index.commit();
+
+		var doc = index.getDocument("1");
+		assertThat(doc.getAll("chunks"), hasSize(2));
 	}
 
 	/**

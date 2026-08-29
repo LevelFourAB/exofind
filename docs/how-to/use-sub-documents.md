@@ -83,7 +83,8 @@ To require multiple conditions to match within the same sub-document, add a `nes
 When building queries with `nested` clauses:
 
 - Reference inner fields by their dotted path (such as `variants.color`). Inner paths resolve only inside a `nested` clause that matches the path. Referencing `variants.color` directly in `query` fails with `index:query:nested:outside`. Referencing it under another object path fails with `index:query:nested:not_in_path`. Top-level index fields cannot appear inside a `nested` clause.
-- A `nested` clause supports clauses that run against a single value: `field`, `text`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `knn` or `fuse` clause inside a `nested` clause, fails with `index:query:nested:unsupported_clause`. An empty `clauses` array matches any document that contains at least one sub-document value.
+- A `nested` clause supports clauses that run against a single value: `field`, `text`, `knn`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `fuse` clause inside a `nested` clause, fails with `index:query:nested:unsupported_clause`. An empty `clauses` array matches any document that contains at least one sub-document value.
+- A `knn` clause inside a `nested` clause searches a `vector` inner field, which is how a document held as a list of chunks is searched for its nearest chunks. See [Search chunks inside a document](search-by-vector.md#search-chunks-inside-a-document).
 - Place `nested` clauses in `query` or `filters` based on how facet counts should behave:
   - Page-level conditions (such as the main search box or "only in stock") belong in `query`. This narrows both the hits and the facet counts.
   - User refinements belong in `filters`. A facet on a filtered field excludes that filter from its counts, keeping other filter values selectable. Place each facet field in a separate `filters` entry. For details, see [Facets](../reference/search-api.md#facets).
@@ -233,5 +234,6 @@ Each value is a Lucene document of its own, written in the same block as the doc
 - [The `nested` clause](../reference/search-api.md#nested) - Reference documentation for nested queries, [ordering by](../reference/search-api.md#ordering-by-a-value-inside-an-object), and [counting](../reference/search-api.md#counting-a-value-inside-an-object) sub-document values.
 - [Documents API](../reference/documents-api.md#how-a-document-is-shaped) - Document payload format and updating documents.
 - [Update parts of documents](update-parts-of-documents.md) - Change one sub-document without resending the others.
+- [Search by vector](search-by-vector.md) - Vector fields, and searching a document held as a list of chunks.
 - [Define an index](define-an-index.md) - Complete index definition reference.
 - [Roll out a definition change](roll-out-a-definition-change.md) - Reindexing existing documents after schema changes.

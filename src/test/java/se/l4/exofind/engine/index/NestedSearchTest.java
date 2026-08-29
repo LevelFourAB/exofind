@@ -370,11 +370,31 @@ public class NestedSearchTest extends AbstractIndexTest {
 			IndexException.class,
 			() -> search(
 				index,
-				Query.nested("variants", Query.knn("variants.color", new float[] { 1f }, 3))
+				Query.nested(
+					"variants",
+					Query.nested("variants", Query.field("variants.color", Matchers.equalTo("red")))
+				)
 			)
 		);
 
 		assertThat(e.getCode(), is("index:query:nested:unsupported_clause"));
+	}
+
+	/**
+	 * A {@code knn} inside the clause runs against the values, so it is only
+	 * refused for what it names - a field that holds no vector.
+	 */
+	@Test
+	public void testKnnOnAValueFieldThatHoldsNoVectorIsRefused() throws IOException {
+		var index = products();
+
+		assertThrows(
+			IndexInvalidQueryTypeException.class,
+			() -> search(
+				index,
+				Query.nested("variants", Query.knn("variants.color", new float[] { 1f }, 3))
+			)
+		);
 	}
 
 	@Test

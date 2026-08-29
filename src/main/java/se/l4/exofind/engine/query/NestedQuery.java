@@ -16,9 +16,14 @@ import org.eclipse.collections.api.list.ImmutableList;
  * reason the other clauses hold inside one.
  *
  * Anything that runs against a single value may sit inside - {@code field},
- * {@code text}, {@code and}, {@code or}, {@code not} and {@code boost}. A
- * clause that only means something for the documents of the index, such as
- * another {@code nested} or a {@code knn}, is refused.
+ * {@code text}, {@code knn}, {@code and}, {@code or}, {@code not} and
+ * {@code boost}. A clause that only means something for the documents of the
+ * index, such as another {@code nested} or a {@code fuse}, is refused.
+ *
+ * A {@link KnnQuery} inside the clause names a vector field of the path and
+ * picks the {@code k} nearest values. {@code k} counts values, so a document
+ * holding several of the nearest takes up several of them, and a search wanting
+ * {@code k} documents asks for more than {@code k} values.
  *
  * The clause ranks the document when something inside it ranks, and
  * {@link #score()} says which of the values that matched decides - by default
