@@ -30,6 +30,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
+import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
@@ -1239,5 +1240,70 @@ public class SearchResourceTest {
 		);
 
 		assertThat(response.total(), is(new SearchResponse.Total(1200, true)));
+	}
+
+	@Test
+	public void testExplainNamesTheClauseAndTheFieldOfTheRequest() throws IOException {
+		books();
+
+		var response = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null
+			)
+		);
+
+		assertThat(response.matched(), is(true));
+		assertThat(response.score(), is(greaterThan(0f)));
+
+		var clause = stepAt(response.detail(), "query[0]");
+		assertThat(clause, is(notNullValue()));
+		assertThat(clause.clauseType(), is("text"));
+		assertThat(clause.field(), is("name"));
+		assertThat(clause.usage(), is("matching"));
+	}
+
+	@Test
+	public void testExplainAnswersForADocumentTheSearchDoesNotMatch() throws IOException {
+		books();
+
+		var response = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(
+					new Clause.Field("category", new Matcher.Equals("poetry"))
+				),
+				null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null
+			)
+		);
+
+		assertThat(response.matched(), is(false));
+		assertThat(response.score(), is(0f));
+
+		var clause = stepAt(response.detail(), "query[0]");
+		assertThat(clause, is(notNullValue()));
+		assertThat(clause.matched(), is(false));
+	}
+
+	private static ExplainResponse.Detail stepAt(ExplainResponse.Detail detail, String clause) {
+		if(clause.equals(detail.clause())) {
+			return detail;
+		}
+
+		for(var child : detail.children()) {
+			var found = stepAt(child, clause);
+			if(found != null) {
+				return found;
+			}
+		}
+
+		return null;
 	}
 }

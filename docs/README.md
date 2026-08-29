@@ -64,6 +64,9 @@ The documentation includes the following how-to guides.
   produces, find the nearest of them, and combine that with a text search.
 - [Paginate search results](how-to/paginate-search-results.md): Use offsets,
   cursors, and numbered pages, and choose when each is the right tool.
+- [Find out why a result ranked where it did](how-to/explain-a-result.md): Read
+  a hit's score back as the clauses and fields you wrote, and find out why a
+  document is missing rather than only why it is low.
 
 ### Changing an index
 

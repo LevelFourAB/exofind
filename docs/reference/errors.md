@@ -65,6 +65,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:update:*` | Document indexing failure | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
 | `index:source:*` | Stored document source copy unavailable | `index:source:not_kept`, `index:source:unreadable` |
 | `index:query:*` | Query refers to unavailable index features or fields | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept` |
+| `index:explain:*` | Score explanation target lookup failure | `index:explain:document_not_found`, `index:explain:value_not_found` |
 | `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:signal:*` | Malformed search request component | `search:clause:field_required`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:hits:path_required`, `search:facet:duplicate_name`, `search:signal:shape_invalid` |
 | `search:cursor:*`, `search:page:*` | Pagination error | `search:cursor:sort_mismatch`, `search:page:too_deep` |
 | Other `index:*` | Index-level state and lifecycle errors | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
@@ -89,3 +90,5 @@ The following error codes require specific handling in client applications:
 - `index:unsupported`: Returned with HTTP `409` when the index requires engine features that the node does not support. Send the request to a node running a version that supports the required features.
 - `index:settings:version_mismatch`: Returned with HTTP `412` when a `PUT` of search settings carries an `If-Match` version the stored settings are no longer at. Read the settings again and rebuild the change on the version that comes back.
 - `index:settings:conflict`: Returned with HTTP `409` when the search settings kept being changed by other writers while the change was being stored. The stored settings are unchanged; retry the request.
+- `index:explain:document_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when no document is indexed under the `key` query parameter.
+- `index:explain:value_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when that document holds no value of the search's `hits` path at the `index` query parameter.

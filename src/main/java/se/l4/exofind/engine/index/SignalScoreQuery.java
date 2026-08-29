@@ -114,7 +114,7 @@ final class SignalScoreQuery extends Query {
 					(float) (inner.getValue().doubleValue() * multiplier),
 					"product of:",
 					inner,
-					Explanation.match((float) multiplier, signals.toString())
+					signals.explain(context, doc)
 				);
 			}
 

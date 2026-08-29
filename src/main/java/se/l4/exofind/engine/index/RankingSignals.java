@@ -5,6 +5,7 @@ import java.io.IOException;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DoubleValues;
 import org.apache.lucene.search.DoubleValuesSource;
+import org.apache.lucene.search.Explanation;
 import org.apache.lucene.search.IndexSearcher;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ImmutableList;
@@ -116,6 +117,49 @@ public final class RankingSignals extends DoubleValuesSource {
 		};
 	}
 
+	/**
+	 * Get what each signal made of one document, and their product.
+	 *
+	 * <p>A signal the document holds no value for is reported as contributing
+	 * one rather than left out.
+	 *
+	 * @param ctx
+	 * @param doc
+	 *   the document within the segment
+	 * @return
+	 * @throws IOException
+	 */
+	public Explanation explain(LeafReaderContext ctx, int doc) throws IOException {
+		var details = new Explanation[signals.size()];
+		var product = 1d;
+
+		for(var i = 0; i < signals.size(); i++) {
+			var signal = signals.get(i);
+			var values = signal.values().getValues(ctx, null);
+
+			if(!values.advanceExact(doc)) {
+				details[i] = Explanation.match(
+					1f,
+					"signal " + signal.field() + " (" + signal.shape()
+						+ ", weight " + signal.weight() + ") has no value here"
+				);
+				continue;
+			}
+
+			var value = values.doubleValue();
+			var contribution = 1 + signal.weight() * signal.shape().contribution(value);
+			product *= contribution;
+
+			details[i] = Explanation.match(
+				(float) contribution,
+				"signal " + signal.field() + " (" + signal.shape()
+					+ ", weight " + signal.weight() + ") reads " + value
+			);
+		}
+
+		return Explanation.match((float) product, "signals, product of:", details);
+	}
+
 	@Override
 	public boolean needsScores() {
 		// The values come from the documents, never from how they matched
@@ -135,7 +179,7 @@ public final class RankingSignals extends DoubleValuesSource {
 		for(var signal : signals) {
 			var values = signal.values().rewrite(searcher);
 			changed |= values != signal.values();
-			rewritten.add(new Applied(values, signal.shape(), signal.weight()));
+			rewritten.add(new Applied(signal.field(), values, signal.shape(), signal.weight()));
 		}
 
 		return changed ? new RankingSignals(rewritten.toImmutable()) : this;
@@ -164,6 +208,10 @@ public final class RankingSignals extends DoubleValuesSource {
 	 * One signal as it runs: where to read the value, how to shape it and how
 	 * much it counts.
 	 *
+	 * @param field
+	 *   name of the field the values are read from, as the definition calls it
+	 *   - carried so that an explanation can name the signal the way the caller
+	 *   asked for it
 	 * @param values
 	 *   the doc values the field wrote for sorting
 	 * @param shape
@@ -171,7 +219,11 @@ public final class RankingSignals extends DoubleValuesSource {
 	 * @param weight
 	 *   how much the contribution counts, as a share of the score
 	 */
-	public record Applied(DoubleValuesSource values, Shape shape, float weight) {
+	public record Applied(String field, DoubleValuesSource values, Shape shape, float weight) {
+		@Override
+		public String toString() {
+			return field + " " + shape + " x" + weight;
+		}
 	}
 
 	/**
@@ -200,6 +252,11 @@ public final class RankingSignals extends DoubleValuesSource {
 	 */
 	public record Saturation(double pivot) implements Shape {
 		@Override
+		public String toString() {
+			return "saturation, pivot " + pivot;
+		}
+
+		@Override
 		public double contribution(double value) {
 			/*
 			 * Below zero the shape says nothing - it describes how much of
@@ -222,6 +279,11 @@ public final class RankingSignals extends DoubleValuesSource {
 	 *   clock
 	 */
 	public record Decay(long halfLifeMillis, long now) implements Shape {
+		@Override
+		public String toString() {
+			return "decay, half life " + halfLifeMillis + "ms";
+		}
+
 		@Override
 		public double contribution(double value) {
 			var age = now - value;

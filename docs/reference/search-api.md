@@ -581,6 +581,123 @@ Requesting `"pages": {}` adds a `pages` object inside `page`:
 
 Page metadata is divided into `start`, `middle`, and `end` arrays. The `current` boolean marks the current page. `end` is omitted if the final page exceeds maximum page depth. Page numbers are 1-based.
 
+## Explaining a result
+
+Explains how a specific document or value hit scores for a search query.
+
+```
+POST /v1alpha1/indexes/{name}/search/actions/explain?key={key}&index={index}
+```
+
+The endpoint requires the `search` permission. Any node answers the request using the generation that node last pulled, without forwarding to the indexer.
+
+### Parameters
+
+- `name` (path parameter, required): The index name. Can include a generation suffix, such as `books@2`.
+- `key` (query parameter, required): The primary key of the document, formatted according to the type of the key field. For value hits, provide the primary key of the parent document.
+- `index` (query parameter, optional): Zero-based index of the value along the `hits.path` to explain. Defaults to `0`. Read only when searching for value hits.
+
+### Request body
+
+The request body accepts the same JSON search request as `POST /v1alpha1/indexes/{name}/search`.
+
+The endpoint compiles the search using the same clauses, locale, and index search settings to produce the exact score reported by a search.
+
+The following request properties are read:
+
+- `query`
+- `filters`
+- `locale`
+- `signals`
+- `hits.path`
+
+The following request properties are ignored: `limit`, `offset`, `after`, `before`, `sort`, `facets`, `highlight`, `matched`, `fields`, and `total`. If the search request specifies a field sort, the endpoint still computes and explains the relevance score.
+
+### Response
+
+```json
+{
+  "matched": true,
+  "score": 7.42,
+  "detail": {
+    "matched": true,
+    "score": 7.42,
+    "description": "sum of:",
+    "children": [
+      {
+        "matched": true,
+        "score": 5.10,
+        "description": "weight(title:bok) [BM25Similarity], result of:",
+        "clause": "query[0]",
+        "clauseType": "text",
+        "field": "title",
+        "usage": "matching",
+        "locale": "sv",
+        "children": []
+      },
+      {
+        "matched": true,
+        "score": 1.30,
+        "description": "signals, product of:",
+        "children": [
+          {
+            "matched": true,
+            "score": 1.24,
+            "description": "signal popularity (saturation, pivot 10.0, weight 1.0) reads 412.0",
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Top-level response properties:
+
+| Property | Type | Description |
+|---|---|---|
+| `matched` | Boolean | Whether the hit satisfies the search. A hit that does not match appears in no search results. |
+| `score` | Number | The relevance score of the hit. Returns `0` if the hit does not match. |
+| `detail` | Object | Root score step explaining how the score was calculated. |
+| `relaxed` | Object | Relaxation details containing `dropped` words and the effective query `text`. Omitted if query relaxation did not run. |
+
+Properties of a score step (`detail` and each entry in `children`):
+
+| Property | Type | Description |
+|---|---|---|
+| `matched` | Boolean | Whether this step was satisfied. A non-matching step contributes nothing to the parent score. |
+| `score` | Number | Score contributed by this step to its parent step. Returns `0` if the step did not match. |
+| `description` | String | Human-readable explanation of the step. |
+| `clause` | String | Path to the clause in the request body that produced this step (for example, `query[0]`, `filters[0]`, or `query[0].filter[1]`). Omitted when the step is not an individual clause. |
+| `clauseType` | String | Clause type matching request syntax (`field`, `text`, `knn`, `nested`, `and`, `or`, `not`, or `boost`). Omitted when `clause` is omitted. |
+| `field` | String | Index definition field name evaluated by the step. Omitted when the step reads no fields or multiple fields. |
+| `usage` | String | Field usage mode evaluated by the step (such as `matching`, `filter`, `autocomplete`, `matching_exact`, `hierarchy`, or `vector`). Omitted when `field` is omitted. |
+| `locale` | String | BCP-47 locale tag of the field variant evaluated by the step. Omitted for fields that store a single variant across all languages. |
+| `children` | Array | Child score steps that compose this step. Empty for leaf steps. |
+
+### Scoring behavior
+
+- **Non-matching hits**: Hits that do not match the query return `matched: false` and `score: 0`. Clause steps that failed return `matched: false`, while clauses that matched return `matched: true`.
+- **Field names**: Field names in the explanation tree correspond to schema names in the index definition rather than internal engine names.
+- **Query relaxation**: When zero results trigger query relaxation, `relaxed` is included and the explanation tree reflects the relaxed query that executed.
+- **Ranking signals**: Signals appear under a dedicated step with one child per signal, specifying the field, function shape, weight, and value read from the document. A missing signal value contributes a factor of `1`.
+- **Value hits**: When `hits.path` targets a nested object field, each value is explained individually by specifying its zero-based position in `index`. See [What a hit stands for](#what-a-hit-stands-for).
+- **Alternatives that did not match**: Within an `or` clause that matched, only the alternatives that matched appear as steps. An `or` that matched nothing is reported as one non-matching step for the clause itself.
+
+### Errors
+
+| HTTP status | Error code | Description |
+|---|---|---|
+| `400` | `index:no_primary_key` | The index declares no primary key. |
+| `400` | Search error codes | The request body is not a valid search request. Returns the same error codes as `POST .../search`. |
+| `401` | Authentication errors | Request lacks valid authentication. |
+| `403` | Authorization errors | Missing the `search` permission. |
+| `404` | `index:explain:document_not_found` | No document exists with the specified `key`. |
+| `404` | `index:explain:value_not_found` | The document contains no value at `index` along the `hits.path`. |
+| `409` | `index:no_live_generation` | No live index generation is available. |
+| `503` | `index:closed` | The index is closed. |
+
 ## Paging rules
 
 - `offset` cannot exceed `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Requests exceeding this limit return `search:page:too_deep`.

@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.index;
 
+import java.util.IdentityHashMap;
 import java.util.Locale;
 
 import org.apache.lucene.search.BooleanClause;
@@ -185,6 +186,12 @@ public class QueryCompiler {
 	 * compiled against this generation.
 	 */
 	private final RankingOverride rankingOverride;
+
+	/**
+	 * Where each clause of the request sits in it, or {@code null} when nothing
+	 * asked to be told - see {@link #markClauses}.
+	 */
+	private IdentityHashMap<Query, String> clausePaths;
 
 	public QueryCompiler(IndexSchema schema, String locale, BitSetProducer nestedParents) {
 		this(schema, locale, nestedParents, null);
@@ -634,6 +641,7 @@ public class QueryCompiler {
 			select(signal.field(), field);
 			applied.add(
 				new RankingSignals.Applied(
+					signal.field(),
 					field.getType().createRankingSource(encounter),
 					shapeOf(signal, now),
 					signal.weight()
@@ -660,7 +668,77 @@ public class QueryCompiler {
 		};
 	}
 
+	/**
+	 * Record where every clause of a request sits in it, so that everything
+	 * compiled from here on is wrapped in a {@link ClauseQuery} naming the
+	 * clause it came from.
+	 *
+	 * <p>Clauses are held by identity, so a list derived from the request -
+	 * the conditions on one path pulled out of a search - carries the marks of
+	 * the clauses it kept. Clauses built after this call, such as the ones
+	 * relaxing produces, are unmarked until it is called again.
+	 *
+	 * <p>Only {@link Index#explain} calls this. A search leaves it unset.
+	 *
+	 * @param query
+	 *   the clauses of the request, addressed as {@code query[i]}
+	 * @param filters
+	 *   the filters of the request, addressed as {@code filters[i]}
+	 */
+	public void markClauses(ListIterable<Query> query, ListIterable<Query> filters) {
+		var paths = new IdentityHashMap<Query, String>();
+		markClauses(query, "query", paths);
+		markClauses(filters, "filters", paths);
+
+		this.clausePaths = paths;
+	}
+
+	private static void markClauses(
+		ListIterable<Query> clauses,
+		String prefix,
+		IdentityHashMap<Query, String> paths
+	) {
+		for(var i = 0; i < clauses.size(); i++) {
+			markClause(clauses.get(i), prefix + "[" + i + "]", paths);
+		}
+	}
+
+	/**
+	 * Mark one clause and everything under it. Clauses are addressed by the
+	 * name the request gives them, so a path reads as a way into the body that
+	 * was sent.
+	 */
+	private static void markClause(
+		Query clause,
+		String path,
+		IdentityHashMap<Query, String> paths
+	) {
+		paths.put(clause, path);
+
+		switch(clause) {
+			case AndQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
+			case OrQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
+			case NotQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
+			case BoostQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
+			case NestedQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
+			case KnnQuery q -> markClauses(q.filter(), path + ".filter", paths);
+			default -> {
+				// Nothing inside to mark
+			}
+		}
+	}
+
 	private org.apache.lucene.search.Query compile(Query clause) {
+		var compiled = compileClause(clause);
+		if(clausePaths == null) {
+			return compiled;
+		}
+
+		var path = clausePaths.get(clause);
+		return path == null ? compiled : new ClauseQuery(compiled, path, clause.type());
+	}
+
+	private org.apache.lucene.search.Query compileClause(Query clause) {
 		return switch(clause) {
 			case FieldQuery q -> compileField(q);
 			case TextQuery q -> compileText(q);

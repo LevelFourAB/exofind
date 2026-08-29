@@ -22,6 +22,7 @@ import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.routing.ServedBy;
+import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.auth.Permission;
@@ -30,12 +31,15 @@ import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.query.Query;
+import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
 /**
@@ -194,6 +198,160 @@ public class SearchResource {
 		return toResponse(mapped, result, tookMs);
 	}
 
+	/**
+	 * Explain how one hit scores under a search.
+	 *
+	 * @param name
+	 * @param key
+	 *   primary key of the document
+	 * @param valueIndex
+	 *   which value of the request's {@code hits} path to explain
+	 * @param body
+	 *   the search to explain the hit under, the same body a search takes
+	 */
+	@POST
+	@Path("/actions/explain")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.SEARCH)
+	@ServedBy(ServedBy.Node.ANY_NODE)
+	@Operation(
+		operationId = "explainSearch",
+		summary = "Explain how one hit scores",
+		description = """
+			Reports how one hit scores under a search, as a tree of steps \
+			naming the clauses of the request they were compiled from and the \
+			fields of the index definition they read.
+
+			The body is a search request; `limit`, `offset`, `after`, \
+			`before`, `sort`, `facets`, `highlight` and `matched` are ignored. \
+			A hit that the search does not match is reported with `matched` \
+			set to `false` rather than refused.
+
+			Requires the `search` permission."""
+	)
+	@APIResponse(
+		responseCode = "200",
+		description = "How the hit scores.",
+		content = @Content(schema = @Schema(implementation = ExplainResponse.class))
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The request is not a valid search, or the index declares no primary \
+			key so a hit cannot be named (`index:no_primary_key`).""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "401",
+		description = """
+			The request carries no credential this node accepts. The response \
+			carries `WWW-Authenticate: Bearer`.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "403",
+		description = "The API key does not have the `search` permission.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			No index has this name, or the key has no grant covering it. Also \
+			when the index holds no document under `key` \
+			(`index:explain:document_not_found`), or that document has no \
+			value of the `hits` path at `index` \
+			(`index:explain:value_not_found`).""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			The index exists but answers for none of its generations \
+			(`index:no_live_generation`).""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = """
+			The request raced the index being closed to free local resources \
+			(`index:closed`). Sending it again reopens the index.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public ExplainResponse explain(
+		@Parameter(
+			description = """
+				Name of the index to search. To explain against one \
+				generation, add `@` and the name of the generation, such as \
+				`books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		@Parameter(
+			description = """
+				Primary key of the document, read as the type of the key field \
+				- so a numeric key is written the way a document writes it. \
+				For a search whose `hits` names an object field, the key of \
+				the document holding the value, which is what such a hit \
+				reports as its `id`.""",
+			example = "9781234567890",
+			required = true
+		)
+		@QueryParam("key") String key,
+		@Parameter(
+			description = """
+				Position of the value to explain among the document's values \
+				of the `hits` path, which is what such a hit reports as its \
+				`index`. Read only by a search whose hits are values.""",
+			example = "0"
+		)
+		@QueryParam("index") @DefaultValue("0") int valueIndex,
+		SearchRequest body
+	) {
+		var index = indexes.getOrThrow(name);
+		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth);
+
+		// Settings belong to the index name, the way they do for a search
+		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
+
+		SearchExplanation explanation;
+		try {
+			explanation = index.explain(
+				mapped.request(),
+				index.parsePrimaryKey(key),
+				valueIndex,
+				settings
+			);
+		} catch(IOException e) {
+			throw new IndexException(IO_ERROR, e, "index", name);
+		}
+
+		return new ExplainResponse(
+			explanation.matched(),
+			explanation.score(),
+			toDetailJson(explanation.detail()),
+			toRelaxedJson(explanation.relaxed())
+		);
+	}
+
+	private static ExplainResponse.Detail toDetailJson(SearchExplanation.Detail detail) {
+		var children = new ArrayList<ExplainResponse.Detail>(detail.children().size());
+		for(var child : detail.children()) {
+			children.add(toDetailJson(child));
+		}
+
+		return new ExplainResponse.Detail(
+			detail.matched(),
+			detail.score(),
+			detail.description(),
+			detail.clause(),
+			detail.clauseType(),
+			detail.field(),
+			detail.usage(),
+			detail.locale(),
+			children
+		);
+	}
+
 	private SearchResponse toResponse(
 		SearchRequestMapper.Mapped mapped,
 		SearchResult result,
@@ -233,7 +391,7 @@ public class SearchResource {
 			new SearchResponse.Total(result.total().count(), result.total().exact()),
 			toFacetsJson(mapped.request(), result),
 			toPage(mapped, result),
-			toRelaxedJson(result),
+			toRelaxedJson(result.relaxed()),
 			tookMs
 		);
 	}
@@ -243,16 +401,16 @@ public class SearchResource {
 	 * nothing - the key is only there when the results answer less than what
 	 * was asked for.
 	 */
-	private static SearchResponse.Relaxed toRelaxedJson(SearchResult result) {
-		if(result.relaxed() == null) {
+	private static SearchResponse.Relaxed toRelaxedJson(SearchResult.Relaxed relaxed) {
+		if(relaxed == null) {
 			return null;
 		}
 
 		var dropped = new ArrayList<SearchResponse.Relaxed.Dropped>(
-			result.relaxed().dropped().size()
+			relaxed.dropped().size()
 		);
 
-		for(var word : result.relaxed().dropped()) {
+		for(var word : relaxed.dropped()) {
 			dropped.add(
 				new SearchResponse.Relaxed.Dropped(
 					word.word(),
@@ -264,7 +422,7 @@ public class SearchResource {
 			);
 		}
 
-		return new SearchResponse.Relaxed(dropped, result.relaxed().text());
+		return new SearchResponse.Relaxed(dropped, relaxed.text());
 	}
 
 	/**

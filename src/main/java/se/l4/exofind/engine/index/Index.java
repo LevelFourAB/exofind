@@ -117,6 +117,7 @@ import se.l4.exofind.engine.query.OrQuery;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.SearchRequest;
+import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortKey;
 
@@ -213,6 +214,20 @@ public class Index {
 				"Hits standing for the values of `{{path}}` can count facets over "
 					+ "fields of the index and fields inside the path, but `{{field}}` "
 					+ "is inside another object"
+			);
+
+	private static final ErrorType ERROR_EXPLAIN_DOCUMENT_NOT_FOUND =
+		ErrorType.withCode("index:explain:document_not_found")
+			.withArguments("key")
+			.withMessage(
+				"No document is indexed under the key `{{key}}`, so there is nothing to explain"
+			);
+
+	private static final ErrorType ERROR_EXPLAIN_VALUE_NOT_FOUND =
+		ErrorType.withCode("index:explain:value_not_found")
+			.withArguments("key", "path", "index")
+			.withMessage(
+				"The document `{{key}}` has no value of `{{path}}` at position {{index}}"
 			);
 
 	private static final Log logger = Log.of(Index.class);
@@ -3589,6 +3604,204 @@ public class Index {
 		} finally {
 			syncLock.readLock().unlock();
 		}
+	}
+
+	/**
+	 * Get how one hit scores under a search.
+	 *
+	 * <p>The search is compiled the way {@link #search} compiles it - the same
+	 * clauses, locale and ranking, and relaxed the same way when it matches
+	 * nothing - so the score reported here is the score a search reports for
+	 * the hit.
+	 *
+	 * <p>Paging, sorting, facets, highlights and {@code matched} are not read.
+	 * A search ordered by a field is still scored, and the score is what this
+	 * answers for.
+	 *
+	 * <p>A hit the search does not match is explained rather than refused, with
+	 * the clauses that ruled it out marked as not matching.
+	 *
+	 * @param request
+	 * @param primaryKey
+	 *   the key of the document, as the type of the key field holds it
+	 * @param valueIndex
+	 *   which value of the request's {@code hits} path to explain, counted the
+	 *   way a hit reports its position. Read only by a search whose hits are
+	 *   values
+	 * @param settings
+	 *   the search settings of the index, or {@code null} to explain under the
+	 *   definition alone
+	 * @return
+	 *   never {@code null}
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition of the index declares no primary key
+	 * @throws IndexException
+	 *   with {@code index:explain:document_not_found} if no document is indexed
+	 *   under the key, {@code index:explain:value_not_found} if it holds no
+	 *   value of the path at the position, or
+	 *   {@code index:query:unsupported_locale} if the search asks for a locale
+	 *   this build has no rules for
+	 * @throws IOException
+	 */
+	public SearchExplanation explain(
+		SearchRequest request,
+		Object primaryKey,
+		int valueIndex,
+		SearchSettings.Snapshot settings
+	) throws IOException {
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				throw new IndexClosedException(id);
+			}
+
+			try(var handle = searcherManager.acquire()) {
+				/*
+				 * Over the same reader as a search, with the query cache off. A
+				 * weight that does not score is handed to the cache, whose
+				 * explanation is the query's own toString and nothing below it -
+				 * which loses every clause a filter was compiled from. Explaining
+				 * visits one document, so there is nothing for a cache to save.
+				 */
+				var searcher = new IndexSearcher(handle.getSearcher().getIndexReader());
+				searcher.setSimilarity(similarity);
+				searcher.setQueryCache(null);
+
+				if(request.locale() != null && Locales.resolve(request.locale()).isEmpty()) {
+					throw new IndexException(
+						ERROR_UNSUPPORTED_SEARCH_LOCALE,
+						"locale", request.locale()
+					);
+				}
+
+				var compiler = new QueryCompiler(
+					schema,
+					request.locale(),
+					nestedParents,
+					compileRankingOverride(settings)
+				);
+				compiler.markClauses(request.query(), request.filters());
+
+				var searched = request.query().newWithAll(request.filters());
+
+				var hitsPath = request.hits() == null ? null : request.hits().path();
+				if(hitsPath != null) {
+					compiler.hitsObjectField(hitsPath);
+				}
+
+				var assembled = assemble(compiler, request, searched);
+				var ranked = ranked(compiler, request, assembled, searched);
+
+				/*
+				 * A search matching nothing lets go of a word and runs again, so
+				 * an explanation follows it there rather than describe a search
+				 * that answered nobody. Counted on the assembled query rather than
+				 * the ranked one, as what ranks a search never changes what it
+				 * matches.
+				 */
+				SearchResult.Relaxed relaxed = null;
+				if(searcher.count(assembled.hits()) == 0) {
+					var outcome = relax(searcher, compiler, request);
+					if(outcome != null) {
+						request = request.withQuery(outcome.query());
+						relaxed = outcome.relaxed();
+
+						// Relaxing builds clauses of its own, which the marks have
+						// to be worked out over before anything is compiled again
+						compiler.markClauses(request.query(), request.filters());
+
+						searched = request.query().newWithAll(request.filters());
+						assembled = assemble(compiler, request, searched);
+						ranked = ranked(compiler, request, assembled, searched);
+					}
+				}
+
+				var explanation = searcher.explain(
+					ranked.query(),
+					explained(searcher, primaryKey, hitsPath, valueIndex)
+				);
+
+				return new SearchExplanation(
+					explanation.isMatch(),
+					explanation.isMatch() ? explanation.getValue().floatValue() : 0f,
+					Explanations.of(explanation),
+					relaxed
+				);
+			}
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Find the Lucene document an explanation is asked about: the document
+	 * itself, or one of the values of an object field when the hits of the
+	 * search are values.
+	 *
+	 * @param searcher
+	 * @param primaryKey
+	 * @param hitsPath
+	 *   the object field the hits are values of, or {@code null} when they are
+	 *   documents
+	 * @param valueIndex
+	 *   position of the value among the document's values of the path
+	 * @return
+	 * @throws IOException
+	 */
+	private int explained(
+		IndexSearcher searcher,
+		Object primaryKey,
+		String hitsPath,
+		int valueIndex
+	) throws IOException {
+		var primaryKeyField = primaryKeyField();
+
+		var encounter = new IndexEncounterImpl(
+			schema.getResources(),
+			schema.isHighlightingInPostings()
+		);
+		encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+		encounter.updateValue(primaryKeyField.getName(), primaryKeyField.getDef());
+
+		var term = primaryKeyField.getType().createPrimaryKeyTerm(encounter, primaryKey);
+
+		/*
+		 * The values of object fields carry the primary key of their document
+		 * too, so the lookup has to say it wants the document of the block.
+		 */
+		var found = searcher.search(parentsOnly(new TermQuery(term)), 1);
+		if(found.totalHits.value() == 0) {
+			throw new IndexException(
+				ERROR_EXPLAIN_DOCUMENT_NOT_FOUND,
+				"key", String.valueOf(primaryKey)
+			);
+		}
+
+		var document = found.scoreDocs[0].doc;
+		if(hitsPath == null) {
+			return document;
+		}
+
+		var value = MatchedChildren.child(
+			searcher,
+			nestedParents,
+			hitsPath,
+			document,
+			valueIndex
+		);
+
+		if(value < 0) {
+			throw new IndexException(
+				ERROR_EXPLAIN_VALUE_NOT_FOUND,
+				"key", String.valueOf(primaryKey),
+				"path", hitsPath,
+				"index", String.valueOf(valueIndex)
+			);
+		}
+
+		return value;
 	}
 
 	/**

@@ -144,6 +144,7 @@ public class SignalScoreQueryTest {
 			new TermQuery(new Term("text", "term")),
 			RankingSignals.of(Lists.immutable.of(
 				new RankingSignals.Applied(
+					"purchases",
 					DoubleValuesSource.fromLongField("purchases"),
 					new RankingSignals.Saturation(50),
 					1f

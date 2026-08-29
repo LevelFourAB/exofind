@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index;
 import java.io.IOException;
 import java.util.Arrays;
 
+import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreMode;
@@ -203,6 +204,85 @@ final class MatchedChildren {
 	 */
 	static Matches none() {
 		return new Matches(NO_ORDINALS, NO_SCORES);
+	}
+
+	/**
+	 * Find the value sitting at one position among a document's values of a
+	 * path - the reverse of {@link #locate}, for a caller holding a position
+	 * and needing the Lucene document the value was written as.
+	 *
+	 * <p>The position counts the children of the path from the start of the
+	 * block, which is the position the copy of the document holds the value at
+	 * and the position a hit reports.
+	 *
+	 * @param searcher
+	 * @param parents
+	 *   the documents of the index per segment, which is what tells where the
+	 *   block of the document starts
+	 * @param path
+	 *   name of the object field the value belongs to
+	 * @param parentDocId
+	 *   Lucene id of the document holding the value
+	 * @param ordinal
+	 *   position of the value among the document's values of the path, counted
+	 *   from zero
+	 * @return
+	 *   the Lucene id of the value, or {@code -1} when the document has no
+	 *   value of the path at that position
+	 * @throws IOException
+	 */
+	static int child(
+		IndexSearcher searcher,
+		BitSetProducer parents,
+		String path,
+		int parentDocId,
+		int ordinal
+	) throws IOException {
+		if(ordinal < 0) {
+			return -1;
+		}
+
+		var context = searcher.getIndexReader().leaves()
+			.get(ReaderUtil.subIndex(parentDocId, searcher.getIndexReader().leaves()));
+
+		var parent = parentDocId - context.docBase;
+		var parentBits = parents.getBitSet(context);
+		var nested = context.reader().getSortedDocValues(FieldNames.NESTED);
+		if(parentBits == null || nested == null) {
+			// The segment holds no values at all
+			return -1;
+		}
+
+		var pathOrd = nested.lookupTerm(new BytesRef(path));
+		if(pathOrd < 0) {
+			// The segment holds values of other paths only
+			return -1;
+		}
+
+		var blockStart = parent == 0 ? 0 : parentBits.prevSetBit(parent - 1) + 1;
+		if(blockStart == parent) {
+			// The document was written without children
+			return -1;
+		}
+
+		if(nested.docID() < blockStart) {
+			nested.advance(blockStart);
+		}
+
+		var position = 0;
+		while(nested.docID() < parent) {
+			if(nested.ordValue() == pathOrd) {
+				if(position == ordinal) {
+					return context.docBase + nested.docID();
+				}
+
+				position++;
+			}
+
+			nested.nextDoc();
+		}
+
+		return -1;
 	}
 
 	/**
