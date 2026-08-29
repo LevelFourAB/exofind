@@ -119,7 +119,7 @@ Synonyms apply at index time. Modifying a synonym set only affects documents ind
 
 ## Compound words
 
-The engine-built `matching` chain automatically decompounds words for the following locales: `da`, `de`, `is`, `nl`, `no`, `nb`, `nn`, and `sv`.
+The engine-built `matching` chain automatically decompounds words for the following locales: `da`, `de`, `fi`, `is`, `nl`, `no`, `nb`, `nn`, and `sv`.
 
 Decompounding splits a word where hyphenation rules allow and matches parts against the locale dictionary. The engine indexes both the constituent parts and the complete compound word.
 

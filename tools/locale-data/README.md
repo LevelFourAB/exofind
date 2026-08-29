@@ -34,12 +34,13 @@ mkdir -p sources && cd sources
 
 # Hyphenation grammars
 base=https://raw.githubusercontent.com/hyphenation/tex-hyphen/master/hyph-utf8/tex/generic/hyph-utf8/patterns/tex
-curl -LO $base/hyph-da.tex -LO $base/hyph-nl.tex -LO $base/hyph-sv.tex -LO $base/hyph-no.tex -LO $base/hyph-is.tex
+curl -LO $base/hyph-da.tex -LO $base/hyph-nl.tex -LO $base/hyph-sv.tex -LO $base/hyph-no.tex -LO $base/hyph-is.tex -LO $base/hyph-fi.tex
 curl -LO https://mirrors.ctan.org/language/hyphenation/dehyph-exptl.zip
 unzip dehyph-exptl.zip
 
 # Word lists
 curl -LO https://ordregister.dk/files/cor1.5.1.0.tsv
+curl -LO https://kaino.kotus.fi/lataa/nykysuomensanalista2024.txt
 curl -LO https://raw.githubusercontent.com/OpenTaal/opentaal-wordlist/master/wordlist.txt
 curl -LO https://www.nb.no/sbfil/leksikalske_databaser/ordbank/20190123_norsk_ordbank_nob_2005.tar.gz
 curl -LO https://www.nb.no/sbfil/leksikalske_databaser/ordbank/20190123_norsk_ordbank_nno_2012.tar.gz
@@ -66,6 +67,7 @@ out=../../locale-data
 # sparse to find compound boundaries; nb and nn share the Norwegian set.
 java Convert.java tex $out/da/patterns.txt sources/hyph-da.tex sources/hyph-no.tex
 java Convert.java tex $out/de/patterns.txt sources/dehyph-exptl/dehyphn-x-2024-02-28.pat
+java Convert.java tex $out/fi/patterns.txt sources/hyph-fi.tex
 java Convert.java tex $out/is/patterns.txt sources/hyph-is.tex
 java Convert.java tex $out/nl/patterns.txt sources/hyph-nl.tex
 java Convert.java tex $out/sv/patterns.txt sources/hyph-sv.tex
@@ -75,6 +77,7 @@ java Convert.java tex $out/nn/patterns.txt sources/hyph-no.tex
 # Word lists
 java Convert.java cor $out/da/words.txt sources/cor1.5.1.0.tsv
 java Convert.java wikidata $out/de/words.txt sources/latest-lexemes.json.gz Q188
+java Convert.java kotus $out/fi/words.txt sources/nykysuomensanalista2024.txt
 java Convert.java wordlist $out/nl/words.txt sources/wordlist.txt
 java Convert.java saldo $out/sv/words.txt sources/saldom.xml
 java Convert.java ordbank $out/nb/words.txt \
@@ -103,7 +106,7 @@ from the engine's own dependencies, so name them from the build:
 ./mvnw -q dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
 cp=$(cat target/classpath.txt)
 
-for l in da de is nb nl nn sv; do
+for l in da de fi is nb nl nn sv; do
     java -Xmx8g -cp "$cp" tools/locale-data/Convert.java \
         fst-words $out/$l/words.fst $out/$l/words.txt.gz
 done

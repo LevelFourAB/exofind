@@ -38,6 +38,7 @@ import com.ibm.icu.text.Normalizer2;
  * <pre>
  * java Convert.java tex        patterns.txt in.tex [more.tex ...]
  * java Convert.java cor        words.txt cor.tsv
+ * java Convert.java kotus      words.txt sanalista.txt
  * java Convert.java ordbank    words.txt lemma.txt fullforms.txt
  * java Convert.java saldo      words.txt saldom.xml
  * java Convert.java wikidata   words.txt lexemes.json.gz language-item
@@ -71,6 +72,7 @@ public class Convert {
 		switch(args[0]) {
 			case "tex" -> tex(args);
 			case "cor" -> cor(args);
+			case "kotus" -> kotus(args);
 			case "ordbank" -> ordbank(args);
 			case "saldo" -> saldo(args);
 			case "wikidata" -> wikidata(args);
@@ -171,6 +173,46 @@ public class Convert {
 					// Danish compounds with the verb stem: løbe -> løbesko or løb
 					if(lemma.endsWith("e")) {
 						add(words, lemma.substring(0, lemma.length() - 1));
+					}
+				}
+			}
+		}
+
+		write(words, args[1]);
+	}
+
+	/**
+	 * Kotus nykysuomen sanalista: tab separated with a header line, the
+	 * headword in the first column and the word class in the third -
+	 * {@code substantiivi}, {@code adjektiivi}, {@code verbi}, and a word
+	 * belonging to two classes naming both, comma separated.
+	 *
+	 * Only the headword is kept. Finnish joins a compound at a nominative
+	 * (kirja - kirjakauppa) or at a genitive (maa - maanjäristys), and the
+	 * genitive singular of a vowel stem is the nominative plus {@code n},
+	 * which the decompounder's linking letter already shaves off. A genitive
+	 * that changes the stem - kaupunki as kaupungin, kauppa as kaupan - is
+	 * not generated: consonant gradation is a change the Finnish stemmer does
+	 * not undo, so a part cut out in the weak grade would be indexed under a
+	 * stem no search for the word reaches.
+	 */
+	private static void kotus(String[] args) throws IOException {
+		var words = new TreeSet<String>();
+
+		try(var reader = Files.newBufferedReader(Path.of(args[2]), StandardCharsets.UTF_8)) {
+			String line;
+			while((line = reader.readLine()) != null) {
+				var columns = line.split("\t");
+				if(columns.length < 3) {
+					continue;
+				}
+
+				for(var wordClass : columns[2].split(",")) {
+					switch(wordClass.trim()) {
+						case "substantiivi", "adjektiivi", "verbi" -> add(words, columns[0]);
+						default -> {
+							// Not a class compounds are built from
+						}
 					}
 				}
 			}

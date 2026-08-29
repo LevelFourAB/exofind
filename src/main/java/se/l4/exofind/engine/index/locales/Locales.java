@@ -263,7 +263,8 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("fi")
 			.withStopWords(FinnishAnalyzer.getDefaultStopSet())
-			.withStemmer(stream -> new SnowballFilter(stream, new FinnishStemmer())));
+			.withStemmer(stream -> new SnowballFilter(stream, new FinnishStemmer()))
+			.withDecompounder(Decompounder.forData("fi")));
 
 		register(locales, StandardLocaleSupport.of("fr")
 			.withStopWords(FrenchAnalyzer.getDefaultStopSet())

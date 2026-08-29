@@ -47,7 +47,7 @@ public class DecompounderTest {
 
 	@Test
 	public void testShippedLocalesHaveData() {
-		for(var tag : List.of("da", "de", "is", "nl", "sv", "no", "nb", "nn")) {
+		for(var tag : List.of("da", "de", "fi", "is", "nl", "sv", "no", "nb", "nn")) {
 			assertThat(
 				tag + " should decompound",
 				Locales.get(tag).orElseThrow().isDecompoundingSupported(),
@@ -69,6 +69,24 @@ public class DecompounderTest {
 		assertThat(
 			parts("de", "winterjacke"),
 			hasItems("winterjacke", "winter", "jacke")
+		);
+	}
+
+	/**
+	 * Finnish joins a compound at a nominative or at a genitive, and the
+	 * genitive of a vowel stem is the nominative plus an {@code n} - maa
+	 * enters maanjäristys as maan. The word list holds nominatives, so the
+	 * genitive reaches it only once the linking letter is shaved off.
+	 */
+	@Test
+	public void testFinnish() throws IOException {
+		assertThat(
+			parts("fi", "kirjakauppa"),
+			hasItems("kirjakauppa", "kirja", "kauppa")
+		);
+		assertThat(
+			parts("fi", "maanjäristys"),
+			hasItems("maanjäristys", "maa", "järistys")
 		);
 	}
 

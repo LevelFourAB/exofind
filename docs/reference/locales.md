@@ -30,7 +30,7 @@ The following table lists the supported language tags and their analysis capabil
 | `et` | Estonian | yes | yes | | |
 | `eu` | Basque | yes | yes | | |
 | `fa` | Persian | yes | yes | | |
-| `fi` | Finnish | yes | yes | | |
+| `fi` | Finnish | yes | yes | | yes |
 | `fr` | French | yes | yes | | |
 | `ga` | Irish | yes | yes | | |
 | `gl` | Galician | yes | yes | | |

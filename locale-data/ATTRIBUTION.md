@@ -17,8 +17,8 @@ built from (nouns, adjectives, verbs and their compounding stems), and the
 Icelandic lookup and stopword list are the source's own form-to-lemma pairs
 and closed word classes.
 
-Sources were retrieved on 2026-08-16, except the Icelandic ones, retrieved
-on 2026-08-29.
+Sources were retrieved on 2026-08-16, except the Icelandic and Finnish ones,
+retrieved on 2026-08-29.
 
 The Icelandic data is share-alike, unlike everything else here. It is
 distributed as data files rather than inside the engine's jar, and adapting
@@ -60,6 +60,22 @@ CC0 1.0.
 
 - <https://dumps.wikimedia.org/wikidatawiki/entities/latest-lexemes.json.gz>
 - SHA-256 `2933e168ab15bb86bf6db6787d5de18c22b780dbcfd141fb50051509ff6ea802`
+
+## fi - Finnish
+
+**Grammar**: Finnish hyphenation patterns from hyph-utf8 (`hyph-fi.tex`,
+version 2.2, 1989), Copyright (C) 1986, 1988, 1989 Kauko Saarinen,
+Computing Centre, University of Jyväskylä. License: "Patterns may be freely
+distributed."
+
+- <https://raw.githubusercontent.com/hyphenation/tex-hyphen/master/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-fi.tex>
+- SHA-256 `cf68be5eb003d299f85f2b7185f31d8ff5799c19dfad3f0300eaf9843e9cc8d3`
+
+**Words**: Nykysuomen sanalista 2024, published by Kotimaisten kielten
+keskus (Kotus) under CC BY 4.0.
+
+- <https://kaino.kotus.fi/lataa/nykysuomensanalista2024.txt>
+- SHA-256 `bfa3d6a630fdff100d7765ee057f55f9b5b0c25045dbdfa809d3e4d1b4473cb3`
 
 ## is - Icelandic
 
