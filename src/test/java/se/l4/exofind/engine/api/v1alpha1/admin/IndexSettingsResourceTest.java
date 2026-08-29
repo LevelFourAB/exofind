@@ -147,7 +147,7 @@ public class IndexSettingsResourceTest {
 		fields.put(
 			"id",
 			new StringFieldDefinition(
-				true, null, null, null, null, null, null, null, null, null, null, null
+				null, true, null, null, null, null, null, null, null, null, null, null, null
 			)
 		);
 		if(withSales) {

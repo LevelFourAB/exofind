@@ -1,8 +1,9 @@
 # Field types
 
 Every field in an [index definition](admin-api.md) has a `type` that defines
-what data it can hold and which configuration options it supports. Fields are
-structured as a tagged union:
+what data it can hold and which configuration options it supports. A field can
+also specify a [`role`](#field-roles) to apply a preset combination of usages.
+Fields are structured as a tagged union:
 
 ```json
 {
@@ -30,6 +31,55 @@ The following properties apply to all field types:
 | `filter` | object | None | Enables filtering search results by exact field value. |
 | `sort` | object | None | Enables sorting search results by field value. Sub-properties: `collation` (`"locale"` by default, or `"binary"` for byte order; strings only) and `missing` (`"last"` by default, or `"first"` to place documents without values first in ascending order). |
 | `facet` | object | None | Enables value count aggregations. On numeric and timestamp fields, enables [range buckets](search-api.md#range-buckets). See [Facets](search-api.md#facets). |
+
+## Field roles
+
+A field can specify a `role` alongside its `type`. A role defines a preset combination of usages for a common kind of field.
+
+Field usages are opt-in, so a field without configured usages cannot be filtered, sorted, counted, or searched. A role turns on the combination of usages that serves its scenario.
+
+The engine expands a role into explicit field properties before storing the index definition. When you read the definition back, the engine returns the individual usages rather than the role name. Modifying a role's meaning does not change an index that already exists.
+
+Any property set beside a role is kept exactly as given. For example, `{"role": "title", "matching": {"weight": 8}}` takes the weight from the caller and the rest of `matching` from the role.
+
+Roles compose with `locales`. A role defines what a field is for, not how its text is analyzed.
+
+Only `string`, `timestamp`, and `geo_point` fields accept `role`. Setting a role on any other type is rejected as an unknown property (HTTP 400). There is no role for `vector` fields because bare vector fields are already searchable with the `knn` clause and use `cosine` similarity by default.
+
+The following table lists the available roles:
+
+| Role | Type | What it turns on |
+|---|---|---|
+| `id` | `string` | `primaryKey: true`, `required: true`, `stored: true`, `filter: {}` |
+| `title` | `string` | `stored: true`, `sort: {}`, `autocomplete: {}`, and `matching` with `weight: 3`, `exact: {}`, `typoTolerance: {}`, `highlight: {}` and `lengthNormalization: "strong"` |
+| `description` | `string` | `stored: true`, and `matching` with `highlight: {}`, `typoTolerance: {}` and `lengthNormalization: "none"` |
+| `tag` | `string` | `filter: {}`, `facet: {}`, and `matching` with `analyzer: {"preset": "preserve_terms"}` |
+| `path` | `string` | `filter: {}`, `facet: {}`, `hierarchy: {}` |
+| `code` | `string` | `stored: true`, `filter: {}`, `autocomplete: {}`, and `matching` with `analyzer: {"preset": "preserve_terms"}` and `lengthNormalization: "none"` |
+| `timestamp` | `timestamp` | `filter: {}`, `sort: {}`, `facet: {}` |
+| `geo` | `geo_point` | `filter: {}`, `sort: {}` |
+
+Notes on specific roles:
+
+- `title` and `description`: These roles name no analyzer, so the engine builds one from the usage and the locale of the value.
+- `tag`: Searches match the label directly. Words are kept whole rather than stemmed.
+- `code`: Designed for human-readable identifiers such as a SKU, part number, order number, or slug. Its `matching` usage keeps every word whole rather than stemming it. Its `autocomplete` configuration names no analyzer so that the engine-built autocomplete chain adds prefix matching. The `code` role does not enable typo tolerance.
+- `multiple`: No role sets `multiple`. A field holding several values must set `multiple: true` explicitly.
+
+### Roles inside object fields
+
+An `object` field does not support `stored` or `highlight`, and flattened lists do not support `sort`. A role turns on only what its enclosing object context accepts:
+
+- Inside any `object` field, a role does not set `stored` and does not set `highlight` on `matching`.
+- Inside a list with `multiple: true` and `mode: "flattened"`, a role does not set `sort`. Single objects and `nested` lists retain sorting.
+- Setting `role: "id"` inside an object field is rejected because an object field cannot define a primary key.
+
+### Errors
+
+| Error code | Condition |
+|---|---|
+| `index:field:role:not_valid_for_type` | The field names a role that its type cannot answer for, such as `role: "title"` on a `timestamp` field. |
+| `index:field:role:not_valid_in_object` | A field inside an object names a role valid only on a field of the index itself, such as `role: "id"`. |
 
 ## `string`
 

@@ -147,16 +147,18 @@ public class GenerationRolloutTest {
 			Map.of(
 				"id",
 				new StringFieldDefinition(
-					true, null, null, null, null, null, null, null, null, null, null, null
+					null, true, null, null, null, null, null, null, null, null, null, null,
+					null
 				),
 				"title",
 				new StringFieldDefinition(
-					null, null, null, true, null, null, null, null, null, null, null, null
+					null, null, null, null, true, null, null, null, null, null, null, null,
+					null
 				),
 				"brand",
 				new StringFieldDefinition(
-					null, null, null, true, null, brandFilter, null, null, null, null, null,
-					null
+					null, null, null, null, true, null, brandFilter, null, null, null, null,
+					null, null
 				)
 			),
 			null,

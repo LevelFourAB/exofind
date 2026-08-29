@@ -26,6 +26,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 	by nearness rather than by value: `filter` enables the `distance` matcher, \
 	and `sort` enables ordering by distance from an origin, nearest first.""")
 public record GeoPointFieldDefinition(
+	/**
+	 * What the field is for, expanded into the usages that serve it before the
+	 * definition is stored. Accepts {@code geo}.
+	 */
+	@Schema(description = FieldDefinition.ROLE_DESCRIPTION)
+	Role role,
+
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
 

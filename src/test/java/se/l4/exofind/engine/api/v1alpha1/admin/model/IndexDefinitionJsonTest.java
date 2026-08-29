@@ -461,7 +461,7 @@ public class IndexDefinitionJsonTest {
 			Map.of(
 				"title",
 				new StringFieldDefinition(
-					null, null, null, null, null,
+					null, null, null, null, null, null,
 					null,
 					new FieldDefinition.Sort(
 						FieldDefinition.Sort.Collation.BINARY,
@@ -594,6 +594,83 @@ public class IndexDefinitionJsonTest {
 		);
 	}
 
+	/**
+	 * The name of a role is written by callers, so the spelling is part of the
+	 * contract rather than a detail of the enum.
+	 */
+	@Test
+	public void testReadRoles() throws Exception {
+		var json = """
+			{
+				"fields": {
+					"id": { "type": "string", "role": "id" },
+					"name": { "type": "string", "role": "title" },
+					"body": { "type": "string", "role": "description" },
+					"brand": { "type": "string", "role": "tag" },
+					"category": { "type": "string", "role": "path" },
+					"sku": { "type": "string", "role": "code" },
+					"published": { "type": "timestamp", "role": "timestamp" },
+					"location": { "type": "geo_point", "role": "geo" }
+				}
+			}
+			""";
+
+		var fields = mapper.readValue(json, IndexDefinition.class).fields();
+
+		assertThat(
+			((StringFieldDefinition) fields.get("id")).role(),
+			is(FieldDefinition.Role.ID)
+		);
+		assertThat(
+			((StringFieldDefinition) fields.get("name")).role(),
+			is(FieldDefinition.Role.TITLE)
+		);
+		assertThat(
+			((StringFieldDefinition) fields.get("body")).role(),
+			is(FieldDefinition.Role.DESCRIPTION)
+		);
+		assertThat(
+			((StringFieldDefinition) fields.get("brand")).role(),
+			is(FieldDefinition.Role.TAG)
+		);
+		assertThat(
+			((StringFieldDefinition) fields.get("category")).role(),
+			is(FieldDefinition.Role.PATH)
+		);
+		assertThat(
+			((StringFieldDefinition) fields.get("sku")).role(),
+			is(FieldDefinition.Role.CODE)
+		);
+		assertThat(
+			((TimestampFieldDefinition) fields.get("published")).role(),
+			is(FieldDefinition.Role.TIMESTAMP)
+		);
+		assertThat(
+			((GeoPointFieldDefinition) fields.get("location")).role(),
+			is(FieldDefinition.Role.GEO)
+		);
+	}
+
+	/**
+	 * No role means anything for a boolean, so the property is not there to
+	 * set - the caller is told rather than left with a role that did nothing.
+	 */
+	@Test
+	public void testRoleOnATypeThatHasNoneIsRejected() {
+		var json = """
+			{
+				"fields": {
+					"published": { "type": "boolean", "role": "tag" }
+				}
+			}
+			""";
+
+		Assertions.assertThrows(
+			UnrecognizedPropertyException.class,
+			() -> mapper.readValue(json, IndexDefinition.class)
+		);
+	}
+
 	@Test
 	public void testUnknownPropertyIsRejected() {
 		var json = """
@@ -618,7 +695,7 @@ public class IndexDefinitionJsonTest {
 			Map.of(
 				"name",
 				new StringFieldDefinition(
-					null, null, null, true, null,
+					null, null, null, null, true, null,
 					null, null, null,
 					null,
 					new StringFieldDefinition.TextUsage(

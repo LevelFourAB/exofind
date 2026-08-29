@@ -27,6 +27,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 	defaults. See \
 	[`string`](https://levelfourab.github.io/exofind/reference/field-types/#string).""")
 public record StringFieldDefinition(
+	/**
+	 * What the field is for, expanded into the usages that serve it before the
+	 * definition is stored. Accepts {@code id}, {@code title},
+	 * {@code description}, {@code tag}, {@code path} and {@code code}.
+	 */
+	@Schema(description = FieldDefinition.ROLE_DESCRIPTION)
+	Role role,
+
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
 

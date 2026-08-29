@@ -130,7 +130,7 @@ public class IndexResourceTest {
 			Map.of(
 				"id",
 				new StringFieldDefinition(
-					true, null, null, null, null,
+					null, true, null, null, null, null,
 					new FieldDefinition.Filter(),
 					null,
 					null,
@@ -299,7 +299,7 @@ public class IndexResourceTest {
 			Map.of(
 				"id",
 				new StringFieldDefinition(
-					true, null, true, null, null,
+					null, true, null, true, null, null,
 					null, null, null, null, null, null,
 					null
 				)
@@ -448,7 +448,7 @@ public class IndexResourceTest {
 			Map.of(
 				"id",
 				new StringFieldDefinition(
-					true, null, null, null, null,
+					null, true, null, null, null, null,
 					new FieldDefinition.Filter(),
 					null,
 					null,

@@ -12,7 +12,9 @@ Before you define an index, ensure you have:
 
 1. Prepare your index definition in JSON. Keep the definition in version control so you can apply it whenever it changes.
 
-2. Send the definition to the admin API with a `PUT` request:
+2. Send the definition to the admin API with a `PUT` request.
+
+   Start by defining fields using roles. A role names what a field is for and expands into the usages that serve it. For more information, see [Field roles](../reference/field-types.md#field-roles).
 
    ```http
    PUT /v1alpha1/admin/indexes/products
@@ -25,30 +27,27 @@ Before you define an index, ensure you have:
      "fields": {
        "id": {
          "type": "string",
-         "primaryKey": true,
-         "required": true
+         "role": "id"
        },
        "name": {
          "type": "string",
-         "sort": {},
-         "matching": {
-           "highlight": {},
-           "weight": 2,
-           "typoTolerance": {}
-         },
-         "autocomplete": {}
+         "role": "title"
        },
        "description": {
          "type": "string",
-         "matching": {
-           "analyzer": { "preset": "full_text" },
-           "highlight": {}
-         }
+         "role": "description"
+       },
+       "sku": {
+         "type": "string",
+         "role": "code"
        },
        "category": {
          "type": "string",
-         "filter": {},
-         "facet": {}
+         "role": "path"
+       },
+       "publishedAt": {
+         "type": "timestamp",
+         "role": "timestamp"
        },
        "published": {
          "type": "boolean",
@@ -102,6 +101,18 @@ The following capabilities behave consistently across field types:
 
 String fields also support capabilities that depend on text analysis: `matching` searches with a query, `autocomplete` matches prefix text as a user types, and `hierarchy` interprets values as tree paths (such as `Men/Shoes/Running`) so facets count [one level at a time](../reference/search-api.md#counting-down-a-tree). For a complete list of options for every type, see [Field types](../reference/field-types.md).
 
+#### Field roles
+
+A role is expanded before storage, so reading the definition back shows the usages rather than the role. Anything set beside a role is kept, taking the specified property from the definition and the remaining properties from the role:
+
+```json
+"name": {
+  "type": "string",
+  "role": "title",
+  "matching": { "weight": 8 }
+}
+```
+
 ### Enable more than one value
 
 A field holds a single value unless you set `"multiple": true`. If a document provides multiple values for a single-valued field, the server rejects the document. A locale-specific field holds one value per locale by default; setting `multiple` allows multiple values within the same locale.
@@ -139,6 +150,19 @@ When you configure `sort`, `facet`, or `matching` on nested fields, the matching
 ### Cover many names with one field
 
 A field name can contain a wildcard `*` to define multiple fields at once, such as `metadata.*`. The `*` matches exactly one name segment. When patterns overlap, the pattern with the longer literal prefix takes precedence. For full matching rules, see [Field types](../reference/field-types.md#wildcard-fields). Every distinct name a pattern accepts becomes a field of its own in the index, and `facet` and `sort` keep per-field structures on top of that, so the set of names must stay bounded and owned by the catalogue rather than by whatever document arrives. To hold attributes that are not named in advance, see [Model dynamic attributes](model-dynamic-attributes.md).
+
+A wildcard field is also a starting point while the shape of a catalogue is still settling. A single `*` field of type `string` with `matching` set makes every string a document carries searchable, so the index answers queries before its fields are named:
+
+```json
+{
+  "fields": {
+    "id": { "type": "string", "role": "id" },
+    "*":  { "type": "string", "matching": {} }
+  }
+}
+```
+
+Treat this as a starting point rather than a destination. Every distinct name still becomes a field of its own, so keep it only while the names come from a catalogue you control, and replace it with named fields as the shape settles. To keep attributes that are never named in advance, use the typed namespaces in [Model dynamic attributes](model-dynamic-attributes.md) instead.
 
 ### Decide how much of a document is kept
 

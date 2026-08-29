@@ -78,6 +78,13 @@ public sealed interface FieldDefinition
 	 * way. An annotation takes a constant expression, and a text block is one,
 	 * so each record refers to these rather than repeating the text.
 	 */
+	String ROLE_DESCRIPTION = """
+		What the field is for, as a name that stands for a combination of \
+		usages. The combination is expanded into the definition before it is \
+		stored, and anything set beside the role is kept as given. Which roles \
+		a type accepts is listed under [Field \
+		roles](https://levelfourab.github.io/exofind/reference/field-types/#field-roles).""";
+
 	String PRIMARY_KEY_DESCRIPTION = """
 		Marks the field as the unique document identifier. Documents with \
 		matching primary keys overwrite existing documents, and an index can \
@@ -153,6 +160,101 @@ public sealed interface FieldDefinition
 	 * Enables counting how many documents share each value of this field.
 	 */
 	Facet facet();
+
+	/**
+	 * What a field is for, standing for the combination of usages that serves
+	 * it.
+	 *
+	 * <p>A role is expanded into the field before the definition is stored, so
+	 * reading the definition back shows the usages rather than the role, and
+	 * what a role stands for can not shift under an index that already exists.
+	 * Anything given beside the role is kept as it was given, whether it is
+	 * part of what the role turns on or not.
+	 *
+	 * <p>Each role belongs to the field types that can answer for it, and
+	 * naming one on another type is refused with
+	 * {@code index:field:role:not_valid_for_type}. Inside an object field a
+	 * role turns on only what an object field accepts, so it leaves
+	 * {@code stored} and {@code highlight} alone, and leaves {@code sort} alone
+	 * where the object is a flattened list.
+	 */
+	@Schema(description = """
+		What a field is for, standing for the combination of usages that serves \
+		it. The combination is expanded before the definition is stored, so \
+		reading it back shows the usages rather than the role. Each role \
+		belongs to the field types that can answer for it.""")
+	enum Role {
+		/**
+		 * The unique key of the document, on a {@code string} field. Turns on
+		 * {@code primaryKey}, {@code required}, {@code stored} and
+		 * {@code filter}. Refused inside an object field, which can hold no
+		 * primary key.
+		 */
+		@JsonProperty("id")
+		ID,
+
+		/**
+		 * The name a reader identifies the document by, on a {@code string}
+		 * field. Turns on {@code stored}, {@code sort}, {@code autocomplete}
+		 * and a {@code matching} raised to three times the weight of an
+		 * ordinary field, ranking a whole-value match above a partial one,
+		 * tolerating typing mistakes, highlighting, and counting length fully.
+		 */
+		@JsonProperty("title")
+		TITLE,
+
+		/**
+		 * Prose about the document, on a {@code string} field. Turns on
+		 * {@code stored} and a {@code matching} that highlights, tolerates
+		 * typing mistakes and does not count length against a longer text.
+		 */
+		@JsonProperty("description")
+		DESCRIPTION,
+
+		/**
+		 * A label the documents are narrowed and counted by, on a
+		 * {@code string} field. Turns on {@code filter}, {@code facet} and a
+		 * {@code matching} that keeps each word whole, so a search for the
+		 * label finds the documents carrying it.
+		 */
+		@JsonProperty("tag")
+		TAG,
+
+		/**
+		 * A label that is a path through a tree, such as
+		 * {@code Men/Shoes/Running}, on a {@code string} field. Turns on
+		 * {@code filter}, {@code facet} and {@code hierarchy} with the default
+		 * separator.
+		 */
+		@JsonProperty("path")
+		PATH,
+
+		/**
+		 * An identifier a person reads and types - a SKU, an order number, a
+		 * slug - on a {@code string} field. Turns on {@code stored},
+		 * {@code filter}, and {@code matching} and {@code autocomplete} that
+		 * keep each word whole rather than stemming it, and that do not count
+		 * length. Typo tolerance is left off, because an identifier one
+		 * character away is a different one.
+		 */
+		@JsonProperty("code")
+		CODE,
+
+		/**
+		 * A point in time the documents are narrowed, ordered and counted by,
+		 * on a {@code timestamp} field. Turns on {@code filter}, {@code sort}
+		 * and {@code facet}.
+		 */
+		@JsonProperty("timestamp")
+		TIMESTAMP,
+
+		/**
+		 * A place the documents are narrowed and ordered by distance from, on a
+		 * {@code geo_point} field. Turns on {@code filter} and {@code sort}.
+		 */
+		@JsonProperty("geo")
+		GEO
+	}
 
 	/**
 	 * How values of a field being locale specific behaves.

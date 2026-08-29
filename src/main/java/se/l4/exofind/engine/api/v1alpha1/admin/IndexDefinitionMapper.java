@@ -54,11 +54,13 @@ import se.l4.exofind.engine.index.schema.VectorFieldTypeDef;
  * meet, and the only place that has to change when one of them moves.
  *
  * Values that were not set stay unset in both directions, so the engine
- * decides what the defaults are rather than the API baking them in. The one
- * deliberate exception is analyzer presets: a preset is expanded to the chain
- * it names on the way in, so that what a preset means can never shift under an
- * index that already exists. Reading a definition back therefore shows the
- * chain rather than the preset.
+ * decides what the defaults are rather than the API baking them in. The
+ * deliberate exceptions are the two shorthands, which are expanded on the way
+ * in so that what they mean can never shift under an index that already
+ * exists: an analyzer preset becomes the chain it names, and a field role
+ * becomes the usages it stands for - see {@link FieldRoles}. Reading a
+ * definition back therefore shows the chain and the usages rather than the
+ * names.
  *
  * {@link #toStored(IndexDefinition)} builds a whole stored definition from what
  * the API model holds, so anything this version can not describe would be
@@ -198,6 +200,8 @@ public class IndexDefinitionMapper {
 	 * @return
 	 */
 	public static IndexDef toStored(IndexDefinition definition) {
+		definition = FieldRoles.expand(definition);
+
 		var builder = IndexDef.newBuilder();
 
 		if(definition.source() != null) {
@@ -1142,6 +1146,13 @@ public class IndexDefinitionMapper {
 				}
 
 				yield new StringFieldDefinition(
+					/*
+					 * A role is expanded before it is stored, so nothing read
+					 * back ever carries one. Answering with a role would make
+					 * the round trip in checkRepresentable depend on what the
+					 * role expands to in this version.
+					 */
+					null,
 					primaryKey,
 					required,
 					multiple,
@@ -1167,6 +1178,7 @@ public class IndexDefinitionMapper {
 				facet
 			);
 			case TIMESTAMP -> new TimestampFieldDefinition(
+				null,
 				primaryKey,
 				required,
 				multiple,
@@ -1177,6 +1189,7 @@ public class IndexDefinitionMapper {
 				facet
 			);
 			case GEO_POINT -> new GeoPointFieldDefinition(
+				null,
 				primaryKey,
 				required,
 				multiple,

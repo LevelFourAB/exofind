@@ -44,6 +44,7 @@ public class IndexDefinitionMapperTest {
 		StringFieldDefinition.TextUsage autocomplete
 	) {
 		return new StringFieldDefinition(
+			null,
 			null, null, null, null, null,
 			null, null, null,
 			keyword,
@@ -93,6 +94,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testStringField() {
 		var field = new StringFieldDefinition(
+			null,
 			true,
 			null,
 			null,
@@ -141,6 +143,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testHierarchyRoundTrips() {
 		var field = new StringFieldDefinition(
+			null,
 			null, null, null, null, null,
 			new FieldDefinition.Filter(),
 			null,
@@ -161,7 +164,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testHierarchyWithoutASeparatorRoundTrips() {
 		var field = new StringFieldDefinition(
-			null, null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null, null, null,
 			new StringFieldDefinition.Hierarchy(null)
 		);
 
@@ -177,6 +180,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testLocalesRoundTrip() {
 		var field = new StringFieldDefinition(
+			null,
 			null, null, null, null,
 			new FieldDefinition.Locales("en", null, null),
 			null, null, null,
@@ -197,6 +201,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testDeclaredLocalesRoundTrip() {
 		var field = new StringFieldDefinition(
+			null,
 			null, null, null, null,
 			new FieldDefinition.Locales("en", List.of("sv", "de"), null),
 			null, null, null,
@@ -262,6 +267,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testFieldOptingOutOfLocaleFallbackRoundTrips() {
 		var field = new StringFieldDefinition(
+			null,
 			null, null, null, null,
 			new FieldDefinition.Locales(
 				"en",
@@ -287,6 +293,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testSortAndFacetRoundTrip() {
 		var field = new StringFieldDefinition(
+			null,
 			null,
 			null,
 			null,
@@ -399,6 +406,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testTimestampFieldRoundTrip() {
 		var field = new TimestampFieldDefinition(
+			null,
 			null, null, null, true, null,
 			new FieldDefinition.Filter(),
 			new FieldDefinition.Sort(null, null),
@@ -417,6 +425,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testGeoPointFieldRoundTrip() {
 		var field = new GeoPointFieldDefinition(
+			null,
 			null, null, null, null, null,
 			new FieldDefinition.Filter(),
 			new FieldDefinition.Sort(null, null),
@@ -440,7 +449,7 @@ public class IndexDefinitionMapperTest {
 			ObjectFieldDefinition.Mode.NESTED,
 			Map.of(
 				"color", new StringFieldDefinition(
-					null, true, null, null, null,
+					null, null, true, null, null, null,
 					new FieldDefinition.Filter(), null, null,
 					null, null, null,
 					null
@@ -480,7 +489,7 @@ public class IndexDefinitionMapperTest {
 			ObjectFieldDefinition.Mode.FLATTENED,
 			Map.of(
 				"color", new StringFieldDefinition(
-					null, null, null, null, null,
+					null, null, null, null, null, null,
 					new FieldDefinition.Filter(), null, null,
 					null, null, null,
 					null
@@ -1390,6 +1399,7 @@ public class IndexDefinitionMapperTest {
 					null,
 					null,
 					null,
+					null,
 					true,
 					new FieldDefinition.Locales(
 						"en",
@@ -1417,6 +1427,7 @@ public class IndexDefinitionMapperTest {
 				),
 				"published",
 				new TimestampFieldDefinition(
+					null,
 					null, null, null, null, null,
 					new FieldDefinition.Filter(),
 					null,

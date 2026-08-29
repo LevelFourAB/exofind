@@ -30,6 +30,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 	and sorting; results return the string as it was indexed. A value without \
 	an offset is rejected, as it names no instant at all.""")
 public record TimestampFieldDefinition(
+	/**
+	 * What the field is for, expanded into the usages that serve it before the
+	 * definition is stored. Accepts {@code timestamp}.
+	 */
+	@Schema(description = FieldDefinition.ROLE_DESCRIPTION)
+	Role role,
+
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
 
