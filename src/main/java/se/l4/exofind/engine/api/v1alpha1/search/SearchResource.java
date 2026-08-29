@@ -30,6 +30,7 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.settings.SearchSettings;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
@@ -79,12 +80,14 @@ public class SearchResource {
 
 	private final Indexes indexes;
 	private final SearchSettings searchSettings;
+	private final RequestMetrics metrics;
 	private final int maxPageDepth;
 	private final int maxRescoreWindow;
 
 	public SearchResource(
 		Indexes indexes,
 		SearchSettings searchSettings,
+		RequestMetrics metrics,
 		@ConfigProperty(name = "exofind.search.max-page-depth", defaultValue = "10000")
 		int maxPageDepth,
 		@ConfigProperty(name = "exofind.search.max-rescore-window", defaultValue = "1000")
@@ -92,6 +95,7 @@ public class SearchResource {
 	) {
 		this.indexes = indexes;
 		this.searchSettings = searchSettings;
+		this.metrics = metrics;
 		this.maxPageDepth = maxPageDepth;
 		this.maxRescoreWindow = maxRescoreWindow;
 	}
@@ -195,7 +199,20 @@ public class SearchResource {
 		try {
 			result = index.search(mapped.request(), settings);
 		} catch(IOException e) {
+			metrics.recordSearch(name, System.nanoTime() - started, false);
 			throw new IndexException(IO_ERROR, e, "index", name);
+		} catch(RuntimeException e) {
+			metrics.recordSearch(name, System.nanoTime() - started, false);
+			throw e;
+		}
+
+		var took = System.nanoTime() - started;
+		metrics.recordSearch(name, took, true);
+
+		if(result.relaxed() != null) {
+			for(var dropped : result.relaxed().dropped()) {
+				metrics.recordRelaxation(dropped.reason().name());
+			}
 		}
 
 		/*
@@ -203,7 +220,7 @@ public class SearchResource {
 		 * the number reads as a time and not as the last digits of how a
 		 * double divides.
 		 */
-		var tookMs = Math.round((System.nanoTime() - started) / 1_000d) / 1_000d;
+		var tookMs = Math.round(took / 1_000d) / 1_000d;
 		return toResponse(mapped, result, tookMs);
 	}
 

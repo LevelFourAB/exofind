@@ -22,13 +22,20 @@
 		<quarkus.platform.version>3.38.2</quarkus.platform.version>
 		<skipITs>true</skipITs>
 		<surefire-plugin.version>3.5.0</surefire-plugin.version>
-		<protobuf-java.version>4.29.3</protobuf-java.version>
+		<!--
+			The OTLP registry carries opentelemetry-proto, whose generated code
+			refuses a protobuf runtime older than 4.34.0. protoc follows this
+			property, so the engine's own generated code is built by the same
+			version that runs it.
+		-->
+		<protobuf-java.version>4.34.2</protobuf-java.version>
 		<lucene.version>10.5.1</lucene.version>
 		<protobuf-maven-plugin.version>4.0.3</protobuf-maven-plugin.version>
 		<mockito.version>5.23.0</mockito.version>
 		<byte-buddy.version>1.18.11</byte-buddy.version>
 		<jmh.version>1.37</jmh.version>
 		<build-helper-plugin.version>3.6.0</build-helper-plugin.version>
+		<quarkus-micrometer-registry.version>3.7.0</quarkus-micrometer-registry.version>
 	</properties>
 
 	<dependencyManagement>
@@ -89,6 +96,21 @@
 		<dependency>
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-logging-json</artifactId>
+		</dependency>
+		<!--
+			Prometheus exposition and OTLP export are both present so that a
+			deployment picks its destination through configuration. Each registry
+			is off unless its own property turns it on, so carrying both costs a
+			node that uses neither nothing but the classpath.
+		-->
+		<dependency>
+			<groupId>io.quarkus</groupId>
+			<artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.quarkiverse.micrometer.registry</groupId>
+			<artifactId>quarkus-micrometer-registry-otlp</artifactId>
+			<version>${quarkus-micrometer-registry.version}</version>
 		</dependency>
 
 		<dependency>

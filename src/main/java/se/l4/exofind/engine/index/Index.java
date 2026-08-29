@@ -112,6 +112,7 @@ import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.index.state.SyncIncompatibleException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.query.AndQuery;
 import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.Facet;
@@ -416,6 +417,12 @@ public class Index {
 	private final IndexCommitManager commitManager;
 
 	/**
+	 * Where commits, pushes and pulls are reported. Never null - an index
+	 * outside a node gets {@link RequestMetrics#none()}.
+	 */
+	private final RequestMetrics metrics;
+
+	/**
 	 * Guards {@link #pendingSources}, {@link #mergeReader} and
 	 * {@link #mergeReaderStale}, which a partial update reads and every write
 	 * updates - all of them while only the read lock of the index is held.
@@ -493,6 +500,26 @@ public class Index {
 		CommitPolicy commitPolicy,
 		DocumentCache documentCache
 	) {
+		this(nodeState, name, localPath, sync, commitPolicy, documentCache, RequestMetrics.none());
+	}
+
+	/**
+	 * Open an index that reports what it does to a node's metrics.
+	 *
+	 * @param metrics
+	 *   told about commits, pushes and pulls. {@link RequestMetrics#none()}
+	 *   for an index opened outside a node
+	 */
+	public Index(
+		NodeState nodeState,
+		String name,
+		Path localPath,
+		StateSync sync,
+		CommitPolicy commitPolicy,
+		DocumentCache documentCache,
+		RequestMetrics metrics
+	) {
+		this.metrics = metrics;
 		this.nodeState = nodeState;
 		this.id = name;
 		this.indexName = IndexName.parse(name).index();
@@ -525,7 +552,7 @@ public class Index {
 		this.searcherManager =
 			new IndexSearcherManager(Duration.ofMinutes(5), maintenanceExecutor);
 		this.commitManager =
-			new IndexCommitManager(this, maintenanceExecutor, commitPolicy);
+			new IndexCommitManager(this, maintenanceExecutor, commitPolicy, metrics);
 
 		this.nestedParents = new QueryBitSetProducer(NestedDocuments.parentsQuery());
 	}
@@ -622,9 +649,11 @@ public class Index {
 		 * Perform the pull outside the lock so normal operations can continue
 		 * while synchronization is in progress.
 		 */
+		var started = System.nanoTime();
 		boolean hasChanges;
 		try {
 			hasChanges = this.sync.pull();
+			metrics.recordPull(System.nanoTime() - started, true);
 
 			if(startState == IndexState.NEEDS_PULL || readerWithoutCommit) {
 				// At start no changes may be pulled but an out of date index
@@ -632,6 +661,8 @@ public class Index {
 				hasChanges = true;
 			}
 		} catch(SyncIncompatibleException e) {
+			metrics.recordPull(System.nanoTime() - started, false);
+
 			/*
 			 * The refusal happened before anything was downloaded, so trying
 			 * again costs no more than an up to date index does and the index
@@ -661,6 +692,12 @@ public class Index {
 			}
 			return;
 		} catch(IOException e) {
+			if(e instanceof SyncConflictException) {
+				metrics.recordConflict("pull");
+			}
+
+			metrics.recordPull(System.nanoTime() - started, false);
+
 			logger.atError()
 				.addKeyValue("index", id)
 				.setCause(e)
@@ -917,6 +954,9 @@ public class Index {
 	}
 
 	private void sync() throws IOException {
+		var started = System.nanoTime();
+		var pushed = false;
+
 		syncLock.readLock().lock();
 		try {
 			if(state == IndexState.CLOSED) {
@@ -971,11 +1011,15 @@ public class Index {
 				}
 			}
 
+			pushed = true;
+
 			var listener = pushListener;
 			if(listener != null) {
 				sync.syncedVersion().ifPresent(listener::accept);
 			}
 		} catch(SyncConflictException e) {
+			metrics.recordConflict("push");
+
 			logger.atError()
 				.addKeyValue("index", id)
 				.log("Another node has changed the remote index; " + e.getMessage());
@@ -990,6 +1034,7 @@ public class Index {
 			throw e;
 		} finally {
 			syncLock.readLock().unlock();
+			metrics.recordPush(System.nanoTime() - started, pushed);
 		}
 	}
 
@@ -1057,6 +1102,28 @@ public class Index {
 		} finally {
 			syncLock.readLock().unlock();
 		}
+	}
+
+	/**
+	 * Get how many changed documents are waiting for a commit. Always zero on
+	 * a node that does not write the index.
+	 *
+	 * @return
+	 */
+	public long getPendingChanges() {
+		return commitManager.pendingChanges();
+	}
+
+	/**
+	 * Get how long the oldest change waiting for a commit has waited. This is
+	 * how far behind a search on another node can be, since nothing reaches a
+	 * reader before it is committed.
+	 *
+	 * @return
+	 *   {@link Duration#ZERO} when nothing is waiting
+	 */
+	public Duration getPendingAge() {
+		return commitManager.getPendingAge();
 	}
 
 	/**

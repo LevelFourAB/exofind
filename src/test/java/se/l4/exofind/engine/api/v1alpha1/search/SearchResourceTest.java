@@ -54,13 +54,23 @@ import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.storage.StorageMode;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
  * Tests for searching over the API - that a request maps into a search, that
  * results come back shaped for the wire and that paging moves through them.
  */
 public class SearchResourceTest {
+	/**
+	 * Metrics into a registry nothing reads, so a resource under test records
+	 * where it would in a node without any of these tests asserting on it.
+	 */
+	public static RequestMetrics metrics() {
+		return new RequestMetrics(new SimpleMeterRegistry(), false);
+	}
+
 	@TempDir
 	Path storageDirectory;
 
@@ -105,7 +115,7 @@ public class SearchResourceTest {
 			Duration.ofSeconds(10),
 			Duration.ofMinutes(10)
 		);
-		resource = new SearchResource(indexes, searchSettings, 10_000, 1_000);
+		resource = new SearchResource(indexes, searchSettings, metrics(),10_000, 1_000);
 	}
 
 	@AfterEach
@@ -1142,7 +1152,7 @@ public class SearchResourceTest {
 	public void testCursorsGoPastTheOffsetCap() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, searchSettings, 10, 1_000);
+		var shallow = new SearchResource(indexes, searchSettings, metrics(),10, 1_000);
 
 		var first = shallow.search(
 			"many",
@@ -1327,7 +1337,7 @@ public class SearchResourceTest {
 	public void testPagesPastTheCapAreNeverOffered() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, searchSettings, 10, 1_000);
+		var shallow = new SearchResource(indexes, searchSettings, metrics(),10, 1_000);
 
 		var response = shallow.search(
 			"many",

@@ -216,6 +216,27 @@ The following table lists search configuration variables:
 | `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | Maximum result depth allowed for offset-based pagination. Requests exceeding this depth are rejected with `search:page:too_deep`, and page numbers past the limit are not returned. Cursor-based pagination using `next` and `previous` is not capped. | `10000` |
 | `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | Maximum number of results a `rescore` block may score a second time. Requests asking for a larger window are rejected with `search:rescore:window_invalid`. Every result in the window is scored again on every request, so this caps what one search costs. | `1000` |
 
+## Metrics
+
+A node exposes Prometheus metrics on `/q/metrics` and can push them over OTLP.
+For every meter and its tags, see [Metrics](metrics.md). For wiring a
+deployment into a backend, see
+[Monitor a deployment](../how-to/monitor-a-deployment.md).
+
+The following table lists metrics configuration variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXOFIND_METRICS_INDEX_ENABLED` | Whether the per-index gauges are registered. Turning them off leaves the node-level meters and `exofind.index.unhealthy` in place, which is what a deployment holding hundreds of indexes does when it does not want a series per index. | `true` |
+| `EXOFIND_METRICS_INDEX_INTERVAL` | How often the per-index rows are rebuilt. Measuring what the local copies take walks every index directory, so this is also how often that happens. | `30s` |
+| `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM` | Whether `exofind.search` carries the index name. Turns one latency histogram into one per index. | `false` |
+| `EXOFIND_METRICS_HISTOGRAM_MODE` | What shape the timers publish: `slo` for around a dozen explicit buckets, `detailed` for Micrometer's full bucket set on a backend storing native histograms, or `none` for a count, total and maximum with no buckets. Every mode publishes buckets rather than quantiles, so a collector may sum them across labels. | `slo` |
+| `EXOFIND_METRICS_HTTP_MAX_URI_TAGS` | How many distinct `uri` values `http.server.requests` may take before the rest are reported as `UNKNOWN`. | `200` |
+| `QUARKUS_MICROMETER_EXPORT_OTLP_PUBLISH` | Whether the node pushes metrics over OTLP. Without an endpoint in `QUARKUS_MICROMETER_EXPORT_OTLP_URL` the registry would push to a collector on localhost, so pushing is something to ask for by name. | `false` |
+| `QUARKUS_MICROMETER_EXPORT_OTLP_URL` | Where metrics are pushed when publishing is on. | `http://localhost:4318/v1/metrics` |
+| `QUARKUS_MICROMETER_EXPORT_OTLP_STEP` | How often metrics are pushed. | `60s` |
+| `QUARKUS_MICROMETER_EXPORT_OTLP_HEADERS` | Headers sent with each push, as `key=value` pairs. This is where a hosted endpoint's credential goes. | None |
+
 ## Logging
 
 The node writes logs to standard output. For information on log line formats,

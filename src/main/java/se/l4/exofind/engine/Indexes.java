@@ -8,7 +8,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -30,6 +32,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
+import com.github.benmanes.caffeine.cache.stats.CacheStats;
 
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
@@ -48,8 +51,10 @@ import se.l4.exofind.engine.index.state.IndexUsageFile;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 /**
  * Indexes manages the access to instances of {@link Index}.
@@ -90,6 +95,12 @@ public class Indexes {
 	private final StateSyncProvider syncProvider;
 	private final IndexRegistry registry;
 	private final RegistryHints registryHints;
+
+	/**
+	 * Handed to every index opened here, so that commits, pushes and pulls are
+	 * reported wherever they happen.
+	 */
+	private final RequestMetrics metrics;
 
 	private final Path indexRoot;
 
@@ -222,11 +233,57 @@ public class Indexes {
 	 */
 	private final DocumentCache documentCache;
 
+	/**
+	 * Open indexes that report nothing, for a test that is not measuring.
+	 */
 	public Indexes(
 		NodeState nodeState,
 		StateSyncProvider syncProvider,
 		IndexRegistry registry,
 		RegistryHints registryHints,
+		Path storageDirectory,
+		OptionalInt maxOpen,
+		Duration refreshInterval,
+		Duration verifyInterval,
+		int refreshConcurrency,
+		Duration closeGracePeriod,
+		int commitMaxChanges,
+		Duration commitMaxInterval,
+		Optional<String> diskMaxSize,
+		Optional<String> documentCacheMaxSize,
+		Duration diskMinIdle,
+		Duration diskHalfLife,
+		Duration diskSweepInterval
+	) throws IOException {
+		this(
+			nodeState,
+			syncProvider,
+			registry,
+			registryHints,
+			RequestMetrics.none(),
+			storageDirectory,
+			maxOpen,
+			refreshInterval,
+			verifyInterval,
+			refreshConcurrency,
+			closeGracePeriod,
+			commitMaxChanges,
+			commitMaxInterval,
+			diskMaxSize,
+			documentCacheMaxSize,
+			diskMinIdle,
+			diskHalfLife,
+			diskSweepInterval
+		);
+	}
+
+	@Inject
+	public Indexes(
+		NodeState nodeState,
+		StateSyncProvider syncProvider,
+		IndexRegistry registry,
+		RegistryHints registryHints,
+		RequestMetrics metrics,
 		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory,
 		@ConfigProperty(name = "exofind.indexes.max-open") OptionalInt maxOpen,
 		@ConfigProperty(name = "exofind.indexes.refresh-interval", defaultValue = "30s") Duration refreshInterval,
@@ -245,6 +302,7 @@ public class Indexes {
 		this.syncProvider = syncProvider;
 		this.registry = registry;
 		this.registryHints = registryHints;
+		this.metrics = metrics;
 		this.verifyInterval = verifyInterval;
 		this.lastManifestChecks = new ConcurrentHashMap<>();
 		this.lifecycleLock = new ReentrantLock();
@@ -1073,7 +1131,8 @@ public class Indexes {
 				dataPath,
 				syncProvider.createSync(parsed, dataPath),
 				commitPolicy,
-				documentCache
+				documentCache,
+				metrics
 			);
 
 			/*
@@ -1230,6 +1289,62 @@ public class Indexes {
 	 */
 	public Duration getRefreshInterval() {
 		return refreshInterval;
+	}
+
+	/**
+	 * Get the generations open on this node, by the name each was opened
+	 * under.
+	 *
+	 * <p>A snapshot: an entry may be closed by the time it is read, and one
+	 * evicted while a caller holds the map is absent from the next call.
+	 * Opens nothing.
+	 *
+	 * @return
+	 */
+	public Map<String, Index> getOpen() {
+		return Map.copyOf(indexes.asMap());
+	}
+
+	/**
+	 * Get what each index directory takes on disk, by index name.
+	 *
+	 * <p>Covers every directory under the index root, including those of
+	 * generations that are not open. Walks the directories, so it costs a
+	 * {@code stat} per file.
+	 *
+	 * @return
+	 * @throws IOException
+	 *   if the index root can not be listed
+	 */
+	public Map<String, Long> getLocalCopySizes() throws IOException {
+		var sizes = new HashMap<String, Long>();
+		try(var paths = Files.list(indexRoot)) {
+			for(var path : paths.filter(Files::isDirectory).toList()) {
+				sizes.put(path.getFileName().toString(), sizeOf(path));
+			}
+		}
+
+		return sizes;
+	}
+
+	/**
+	 * Get how much the local copies may take on disk, as
+	 * {@code EXOFIND_INDEXES_DISK_MAX_SIZE} names it.
+	 *
+	 * @return
+	 *   empty when the copies are not bounded
+	 */
+	public OptionalLong getDiskMaxSize() {
+		return diskMaxSize;
+	}
+
+	/**
+	 * Get how the document cache has answered so far.
+	 *
+	 * @return
+	 */
+	public CacheStats getDocumentCacheStats() {
+		return documentCache.stats();
 	}
 
 	/**

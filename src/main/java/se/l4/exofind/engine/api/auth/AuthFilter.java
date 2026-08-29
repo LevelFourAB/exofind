@@ -5,7 +5,9 @@ import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Principal;
+import se.l4.exofind.engine.auth.UnauthenticatedException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.Priority;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -36,8 +38,10 @@ public class AuthFilter implements ContainerRequestFilter {
 
 	private final Keys keys;
 	private final AuthContext context;
+	private final RequestMetrics metrics;
 
-	public AuthFilter(Keys keys, AuthContext context) {
+	public AuthFilter(Keys keys, AuthContext context, RequestMetrics metrics) {
+		this.metrics = metrics;
 		this.keys = keys;
 		this.context = context;
 	}
@@ -50,23 +54,39 @@ public class AuthFilter implements ContainerRequestFilter {
 			return;
 		}
 
-		var principal = keys.resolve(request.getHeaderString(HttpHeaders.AUTHORIZATION));
-		context.set(principal);
+		try {
+			var principal = keys.resolve(request.getHeaderString(HttpHeaders.AUTHORIZATION));
+			context.set(principal);
 
-		var required = method.getAnnotation(RequiresPermission.class);
-		if(required == null) {
-			throw new IllegalStateException(
-				"Endpoint " + method.getDeclaringClass().getName() + "#" + method.getName()
-					+ " does not say what it requires, so it cannot be served. Annotate it"
-					+ " with @RequiresPermission"
+			var required = method.getAnnotation(RequiresPermission.class);
+			if(required == null) {
+				throw new IllegalStateException(
+					"Endpoint " + method.getDeclaringClass().getName() + "#" + method.getName()
+						+ " does not say what it requires, so it cannot be served. Annotate it"
+						+ " with @RequiresPermission"
+				);
+			}
+
+			check(
+				principal,
+				required,
+				request.getUriInfo().getPathParameters().getFirst(ServedBy.INDEX_PARAMETER)
 			);
+		} catch(UnauthenticatedException e) {
+			metrics.recordAuthFailure("unauthenticated");
+			throw e;
+		} catch(ForbiddenException e) {
+			metrics.recordAuthFailure("forbidden");
+			throw e;
+		} catch(IndexNotFoundException e) {
+			/*
+			 * A key that was granted nothing on the index is answered as though
+			 * the index were not there, so counting it here is the only place
+			 * the refusal is visible as one.
+			 */
+			metrics.recordAuthFailure("not_covered");
+			throw e;
 		}
-
-		check(
-			principal,
-			required,
-			request.getUriInfo().getPathParameters().getFirst(ServedBy.INDEX_PARAMETER)
-		);
 	}
 
 	private static void check(

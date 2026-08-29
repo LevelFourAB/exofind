@@ -25,9 +25,13 @@ import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
+import se.l4.exofind.engine.metrics.RequestMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 public class EngineExceptionMapperTest {
-	private final EngineExceptionMapper mapper = new EngineExceptionMapper();
+	private final EngineExceptionMapper mapper = new EngineExceptionMapper(
+		new RequestMetrics(new SimpleMeterRegistry(), false)
+	);
 
 	private static final ErrorType INVALID = ErrorType.withCode("test:invalid")
 		.withArguments("name")

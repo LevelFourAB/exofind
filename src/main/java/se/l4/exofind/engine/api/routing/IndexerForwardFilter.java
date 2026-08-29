@@ -17,6 +17,8 @@ import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.metrics.Meters;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.Priority;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.Priorities;
@@ -125,16 +127,19 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 	private final NodeState nodeState;
 	private final IndexerOwnership ownership;
 	private final Indexes indexes;
+	private final RequestMetrics metrics;
 	private final HttpClient client;
 
 	public IndexerForwardFilter(
 		NodeState nodeState,
 		IndexerOwnership ownership,
-		Indexes indexes
+		Indexes indexes,
+		RequestMetrics metrics
 	) {
 		this.nodeState = nodeState;
 		this.ownership = ownership;
 		this.indexes = indexes;
+		this.metrics = metrics;
 
 		/*
 		 * Pinned to HTTP/1.1 rather than negotiating: the JDK client would
@@ -228,6 +233,7 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 			 * gone stale. Refused rather than forwarded again - see the class
 			 * doc.
 			 */
+			metrics.recordForward("stale");
 			throw new IndexerUnavailableException();
 		}
 
@@ -236,6 +242,7 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 			.orElse(null);
 
 		if(target == null) {
+			metrics.recordForward("unavailable");
 			throw new IndexerUnavailableException();
 		}
 
@@ -271,12 +278,15 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 		try {
 			response = client.send(outgoing.build(), HttpResponse.BodyHandlers.ofInputStream());
 		} catch(IOException e) {
+			metrics.recordForward("unreachable");
 			throw new IndexerUnreachableException(e);
 		} catch(InterruptedException e) {
 			Thread.currentThread().interrupt();
+			metrics.recordForward("unreachable");
 			throw new IndexerUnreachableException(e);
 		}
 
+		metrics.recordForward(Meters.OUTCOME_SUCCESS);
 		request.abortWith(relay(response, request.getUriInfo().getRequestUri()));
 	}
 

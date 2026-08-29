@@ -11,6 +11,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.metrics.Meters;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 
 /**
  * Commits an index on its own, so that what has been indexed becomes
@@ -54,6 +56,7 @@ public class IndexCommitManager {
 	private final Index index;
 	private final ScheduledExecutorService executor;
 	private final CommitPolicy policy;
+	private final RequestMetrics metrics;
 
 	private final ReentrantLock lock;
 
@@ -96,9 +99,23 @@ public class IndexCommitManager {
 		ScheduledExecutorService executor,
 		CommitPolicy policy
 	) {
+		this(index, executor, policy, RequestMetrics.none());
+	}
+
+	/**
+	 * @param metrics
+	 *   told how long each commit took and whether it succeeded
+	 */
+	public IndexCommitManager(
+		Index index,
+		ScheduledExecutorService executor,
+		CommitPolicy policy,
+		RequestMetrics metrics
+	) {
 		this.index = index;
 		this.executor = executor;
 		this.policy = policy;
+		this.metrics = metrics;
 
 		this.lock = new ReentrantLock();
 		this.idle = lock.newCondition();
@@ -134,6 +151,25 @@ public class IndexCommitManager {
 			} else {
 				armTimer();
 			}
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	/**
+	 * Get how long the oldest change waiting for a commit has waited.
+	 *
+	 * @return
+	 *   {@link Duration#ZERO} when nothing is waiting
+	 */
+	public Duration getPendingAge() {
+		lock.lock();
+		try {
+			if(pendingChanges == 0) {
+				return Duration.ZERO;
+			}
+
+			return Duration.ofNanos(System.nanoTime() - oldestPendingAt);
 		} finally {
 			lock.unlock();
 		}
@@ -315,10 +351,23 @@ public class IndexCommitManager {
 			.addKeyValue("changes", attempted)
 			.log("Committing index");
 
+		/*
+		 * Decided from the changes this commit set out to take, which was read
+		 * under the lock. Reading the backlog here would race with a change
+		 * being recorded while the commit runs.
+		 */
+		var trigger = policy.maxChanges() > 0 && attempted >= policy.maxChanges()
+			? Meters.TRIGGER_CHANGES
+			: Meters.TRIGGER_INTERVAL;
+
+		var started = System.nanoTime();
 		try {
 			index.commit();
+			metrics.recordCommit(trigger, System.nanoTime() - started, true);
 			return Outcome.COMMITTED;
 		} catch(SyncConflictException e) {
+			metrics.recordCommit(trigger, System.nanoTime() - started, false);
+
 			/*
 			 * The push found the remote written by someone else and gave up the
 			 * local changes for it; the index is now waiting to be pulled over.
@@ -332,6 +381,8 @@ public class IndexCommitManager {
 
 			return Outcome.ABANDONED;
 		} catch(IndexReadonlyException | IndexClosedException | IndexOutOfDateException e) {
+			metrics.recordCommit(trigger, System.nanoTime() - started, false);
+
 			logger.atInfo()
 				.addKeyValue("index", index.getId())
 				.addKeyValue("changes", attempted)
@@ -340,6 +391,8 @@ public class IndexCommitManager {
 
 			return Outcome.ABANDONED;
 		} catch(IOException | RuntimeException e) {
+			metrics.recordCommit(trigger, System.nanoTime() - started, false);
+
 			logger.atWarn()
 				.addKeyValue("index", index.getId())
 				.addKeyValue("changes", attempted)

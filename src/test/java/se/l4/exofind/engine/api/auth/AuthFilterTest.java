@@ -21,6 +21,7 @@ import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.auth.UnauthenticatedException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ResourceInfo;
 import jakarta.ws.rs.core.MultivaluedHashMap;
@@ -56,7 +57,7 @@ public class AuthFilterTest {
 	void setup() {
 		keys = mock(Keys.class);
 		context = new AuthContext();
-		filter = new AuthFilter(keys, context);
+		filter = new AuthFilter(keys, context, RequestMetrics.none());
 	}
 
 	private static Method endpoint(String name) {

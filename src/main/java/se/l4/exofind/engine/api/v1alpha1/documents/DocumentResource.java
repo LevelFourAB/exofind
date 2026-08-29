@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntSupplier;
 
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
@@ -51,7 +52,9 @@ import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.reindex.ReindexJobs;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -213,11 +216,26 @@ public class DocumentResource {
 	private final Indexes indexes;
 	private final ObjectMapper mapper;
 	private final ReindexJobs reindexJobs;
+	private final RequestMetrics metrics;
 
+	/**
+	 * Write documents that report nothing, for a test that is not measuring.
+	 */
 	public DocumentResource(Indexes indexes, ObjectMapper mapper, ReindexJobs reindexJobs) {
+		this(indexes, mapper, reindexJobs, RequestMetrics.none());
+	}
+
+	@Inject
+	public DocumentResource(
+		Indexes indexes,
+		ObjectMapper mapper,
+		ReindexJobs reindexJobs,
+		RequestMetrics metrics
+	) {
 		this.indexes = indexes;
 		this.mapper = mapper;
 		this.reindexJobs = reindexJobs;
+		this.metrics = metrics;
 	}
 
 	/**
@@ -228,6 +246,37 @@ public class DocumentResource {
 	private Index writable(String name) {
 		reindexJobs.checkTargetWritable(name);
 		return indexes.getOrThrow(name);
+	}
+
+	/**
+	 * Time a change to an index and report it under an operation name.
+	 *
+	 * <p>The measurement starts once the index has been found, so it covers
+	 * reading the request and changing the index. A change that throws is
+	 * reported as failed and as covering no documents, and its exception is
+	 * passed on.
+	 *
+	 * <p>The operation names are persistent identifiers, carried as a tag on
+	 * the {@code exofind.write} meters: {@code add}, {@code update},
+	 * {@code delete} and {@code delete_by_query}. Both forms of a request, the
+	 * JSON one and the newline delimited one, report the same name.
+	 *
+	 * @param change
+	 *   the change to make, answering with how many documents it covered
+	 */
+	private int measure(String operation, IntSupplier change) {
+		var started = System.nanoTime();
+
+		int documents;
+		try {
+			documents = change.getAsInt();
+		} catch(RuntimeException e) {
+			metrics.recordWrite(operation, System.nanoTime() - started, 0, false);
+			throw e;
+		}
+
+		metrics.recordWrite(operation, System.nanoTime() - started, documents, true);
+		return documents;
 	}
 
 	/**
@@ -335,13 +384,15 @@ public class DocumentResource {
 		}
 
 		var index = writable(name);
-
 		var documents = body.documents();
-		for(var i = 0; i < documents.size(); i++) {
-			addDocument(index, name, documents.get(i), i);
-		}
 
-		return new DocumentsResponse(documents.size());
+		return new DocumentsResponse(measure("add", () -> {
+			for(var i = 0; i < documents.size(); i++) {
+				addDocument(index, name, documents.get(i), i);
+			}
+
+			return documents.size();
+		}));
 	}
 
 	/**
@@ -370,20 +421,23 @@ public class DocumentResource {
 		}
 
 		var index = writable(name);
-		var indexed = 0;
 
-		try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
-			while(hasNext(documents, indexed)) {
-				addDocument(index, name, documents.next(), indexed);
-				indexed++;
+		return new DocumentsResponse(measure("add", () -> {
+			var indexed = 0;
+
+			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
+				while(hasNext(documents, indexed)) {
+					addDocument(index, name, documents.next(), indexed);
+					indexed++;
+				}
+			} catch(JacksonException e) {
+				throw malformed(e, indexed);
+			} catch(IOException e) {
+				throw new IndexException(IO_ERROR, e, "index", name);
 			}
-		} catch(JacksonException e) {
-			throw malformed(e, indexed);
-		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
-		}
 
-		return new DocumentsResponse(indexed);
+			return indexed;
+		}));
 	}
 
 	/**
@@ -520,14 +574,18 @@ public class DocumentResource {
 		var index = writable(name);
 		var skipMissing = skipMissing(missing);
 		var missingKeys = Lists.mutable.empty();
-
 		var documents = body.documents();
-		var updated = 0;
-		for(var i = 0; i < documents.size(); i++) {
-			if(updateDocument(index, name, documents.get(i), i, skipMissing, missingKeys)) {
-				updated++;
+
+		var updated = measure("update", () -> {
+			var changed = 0;
+			for(var i = 0; i < documents.size(); i++) {
+				if(updateDocument(index, name, documents.get(i), i, skipMissing, missingKeys)) {
+					changed++;
+				}
 			}
-		}
+
+			return changed;
+		});
 
 		return new UpdateResponse(updated, missingKeys);
 	}
@@ -563,22 +621,26 @@ public class DocumentResource {
 		var skipMissing = skipMissing(missing);
 		var missingKeys = Lists.mutable.empty();
 
-		var read = 0;
-		var updated = 0;
+		var updated = measure("update", () -> {
+			var read = 0;
+			var changed = 0;
 
-		try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
-			while(hasNext(documents, read)) {
-				if(updateDocument(index, name, documents.next(), read, skipMissing, missingKeys)) {
-					updated++;
+			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
+				while(hasNext(documents, read)) {
+					if(updateDocument(index, name, documents.next(), read, skipMissing, missingKeys)) {
+						changed++;
+					}
+
+					read++;
 				}
-
-				read++;
+			} catch(JacksonException e) {
+				throw malformed(e, read);
+			} catch(IOException e) {
+				throw new IndexException(IO_ERROR, e, "index", name);
 			}
-		} catch(JacksonException e) {
-			throw malformed(e, read);
-		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
-		}
+
+			return changed;
+		});
 
 		return new UpdateResponse(updated, missingKeys);
 	}
@@ -798,18 +860,23 @@ public class DocumentResource {
 		}
 
 		var index = writable(name);
-		var primaryKey = index.parsePrimaryKey(key);
-		var keyField = index.getPrimaryKey().orElseThrow().getName();
 
-		var patch = withKey(DocumentMapper.toPatch(index, body), keyField, primaryKey);
+		measure("update", () -> {
+			var primaryKey = index.parsePrimaryKey(key);
+			var keyField = index.getPrimaryKey().orElseThrow().getName();
 
-		try {
-			if(!index.updateDocument(patch)) {
-				throw new IndexDocumentNotFoundException(key);
+			var patch = withKey(DocumentMapper.toPatch(index, body), keyField, primaryKey);
+
+			try {
+				if(!index.updateDocument(patch)) {
+					throw new IndexDocumentNotFoundException(key);
+				}
+			} catch(IOException e) {
+				throw new IndexException(IO_ERROR, e, "index", name);
 			}
-		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
-		}
+
+			return 1;
+		});
 
 		return Response.noContent().build();
 	}
@@ -954,11 +1021,15 @@ public class DocumentResource {
 	) {
 		var index = writable(name);
 
-		try {
-			index.deleteDocument(index.parsePrimaryKey(key));
-		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
-		}
+		measure("delete", () -> {
+			try {
+				index.deleteDocument(index.parsePrimaryKey(key));
+			} catch(IOException e) {
+				throw new IndexException(IO_ERROR, e, "index", name);
+			}
+
+			return 1;
+		});
 
 		return Response.noContent().build();
 	}
@@ -1067,20 +1138,26 @@ public class DocumentResource {
 
 		var index = writable(name);
 
-		try {
-			if(body.keys() != null) {
-				return new DeleteResponse(index.deleteDocuments(toKeys(body.keys())));
-			}
+		if(body.keys() != null) {
+			return new DeleteResponse(measure("delete", () -> {
+				try {
+					return index.deleteDocuments(toKeys(body.keys()));
+				} catch(IOException e) {
+					throw new IndexException(IO_ERROR, e, "index", name);
+				}
+			}));
+		}
 
-			return new DeleteResponse(
-				index.deleteByQuery(
+		return new DeleteResponse(measure("delete_by_query", () -> {
+			try {
+				return index.deleteByQuery(
 					SearchRequestMapper.toQuery(body.query(), "/query"),
 					body.locale()
-				)
-			);
-		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
-		}
+				);
+			} catch(IOException e) {
+				throw new IndexException(IO_ERROR, e, "index", name);
+			}
+		}));
 	}
 
 	/**

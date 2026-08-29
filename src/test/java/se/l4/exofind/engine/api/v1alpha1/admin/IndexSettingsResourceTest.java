@@ -41,6 +41,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.documents.DocumentResource;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchResource;
+import se.l4.exofind.engine.api.v1alpha1.search.SearchResourceTest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
@@ -130,7 +131,13 @@ public class IndexSettingsResourceTest {
 		);
 		resource = new IndexSettingsResource(indexes, new ObjectMapper(), searchSettings);
 		documents = new DocumentResource(indexes, new ObjectMapper(), reindexJobs);
-		search = new SearchResource(indexes, searchSettings, 10_000, 1_000);
+		search = new SearchResource(
+			indexes,
+			searchSettings,
+			SearchResourceTest.metrics(),
+			10_000,
+			1_000
+		);
 
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())

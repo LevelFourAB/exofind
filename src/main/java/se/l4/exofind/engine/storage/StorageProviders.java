@@ -30,6 +30,8 @@ import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.index.state.ObjectStorageIndexerOwnership;
 import se.l4.exofind.engine.index.state.ObjectStorageSyncProvider;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
+import se.l4.exofind.engine.metrics.StorageMetricsInterceptor;
+import io.micrometer.core.instrument.MeterRegistry;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.reindex.LocalReindexJobStorage;
 import se.l4.exofind.engine.reindex.ObjectStorageReindexJobStorage;
@@ -162,6 +164,7 @@ public class StorageProviders {
 	public ObjectStorage objectStorage(
 		StorageMode mode,
 		NodeState nodeState,
+		MeterRegistry meterRegistry,
 		@ConfigProperty(name = "exofind.storage.remote.url") Optional<String> url,
 		@ConfigProperty(name = "exofind.storage.remote.access-key") Optional<String> accessKey,
 		@ConfigProperty(name = "exofind.storage.remote.secret-key") Optional<String> secretKey,
@@ -183,7 +186,8 @@ public class StorageProviders {
 			region,
 			required(bucket, "EXOFIND_STORAGE_REMOTE_BUCKET"),
 			prefix,
-			nodeState.isIndexerCandidate()
+			nodeState.isIndexerCandidate(),
+			new StorageMetricsInterceptor(meterRegistry)
 		);
 	}
 

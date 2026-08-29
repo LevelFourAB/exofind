@@ -13,6 +13,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -78,6 +79,26 @@ public class ObjectStorage {
 		Optional<String> prefix,
 		boolean indexer
 	) throws IOException {
+		this(url, accessKey, secretKey, region, bucket, prefix, indexer, null);
+	}
+
+	/**
+	 * Open the storage with something watching the requests made through it.
+	 *
+	 * @param interceptor
+	 *   told about every request the client makes, or {@code null} to watch
+	 *   none
+	 */
+	public ObjectStorage(
+		String url,
+		String accessKey,
+		String secretKey,
+		Optional<String> region,
+		String bucket,
+		Optional<String> prefix,
+		boolean indexer,
+		ExecutionInterceptor interceptor
+	) throws IOException {
 		this.bucket = bucket;
 		this.prefix = prefix;
 		this.client = S3Client.builder()
@@ -112,7 +133,13 @@ public class ObjectStorage {
 			 * write, or worth another attempt. The SDK retrying underneath
 			 * would multiply those attempts.
 			 */
-			.overrideConfiguration(o -> o.retryStrategy(AwsRetryStrategy.doNotRetry()))
+			.overrideConfiguration(o -> {
+				o.retryStrategy(AwsRetryStrategy.doNotRetry());
+
+				if(interceptor != null) {
+					o.addExecutionInterceptor(interceptor);
+				}
+			})
 			.httpClientBuilder(UrlConnectionHttpClient.builder())
 			.build();
 

@@ -110,6 +110,9 @@ The documentation includes the following how-to guides.
 - [Operate a deployment](how-to/operate-a-deployment.md): See what each node is
   serving, tell a node that is behind from one that is broken, and manage disk
   and upgrades.
+- [Monitor a deployment](how-to/monitor-a-deployment.md): Send the meters a node
+  exposes to Grafana Cloud or another backend, keep what a deployment holding
+  hundreds of indexes pays for under control, and choose what to alert on.
 - [Repair the index registry](how-to/repair-the-index-registry.md): Audit the
   registry against what the storage holds, rebuild one that is lost or
   corrupt, and spot drift before it matters.
@@ -124,6 +127,8 @@ The documentation includes the following reference topics:
   shares - versioning, media types, conditional requests, forwarding, and what
   each status code means.
 - [Configuration](reference/configuration.md): Every environment variable.
+- [Metrics](reference/metrics.md): Every meter a node registers, what it is
+  tagged with, and the settings that decide what is exported.
 - [Authentication](reference/auth.md): Keys, permissions, roles, and the keys
   API.
 - [Admin API](reference/admin-api.md): Defining, inspecting, and removing

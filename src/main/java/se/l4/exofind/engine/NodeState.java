@@ -102,6 +102,16 @@ public class NodeState {
 	}
 
 	/**
+	 * Get if this node holds every index at once, which is what a node that
+	 * can not be contested does rather than being granted them one at a time.
+	 *
+	 * @return
+	 */
+	public boolean holdsEveryIndex() {
+		return indexerCandidate && everything;
+	}
+
+	/**
 	 * Record that {@code changes} documents of an index changed here, toward
 	 * what {@link #writeLoad(String)} answers.
 	 *

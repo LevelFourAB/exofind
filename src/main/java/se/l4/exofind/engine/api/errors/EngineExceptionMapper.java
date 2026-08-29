@@ -39,6 +39,7 @@ import se.l4.exofind.engine.index.state.IndexerLeadershipUnreadableException;
 import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.reindex.ReindexInProgressException;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
 import se.l4.exofind.engine.reindex.ReindexTargetBusyException;
@@ -59,9 +60,21 @@ import jakarta.ws.rs.ext.Provider;
 public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 	private static final Log logger = Log.of(EngineExceptionMapper.class);
 
+	private final RequestMetrics metrics;
+
+	public EngineExceptionMapper(RequestMetrics metrics) {
+		this.metrics = metrics;
+	}
+
 	@Override
 	public Response toResponse(EngineException e) {
 		var status = statusOf(e);
+
+		/*
+		 * Counted by code rather than by status, since the code names what went
+		 * wrong and several of them share a status.
+		 */
+		metrics.recordError(e.getCode());
 
 		if(status.getStatusCode() >= 500) {
 			logger.atError()
