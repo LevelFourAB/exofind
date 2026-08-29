@@ -145,6 +145,7 @@ public class QuerySynonymSearchTest extends AbstractIndexTest {
 			stored,
 			null,
 			stored.getSynonymsMap(),
+			Map.of(),
 			Lists.immutable.empty(),
 			version
 		);
@@ -578,6 +579,7 @@ public class QuerySynonymSearchTest extends AbstractIndexTest {
 		var setAside = new SearchSettings.Snapshot(
 			stored,
 			null,
+			Map.of(),
 			Map.of(),
 			Lists.immutable.of("something_this_build_lacks"),
 			"\"1\""

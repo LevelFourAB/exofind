@@ -23,6 +23,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   else - the settings say nothing and the definition stands
  * @param synonyms
  *   synonym sets applied to the text of a search, by name
+ * @param typoExclusions
+ *   words matched as they are spelled however much typo tolerance their
+ *   fields declare, by name
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
@@ -44,7 +47,14 @@ public record SearchSettingsDefinition(
 		in an index definition, which widen a value as it is indexed, these \
 		widen what a search asks for - so a rule added here reaches documents \
 		that were indexed long before it.""")
-	Map<String, QuerySynonyms> synonyms
+	Map<String, QuerySynonyms> synonyms,
+
+	@Schema(description = """
+		Words matched as they are spelled, by name. A word listed here is \
+		looked up as it was typed however much typo tolerance the field it is \
+		searched in declares, which is how a brand name or a model code keeps \
+		its spelling inside text that is otherwise typo tolerant.""")
+	Map<String, TypoExclusions> typoExclusions
 ) {
 	/**
 	 * A synonym set applied to what a search asks for.
@@ -91,6 +101,45 @@ public record SearchSettingsDefinition(
 			examples = "0.8"
 		)
 		Float boost
+	) {
+	}
+
+	/**
+	 * Words a search matches as they are spelled.
+	 *
+	 * <p>The words are read through the analysis chain of the field, so a word
+	 * the chain leaves nothing of, such as a stopword, excludes nothing, and
+	 * one it leaves several terms of excludes each of them.
+	 *
+	 * <p>The list is read against the words a search was typed with: a word
+	 * that is not listed keeps the tolerance of its field, including when a
+	 * near reading of it lands on a listed word.
+	 *
+	 * @param words
+	 *   the words, as they would be typed
+	 * @param fields
+	 *   the fields the words are excluded in, or {@code null} for every field
+	 *   a search reads as text
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Words matched as they are spelled, whatever typo tolerance the fields \
+		they are searched in declare.""")
+	public record TypoExclusions(
+		@Schema(description = """
+			The words, as they would be typed. A word is read through the \
+			analysis chain of each field it is excluded in, so a word the \
+			chain leaves nothing of excludes nothing, and one it leaves \
+			several terms of excludes each of them.""")
+		List<String> words,
+
+		@Schema(description = """
+			The fields the words are excluded in, named as a search names \
+			them. Omitted covers every field a search reads as text. A name \
+			the generation the index answers from does not have is refused \
+			here; a generation promoted later that lacks it makes searches \
+			forgive mistakes in the field as the definition says.""")
+		List<String> fields
 	) {
 	}
 }

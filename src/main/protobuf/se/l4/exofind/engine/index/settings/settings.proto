@@ -55,6 +55,16 @@ message SearchSettingsStore {
 	map<string, QuerySynonyms> synonyms = 3;
 
 	/*
+	 * Words that are matched as they are spelled, by set name.
+	 *
+	 * Where typo tolerance is declared belongs to the definition, which is
+	 * about the fields a search may spend a fuzzy walk on. These are about the
+	 * words: a name or a code inside a field that is otherwise worth forgiving
+	 * mistakes in.
+	 */
+	map<string, QueryTypoExclusions> typo_exclusions = 4;
+
+	/*
 	 * Names of the capabilities this object uses, written by whichever version
 	 * of the engine last stored it.
 	 *
@@ -102,4 +112,31 @@ message QuerySynonyms {
 	 * the way an index-time set does.
 	 */
 	optional float boost = 3;
+}
+
+/*
+ * Words a search matches as they are spelled, however many mistakes the
+ * typo tolerance of the field would forgive.
+ *
+ * The words are read through the analysis chain of the field, the way the
+ * terms of a query-time synonym rule are: a word the chain leaves nothing of,
+ * such as a stopword, excludes nothing.
+ *
+ * The list is read against the words a search was typed with. A word that is
+ * listed is looked up as it stands, and a word that is not keeps the
+ * forgiveness the field declares - including when a near reading of it lands
+ * on a listed word.
+ */
+message QueryTypoExclusions {
+	/*
+	 * The words, as they would be typed. Empty excludes nothing.
+	 */
+	repeated string words = 1;
+
+	/*
+	 * The fields the words are excluded in, named as a search names them.
+	 * Empty covers every field a search reads as text, such as a list of brand
+	 * names written for a whole catalogue.
+	 */
+	repeated string fields = 2;
 }

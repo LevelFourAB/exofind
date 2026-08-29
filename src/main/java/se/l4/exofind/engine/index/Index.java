@@ -94,6 +94,7 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.analysis.SynonymOverlay;
+import se.l4.exofind.engine.index.analysis.TypoExclusions;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.DefinitionCompatibility;
@@ -104,6 +105,7 @@ import se.l4.exofind.engine.index.schema.IndexSchema;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.index.schema.RankingOverride;
 import se.l4.exofind.engine.index.settings.QuerySynonyms;
+import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
@@ -3218,6 +3220,78 @@ public class Index {
 	}
 
 	/**
+	 * Validate the word lists of search settings that are matched as they are
+	 * spelled against this generation. What passes here can still be skipped by
+	 * a later generation - see {@link TypoExclusions#compile} - so this is the
+	 * check for storing settings, not for searching with them.
+	 *
+	 * @param typoExclusions
+	 *   the lists as they would be stored, by name
+	 * @param location
+	 *   where the lists sit in what the caller is validating
+	 * @return
+	 *   what stops the lists, empty when this generation answers for all of
+	 *   them
+	 */
+	public ListIterable<ErrorMessage> validateTypoExclusions(
+		Map<String, QueryTypoExclusions> typoExclusions,
+		ObjectLocation location
+	) {
+		return TypoExclusions.validate(typoExclusions, schema, location);
+	}
+
+	/**
+	 * The exclusions last compiled, and what they were compiled from. Reading a
+	 * word list walks every word of it through the analyzer of every field it
+	 * covers, which is work a search should do once for a version of the
+	 * settings rather than once each.
+	 */
+	private record CompiledTypoExclusions(
+		String settingsVersion,
+		String definitionVersion,
+		TypoExclusions exclusions
+	) {
+	}
+
+	private volatile CompiledTypoExclusions compiledTypoExclusions;
+
+	/**
+	 * Compile the word lists of the search settings against this generation.
+	 */
+	private TypoExclusions compileTypoExclusions(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.typoExclusions().isEmpty()) {
+			return TypoExclusions.none();
+		}
+
+		var compiled = compiledTypoExclusions;
+		if(compiled != null
+			&& compiled.settingsVersion().equals(settings.version())
+			&& compiled.definitionVersion().equals(definitionVersion)) {
+			return compiled.exclusions();
+		}
+
+		var exclusions = TypoExclusions.compile(settings.typoExclusions(), schema);
+		compiledTypoExclusions = new CompiledTypoExclusions(
+			settings.version(),
+			definitionVersion,
+			exclusions
+		);
+
+		if(exclusions.skippedFields().notEmpty()) {
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.addKeyValue("fields", exclusions.skippedFields().makeString(", "))
+				.log(
+					"The search settings match words as they are spelled in fields"
+						+ " this generation cannot answer for; forgiving mistakes"
+						+ " in those fields as the definition says"
+				);
+		}
+
+		return exclusions;
+	}
+
+	/**
 	 * Search this index with its search settings in force.
 	 *
 	 * <p>The settings belong to the index name while this instance is one
@@ -3265,7 +3339,8 @@ public class Index {
 					request.locale(),
 					nestedParents,
 					compileRankingOverride(settings),
-					compileSynonymOverlay(settings)
+					compileSynonymOverlay(settings),
+					compileTypoExclusions(settings)
 				);
 				var searched = request.query().newWithAll(request.filters());
 
@@ -3890,7 +3965,8 @@ public class Index {
 					request.locale(),
 					nestedParents,
 					compileRankingOverride(settings),
-					compileSynonymOverlay(settings)
+					compileSynonymOverlay(settings),
+					compileTypoExclusions(settings)
 				);
 				compiler.markClauses(request.query(), request.filters());
 

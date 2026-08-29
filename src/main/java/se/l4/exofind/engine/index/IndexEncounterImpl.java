@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 import se.l4.exofind.engine.index.analysis.SynonymOverlay;
+import se.l4.exofind.engine.index.analysis.TypoExclusions;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -14,6 +15,7 @@ public class IndexEncounterImpl implements IndexEncounter {
 	private final ResourcesDef resources;
 	private final boolean highlightsInPostings;
 	private final SynonymOverlay querySynonyms;
+	private final TypoExclusions typoExclusions;
 
 	private Optional<Locale> locale;
 	private LocaleSupport localeSupport;
@@ -24,23 +26,30 @@ public class IndexEncounterImpl implements IndexEncounter {
 	private boolean forHighlighting;
 
 	public IndexEncounterImpl(ResourcesDef resources, boolean highlightsInPostings) {
-		this(resources, highlightsInPostings, SynonymOverlay.none());
+		this(resources, highlightsInPostings, SynonymOverlay.none(), TypoExclusions.none());
 	}
 
 	public IndexEncounterImpl(
 		ResourcesDef resources,
 		boolean highlightsInPostings,
-		SynonymOverlay querySynonyms
+		SynonymOverlay querySynonyms,
+		TypoExclusions typoExclusions
 	) {
 		this.resources = resources;
 		this.highlightsInPostings = highlightsInPostings;
 		this.querySynonyms = querySynonyms;
+		this.typoExclusions = typoExclusions;
 		this.locale = Optional.empty();
 	}
 
 	@Override
 	public SynonymOverlay getQuerySynonyms() {
 		return querySynonyms;
+	}
+
+	@Override
+	public TypoExclusions getTypoExclusions() {
+		return typoExclusions;
 	}
 
 	@Override

@@ -94,6 +94,9 @@ public class SearchSettings {
 	 * @param synonyms
 	 *   the synonym sets to widen the text of a search with, by name; empty
 	 *   when the object carries none or could not be honoured
+	 * @param typoExclusions
+	 *   the word lists to match as they are spelled, by name; empty when the
+	 *   object carries none or could not be honoured
 	 * @param unsupportedFeatures
 	 *   what the object needs that this build does not have, sorted; empty
 	 *   when it is in force
@@ -103,6 +106,7 @@ public class SearchSettings {
 		SearchSettingsStore stored,
 		RankingConfig ranking,
 		Map<String, QuerySynonyms> synonyms,
+		Map<String, QueryTypoExclusions> typoExclusions,
 		ListIterable<String> unsupportedFeatures,
 		String version
 	) {
@@ -489,8 +493,8 @@ public class SearchSettings {
 	}
 
 	/**
-	 * Work out what a stored object means on this node: the ranking it puts in
-	 * force, or the names of what stops it.
+	 * Work out what a stored object means on this node: what it puts in force,
+	 * or the names of what stops it.
 	 */
 	private static Snapshot decode(SearchSettingsStore stored, String version) {
 		var unsupported = SearchSettingsFeatures.unsupportedIn(stored).toSortedList();
@@ -499,6 +503,7 @@ public class SearchSettings {
 			stored,
 			unsupported.isEmpty() && stored.hasRanking() ? stored.getRanking() : null,
 			unsupported.isEmpty() ? stored.getSynonymsMap() : Map.of(),
+			unsupported.isEmpty() ? stored.getTypoExclusionsMap() : Map.of(),
 			unsupported,
 			version
 		);

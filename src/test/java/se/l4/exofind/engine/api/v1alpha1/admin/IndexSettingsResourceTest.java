@@ -183,6 +183,7 @@ public class IndexSettingsResourceTest {
 				List.of(new IndexDefinition.Ranking.TieBreaker("sales", direction)),
 				null
 			),
+			null,
 			null
 		);
 	}
@@ -269,6 +270,7 @@ public class IndexSettingsResourceTest {
 						null
 					))
 				),
+				null,
 				null
 			)
 		);
@@ -395,6 +397,7 @@ public class IndexSettingsResourceTest {
 						List.of(new IndexDefinition.Ranking.TieBreaker("missing", null)),
 						null
 					),
+					null,
 					null
 				)
 			)
@@ -506,6 +509,7 @@ public class IndexSettingsResourceTest {
 					)
 				)
 			),
+			null,
 			null
 		);
 	}
@@ -558,6 +562,7 @@ public class IndexSettingsResourceTest {
 						null
 					))
 				),
+				null,
 				null
 			)
 		);
@@ -808,13 +813,18 @@ public class IndexSettingsResourceTest {
 					null,
 					null
 				)
-			)
+			),
+			null
 		);
 	}
 
 	private List<Object> names(String text) {
+		return names("shoes", text);
+	}
+
+	private List<Object> names(String index, String text) {
 		var response = search.search(
-			"shoes",
+			index,
 			new SearchRequest(
 				List.of(new Clause.Text(text, null, null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null,
@@ -876,7 +886,8 @@ public class IndexSettingsResourceTest {
 							List.of("missing"),
 							null
 						)
-					)
+					),
+					null
 				)
 			)
 		);
@@ -910,7 +921,8 @@ public class IndexSettingsResourceTest {
 							List.of("id"),
 							null
 						)
-					)
+					),
+					null
 				)
 			)
 		);
@@ -939,7 +951,8 @@ public class IndexSettingsResourceTest {
 							null,
 							0f
 						)
-					)
+					),
+					null
 				)
 			)
 		);
@@ -965,7 +978,8 @@ public class IndexSettingsResourceTest {
 							null,
 							null
 						)
-					)
+					),
+					null
 				)
 			)
 		);
@@ -1030,12 +1044,209 @@ public class IndexSettingsResourceTest {
 		resource.put("shoes", null, equivalent("trainers", "sneakers"));
 		assertThat(names("trainers"), containsInAnyOrder("1", "2"));
 
-		resource.put("shoes", null, new SearchSettingsDefinition(null, null));
+		resource.put("shoes", null, new SearchSettingsDefinition(null, null, null));
 
 		assertThat(names("trainers"), contains("2"));
 
 		var info = (SearchSettingsInfo) resource.get("shoes").getEntity();
 		assertThat(info.synonyms(), is(nullValue()));
+	}
+
+	/**
+	 * A shop whose text forgives one mistake in a word, holding a camera brand
+	 * and a common word that sits one mistake from it.
+	 */
+	private void cameras() {
+		var fields = new LinkedHashMap<String, FieldDefinition>();
+		fields.put(
+			"id",
+			new StringFieldDefinition(
+				null, true, null, null, null, null, null, null, null, null, null, null, null
+			)
+		);
+		fields.put(
+			"name",
+			new StringFieldDefinition(
+				null, null, null, null, null, null, null, null, null, null,
+				new StringFieldDefinition.TextUsage(
+					null,
+					null,
+					null,
+					new StringFieldDefinition.TextUsage.TypoTolerance(null, null, null, null),
+					null,
+					null,
+					null
+				),
+				null, null
+			)
+		);
+
+		admin.put("cameras", null, null, false, uriInfo, new IndexDefinition(
+			null, null, fields, null, null, null
+		));
+
+		documents.add("cameras", new DocumentsRequest(List.of(
+			Map.of("id", "1", "name", "canon camera"),
+			Map.of("id", "2", "name", "canyon camera")
+		)));
+		admin.commit("cameras");
+	}
+
+	/**
+	 * Settings matching one word as it is spelled, in every field.
+	 */
+	private static SearchSettingsDefinition excluding(String... words) {
+		return new SearchSettingsDefinition(
+			null,
+			null,
+			Map.of(
+				"brands",
+				new SearchSettingsDefinition.TypoExclusions(List.of(words), null)
+			)
+		);
+	}
+
+	@Test
+	public void testExcludedWordsKeepTheirSpellingWithoutTouchingTheDefinition() {
+		cameras();
+
+		var before = (IndexInfo) admin.get("cameras").getEntity();
+		assertThat(names("cameras", "canon"), containsInAnyOrder("1", "2"));
+
+		resource.put("cameras", null, excluding("canon"));
+
+		assertThat(names("cameras", "canon"), contains("1"));
+
+		// The documents were never touched, and neither was the definition
+		var after = (IndexInfo) admin.get("cameras").getEntity();
+		assertThat(after.version(), is(before.version()));
+	}
+
+	@Test
+	public void testGetAnswersTheExcludedWordsThatWereStored() {
+		cameras();
+
+		resource.put("cameras", null, excluding("canon"));
+
+		var info = (SearchSettingsInfo) resource.get("cameras").getEntity();
+		var exclusions = info.typoExclusions().get("brands");
+
+		assertThat(exclusions.words(), contains("canon"));
+		assertThat(exclusions.fields(), is(nullValue()));
+	}
+
+	/**
+	 * The stored object names what it uses, so a node that has no code for word
+	 * lists sets the settings aside instead of searching without them.
+	 */
+	@Test
+	public void testStoredExclusionsNameTheFeatureTheyNeed() {
+		cameras();
+
+		resource.put("cameras", null, excluding("canon"));
+
+		assertThat(
+			searchSettings.read("cameras").orElseThrow().stored().getRequiredFeaturesList(),
+			contains("typo_exclusions")
+		);
+	}
+
+	@Test
+	public void testTypoExclusionsOnAnUnknownFieldAreRefused() {
+		cameras();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put(
+				"cameras",
+				null,
+				new SearchSettingsDefinition(
+					null,
+					null,
+					Map.of(
+						"brands",
+						new SearchSettingsDefinition.TypoExclusions(
+							List.of("canon"),
+							List.of("missing")
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(
+			e.getErrors().get(0).getCode(),
+			is("index:settings:typo_exclusions:unknown_field")
+		);
+	}
+
+	/**
+	 * A field nothing is searched as text in forgives no mistakes to begin
+	 * with, so a list naming it reads as a list that does not work rather than
+	 * as settings to fix.
+	 */
+	@Test
+	public void testTypoExclusionsOnAFieldThatIsNotTextAreRefused() {
+		cameras();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put(
+				"cameras",
+				null,
+				new SearchSettingsDefinition(
+					null,
+					null,
+					Map.of(
+						"brands",
+						new SearchSettingsDefinition.TypoExclusions(
+							List.of("canon"),
+							List.of("id")
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(
+			e.getErrors().get(0).getCode(),
+			is("index:settings:typo_exclusions:field_not_text")
+		);
+	}
+
+	/**
+	 * A word is added to a list the way a rule is added to a synonym set, which
+	 * is what a catalogue growing one brand at a time looks like.
+	 */
+	@Test
+	public void testPatchAddsAnExcludedWord() {
+		cameras();
+
+		resource.put("cameras", null, excluding("leica"));
+
+		var info = patch("cameras", null, "typoExclusions.brands.words[]", "canon");
+
+		assertThat(info.typoExclusions().get("brands").words(), contains("leica", "canon"));
+		assertThat(names("cameras", "canon"), contains("1"));
+	}
+
+	/**
+	 * Settings are the state a caller wants, so storing settings without a word
+	 * list leaves an index with none rather than with the list it had.
+	 */
+	@Test
+	public void testStoringSettingsWithoutTypoExclusionsClearsThem() {
+		cameras();
+
+		resource.put("cameras", null, excluding("canon"));
+		assertThat(names("cameras", "canon"), contains("1"));
+
+		resource.put("cameras", null, new SearchSettingsDefinition(null, null, null));
+
+		assertThat(names("cameras", "canon"), containsInAnyOrder("1", "2"));
+
+		var info = (SearchSettingsInfo) resource.get("cameras").getEntity();
+		assertThat(info.typoExclusions(), is(nullValue()));
 	}
 
 	/**

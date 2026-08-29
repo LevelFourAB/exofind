@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 import se.l4.exofind.engine.index.analysis.SynonymOverlay;
+import se.l4.exofind.engine.index.analysis.TypoExclusions;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
@@ -60,6 +61,18 @@ public interface IndexEncounter {
 	 */
 	default SynonymOverlay getQuerySynonyms() {
 		return SynonymOverlay.none();
+	}
+
+	/**
+	 * Get the words the search settings of the index match as they are
+	 * spelled, whatever typo tolerance the field declares. Nothing outside a
+	 * search has them, so indexing sees exclusions that exclude nothing.
+	 *
+	 * @return
+	 *   never {@code null}
+	 */
+	default TypoExclusions getTypoExclusions() {
+		return TypoExclusions.none();
 	}
 
 	/**

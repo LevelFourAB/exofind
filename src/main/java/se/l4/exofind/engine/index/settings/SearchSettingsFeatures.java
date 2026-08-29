@@ -38,9 +38,19 @@ public final class SearchSettingsFeatures {
 	 */
 	public static final String QUERY_SYNONYMS = "query_synonyms";
 
+	/**
+	 * The object carries words that are matched as they are spelled.
+	 *
+	 * <p>A node without this name would forgive mistakes in a word its peers
+	 * look up as it stands, which is a different set of documents rather than a
+	 * different order of them.
+	 */
+	public static final String TYPO_EXCLUSIONS = "typo_exclusions";
+
 	private static final ImmutableSet<String> SUPPORTED = Sets.immutable.of(
 		RANKING,
-		QUERY_SYNONYMS
+		QUERY_SYNONYMS,
+		TYPO_EXCLUSIONS
 	);
 
 	private SearchSettingsFeatures() {
@@ -63,6 +73,10 @@ public final class SearchSettingsFeatures {
 
 		if(!settings.getSynonymsMap().isEmpty()) {
 			features.add(QUERY_SYNONYMS);
+		}
+
+		if(!settings.getTypoExclusionsMap().isEmpty()) {
+			features.add(TYPO_EXCLUSIONS);
 		}
 
 		return features.toSortedList();

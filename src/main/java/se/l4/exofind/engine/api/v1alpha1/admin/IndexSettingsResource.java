@@ -40,6 +40,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.settings.QuerySynonyms;
+import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.settings.SearchSettingsException;
 import se.l4.exofind.engine.index.settings.SearchSettingsFeatures;
@@ -60,8 +61,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 /**
- * The search settings of an index - the ranking its searches run with, kept
- * apart from the definition of what its documents were indexed as.
+ * The search settings of an index - how its searches behave, kept apart from
+ * the definition of what its documents were indexed as.
  *
  * <p>Settings are handled as desired state the way definitions are: sent in
  * full, replacing what was stored, with the version returned as an
@@ -78,14 +79,14 @@ import jakarta.ws.rs.core.Response;
  * two. A caller sends the request anywhere and it is passed along, the way
  * document writes are.
  *
- * <p>The ranking is validated against the generation the name answers from
- * when it is stored. A generation promoted later may lack a field the settings
- * name; searches then skip that entry rather than fail, and the index's status
- * says so.
+ * <p>The fields the settings name are validated against the generation the
+ * name answers from when it is stored. A generation promoted later may lack one
+ * of them; searches then skip that entry rather than fail, and the index's
+ * status says so.
  */
 @Tag(
 	name = "Search settings",
-	description = "Per-index ranking, kept apart from the index definition.",
+	description = "Per-index search behaviour, kept apart from the index definition.",
 	externalDocs = @ExternalDocumentation(
 		description = "Search settings reference",
 		url = "https://exofind.dev/reference/admin-api/#search-settings"
@@ -266,7 +267,8 @@ public class IndexSettingsResource {
 			The ranking is validated against the generation the index name \
 			answers from, using the same `index:ranking:*` codes that validate \
 			a definition's ranking, so settings that would rank by nothing are \
-			refused rather than stored.
+			refused rather than stored. The fields named by `synonyms` and \
+			`typoExclusions` are validated against the same generation.
 
 			Takes effect for searches on the answering node at once and on \
 			every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL`, so \
@@ -290,8 +292,9 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The body is missing, or the ranking failed validation against the \
-			generation the index answers from (`index:ranking:*`).""",
+			The body is missing, or the settings failed validation against the \
+			generation the index answers from (`index:ranking:*`, \
+			`index:settings:synonyms:*`, `index:settings:typo_exclusions:*`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -536,7 +539,7 @@ public class IndexSettingsResource {
 			var snapshot = searchSettings.read(stored).orElse(null);
 
 			var base = snapshot == null
-				? new SearchSettingsDefinition(null, null)
+				? new SearchSettingsDefinition(null, null, null)
 				: describable(snapshot);
 
 			var changed = read(ObjectPatch.applyTo(mapper.valueToTree(base), body, mapper));
@@ -603,6 +606,20 @@ public class IndexSettingsResource {
 			}
 		}
 
+		if(definition.typoExclusions() != null) {
+			for(var entry : definition.typoExclusions().entrySet()) {
+				builder.putTypoExclusions(entry.getKey(), toStored(entry.getValue()));
+			}
+
+			var errors = index.validateTypoExclusions(
+				builder.getTypoExclusionsMap(),
+				ObjectLocation.root().forField("typoExclusions")
+			);
+			if(errors.notEmpty()) {
+				throw new ValidationException(errors);
+			}
+		}
+
 		return SearchSettingsFeatures.describe(builder.build());
 	}
 
@@ -631,12 +648,34 @@ public class IndexSettingsResource {
 		);
 	}
 
+	private static QueryTypoExclusions toStored(
+		SearchSettingsDefinition.TypoExclusions exclusions
+	) {
+		var builder = QueryTypoExclusions.newBuilder();
+
+		if(exclusions.words() != null) {
+			builder.addAllWords(exclusions.words());
+		}
+		if(exclusions.fields() != null) {
+			builder.addAllFields(exclusions.fields());
+		}
+
+		return builder.build();
+	}
+
+	private static SearchSettingsDefinition.TypoExclusions toApi(QueryTypoExclusions exclusions) {
+		return new SearchSettingsDefinition.TypoExclusions(
+			exclusions.getWordsCount() == 0 ? null : List.copyOf(exclusions.getWordsList()),
+			exclusions.getFieldsCount() == 0 ? null : List.copyOf(exclusions.getFieldsList())
+		);
+	}
+
 	/**
 	 * Read the synonym sets of stored settings as the API describes them,
 	 * {@code null} when there are none - which is what the settings are sent
 	 * back as, so that describing them and storing them again is a round trip.
 	 */
-	private static Map<String, SearchSettingsDefinition.QuerySynonyms> toApi(
+	private static Map<String, SearchSettingsDefinition.QuerySynonyms> synonymsOf(
 		SearchSettingsStore stored
 	) {
 		if(stored.getSynonymsMap().isEmpty()) {
@@ -649,6 +688,26 @@ public class IndexSettingsResource {
 		}
 
 		return synonyms;
+	}
+
+	/**
+	 * Read the excluded words of stored settings as the API describes them,
+	 * {@code null} when there are none - the same round trip the synonym sets
+	 * are read by.
+	 */
+	private static Map<String, SearchSettingsDefinition.TypoExclusions> typoExclusionsOf(
+		SearchSettingsStore stored
+	) {
+		if(stored.getTypoExclusionsMap().isEmpty()) {
+			return null;
+		}
+
+		var exclusions = new TreeMap<String, SearchSettingsDefinition.TypoExclusions>();
+		for(var entry : stored.getTypoExclusionsMap().entrySet()) {
+			exclusions.put(entry.getKey(), toApi(entry.getValue()));
+		}
+
+		return exclusions;
 	}
 
 	/**
@@ -673,7 +732,8 @@ public class IndexSettingsResource {
 		IndexDefinition.Ranking ranking = stored.hasRanking()
 			? RankingMapper.toApi(stored.getRanking())
 			: null;
-		var synonyms = toApi(stored);
+		var synonyms = synonymsOf(stored);
+		var typoExclusions = typoExclusionsOf(stored);
 
 		SearchSettingsStore roundTripped;
 		try {
@@ -687,6 +747,11 @@ public class IndexSettingsResource {
 						entry.getKey(),
 						toStored(entry.getKey(), entry.getValue())
 					);
+				}
+			}
+			if(typoExclusions != null) {
+				for(var entry : typoExclusions.entrySet()) {
+					builder.putTypoExclusions(entry.getKey(), toStored(entry.getValue()));
 				}
 			}
 
@@ -705,7 +770,7 @@ public class IndexSettingsResource {
 			throw new UnrepresentableStateException(UNREPRESENTABLE);
 		}
 
-		return new SearchSettingsDefinition(ranking, synonyms);
+		return new SearchSettingsDefinition(ranking, synonyms, typoExclusions);
 	}
 
 	/**
@@ -871,7 +936,8 @@ public class IndexSettingsResource {
 			snapshot.stored().hasRanking()
 				? RankingMapper.toApi(snapshot.stored().getRanking())
 				: null,
-			toApi(snapshot.stored()),
+			synonymsOf(snapshot.stored()),
+			typoExclusionsOf(snapshot.stored()),
 			unquote(snapshot.version()),
 			snapshot.unsupportedFeatures().isEmpty()
 				? null

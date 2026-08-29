@@ -141,7 +141,7 @@ If an index definition contains settings from a newer API version that the curre
 
 ## Search settings
 
-Search settings hold per-index configuration that affects how searches are answered, including ranking rules and synonym sets.
+Search settings hold per-index configuration that affects how searches are answered, including ranking rules, synonym sets, and words that are matched as they are spelled.
 
 Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Requests that modify search settings run on the node that holds the index, like other modifying requests; `GET` requests are served by whichever node receives them.
 
@@ -161,10 +161,11 @@ The response contains the following fields:
 
 - `ranking`: The ranking searches run with instead of the definition's ranking, in the same shape as the definition's `ranking`. While present, it replaces the definition's ranking completely; an empty object turns ranking off. Supplying `signals` in a search request still replaces both. See [Relevance](../explanation/relevance.md).
 - `synonyms`: Synonym sets applied to the text of a search, keyed by set name. See [Synonyms](#synonyms).
+- `typoExclusions`: Words matched as they are spelled, keyed by list name. See [Typo exclusions](#typo-exclusions).
 - `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
 
-A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking.
+A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms` and `typoExclusions` against the same generation.
 
 A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
 
@@ -228,6 +229,44 @@ The server validates synonym sets against the generation the index name answers 
 - `index:settings:synonyms:invalid_boost`: The `boost` value is not a positive number.
 - `index:settings:synonyms:invalid_rule`: A rule is not exactly one kind (`equivalent` or `mapping`).
 
+### Typo exclusions
+
+Search settings can list words that are matched as they are spelled under the `typoExclusions` field. A word on a list is looked up as it was typed, however much typo tolerance the field it is searched in declares. Use a list for brand names and model codes that sit inside text you want typo tolerant otherwise.
+
+Where typo tolerance is allowed remains part of the index definition, which declares it per field usage. See [Field types](field-types.md#string). A word list narrows that per word, and changing one takes effect without reindexing.
+
+The `typoExclusions` field is an object keyed by list name:
+
+```json
+{
+  "typoExclusions": {
+    "brands": {
+      "words": ["canon", "leica"],
+      "fields": ["name"]
+    }
+  }
+}
+```
+
+A word list contains the following fields:
+
+- `words`: The words, as somebody would type them.
+- `fields`: An optional list of field names the words are excluded in, named as a search names them. If omitted, the list covers every field searched as text (any field with a `matching` or an `autocomplete` usage).
+
+The engine applies a word list as follows:
+
+- Words are read through the analysis chain of each field they are excluded in, so a word matches the term that field wrote. A word the chain leaves nothing of, such as a stopword, excludes nothing, and a word the chain leaves several terms of excludes each of them.
+- The list is read against the words a search was typed with. A word that is not listed keeps the tolerance of its field, including when a near reading of it lands on a listed word.
+- A clause that turns typo tolerance off with `"typos": "off"` matches every word as it is typed, so a list changes nothing there.
+- A generation promoted later can lack a field a list names. Searches then forgive mistakes in that field as the definition says, rather than fail.
+
+A node whose version does not support the `typo_exclusions` capability sets the whole settings object aside and searches with the definition alone. The `unsupportedFeatures` field of the settings response lists the name.
+
+The server validates word lists against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
+
+- `index:settings:typo_exclusions:unknown_field`: The list is applied to a field that does not exist in the index.
+- `index:settings:typo_exclusions:field_not_text`: The list is applied to a field that is not searched as text.
+
 ### Changing part of the search settings
 
 ```text
@@ -268,6 +307,11 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `synonyms.<name>.fields` | The list of target fields for a synonym set. |
 | `synonyms.<name>.rules` | The list of rules for a synonym set. |
 | `synonyms.<name>.rules[]` | A new rule added to a synonym set. |
+| `typoExclusions` | The whole typo exclusions object. |
+| `typoExclusions.<name>` | A word list by name. |
+| `typoExclusions.<name>.fields` | The list of target fields for a word list. |
+| `typoExclusions.<name>.words` | The words of a word list. |
+| `typoExclusions.<name>.words[]` | A new word added to a word list. |
 
 Inside bracket selectors, a backslash (`\`) escapes characters, such as `\]`. Objects along a path are created if they do not exist, but lists are not created.
 

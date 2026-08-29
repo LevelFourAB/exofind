@@ -17,6 +17,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param synonyms
  *   synonym sets applied to the text of a search, or {@code null} when the
  *   settings carry none
+ * @param typoExclusions
+ *   words matched as they are spelled, or {@code null} when the settings carry
+ *   none
  * @param version
  *   the version the settings are stored at, also returned as the {@code ETag}
  *   of the response and accepted back as {@code If-Match}
@@ -40,6 +43,11 @@ public record SearchSettingsInfo(
 		Synonym sets applied to the text of a search, by name. Omitted when \
 		the settings carry none.""")
 	Map<String, SearchSettingsDefinition.QuerySynonyms> synonyms,
+
+	@Schema(description = """
+		Words matched as they are spelled, by name. Omitted when the settings \
+		carry none.""")
+	Map<String, SearchSettingsDefinition.TypoExclusions> typoExclusions,
 
 	@Schema(
 		description = """

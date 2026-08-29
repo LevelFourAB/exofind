@@ -76,7 +76,7 @@ The `text` clause accepts the following options:
 - `fields`: An object mapping field names to score weights. A field mapped to `null` uses the weight from its field definition. If omitted, searches all searchable fields.
 - `match`: Term matching mode: `"all"` (default), `"any"`, `"phrase"`, or `"user"`. `"phrase"` requires terms to appear in exact order and adjacent. `"user"` parses search syntax such as quotes and negation (see [Reading what was typed](#reading-what-was-typed)).
 - `prefix`: Prefix matching behavior on the final query term: `"last_token"` (default) matches the trailing word as a prefix; `"off"` requires an exact word match.
-- `typos`: Typo tolerance handling: `"auto"` (default) follows each field's `typoTolerance` configuration; `"off"` disables typo tolerance for the clause.
+- `typos`: Typo tolerance handling: `"auto"` (default) follows each field's `typoTolerance` configuration and the [typo exclusions](admin-api.md#typo-exclusions) in the search settings of the index; `"off"` disables typo tolerance for the clause.
 - `slop`: Number of intervening words permitted between terms in a phrase. Defaults to `0` (words must be adjacent).
 - `relax`: Query relaxation strategy when no documents match: `"unmatched"` (default), `"words"`, or `"off"`. See [Finding something rather than nothing](#finding-something-rather-than-nothing).
 - `combine`: Scope for multi-field term matching: `"term"` (default) or `"field"`.

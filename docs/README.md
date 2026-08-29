@@ -85,6 +85,9 @@ The documentation includes the following how-to guides.
 - [Change synonyms without reindexing](how-to/change-synonyms-without-reindexing.md):
   Make a synonym take effect over a catalogue that is already indexed, and
   decide which side of the search a set belongs on.
+- [Exclude words from typo tolerance](how-to/exclude-words-from-typo-tolerance.md):
+  Hold a brand name or a model code to its spelling inside a field that
+  forgives mistakes in every other word.
 - [Survive Lucene upgrades](how-to/survive-lucene-upgrades.md): Notice an index
   nearing the end of its readable life and reindex it in time.
 

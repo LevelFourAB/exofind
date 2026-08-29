@@ -48,6 +48,7 @@ import org.apache.lucene.util.automaton.Operations;
 import org.eclipse.collections.api.collection.MutableCollection;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
+import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.collections.impl.factory.Lists;
 
 import se.l4.exofind.engine.errors.ErrorMessage;
@@ -65,6 +66,7 @@ import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
 import se.l4.exofind.engine.index.analysis.AnalyzerChains;
 import se.l4.exofind.engine.index.analysis.AnalyzerMode;
 import se.l4.exofind.engine.index.analysis.Analyzers;
+import se.l4.exofind.engine.index.analysis.SynonymOverlay;
 import se.l4.exofind.engine.index.analysis.TokenGraph;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
@@ -1178,8 +1180,7 @@ public class StringFieldType implements FieldType {
 		String name;
 		Analyzer analyzer;
 		boolean prefixLast;
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos = null;
-		var maxEdits = MAX_EDITS;
+		Tolerance tolerance = null;
 
 		/*
 		 * Only the matching usage holds positions worth reading; an
@@ -1191,15 +1192,13 @@ public class StringFieldType implements FieldType {
 
 		if(stringType.hasMatching()) {
 			name = encounter.name(FieldNames.MATCHING);
-			analyzer = queryAnalyzer(
-				encounter,
-				Analyzers.matching(
-					stringType.getMatching(),
-					encounter.getResources(),
-					localeSupport,
-					AnalyzerMode.QUERYING
-				)
+			var base = Analyzers.matching(
+				stringType.getMatching(),
+				encounter.getResources(),
+				localeSupport,
+				AnalyzerMode.QUERYING
 			);
+			analyzer = queryAnalyzer(encounter, base);
 			prefixLast = matcher.prefix() == TextMatcher.Prefix.LAST_TOKEN;
 
 			/*
@@ -1209,7 +1208,11 @@ public class StringFieldType implements FieldType {
 			 */
 			if(stringType.getMatching().hasTypoTolerance()
 				&& matcher.typos() != TextMatcher.Typos.OFF) {
-				typos = stringType.getMatching().getTypoTolerance();
+				tolerance = new Tolerance(
+					stringType.getMatching().getTypoTolerance(),
+					MAX_EDITS,
+					excludedTerms(encounter, base)
+				);
 			}
 		} else if(stringType.hasAutocomplete()) {
 			/*
@@ -1219,15 +1222,13 @@ public class StringFieldType implements FieldType {
 			 * not a prefix query over them.
 			 */
 			name = encounter.name(FieldNames.AUTOCOMPLETE);
-			analyzer = queryAnalyzer(
-				encounter,
-				Analyzers.autocomplete(
-					stringType.getAutocomplete(),
-					encounter.getResources(),
-					localeSupport,
-					AnalyzerMode.QUERYING
-				)
+			var base = Analyzers.autocomplete(
+				stringType.getAutocomplete(),
+				encounter.getResources(),
+				localeSupport,
+				AnalyzerMode.QUERYING
 			);
+			analyzer = queryAnalyzer(encounter, base);
 			prefixLast = false;
 
 			/*
@@ -1238,8 +1239,13 @@ public class StringFieldType implements FieldType {
 			 */
 			if(stringType.getAutocomplete().hasTypoTolerance()
 				&& matcher.typos() != TextMatcher.Typos.OFF) {
-				typos = stringType.getAutocomplete().getTypoTolerance();
-				maxEdits = typos.hasMinLengthTwoTypos() ? MAX_EDITS : MAX_EDITS_WHILE_TYPING;
+				var typos = stringType.getAutocomplete().getTypoTolerance();
+
+				tolerance = new Tolerance(
+					typos,
+					typos.hasMinLengthTwoTypos() ? MAX_EDITS : MAX_EDITS_WHILE_TYPING,
+					excludedTerms(encounter, base)
+				);
 			}
 		} else {
 			throw new IndexFieldUsageException(encounter.getFieldName(), "matching");
@@ -1262,8 +1268,7 @@ public class StringFieldType implements FieldType {
 						name,
 						segments.get(i),
 						prefixLast && isLast,
-						typos,
-						maxEdits,
+						tolerance,
 						positioned
 					)
 			);
@@ -1292,10 +1297,8 @@ public class StringFieldType implements FieldType {
 	 * @param segment
 	 * @param prefix
 	 *   if the last word of the part may still be half typed
-	 * @param typos
-	 *   what mistakes are allowed, {@code null} for none
-	 * @param maxEdits
-	 *   the most mistakes to forgive
+	 * @param tolerance
+	 *   what mistakes are forgiven, {@code null} for none
 	 * @param positioned
 	 *   whether the field holds positions a phrase can be read from
 	 * @return
@@ -1304,8 +1307,7 @@ public class StringFieldType implements FieldType {
 		String name,
 		TokenGraph.Segment segment,
 		boolean prefix,
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
-		int maxEdits,
+		Tolerance tolerance,
 		boolean positioned
 	) {
 		if(segment.isSingleWord()) {
@@ -1313,12 +1315,17 @@ public class StringFieldType implements FieldType {
 
 			if(words.size() == 1) {
 				return boosted(
-					tokenQuery(new Term(name, words.get(0).text()), prefix, typos, maxEdits),
+					tokenQuery(new Term(name, words.get(0).text()), prefix, tolerance),
 					words.get(0).boost()
 				);
 			}
 
-			if(!prefix && typos == null) {
+			/*
+			 * Words none of which is read fuzzily are one choice, whether the
+			 * field forgives no mistakes at all or the settings match each of
+			 * these words as it is spelled.
+			 */
+			if(!prefix && words.noneSatisfy(word -> forgiven(tolerance, word.text()))) {
 				var builder = new SynonymQuery.Builder(name);
 				for(var word : words) {
 					builder.addTerm(new Term(name, word.text()), word.boost());
@@ -1331,7 +1338,7 @@ public class StringFieldType implements FieldType {
 			for(var word : words) {
 				builder.add(
 					boosted(
-						tokenQuery(new Term(name, word.text()), prefix, typos, maxEdits),
+						tokenQuery(new Term(name, word.text()), prefix, tolerance),
 						word.boost()
 					),
 					BooleanClause.Occur.SHOULD
@@ -1369,14 +1376,14 @@ public class StringFieldType implements FieldType {
 		var terms = alternative.terms();
 
 		if(terms.size() == 1) {
-			return tokenQuery(new Term(name, terms.get(0).term().text()), prefix, null, 0);
+			return tokenQuery(new Term(name, terms.get(0).term().text()), prefix, null);
 		}
 
 		if(!positioned) {
 			var builder = new BooleanQuery.Builder();
 			for(var placed : terms) {
 				builder.add(
-					tokenQuery(new Term(name, placed.term().text()), false, null, 0),
+					tokenQuery(new Term(name, placed.term().text()), false, null),
 					BooleanClause.Occur.MUST
 				);
 			}
@@ -1481,29 +1488,31 @@ public class StringFieldType implements FieldType {
 
 		var usage = stringType.getAutocomplete();
 		var name = encounter.name(FieldNames.AUTOCOMPLETE);
-		var analyzer = queryAnalyzer(
-			encounter,
-			Analyzers.autocomplete(
-				usage,
-				encounter.getResources(),
-				encounter.getLocaleSupport(),
-				AnalyzerMode.QUERYING
-			)
+		var base = Analyzers.autocomplete(
+			usage,
+			encounter.getResources(),
+			encounter.getLocaleSupport(),
+			AnalyzerMode.QUERYING
 		);
+		var analyzer = queryAnalyzer(encounter, base);
 
 		var segments = analyze(encounter, analyzer, name, matcher.text());
 		if(segments.size() != matchingParts) {
 			return null;
 		}
 
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos = null;
-		var maxEdits = MAX_EDITS;
+		Tolerance tolerance = null;
 		if(usage.hasTypoTolerance() && matcher.typos() != TextMatcher.Typos.OFF) {
-			typos = usage.getTypoTolerance();
-			maxEdits = typos.hasMinLengthTwoTypos() ? MAX_EDITS : MAX_EDITS_WHILE_TYPING;
+			var typos = usage.getTypoTolerance();
+
+			tolerance = new Tolerance(
+				typos,
+				typos.hasMinLengthTwoTypos() ? MAX_EDITS : MAX_EDITS_WHILE_TYPING,
+				excludedTerms(encounter, base)
+			);
 		}
 
-		return segmentQuery(name, segments.getLast(), false, typos, maxEdits, false);
+		return segmentQuery(name, segments.getLast(), false, tolerance, false);
 	}
 
 	/**
@@ -1552,7 +1561,7 @@ public class StringFieldType implements FieldType {
 
 		if(segments.size() == 1 && segments.get(0).isSingleWord()) {
 			// A phrase of one word is that word, half typed or not
-			return segmentQuery(name, segments.get(0), prefixLast, null, 0, true);
+			return segmentQuery(name, segments.get(0), prefixLast, null, true);
 		}
 
 		if(!prefixLast
@@ -1761,19 +1770,16 @@ public class StringFieldType implements FieldType {
 	 *   the word as it came out of analysis
 	 * @param prefix
 	 *   if the word may still be half typed
-	 * @param typos
-	 *   what mistakes are allowed, {@code null} for none
-	 * @param maxEdits
-	 *   the most mistakes to forgive, whatever the word is long enough for
+	 * @param tolerance
+	 *   what mistakes are forgiven, {@code null} for none
 	 * @return
 	 */
 	private static Query tokenQuery(
 		Term term,
 		boolean prefix,
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
-		int maxEdits
+		Tolerance tolerance
 	) {
-		var edits = typos == null ? 0 : editsAllowed(term.text(), typos, maxEdits);
+		var edits = tolerance == null ? 0 : tolerance.editsAllowed(term.text());
 
 		var exact = prefix
 			? cacheable(new PrefixQuery(term, EXPANSION_REWRITE))
@@ -1790,7 +1796,7 @@ public class StringFieldType implements FieldType {
 		 */
 		return new BooleanQuery.Builder()
 			.add(exact, BooleanClause.Occur.SHOULD)
-			.add(typoLadder(term, edits, typos, prefix), BooleanClause.Occur.SHOULD)
+			.add(typoLadder(term, edits, tolerance.config(), prefix), BooleanClause.Occur.SHOULD)
 			.build();
 	}
 
@@ -1846,42 +1852,80 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
-	 * Get how many typos a word is long enough to carry, up to the ceiling the
-	 * usage affords. A short word is mostly other words, so how much mistake it
-	 * can absorb grows with its length.
+	 * What mistakes are forgiven in the words of one search of one field: the
+	 * tolerance the definition declared, the ceiling the shape of the query
+	 * puts on it, and the words the search settings match as they are spelled.
 	 *
-	 * A word of digits alone carries none however long it is, unless the usage
-	 * asked for them through {@code numbers}: a number one digit off is a
-	 * different number rather than a misspelling, so forgiving the difference
-	 * answers with what was not asked for.
-	 *
-	 * @param token
-	 * @param typos
+	 * @param config
+	 *   the tolerance the usage being searched declares
 	 * @param maxEdits
-	 * @return
+	 *   the most mistakes to forgive, whatever a word is long enough for
+	 * @param excluded
+	 *   the terms matched as they are spelled, empty when the settings exclude
+	 *   none in this field
 	 */
-	private static int editsAllowed(
-		String token,
-		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
-		int maxEdits
+	private record Tolerance(
+		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig config,
+		int maxEdits,
+		ImmutableSet<String> excluded
 	) {
-		if(!typos.hasNumbers() && isAllDigits(token)) {
-			return 0;
+		/**
+		 * Get how many typos a word is long enough to carry, up to the ceiling
+		 * the usage affords. A short word is mostly other words, so how much
+		 * mistake it can absorb grows with its length.
+		 *
+		 * A word the search settings exclude carries none, and neither does a
+		 * word of digits alone unless the usage asked for them through
+		 * {@code numbers}: a number one digit off is a different number rather
+		 * than a misspelling, so forgiving the difference answers with what was
+		 * not asked for.
+		 *
+		 * @param token
+		 *   the word as it came out of analysis
+		 * @return
+		 */
+		int editsAllowed(String token) {
+			if(excluded.contains(token)) {
+				return 0;
+			}
+
+			if(!config.hasNumbers() && isAllDigits(token)) {
+				return 0;
+			}
+
+			var length = token.codePointCount(0, token.length());
+
+			var two = config.hasMinLengthTwoTypos()
+				? config.getMinLengthTwoTypos()
+				: DEFAULT_MIN_LENGTH_TWO_TYPOS;
+			if(maxEdits >= 2 && length >= two) {
+				return 2;
+			}
+
+			var one = config.hasMinLengthOneTypo()
+				? config.getMinLengthOneTypo()
+				: DEFAULT_MIN_LENGTH_ONE_TYPO;
+			return length >= one ? 1 : 0;
 		}
+	}
 
-		var length = token.codePointCount(0, token.length());
+	/**
+	 * Get whether a word is read fuzzily at all, for the shapes that ask for
+	 * one query where nothing is.
+	 */
+	private static boolean forgiven(Tolerance tolerance, String token) {
+		return tolerance != null && tolerance.editsAllowed(token) > 0;
+	}
 
-		var two = typos.hasMinLengthTwoTypos()
-			? typos.getMinLengthTwoTypos()
-			: DEFAULT_MIN_LENGTH_TWO_TYPOS;
-		if(maxEdits >= 2 && length >= two) {
-			return 2;
-		}
-
-		var one = typos.hasMinLengthOneTypo()
-			? typos.getMinLengthOneTypo()
-			: DEFAULT_MIN_LENGTH_ONE_TYPO;
-		return length >= one ? 1 : 0;
+	/**
+	 * Get the terms of a field the search settings match as they are spelled.
+	 *
+	 * <p>Read through the analyzer the definition builds rather than the one
+	 * {@link SynonymOverlay} widens, so a set that names a synonym of an
+	 * excluded word does not carry the exclusion over to it.
+	 */
+	private static ImmutableSet<String> excludedTerms(IndexEncounter encounter, Analyzer base) {
+		return encounter.getTypoExclusions().termsIn(base, encounter.getFieldName());
 	}
 
 	/**
