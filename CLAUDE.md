@@ -2,38 +2,25 @@
 
 Guidance for Claude Code (claude.ai/code) when working in this repository.
 
-Exofind is an experimental search engine built on S3-compatible object
-storage, using Apache Lucene for indexing/search and Quarkus as the
-application framework.
+Exofind is an experimental search engine built on S3-compatible object storage. It uses Apache Lucene for indexing and search, and Quarkus as the application framework.
 
-Three places hold what this file leaves out, and they are kept current rather
-than summarized here:
+Three other locations contain details not summarized in this file:
 
-- `README.md` - configuration, the toolchain, the shape of the API.
-- `docs/` - why the design is the way it is, written for someone running
-  Exofind. Read `docs/explanation/` before changing how nodes coordinate.
-- The doc comment on the type itself - every rule below is explained where it
-  is enforced, and that is where the whole argument lives.
+- `README.md`: Quick start, the toolchain and its mise tasks, and the container images.
+- `docs/`: The manual, organized by Diátaxis. `docs/reference/` states the configuration settings, the API and the error codes. `docs/explanation/` gives the design rationale; read it before changing node coordination.
+- Doc comments on types: Detailed explanations of enforced rules and their rationale.
 
-`website/` publishes `docs/` and the demo pages to GitHub Pages, reading the
-Markdown where it lies rather than holding a copy. A new document is a file in
-`docs/` and a line in `docs/README.md`, which is what the sidebar is built
-from; `website/README.md` covers the rest.
+`website/` publishes `docs/` and the demo pages to GitHub Pages by reading Markdown source files directly. To add a document, create a file in `docs/` and add an entry to `docs/README.md`, which generates the sidebar. For more details, see `website/README.md`.
 
 ## Commands
 
-Common workflows are mise tasks: `mise run dev`, `build`, `test`, `verify`,
-`storage`, `storage:stop`. The toolchain versions live in `mise.toml`.
+Common workflows use mise tasks: `mise run dev`, `build`, `test`, `verify`, `storage`, and `storage:stop`. Toolchain versions are defined in `mise.toml`.
 
-`mise run site` serves the website - the documentation and the demo pages -
-and `site:build` builds it. Nothing there is part of the engine build; the
-engine needs no node.
+`mise run site` serves the website, including documentation and demo pages. `mise run site:build` builds the website. The website build is separate from the engine build; the engine does not require Node.js.
 
-`mise run bench` runs the JMH benchmarks under `src/benchmark/java`, which
-compile only under the `benchmark` profile - see
-`docs/how-to/benchmark-the-engine.md`.
+`mise run bench` runs JMH benchmarks under `src/benchmark/java`. These benchmarks compile only under the `benchmark` profile. For details, see `docs/how-to/benchmark-the-engine.md`.
 
-Narrower runs go through Maven directly:
+Run targeted tests with Maven directly:
 
 ```bash
 ./mvnw test -Dtest=IndexTest              # one test class
@@ -41,132 +28,51 @@ Narrower runs go through Maven directly:
 ./mvnw verify -Pnative                    # integration tests, needs a native build
 ```
 
-Tests that talk to remote storage start their own container through
-Testcontainers, so they need Docker but nothing started by hand. Dev mode
-(`mise run dev`) uses the SeaweedFS from docker compose (`mise run storage`).
+Tests that interact with remote storage start a container through Testcontainers. These tests require Docker, but do not require manually started services. Development mode (`mise run dev`) stores everything on local disk, because `EXOFIND_STORAGE_MODE` defaults to `local`. To run it against object storage, start SeaweedFS with `mise run storage` and set the mode and the remote settings from `docs/reference/configuration.md`.
 
 ## Orientation
 
-Code lives under `se.l4.exofind.engine`.
+Source code is located under `se.l4.exofind.engine`.
 
-- **Where things are kept is one decision.** `StorageMode` is named by
-  `EXOFIND_STORAGE_MODE` and `StorageProviders` produces the sync provider, the
-  indexer ownership, the registry storage and the key storage from it together,
-  so they can never disagree about whether there is a bucket. `LOCAL` is the
-  default and means one node whose directory *is* the deployment rather than a
-  copy of it.
-- **An index is a name over generations.** `IndexRegistry` - one object in the
-  bucket, replaced conditionally - says which indexes exist, which generations
-  each has and which one the bare name answers for; `IndexName` is how
-  `books@2` is taken apart. `Indexes` opens and caches `Index` instances, one
-  per *generation*.
-- **An `Index` owns one Lucene directory**, moves through a state machine as it
-  syncs (`NEEDS_PULL` → `PULLING` → `USABLE` → `MODIFIED`) and pushes and pulls
-  through a `StateSyncProvider`. Below the open cache, `Indexes` sweeps the
-  coldest closed directories when `exofind.indexes.disk.max-size` is set, and
-  `LocalCopy` is what refuses to remove anything the remote does not fully
-  hold.
-- **`NodeState` says which indexes this node writes.** The
-  `exofind.indexer.enabled` property is candidacy, `IndexerOwnership` divides
-  the index names among the
-  candidates through a leadership table; gaining or losing a name reopens its
-  open generations through `NodeState`'s listeners. Writes for an index a node
-  does not hold are forwarded by `IndexerForwardFilter`, per what the endpoint
-  declares with `@ServedBy` - and a write for an index nothing holds is what
-  appoints its writer, via `tryClaim`.
-- **`se.l4.exofind.engine.reindex` fills a generation from another one.**
-  `ReindexJobs` drives the copy-replay-hold-promote sequence off a durable
-  record per index (`ReindexJobStorage`), which is also what a successor
-  resumes a half-finished job from - the job runs wherever the index's writer
-  is, and status is answered from the record on any node.
-- **`se.l4.exofind.engine.auth` decides who a request is from.** `Keys` turns a
-  bearer token into a `Principal`, and `AuthFilter` checks that principal
-  against the `@RequiresPermission` the endpoint declares.
+- **Storage configuration:** `StorageMode` is configured by `EXOFIND_STORAGE_MODE`. `StorageProviders` creates the sync provider, indexer ownership, registry storage, and key storage together. This ensures all components agree on whether a bucket is configured. `LOCAL` is the default mode, where a single node's directory serves as the deployment rather than a copy.
+- **Index generations:** An index represents a name over multiple generations. `IndexRegistry` is stored as a single object in the bucket and replaced conditionally. It tracks existing indexes, their generations, and which generation serves requests for the bare index name. `IndexName` parses generation names such as `books@2`. `Indexes` opens and caches `Index` instances, with one instance per generation.
+- **Index state and directory ownership:** An `Index` owns one Lucene directory. It moves through a state machine during synchronization (`NEEDS_PULL` → `PULLING` → `USABLE` → `MODIFIED`) and pushes and pulls data through a `StateSyncProvider`. Below the open cache, `Indexes` removes the coldest closed directories when `exofind.indexes.disk.max-size` is set. `LocalCopy` prevents removal of any data that remote storage does not fully contain.
+- **Node state and index writing:** `NodeState` tracks which indexes the local node writes. The `exofind.indexer.enabled` property controls candidacy. `IndexerOwnership` distributes index names among candidates through a leadership table. Gaining or losing an index name reopens active generations through listeners on `NodeState`. Writes for unassigned indexes are forwarded by `IndexerForwardFilter`, based on the `@ServedBy` annotation on the endpoint. A write request for an unassigned index claims a writer using `tryClaim`.
+- **Reindexing generations:** The `se.l4.exofind.engine.reindex` package populates a new generation from an existing one. `ReindexJobs` manages the copy-replay-hold-promote workflow using a durable record per index (`ReindexJobStorage`). Successor nodes use this record to resume interrupted jobs. Reindex jobs run on the node that owns the index writer, and any node can query job status from the record.
+- **Authentication:** The `se.l4.exofind.engine.auth` package holds the keys and what they grant. `Keys` converts a bearer token into a `Principal`. The `se.l4.exofind.engine.api.auth` package applies that principal to a request: `AuthFilter` validates it against the `@RequiresPermission` annotation declared on the endpoint.
 
-Only one node writes an index at a time, and that takes both halves: the
-leadership table decides who *tries* (liveness), while the conditional
-manifest writes and the epoch-scoped object keys are what stop a node that
-wrongly believes it holds an index from corrupting anything (safety). Neither
-alone is enough - see `docs/explanation/synchronization.md`.
+Only one node writes to an index at a time. This requires two coordination mechanisms:
 
-Storing locally has neither half, so `StorageDirectoryLock` supplies what they
-were protecting: a file lock held on the storage directory for as long as the
-node runs, which makes "there is one process" true rather than assumed. It is
-held in both modes, because two nodes over one directory write over the same
-Lucene commits whether or not there is a bucket behind them.
+- The leadership table determines which node attempts writes (liveness).
+- Conditional manifest writes and epoch-scoped object keys prevent split-brain nodes from corrupting data (safety).
+
+Neither mechanism is sufficient on its own. For more information, see `docs/explanation/synchronization.md`.
+
+Local storage does not use remote synchronization mechanisms. Instead, `StorageDirectoryLock` holds a file lock on the storage directory for the lifetime of the node process. This guarantees that only one process accesses the directory. The file lock is held in both local and remote modes, because multiple nodes sharing a directory can overwrite Lucene commits regardless of object storage.
 
 ## Rules that fail silently
 
-Everything else is caught by the compiler, a test or validation. These are not:
+The compiler, tests, or validation catch most errors. The following issues fail silently if overlooked:
 
-- **A new usage, type or capability needs a name in `IndexFeatures`**, and
-  anything that *narrows* a key needs one in `AuthFeatures`. Protobuf keeps
-  fields it has no code for, so without a name an older node reads a newer
-  definition, misses the part it does not understand and indexes anyway.
-- **A setting that decides what is written needs a comparison in
-  `DefinitionCompatibility`.** It names every such setting one at a time rather
-  than deriving them, so one added without a branch is accepted over documents
-  that were never given it - which is the silent under-answering the whole
-  class exists to refuse. A setting a search reads needs nothing.
-- **Names written to disk, or written by callers, are never renamed or
-  reused**: feature names, `Permission` constants, matcher and clause
-  identifiers, proto field numbers, the error codes
-  `DefinitionCompatibility` reports.
-- **`definitions.proto` and `storage.proto` are storage formats** that have to
-  stay readable for as long as an index exists. The rules are in the header
-  comment of `definitions.proto` - read it before adding a field.
-- **The stored definition and the REST contract version independently**, mapped
-  by `IndexDefinitionMapper`. Its `checkRepresentable` holds only while one API
-  definition always maps to one stored definition, so a mapping with two ways
-  to store the same thing breaks the check rather than the round trip.
-- **A logger comes from `Log.of`, never from `LoggerFactory`**. Both compile
-  and both log; only the first keeps `addKeyValue` pairs as fields, because
-  SLF4J flattens them into the message for every backend Quarkus can bind. The
-  argument is on `Log`.
-- **A benchmark run after a source change needs a clean build.** The
-  incremental recompile leaves the classes JMH generated from the old sources
-  stale, every fork dies, and the runner still exits zero - the failure shows
-  only as benchmarks missing from the results. How to build clean without
-  losing the built indexes is in `docs/how-to/benchmark-the-engine.md`.
-- **A `.fst` under `locale-data/` is only readable by the Lucene that wrote
-  it, and the engine reads nothing else** - the `.txt.gz` beside it is what
-  the file was built from, not a fallback. A Lucene upgrade without a rebuild
-  leaves a data set whose absence is quiet: a locale that decompounds simply
-  stops splitting and indexes compounds whole. `DecompounderTest` and
-  `LemmatizerTest` open every shipped transducer to turn that into a build
-  failure; the fix is to rebuild them, per `tools/locale-data/README.md`.
-- **The default matching chain rewrites words** - stemmed, decompounded, by
-  locale - so a test that hand-picks words to sit a certain number of letters
-  or typos apart is measuring the distance between what analysis leaves of
-  them. Declare a normalize-only analyzer in the test's definition when the
-  letters have to mean what they say.
+- **Feature registration in `IndexFeatures` and `AuthFeatures`:** Register any new usage, type, or capability in `IndexFeatures`. Register any key constraint in `AuthFeatures`. Protocol Buffers preserves unknown fields during decoding. Without an explicit feature name, an older node reads a newer definition, ignores unrecognized fields, and indexes data incorrectly.
+- **Comparisons in `DefinitionCompatibility`:** Any setting that affects written index data requires an explicit check in `DefinitionCompatibility`. The class enumerates each setting individually rather than deriving compatibility automatically. If you add a setting without a compatibility check, the engine accepts documents that lack that setting, leading to incomplete query results. Settings that only affect search queries do not require compatibility checks.
+- **Persistent identifier immutability:** Never rename or reuse identifiers that are written to disk or sent by clients. This includes feature names, `Permission` constants, matcher and clause identifiers, Protocol Buffers field numbers, and error codes reported by `DefinitionCompatibility`.
+- **Protocol Buffers backward compatibility:** `definitions.proto` and `storage.proto` define storage formats that must remain readable for the lifetime of an index. Follow the rules in the header comment of `definitions.proto` before adding fields.
+- **Independent definition versioning:** Stored definitions and the REST API contract version independently and are mapped by `IndexDefinitionMapper`. The `checkRepresentable` validation assumes that each API definition maps to exactly one stored definition. If a mapping allows multiple stored representations for the same API definition, `checkRepresentable` fails.
+- **Logger instantiation with `Log.of`:** Always instantiate loggers using `Log.of` instead of `LoggerFactory`. While both compile and log output, only `Log.of` preserves `addKeyValue` pairs as structured fields. SLF4J flattens structured key-value pairs into the log message on Quarkus logging backends. See `Log` for details.
+- **Clean builds for JMH benchmarks:** Always run a clean build before running benchmarks after modifying source code. Incremental compilation leaves stale JMH-generated classes, causing benchmark forks to fail while the test runner still exits with status zero. This failure only appears as missing benchmark results. For instructions on performing a clean build without losing existing indexes, see `docs/how-to/benchmark-the-engine.md`.
+- **Transducer compatibility in `locale-data/`:** Files with the `.fst` extension under `locale-data/` can only be read by the exact version of Lucene that generated them. The engine does not fall back to the adjacent `.txt.gz` source files at runtime. Upgrading Lucene without rebuilding `.fst` files silently disables decompounding, causing compounds to be indexed without splitting. `DecompounderTest` and `LemmatizerTest` validate every shipped transducer during the build. To rebuild transducer files, see `tools/locale-data/README.md`.
+- **Matching chain text analysis in tests:** The default matching chain analyzes text by stemming, decompounding, and applying locale-specific rules. Tests that rely on exact character distances or specific edit distances must account for this analysis. To test exact character matching, configure a normalize-only analyzer in the test index definition.
 
 ## Where a new thing goes
 
-- A matcher, a ranking shape or a query clause: a record, plus the branch in
-  `QueryCompiler`, plus `createQuery` on every type the matcher means something
-  for - a type it means nothing for throws.
-- A way of using a field: on `FieldDef` when it works whatever the value is
-  (`filter`, `sort`, `facet`), on the type when it depends on how the value is
-  analyzed. In both the proto and `FieldDefinition`. Rules every type shares
-  are checked in `Field.validate`, rules only one type can judge in its own,
-  and turning it on reaches no indexed document, so it needs a branch in
-  `DefinitionCompatibility` too.
-- A locale: an entry in `Locales`, which registers `locale.<tag>` as a feature
-  on its own. A locale whose analysis comes from `locale-data/` rather than
-  from the jar - Icelandic - is registered only where the data is installed,
-  so the node that cannot analyze the language refuses definitions naming it
-  instead of indexing the text unanalyzed. `tools/locale-data/` regenerates
-  the files. A word list or lemma lookup is shipped twice: the `.fst` the
-  engine memory maps, and the text it was built from, which nothing reads at
-  runtime.
-- An indexable type: a case in `documents.proto` and in `DocumentSource`, or
-  documents of it cannot be kept.
+When adding components, place them in the following locations:
+
+- **Matchers, ranking shapes, or query clauses:** Create a record, add a branch in `QueryCompiler`, and implement `createQuery` on every supported type. Unsupported types must throw an exception.
+- **Field usage types:** In `definitions.proto`, add field features to the `FieldDef` message if they apply regardless of value type (`filter`, `sort`, `facet`). Add them to the message of the specific type if they depend on value analysis. Map the new configuration to the API in `FieldDefinition` and `IndexDefinitionMapper`. Validate shared field rules in `Field.validate`, and type-specific rules in the corresponding type class. Add a branch in `DefinitionCompatibility` because enabling a field feature does not re-index existing documents.
+- **Locales:** Add an entry in `Locales`. `IndexFeatures` derives a `locale.<tag>` feature from every registered locale, and a `decompound.<tag>` feature from every locale that splits compounds. For locales whose analysis data is stored in `locale-data/` rather than the JAR file (such as Icelandic), register the locale only when the data files are installed. This ensures nodes without language data reject incompatible definitions rather than indexing unanalyzed text. Use `tools/locale-data/` to regenerate locale data files. Word lists and lemma lookups include both a runtime memory-mapped `.fst` file and a source text file.
+- **Indexable types:** Add a case to `documents.proto` and `DocumentSource` to allow storing documents of that type.
 
 ## Keeping this file useful
 
-This file is a map and a list of traps, nothing more. Design rationale belongs
-in the doc comment of the type that enforces it, or in `docs/explanation/` when
-it outgrows one type; the `documentation` skill has the house rules for both.
-If something here could be a doc comment, move it there and leave at most the
-one line that says where to look.
+Keep this file concise: it serves as a map of the repository and a list of silent failure modes. Place design rationale in the doc comment of the enforcing type, or in `docs/explanation/` if the rationale spans multiple types. Follow the guidelines in the `documentation` skill. If content in this file belongs in a doc comment, move it to the source code and keep only a single-line reference here.
