@@ -134,6 +134,7 @@ If a request fails, use the following guidelines:
 ## Related
 
 - [Documents API](../reference/documents-api.md) - Request schemas, response formats, and status codes.
+- [Update parts of documents](update-parts-of-documents.md) - Change one field, one sub-document, or one locale without resending the rest.
 - [Define an index](define-an-index.md) - Define schemas and field validation rules.
 - [Roll out a definition change](roll-out-a-definition-change.md) - Reindex documents when an index definition changes.
 - [Search an index](search-an-index.md) - Query and retrieve indexed documents.

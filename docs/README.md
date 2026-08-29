@@ -43,6 +43,9 @@ The documentation includes the following how-to guides.
 - [Index documents](how-to/index-documents.md): Send documents, load a
   dataset, keep it current with feeds and deletes, and recover from a refused
   request.
+- [Update parts of documents](how-to/update-parts-of-documents.md): Change one
+  field, one sub-document, or one locale without resending the rest of the
+  document.
 - [Read documents back](how-to/read-documents.md): Page an index back out again
   to export it, load it somewhere else, or see what a document holds.
 - [Make a write visible to search](how-to/make-writes-visible.md): Find out why

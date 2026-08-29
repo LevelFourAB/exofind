@@ -6,13 +6,18 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.collections.api.factory.Lists;
-import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.list.ListIterable;
 
+import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.DocumentPatch;
+import se.l4.exofind.engine.index.DocumentPath;
 import se.l4.exofind.engine.index.GeoPoint;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.schema.Field;
+import se.l4.exofind.engine.index.schema.IndexSchema;
 import se.l4.exofind.engine.index.types.GeoPointFieldType;
 import se.l4.exofind.engine.index.types.VectorFieldType;
 
@@ -34,36 +39,342 @@ import se.l4.exofind.engine.index.types.VectorFieldType;
  * Java API.
  */
 public class DocumentMapper {
+	private static final ErrorType UNKNOWN_FIELD = ErrorType
+		.withCode("request:update:path_unknown_field")
+		.withArguments("path", "field")
+		.withMessage(
+			"`{{path}}` reaches into the field `{{field}}`, which the index does not have"
+		);
+
+	private static final ErrorType SELECTOR_NOT_SUPPORTED = ErrorType
+		.withCode("request:update:selector_not_supported")
+		.withArguments("path", "field")
+		.withMessage(
+			"`{{path}}` names one value of `{{field}}`, which holds neither locale "
+			+ "variants nor objects"
+		);
+
+	private static final ErrorType MATCH_NOT_AN_OBJECT = ErrorType
+		.withCode("request:update:match_not_an_object")
+		.withArguments("path", "field")
+		.withMessage(
+			"`{{path}}` matches on a field inside `{{field}}`, whose values are not objects"
+		);
+
+	private static final ErrorType LOCALE_UNKNOWN = ErrorType
+		.withCode("request:update:locale_unknown")
+		.withArguments("path", "field", "locale")
+		.withMessage("Field `{{field}}` holds no variant for the locale `{{locale}}`");
+
+	private static final ErrorType ADD_NOT_MULTIPLE = ErrorType
+		.withCode("request:update:add_not_multiple")
+		.withArguments("path", "field")
+		.withMessage(
+			"`{{path}}` adds a value to `{{field}}`, which holds a single value - "
+			+ "name the field on its own to replace it"
+		);
+
+	private static final ErrorType ADD_REACHES_INSIDE = ErrorType
+		.withCode("request:update:add_reaches_inside")
+		.withArguments("path")
+		.withMessage(
+			"`{{path}}` reaches inside a value that is being added, which does not exist yet - "
+			+ "give the whole value instead"
+		);
+
+	private static final ErrorType NOT_AN_OBJECT = ErrorType
+		.withCode("request:update:not_an_object")
+		.withArguments("path", "field")
+		.withMessage("`{{path}}` reaches inside `{{field}}`, whose values are not objects");
+
+	private static final ErrorType VALUE_REQUIRED = ErrorType
+		.withCode("request:update:value_required")
+		.withArguments("path", "field")
+		.withMessage(
+			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "
+			+ "as `{{field}}[field=value]`"
+		);
+
 	private DocumentMapper() {
 	}
 
 	/**
 	 * Map a change to some of the fields of a document.
 	 *
-	 * <p>A key the JSON holds names a field the patch replaces, so a field
-	 * written as {@code null} is one the patch empties - unlike a whole
-	 * document, where it is a field that was not given. Everything else is read
-	 * the same way as in a whole document.
+	 * <p>Every key of the JSON is a path naming a place in the document, and
+	 * what it maps to is what that place becomes - so a path written as
+	 * {@code null} is one the patch empties, unlike in a whole document, where
+	 * it is a field that was not given. How a path is written is
+	 * {@link DocumentPath}, and what one means is {@link DocumentPatch}.
+	 * Everything else is read the same way as in a whole document.
 	 *
 	 * @param index
 	 *   the index the change is meant for, whose definition decides how the
-	 *   JSON is read
+	 *   paths and the JSON are read
 	 * @param json
-	 *   the fields to change, keyed by field name
+	 *   the places to change, keyed by path
 	 * @return
+	 * @throws ValidationException
+	 *   if a key is not a path, or names a place the definition does not allow
+	 *   to be named that way
 	 */
 	public static DocumentPatch toPatch(Index index, Map<String, Object> json) {
-		var fields = Sets.mutable.<String>ofInitialCapacity(json.size());
-		var values = new ArrayList<Document.Value>(json.size());
+		var changes = Lists.mutable.<DocumentPatch.Change>ofInitialCapacity(json.size());
 
 		for(var entry : json.entrySet()) {
-			var name = entry.getKey();
-
-			fields.add(name);
-			appendValues(index, index.getField(name), name, entry.getValue(), values);
+			changes.add(toChange(index, entry.getKey(), entry.getValue()));
 		}
 
-		return new DocumentPatch(fields.toImmutable(), Lists.immutable.ofAll(values));
+		return new DocumentPatch(changes.toImmutable());
+	}
+
+	/**
+	 * Map one key of a change into the place it names and what that place
+	 * becomes.
+	 */
+	private static DocumentPatch.Change toChange(Index index, String text, Object value) {
+		var path = DocumentPath.parse(text);
+
+		if(path.selector() == null) {
+			return withoutSelector(index, text, value);
+		}
+
+		var field = index.getField(path.field()).orElseThrow(
+			() -> new ValidationException(
+				UNKNOWN_FIELD.toMessage(at(text), "path", text, "field", path.field())
+			)
+		);
+
+		if(path.selector().isEmpty()) {
+			return added(index, field, path, text, value);
+		}
+
+		var equals = path.selector().indexOf('=');
+		if(equals > 0) {
+			return matching(index, field, path, text, value, equals);
+		}
+
+		return inLocale(index, field, path, text, value);
+	}
+
+	/**
+	 * Map a path with no selector, which is a whole field unless it reaches
+	 * into an object field of the index.
+	 */
+	private static DocumentPatch.Change withoutSelector(Index index, String text, Object value) {
+		/*
+		 * Tried from the last dot back, so that a field whose own name holds
+		 * dots is preferred over reading that name as a path through an object.
+		 */
+		for(var dot = text.lastIndexOf('.'); dot > 0; dot = text.lastIndexOf('.', dot - 1)) {
+			var outer = index.getField(text.substring(0, dot));
+
+			if(outer.isPresent() && outer.get().isObject()) {
+				return insideObject(
+					index,
+					outer.get(),
+					null,
+					text.substring(dot + 1),
+					text,
+					value
+				);
+			}
+		}
+
+		return new DocumentPatch.Change(
+			text,
+			DocumentPatch.Selector.ALL,
+			null,
+			mapped(index, index.getField(text), text, null, value)
+		);
+	}
+
+	/**
+	 * Map a path that adds a value to the ones a field holds.
+	 */
+	private static DocumentPatch.Change added(
+		Index index,
+		Field field,
+		DocumentPath path,
+		String text,
+		Object value
+	) {
+		if(path.inner() != null) {
+			throw new ValidationException(
+				ADD_REACHES_INSIDE.toMessage(at(text), "path", text)
+			);
+		}
+
+		if(!field.isMultiple()) {
+			throw new ValidationException(
+				ADD_NOT_MULTIPLE.toMessage(at(text), "path", text, "field", field.getName())
+			);
+		}
+
+		return new DocumentPatch.Change(
+			field.getName(),
+			DocumentPatch.Selector.ADDED,
+			null,
+			mapped(index, Optional.of(field), field.getName(), null, value)
+		);
+	}
+
+	/**
+	 * Map a path naming the object values that hold a value for one of their
+	 * own fields.
+	 */
+	private static DocumentPatch.Change matching(
+		Index index,
+		Field field,
+		DocumentPath path,
+		String text,
+		Object value,
+		int equals
+	) {
+		if(!field.isObject()) {
+			throw new ValidationException(
+				MATCH_NOT_AN_OBJECT.toMessage(at(text), "path", text, "field", field.getName())
+			);
+		}
+
+		var selector = new DocumentPatch.Selector.Matching(
+			path.selector().substring(0, equals),
+			path.selector().substring(equals + 1)
+		);
+
+		if(path.inner() != null) {
+			return insideObject(index, field, selector, path.inner(), text, value);
+		}
+
+		return new DocumentPatch.Change(
+			field.getName(),
+			selector,
+			null,
+			mapped(index, Optional.of(field), field.getName(), null, value)
+		);
+	}
+
+	/**
+	 * Map a path naming one locale variant of a field.
+	 */
+	private static DocumentPatch.Change inLocale(
+		Index index,
+		Field field,
+		DocumentPath path,
+		String text,
+		Object value
+	) {
+		if(!field.isLocaleSpecific()) {
+			throw new ValidationException(
+				SELECTOR_NOT_SUPPORTED.toMessage(at(text), "path", text, "field", field.getName())
+			);
+		}
+
+		if(path.inner() != null) {
+			throw new ValidationException(
+				NOT_AN_OBJECT.toMessage(at(text), "path", text, "field", field.getName())
+			);
+		}
+
+		/*
+		 * Resolved to the variant the field declares rather than kept as it was
+		 * written, because that is the locale the values are held under - a
+		 * field holding `no` takes a change written for `nb-NO`.
+		 */
+		var locale = field.resolveLocale(path.selector()).orElseThrow(
+			() -> new ValidationException(
+				LOCALE_UNKNOWN.toMessage(
+					at(text),
+					"path", text,
+					"field", field.getName(),
+					"locale", path.selector()
+				)
+			)
+		);
+
+		return new DocumentPatch.Change(
+			field.getName(),
+			new DocumentPatch.Selector.InLocale(locale),
+			null,
+			mapped(index, Optional.of(field), field.getName(), locale, value)
+		);
+	}
+
+	/**
+	 * Map a path that reaches into the values of an object field.
+	 *
+	 * @param selector
+	 *   which values, {@code null} for a path that named none - which a field
+	 *   holding a list of values refuses
+	 */
+	private static DocumentPatch.Change insideObject(
+		Index index,
+		Field object,
+		DocumentPatch.Selector selector,
+		String inner,
+		String text,
+		Object value
+	) {
+		if(selector == null) {
+			if(object.isMultiple()) {
+				throw new ValidationException(
+					VALUE_REQUIRED.toMessage(
+						at(text),
+						"path", text,
+						"field", object.getName()
+					)
+				);
+			}
+
+			selector = DocumentPatch.Selector.ALL;
+		}
+
+		var path = object.getName() + '.' + inner;
+
+		/*
+		 * The fields of a nested object resolve through the path; the fields of
+		 * a flattened one are fields of the index under it.
+		 */
+		var field = index.getNestedField(path)
+			.map(IndexSchema.NestedField::field)
+			.or(() -> index.getField(path));
+
+		return new DocumentPatch.Change(
+			object.getName(),
+			selector,
+			inner,
+			mapped(index, field, inner, null, value)
+		);
+	}
+
+	/**
+	 * Read what one place of a change was given, as the values that place
+	 * becomes.
+	 *
+	 * @param locale
+	 *   the locale to hold the values under, {@code null} to read the locales
+	 *   out of the value the way a whole document does
+	 */
+	private static ListIterable<Document.Value> mapped(
+		Index index,
+		Optional<Field> field,
+		String name,
+		String locale,
+		Object value
+	) {
+		var values = new ArrayList<Document.Value>();
+
+		if(locale == null) {
+			appendValues(index, field, name, value, values);
+		} else {
+			appendIn(index, field.get(), name, locale, value, values);
+		}
+
+		return Lists.immutable.ofAll(values);
+	}
+
+	private static ObjectLocation at(String path) {
+		return ObjectLocation.root().forField(path);
 	}
 
 	/**
@@ -135,20 +446,44 @@ public class DocumentMapper {
 		 */
 		if(field0.isLocaleSpecific() && value instanceof Map<?, ?> localized) {
 			for(var entry : localized.entrySet()) {
-				var locale = String.valueOf(entry.getKey());
-
-				for(var single : each(field0, entry.getValue())) {
-					target.add(
-						new Document.Value(name, toValue(index, field0, single), locale)
-					);
-				}
+				appendIn(
+					index,
+					field0,
+					name,
+					String.valueOf(entry.getKey()),
+					entry.getValue(),
+					target
+				);
 			}
 
 			return;
 		}
 
-		for(var single : each(field0, value)) {
-			target.add(new Document.Value(name, toValue(index, field0, single)));
+		appendIn(index, field0, name, null, value, target);
+	}
+
+	/**
+	 * Read what one field was given in one locale.
+	 *
+	 * @param locale
+	 *   the locale the values are held under, {@code null} for a field that is
+	 *   the same in every language, or for a value that keeps the field's
+	 *   default
+	 */
+	private static void appendIn(
+		Index index,
+		Field field,
+		String name,
+		String locale,
+		Object value,
+		List<Document.Value> target
+	) {
+		if(value == null) {
+			return;
+		}
+
+		for(var single : each(field, value)) {
+			target.add(new Document.Value(name, toValue(index, field, single), locale));
 		}
 	}
 
@@ -262,7 +597,7 @@ public class DocumentMapper {
 			);
 		}
 
-		return new Document(values.toArray(Document.Value[]::new));
+		return new Document(values.toArray(new Document.Value[0]));
 	}
 
 	private static Double coordinate(Map<?, ?> point, String name, String alternative) {

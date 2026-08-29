@@ -44,7 +44,7 @@ public class DocumentUpdateTest extends AbstractIndexTest {
 		var index = catalogue();
 
 		assertTrue(index.updateDocument(
-			new DocumentPatch(
+			DocumentPatch.replacing(
 				Sets.immutable.of("id", "category"),
 				Lists.immutable.of(new Document.Value("id", "1"))
 			)
@@ -205,7 +205,7 @@ public class DocumentUpdateTest extends AbstractIndexTest {
 			names.add(value.name());
 		}
 
-		return new DocumentPatch(names.toImmutable(), Lists.immutable.of(values));
+		return DocumentPatch.replacing(names.toImmutable(), Lists.immutable.of(values));
 	}
 
 	private static Document.Value set(String name, Object value) {

@@ -119,7 +119,7 @@ The request supports the following headers:
 
 ### Request body
 
-The body contains document objects. Each object must include the primary key and the fields to update.
+The body contains change objects. Each object must include the primary key. Every other key is a path naming a place in the document, and the value is what that place becomes.
 
 The following example uses `Content-Type: application/json`:
 
@@ -134,27 +134,66 @@ The following example uses `Content-Type: application/json`:
 
 You can also send updates using `Content-Type: application/x-ndjson` with one change object per line.
 
+### Paths
+
+A path is a field name, and may carry a selector in brackets and a field inside the value the selector picks:
+
+| Path | Names |
+| --- | --- |
+| `price` | The field itself, with every value it holds. |
+| `title[sv]` | The `sv` variant of a locale-specific field. |
+| `tags[]` | A value added to the ones the field holds. |
+| `variants[sku=V-2]` | The object values whose `sku` field reads as `V-2`. |
+| `variants[sku=V-2].price` | The `price` field inside those values. |
+| `dimensions.width` | The `width` field inside a single object value. |
+
+Paths follow these rules:
+
+- A selector in brackets holds a BCP 47 tag on a locale-specific field, and `field=value` on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`.
+- Empty brackets add a value, which requires a field declared `multiple`. Nothing is matched, so no value is replaced.
+- `field=value` compares the text form of the value. A value held as the number `2` matches the selector `2`.
+- Inside brackets, a backslash stands for the character after it, which is how a selector holds a `]` of its own.
+- A field inside a list of objects requires a selector saying which value. Without one, the request returns `request:update:value_required`.
+
 ### Update behavior
 
-Field modifications apply as follows:
+Path changes apply as follows:
 
-| Field change | Behavior |
+| Change | Behavior |
 | --- | --- |
-| Field with a value | Replaces the current value of the field. |
-| Field set to `null` | Clears the field value. |
-| Omitted field | Leaves the existing field value unchanged. |
+| Path with a value | Replaces what the path names. |
+| Path set to `null` | Empties what the path names. On a selector naming object values, this removes those values. |
+| Path not given | Leaves what it would name unchanged. |
 
 Updates follow these rules:
 
-- Locale-specific fields and object fields are replaced entirely rather than merged.
+- The path replaces exactly what it names, and leaves everything around it. `variants` replaces every value of the field, `variants[sku=V-2]` replaces one of them, and `variants[sku=V-2].price` replaces one field inside that value.
+- A value replaced in place keeps its position in the list. An added value goes last.
 - Multiple updates to the same document in a single batch apply in the order provided.
-- The updated document is validated as a whole. If validation fails, the request is rejected and the document remains unchanged.
+- Every change to one document is applied and validated as a whole. If validation fails, the request is rejected and the document remains unchanged.
+- The whole document is rewritten in the index either way, so a change to one sub-document costs what rewriting the document costs. For more information, see [How sub-documents are stored](../explanation/document-blocks.md).
 
 ### Constraints and errors
 
 - If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. For more information, see the [Admin API](admin-api.md).
 - If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
 - If `missing` is set to `fail` (default) and a document key is not found, the request fails. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
+- A selector that names no value the document holds returns `request:update:no_match`. A key nothing matches is not created.
+
+The following error codes report a path the endpoint cannot use:
+
+| Code | Meaning |
+| --- | --- |
+| `request:update:path_invalid` | The key cannot be read as a path. |
+| `request:update:path_unknown_field` | The path reaches into a field the index does not have. |
+| `request:update:selector_not_supported` | The path names one value of a field that holds neither locale variants nor objects. |
+| `request:update:match_not_an_object` | The path matches on an inner field of a field whose values are not objects. |
+| `request:update:locale_unknown` | The field holds no variant for the named locale. |
+| `request:update:add_not_multiple` | The path adds a value to a field that holds a single value. |
+| `request:update:add_reaches_inside` | The path reaches inside a value that is being added. |
+| `request:update:not_an_object` | The path reaches inside a field whose values are not objects. |
+| `request:update:value_required` | The path reaches into a list of objects without saying which value. |
+| `request:update:no_match` | The selector names no value the document holds. |
 
 ### Response
 

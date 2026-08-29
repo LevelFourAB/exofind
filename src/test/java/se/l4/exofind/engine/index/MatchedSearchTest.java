@@ -422,7 +422,7 @@ public class MatchedSearchTest extends AbstractIndexTest {
 		 * position found among the children naming the same value in the copy.
 		 */
 		index.updateDocument(
-			new DocumentPatch(
+			DocumentPatch.replacing(
 				org.eclipse.collections.api.factory.Sets.immutable.of("id", "name"),
 				org.eclipse.collections.api.factory.Lists.immutable.of(
 					new Document.Value("id", "1"),

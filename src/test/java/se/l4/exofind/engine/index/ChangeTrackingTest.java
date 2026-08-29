@@ -74,7 +74,7 @@ public class ChangeTrackingTest extends AbstractIndexTest {
 		var index = catalogue();
 		var log = index.beginChangeTracking();
 
-		assertTrue(index.updateDocument(new DocumentPatch(
+		assertTrue(index.updateDocument(DocumentPatch.replacing(
 			Sets.immutable.of("id", "category"),
 			Lists.immutable.of(
 				new Document.Value("id", "1"),

@@ -390,11 +390,19 @@ public class DocumentResource {
 		operationId = "updateDocuments",
 		summary = "Update fields of existing documents",
 		description = """
-			Changes named fields of documents already in the index, leaving \
-			the rest of each document as it is. A field with a value replaces \
-			the current value, a field set to `null` clears it, and an omitted \
-			field is left alone; locale-specific and object fields are \
-			replaced entirely rather than merged.
+			Changes named parts of documents already in the index, leaving the \
+			rest of each document as it is. Every key is a path naming a place \
+			in the document: the place is replaced by what the key maps to, a \
+			key set to `null` empties it, and a place no key names is left \
+			alone.
+
+			How deeply a path reaches is what decides how much it replaces. \
+			`variants` replaces every value of the field, \
+			`variants[sku=V-2]` replaces the one object value whose `sku` \
+			reads as `V-2`, and `variants[sku=V-2].price` replaces one field \
+			inside that value. The same holds for locales: `title` replaces \
+			every variant and `title[sv]` replaces the Swedish one. \
+			`variants[]` adds a value to the ones the field holds.
 
 			Send `application/json` with a `documents` array, or \
 			`application/x-ndjson` with one change object per line and no \
@@ -420,7 +428,21 @@ public class DocumentResource {
 			`missing` was `fail` (`request:update:not_found`), the index \
 			declares no primary key (`index:no_primary_key`), or the index \
 			keeps no document sources (`index:source:not_kept`) - resend the \
-			whole document in that case.""",
+			whole document in that case.
+
+			A path is refused when it cannot be read \
+			(`request:update:path_invalid`), names a field the index does not \
+			have (`request:update:path_unknown_field`), names one value of a \
+			field holding neither locale variants nor objects \
+			(`request:update:selector_not_supported`), names a locale the \
+			field holds no variant for (`request:update:locale_unknown`), adds \
+			to a field holding a single value \
+			(`request:update:add_not_multiple`), reaches inside a field whose \
+			values are not objects (`request:update:not_an_object`), or \
+			reaches into a list of objects without saying which value \
+			(`request:update:value_required`). A path naming a value the \
+			document does not hold is refused with \
+			`request:update:no_match`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(

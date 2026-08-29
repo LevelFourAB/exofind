@@ -177,7 +177,7 @@ public class DocumentChangeBenchmark {
 		var roles = spec.roles();
 		var changed = roles.number() == null ? roles.keyword() : roles.number();
 
-		return new DocumentPatch(
+		return DocumentPatch.replacing(
 			Sets.immutable.of(key, changed),
 			Lists.immutable.of(
 				new Document.Value(key, document.get(key)),
