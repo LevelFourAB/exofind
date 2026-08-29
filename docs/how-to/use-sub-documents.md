@@ -83,7 +83,7 @@ To require multiple conditions to match within the same sub-document, add a `nes
 When building queries with `nested` clauses:
 
 - Reference inner fields by their dotted path (such as `variants.color`). Inner paths resolve only inside a `nested` clause that matches the path. Referencing `variants.color` directly in `query` fails with `index:query:nested:outside`. Referencing it under another object path fails with `index:query:nested:not_in_path`. Top-level index fields cannot appear inside a `nested` clause.
-- A `nested` clause supports clauses that run against a single value: `field`, `text`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `knn` clause inside a `nested` clause, fails with `index:query:nested:unsupported_clause`. An empty `clauses` array matches any document that contains at least one sub-document value.
+- A `nested` clause supports clauses that run against a single value: `field`, `text`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `knn` or `fuse` clause inside a `nested` clause, fails with `index:query:nested:unsupported_clause`. An empty `clauses` array matches any document that contains at least one sub-document value.
 - Place `nested` clauses in `query` or `filters` based on how facet counts should behave:
   - Page-level conditions (such as the main search box or "only in stock") belong in `query`. This narrows both the hits and the facet counts.
   - User refinements belong in `filters`. A facet on a filtered field excludes that filter from its counts, keeping other filter values selectable. Place each facet field in a separate `filters` entry. For details, see [Facets](../reference/search-api.md#facets).

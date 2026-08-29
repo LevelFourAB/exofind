@@ -91,7 +91,31 @@ If you place filter conditions outside the `knn` clause, the engine identifies t
 
 ## Combine with a text search
 
-To perform a hybrid search, place a `knn` clause and a `text` clause inside an `or` query clause:
+To perform a hybrid search, combine text and vector rankings inside a [`fuse`](../reference/search-api.md#fuse) clause:
+
+```json
+{
+  "query": [
+    { "type": "fuse", "depth": 100,
+      "rankings": [
+        { "clauses": [ { "type": "text", "text": "waterproof jacket", "fields": { "name": null } } ] },
+        { "clauses": [ { "type": "knn", "field": "embedding", "vector": [0.01, -0.2], "k": 100 } ] }
+      ],
+      "filter": [ { "field": "published", "match": { "value": true } } ] }
+  ]
+}
+```
+
+The engine runs each ranking separately up to `depth` results, then scores documents by their position across rankings using reciprocal rank fusion. Documents that rank well in multiple rankings score highest. Because the engine evaluates only rank positions, you do not need to normalize BM25 text scores and vector similarity scores into a shared scale.
+
+Configure the fusion clause with these properties:
+
+- `depth`: Sets how many results to read from each ranking (default: `100`). This bounds total merged results, facet counts, and pagination depth. Set `depth` to cover all pages you display.
+- `rankConstant`: Controls how much rank differences matter (default: `60.0`). Lower values give higher weight to top results in each ranking. Higher values flatten rank differences so that appearing in multiple rankings matters more than rank position in one ranking.
+- `weight`: Scales the contribution of a ranking relative to others (default: `1.0`). Use `weight` to reduce the influence of less reliable rankings, such as vector rankings based on user history.
+- `filter`: Restricts candidate documents before each ranking is cut to `depth`. A `knn` ranking inside the fusion uses these filters as pre-filters. If you place filters outside the `fuse` clause, the engine filters the merged list after cutting to `depth`, which can return few or no results.
+
+To combine text and vector queries by adding scores together instead of fusing ranks, place them inside an `or` clause:
 
 ```json
 {
@@ -104,11 +128,7 @@ To perform a hybrid search, place a `knn` clause and a `text` clause inside an `
 }
 ```
 
-The engine sums the scores from both clauses, ranking documents matched by both clauses highest.
-
-To adjust the relative influence of either clause, wrap the clause in a [`boost`](../reference/search-api.md#boost). Because text and vector scores use different scales, test different boost weights against queries with known target results.
-
-Place mandatory filter conditions (such as visibility or tenancy rules) directly in the `query` array alongside the `or` clause, rather than inside the `or` clause. Conditions in `query` restrict results without affecting ranking scores.
+The engine sums the scores from all matching clauses. Because text and vector scores use different scales, wrap individual clauses in a [`boost`](../reference/search-api.md#boost) and test weights against queries with expected results. Use the `or` form when you want a single score you tune yourself, and `fuse` otherwise.
 
 ## Trade recall for space and speed
 
@@ -137,5 +157,6 @@ Vector distance computations use the JVM vector module, which is enabled in the 
 
 - [`vector` fields](../reference/field-types.md#vector) - Complete field property reference.
 - [The `knn` clause](../reference/search-api.md#knn) - Search clause syntax and options.
+- [The `fuse` clause](../reference/search-api.md#fuse) - Merging several rankings by rank.
 - [Search an index](search-an-index.md) - General search request configuration.
 - [Roll out a definition change](roll-out-a-definition-change.md) - Procedures for updating field definitions and models.

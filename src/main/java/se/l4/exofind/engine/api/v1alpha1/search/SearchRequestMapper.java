@@ -26,6 +26,7 @@ import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.DecaySignal;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldSort;
+import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.GeoDistanceSort;
 import se.l4.exofind.engine.query.KnnQuery;
 import se.l4.exofind.engine.query.NestedQuery;
@@ -208,6 +209,24 @@ public class SearchRequestMapper {
 	private static final ErrorType CLAUSE_WEIGHT_INVALID =
 		ErrorType.withCode("search:clause:weight_invalid")
 			.withMessage("How much the clauses count is required, zero or above");
+
+	private static final ErrorType CLAUSE_RANKINGS_INVALID =
+		ErrorType.withCode("search:clause:rankings_invalid")
+			.withMessage(
+				"Fusing ranks a document by where several rankings put it, so it needs at least two of them"
+			);
+
+	private static final ErrorType CLAUSE_RANKING_EMPTY =
+		ErrorType.withCode("search:clause:ranking_empty")
+			.withMessage("A ranking needs something to rank by");
+
+	private static final ErrorType CLAUSE_DEPTH_INVALID =
+		ErrorType.withCode("search:clause:depth_invalid")
+			.withMessage("How far down each ranking is read has to be at least one result");
+
+	private static final ErrorType CLAUSE_RANK_CONSTANT_INVALID =
+		ErrorType.withCode("search:clause:rank_constant_invalid")
+			.withMessage("How much neighbouring ranks differ by has to be a number above zero");
 
 	private static final ErrorType MATCHER_VALUE_REQUIRED =
 		ErrorType.withCode("search:matcher:value_required")
@@ -1102,6 +1121,22 @@ public class SearchRequestMapper {
 				case Clause.Or or -> refuseKnn(or.clauses(), at + "/clauses", errors);
 				case Clause.Not not -> refuseKnn(not.clauses(), at + "/clauses", errors);
 				case Clause.Boost boost -> refuseKnn(boost.clauses(), at + "/clauses", errors);
+				case Clause.Fuse fuse -> {
+					if(fuse.rankings() != null) {
+						for(var ranking = 0; ranking < fuse.rankings().size(); ranking++) {
+							var entry = fuse.rankings().get(ranking);
+							if(entry != null) {
+								refuseKnn(
+									entry.clauses(),
+									at + "/rankings/" + ranking + "/clauses",
+									errors
+								);
+							}
+						}
+					}
+
+					refuseKnn(fuse.filter(), at + "/filter", errors);
+				}
 				case null, default -> {
 				}
 			}
@@ -1602,6 +1637,87 @@ public class SearchRequestMapper {
 				}
 
 				return new KnnQuery(knn.field(), knn.vector(), knn.k(), filter);
+			}
+
+			case Clause.Fuse fuse -> {
+				var valid = true;
+
+				var rankings = Lists.mutable.<FuseQuery.Ranking>empty();
+				if(fuse.rankings() == null || fuse.rankings().size() < 2) {
+					errors.add(
+						CLAUSE_RANKINGS_INVALID.toMessage(Location.create(path + "/rankings"))
+					);
+					valid = false;
+				}
+
+				if(fuse.rankings() != null) {
+					for(var i = 0; i < fuse.rankings().size(); i++) {
+						var at = path + "/rankings/" + i;
+						var ranking = fuse.rankings().get(i);
+
+						if(ranking == null) {
+							errors.add(REQUIRED.toMessage(Location.create(at)));
+							valid = false;
+							continue;
+						}
+
+						var clauses = toClauses(ranking.clauses(), at + "/clauses", errors);
+						if(clauses.isEmpty()) {
+							errors.add(
+								CLAUSE_RANKING_EMPTY.toMessage(Location.create(at + "/clauses"))
+							);
+							valid = false;
+							continue;
+						}
+
+						var weight = ranking.weight();
+						if(weight != null && (!(weight >= 0) || !Float.isFinite(weight))) {
+							errors.add(
+								CLAUSE_WEIGHT_INVALID.toMessage(Location.create(at + "/weight"))
+							);
+							valid = false;
+							continue;
+						}
+
+						rankings.add(new FuseQuery.Ranking(
+							clauses,
+							weight == null ? FuseQuery.DEFAULT_WEIGHT : weight
+						));
+					}
+				}
+
+				var depth = FuseQuery.DEFAULT_DEPTH;
+				if(fuse.depth() != null) {
+					if(fuse.depth() < 1) {
+						errors.add(
+							CLAUSE_DEPTH_INVALID.toMessage(Location.create(path + "/depth"))
+						);
+						valid = false;
+					} else {
+						depth = fuse.depth();
+					}
+				}
+
+				var rankConstant = FuseQuery.DEFAULT_RANK_CONSTANT;
+				if(fuse.rankConstant() != null) {
+					if(!(fuse.rankConstant() > 0) || !Float.isFinite(fuse.rankConstant())) {
+						errors.add(
+							CLAUSE_RANK_CONSTANT_INVALID.toMessage(
+								Location.create(path + "/rankConstant")
+							)
+						);
+						valid = false;
+					} else {
+						rankConstant = fuse.rankConstant();
+					}
+				}
+
+				var filter = toClauses(fuse.filter(), path + "/filter", errors);
+				if(!valid) {
+					return null;
+				}
+
+				return new FuseQuery(rankings.toImmutable(), depth, rankConstant, filter);
 			}
 
 			case Clause.Nested nested -> {

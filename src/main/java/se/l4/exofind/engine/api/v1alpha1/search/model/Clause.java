@@ -39,7 +39,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = Clause.And.class, name = "and"),
 	@JsonSubTypes.Type(value = Clause.Or.class, name = "or"),
 	@JsonSubTypes.Type(value = Clause.Not.class, name = "not"),
-	@JsonSubTypes.Type(value = Clause.Boost.class, name = "boost")
+	@JsonSubTypes.Type(value = Clause.Boost.class, name = "boost"),
+	@JsonSubTypes.Type(value = Clause.Fuse.class, name = "fuse")
 })
 @Schema(description = """
 	A search condition, structured as a tagged union where `type` selects the \
@@ -47,8 +48,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	containing `field` and `match`. See \
 	[Clauses](https://exofind.dev/reference/search-api/#clauses).""")
 public sealed interface Clause
-	permits Clause.Field, Clause.Text, Clause.Knn, Clause.Nested, Clause.And, Clause.Or,
-		Clause.Not, Clause.Boost {
+	permits Clause.Field, Clause.Text, Clause.Knn, Clause.Fuse, Clause.Nested, Clause.And,
+		Clause.Or, Clause.Not, Clause.Boost {
 	/**
 	 * Match documents by what a single field holds.
 	 */
@@ -436,5 +437,114 @@ public sealed interface Clause
 		)
 		List<Clause> clauses
 	) implements Clause {
+	}
+
+	/**
+	 * Match what several rankings found, scored by where each of them put a
+	 * document rather than by what any of them scored. This is what combines
+	 * a text ranking with a vector ranking without adding two scales that
+	 * have nothing in common.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(
+		name = "FuseClause",
+		description = """
+			Runs several rankings separately and merges them with reciprocal \
+			rank fusion, scoring each document by the sum of \
+			`weight / (rankConstant + rank)` over the rankings that reached \
+			it. Only the position a ranking gave a document is read, so \
+			scores on different scales - such as BM25 and vector similarity - \
+			combine without normalization. Matches only the `depth` best \
+			results of each ranking. See \
+			[`fuse`](https://exofind.dev/reference/search-api/#fuse)."""
+	)
+	record Fuse(
+		/**
+		 * The rankings to fuse, at least two.
+		 */
+		@Schema(
+			description = """
+				Rankings to run and merge. At least two are required; fewer \
+				returns `search:clause:rankings_invalid`.""",
+			required = true
+		)
+		List<Ranking> rankings,
+
+		/**
+		 * How far down each ranking is read, left out for 100. This is the
+		 * whole of what the clause can match.
+		 */
+		@Schema(
+			description = """
+				Number of results read from each ranking. This bounds what \
+				the clause can match and how deep paging reaches, the way `k` \
+				bounds a `knn` clause. Must be at least `1`.""",
+			defaultValue = "100"
+		)
+		Integer depth,
+
+		/**
+		 * How much the difference between neighbouring ranks counts, left out
+		 * for 60.
+		 */
+		@Schema(
+			description = """
+				Constant added to each rank before it is inverted. Lower \
+				values make the first results of a ranking count for much \
+				more than the rest; higher values flatten the difference, so \
+				being found by several rankings matters more than being found \
+				first by one. Must be above `0`.""",
+			defaultValue = "60"
+		)
+		Float rankConstant,
+
+		/**
+		 * Clauses narrowing every ranking before it is cut to depth.
+		 */
+		@Schema(description = """
+			Clauses that narrow every ranking before it is cut to `depth`. A \
+			`knn` inside a ranking takes these as its own pre-filter, so a \
+			narrowed vector ranking still returns `k` results. Conditions \
+			placed beside the `fuse` clause instead only narrow the merged \
+			list afterwards.""")
+		List<Clause> filter
+	) implements Clause {
+		/**
+		 * One of the rankings being fused.
+		 */
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(
+			name = "FuseRanking",
+			description = """
+				One ranking of a fusion: what it searches for, and how much \
+				where it placed a document counts."""
+		)
+		public record Ranking(
+			/**
+			 * What the ranking searches for, all of which has to be
+			 * satisfied.
+			 */
+			@Schema(
+				description = """
+					Clauses the ranking searches for, combined with an \
+					implicit `AND`. At least one is required.""",
+				required = true
+			)
+			List<Clause> clauses,
+
+			/**
+			 * How much where this ranking put a document counts against the
+			 * other rankings, left out for 1.
+			 */
+			@Schema(
+				description = """
+					Multiplier for what this ranking contributes. It cannot \
+					reorder the ranking itself, only weigh it against the \
+					others.""",
+				defaultValue = "1"
+			)
+			Float weight
+		) {
+		}
 	}
 }

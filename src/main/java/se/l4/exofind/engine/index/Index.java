@@ -117,6 +117,7 @@ import se.l4.exofind.engine.query.AndQuery;
 import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldQuery;
+import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.KnnQuery;
 import se.l4.exofind.engine.query.NestedQuery;
 import se.l4.exofind.engine.query.NotQuery;
@@ -4912,6 +4913,13 @@ public class Index {
 				case BoostQuery q -> collectFieldPaths(q.clauses(), path, collected);
 				case NestedQuery q -> collected.add(q.path());
 				case KnnQuery q -> collected.add(q.field());
+				case FuseQuery q -> {
+					for(var ranking : q.rankings()) {
+						collectFieldPaths(ranking.clauses(), path, collected);
+					}
+
+					collectFieldPaths(q.filter(), path, collected);
+				}
 			}
 		}
 	}

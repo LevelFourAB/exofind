@@ -30,7 +30,7 @@ import se.l4.exofind.engine.query.matchers.TextMatcher;
  * goes by outside the engine, so it is never renamed or reused.
  */
 public sealed interface Query
-	permits FieldQuery, TextQuery, KnnQuery, AndQuery, OrQuery, NotQuery, BoostQuery,
+	permits FieldQuery, TextQuery, KnnQuery, FuseQuery, AndQuery, OrQuery, NotQuery, BoostQuery,
 		NestedQuery {
 	/**
 	 * Get the unique identifier for this kind of clause.
@@ -45,8 +45,8 @@ public sealed interface Query
 	 * Looking a value up in a field is exact - a document either has it or it
 	 * does not - so a field clause narrows the results without disturbing how
 	 * they are ranked. Ticking a filter can then never reshuffle what is left.
-	 * Text and boosts are the clauses that rank, and a clause that nests others
-	 * ranks if anything inside it does.
+	 * Text, vectors, boosts and fusions are the clauses that rank, and a clause
+	 * that nests others ranks if anything inside it does.
 	 *
 	 * @return
 	 */
@@ -104,6 +104,22 @@ public sealed interface Query
 	 */
 	static KnnQuery knn(String field, float[] vector, int k) {
 		return KnnQuery.of(field, vector, k);
+	}
+
+	/**
+	 * Match what several rankings found, scored by where each of them put a
+	 * document rather than by what any of them scored - which is how a text
+	 * ranking and a vector ranking are combined without adding up two scales
+	 * that have nothing in common. Use {@link FuseQuery#withFilter(Query...)}
+	 * to narrow every ranking before it is cut to depth.
+	 *
+	 * @param rankings
+	 *   the rankings to fuse, at least two - see
+	 *   {@link FuseQuery#ranking(Query...)}
+	 * @return
+	 */
+	static FuseQuery fuse(FuseQuery.Ranking... rankings) {
+		return FuseQuery.of(rankings);
 	}
 
 	/**

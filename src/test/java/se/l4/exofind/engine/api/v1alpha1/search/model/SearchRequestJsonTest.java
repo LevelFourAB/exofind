@@ -449,6 +449,46 @@ public class SearchRequestJsonTest {
 	}
 
 	@Test
+	public void testFuseClauseCarriesItsRankings() throws Exception {
+		var json = """
+			{
+				"query": [
+					{
+						"type": "fuse",
+						"depth": 200,
+						"rankConstant": 20,
+						"rankings": [
+							{ "clauses": [ { "type": "text", "text": "waterproof jacket" } ] },
+							{
+								"clauses": [
+									{ "type": "knn", "field": "embedding", "vector": [0.1, 0.2], "k": 200 }
+								],
+								"weight": 0.5
+							}
+						],
+						"filter": [ { "field": "inStock", "match": { "value": true } } ]
+					}
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var clause = (Clause.Fuse) request.query().get(0);
+		assertThat(clause.depth(), is(200));
+		assertThat(clause.rankConstant(), is(20f));
+		assertThat(clause.filter().get(0), instanceOf(Clause.Field.class));
+
+		var text = clause.rankings().get(0);
+		assertThat(text.clauses().get(0), instanceOf(Clause.Text.class));
+		assertThat(text.weight(), is(nullValue()));
+
+		var vector = clause.rankings().get(1);
+		assertThat(vector.clauses().get(0), instanceOf(Clause.Knn.class));
+		assertThat(vector.weight(), is(0.5f));
+	}
+
+	@Test
 	public void testPagingAndTotal() throws Exception {
 		var json = """
 			{

@@ -159,6 +159,53 @@ Matches the `k` nearest documents by vector distance in a specified field:
 - `k`: Number of nearest documents to return.
 - `filter`: Array of filter clauses that documents must satisfy before nearest-neighbor evaluation.
 
+### `fuse`
+
+Matches documents across several rankings, scored and merged by rank:
+
+```json
+{ "type": "fuse", "depth": 200, "rankConstant": 60,
+  "rankings": [
+    { "clauses": [ { "type": "text", "text": "waterproof jacket", "fields": { "name": null } } ] },
+    { "clauses": [ { "type": "knn", "field": "embedding", "vector": [0.1, 0.2], "k": 200 } ], "weight": 0.5 }
+  ],
+  "filter": [ { "field": "inStock", "match": { "value": true } } ] }
+```
+
+- `rankings`: Array of rankings to run and merge. Each entry contains a `clauses` array combined with an implicit `AND`, and an optional `weight` (default `1`).
+- `depth`: Number of results read from each ranking. Defaults to `100`.
+- `rankConstant`: Constant added to each rank before it is inverted. Defaults to `60`.
+- `filter`: Array of clauses that narrow every ranking before it is cut to `depth`.
+
+Each ranking runs independently. Documents are scored by the sum of `weight / (rankConstant + rank)` across the rankings that reached them, where rank 1 is the top result of a ranking. Because the clause reads only result positions, scores from different scales (such as BM25 text relevance and vector similarity) combine without normalization.
+
+Reciprocal rank fusion provides the following behaviors:
+
+- Documents that rank well across multiple rankings outrank documents placed first in only one ranking.
+- Poorly performing rankings contribute noise rather than dominating results. This makes it safe to fuse rankings from unverified sources, such as vectors generated from user profiles.
+- The fused score is close to `1 / rankConstant`. A scoring clause placed beside the `fuse` clause adds its own score scale on top. Rank with the `fuse` clause and use clauses beside it for filtering.
+- Lower `rankConstant` values increase the weight of the highest-ranked results in each ranking. Higher values flatten the difference across ranks, giving more weight to documents found by multiple rankings.
+- The `weight` property scales a ranking's contribution relative to other rankings. It cannot reorder results within that ranking, because child clauses determine ranking order.
+- Conditions that every result must satisfy belong in `filter` rather than beside the `fuse` clause. A `knn` clause inside a ranking applies `filter` entries as a pre-filter, ensuring the vector ranking returns `k` results. Clauses placed beside the `fuse` clause filter the merged list after each ranking is cut to `depth`, which can produce fewer results.
+
+The `fuse` clause is a top-N clause that matches at most `depth` results per ranking:
+
+- Total match counts reflect the merged list, not all matching documents in the index.
+- Facet counts aggregate only documents in the merged list.
+- Pagination cannot exceed the merged list. Set `depth` high enough to cover all requested result pages.
+- Providing an explicit `sort` orders the merged list by that sort instead of the fused score.
+- The [`explain` endpoint](#explaining-a-result) reports the rank assigned by each ranking and its contributed score.
+- Each pass over a fused query runs its child rankings again. Calculating facet counts on a fused search executes child rankings multiple times.
+
+Fusing rules and error conditions:
+
+- Specifying fewer than two rankings returns `search:clause:rankings_invalid`.
+- Specifying a ranking with no clauses returns `search:clause:ranking_empty`.
+- Setting a ranking `weight` below `0` or to a non-finite number returns `search:clause:weight_invalid`.
+- Setting `depth` below `1` returns `search:clause:depth_invalid`.
+- Setting `rankConstant` to `0`, below `0`, or to a non-finite number returns `search:clause:rank_constant_invalid`.
+- Specifying a `knn` clause inside a ranking of a search with [`hits`](#what-a-hit-stands-for) returns `search:hits:with_knn`.
+
 ### `nested`
 
 Matches documents where a single element of a `nested` [`object` field](field-types.md#object) satisfies all child clauses:
@@ -174,7 +221,7 @@ Matches documents where a single element of a `nested` [`object` field](field-ty
 - `clauses`: Array of clauses evaluated within a single nested object value. An empty array matches any document where the object field is present.
 - `score`: Scoring mode for aggregating matching nested values: `"max"` (default), `"min"`, `"avg"`, or `"total"`.
 
-A `nested` clause must target a `nested` object field path. Using a `nested` clause on a flattened object field returns `index:query:nested:flattened`. Using a `nested` clause on a non-object field returns an error. Child clauses may include `field`, `text`, `and`, `or`, `not`, and `boost`. Including a root-level clause such as another `nested` or `knn` clause returns `index:query:nested:unsupported_clause`.
+A `nested` clause must target a `nested` object field path. Using a `nested` clause on a flattened object field returns `index:query:nested:flattened`. Using a `nested` clause on a non-object field returns an error. Child clauses may include `field`, `text`, `and`, `or`, `not`, and `boost`. Including a root-level clause such as another `nested`, `knn` or `fuse` clause returns `index:query:nested:unsupported_clause`.
 
 A `text` clause inside a `nested` clause searches across all fields in the nested path when `fields` is omitted:
 

@@ -72,7 +72,7 @@ Before you begin, ensure that you have:
 
    Each node in `children` includes:
    - `clause`: The path to the clause in your request body (for example, `query[0]`, `query[1].clauses[0]`, or `filters[0]`).
-   - `clauseType`: The clause type from your request, such as `text`, `boost`, `field`, or `knn`.
+   - `clauseType`: The clause type from your request, such as `text`, `boost`, `field`, `knn`, or `fuse`.
    - `field`: The field name defined in your index definition.
    - `score`: The numeric score contributed by this clause to the parent step.
 

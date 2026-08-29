@@ -30,6 +30,7 @@ import se.l4.exofind.engine.query.DecaySignal;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.FieldSort;
+import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.NestedQuery;
 import se.l4.exofind.engine.query.OrQuery;
 import se.l4.exofind.engine.query.SaturationSignal;
@@ -765,6 +766,150 @@ public class SearchRequestMapperTest {
 			codesOf(e),
 			containsInAnyOrder("search:clause:vector_required", "search:clause:k_invalid")
 		);
+	}
+
+	@Test
+	public void testFuseClauseIsMapped() {
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(
+				new Clause.Fuse(
+					List.of(
+						new Clause.Fuse.Ranking(List.of(new Clause.Text(
+							"waterproof jacket", null, null, null, null, null, null, null
+						)), null),
+						new Clause.Fuse.Ranking(
+							List.of(new Clause.Knn("embedding", new float[] { 1f }, 50, null)),
+							0.5f
+						)
+					),
+					200,
+					20f,
+					List.of(new Clause.Field("published", new Matcher.Equals(true)))
+				)
+			),
+			MAX_DEPTH, MAX_WINDOW
+		);
+
+		var clause = (FuseQuery) mapped.request().query().getFirst();
+		assertThat(clause.depth(), is(200));
+		assertThat(clause.rankConstant(), is(20f));
+		assertThat(clause.rankings().size(), is(2));
+		assertThat(clause.rankings().get(0).weight(), is(FuseQuery.DEFAULT_WEIGHT));
+		assertThat(clause.rankings().get(1).weight(), is(0.5f));
+		assertThat(clause.filter().size(), is(1));
+	}
+
+	@Test
+	public void testFuseFallsBackToTheDefaultDepthAndRankConstant() {
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(
+				new Clause.Fuse(
+					List.of(
+						new Clause.Fuse.Ranking(
+							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null)),
+							null
+						),
+						new Clause.Fuse.Ranking(
+							List.of(new Clause.Knn("embedding", new float[] { 1f }, 50, null)),
+							null
+						)
+					),
+					null, null, null
+				)
+			),
+			MAX_DEPTH, MAX_WINDOW
+		);
+
+		var clause = (FuseQuery) mapped.request().query().getFirst();
+		assertThat(clause.depth(), is(FuseQuery.DEFAULT_DEPTH));
+		assertThat(clause.rankConstant(), is(FuseQuery.DEFAULT_RANK_CONSTANT));
+		assertThat(clause.filter().isEmpty(), is(true));
+	}
+
+	@Test
+	public void testFuseNeedsTwoRankings() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Fuse(
+						List.of(new Clause.Fuse.Ranking(
+							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null)),
+							null
+						)),
+						null, null, null
+					)
+				),
+				MAX_DEPTH, MAX_WINDOW
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:rankings_invalid"));
+		assertThat(pathsOf(e), contains("/query/0/rankings"));
+	}
+
+	@Test
+	public void testFuseIsValidatedThroughout() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Fuse(
+						List.of(
+							new Clause.Fuse.Ranking(List.of(), null),
+							new Clause.Fuse.Ranking(
+								List.of(new Clause.Knn("embedding", new float[] { 1f }, 50, null)),
+								-1f
+							)
+						),
+						0,
+						0f,
+						null
+					)
+				),
+				MAX_DEPTH, MAX_WINDOW
+			)
+		);
+
+		assertThat(
+			codesOf(e),
+			containsInAnyOrder(
+				"search:clause:ranking_empty",
+				"search:clause:weight_invalid",
+				"search:clause:depth_invalid",
+				"search:clause:rank_constant_invalid"
+			)
+		);
+	}
+
+	@Test
+	public void testHitsWithAKnnInsideAFusionAreRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					List.of(new Clause.Fuse(
+						List.of(
+							new Clause.Fuse.Ranking(
+								List.of(new Clause.Text("jacket", null, null, null, null, null, null, null)),
+								null
+							),
+							new Clause.Fuse.Ranking(
+								List.of(new Clause.Knn("embedding", new float[] { 1f }, 5, null)),
+								null
+							)
+						),
+						null, null, null
+					)),
+					null, null, null,
+					new SearchRequest.Hits("variants", null, null)
+				),
+				MAX_DEPTH, MAX_WINDOW
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:hits:with_knn"));
+		assertThat(pathsOf(e), contains("/query/0/rankings/1/clauses/0"));
 	}
 
 	@Test

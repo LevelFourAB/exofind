@@ -95,6 +95,20 @@ When a search request specifies an explicit `sort` parameter, Exofind orders res
 
 A [`knn`](../reference/search-api.md#knn) clause scores documents based on vector distance, which uses a different scale from text matching. In a hybrid search combining both scoring methods with an `or` clause, Exofind adds the vector and text scores together without normalizing them. Because the appropriate balance depends on the specific embedding model and text data, you must measure your search results and tune the balance using a `boost` clause.
 
+## Fusing rankings instead of adding scores
+
+Adding a BM25 score to a cosine similarity assumes the two numbers mean something comparable. They do not, and the balance that works for one embedding model and one corpus does not carry to the next. Requiring both clauses to match is worse still: it drops the documents that only one method found, which is the recall that holding vectors beside text is for.
+
+The [`fuse`](../reference/search-api.md#fuse) clause avoids both problems. Each ranking runs separately, and a document is scored by the sum of `weight / (rankConstant + rank)` over the rankings that reached it. Only the position a ranking gave a document is read, so no score has to be normalized into another and no scale can drown another out.
+
+Fusing by rank leads to several specific behaviors:
+
+- A document that several rankings placed well outranks a document that one ranking placed first.
+- The result set is the union of what the rankings found, so a document only one ranking reached is still a result.
+- A ranking that answers badly contributes noise proportional to its weight, and cannot take over the result list. This bound is what makes it safe to fuse a ranking nobody vouched for, such as a retrieval by a vector built from what a person read before. A profile vector added into the query instead would hijack the search whenever the profile was wrong.
+- The clause matches the `depth` best results of each ranking and nothing else, so the total, the facet counts and paging are all bounded by `depth`, the way a `knn` clause is bounded by `k`.
+- The fused score is a sum of reciprocal ranks, close to `1 / rankConstant`. A clause beside the fusion that also scores adds a different scale on top, which is the blend the fusion exists to avoid.
+
 ## Relaxing changes the result set, not the ranking
 
 When a `text` search matches no documents, query relaxation can drop terms instead of returning an empty result set. The response reports which terms were dropped. Dropped terms still contribute to ranking: documents that contain a dropped term rank higher among the returned results. Relaxation alters which documents are eligible to be ranked, not the ranking mechanics themselves.
@@ -109,6 +123,7 @@ The following table summarizes where you configure each ranking component and wh
 | Field weights | Index definition (overridable per search) | Next search |
 | Whole-value match (`exact`) | Index definition | Newly indexed documents |
 | Boost clauses | Search request | Next search |
+| Rank fusion (`fuse`) | Search request | Next search |
 | Second-pass rescoring (`rescore`) | Search request | Next search |
 | Signals | Index definition, replaceable by search settings (a search adds its own on top) | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Tie breakers | Index definition, replaceable by search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
@@ -120,5 +135,5 @@ Exofind evaluates most ranking components at query time, making ranking adjustme
 ## Related
 
 - [Field types](../reference/field-types.md#ranking) - Reference for `ranking`, `signals`, and field-level settings.
-- [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `signals`, `rescore`, and `sort` parameters.
+- [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `fuse`, `signals`, `rescore`, and `sort` parameters.
 - [Search an index](../how-to/search-an-index.md) - How-to guide for constructing search queries.

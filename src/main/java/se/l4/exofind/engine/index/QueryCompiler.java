@@ -18,6 +18,7 @@ import org.apache.lucene.search.join.ToParentBlockJoinQuery;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.ImmutableMap;
@@ -38,6 +39,7 @@ import se.l4.exofind.engine.query.DecaySignal;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.FieldSort;
+import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.GeoDistanceSort;
 import se.l4.exofind.engine.query.KnnQuery;
 import se.l4.exofind.engine.query.NestedQuery;
@@ -304,6 +306,15 @@ public class QueryCompiler {
 			case FieldQuery q -> namesAField(q.field());
 			case KnnQuery q -> namesAField(q.field());
 			case TextQuery q -> textDocumentsOnly(q);
+
+			/*
+			 * Any one ranking may be the one that found a document, so all of
+			 * them have to answer - unless what narrows every ranking answers
+			 * for them.
+			 */
+			case FuseQuery q -> q.rankings()
+				.allSatisfy(ranking -> matchesDocumentsOnly(ranking.clauses()))
+				|| matchesDocumentsOnly(q.filter());
 
 			// Joined back to the documents holding the values it matched
 			case NestedQuery q -> true;
@@ -831,6 +842,17 @@ public class QueryCompiler {
 			case BoostQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
 			case NestedQuery q -> markClauses(q.clauses(), path + ".clauses", paths);
 			case KnnQuery q -> markClauses(q.filter(), path + ".filter", paths);
+			case FuseQuery q -> {
+				for(var i = 0; i < q.rankings().size(); i++) {
+					markClauses(
+						q.rankings().get(i).clauses(),
+						path + ".rankings[" + i + "].clauses",
+						paths
+					);
+				}
+
+				markClauses(q.filter(), path + ".filter", paths);
+			}
 			default -> {
 				// Nothing inside to mark
 			}
@@ -852,6 +874,7 @@ public class QueryCompiler {
 			case FieldQuery q -> compileField(q);
 			case TextQuery q -> compileText(q);
 			case KnnQuery q -> compileKnn(q);
+			case FuseQuery q -> compileFuse(q);
 			case NestedQuery q -> compileNested(q);
 			case AndQuery q -> compileAll(q.clauses());
 			case OrQuery q -> compileAny(q.clauses());
@@ -1451,6 +1474,113 @@ public class QueryCompiler {
 
 		select(clause.field(), field);
 		return field.getType().createKnnQuery(encounter, clause.vector(), clause.k(), filter);
+	}
+
+	/**
+	 * Compile a fusion of rankings, each of which is searched on its own and
+	 * merged by where it placed a document - see {@link FusionQuery}.
+	 *
+	 * The filter reaches each ranking twice over. It narrows the ranking as a
+	 * whole, and it is pushed down into every {@code knn} inside it as a
+	 * pre-filter of its own. A vector ranking narrowed only afterwards would
+	 * return the global nearest documents with most of them filtered away,
+	 * leaving far fewer results than its {@code k} asked for. The same
+	 * condition applied twice matches the same documents, so the push-down
+	 * costs nothing but the second pass over it.
+	 *
+	 * @param clause
+	 * @return
+	 */
+	private org.apache.lucene.search.Query compileFuse(FuseQuery clause) {
+		var filter = clause.filter().isEmpty()
+			? null
+			: compileAll(clause.filter());
+
+		var rankings = new org.apache.lucene.search.Query[clause.rankings().size()];
+		var weights = new float[rankings.length];
+
+		for(var i = 0; i < rankings.length; i++) {
+			var ranking = clause.rankings().get(i);
+			var compiled = compileAll(narrowed(ranking.clauses(), clause.filter()));
+
+			rankings[i] = filter == null
+				? compiled
+				: new BooleanQuery.Builder()
+					.add(compiled, BooleanClause.Occur.MUST)
+					.add(filter, BooleanClause.Occur.FILTER)
+					.build();
+
+			weights[i] = ranking.weight();
+		}
+
+		return new FusionQuery(rankings, weights, clause.depth(), clause.rankConstant());
+	}
+
+	/**
+	 * Push the clauses that narrow a fusion into the {@code knn} clauses of one
+	 * of its rankings, so that each of them picks its neighbours from among the
+	 * documents that satisfy them.
+	 *
+	 * Only the branches a document has to satisfy on its way in are descended
+	 * into. A {@code not} inverts what it holds, so a condition moved inside
+	 * one would ask for the opposite of what it says.
+	 *
+	 * @param clauses
+	 * @param filter
+	 *   what narrows the fusion, empty for nothing
+	 * @return
+	 */
+	private ListIterable<Query> narrowed(ListIterable<Query> clauses, ImmutableList<Query> filter) {
+		if(filter.isEmpty()) {
+			return clauses;
+		}
+
+		return clauses.collect(clause -> narrowed(clause, filter));
+	}
+
+	private Query narrowed(Query clause, ImmutableList<Query> filter) {
+		return switch(clause) {
+			case KnnQuery q -> carryMark(q, new KnnQuery(
+				q.field(),
+				q.vector(),
+				q.k(),
+				q.filter().newWithAll(filter)
+			));
+
+			case AndQuery q -> carryMark(q, AndQuery.of(narrowed(q.clauses(), filter)));
+			case OrQuery q -> carryMark(q, OrQuery.of(narrowed(q.clauses(), filter)));
+			case BoostQuery q -> carryMark(
+				q,
+				new BoostQuery(q.weight(), Lists.immutable.ofAll(narrowed(q.clauses(), filter)))
+			);
+
+			default -> clause;
+		};
+	}
+
+	/**
+	 * Give a clause built here the place in the request that the clause it was
+	 * built from holds, so that an explanation still says which clause of the
+	 * body a step came from.
+	 *
+	 * @param from
+	 *   the clause of the request
+	 * @param to
+	 *   what is compiled in its place
+	 * @return
+	 *   {@code to}
+	 */
+	private <T extends Query> T carryMark(Query from, T to) {
+		if(clausePaths == null) {
+			return to;
+		}
+
+		var path = clausePaths.get(from);
+		if(path != null) {
+			clausePaths.put(to, path);
+		}
+
+		return to;
 	}
 
 	/**
