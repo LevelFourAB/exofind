@@ -16,21 +16,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * {@code filters} so that facets can exclude filter entries on their own fields
  * from match counts:
  *
- * <pre>
- * {
- *   "query": [
- *     { "type": "text", "text": "silent spr", "fields": { "name": 3 } },
- *     { "field": "published", "match": { "value": true } }
- *   ],
- *   "filters": [
- *     { "field": "category", "match": { "type": "in", "values": ["fiction", "poetry"] } }
- *   ],
- *   "facets": [ { "field": "category" } ],
- *   "sort": [ { "type": "score" }, { "field": "name", "order": "asc" } ],
- *   "fields": ["name", "price"],
- *   "limit": 20
- * }
- * </pre>
+ * <pre>{@value #EXAMPLE}</pre>
  *
  * <p>Result pagination is configured using {@code limit} together with at most
  * one of {@code offset}, {@code after}, or {@code before}. Cursors are opaque
@@ -39,9 +25,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * are always returned in sort order.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	All request properties are optional. An empty request matches all \
-	documents in the index.""")
+@Schema(
+	description = """
+		All request properties are optional. An empty request matches all \
+		documents in the index.""",
+	examples = SearchRequest.EXAMPLE
+)
 public record SearchRequest(
 	/**
 	 * Clauses that a matching document must satisfy. If omitted, matches all
@@ -250,6 +239,29 @@ public record SearchRequest(
 		[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""")
 	Rescore rescore
 ) {
+	/**
+	 * The example search, as the JSON a client sends. The class Javadoc and
+	 * the OpenAPI schema of this record both show this text.
+	 *
+	 * <p>{@code SchemaExampleTest} reads it back into this record with unknown
+	 * properties rejected, so an example naming a property the record has lost
+	 * fails the build.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "query": [
+		    { "type": "text", "text": "silent spr", "fields": { "name": 3 } },
+		    { "field": "published", "match": { "value": true } }
+		  ],
+		  "filters": [
+		    { "field": "category", "match": { "type": "in", "values": ["fiction", "poetry"] } }
+		  ],
+		  "facets": [ { "field": "category" } ],
+		  "sort": [ { "type": "score" }, { "field": "name", "order": "asc" } ],
+		  "fields": ["name", "price"],
+		  "limit": 20
+		}""";
+
 	/**
 	 * A search that answers in the order its ranking gave, without a second
 	 * pass over the best of them.

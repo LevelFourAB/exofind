@@ -13,14 +13,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * value replaces what the path names, a path set to {@code null} empties what
  * the path names, and an omitted path leaves the existing value unchanged:
  *
- * <pre>
- * {
- *   "documents": [
- *     { "id": "1", "price": 34.50, "inStock": true },
- *     { "id": "2", "price": 12.00, "variants[sku=V-2].price": 29.0 }
- *   ]
- * }
- * </pre>
+ * <pre>{@value #EXAMPLE}</pre>
  *
  * <p>Path syntax is defined by {@code DocumentPath}, and update semantics are
  * defined by {@code DocumentPatch}. A single change object with this structure
@@ -50,4 +43,15 @@ public record UpdateRequest(
 	)
 	List<Map<String, Object>> documents
 ) {
+	/**
+	 * The example request, as the JSON a client sends. The class Javadoc and
+	 * the OpenAPI schema of this record both show this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "documents": [
+		    { "id": "1", "price": 34.50, "inStock": true },
+		    { "id": "2", "price": 12.00, "variants[sku=V-2].price": 29.0 }
+		  ]
+		}""";
 }

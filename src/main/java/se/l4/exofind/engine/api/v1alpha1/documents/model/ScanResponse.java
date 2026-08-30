@@ -24,11 +24,14 @@ import se.l4.exofind.engine.index.Document;
  *   continuation key
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	A batch of documents read from an index. A single request reads from a \
-	point-in-time snapshot and sees committed data only, so uncommitted writes \
-	are not visible. For more information, see [Reading \
-	documents](https://exofind.dev/reference/documents-api/#reading-documents).""")
+@Schema(
+	description = """
+		A batch of documents read from an index. A single request reads from a \
+		point-in-time snapshot and sees committed data only, so uncommitted writes \
+		are not visible. For more information, see [Reading \
+		documents](https://exofind.dev/reference/documents-api/#reading-documents).""",
+	examples = ScanResponse.EXAMPLE
+)
 public record ScanResponse(
 	/*
 	 * Typed as an array of free-form objects rather than by the engine's
@@ -58,4 +61,16 @@ public record ScanResponse(
 	)
 	String next
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "documents": [
+		    { "id": "1", "name": { "sv": "blåbärssylt" }, "energy": 234 },
+		    { "id": "2", "name": { "sv": "hallonsylt" }, "energy": 241 }
+		  ],
+		  "next": "2"
+		}""";
 }

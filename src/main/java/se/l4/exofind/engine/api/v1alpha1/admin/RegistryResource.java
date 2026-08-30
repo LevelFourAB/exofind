@@ -3,7 +3,9 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -97,7 +99,10 @@ public class RegistryResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "Comparison of the shared registry with remote storage.",
-		content = @Content(schema = @Schema(implementation = RegistryAuditResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = RegistryAuditResponse.class),
+			examples = @ExampleObject(name = "audit", value = RegistryAuditResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -170,7 +175,10 @@ public class RegistryResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "A summary of the changes made by the repair.",
-		content = @Content(schema = @Schema(implementation = RegistryRepairResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = RegistryRepairResponse.class),
+			examples = @ExampleObject(name = "repaired", value = RegistryRepairResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -191,7 +199,13 @@ public class RegistryResource {
 			`index:registry:io_error`). The registry remains unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
-	public RegistryRepairResponse repair(RegistryRepairRequest body) {
+	public RegistryRepairResponse repair(
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = RegistryRepairRequest.class),
+			examples = @ExampleObject(name = "repair", value = RegistryRepairRequest.EXAMPLE)
+		))
+		RegistryRepairRequest body
+	) {
 		var result = auditOrThrow().repair(
 			body != null && Boolean.TRUE.equals(body.promoteNewest())
 		);

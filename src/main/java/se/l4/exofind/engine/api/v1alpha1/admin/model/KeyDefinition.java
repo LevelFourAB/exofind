@@ -16,9 +16,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   when the key expires, as an ISO-8601 timestamp; omitted if the key does not
  *   expire
  */
-@Schema(description = """
-	What a key should be allowed to do. See \
-	[Permissions](https://exofind.dev/reference/auth/#permissions).""")
+@Schema(
+	description = """
+		What a key should be allowed to do. See \
+		[Permissions](https://exofind.dev/reference/auth/#permissions).""",
+	examples = KeyDefinition.EXAMPLE
+)
 public record KeyDefinition(
 	@Schema(
 		description = """
@@ -45,6 +48,17 @@ public record KeyDefinition(
 	)
 	String expiresAt
 ) {
+	/**
+	 * The example definition, as the JSON a client sends. The OpenAPI schema
+	 * of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "description": "the search backend",
+		  "grants": [ { "role": "reader", "indexes": ["products"] } ],
+		  "expiresAt": "2027-01-01T00:00:00Z"
+		}""";
+
 	/**
 	 * A set of permissions over a set of index patterns. Every permission in
 	 * the grant applies to every matching index.

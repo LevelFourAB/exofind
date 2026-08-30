@@ -10,9 +10,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   generation; absent means {@code false}, so a created index answers for
  *   nothing until a generation is promoted
  */
-@Schema(description = """
-	How a repair should treat the indexes it creates. The entire body is \
-	optional.""")
+@Schema(
+	description = """
+		How a repair should treat the indexes it creates. The entire body is \
+		optional.""",
+	examples = RegistryRepairRequest.EXAMPLE
+)
 public record RegistryRepairRequest(
 	@Schema(
 		description = """
@@ -25,4 +28,10 @@ public record RegistryRepairRequest(
 	)
 	Boolean promoteNewest
 ) {
+	/**
+	 * The example request, as the JSON a client sends. The OpenAPI schema of
+	 * this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{ "promoteNewest": true }""";
 }

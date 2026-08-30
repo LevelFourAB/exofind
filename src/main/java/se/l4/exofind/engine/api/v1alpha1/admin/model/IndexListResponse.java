@@ -15,13 +15,34 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param indexes
  *   indexes visible to the caller, ordered by name
  */
-@Schema(description = """
-	The indexes held across the deployment. Definitions and status are \
-	omitted; request a specific index to retrieve them.""")
+@Schema(
+	description = """
+		The indexes held across the deployment. Definitions and status are \
+		omitted; request a specific index to retrieve them.""",
+	examples = IndexListResponse.EXAMPLE
+)
 public record IndexListResponse(
 	@Schema(description = "The indexes visible to the key, ordered by name.")
 	List<IndexSummary> indexes
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "indexes": [
+		    {
+		      "name": "products",
+		      "generation": "2",
+		      "generations": [
+		        { "name": "1", "live": false, "createdAt": "2026-08-16T11:02:07Z" },
+		        { "name": "2", "live": true, "createdAt": "2026-08-28T10:15:30Z" }
+		      ]
+		    }
+		  ]
+		}""";
+
 	/**
 	 * Summary of an index and its generations.
 	 *

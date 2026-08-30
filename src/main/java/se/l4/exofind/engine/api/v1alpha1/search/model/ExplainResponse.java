@@ -10,10 +10,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * Explains how a specific document or value hit scores for a search query.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Explains how a specific document or value hit scores for a search query. \
-	See [Explaining a \
-	result](https://exofind.dev/reference/search-api/#explaining-a-result).""")
+@Schema(
+	description = """
+		Explains how a specific document or value hit scores for a search query. \
+		See [Explaining a \
+		result](https://exofind.dev/reference/search-api/#explaining-a-result).""",
+	examples = ExplainResponse.EXAMPLE
+)
 public record ExplainResponse(
 	/**
 	 * Whether the hit satisfies the search.
@@ -51,6 +54,32 @@ public record ExplainResponse(
 		query that executed.""")
 	SearchResponse.Relaxed relaxed
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. It explains
+	 * the text clause of the request under {@link SearchRequest#EXAMPLE}.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "matched": true,
+		  "score": 8.42,
+		  "detail": {
+		    "matched": true,
+		    "score": 8.42,
+		    "description": "sum of:",
+		    "children": [
+		      {
+		        "matched": true,
+		        "score": 8.42,
+		        "description": "weight(name:spring) [BM25], result of:",
+		        "clause": "query[0]",
+		        "clauseType": "text",
+		        "field": "name",
+		        "usage": "matching"
+		      }
+		    ]
+		  }
+		}""";
+
 	/**
 	 * One score step in the explanation tree.
 	 */

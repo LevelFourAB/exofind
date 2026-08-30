@@ -14,11 +14,9 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
  *
  * <p>The request body must include either `keys` or `query`, but not both:
  *
- * <pre>
- * { "keys": ["1", "2"] }
+ * <pre>{@value #BY_KEYS}
  *
- * { "query": [ { "field": "category", "match": { "value": "sylt" } } ] }
- * </pre>
+ * {@value #BY_QUERY}</pre>
  *
  * @param keys
  *   the primary keys of the documents to remove, formatted according to the key
@@ -31,10 +29,13 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
  *   use each field's default locale. Valid only when specifying {@code query}
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Which documents to remove. The request must carry either `keys` or \
-	`query`, but not both (`request:delete:target_required`, \
-	`request:delete:target_conflicting`).""")
+@Schema(
+	description = """
+		Which documents to remove. The request must carry either `keys` or \
+		`query`, but not both (`request:delete:target_required`, \
+		`request:delete:target_conflicting`).""",
+	examples = { DeleteRequest.BY_KEYS, DeleteRequest.BY_QUERY }
+)
 public record DeleteRequest(
 	@Schema(description = """
 		List of primary keys to delete, formatted according to the key field \
@@ -60,4 +61,17 @@ public record DeleteRequest(
 	)
 	String locale
 ) {
+	/**
+	 * The example naming the documents by key. The class Javadoc and the
+	 * OpenAPI schema of this record both show this text.
+	 */
+	public static final String BY_KEYS = """
+		{ "keys": ["1", "2"] }""";
+
+	/**
+	 * The example naming the documents by query. The class Javadoc and the
+	 * OpenAPI schema of this record both show this text.
+	 */
+	public static final String BY_QUERY = """
+		{ "query": [ { "field": "category", "match": { "value": "sylt" } } ] }""";
 }

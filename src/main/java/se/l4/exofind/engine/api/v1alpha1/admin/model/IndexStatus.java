@@ -35,10 +35,13 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
  *   searches with the definition alone
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	The observed state reported by the answering node. The API does not accept \
-	this object as input. See [Index \
-	states](https://exofind.dev/reference/admin-api/#index-states).""")
+@Schema(
+	description = """
+		The observed state reported by the answering node. The API does not accept \
+		this object as input. See [Index \
+		states](https://exofind.dev/reference/admin-api/#index-states).""",
+	examples = IndexStatus.EXAMPLE
+)
 public record IndexStatus(
 	@Schema(description = """
 		The remote synchronization state as observed by the answering node: \
@@ -93,4 +96,16 @@ public record IndexStatus(
 		node puts them back in force.""")
 	List<String> settingsUnsupportedFeatures
 ) {
+	/**
+	 * The example status, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "state": "USABLE",
+		  "readOnly": false,
+		  "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
+		  "luceneCompatibility": "CURRENT",
+		  "luceneCreatedMajor": 10
+		}""";
 }

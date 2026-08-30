@@ -16,7 +16,10 @@ import se.l4.exofind.engine.index.Document;
  * Response returned by a search query.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response).")
+@Schema(
+	description = "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response).",
+	examples = SearchResponse.EXAMPLE
+)
 public record SearchResponse(
 	/**
 	 * List of matching hits in the requested sort order.
@@ -84,6 +87,39 @@ public record SearchResponse(
 	)
 	double tookMs
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. It answers
+	 * the request under {@link SearchRequest#EXAMPLE}, so the two read
+	 * together.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "hits": [
+		    {
+		      "id": "9781234567890",
+		      "score": 8.42,
+		      "document": { "name": "Silent Spring", "price": 12.50 }
+		    },
+		    {
+		      "id": "9780007458424",
+		      "score": 3.17,
+		      "document": { "name": "Spring Snow", "price": 9.95 }
+		    }
+		  ],
+		  "total": { "count": 128, "exact": true },
+		  "facets": {
+		    "category": {
+		      "values": [
+		        { "value": "fiction", "count": 87 },
+		        { "value": "poetry", "count": 41 }
+		      ],
+		      "totalValues": 2
+		    }
+		  },
+		  "page": { "limit": 20, "offset": 0, "next": "c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0" },
+		  "tookMs": 7.412
+		}""";
+
 	/**
 	 * A single search result. Represents either a matching document, or - when
 	 * `hits` specifies an object field - an individual matching value of that

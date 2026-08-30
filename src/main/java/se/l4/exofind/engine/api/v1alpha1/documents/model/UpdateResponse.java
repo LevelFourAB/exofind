@@ -14,7 +14,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   when the request specifies skipping missing keys; otherwise, the request
  *   fails on the first missing key
  */
-@Schema(description = "The count of updated documents, and any keys that were skipped.")
+@Schema(
+	description = "The count of updated documents, and any keys that were skipped.",
+	examples = UpdateResponse.EXAMPLE
+)
 public record UpdateResponse(
 	@Schema(description = "The number of documents updated.", examples = "1998")
 	int updated,
@@ -25,4 +28,11 @@ public record UpdateResponse(
 		request sent without it fails on the first missing key.""")
 	List<Object> missing
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text. A request sent without
+	 * {@code ?missing=skip} carries no {@code missing}.
+	 */
+	public static final String EXAMPLE = """
+		{ "updated": 1998 }""";
 }

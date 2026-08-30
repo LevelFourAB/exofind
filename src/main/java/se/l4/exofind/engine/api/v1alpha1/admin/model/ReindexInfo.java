@@ -34,9 +34,12 @@ import se.l4.exofind.engine.reindex.ReindexJob;
  * @param updatedAt
  *   the timestamp when the job record was last updated, in ISO 8601 format
  */
-@Schema(description = """
-	A reindex job record. See [Job record and \
-	phases](https://exofind.dev/reference/admin-api/#job-record-and-phases).""")
+@Schema(
+	description = """
+		A reindex job record. See [Job record and \
+		phases](https://exofind.dev/reference/admin-api/#job-record-and-phases).""",
+	examples = ReindexInfo.EXAMPLE
+)
 public record ReindexInfo(
 	@Schema(description = "The name of the index.", examples = "products")
 	String index,
@@ -120,6 +123,23 @@ public record ReindexInfo(
 	)
 	String updatedAt
 ) {
+	/**
+	 * The example job, as the JSON the engine answers with. The OpenAPI schema
+	 * of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "index": "products",
+		  "target": "products@2",
+		  "source": "products@1",
+		  "phase": "copying",
+		  "promote": "auto",
+		  "documentsCopied": 125000,
+		  "sourceDocuments": 2400000,
+		  "startedAt": "2026-08-28T10:15:30Z",
+		  "updatedAt": "2026-08-28T10:16:02Z"
+		}""";
+
 	public static ReindexInfo of(ReindexJob job) {
 		return new ReindexInfo(
 			job.index(),

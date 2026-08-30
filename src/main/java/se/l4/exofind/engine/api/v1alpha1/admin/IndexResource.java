@@ -7,8 +7,10 @@ import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -150,7 +152,10 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The indexes the key can see, ordered by name.",
-		content = @Content(schema = @Schema(implementation = IndexListResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexListResponse.class),
+			examples = @ExampleObject(name = "indexes", value = IndexListResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -205,7 +210,10 @@ public class IndexResource {
 			The index, with its version in the `ETag` header. Presets are \
 			stored expanded; the response returns the expanded chain rather \
 			than the preset name.""",
-		content = @Content(schema = @Schema(implementation = IndexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexInfo.class),
+			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -334,14 +342,20 @@ public class IndexResource {
 		description = """
 			An existing definition was replaced. The new version is in the \
 			`ETag` header.""",
-		content = @Content(schema = @Schema(implementation = IndexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexInfo.class),
+			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "201",
 		description = """
 			The index or generation was created. The version is in the `ETag` \
 			header and the location in `Location`.""",
-		content = @Content(schema = @Schema(implementation = IndexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexInfo.class),
+			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -436,6 +450,14 @@ public class IndexResource {
 		)
 		@QueryParam("allowStaleDocuments") @DefaultValue("false") boolean allowStaleDocuments,
 		@Context UriInfo uriInfo,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = IndexDefinition.class),
+			examples = @ExampleObject(
+				name = "definition",
+				summary = "A primary key and four searchable fields",
+				value = IndexDefinition.EXAMPLE
+			)
+		))
 		IndexDefinition definition
 	) {
 		if(definition == null) {
@@ -644,7 +666,10 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The index now answers from this generation.",
-		content = @Content(schema = @Schema(implementation = IndexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexInfo.class),
+			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -724,7 +749,10 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The resulting status of the index.",
-		content = @Content(schema = @Schema(implementation = IndexStatus.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexStatus.class),
+			examples = @ExampleObject(name = "status", value = IndexStatus.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -812,7 +840,10 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The resulting status of the index on this node.",
-		content = @Content(schema = @Schema(implementation = IndexStatus.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexStatus.class),
+			examples = @ExampleObject(name = "status", value = IndexStatus.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",

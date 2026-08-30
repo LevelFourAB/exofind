@@ -28,11 +28,14 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   name
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Per-index settings that affect how searches are answered, sent in full and \
-	replacing what was stored. Search settings belong to the index name rather \
-	than to a generation, so promoting a generation preserves existing search \
-	settings.""")
+@Schema(
+	description = """
+		Per-index settings that affect how searches are answered, sent in full and \
+		replacing what was stored. Search settings belong to the index name rather \
+		than to a generation, so promoting a generation preserves existing search \
+		settings.""",
+	examples = SearchSettingsDefinition.EXAMPLE
+)
 public record SearchSettingsDefinition(
 	@Schema(description = """
 		The ranking searches run with instead of the definition's ranking, in \
@@ -58,6 +61,28 @@ public record SearchSettingsDefinition(
 		codes that sit inside text you want typo tolerant otherwise.""")
 	Map<String, TypoExclusions> typoExclusions
 ) {
+	/**
+	 * The example settings, as the JSON a client sends. The OpenAPI schema of
+	 * this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "ranking": {
+		    "signals": [
+		      { "field": "purchases", "saturation": { "pivot": 50 }, "weight": 0.5 }
+		    ],
+		    "tieBreakers": [
+		      { "field": "sales", "direction": "descending" }
+		    ]
+		  },
+		  "synonyms": {
+		    "products": {
+		      "rules": [ { "equivalent": ["laptop", "notebook"] } ],
+		      "fields": ["name"]
+		    }
+		  }
+		}""";
+
 	/**
 	 * A query-time synonym set applied to search text.
 	 *

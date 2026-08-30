@@ -11,8 +11,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -121,7 +123,14 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The matching documents, in the order that `sort` asks for.",
-		content = @Content(schema = @Schema(implementation = SearchResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = SearchResponse.class),
+			examples = @ExampleObject(
+				name = "results",
+				summary = "The answer to the example request",
+				value = SearchResponse.EXAMPLE
+			)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -178,6 +187,14 @@ public class SearchResource {
 			example = "books"
 		)
 		@PathParam("name") String name,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = SearchRequest.class),
+			examples = @ExampleObject(
+				name = "search",
+				summary = "Text and a filter, counted by category",
+				value = SearchRequest.EXAMPLE
+			)
+		))
 		SearchRequest body
 	) {
 		var started = System.nanoTime();
@@ -254,7 +271,10 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "How the hit scores.",
-		content = @Content(schema = @Schema(implementation = ExplainResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = ExplainResponse.class),
+			examples = @ExampleObject(name = "explanation", value = ExplainResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -326,6 +346,14 @@ public class SearchResource {
 			example = "0"
 		)
 		@QueryParam("index") @DefaultValue("0") int valueIndex,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = SearchRequest.class),
+			examples = @ExampleObject(
+				name = "search",
+				summary = "The search to explain the hit against",
+				value = SearchRequest.EXAMPLE
+			)
+		))
 		SearchRequest body
 	) {
 		var index = indexes.getOrThrow(name);

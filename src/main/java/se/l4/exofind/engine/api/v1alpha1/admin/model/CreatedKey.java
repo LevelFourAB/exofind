@@ -13,9 +13,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param key
  *   the key metadata as returned in listings
  */
-@Schema(description = """
-	A newly created key. This is the only response its credential ever appears \
-	in.""")
+@Schema(
+	description = """
+		A newly created key. This is the only response its credential ever appears \
+		in.""",
+	examples = CreatedKey.EXAMPLE
+)
 public record CreatedKey(
 	@Schema(
 		description = """
@@ -30,4 +33,19 @@ public record CreatedKey(
 	@Schema(description = "The key as a listing will show it from now on.")
 	KeyInfo key
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "credential": "exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH",
+		  "key": {
+		    "id": "4ff6b760264c1918",
+		    "description": "the search backend",
+		    "grants": [ { "permissions": ["search", "indexes.read"], "indexes": ["products"] } ],
+		    "createdAt": "2026-08-16T12:09:33.198275Z",
+		    "expiresAt": "2027-01-01T00:00:00Z"
+		  }
+		}""";
 }

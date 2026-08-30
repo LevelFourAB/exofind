@@ -20,10 +20,13 @@ import se.l4.exofind.engine.index.registry.RegistryAuditReport;
  *   storage prefixes whose names no index or generation may carry, as
  *   {@code index} or {@code index/generation}; a repair never registers these
  */
-@Schema(description = """
-	The registry compared with what remote storage holds. Reported by the \
-	engine and never accepted as input. See \
-	[Audit](https://exofind.dev/reference/admin-api/#audit).""")
+@Schema(
+	description = """
+		The registry compared with what remote storage holds. Reported by the \
+		engine and never accepted as input. See \
+		[Audit](https://exofind.dev/reference/admin-api/#audit).""",
+	examples = RegistryAuditResponse.EXAMPLE
+)
 public record RegistryAuditResponse(
 	@Schema(description = """
 		The state of the registry object: `PRESENT`, `ABSENT` (no registry \
@@ -41,6 +44,27 @@ public record RegistryAuditResponse(
 		prefixes.""")
 	List<String> unusable
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "registry": "PRESENT",
+		  "indexes": [
+		    {
+		      "name": "products",
+		      "registered": true,
+		      "live": "2",
+		      "generations": [
+		        { "name": "1", "registered": true, "stored": "SYNCED" },
+		        { "name": "2", "registered": true, "stored": "SYNCED" }
+		      ]
+		    }
+		  ],
+		  "unusable": []
+		}""";
+
 	/**
 	 * @param name
 	 *   the name of the index

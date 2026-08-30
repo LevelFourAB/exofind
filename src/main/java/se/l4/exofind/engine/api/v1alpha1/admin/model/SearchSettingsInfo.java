@@ -28,10 +28,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   definition alone
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	The search settings of an index as stored, together with the observed \
-	status reported by the answering node. See [Search \
-	settings](https://exofind.dev/reference/admin-api/#search-settings).""")
+@Schema(
+	description = """
+		The search settings of an index as stored, together with the observed \
+		status reported by the answering node. See [Search \
+		settings](https://exofind.dev/reference/admin-api/#search-settings).""",
+	examples = SearchSettingsInfo.EXAMPLE
+)
 public record SearchSettingsInfo(
 	@Schema(description = """
 		The ranking searches run with instead of the definition's ranking. \
@@ -65,4 +68,20 @@ public record SearchSettingsInfo(
 		force.""")
 	List<String> unsupportedFeatures
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "ranking": {
+		    "signals": [
+		      { "field": "purchases", "saturation": { "pivot": 50 }, "weight": 0.5 }
+		    ],
+		    "tieBreakers": [
+		      { "field": "sales", "direction": "descending" }
+		    ]
+		  },
+		  "version": "9f2c1a0b3d4e5f60"
+		}""";
 }

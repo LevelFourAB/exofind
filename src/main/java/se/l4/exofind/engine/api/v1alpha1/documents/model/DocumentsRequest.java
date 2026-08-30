@@ -12,29 +12,21 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * the format returned in search hits so that search results can be re-indexed
  * directly:
  *
- * <pre>
- * {
- *   "documents": [
- *     {
- *       "id": "1",
- *       "name": { "sv": "blåbärssylt", "en": "blueberry jam" },
- *       "tags": ["sylt", "bär"],
- *       "energy": 234
- *     }
- *   ]
- * }
- * </pre>
+ * <pre>{@value #EXAMPLE}</pre>
  *
  * @param documents
  *   the documents to index, each replacing any existing document under its
  *   primary key
  */
-@Schema(description = """
-	Documents to index. A document specifies its own primary key. Indexing a \
-	document with an existing key replaces the document under that key; if an \
-	index definition does not declare a primary key, each request adds a new \
-	document. See [How a document is \
-	shaped](https://exofind.dev/reference/documents-api/#how-a-document-is-shaped).""")
+@Schema(
+	description = """
+		Documents to index. A document specifies its own primary key. Indexing a \
+		document with an existing key replaces the document under that key; if an \
+		index definition does not declare a primary key, each request adds a new \
+		document. See [How a document is \
+		shaped](https://exofind.dev/reference/documents-api/#how-a-document-is-shaped).""",
+	examples = DocumentsRequest.EXAMPLE
+)
 public record DocumentsRequest(
 	@Schema(
 		description = """
@@ -47,4 +39,19 @@ public record DocumentsRequest(
 	)
 	List<Map<String, Object>> documents
 ) {
+	/**
+	 * The example request, as the JSON a client sends. The class Javadoc and
+	 * the OpenAPI schema of this record both show this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "documents": [
+		    {
+		      "id": "1",
+		      "name": { "sv": "blåbärssylt", "en": "blueberry jam" },
+		      "tags": ["sylt", "bär"],
+		      "energy": 234
+		    }
+		  ]
+		}""";
 }

@@ -3,8 +3,10 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -92,7 +94,10 @@ public class KeyResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The deployment keys and this node's key configuration.",
-		content = @Content(schema = @Schema(implementation = KeyListResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = KeyListResponse.class),
+			examples = @ExampleObject(name = "keys", value = KeyListResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -157,7 +162,10 @@ public class KeyResource {
 		description = """
 			The key was created. The `credential` in this response is the only \
 			copy returned.""",
-		content = @Content(schema = @Schema(implementation = CreatedKey.class))
+		content = @Content(
+			schema = @Schema(implementation = CreatedKey.class),
+			examples = @ExampleObject(name = "created", value = CreatedKey.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -186,7 +194,17 @@ public class KeyResource {
 			(`auth:keys:conflict`). The stored keys are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
-	public Response create(KeyDefinition definition) {
+	public Response create(
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = KeyDefinition.class),
+			examples = @ExampleObject(
+				name = "key",
+				summary = "A reader of one index, expiring at a date",
+				value = KeyDefinition.EXAMPLE
+			)
+		))
+		KeyDefinition definition
+	) {
 		if(definition == null) {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}

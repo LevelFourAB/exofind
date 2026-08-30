@@ -320,7 +320,10 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The documents were indexed successfully.",
-		content = @Content(schema = @Schema(implementation = DocumentsResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = DocumentsResponse.class),
+			examples = @ExampleObject(name = "indexed", value = DocumentsResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -382,6 +385,14 @@ public class DocumentResource {
 			example = "books"
 		)
 		@PathParam("name") String name,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = DocumentsRequest.class),
+			examples = @ExampleObject(
+				name = "documents",
+				summary = "One document with a locale-specific field",
+				value = DocumentsRequest.EXAMPLE
+			)
+		))
 		DocumentsRequest body
 	) {
 		if(body == null || body.documents() == null) {
@@ -495,7 +506,10 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The documents were updated.",
-		content = @Content(schema = @Schema(implementation = UpdateResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = UpdateResponse.class),
+			examples = @ExampleObject(name = "updated", value = UpdateResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -576,6 +590,14 @@ public class DocumentResource {
 			schema = @Schema(enumeration = {"fail", "skip"}, defaultValue = "fail")
 		)
 		@QueryParam("missing") String missing,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = UpdateRequest.class),
+			examples = @ExampleObject(
+				name = "changes",
+				summary = "Two documents changed by path",
+				value = UpdateRequest.EXAMPLE
+			)
+		))
 		UpdateRequest body
 	) {
 		if(body == null || body.documents() == null) {
@@ -1091,7 +1113,10 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The documents were removed.",
-		content = @Content(schema = @Schema(implementation = DeleteResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = DeleteResponse.class),
+			examples = @ExampleObject(name = "deleted", value = DeleteResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -1151,6 +1176,21 @@ public class DocumentResource {
 			example = "books"
 		)
 		@PathParam("name") String name,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = DeleteRequest.class),
+			examples = {
+				@ExampleObject(
+					name = "keys",
+					summary = "By primary key",
+					value = DeleteRequest.BY_KEYS
+				),
+				@ExampleObject(
+					name = "query",
+					summary = "By query",
+					value = DeleteRequest.BY_QUERY
+				)
+			}
+		))
 		DeleteRequest body
 	) {
 		if(body == null || body.keys() == null && body.query() == null) {
@@ -1263,7 +1303,10 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The documents, in primary key order.",
-		content = @Content(schema = @Schema(implementation = ScanResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = ScanResponse.class),
+			examples = @ExampleObject(name = "batch", value = ScanResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",

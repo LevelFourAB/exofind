@@ -45,7 +45,7 @@ public final class ApiEndpoints {
 	public static List<Method> endpoints() throws Exception {
 		var endpoints = new ArrayList<Method>();
 
-		for(var type : apiClasses()) {
+		for(var type : classes()) {
 			if(type.getAnnotation(jakarta.ws.rs.Path.class) == null) {
 				continue;
 			}
@@ -72,7 +72,11 @@ public final class ApiEndpoints {
 		return endpoint.getDeclaringClass().getName() + "#" + endpoint.getName();
 	}
 
-	private static List<Class<?>> apiClasses() throws Exception {
+	/**
+	 * Every compiled class of the API, resources and models alike, in the
+	 * order they were walked in.
+	 */
+	public static List<Class<?>> classes() throws Exception {
 		var root = classesDirectory();
 		var api = root.resolve("se/l4/exofind/engine/api");
 

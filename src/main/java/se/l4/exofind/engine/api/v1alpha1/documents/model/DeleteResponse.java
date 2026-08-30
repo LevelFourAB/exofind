@@ -11,7 +11,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   key produces a success response; for requests using a query, this counts
  *   the matching committed searchable documents
  */
-@Schema(description = "The count of deleted documents.")
+@Schema(
+	description = "The count of deleted documents.",
+	examples = DeleteResponse.EXAMPLE
+)
 public record DeleteResponse(
 	@Schema(
 		description = """
@@ -24,4 +27,10 @@ public record DeleteResponse(
 	)
 	int deleted
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{ "deleted": 3 }""";
 }

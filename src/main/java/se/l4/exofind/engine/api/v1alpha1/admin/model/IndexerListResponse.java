@@ -18,11 +18,14 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param claims
  *   active writer claims per index, ordered by index
  */
-@Schema(description = """
-	Candidate nodes competing to write indexes and the active writer claim for \
-	each index. The response reflects the answering node's view of shared \
-	deployment state and can lag actual state by a few seconds. On nodes using \
-	local storage, both lists are empty.""")
+@Schema(
+	description = """
+		Candidate nodes competing to write indexes and the active writer claim for \
+		each index. The response reflects the answering node's view of shared \
+		deployment state and can lag actual state by a few seconds. On nodes using \
+		local storage, both lists are empty.""",
+	examples = IndexerListResponse.EXAMPLE
+)
 public record IndexerListResponse(
 	@Schema(description = "The candidate nodes competing to write indexes, ordered by node.")
 	List<Candidate> candidates,
@@ -33,6 +36,29 @@ public record IndexerListResponse(
 		Claims on indexes where the key lacks permissions are also omitted.""")
 	List<Claim> claims
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "candidates": [
+		    {
+		      "node": "node-a-7f21",
+		      "address": "http://node-a:8080",
+		      "expiresAt": "2026-08-21T10:15:30Z"
+		    }
+		  ],
+		  "claims": [
+		    {
+		      "index": "products",
+		      "node": "node-a-7f21",
+		      "address": "http://node-a:8080",
+		      "expiresAt": "2026-08-21T10:15:30Z"
+		    }
+		  ]
+		}""";
+
 	/**
 	 * A node competing to write indexes.
 	 *

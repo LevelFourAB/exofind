@@ -3,6 +3,7 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
@@ -84,7 +85,10 @@ public class IndexerResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The candidate nodes and the claims the key can see.",
-		content = @Content(schema = @Schema(implementation = IndexerListResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = IndexerListResponse.class),
+			examples = @ExampleObject(name = "indexers", value = IndexerListResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",

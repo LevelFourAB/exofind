@@ -27,11 +27,14 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param generations
  *   all generations of the index, ordered by name
  */
-@Schema(description = """
-	An index together with the definition and status of one of its \
-	generations: the generation specified in the request, or the live \
-	generation if omitted. See [Index \
-	resource](https://exofind.dev/reference/admin-api/#index-resource).""")
+@Schema(
+	description = """
+		An index together with the definition and status of one of its \
+		generations: the generation specified in the request, or the live \
+		generation if omitted. See [Index \
+		resource](https://exofind.dev/reference/admin-api/#index-resource).""",
+	examples = IndexInfo.EXAMPLE
+)
 public record IndexInfo(
 	@Schema(description = "The name of the index.", examples = "products")
 	String name,
@@ -70,4 +73,31 @@ public record IndexInfo(
 		A list of all generations for the index, ordered by name.""")
 	List<GenerationSummary> generations
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "name": "products",
+		  "generation": "2",
+		  "live": true,
+		  "version": "9f2c1a0b3d4e5f60",
+		  "definition": {
+		    "fields": {
+		      "id": { "type": "string", "primaryKey": true, "required": true },
+		      "name": { "type": "string", "matching": {}, "sort": {} }
+		    }
+		  },
+		  "status": {
+		    "state": "USABLE",
+		    "readOnly": false,
+		    "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
+		    "luceneCompatibility": "CURRENT"
+		  },
+		  "generations": [
+		    { "name": "1", "live": false, "createdAt": "2026-08-16T11:02:07Z" },
+		    { "name": "2", "live": true, "createdAt": "2026-08-28T10:15:30Z" }
+		  ]
+		}""";
 }

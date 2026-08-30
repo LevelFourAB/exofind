@@ -37,11 +37,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *   documents translated into it
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	What an index contains and how it can be searched. A definition is the \
-	state a caller wants: it is sent in full and anything left out is removed. \
-	Observed state, such as whether the index is usable, is reported separately \
-	under `status`.""")
+@Schema(
+	description = """
+		What an index contains and how it can be searched. A definition is the \
+		state a caller wants: it is sent in full and anything left out is removed. \
+		Observed state, such as whether the index is usable, is reported separately \
+		under `status`.""",
+	examples = IndexDefinition.EXAMPLE
+)
 public record IndexDefinition(
 	@Schema(
 		description = """
@@ -84,6 +87,21 @@ public record IndexDefinition(
 		into it.""")
 	LocaleFallback localeFallback
 ) {
+	/**
+	 * The example definition, as the JSON a client sends. The OpenAPI schema
+	 * of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{
+		  "fields": {
+		    "id": { "type": "string", "primaryKey": true, "required": true },
+		    "name": { "type": "string", "matching": {}, "sort": {} },
+		    "category": { "type": "string", "filter": {}, "facet": {} },
+		    "price": { "type": "float", "filter": {}, "sort": {} },
+		    "published": { "type": "boolean", "filter": {} }
+		  }
+		}""";
+
 	/**
 	 * Fills missing locale values in a document from available translations
 	 * during indexing.

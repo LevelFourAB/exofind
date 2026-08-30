@@ -9,7 +9,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   the number of documents indexed, matching every document in the request on
  *   success
  */
-@Schema(description = "The count of indexed documents.")
+@Schema(
+	description = "The count of indexed documents.",
+	examples = DocumentsResponse.EXAMPLE
+)
 public record DocumentsResponse(
 	@Schema(
 		description = """
@@ -19,4 +22,10 @@ public record DocumentsResponse(
 	)
 	int indexed
 ) {
+	/**
+	 * The example response, as the JSON the engine answers with. The OpenAPI
+	 * schema of this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{ "indexed": 2 }""";
 }

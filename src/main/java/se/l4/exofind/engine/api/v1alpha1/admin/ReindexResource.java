@@ -3,8 +3,10 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -116,7 +118,10 @@ public class ReindexResource {
 	@APIResponse(
 		responseCode = "202",
 		description = "A reindex job was started and runs asynchronously.",
-		content = @Content(schema = @Schema(implementation = ReindexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = ReindexInfo.class),
+			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -166,6 +171,10 @@ public class ReindexResource {
 			example = "products@2"
 		)
 		@PathParam("name") String name,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = ReindexRequest.class),
+			examples = @ExampleObject(name = "job", value = ReindexRequest.EXAMPLE)
+		))
 		ReindexRequest body
 	) {
 		var job = reindexes.start(
@@ -208,7 +217,10 @@ public class ReindexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The job record.",
-		content = @Content(schema = @Schema(implementation = ReindexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = ReindexInfo.class),
+			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -272,7 +284,10 @@ public class ReindexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The job record as it stands after cancellation.",
-		content = @Content(schema = @Schema(implementation = ReindexInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = ReindexInfo.class),
+			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -337,7 +352,10 @@ public class ReindexResource {
 	@APIResponse(
 		responseCode = "200",
 		description = "The job records visible to the key, ordered by index name.",
-		content = @Content(schema = @Schema(implementation = ReindexListResponse.class))
+		content = @Content(
+			schema = @Schema(implementation = ReindexListResponse.class),
+			examples = @ExampleObject(name = "jobs", value = ReindexListResponse.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",

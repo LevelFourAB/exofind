@@ -12,9 +12,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   {@code auto} or {@code null} to promote automatically once caught up, or
  *   {@code manual} to pause in the ready phase for manual promotion
  */
-@Schema(description = """
-	Configuration for a reindex job. Both fields are optional; an empty body \
-	reads from the live generation and promotes automatically.""")
+@Schema(
+	description = """
+		Configuration for a reindex job. Both fields are optional; an empty body \
+		reads from the live generation and promotes automatically.""",
+	examples = ReindexRequest.EXAMPLE
+)
 public record ReindexRequest(
 	@Schema(
 		description = """
@@ -36,4 +39,10 @@ public record ReindexRequest(
 	)
 	String promote
 ) {
+	/**
+	 * The example request, as the JSON a client sends. The OpenAPI schema of
+	 * this record shows this text.
+	 */
+	public static final String EXAMPLE = """
+		{ "from": "products@1", "promote": "manual" }""";
 }

@@ -180,7 +180,10 @@ public class IndexSettingsResource {
 		responseCode = "200",
 		description = """
 			The stored settings, with their version in the `ETag` header.""",
-		content = @Content(schema = @Schema(implementation = SearchSettingsInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = SearchSettingsInfo.class),
+			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "401",
@@ -279,7 +282,10 @@ public class IndexSettingsResource {
 		description = """
 			The settings as stored, with their new version in the `ETag` \
 			header.""",
-		content = @Content(schema = @Schema(implementation = SearchSettingsInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = SearchSettingsInfo.class),
+			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
@@ -345,6 +351,14 @@ public class IndexSettingsResource {
 			example = "\"9f2c1a0b3d4e5f60\""
 		)
 		@HeaderParam("If-Match") String ifMatch,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = SearchSettingsDefinition.class),
+			examples = @ExampleObject(
+				name = "settings",
+				summary = "A ranking signal, a tie-breaker and a synonym set",
+				value = SearchSettingsDefinition.EXAMPLE
+			)
+		))
 		SearchSettingsDefinition definition
 	) {
 		if(definition == null) {
@@ -429,7 +443,10 @@ public class IndexSettingsResource {
 		description = """
 			The settings as stored, with their new version in the `ETag` \
 			header.""",
-		content = @Content(schema = @Schema(implementation = SearchSettingsInfo.class))
+		content = @Content(
+			schema = @Schema(implementation = SearchSettingsInfo.class),
+			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
+		)
 	)
 	@APIResponse(
 		responseCode = "400",
