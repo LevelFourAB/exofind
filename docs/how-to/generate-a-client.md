@@ -12,12 +12,15 @@ Before generating an API client, ensure you have:
 
 ## Obtaining the OpenAPI document
 
-You can fetch the OpenAPI document from a running node or read it from a local engine build.
+You can fetch the OpenAPI document from a running node, download the published copy, or read it from a local engine build.
 
-- **From a running node**: Send a request to `GET /q/openapi`. The endpoint does not require an API key and answers regardless of the node authentication mode. The default format is YAML. To get JSON, query `GET /q/openapi?format=json`, query `GET /q/openapi.json`, or send an `Accept: application/json` header.
+- **From a running node**: Send a request to `GET /q/openapi`. The endpoint does not require an API key and answers regardless of the node authentication mode. The default format is YAML. To get JSON, query `GET /q/openapi?format=json`, query `GET /q/openapi.json`, or send an `Accept: application/json` header. Use this source to match the node you deploy.
+- **From the website**: Download <https://exofind.dev/openapi.yaml>. This is the document the [REST API pages](https://exofind.dev/api/) are generated from, and it describes the current release.
 - **From an engine build**: Run `mise run build` or `./mvnw package`. The build outputs `target/openapi/openapi.yaml` and `target/openapi/openapi.json`.
 
 The document uses OpenAPI specification version `3.1.0`. Ensure your generator supports OpenAPI 3.1.
+
+The document declares one server, `{node}`, a variable whose default is `http://localhost:8080`. Set it to the address of your deployment when you generate the client, or set the base URL on the client instance.
 
 ## Generating the client code
 

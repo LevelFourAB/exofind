@@ -33,6 +33,8 @@ GET    /v1alpha1/admin/registry/audit                   # compare the registry w
 POST   /v1alpha1/admin/registry/actions/repair          # register what the storage holds
 ```
 
+Each endpoint also has a generated page stating every field it accepts and returns, grouped as [Indexes](https://exofind.dev/api/operations/tags/indexes/), [Search settings](https://exofind.dev/api/operations/tags/search-settings/), [Reindexes](https://exofind.dev/api/operations/tags/reindexes/), [Indexers](https://exofind.dev/api/operations/tags/indexers/), and [Registry](https://exofind.dev/api/operations/tags/registry/).
+
 Requests that modify an index (all endpoints except read requests and `pull`) run on the node that holds that index. The holder node can differ for each index. If another node receives the request, it forwards the request with the original credentials to the holder node and returns the holder's response.
 
 When no node holds an index, the first candidate node that receives a write claims the index. If no candidate node is available to forward to, or if no candidate node sets `EXOFIND_NODE_ADDRESS`, the server returns `409 Conflict`. If a holder node does not respond, the server returns `502 Bad Gateway`.

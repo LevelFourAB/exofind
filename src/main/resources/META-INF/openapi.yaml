@@ -1,0 +1,29 @@
+# The part of the OpenAPI document that no annotation can express.
+#
+# SmallRye reads this file as the base model and merges the annotations on top
+# of it, so everything else about the document is still declared where the
+# endpoint is.
+#
+# `servers` cannot be. A deployment is run by whoever uses it, so the base URL
+# is a variable, and MicroProfile has no annotation for a server variable.
+# Without this file SmallRye fills the list in from the addresses the build was
+# configured to listen on, `http://localhost:8080` and `http://0.0.0.0:8080`,
+# each described as `Auto generated value`. Those two read as a claim about the
+# API on the published page, and a client generated from the document takes the
+# first of them as its base URL.
+---
+openapi: 3.1.0
+servers:
+  - url: "{node}"
+    description: >-
+      Any node of a deployment. Every node answers every endpoint. A node that
+      does not hold the index writer forwards the writes it receives, and
+      answers a search from the copy it holds.
+    variables:
+      node:
+        default: http://localhost:8080
+        description: >-
+          The origin a node is reached at, followed by the path prefix it is
+          served under if a proxy in front of it adds one. The tutorials and
+          the published images use `http://localhost:8080`. A deployment
+          replaces it with its own address.

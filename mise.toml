@@ -103,6 +103,21 @@ dir = "website"
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
 run = ["pnpm install", "pnpm run dev"]
 
+[tasks."site:openapi"]
+description = "Refresh the OpenAPI document the site publishes and generates its API pages from"
+# The site is built without Java - see `.github/workflows/pages.yml` - so the
+# document the engine writes is checked in under `website/public/` rather than
+# read out of `target/`. This task moves it across. The diff it leaves is the
+# change to the API surface, in one file.
+#
+# Packaged rather than compiled: the packaging step is what writes the
+# document, and a `target/openapi` left over from an earlier build is copied
+# just as happily as a current one.
+run = [
+	"mvn package -DskipTests",
+	"cp target/openapi/openapi.yaml website/public/openapi.yaml"
+]
+
 [tasks."site:build"]
 description = "Build the site into website/dist"
 dir = "website"

@@ -139,6 +139,8 @@ POST   /v1alpha1/admin/keys        # Create a key
 DELETE /v1alpha1/admin/keys/{id}   # Revoke a key
 ```
 
+Each endpoint also has a generated page stating every field it accepts and returns. See [API keys](https://exofind.dev/api/operations/tags/api-keys/).
+
 ### Creating a key
 
 To create a key, send a `POST` request to `/v1alpha1/admin/keys`:

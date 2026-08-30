@@ -35,7 +35,7 @@ const OMITTED = ['Tutorials'];
  * of this site rather than documents in `docs/`, so they are in no part and
  * are named here instead. A name that matches no group is an error, as above.
  */
-const EXTRA = ['Demos'];
+const EXTRA = ['REST API', 'Demos'];
 
 /**
  * @typedef {object} Section

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi';
 
 import { DEMOS } from './src/examples/demos.mjs';
 import { DOCS_INDEX, PARTS } from './src/parts.mjs';
@@ -60,6 +61,50 @@ export default defineConfig({
 			customCss: ['./src/styles/site.css'],
 
 			/*
+			 * A page per endpoint, generated from the OpenAPI document the
+			 * engine build writes. The document is read from `public/`, so the
+			 * site publishes it at `/openapi.yaml` as well - the manual tells
+			 * a reader to build a client from it, and that reader should get
+			 * the same copy these pages state. `mise run site:openapi`
+			 * refreshes it.
+			 *
+			 * These pages state one endpoint's request and response in full.
+			 * The pages under `docs/reference/` explain the parts of the API
+			 * that are not one endpoint - a clause, a facet, a cursor - and
+			 * each side links to the other.
+			 */
+			plugins: [
+				starlightOpenAPI([
+					{
+						base: 'api',
+						schema: './public/openapi.yaml',
+						sidebar: {
+							label: 'REST API',
+							collapsed: false,
+							operations: { badges: true },
+							snippets: {
+								operations: {
+									clients: {
+										javascript: [ 'fetch' ],
+										shell: [ 'curl' ],
+										java: [ 'nethttp' ],
+										go: [ 'nethttp' ]
+									}
+								}
+							}
+						}
+					}
+				])
+			],
+
+			/*
+			 * The sidebar is settled here, after the generated section has
+			 * been put in place of its placeholder. What it does and why is on
+			 * the module.
+			 */
+			routeMiddleware: './src/route-data.mjs',
+
+			/*
 			 * The head adds the client router, so that a click within the
 			 * documentation changes the content rather than the document. The
 			 * header row carries a link into each part of the documentation,
@@ -79,10 +124,17 @@ export default defineConfig({
 
 			sidebar: [
 				...sidebarFrom(DOCS_INDEX),
+				...openAPISidebarGroups,
 				{
 					label: 'Demos',
-					/* Open for the reason the documentation groups are. */
-					collapsed: false,
+					/*
+					 * Closed for the reason the reference and the explanations
+					 * are - see `CLOSED` in `./src/sidebar.mjs`. It opens
+					 * itself on the catalogue, which is the only page of the
+					 * section that keeps the sidebar; a demo runs the width of
+					 * the window and has links of its own back to the manual.
+					 */
+					collapsed: true,
 					items: [
 						{ label: 'All demos', link: '/examples/' },
 						...DEMOS.map(entry => ({

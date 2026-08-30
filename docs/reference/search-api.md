@@ -6,6 +6,8 @@ Executes a search query against an index on the node that receives the request.
 POST /v1alpha1/indexes/{name}/search
 ```
 
+The endpoint also has a generated page stating every field it accepts and returns. See [Search an index](https://exofind.dev/api/operations/search/).
+
 ## Request
 
 ```json

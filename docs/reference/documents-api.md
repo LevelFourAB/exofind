@@ -2,6 +2,8 @@
 
 The Documents API reads, creates, updates, and deletes documents in an index under `/v1alpha1/indexes/{name}/documents`.
 
+Each endpoint also has a generated page stating every field it accepts and returns. See [Documents](https://exofind.dev/api/operations/tags/documents/).
+
 ## Routing and commits
 
 Each index is written by one node at a time. A node that receives a write request for an index it does not hold forwards the request to the active indexer node. If no target node is available to handle the forwarded request, the request returns status `409` with error `indexer:unavailable`.

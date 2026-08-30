@@ -36,6 +36,25 @@ const SUBSECTION = /^###\s+(.+?)\s*$/;
  */
 const FLATTENED = ['Tutorials', 'How-to guides'];
 
+/*
+ * Sections the sidebar shows closed until the reader is in them. These are the
+ * sections read a page at a time rather than worked through - a reader goes to
+ * one reference topic or one explanation, and the twenty-odd lines the rest of
+ * them cost push the section they came from off the screen. The how-to guides
+ * are left open: they are the part of the manual a reader browses, and their
+ * titles are what says which guide solves the task at hand.
+ *
+ * A closed group opens itself on a page inside it, whether the reader got there
+ * from the header, from a link in the prose or from search, and stays open
+ * afterwards. So this decides what the column looks like on arrival, not what
+ * the reader can see while reading.
+ *
+ * A name here that matches no section is an error, as in `FLATTENED` above. The
+ * sections that are not documentation - the REST API and the demos - are closed
+ * where they are declared, in `../astro.config.mjs`.
+ */
+const CLOSED = ['Reference', 'Explanation'];
+
 /**
  * Build the sidebar entries from a documentation index.
  *
@@ -44,26 +63,31 @@ const FLATTENED = ['Tutorials', 'How-to guides'];
  * index rather than here. A heading that lists no document is left out, and a
  * section named in `FLATTENED` is replaced by what it holds.
  *
- * Groups arrive open. The column is long enough to scroll, but a reader who
- * has to open a group to find out whether what they want is in it is reading
- * labels rather than pages, and the labels are not the manual. Starlight
- * remembers whichever groups the reader closes themselves.
+ * Groups arrive open unless `CLOSED` names them, and Starlight remembers
+ * whichever ones the reader opens or closes themselves.
  *
  * @param {URL} index the `README.md` that lists the documentation
  * @returns Starlight sidebar entries, groups and links both
  * @throws {Error} if the index lists no document at all, or if a section that
- *   is to be flattened is not in it
+ *   is to be flattened or closed is not in it
  */
 export function sidebarFrom(index) {
 	const flattened = new Set(FLATTENED);
+	const closed = new Set(CLOSED);
 
 	const listing = sectionsIn(index).flatMap(section => flattened.delete(section.label)
-		? section.items.map(open)
-		: [open(section)]);
+		? section.items.map(entry => grouped(entry, closed))
+		: [grouped(section, closed)]);
 
 	if(flattened.size > 0) {
 		throw new Error(
 			`The sidebar is told to flatten sections the documentation index does not have: ${[...flattened].join(', ')}`
+		);
+	}
+
+	if(closed.size > 0) {
+		throw new Error(
+			`The sidebar is told to close sections the documentation index does not have: ${[...closed].join(', ')}`
 		);
 	}
 
@@ -157,9 +181,12 @@ function pruned(group) {
 	return items.length > 0 ? { ...group, items } : null;
 }
 
-/** A group as Starlight takes it, open rather than collapsed. A link as it is. */
-function open(item) {
-	return item.items ? { ...item, collapsed: false } : item;
+/**
+ * A group as Starlight takes it, closed if `CLOSED` names it and open
+ * otherwise. A link is what it already was.
+ */
+function grouped(item, closed) {
+	return item.items ? { ...item, collapsed: closed.delete(item.label) } : item;
 }
 
 /** Every document under a group, however deeply it is grouped. */

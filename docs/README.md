@@ -121,7 +121,9 @@ The documentation includes the following how-to guides.
 
 ## Reference
 
-The documentation includes the following reference topics:
+The documentation includes the following reference topics. Alongside them, the
+website carries a page per endpoint at <https://exofind.dev/api/>, generated
+from the OpenAPI document.
 
 - [API conventions](reference/api-conventions.md): The rules every endpoint
   shares - versioning, media types, conditional requests, forwarding, and what

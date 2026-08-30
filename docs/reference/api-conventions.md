@@ -2,6 +2,8 @@
 
 Every endpoint in the Exofind HTTP API follows a shared set of conventions for routing, media types, authentication, state handling, and error reporting.
 
+The reference pages that follow describe the API by subject. For one page per endpoint, listing every field of its request and every response it returns, see the [REST API pages](https://exofind.dev/api/). Those pages are generated from the [OpenAPI document](https://exofind.dev/openapi.yaml), which the engine build writes.
+
 ## Shape of the API
 
 Every endpoint is served under the path prefix `/v1alpha1`. The API version is `v1alpha1`. Exofind is experimental and the API changes without maintaining backward compatibility.

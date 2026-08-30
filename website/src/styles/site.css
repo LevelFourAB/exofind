@@ -319,15 +319,26 @@ starlight-menu-button[aria-expanded='true'] button {
 }
 
 /*
- * A section long enough to be divided - the how-to guides are - holds
- * sub-sections, and those are headings rather than second eyebrows: the
- * eyebrow says which of the four kinds of documentation the column is showing,
- * and there is one of those per section.
+ * A section long enough to be divided - the how-to guides are, and so is the
+ * REST API - holds sub-sections, and those are headings rather than second
+ * eyebrows: the eyebrow says which of the four kinds of documentation the
+ * column is showing, and there is one of those per section.
+ *
+ * It is set smaller than the pages under it and carries its weight instead.
+ * A heading the size of the lines it heads competes with them for the eye,
+ * which on a column of thirty endpoints under six sub-sections is the reader
+ * reading every line to find where one list ends and the next begins.
  */
 .sidebar-content ul ul .large {
 	color: var(--sl-color-white);
-	font-size: 0.875rem;
+	font-size: 0.75rem;
 	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+
+/* The control that opens a sub-section is sized to its heading, not the page's. */
+.sidebar-content ul ul .caret {
+	font-size: 0.875rem;
 }
 
 /* One sub-section is set apart from the next; the pages within one are not. */
@@ -376,6 +387,78 @@ starlight-menu-button[aria-expanded='true'] button {
 	background: none;
 	color: var(--sl-color-text-accent);
 	font-weight: 600;
+}
+
+/* ----------------------------------------------------------------------- */
+/* The method an endpoint answers                                          */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * Two things carry a method: the entry for an endpoint in the sidebar, and the
+ * line at the top of the endpoint's own page. Both arrive as filled chips in a
+ * set of colours that are corrected for a light page only when the reader has
+ * chosen light themselves - a reader on Auto whose system is light is handed
+ * the dark set, on paper. They are drawn here instead, in the terms the rest of
+ * the furniture is drawn in: a hairline rather than a fill, square, the mono
+ * face at a label size, and one pair of colours that `light-dark()` picks
+ * between.
+ *
+ * The colour says what an endpoint does to an index rather than which verb it
+ * spells that with. Reading is the grey the column is written in, so what
+ * stands out in a list of thirty endpoints is the handful that change
+ * something; each way of changing something has a colour of its own. The blue
+ * is not among them: on this site blue means the page you are on.
+ */
+.sidebar-content .sl-openapi-method-get,
+.sl-markdown-content .method-path > .get {
+	--method: var(--sl-color-gray-3);
+}
+
+.sidebar-content .sl-openapi-method-post,
+.sl-markdown-content .method-path > .post {
+	--method: light-dark(#1f7a4d, #55b98a);
+}
+
+.sidebar-content .sl-openapi-method-put,
+.sl-markdown-content .method-path > .put {
+	--method: light-dark(#8a5a06, #d3a04f);
+}
+
+.sidebar-content .sl-openapi-method-patch,
+.sl-markdown-content .method-path > .patch {
+	--method: light-dark(#0f6d75, #4bb6bf);
+}
+
+.sidebar-content .sl-openapi-method-delete,
+.sl-markdown-content .method-path > .delete {
+	--method: light-dark(#a72f2f, #e58585);
+}
+
+/*
+ * In the sidebar it is a note beside a page title rather than a thing to read
+ * on the way down the column, so it is set below the label size the furniture
+ * uses and its rule is drawn at part strength.
+ */
+.sidebar-content .sl-badge {
+	background: none;
+	border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+	border-radius: 0;
+	color: var(--method, var(--sl-color-gray-3));
+	font-family: var(--sl-font-mono);
+	font-size: 0.625rem;
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	line-height: 1.5;
+	padding-block: 0;
+	padding-inline: 0.25rem;
+}
+
+/* On the page it is read as the endpoint, so it keeps its size and its rule. */
+.sl-markdown-content .method-path > .method {
+	background: none;
+	border-color: var(--method, var(--sl-color-gray-3));
+	color: var(--method, var(--sl-color-gray-3));
+	letter-spacing: 0.04em;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -500,8 +583,20 @@ main .content-panel + .content-panel {
  *
  * The child combinator is deliberate. A descendant selector would also find
  * the headings inside an aside or a card and hang those into the margin.
+ *
+ * An endpoint's page is generated rather than written, and its headings arrive
+ * in two shapes a written page has neither of: each is wrapped in a
+ * `.sl-heading-wrapper`, so that the anchor link can sit at the end of the
+ * heading's last line, and the generator puts some of those wrappers in a
+ * section of their own. The wrapper is what carries the rule and the numeral,
+ * because the heading inside it is set inline. Both shapes are named a level at
+ * a time: a heading deeper in - one naming a response header or an example -
+ * is a heading within a section rather than a section of the page, and is not
+ * counted.
  */
-.sl-markdown-content > h2 {
+.sl-markdown-content > h2,
+.sl-markdown-content > .sl-heading-wrapper.level-h2,
+.sl-markdown-content > section > .sl-heading-wrapper.level-h2 {
 	align-items: baseline;
 	border-block-start: 1px solid var(--sl-color-gray-5);
 	counter-increment: doc-section;
@@ -514,7 +609,9 @@ main .content-panel + .content-panel {
 	padding-block-start: 1rem;
 }
 
-.sl-markdown-content > h2::before {
+.sl-markdown-content > h2::before,
+.sl-markdown-content > .sl-heading-wrapper.level-h2::before,
+.sl-markdown-content > section > .sl-heading-wrapper.level-h2::before {
 	color: var(--sl-color-gray-3);
 	content: counter(doc-section, decimal-leading-zero);
 	font-family: var(--sl-font-mono);
@@ -527,7 +624,9 @@ main .content-panel + .content-panel {
 	order: 1;
 }
 
-.sl-markdown-content > h3 {
+.sl-markdown-content > h3,
+.sl-markdown-content > .sl-heading-wrapper.level-h3,
+.sl-markdown-content > section > .sl-heading-wrapper.level-h3 {
 	font-weight: 600;
 	letter-spacing: -0.005em;
 	margin-block-start: 1.75rem;
@@ -539,7 +638,9 @@ main .content-panel + .content-panel {
 	 * the edge of the column the page has, and pushes its own words back onto
 	 * the axis.
 	 */
-	.sl-markdown-content > h2 {
+	.sl-markdown-content > h2,
+	.sl-markdown-content > .sl-heading-wrapper.level-h2,
+	.sl-markdown-content > section > .sl-heading-wrapper.level-h2 {
 		display: block;
 		margin-block-start: 3.25rem;
 		margin-inline-start: calc(-1 * var(--doc-margin));
@@ -548,7 +649,9 @@ main .content-panel + .content-panel {
 		position: relative;
 	}
 
-	.sl-markdown-content > h2::before {
+	.sl-markdown-content > h2::before,
+	.sl-markdown-content > .sl-heading-wrapper.level-h2::before,
+	.sl-markdown-content > section > .sl-heading-wrapper.level-h2::before {
 		font-size: 0.8125rem;
 		inset-block-start: 1.625rem;
 		inset-inline-start: 0;
@@ -556,7 +659,9 @@ main .content-panel + .content-panel {
 		position: absolute;
 	}
 
-	.sl-markdown-content > h3 {
+	.sl-markdown-content > h3,
+	.sl-markdown-content > .sl-heading-wrapper.level-h3,
+	.sl-markdown-content > section > .sl-heading-wrapper.level-h3 {
 		margin-block-start: 2.125rem;
 	}
 }
@@ -635,6 +740,34 @@ main .content-panel + .content-panel {
 @media (max-width: 49.999rem) {
 	.sl-markdown-content :is(th, td):not(:first-child) {
 		min-width: 13rem;
+	}
+}
+
+/* ----------------------------------------------------------------------- */
+/* The generated API pages                                                 */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * A field of a request body and what is said about it are two columns, which
+ * is what `starlight-openapi` lays them out as at every width.
+ *
+ * Below the width the sidebar appears at there is no room for two. The name
+ * column keeps a quarter of the page, and the measure left to the description
+ * breaks `index:query:usage_not_enabled` over three lines. That is the failure
+ * the tables above are given a floor to avoid. A phone stacks them instead.
+ *
+ * Both selectors are a step longer than they look as though they need to be.
+ * These are a component's own classes, and the rule that sets the width being
+ * reset here is scoped, which carries a class of its own.
+ */
+@media (max-width: 49.999rem) {
+	.sl-markdown-content .key {
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.sl-markdown-content .key > .name {
+		max-width: none;
 	}
 }
 
