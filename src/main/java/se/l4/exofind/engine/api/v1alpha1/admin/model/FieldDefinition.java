@@ -12,8 +12,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 /**
  * Definition of a single field in an {@link IndexDefinition}.
  *
- * Fields are represented as a tagged union, where {@code type} selects the
- * type of the field and the properties available on it:
+ * <p>Fields are structured as a tagged union, where {@code type} selects the
+ * field type and the properties available on it:
  *
  * <pre>
  * {
@@ -24,24 +24,17 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  * }
  * </pre>
  *
- * A way of using a field is turned on by including its configuration rather
- * than by a flag, so that options can be added to it without changing the
- * shape of what callers already send. An empty object enables it with the
- * defaults of the engine.
+ * <p>Field usages are opt-in. Adding an empty configuration object enables a
+ * usage with engine defaults, allowing options to be added without changing
+ * existing request payloads.
  *
- * The ways that work the same whatever the field holds - filtering, sorting,
- * faceting - are on this interface. The ones that depend on how text is
- * analyzed are on the types that have them.
+ * <p>Common usages such as filtering, sorting, and faceting apply across field
+ * types, while text analysis options are defined on the types that support
+ * them.
  *
- * Properties are nullable so that the API can tell a value that was left out
- * from one that was explicitly set to its default. Only what the caller sends
- * is stored, which keeps defaults owned by the engine.
- *
- * Adding a field type is done by adding a record here, permitting it in this
- * interface and extending the mapping in
- * {@code se.l4.exofind.engine.api.v1alpha1.admin.IndexDefinitionMapper}. The
- * types available are the ones the engine can index, which is currently
- * strings, booleans, numbers and vectors.
+ * <p>Properties are optional so omitted values are distinguished from explicit
+ * defaults. The engine stores only explicitly configured properties, preserving
+ * default values across engine updates.
  */
 @JsonTypeInfo(
 	use = JsonTypeInfo.Id.NAME,
@@ -61,11 +54,11 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = ObjectFieldDefinition.class, name = "object")
 })
 @Schema(description = """
-	Definition of one field, structured as a tagged union where `type` selects \
+	Definition of a field, structured as a tagged union where `type` selects \
 	the field type and the properties available on it. Field usages are \
-	opt-in: an empty configuration object enables a usage with engine \
-	defaults, and only explicitly configured properties are stored, so \
-	defaults stay owned by the engine across upgrades. See [Field \
+	opt-in: adding an empty configuration object enables a usage with engine \
+	defaults, and only explicitly configured properties are stored, preserving \
+	default values across engine updates. See [Field \
 	types](https://exofind.dev/reference/field-types/).""")
 public sealed interface FieldDefinition
 	permits StringFieldDefinition, BooleanFieldDefinition, VectorFieldDefinition,
@@ -73,51 +66,49 @@ public sealed interface FieldDefinition
 		DoubleFieldDefinition, TimestampFieldDefinition, GeoPointFieldDefinition,
 		ObjectFieldDefinition {
 	/**
-	 * Descriptions of the properties every field type carries, kept here so
-	 * that the ten records implementing this interface describe them the same
-	 * way. An annotation takes a constant expression, and a text block is one,
-	 * so each record refers to these rather than repeating the text.
+	 * Descriptions of common field properties shared across all field type
+	 * definitions.
 	 */
 	String ROLE_DESCRIPTION = """
-		What the field is for, as a name that stands for a combination of \
-		usages. The combination is expanded into the definition before it is \
-		stored, and anything set beside the role is kept as given. Which roles \
-		a type accepts is listed under [Field \
+		Specifies a field role that applies a preset combination of usages. \
+		The role expands into explicit field properties before the definition \
+		is stored, and any property set alongside the role is preserved as \
+		given. Supported roles per type are listed under [Field \
 		roles](https://exofind.dev/reference/field-types/#field-roles).""";
 
 	String PRIMARY_KEY_DESCRIPTION = """
 		Marks the field as the unique document identifier. Documents with \
-		matching primary keys overwrite existing documents, and an index can \
-		have at most one primary key. A primary key must be `required` and \
-		cannot be `multiple`, locale-specific, or a wildcard field.""";
+		matching primary keys overwrite existing documents. An index can have \
+		at most one primary key. Primary key fields must be `required` and \
+		cannot be `multiple`, locale-specific, or wildcard fields.""";
 
 	String REQUIRED_DESCRIPTION = """
-		When `true`, documents that lack a value for this field are \
-		rejected.""";
+		When `true`, the engine rejects documents that lack a value for this \
+		field.""";
 
 	String MULTIPLE_DESCRIPTION = """
-		When `true`, the field accepts several values in one document. When \
-		`false`, a document carrying several values for it is rejected.""";
+		When `true`, the field accepts multiple values in a single document. \
+		If `false`, the engine rejects documents containing multiple values \
+		for the field.""";
 
 	String STORED_DESCRIPTION = """
-		When `true`, values are stored so they can be returned in search \
-		results. Only matters on an index whose `source` is `none`, since a \
-		document is otherwise kept whole.""";
+		When `true`, the engine stores field values to return in search \
+		results. This setting applies only when `source` is set to `none`, as \
+		documents are otherwise preserved in full.""";
 
 	String LOCALES_DESCRIPTION = """
-		Makes values locale-specific, so analysis and collation follow the \
-		locale each value carries.""";
+		Configures locale-specific field values, so analysis and collation \
+		follow the locale each value carries.""";
 
 	String FILTER_DESCRIPTION = """
-		Enables narrowing results to the documents holding a given value. \
-		Filtering is exact whatever the type; on numeric and timestamp fields \
-		it also enables range matching.""";
+		Enables filtering search results by exact field value. On numeric and \
+		timestamp fields, filtering also enables range queries.""";
 
-	String SORT_DESCRIPTION = "Enables ordering results by the value of this field.";
+	String SORT_DESCRIPTION = "Enables sorting search results by field value.";
 
 	String FACET_DESCRIPTION = """
-		Enables counting how many documents share each value of this field. On \
-		numeric and timestamp fields it also enables range buckets.""";
+		Enables value count aggregations. On numeric and timestamp fields, it \
+		also enables range buckets.""";
 
 	/**
 	 * If this field is the primary key of the index. An index has at most one
@@ -162,27 +153,27 @@ public sealed interface FieldDefinition
 	Facet facet();
 
 	/**
-	 * What a field is for, standing for the combination of usages that serves
-	 * it.
+	 * A role defines a preset combination of usages for a common kind of field.
 	 *
-	 * <p>A role is expanded into the field before the definition is stored, so
-	 * reading the definition back shows the usages rather than the role, and
-	 * what a role stands for can not shift under an index that already exists.
-	 * Anything given beside the role is kept as it was given, whether it is
-	 * part of what the role turns on or not.
+	 * <p>The engine expands a role into explicit field properties before
+	 * storing the index definition. When you read the definition back, the
+	 * engine returns the individual usages rather than the role name, ensuring
+	 * that modifying a role's meaning does not change an existing index. Any
+	 * property set beside a role is kept exactly as given.
 	 *
-	 * <p>Each role belongs to the field types that can answer for it, and
-	 * naming one on another type is refused with
-	 * {@code index:field:role:not_valid_for_type}. Inside an object field a
-	 * role turns on only what an object field accepts, so it leaves
-	 * {@code stored} and {@code highlight} alone, and leaves {@code sort} alone
-	 * where the object is a flattened list.
+	 * <p>Each role applies only to the field types that support it; setting a
+	 * role on an unsupported type is rejected with
+	 * {@code index:field:role:not_valid_for_type}. Inside an object field, a
+	 * role enables only what the enclosing object context accepts, omitting
+	 * {@code stored} and {@code highlight}, and omitting {@code sort} inside a
+	 * flattened list.
 	 */
 	@Schema(description = """
-		What a field is for, standing for the combination of usages that serves \
-		it. The combination is expanded before the definition is stored, so \
-		reading it back shows the usages rather than the role. Each role \
-		belongs to the field types that can answer for it.""")
+		Defines a preset combination of usages for a common kind of field. The \
+		engine expands a role into explicit field properties before storing \
+		the index definition, so reading the definition back returns the \
+		individual usages rather than the role name. Each role applies only to \
+		the field types that support it.""")
 	enum Role {
 		/**
 		 * The unique key of the document, on a {@code string} field. Turns on
@@ -257,7 +248,7 @@ public sealed interface FieldDefinition
 	}
 
 	/**
-	 * How values of a field being locale specific behaves.
+	 * Configures locale-specific field values.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -265,49 +256,48 @@ public sealed interface FieldDefinition
 		fields](https://exofind.dev/how-to/localize-fields/).""")
 	record Locales(
 		/**
-		 * The locale assumed for a value that does not carry one (BCP-47).
+		 * The BCP-47 fallback locale assumed for values that carry no locale.
 		 */
 		@Schema(
-			description = """
-				BCP-47 locale assumed for a value that carries none.""",
+			description = "BCP-47 fallback locale for non-localized values.",
 			examples = "sv"
 		)
 		String defaultLocale,
 
 		/**
-		 * The locales the field holds values in, besides the default. A value
-		 * carrying a locale that is not listed here (or the default) is
-		 * refused, and these are the locales a search can ask the field for.
+		 * List of supported locales for the field, in addition to the default
+		 * locale. A value carrying a locale that is neither listed here nor set
+		 * as default is rejected, and queries can target any listed locale.
 		 */
 		@Schema(description = """
-			The locales the field holds values in, besides the default. A value \
-			carrying a locale named neither here nor as the default is \
-			refused, and these are the locales a search can ask the field \
-			for.""")
+			List of supported locales for the field, in addition to the \
+			default locale. Documents containing values with unlisted locales \
+			are rejected, and queries can target any listed locale.""")
 		List<String> locales,
 
 		/**
-		 * Whether this field takes part in the {@code localeFallback} of the
-		 * index. Left out to take part, the same as {@code enabled}.
+		 * Controls whether this field participates in the
+		 * {@code localeFallback} of the index. Omitted, the field participates
+		 * in fallback, equivalent to {@code enabled}.
 		 *
-		 * Only read for an index that declares a fallback. Saying
-		 * {@code enabled} where it does not is refused, as nothing would fill
-		 * anything.
+		 * <p>Evaluated only on an index that declares a fallback configuration.
+		 * Setting {@code enabled} on an index without fallback is rejected.
 		 */
 		@Schema(
 			description = """
-				Whether this field takes part in the index's `localeFallback`. \
-				Only read on an index that declares a fallback; saying \
-				`enabled` where it does not is refused, as nothing would fill \
-				anything.""",
+				Controls whether this field participates in the index's \
+				`localeFallback`. Only evaluated on an index that declares a \
+				fallback; setting `enabled` on an index without fallback \
+				configuration is rejected.""",
 			defaultValue = "enabled"
 		)
 		Fallback fallback
 	) {
 		@Schema(description = """
-			Whether a field takes part in the index's locale fallback: \
-			`enabled` fills the locales it holds no value in, `disabled` \
-			leaves them empty.""")
+			Controls whether a field participates in the index's locale \
+			fallback: `enabled` populates missing locales from fallback \
+			values, and `disabled` excludes the field from fallback \
+			resolution.""")
 		public enum Fallback {
 			/**
 			 * Fill the locales this field holds no value in, the way the index
@@ -326,52 +316,55 @@ public sealed interface FieldDefinition
 	}
 
 	/**
-	 * How filtering on a field behaves. Filtering is exact whatever the type;
-	 * how a string is normalized before it is compared exactly is the
-	 * {@code keyword} config of the string type.
+	 * Enables filtering search results by exact field value. Filtering is exact
+	 * across all types; exact-match normalization for string fields is
+	 * configured under {@code keyword}.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Enables filtering. Carries no options - filtering is exact whatever the \
-		type, and how a string is normalized before it is compared is the \
-		`keyword` config of the string type.""")
+		Enables filtering search results by exact field value. Filtering is \
+		exact across all types; exact-match normalization for string fields is \
+		configured under `keyword`.""")
 	record Filter() {
 	}
 
 	/**
-	 * How ordering by a field behaves.
+	 * Enables sorting search results by field value.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Enables sorting, and says how values compare.")
+	@Schema(description = """
+		Enables sorting search results by field value and configures value \
+		comparison.""")
 	record Sort(
 		/**
-		 * How two values are ordered relative to each other. Only meaningful
-		 * for strings, which default to {@code locale}.
+		 * Collation order used when comparing values. Applies only to string
+		 * fields, which default to {@code locale}.
 		 */
 		@Schema(
 			description = """
-				How two values compare. Only meaningful for strings.""",
+				Collation order used when comparing values. Applies only to \
+				string fields.""",
 			defaultValue = "locale"
 		)
 		Collation collation,
 
 		/**
-		 * Where documents without a value are placed when ordering ascending.
-		 * Defaults to {@code last}.
+		 * Places documents without values first or last when sorting in
+		 * ascending order. Defaults to {@code last}.
 		 */
 		@Schema(
 			description = """
-				Where documents holding no value are placed when ordering \
-				ascending.""",
+				Places documents without values first or last when sorting in \
+				ascending order.""",
 			defaultValue = "last"
 		)
 		Missing missing
 	) {
 		@Schema(description = """
-			How two string values compare: `locale` orders by the rules of the \
-			locale, so `å` sorts where a reader of that locale expects it; \
-			`binary` orders by bytes, which is faster but only reads correctly \
-			for plain ASCII.""")
+			Collation order for string comparisons: `locale` orders by the \
+			rules of the locale so characters such as `å` sort in expected \
+			language order; `binary` orders by byte order, which is faster for \
+			plain ASCII text.""")
 		public enum Collation {
 			/**
 			 * Order by the bytes of the value. Fast, but only reads correctly
@@ -389,8 +382,8 @@ public sealed interface FieldDefinition
 		}
 
 		@Schema(description = """
-			Where documents holding no value are placed when ordering \
-			ascending: `first` or `last`.""")
+			Placement of documents without values when sorting in ascending \
+			order: `first` or `last`.""")
 		public enum Missing {
 			@JsonProperty("first")
 			FIRST,
@@ -401,12 +394,12 @@ public sealed interface FieldDefinition
 	}
 
 	/**
-	 * How counting documents per value of a field behaves.
+	 * Enables value count aggregations across search results.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Enables counting documents per value of the field. Carries no \
-		options.""")
+		Enables value count aggregations across search results. Carries no \
+		configuration options.""")
 	record Facet() {
 	}
 }

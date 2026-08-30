@@ -6,21 +6,18 @@ import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 import jakarta.ws.rs.core.Application;
 
 /**
- * The parts of the OpenAPI document that belong to the API as a whole rather
- * than to any one endpoint.
+ * Declares shared OpenAPI components for the API.
  *
- * Quarkus discovers resources without an {@link Application} class, so this one
- * declares nothing about routing - it exists because the document's shared
- * pieces have to hang off a type the OpenAPI scanner reads, and the scanner
- * reads them from the {@link Application}. Everything else about the document
- * is either configuration, in {@code application.properties}, or declared on the
- * endpoint it describes.
+ * <p>Resource classes declare routing independently of {@link Application}.
+ * Shared OpenAPI components are discovered from {@link Application}, deployment
+ * options are configured in {@code application.properties}, and endpoint
+ * metadata is declared on each resource.
  *
- * The scheme declared here is the only way a request carries a credential:
- * every endpoint takes an API key as a bearer token, and nothing is read from a
- * cookie or a query parameter. What each endpoint then requires of that key is
- * said by its {@code @RequiresPermission}, and repeated in the endpoint's
- * description - a scheme says how to authenticate, not what it lets you do.
+ * <p>API requests authenticate using bearer tokens. Credentials are read only
+ * from the Authorization header, never from cookies or query parameters. The
+ * permission required by an endpoint is specified by its
+ * {@code @RequiresPermission} annotation and documented in the endpoint
+ * description.
  */
 @SecurityScheme(
 	securitySchemeName = ExofindApi.API_KEY,

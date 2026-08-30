@@ -7,29 +7,30 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * How the indexes are divided among the nodes right now, as the answering
- * node knows it. Reported by the engine and never accepted as input.
+ * Candidate nodes competing to write indexes and active writer claims across
+ * the deployment. Reported by the engine and never accepted as input.
  *
- * <p>An index without a claim has no writer until a write for it appoints
- * one, so it is answered by not appearing rather than by an empty entry.
+ * <p>Indexes without an active claim are omitted until a write assigns a
+ * writer.
  *
  * @param candidates
  *   the nodes competing to write indexes, ordered by node
  * @param claims
- *   one entry per index some node writes, ordered by index
+ *   active writer claims per index, ordered by index
  */
 @Schema(description = """
-	How the indexes are divided among the nodes, as the answering node knows \
-	it - so the answer can lag actual state by a few seconds. On a node using \
-	local storage both lists are empty.""")
+	Candidate nodes competing to write indexes and the active writer claim for \
+	each index. The response reflects the answering node's view of shared \
+	deployment state and can lag actual state by a few seconds. On nodes using \
+	local storage, both lists are empty.""")
 public record IndexerListResponse(
-	@Schema(description = "The nodes competing to write indexes, ordered by node.")
+	@Schema(description = "The candidate nodes competing to write indexes, ordered by node.")
 	List<Candidate> candidates,
 
 	@Schema(description = """
-		One entry per index some node writes, ordered by index. An index with \
-		no active claim is left out until a write appoints a writer, and a \
-		claim on an index the key has no grant for is left out too.""")
+		The active writer claim for each index, ordered by index. Indexes \
+		without an active claim are omitted until a write assigns a writer. \
+		Claims on indexes where the key lacks permissions are also omitted.""")
 	List<Claim> claims
 ) {
 	/**
@@ -38,10 +39,10 @@ public record IndexerListResponse(
 	 * @param node
 	 *   the name the node competes under
 	 * @param address
-	 *   where writes are sent, or {@code null} when the node offered no
-	 *   address
+	 *   the target address for write forwarding, or {@code null} if the node
+	 *   provided no address
 	 * @param expiresAt
-	 *   when the candidacy lapses unless the node renews it
+	 *   the timestamp when the candidacy expires unless renewed by the node
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = "A node competing to write indexes.")
@@ -59,8 +60,8 @@ public record IndexerListResponse(
 
 		@Schema(
 			description = """
-				When the candidacy lapses unless the node renews it, as an ISO \
-				8601 timestamp.""",
+				The timestamp when the candidacy expires unless renewed by the \
+				node, as an ISO 8601 timestamp.""",
 			examples = "2026-08-21T10:15:30Z"
 		)
 		String expiresAt
@@ -68,20 +69,20 @@ public record IndexerListResponse(
 	}
 
 	/**
-	 * One index and the node writing it.
+	 * An index and the node writing it.
 	 *
 	 * @param index
-	 *   name of the index
+	 *   the name of the index
 	 * @param node
 	 *   the node writing the index
 	 * @param address
-	 *   where writes for the index are sent, or {@code null} when the node
-	 *   offered no address
+	 *   the target address for write forwarding, or {@code null} if the node
+	 *   provided no address
 	 * @param expiresAt
-	 *   when the claim lapses unless the node renews it
+	 *   the timestamp when the claim expires unless renewed by the node
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One index and the node writing it.")
+	@Schema(description = "An index and the node writing it.")
 	public record Claim(
 		@Schema(description = "Name of the index.", examples = "products")
 		String index,
@@ -99,8 +100,8 @@ public record IndexerListResponse(
 
 		@Schema(
 			description = """
-				When the claim lapses unless the node renews it, as an ISO \
-				8601 timestamp.""",
+				The timestamp when the claim expires unless renewed by the \
+				node, as an ISO 8601 timestamp.""",
 			examples = "2026-08-21T10:15:30Z"
 		)
 		String expiresAt

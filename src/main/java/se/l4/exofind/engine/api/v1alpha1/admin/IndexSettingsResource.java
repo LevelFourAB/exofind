@@ -61,32 +61,27 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 /**
- * The search settings of an index - how its searches behave, kept apart from
- * the definition of what its documents were indexed as.
+ * Search settings of an index, configuring search behavior separately from the
+ * index definition.
  *
- * <p>Settings are handled as desired state the way definitions are: sent in
- * full, replacing what was stored, with the version returned as an
- * {@code ETag} that can be sent back as {@code If-Match}. A change to part of
- * them is sent as paths instead, and means the same thing a change to part of a
- * document means. Unlike a definition they belong to the index name rather than
- * to a generation - promoting a generation keeps them. Every other node picks a
- * change up within {@code exofind.settings.refresh-interval}.
+ * <p>Settings are handled as desired state: sent in full, replacing what was
+ * stored, with the version returned as an {@code ETag} that can be sent back as
+ * {@code If-Match}. A change to part of them is sent as paths instead, matching
+ * how document field updates are structured. Search settings belong to the
+ * index name rather than to a generation, so promoting a generation preserves
+ * them. Other nodes pick up changes within
+ * {@code exofind.settings.refresh-interval}.
  *
- * <p>Changes run on the index's writer. Not because the object needs it - it
- * is one object replaced conditionally, safe from any node - but because the
- * writer is what reports the new version into the registry, and the node that
- * writes both is the node whose crash between them is one story rather than
- * two. A caller sends the request anywhere and it is passed along, the way
- * document writes are.
+ * <p>Modifying requests run on the node that writes the index; requests
+ * received by other nodes are forwarded automatically.
  *
- * <p>The fields the settings name are validated against the generation the
- * name answers from when it is stored. A generation promoted later may lack one
- * of them; searches then skip that entry rather than fail, and the index's
- * status says so.
+ * <p>Field names in search settings are validated against the generation the
+ * index currently answers from. If a generation promoted later lacks a
+ * configured field, searches skip that entry rather than fail.
  */
 @Tag(
 	name = "Search settings",
-	description = "Per-index search behaviour, kept apart from the index definition.",
+	description = "Per-index search configuration, managed separately from index definitions.",
 	externalDocs = @ExternalDocumentation(
 		description = "Search settings reference",
 		url = "https://exofind.dev/reference/admin-api/#search-settings"
@@ -154,13 +149,11 @@ public class IndexSettingsResource {
 	}
 
 	/**
-	 * Get the search settings of an index as they are stored.
+	 * Returns the search settings of an index as stored in remote storage.
 	 *
-	 * <p>Read from the storage rather than from this node's copy, so settings
-	 * stored elsewhere are answered as soon as they exist. An index that has
-	 * none - one searching with its definition alone - answers that there are
-	 * no settings rather than with something empty, so the {@code ETag} always
-	 * names a version that exists.
+	 * <p>If an index has no search settings and searches with its definition
+	 * alone, the request returns a not-found error rather than an empty object,
+	 * ensuring the {@code ETag} always represents an explicit stored version.
 	 *
 	 * @param name
 	 * @return
@@ -172,13 +165,13 @@ public class IndexSettingsResource {
 		summary = "Get search settings",
 		description = """
 			Returns the search settings as stored, with their version in the \
-			`ETag` header. Read from storage rather than from this node's \
-			copy, so settings stored elsewhere are answered as soon as they \
-			exist.
+			`ETag` header. Settings are read directly from storage rather than \
+			from the node's local copy.
 
-			An index with no settings - one searching with its definition \
-			alone - answers `404` with `index:settings:not_found` rather than \
-			an empty object, so the `ETag` always names a version that exists.
+			An index with no search settings - one searching with its \
+			definition alone - returns `404` with `index:settings:not_found` \
+			rather than an empty object, ensuring the `ETag` always represents \
+			an explicit stored version.
 
 			Served by whichever node receives the request. Requires the \
 			`indexes.read` permission."""
@@ -202,9 +195,9 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			The index has no search settings \
-			(`index:settings:not_found`), no index has this name, or the key \
-			has no grant covering it.""",
+			The index has no search settings (`index:settings:not_found`), the \
+			index does not exist, or the API key lacks permission on the \
+			index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -234,21 +227,20 @@ public class IndexSettingsResource {
 	}
 
 	/**
-	 * Replace the search settings of an index.
+	 * Replaces the search settings of an index.
 	 *
-	 * <p>The ranking is validated against the generation the name answers
-	 * from, so settings that would rank by nothing are refused rather than
-	 * stored. Takes effect for searches on this node at once and on every
-	 * other node within its refresh interval.
+	 * <p>The server validates the ranking against the generation the index name
+	 * answers from. A change takes effect for searches on this node immediately
+	 * and on other nodes within the settings refresh interval.
 	 *
 	 * @param name
-	 *   the index, or one generation of it - the settings belong to the index
-	 *   either way, a generation only names what to validate against
+	 *   the index, or one generation of it; the settings belong to the index
+	 *   either way, and a generation specifies which generation to validate
+	 *   against
 	 * @param ifMatch
 	 *   version the settings are expected to have, as returned by the
-	 *   {@code ETag} of a previous request. When given and the settings have
-	 *   since been changed the request fails instead of overwriting that
-	 *   change
+	 *   {@code ETag} header of a previous request; if the settings changed
+	 *   since, the request fails instead of overwriting that change
 	 * @param definition
 	 * @return
 	 */
@@ -260,27 +252,27 @@ public class IndexSettingsResource {
 		operationId = "putSearchSettings",
 		summary = "Replace search settings",
 		description = """
-			Replaces the settings completely and answers with them as stored. \
-			While a `ranking` is present it replaces the definition's ranking \
-			entirely; an empty object turns ranking off.
+			Replaces the settings completely and returns them as stored. While \
+			a `ranking` is present, it replaces the definition's ranking \
+			completely; an empty object turns ranking off.
 
-			The ranking is validated against the generation the index name \
-			answers from, using the same `index:ranking:*` codes that validate \
-			a definition's ranking, so settings that would rank by nothing are \
-			refused rather than stored. The fields named by `synonyms` and \
-			`typoExclusions` are validated against the same generation.
+			The server validates the ranking against the generation the index \
+			name answers from, using the same `index:ranking:*` error codes \
+			used to validate a definition's ranking. The server validates the \
+			fields named by `synonyms` and `typoExclusions` against the same \
+			generation.
 
-			Takes effect for searches on the answering node at once and on \
-			every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL`, so \
-			for a moment two nodes can rank the same query differently. \
-			Settings outlive generations: a generation promoted later may lack \
-			a field the settings name, and searches then skip that entry \
-			rather than fail.
+			A change takes effect for searches on the answering node \
+			immediately and on all other nodes within \
+			`EXOFIND_SETTINGS_REFRESH_INTERVAL`. Until then, two nodes can \
+			rank the same query differently. Search settings outlive \
+			generations: a generation promoted later can lack a field the \
+			settings name, and searches then skip that entry rather than fail.
 
 			Runs on the node that writes the index. Requires the \
-			`settings.write` permission, which is kept apart from \
-			`indexes.write` so relevance tuning can be granted without the \
-			power to change what an index contains."""
+			`settings.write` permission, which is separate from \
+			`indexes.write` so relevance tuning can be granted without \
+			permission to change what an index contains."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -292,8 +284,8 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The body is missing, or the settings failed validation against the \
-			generation the index answers from (`index:ranking:*`, \
+			The request body is missing, or the settings failed validation \
+			against the generation the index answers from (`index:ranking:*`, \
 			`index:settings:synonyms:*`, `index:settings:typo_exclusions:*`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
@@ -309,18 +301,17 @@ public class IndexSettingsResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = "No index has this name, or the API key lacks permissions covering it.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The settings kept being changed by other writers while this change \
-			was being stored (`index:settings:conflict`), storage could not be \
-			reached (`index:settings:io_error`, \
-			`index:settings:unavailable`), or no node is available to write \
-			the index. The stored settings are unchanged; send the request \
-			again.""",
+			Concurrent modifications prevented the settings from being stored \
+			(`index:settings:conflict`), storage could not be reached \
+			(`index:settings:io_error`, `index:settings:unavailable`), or no \
+			node is available to write the index. The stored settings remain \
+			unchanged; send the request again.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -373,21 +364,20 @@ public class IndexSettingsResource {
 	}
 
 	/**
-	 * Change some of the search settings of an index, leaving the rest as they
-	 * are.
+	 * Modifies named parts of the search settings of an index.
 	 *
-	 * <p>The change is applied to the settings as they are stored and the
-	 * result is validated and stored the way a whole one is, so a change that
-	 * would rank by nothing is refused rather than stored.
+	 * <p>The change is applied to the stored settings, and the result is
+	 * validated against the generation the index answers from.
 	 *
 	 * @param name
-	 *   the index, or one generation of it - the settings belong to the index
-	 *   either way, a generation only names what to validate against
+	 *   the index, or one generation of it; the settings belong to the index
+	 *   either way, and a generation specifies which generation to validate
+	 *   against
 	 * @param ifMatch
 	 *   version the settings are expected to have, as returned by the
-	 *   {@code ETag} of a previous request. When given and the settings have
-	 *   since been changed the request fails instead of building the change on
-	 *   the version that replaced them
+	 *   {@code ETag} header of a previous request; if the settings changed
+	 *   since, the request fails instead of building the change on the version
+	 *   that replaced them
 	 * @param body
 	 *   the places to change, keyed by path
 	 * @return
@@ -404,34 +394,32 @@ public class IndexSettingsResource {
 		summary = "Change some of the search settings",
 		description = """
 			Changes named parts of the settings, leaving the rest as they are, \
-			and answers with them as stored. Every key of the body is a path \
-			naming a place in the settings, the place is replaced by what the \
-			key maps to, a key set to `null` clears it, and a place no key \
-			names is left alone - which is what a change to some of a document \
-			means, written the same way.
+			and returns them as stored. The request body is a change object \
+			where each key is a path naming a location in the settings: a path \
+			with a value replaces the target value, a path set to `null` \
+			clears the target value, and an omitted path leaves the existing \
+			value unchanged.
 
-			A path is field names joined by `.`, and a name may carry a \
-			selector in brackets that picks list entries by what they hold: \
-			`ranking.signals[field=sales].weight` changes one weight, \
+			Paths use field names joined by `.`. A path element can include a \
+			bracket selector to select list entries by content rather than \
+			index: `ranking.signals[field=sales].weight` changes one weight, \
 			`ranking.signals[field=sales]` replaces one signal, \
-			`ranking.signals[]` adds one, and `ranking` replaces or clears the \
-			whole ranking. Entries are picked by what they hold rather than by \
-			where they sit, so a change survives the list being reordered.
+			`ranking.signals[]` adds a signal, and `ranking` replaces or \
+			clears the whole ranking. Selecting entries by content ensures \
+			changes apply even if the list order changes.
 
-			The result is validated against the generation the index name \
-			answers from, using the same `index:ranking:*` codes as a `PUT`, so \
-			a change that would rank by nothing is refused rather than stored. \
-			An index that has no stored settings is changed as if it had empty \
-			ones.
+			The merged settings are validated against the generation the index \
+			name answers from, using the same `index:ranking:*` error codes as \
+			a `PUT` request. An index with no stored settings is modified as \
+			if it had empty settings.
 
-			Without `If-Match`, a change that races another is built again on \
-			what the other left, up to three times, and answers \
-			`index:settings:conflict` after that. With `If-Match`, a version \
-			that has since moved answers `412` instead.
+			Without an `If-Match` header, a change that conflicts with a \
+			concurrent update rebuilds on the newer version up to three times \
+			before returning `index:settings:conflict`. With an `If-Match` \
+			header, a version mismatch returns `412` without retrying.
 
-			Takes effect the way replacing the settings does: on the answering \
-			node at once and on every other node within \
-			`EXOFIND_SETTINGS_REFRESH_INTERVAL`.
+			Takes effect immediately on the answering node and on all other \
+			nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`.
 
 			Runs on the node that writes the index. Requires the \
 			`settings.write` permission."""
@@ -446,10 +434,10 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The body is missing, a key is not a path or names a place the \
-			settings cannot be changed at (`request:update:*`), or the result \
-			failed validation against the generation the index answers from \
-			(`index:ranking:*`).""",
+			The request body is missing, a key is not a path or names a place \
+			the settings cannot be changed at (`request:update:*`), or the \
+			result failed validation against the generation the index answers \
+			from (`index:ranking:*`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -464,19 +452,18 @@ public class IndexSettingsResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = "No index has this name, or the API key lacks permissions covering it.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The settings kept being changed by other writers while this change \
-			was being made (`index:settings:conflict`), the stored settings \
-			hold parts this version cannot describe \
-			(`index:settings:unrepresentable`), storage could not be reached \
-			(`index:settings:io_error`, `index:settings:unavailable`), or no \
-			node is available to write the index. The stored settings are \
-			unchanged.""",
+			Concurrent modifications prevented the change from being made \
+			(`index:settings:conflict`), the stored settings hold parts this \
+			version cannot describe (`index:settings:unrepresentable`), \
+			storage could not be reached (`index:settings:io_error`, \
+			`index:settings:unavailable`), or no node is available to write \
+			the index. The stored settings are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -854,10 +841,11 @@ public class IndexSettingsResource {
 	}
 
 	/**
-	 * Remove the search settings of an index, returning it to searching with
+	 * Removes the search settings of an index, returning it to searching with
 	 * its definition alone.
 	 *
-	 * <p>Takes effect the way replacing them does. Removing what is not there
+	 * <p>Takes effect immediately on this node and across the deployment within
+	 * the settings refresh interval. Deleting settings that do not exist
 	 * changes nothing, so the request can be repeated.
 	 *
 	 * @param name
@@ -871,13 +859,13 @@ public class IndexSettingsResource {
 		summary = "Remove search settings",
 		description = """
 			Removes the settings, returning the index to the ranking in its \
-			definition. Takes effect the way replacing them does. Removing \
-			settings that are not there changes nothing and answers `204` all \
-			the same, so the request can be repeated.
+			definition. Takes effect immediately on the node that holds the \
+			index and on other nodes within the settings refresh interval. \
+			Deleting settings that do not exist changes nothing and answers \
+			`204` all the same, so the request can be repeated.
 
-			Note that removing settings does not remove them from remote \
-			storage, so an index created again under the same name picks them \
-			back up.
+			Deletion does not remove data held in remote storage, so an index \
+			created again under the same name picks its old settings back up.
 
 			Runs on the node that writes the index. Requires the \
 			`settings.write` permission."""
@@ -900,7 +888,7 @@ public class IndexSettingsResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = "No index has this name, or the API key lacks permissions covering it.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(

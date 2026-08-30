@@ -8,97 +8,99 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Search settings of an index, describing how its searches behave apart from
- * how its documents were indexed.
+ * Search settings of an index, describing how searches are answered
+ * independently of how documents were indexed.
  *
- * <p>Settings are the state a caller wants - they are sent in full and replace
- * what was stored, so the same request can be repeated without changing the
- * outcome. Unlike a definition they belong to the index name rather than to a
- * generation: promoting a generation keeps them, and changing them reaches
- * every node without going through the index's writer.
+ * <p>Settings are handled as desired state. A request sends the settings in
+ * full, replacing previous settings, so repeating the request produces the same
+ * outcome. Settings belong to the index name rather than to a generation:
+ * promoting a generation preserves existing search settings, and updates
+ * propagate across the deployment without passing through the index writer.
  *
  * @param ranking
- *   the ranking searches run with instead of the definition's. An empty object
- *   turns the definition's ranking off; left out - together with everything
- *   else - the settings say nothing and the definition stands
+ *   ranking configuration applied instead of the definition ranking; an empty
+ *   object turns ranking off, and omitting the settings leaves the definition
+ *   ranking in place
  * @param synonyms
- *   synonym sets applied to the text of a search, by name
+ *   query-time synonym sets applied to search text, keyed by set name
  * @param typoExclusions
- *   words matched as they are spelled however much typo tolerance their
- *   fields declare, by name
+ *   words matched as spelled regardless of field typo tolerance, keyed by list
+ *   name
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
 	Per-index settings that affect how searches are answered, sent in full and \
-	replacing what was stored. They belong to the index name rather than to a \
-	generation, so promoting a generation keeps them.""")
+	replacing what was stored. Search settings belong to the index name rather \
+	than to a generation, so promoting a generation preserves existing search \
+	settings.""")
 public record SearchSettingsDefinition(
 	@Schema(description = """
-		The ranking searches run with instead of the definition's, in the same \
-		shape as the definition's `ranking`. While present it replaces the \
-		definition's ranking completely; an empty object turns ranking off. \
-		A search request adds its own `signals` to whichever of the two is in \
-		force, or replaces them with `signalsMode`. Validated against the \
-		generation the index name answers from, using the same \
-		`index:ranking:*` codes that validate a definition's ranking.""")
+		The ranking searches run with instead of the definition's ranking, in \
+		the same shape as the definition's `ranking`. While present, it \
+		replaces the definition's ranking completely; an empty object turns \
+		ranking off. A search request adds its own `signals` to whichever \
+		ranking is in force, or replaces them with `signalsMode`. Validated \
+		against the generation the index name answers from, using the same \
+		`index:ranking:*` error codes that validate a definition's ranking.""")
 	IndexDefinition.Ranking ranking,
 
 	@Schema(description = """
-		Synonym sets applied to the text of a search, by name. Unlike the sets \
-		in an index definition, which widen a value as it is indexed, these \
-		widen what a search asks for - so a rule added here reaches documents \
-		that were indexed long before it.""")
+		Synonym sets applied to the text of a search, keyed by set name. \
+		Unlike index-time synonym sets defined in an index definition, which \
+		widen document values during indexing, query-time synonym sets widen \
+		the search query and apply to every document already in the index.""")
 	Map<String, QuerySynonyms> synonyms,
 
 	@Schema(description = """
-		Words matched as they are spelled, by name. A word listed here is \
-		looked up as it was typed however much typo tolerance the field it is \
-		searched in declares, which is how a brand name or a model code keeps \
-		its spelling inside text that is otherwise typo tolerant.""")
+		Words matched as they are spelled, keyed by list name. A word on a \
+		list is looked up as it was typed, however much typo tolerance the \
+		field it is searched in declares. Use a list for brand names and model \
+		codes that sit inside text you want typo tolerant otherwise.""")
 	Map<String, TypoExclusions> typoExclusions
 ) {
 	/**
-	 * A synonym set applied to what a search asks for.
+	 * A query-time synonym set applied to search text.
 	 *
-	 * <p>The rules are the ones an index definition holds in its resources, so
-	 * a set can be moved between the two sides without being rewritten. They
-	 * are applied after the analysis chain of the field has had the text, so
-	 * the terms of the rules are read through that chain as well: a term the
-	 * chain leaves nothing of, such as a stopword, matches nothing.
+	 * <p>Rules use the same structure as synonym sets in an index definition.
+	 * Rules apply after the field's analysis chain processes the text, and rule
+	 * terms are analyzed through that same chain. If an analysis chain leaves
+	 * nothing of a term (such as a stopword), that term matches nothing.
 	 *
 	 * @param rules
 	 *   the rules of the set
 	 * @param fields
-	 *   the fields the set is applied to, or {@code null} for every field a
-	 *   search reads as text
+	 *   list of target field names, or {@code null} for every field searched as
+	 *   text
 	 * @param boost
-	 *   what a term the rules added counts against the term that was typed, or
+	 *   weight of terms added by the rules relative to the typed term, or
 	 *   {@code null} for the engine default
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		A synonym set applied to what a search asks for, rather than to values \
-		as they are indexed.""")
+		A synonym set applied to the search query at query time, rather than \
+		to document values during indexing.""")
 	public record QuerySynonyms(
 		@Schema(description = """
-			The rules of the set, in the same shape as the rules of a set in \
-			an index definition's `resources`.""")
+			The rules of the set, using the same shape as rules in an index \
+			definition's `resources`.""")
 		List<IndexDefinition.Resources.Synonyms.Rule> rules,
 
 		@Schema(description = """
-			The fields the set is applied to, named as a search names them. \
-			Omitted applies it to every field a search reads as text. A name \
-			the generation the index answers from does not have is refused \
-			here; a generation promoted later that lacks it makes searches \
-			skip the field rather than fail.""")
+			An optional list of field names the set applies to, named as a \
+			search names them. If omitted, the set applies to every field \
+			searched as text. Target fields are validated against the \
+			generation the index answers from at write time; a generation \
+			promoted later that lacks a named field causes searches to skip \
+			that field rather than fail.""")
 		List<String> fields,
 
 		@Schema(
 			description = """
-				What a term the rules added counts against the term that was \
-				typed. Below `1` a document holding the word that was typed \
-				ranks above one holding only a synonym of it; `1` makes the \
-				two count the same. Defaults to `0.8`.""",
+				A positive number specifying what a term added by the rules \
+				counts against the typed term. Default `0.8`. Values below `1` \
+				rank a document holding the typed term above one holding only \
+				a synonym. A value of `1` weighs synonyms and typed terms \
+				equally.""",
 			examples = "0.8"
 		)
 		Float boost
@@ -106,40 +108,41 @@ public record SearchSettingsDefinition(
 	}
 
 	/**
-	 * Words a search matches as they are spelled.
+	 * Words matched as they are spelled during search.
 	 *
-	 * <p>The words are read through the analysis chain of the field, so a word
-	 * the chain leaves nothing of, such as a stopword, excludes nothing, and
-	 * one it leaves several terms of excludes each of them.
+	 * <p>Words are evaluated through the analysis chain of each field they are
+	 * excluded in. If the chain leaves nothing of a word (such as a stopword),
+	 * it excludes nothing; if it produces several terms, each term is excluded.
 	 *
-	 * <p>The list is read against the words a search was typed with: a word
-	 * that is not listed keeps the tolerance of its field, including when a
-	 * near reading of it lands on a listed word.
+	 * <p>The list is matched against the words typed in the search. Unlisted
+	 * words retain the typo tolerance of their field, even when an approximate
+	 * match lands on a listed word.
 	 *
 	 * @param words
-	 *   the words, as they would be typed
+	 *   the words, as typed
 	 * @param fields
 	 *   the fields the words are excluded in, or {@code null} for every field
-	 *   a search reads as text
+	 *   searched as text
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Words matched as they are spelled, whatever typo tolerance the fields \
-		they are searched in declare.""")
+		Words matched as they are spelled, regardless of the typo tolerance \
+		configured on the searched fields.""")
 	public record TypoExclusions(
 		@Schema(description = """
-			The words, as they would be typed. A word is read through the \
-			analysis chain of each field it is excluded in, so a word the \
-			chain leaves nothing of excludes nothing, and one it leaves \
-			several terms of excludes each of them.""")
+			The words, as typed. Words are read through the analysis chain of \
+			each field they are excluded in. A word the chain leaves nothing \
+			of (such as a stopword) excludes nothing, and a word the chain \
+			produces several terms from excludes each of them.""")
 		List<String> words,
 
 		@Schema(description = """
-			The fields the words are excluded in, named as a search names \
-			them. Omitted covers every field a search reads as text. A name \
-			the generation the index answers from does not have is refused \
-			here; a generation promoted later that lacks it makes searches \
-			forgive mistakes in the field as the definition says.""")
+			An optional list of field names the words are excluded in, named \
+			as a search names them. If omitted, the list covers every field \
+			searched as text. Field names are validated against the active \
+			generation at write time; a generation promoted later that lacks a \
+			named field applies typo tolerance as configured in the index \
+			definition.""")
 		List<String> fields
 	) {
 	}

@@ -5,10 +5,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Definition of a field containing a 32 bit signed integer.
+ * Defines a field containing a 32 bit signed integer.
  *
- * A number has nothing to analyze, so it is searched by filtering - which for
- * a number means ranges as well as equality:
+ * <p>Numeric fields do not support text analysis and are searched by filtering,
+ * which supports exact matches and range queries:
  *
  * <pre>
  * {
@@ -20,8 +20,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	A 32-bit signed integer. A number has nothing to analyze, so it is searched \
-	by filtering - which for a number means ranges as well as equality.""")
+	Represents a 32-bit signed integer. Numeric fields do not support text \
+	analysis and are searched by filtering, which supports exact matches and \
+	range queries.""")
 public record Int32FieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
@@ -48,18 +49,20 @@ public record Int32FieldDefinition(
 	Facet facet,
 
 	@Schema(description = """
-		Bounds the values the field accepts. A document holding a value \
-		outside them is rejected.""")
+		Sets allowed numeric bounds. Documents containing values outside these \
+		bounds are rejected.""")
 	Validation validation
 ) implements FieldDefinition {
 	/**
-	 * The values the field accepts. A value outside the bounds is refused when
-	 * a document is added.
+	 * The values the field accepts. Documents containing values outside these
+	 * bounds are rejected.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "Int32Validation",
-		description = "The values an `int32` field accepts."
+		description = """
+			Sets the allowed numeric bounds for an `int32` field. Documents \
+			containing values outside these bounds are rejected."""
 	)
 	public record Validation(
 		@Schema(description = "Lowest value accepted.", examples = "0")

@@ -3,18 +3,18 @@ package se.l4.exofind.engine.api.v1alpha1.documents.model;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * What came of putting documents into an index.
+ * Response returned after indexing documents into an index.
  *
  * @param indexed
- *   how many documents the index took, which for a request that succeeded is
- *   every document it carried
+ *   the number of documents indexed, matching every document in the request on
+ *   success
  */
 @Schema(description = "The count of indexed documents.")
 public record DocumentsResponse(
 	@Schema(
 		description = """
-			How many documents were indexed, which for a request that \
-			succeeded is every document it carried.""",
+			The number of documents indexed. For a successful request, this \
+			includes every document in the request.""",
 		examples = "2"
 	)
 	int indexed

@@ -5,10 +5,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Definition of a field holding a point on the earth, as a WGS 84 latitude
- * and longitude.
+ * Defines a field holding a point on the earth, as a WGS 84 latitude and
+ * longitude.
  *
- * A place is searched by nearness rather than by value: {@code filter}
+ * <p>Locations are searched by distance rather than exact value: {@code filter}
  * enables the {@code distance} matcher, and {@code sort} enables ordering by
  * distance from an origin, nearest first.
  *
@@ -22,9 +22,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	A geographic location, given as WGS 84 `lat` and `lon`. A place is searched \
-	by nearness rather than by value: `filter` enables the `distance` matcher, \
-	and `sort` enables ordering by distance from an origin, nearest first.""")
+	Represents a geographic location defined by WGS 84 `lat` and `lon` \
+	coordinates. Locations are searched by distance rather than exact value: \
+	`filter` enables the `distance` matcher, and `sort` enables ordering by \
+	distance from an origin, nearest first.""")
 public record GeoPointFieldDefinition(
 	/**
 	 * What the field is for, expanded into the usages that serve it before the

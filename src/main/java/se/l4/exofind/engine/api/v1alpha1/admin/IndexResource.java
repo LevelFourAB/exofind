@@ -57,35 +57,28 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 
 /**
- * Administration of the indexes on this node - creating them, changing what
- * they contain and synchronizing them with the remote.
+ * Manages indexes, index definitions, generations, and remote synchronization.
  *
- * Definitions are handled as desired state: a definition is sent in full and
- * replaces the previous one, so the same request can be repeated without
- * changing the outcome. The version of a definition is returned as an
- * {@code ETag} and can be sent back as {@code If-Match} to be told that
- * someone else has changed the index instead of overwriting their change.
+ * <p>Index definitions operate as assertions of desired state. Sending a
+ * definition replaces any previous definition in full, so repeating the request
+ * produces the same outcome. The definition version is returned in an
+ * {@code ETag} header and can be supplied in an {@code If-Match} header on
+ * subsequent requests to prevent overwriting concurrent updates.
  *
- * An index holds generations, and a definition belongs to a generation rather
- * than to the index. Every endpoint here takes either the index - which means
- * the generation it currently answers from - or one generation by name, written
- * {@code books@2}. A definition that the documents already indexed were not
- * indexed under is rolled out by creating a generation, filling it and
- * promoting it, rather than by changing an index in place: the name callers use
- * never changes, so nothing they hold has to be updated when it happens.
+ * <p>An index holds generations, and definitions belong to a generation rather
+ * than directly to the index. Endpoints accept either the index name,
+ * referencing the live generation, or a specific generation by name such as
+ * {@code books@2}. When a definition change affects how documents are indexed,
+ * create and populate a new generation, then promote it.
  *
- * Everything here that changes an index - its definition, its generations,
- * which one it answers from - runs on the indexer, and a request that reaches
- * another node is passed along to it. The registry itself could be written
- * from anywhere, being one object replaced conditionally, but routing every
- * change about a name through the node that writes the name keeps "one writer
- * per index" true for all of it rather than only for the documents.
+ * <p>Modifying requests run on the node that holds the index; requests received
+ * by other nodes are forwarded automatically.
  *
- * Indexing and searching documents are not part of this API.
+ * <p>Indexing and searching documents are handled by separate APIs.
  */
 @Tag(
 	name = "Indexes",
-	description = "Defines, reads and deletes indexes and their generations.",
+	description = "Defines, reads, and deletes indexes and their generations.",
 	externalDocs = @ExternalDocumentation(
 		description = "Admin API reference",
 		url = "https://exofind.dev/reference/admin-api/"
@@ -132,12 +125,11 @@ public class IndexResource {
 	}
 
 	/**
-	 * List the indexes available on this node that the caller has been granted
-	 * something on.
+	 * List the indexes available on this node that the caller has permissions
+	 * for.
 	 *
-	 * <p>An index no grant of the caller's key covers is left out rather than
-	 * refused, the same way asking for it directly answers that there is no such
-	 * index - a listing is not a way around what a key can see.
+	 * <p><p>Index listings omit indexes on which the key has no permissions
+	 * rather than refusing the listing.
 	 *
 	 * @return
 	 */
@@ -148,12 +140,10 @@ public class IndexResource {
 		summary = "List indexes",
 		description = """
 			Lists the indexes the deployment holds, with their generations and \
-			which one each answers for.
+			the live generation each answers for.
 
-			An index no grant of the calling key covers is left out rather \
-			than refused, the same way asking for it directly answers that \
-			there is no such index - a listing is not a way around what a key \
-			can see.
+			Index listings omit indexes on which the key has no permissions \
+			rather than refusing the listing.
 
 			Requires the `indexes.read` permission."""
 	)
@@ -187,7 +177,7 @@ public class IndexResource {
 	}
 
 	/**
-	 * Get an index, its definition and its current status.
+	 * Returns an index, its definition, and its current status.
 	 *
 	 * @param name
 	 * @return
@@ -200,12 +190,12 @@ public class IndexResource {
 		summary = "Get an index",
 		description = """
 			Returns the index resource: its definition as stored, the \
-			generation the name answers for, every generation it holds, and \
-			the status the answering node observes.
+			generation described in the response, every generation it holds, \
+			and the status the answering node observes.
 
-			The definition's version is returned in the `ETag` header. Send it \
-			back as `If-Match` on a `PUT` to be told that someone else changed \
-			the index rather than overwriting their change.
+			The definition version is returned in the `ETag` header. Pass this \
+			value in the `If-Match` header on `PUT` requests to prevent \
+			overwriting concurrent updates.
 
 			Requires the `indexes.read` permission."""
 	)
@@ -213,8 +203,8 @@ public class IndexResource {
 		responseCode = "200",
 		description = """
 			The index, with its version in the `ETag` header. Presets are \
-			stored expanded, so the definition comes back as the expanded \
-			chain rather than the preset name.""",
+			stored expanded; the response returns the expanded chain rather \
+			than the preset name.""",
 		content = @Content(schema = @Schema(implementation = IndexInfo.class))
 	)
 	@APIResponse(
@@ -245,7 +235,9 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed. Retrying the request \
+			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public Response get(
@@ -262,38 +254,36 @@ public class IndexResource {
 	}
 
 	/**
-	 * Create an index, add a generation to one, or replace the definition of
-	 * something that is already there.
+	 * Creates an index, adds a generation, or replaces an existing index
+	 * definition.
 	 *
-	 * <p>Which of those happens is decided by the name. {@code books} creates
-	 * the index with a first generation, or replaces the definition of the
-	 * generation it answers from; {@code books@2} adds that generation to an
-	 * index that already exists, or replaces its definition. A generation
-	 * created here holds no documents and the index goes on answering from the
-	 * one it had, until {@code actions/promote} says otherwise.
+	 * <p><p>The target of the request depends on the name format. {@code books}
+	 * creates the index with an initial generation, or replaces the definition
+	 * of the live generation; {@code books@2} adds that generation to an
+	 * existing index, or replaces its definition. A newly created generation
+	 * contains no documents and is not live; the index continues serving from
+	 * the previous live generation until {@code actions/promote} is called.
 	 *
-	 * <p>Replacing the definition of a generation that holds documents is
-	 * refused where the change would reach none of them - a usage turned on for
-	 * a field, a different analysis chain, an edited synonym set. Such a change
-	 * is rolled out through a generation instead, which is what keeps a search
-	 * from quietly answering with less than it should.
+	 * <p><p>When the target generation already holds documents, a request is
+	 * refused if the new definition changes how documents are indexed, such as
+	 * enabling a usage on an existing field, changing an analyzer chain, or
+	 * editing a synonym set. Such changes require creating and promoting a new
+	 * generation.
 	 *
 	 * @param name
 	 *   the index, or one generation of it
 	 * @param ifMatch
-	 *   version the definition is expected to have, as returned by the
-	 *   {@code ETag} of a previous request. When given and the index has since
-	 *   been changed the request fails instead of overwriting that change
+	 *   expected version of the definition, as returned in the {@code ETag}
+	 *   header of a previous request. If the stored version does not match, the
+	 *   request fails instead of overwriting concurrent changes
 	 * @param reindex
-	 *   {@code auto} or {@code manual} to also fill the generation being
-	 *   created from the live one, the way the reindex action would - sugar
-	 *   over the action, for creating a generation only if the reindex is
-	 *   wanted. Only meaningful when a generation is created
+	 *   promotion mode ({@code auto} or {@code manual}) to start a reindex job
+	 *   populating the new generation from the live generation. Only valid when
+	 *   creating a generation
 	 * @param allowStaleDocuments
-	 *   {@code true} to store a definition the documents already indexed were
-	 *   not indexed under, for the case where they are about to be sent again
-	 *   anyway. They go on answering the way they were indexed until they are
-	 *   sent
+	 *   {@code true} to store a definition without reindexing existing
+	 *   documents. Existing documents continue to serve queries as indexed
+	 *   until they are reindexed
 	 * @param definition
 	 * @return
 	 * @throws UnrepresentableStateException
@@ -312,31 +302,31 @@ public class IndexResource {
 		operationId = "putIndex",
 		summary = "Create or replace an index definition",
 		description = """
-			Sends a definition in full, replacing any previous one, so \
-			repeating the request produces the same outcome. Any setting the \
-			body omits is removed.
+			Sends a definition in full, replacing any previous definition. Any \
+			setting the body omits is removed. Repeating the request produces \
+			the same outcome.
 
-			What the request does is decided by the name. `books` creates the \
-			index with an initial generation named `1`, or updates the \
-			definition of the live generation; `books@2` creates that \
+			The target of the request depends on the name format. `books` \
+			creates the index with an initial generation named `1`, or updates \
+			the definition of the live generation; `books@2` creates that \
 			generation under an existing index, or updates its definition. A \
-			newly created generation holds no documents and is not live - the \
-			index keeps answering from the generation it had until \
-			`actions/promote` says otherwise, and `PUT books@2` on an index \
-			that does not exist answers `404`.
+			newly created generation contains no documents and is not live; \
+			the index continues serving from the previous live generation \
+			until `actions/promote` is called, and `PUT books@2` on an index \
+			that does not exist returns `404`.
 
-			On a generation that already holds documents, a change that would \
-			reach none of them is refused with `409` and \
-			`index:definition:incompatible` - a usage enabled on an existing \
-			field, a changed analysis chain, an edited synonym set, a changed \
-			`type`, `primaryKey` or `multiple`. The response carries one \
-			detail per difference, each with the `path` of the field that \
-			caused it. Adding or removing a field, disabling a usage, and \
-			changing `stored`, `source`, `metadata`, `ranking` or the \
-			search-time settings are all accepted.
+			When the target generation already holds documents, a request is \
+			refused with `409` and `index:definition:incompatible` if the new \
+			definition changes how documents are indexed, such as enabling a \
+			usage on an existing field, changing an analyzer chain, editing a \
+			synonym set, or changing `type`, `primaryKey`, or `multiple`. The \
+			response includes one detail item per difference, each with the \
+			`path` of the field that caused it. Adding or removing a field, \
+			disabling a usage, and changing `stored`, `source`, `metadata`, \
+			`ranking`, or search-time settings are accepted.
 
-			Runs on the node that writes the index; a request that reaches \
-			another node is forwarded there. Requires the `indexes.write` \
+			Requests run on the node that writes the index; a request received \
+			by another node is forwarded there. Requires the `indexes.write` \
 			permission."""
 	)
 	@APIResponse(
@@ -382,10 +372,10 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The definition conflicts with the documents the generation holds \
-			(`index:definition:incompatible`), the stored definition holds \
+			The definition conflicts with documents stored in the generation \
+			(`index:definition:incompatible`), the stored definition contains \
 			settings this API version cannot represent \
-			(`index:definition:unrepresentable`), the index needs engine \
+			(`index:definition:unrepresentable`), the index requires engine \
 			features this node does not have (`index:unsupported`), a reindex \
 			job is already running (`reindex:in_progress`), no node is \
 			available to write the index (`indexer:unavailable`), or the \
@@ -395,9 +385,8 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "412",
 		description = """
-			The `If-Match` version does not match the stored definition. Read \
-			the index again and rebuild the change on the version that comes \
-			back.""",
+			The `If-Match` version does not match the stored definition. \
+			Re-read the index and rebuild the change against the new version.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -407,7 +396,9 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed. Retrying the request \
+			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public Response put(
@@ -420,28 +411,27 @@ public class IndexResource {
 		@PathParam("name") String name,
 		@Parameter(
 			description = """
-				Version the definition is expected to be at, as returned by a \
-				previous response's `ETag`. `*` matches any existing version. \
-				A version that no longer matches answers `412` instead of \
-				overwriting the change that moved it.""",
+				The expected definition version, as returned in a previous \
+				`ETag` header. `*` matches any existing version. If the \
+				version no longer matches, the server returns `412` instead of \
+				overwriting intermediate changes.""",
 			example = "\"9f2c1a0b3d4e5f60\""
 		)
 		@HeaderParam("If-Match") String ifMatch,
 		@Parameter(
 			description = """
-				Also start a reindex job filling the generation being created \
-				from the live one, the way the reindex action would. One-shot: \
-				it is not stored in the definition, and it is refused on a \
+				Starts a reindex job filling the generation being created from \
+				the live one, the way the reindex action would. One-shot: it \
+				is not stored in the definition, and it is refused on a \
 				request that creates no generation.""",
 			schema = @Schema(enumeration = {"auto", "manual"})
 		)
 		@QueryParam("reindex") String reindex,
 		@Parameter(
 			description = """
-				Store a definition the documents already indexed were not \
-				indexed under, for the case where they are about to be sent \
-				again anyway. They go on answering the way they were indexed \
-				until they are. No effect on an empty generation.""",
+				Forces the update without reindexing existing documents. \
+				Existing documents continue to serve queries as indexed until \
+				they are reindexed. Has no effect on an empty generation.""",
 			schema = @Schema(type = SchemaType.BOOLEAN, defaultValue = "false")
 		)
 		@QueryParam("allowStaleDocuments") @DefaultValue("false") boolean allowStaleDocuments,
@@ -529,13 +519,13 @@ public class IndexResource {
 	}
 
 	/**
-	 * Delete an index and every generation of it, or one generation on its own.
+	 * Deletes an index and all of its generations, or a single generation.
 	 *
-	 * <p>The index is taken out of the registry, so it is gone for the whole
-	 * deployment rather than only for this node - every node removes its own
-	 * copy when it next reads the registry. What the remote holds under it is
-	 * not removed. The generation an index answers from is refused, so an index
-	 * is never left answering for nothing.
+	 * <p><p>Removing an index or generation removes it from the shared registry
+	 * across the deployment; other nodes remove their local copies during their
+	 * next registry read. Deletion does not remove data held in remote storage.
+	 * Deleting the live generation is refused until another generation is
+	 * promoted.
 	 *
 	 * @param name
 	 *   the index, or one generation of it
@@ -549,17 +539,16 @@ public class IndexResource {
 		operationId = "deleteIndex",
 		summary = "Delete an index or a generation",
 		description = """
-			Deleting `books` removes the index and every generation of it; \
-			deleting `books@2` removes only that generation. Deleting the live \
-			generation is refused with `index:generation:is_live` until \
-			another one is promoted, so an index is never left answering for \
-			nothing.
+			Deleting `books` deletes the index and all of its generations; \
+			deleting `books@2` deletes only that generation. Deleting the live \
+			generation fails with `index:generation:is_live` until another \
+			generation is promoted.
 
-			The entry is removed from the registry the deployment shares, so \
-			it is gone everywhere rather than only on this node - other nodes \
-			drop their local copies at their next registry read. What remote \
-			storage holds under it is not removed, so an index created again \
-			under the same name picks its old search settings back up.
+			Deleting an index or generation removes it from the shared \
+			registry across the deployment; other nodes remove their local \
+			copies during their next registry read. Deletion does not remove \
+			data held in remote storage, so an index created again under the \
+			same name picks its old search settings back up.
 
 			Requires the `indexes.delete` permission."""
 	)
@@ -600,8 +589,9 @@ public class IndexResource {
 	public Response delete(
 		@Parameter(
 			description = """
-				The index, which removes every generation of it, or one \
-				generation by name such as `books@2`.""",
+				The index name, which deletes the index and all of its \
+				generations, or a specific generation by name such as \
+				`books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name
@@ -616,18 +606,15 @@ public class IndexResource {
 	}
 
 	/**
-	 * Make an index answer from one of its generations, which is how a rebuilt
-	 * index is rolled out.
+	 * Configures an index to serve from the specified generation.
 	 *
-	 * <p>Callers using the index by name read the promoted generation from here
-	 * on - on this node at once, and on every other node within its refresh
-	 * interval. Nothing they hold changes, so this is also how a rollout is
-	 * undone: promote the generation that was answering before.
+	 * <p>Requests using the bare index name read the promoted generation
+	 * immediately on the receiving node and within the refresh interval on all
+	 * other nodes. To roll back a deployment, promote the previous generation.
 	 *
-	 * <p>A generation a reindex is filling is promoted through the job: one
-	 * that says it is ready is drained and promoted complete, one that has
-	 * not caught up yet is refused - promoting a partial copy is what the job
-	 * exists to prevent.
+	 * <p>A generation being filled by a reindex job is promoted through the
+	 * job. Promoting a job in the ready phase drains remaining changes and
+	 * completes promotion; promoting before the job is ready is refused.
 	 *
 	 * @param name
 	 *   the generation to promote, as {@code index@generation}
@@ -641,20 +628,16 @@ public class IndexResource {
 		operationId = "promoteGeneration",
 		summary = "Promote a generation",
 		description = """
-			Makes the index answer from the named generation, which is how a \
-			rebuilt index is rolled out. Callers using the bare index name \
-			read the promoted generation from here on - on the answering node \
-			at once, and on every other node within \
-			`EXOFIND_INDEXES_REFRESH_INTERVAL`. Nothing the callers hold \
-			changes, so \
-			this is also how a rollout is undone: promote the generation that \
-			was answering before.
+			Configures the index to serve from the specified generation. The \
+			change takes effect immediately on the receiving node and within \
+			`EXOFIND_INDEXES_REFRESH_INTERVAL` on all other nodes. To roll \
+			back a deployment, promote the previous generation.
 
-			The path must name a generation; calling it on a bare index name \
-			returns `index:generation:name_required`. A generation being \
-			filled by a reindex job is promoted through the job - one in the \
-			`ready` phase is drained and promoted complete, one that has not \
-			caught up is refused with `reindex:target_busy`.
+			The request path must specify a generation name; calling `promote` \
+			without a generation returns `index:generation:name_required`. \
+			Promoting the target of a `ready` reindex job finishes the job, \
+			while promoting before the job is ready is refused with \
+			`reindex:target_busy`.
 
 			Requires the `indexes.promote` permission."""
 	)
@@ -715,7 +698,8 @@ public class IndexResource {
 	}
 
 	/**
-	 * Commit pending changes to an index and push them to the remote.
+	 * Pushes pending changes (documents and definition) to storage and returns
+	 * the resulting status.
 	 *
 	 * @param name
 	 * @return
@@ -728,16 +712,14 @@ public class IndexResource {
 		operationId = "commitIndex",
 		summary = "Commit pending changes",
 		description = """
-			Commits whatever documents and definition changes are waiting and \
-			pushes them to remote storage, making them searchable. The writer \
-			commits on its own once enough has been indexed or enough time has \
-			passed, so this is for committing at once - loading a dataset is \
-			many indexing requests and one commit at the end, rather than a \
-			commit per batch.
+			Pushes pending changes (documents and definition) to storage, \
+			making them searchable. The index writer commits automatically \
+			based on indexing volume or elapsed time. Use this endpoint to \
+			commit immediately, such as after loading a dataset.
 
-			Acts on the generation the path names, or the live one when it \
-			names none. Runs on the node that writes the index. Requires the \
-			`indexes.commit` permission."""
+			Acts on the generation specified in the request path, or the live \
+			generation if omitted. Runs on the node that writes the index. \
+			Requires the `indexes.commit` permission."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -775,14 +757,16 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed. Retrying the request \
+			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public IndexStatus commit(
 		@Parameter(
 			description = """
-				The index, which commits the generation it answers for, or one \
-				generation by name such as `books@2`.""",
+				The index name, which commits the live generation, or a \
+				specific generation by name such as `books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name
@@ -799,11 +783,11 @@ public class IndexResource {
 	}
 
 	/**
-	 * Pull the latest state of an index from the remote.
+	 * Fetches the latest remote state of an index immediately instead of
+	 * waiting for the refresh interval.
 	 *
-	 * <p>A pull updates the copy on the node serving it, so it runs wherever
-	 * it lands - sending it to the indexer would refresh the one node that is
-	 * already current.
+	 * <p>A pull updates the local copy on the node serving the request and is
+	 * never forwarded.
 	 *
 	 * @param name
 	 * @return
@@ -816,13 +800,12 @@ public class IndexResource {
 		operationId = "pullIndex",
 		summary = "Pull the latest state",
 		description = """
-			Fetches the latest remote state at once instead of waiting for \
-			`EXOFIND_INDEXES_REFRESH_INTERVAL`, and answers with the resulting \
+			Fetches the latest remote state immediately instead of waiting for \
+			`EXOFIND_INDEXES_REFRESH_INTERVAL`, and returns the resulting \
 			status.
 
-			A pull updates the copy held by the node serving it, so it runs \
-			wherever it lands and is never forwarded - sending it to the index \
-			writer would only refresh the one node that is already current.
+			A pull updates the local copy on the receiving node and is never \
+			forwarded.
 
 			Requires the `indexes.pull` permission."""
 	)
@@ -850,13 +833,15 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed. Retrying the request \
+			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public IndexStatus pull(
 		@Parameter(
 			description = """
-				The index, which pulls the generation it answers for, or one \
+				The index name, which pulls the live generation, or a specific \
 				generation by name such as `books@2`.""",
 			example = "books"
 		)

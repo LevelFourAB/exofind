@@ -6,11 +6,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Definition of a field holding a vector of floats, searched by similarity
- * rather than by value.
+ * Definition of a field holding a vector of floating-point numbers searched by
+ * similarity using the {@code knn} search clause.
  *
- * The vectors arrive with the documents - the engine never produces them - and
- * every value has to have exactly {@code dimensions} components:
+ * <p>Vectors must be supplied in document payloads, and every vector must
+ * contain exactly {@code dimensions} components:
  *
  * <pre>
  * {
@@ -20,17 +20,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * }
  * </pre>
  *
- * A vector is searched with the {@code knn} clause, so it has no
- * {@code filter} - filtering, sorting and faceting mean nothing for it and are
- * refused.
+ * <p>Vector fields do not support {@code filter}, sorting, or faceting.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	An array of floating-point numbers searched by similarity with the `knn` \
-	search clause. Vectors are supplied in document payloads - the engine never \
-	produces them - and vector fields support no `filter`, `sort`, `facet` or \
-	`locales`. See [Search by \
-	vector](https://exofind.dev/how-to/search-by-vector/).""")
+	Represents an array of floating-point numbers searched by similarity using \
+	the `knn` search clause. Vector fields do not support `filter`, `sort`, \
+	`facet`, or `locales`. Vectors must be supplied in document payloads. See \
+	[Search by vector](https://exofind.dev/how-to/search-by-vector/).""")
 public record VectorFieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
@@ -44,36 +41,35 @@ public record VectorFieldDefinition(
 	@Schema(description = FieldDefinition.STORED_DESCRIPTION, defaultValue = "false")
 	Boolean stored,
 
-	@Schema(description = "Not supported on a vector field; setting it is refused.")
+	@Schema(description = "Not supported on a vector field; setting it is rejected.")
 	FieldDefinition.Locales locales,
 
 	@Schema(description = """
-		Not supported on a vector field - a vector is searched with the `knn` \
-		clause - so setting it is refused.""")
+		Not supported on a vector field. Vector fields are searched by \
+		similarity using the `knn` search clause; setting it is rejected.""")
 	FieldDefinition.Filter filter,
 
-	@Schema(description = "Not supported on a vector field; setting it is refused.")
+	@Schema(description = "Not supported on a vector field; setting it is rejected.")
 	FieldDefinition.Sort sort,
 
-	@Schema(description = "Not supported on a vector field; setting it is refused.")
+	@Schema(description = "Not supported on a vector field; setting it is rejected.")
 	FieldDefinition.Facet facet,
 
 	/**
-	 * How many components every vector of the field has. Required, and fixed
-	 * once documents have been indexed.
+	 * Number of vector dimensions. Required. Cannot be modified after indexing
+	 * documents.
 	 */
 	@Schema(
 		description = """
-			Number of vector dimensions. Every value must have exactly this \
-			many components. Required, and fixed once documents have been \
-			indexed.""",
+			Number of vector dimensions. Required. Cannot be modified after \
+			indexing documents.""",
 		required = true,
 		examples = "1536"
 	)
 	Integer dimensions,
 
 	/**
-	 * How near two vectors are judged to be. Defaults to {@code cosine}.
+	 * Vector distance metric. Defaults to {@code cosine}.
 	 */
 	@Schema(
 		description = """
@@ -84,16 +80,14 @@ public record VectorFieldDefinition(
 	Similarity similarity,
 
 	/**
-	 * Parameters of the HNSW graph the vectors are searched through.
+	 * Hierarchical Navigable Small World index configuration.
 	 */
 	@Schema(description = """
-		Parameters of the Hierarchical Navigable Small World graph the vectors \
-		are searched through.""")
+		Hierarchical Navigable Small World index configuration.""")
 	Hnsw hnsw,
 
 	/**
-	 * How much precision stored vectors give up for space. Defaults to
-	 * {@code none}.
+	 * Vector compression method. Defaults to {@code none}.
 	 */
 	@Schema(
 		description = "Vector compression method.",
@@ -102,8 +96,8 @@ public record VectorFieldDefinition(
 	Quantization quantization
 ) implements FieldDefinition {
 	@Schema(description = """
-		Vector distance metric: `cosine`, `dot_product` - which requires \
-		unit-length vectors - or `euclidean`.""")
+		Vector distance metric: `cosine`, `dot_product`, or `euclidean`. \
+		`dot_product` requires unit-length normalized vectors.""")
 	public enum Similarity {
 		@JsonProperty("cosine")
 		COSINE,
@@ -121,7 +115,7 @@ public record VectorFieldDefinition(
 	}
 
 	@Schema(description = """
-		Vector compression method: `none`, `int8` or `int4`.""")
+		Vector compression method: `none`, `int8`, or `int4`.""")
 	public enum Quantization {
 		@JsonProperty("none")
 		NONE,
@@ -134,26 +128,27 @@ public record VectorFieldDefinition(
 	}
 
 	/**
-	 * Parameters of the HNSW graph. Both trade indexing time and space for
-	 * recall; leaving them out takes the engine defaults.
+	 * Hierarchical Navigable Small World index configuration. Parameters trade
+	 * indexing time and space for recall; omitting them uses engine defaults.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Parameters of the HNSW graph. Both trade indexing time and space for \
-		recall; leaving them out takes the engine defaults.""")
+		Hierarchical Navigable Small World index configuration. Parameters \
+		trade indexing time and space for recall; omitting them uses engine \
+		defaults.""")
 	public record Hnsw(
 		/**
-		 * How many neighbours each node of the graph keeps.
+		 * Number of bi-directional links per node.
 		 */
-		@Schema(description = "Number of bi-directional links each node of the graph keeps.")
+		@Schema(description = "Number of bi-directional links per node.")
 		Integer m,
 
 		/**
-		 * How many candidates are considered while the graph is built.
+		 * Size of dynamic candidate list evaluated during index construction.
 		 */
 		@Schema(description = """
-			Size of the dynamic candidate list evaluated while the graph is \
-			built.""")
+			Size of dynamic candidate list evaluated during index \
+			construction.""")
 		Integer efConstruction
 	) {
 	}

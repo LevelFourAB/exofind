@@ -32,26 +32,22 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 /**
- * The API keys of the deployment.
+ * Manages deployment API keys.
  *
- * <p>Keys live in the object storage rather than in the configuration of a
- * node, so a key created here works on every node and revoking one takes effect
- * everywhere without redeploying anything. How long that takes is
- * {@code EXOFIND_AUTH_REFRESH_INTERVAL} on each node.
+ * <p>Keys are stored in shared deployment storage. A key created on one node
+ * works on all nodes, and revoking a key takes effect across all nodes without
+ * redeployment. Revocation propagates within the duration configured by
+ * {@code EXOFIND_AUTH_REFRESH_INTERVAL}.
  *
- * <p>Managing keys does not need the indexer role - the store is one object
- * replaced conditionally on the version it was read at, and a key is about the
- * deployment rather than about any index - so these requests are served by
- * whichever node receives them and are never passed to the indexer.
+ * <p>Key management does not depend on a specific node. Requests are handled
+ * directly by the node that receives them and are not forwarded to the indexer.
  *
- * <p>A key is created and revoked, never edited. Changing what something is
- * allowed to do means creating the key it should have, moving whatever uses it
- * over, and revoking the old one, which leaves a moment where both work rather
- * than a moment where neither does.
+ * <p>Keys are immutable. To change permissions, create a replacement key,
+ * migrate clients to the new key, and revoke the old key.
  */
 @Tag(
 	name = "API keys",
-	description = "Creates, lists and revokes the API keys of the deployment.",
+	description = "Creates, lists, and revokes the API keys of the deployment.",
 	externalDocs = @ExternalDocumentation(
 		description = "Authentication reference",
 		url = "https://exofind.dev/reference/auth/"
@@ -71,10 +67,10 @@ public class KeyResource {
 	}
 
 	/**
-	 * List the keys, and how the node answering is configured to use them.
+	 * Lists deployment keys and the key configuration of the answering node.
 	 *
-	 * <p>Credentials are not part of a listing and cannot be recovered from
-	 * one.
+	 * <p>Key credentials are stored only as hashes and cannot be recovered from
+	 * listings.
 	 *
 	 * @return
 	 */
@@ -84,12 +80,11 @@ public class KeyResource {
 		operationId = "listKeys",
 		summary = "List API keys",
 		description = """
-			Lists the deployment keys, which are shared across all nodes, \
-			along with how the answering node is configured to use them.
+			Lists deployment keys shared across all nodes, along with the \
+			local key configuration of the answering node.
 
-			Credentials are stored only as hashes, so they are not part of a \
-			listing and cannot be recovered from one. A lost credential must \
-			be replaced.
+			Key credentials are stored only as hashes and cannot be recovered \
+			from listings. A lost credential must be replaced.
 
 			Served by whichever node receives the request. Requires the \
 			`keys.read` permission."""
@@ -126,10 +121,10 @@ public class KeyResource {
 	}
 
 	/**
-	 * Create a key.
+	 * Creates an API key and returns the generated credential and metadata.
 	 *
-	 * <p>The credential is in the response and nowhere else, as only a hash of
-	 * it is stored.
+	 * <p>The secret credential is returned only in this response because
+	 * credentials are stored only as hashes.
 	 *
 	 * @param definition
 	 * @return
@@ -142,33 +137,34 @@ public class KeyResource {
 		operationId = "createKey",
 		summary = "Create an API key",
 		description = """
-			Creates a key and answers with the generated credential and the \
-			key's metadata. The full credential is returned only in this \
-			response and nowhere else, as only a hash of it is stored - a lost \
+			Creates an API key and returns the generated credential string and \
+			key metadata. The full secret credential is returned only in this \
+			response because credentials are stored only as hashes. A lost \
 			credential cannot be recovered and must be replaced. Server logs \
-			record the key `id`, never the credential.
+			record the key `id`, never the credential value.
 
-			Roles are expanded into their permissions when the key is created, \
-			and only the resulting permissions are stored, so a key does not \
-			change if a role's definition changes in a later version.
+			When a key is created, roles are expanded into their constituent \
+			permissions. Only the resulting permissions are stored in the key. \
+			Existing keys do not change permissions if role definitions change \
+			in later software versions.
 
-			A key created here works on every node at once, since a node looks \
-			up an unseen key immediately. Served by whichever node receives \
-			the request. Requires the `keys.write` permission."""
+			A key created on one node works on all nodes immediately because \
+			nodes look up unseen keys without delay. Served by whichever node \
+			receives the request. Requires the `keys.write` permission."""
 	)
 	@APIResponse(
 		responseCode = "201",
 		description = """
 			The key was created. The `credential` in this response is the only \
-			copy there will be.""",
+			copy returned.""",
 		content = @Content(schema = @Schema(implementation = CreatedKey.class))
 	)
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The body is missing, or names an unknown role, permission or index \
-			pattern, or carries an invalid `expiresAt` (`auth:key:*`). All \
-			validation errors are reported.""",
+			The request body is missing, specifies an unknown role, \
+			permission, or index pattern, or contains an invalid `expiresAt` \
+			timestamp (`auth:key:*`). All validation errors are reported.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -184,11 +180,10 @@ public class KeyResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			Key storage is unavailable on this node \
-			(`auth:keys:unavailable`), could not be reached \
-			(`auth:keys:io_error`), or another node changed the keys while \
-			this change was being stored (`auth:keys:conflict`). The stored \
-			keys are unchanged.""",
+			Key storage is unavailable on this node (`auth:keys:unavailable`), \
+			could not be reached (`auth:keys:io_error`), or concurrent updates \
+			from other nodes conflicted with this request \
+			(`auth:keys:conflict`). The stored keys are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public Response create(KeyDefinition definition) {
@@ -210,10 +205,10 @@ public class KeyResource {
 	}
 
 	/**
-	 * Revoke a key.
+	 * Revokes an API key.
 	 *
-	 * <p>It stops working on this node at once and on every other node within
-	 * that node's refresh interval.
+	 * <p>Revocation takes effect on this node immediately and on all other
+	 * nodes within their configured refresh interval.
 	 *
 	 * @param id
 	 * @return
@@ -226,16 +221,15 @@ public class KeyResource {
 		operationId = "revokeKey",
 		summary = "Revoke an API key",
 		description = """
-			Revokes a key. It stops working on the answering node at once and \
-			on every other node within that node's \
-			`EXOFIND_AUTH_REFRESH_INTERVAL`, since a node accepts a cached key \
-			until its next storage read.
+			Revokes an API key. Revocation takes effect on the answering node \
+			immediately and across all other nodes within \
+			`EXOFIND_AUTH_REFRESH_INTERVAL`, as nodes accept cached keys until \
+			their next storage read.
 
-			Keys are immutable: to change what something is allowed to do, \
-			create the key it should have, move whatever uses it over, and \
-			revoke the old one - which leaves a moment where both work rather \
-			than one where neither does. The root key is not stored in key \
-			storage and cannot be revoked through the API.
+			Keys are immutable. To change permissions, create a replacement \
+			key, migrate clients to the new key, and revoke the old key. The \
+			root key is not stored in key storage and cannot be revoked \
+			through the API.
 
 			Served by whichever node receives the request. Requires the \
 			`keys.write` permission."""
@@ -260,7 +254,7 @@ public class KeyResource {
 		responseCode = "409",
 		description = """
 			Key storage is unavailable on this node, could not be reached, or \
-			another node changed the keys while this change was being stored. \
+			concurrent updates from other nodes conflicted with this request. \
 			The stored keys are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)

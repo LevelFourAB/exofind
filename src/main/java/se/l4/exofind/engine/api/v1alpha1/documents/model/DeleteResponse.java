@@ -3,23 +3,23 @@ package se.l4.exofind.engine.api.v1alpha1.documents.model;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * What came of removing documents from an index.
+ * Response returned after deleting documents from an index.
  *
  * @param deleted
- *   how many documents the request removed. A request naming keys counts the
- *   keys it carried, as a key nothing was indexed under is not an error; a
- *   request naming a query counts the documents it matched among the
- *   searchable ones, which leaves out any it removed that had not been
- *   committed yet
+ *   the number of removed documents. For requests using keys, this counts the
+ *   keys provided in the request, since requesting the deletion of an unindexed
+ *   key produces a success response; for requests using a query, this counts
+ *   the matching committed searchable documents
  */
 @Schema(description = "The count of deleted documents.")
 public record DeleteResponse(
 	@Schema(
 		description = """
-			How many documents were removed. A request naming `keys` counts \
-			the keys it carried, since a key nothing was indexed under is not \
-			an error; a request naming a `query` counts the committed \
-			searchable documents it matched.""",
+			How many documents were removed. For requests using `keys`, this \
+			is the number of keys provided in the request, since requesting \
+			the deletion of an unindexed key produces a success response. For \
+			requests using `query`, this is the number of matching committed \
+			searchable documents.""",
 		examples = "3"
 	)
 	int deleted

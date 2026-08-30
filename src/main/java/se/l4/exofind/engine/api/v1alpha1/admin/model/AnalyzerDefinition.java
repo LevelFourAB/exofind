@@ -9,8 +9,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * How the text of a usage is analyzed. Exactly one of {@code preset},
- * {@code custom} and {@code named} is given:
+ * Specifies how the text of a usage is analyzed. Specify exactly one of
+ * {@code preset}, {@code custom}, or {@code named}:
  *
  * <pre>
  * "analyzer": { "preset": "full_text" }
@@ -18,59 +18,63 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * "analyzer": { "named": "prose" }
  * </pre>
  *
- * A preset is expanded to the chain it names before it is stored, so reading
- * the definition back shows the chain rather than the preset - what a preset
- * means can then never shift under an index that already exists. A named
- * chain refers to one defined once in the resources of the index, for chains
- * shared between fields.
+ * <p>A preset specifies a predefined analyzer chain. The engine expands the
+ * preset before storing the index definition. A named chain references an
+ * analyzer defined under resources in the index definition to share analyzer
+ * configurations across fields.
  *
- * Components that pick words by locale - stopwords and stemming - follow the
- * locale of the value being analyzed unless they name one, which is what lets
- * one chain serve a field whose values come in several locales.
+ * <p>Components that select words by locale, such as stopwords and stemming,
+ * use the locale of the value being analyzed unless specified.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	How the text of a usage is analyzed, carrying exactly one of `preset`, \
-	`custom` and `named`. A chain describes the indexing side; the engine \
-	derives the querying side from it. Components that select words by locale, \
-	such as stopwords and stemming, follow the locale of the value being \
-	analyzed unless they name one. See \
-	[Analysis](https://exofind.dev/reference/analysis/).""")
+	Specifies how the text of a usage is analyzed, with exactly one of \
+	`preset`, `custom`, or `named`. An analyzer chain describes the indexing \
+	process. The engine derives the query analyzer from the indexing chain. \
+	Components that select words by locale, such as stopwords and stemming, \
+	use the locale of the value being analyzed unless you specify a locale. \
+	See [Analysis](https://exofind.dev/reference/analysis/).""")
 public record AnalyzerDefinition(
 	/**
-	 * A named chain the engine expands: {@code preserve_terms} tokenizes and
-	 * normalizes but keeps every word whole, for names, codes and SKUs;
-	 * {@code full_text} also drops stopwords and stems, for prose.
+	 * A predefined analyzer chain expanded before storing the index definition.
+	 * {@code preserve_terms} tokenizes and normalizes text, but keeps each word
+	 * whole, for names, codes, and SKUs. {@code full_text} tokenizes and
+	 * normalizes text, removes stopwords, splits compound words, and stems
+	 * words, for prose.
 	 */
 	@Schema(description = """
-		A predefined chain, expanded before the definition is stored - so \
-		reading the definition back shows the chain rather than the preset, \
-		and what a preset means can never shift under an index that already \
-		exists.""")
+		A preset specifies a predefined analyzer chain. The engine expands the \
+		preset before storing the index definition.""")
 	Preset preset,
 
 	/**
-	 * A chain given in full.
+	 * A custom analyzer chain that defines character filters, a tokenizer, and
+	 * token filters.
 	 */
-	@Schema(description = "A chain given in full.")
+	@Schema(description = """
+		A custom analyzer chain that defines character filters, a tokenizer, \
+		and token filters.""")
 	Custom custom,
 
 	/**
-	 * The name of a chain defined in the resources of the index.
+	 * The name of an analyzer defined under resources in the index definition,
+	 * used to share analyzer configurations across fields.
 	 */
 	@Schema(
 		description = """
-			Name of a chain defined under the index's `resources`, for chains \
-			shared between fields. Validation fails if no such name is \
-			defined.""",
+			A named chain references an analyzer defined under `resources` in \
+			the index definition. Used to share analyzer configurations across \
+			fields. Validation fails if the specified name does not exist \
+			under `resources`.""",
 		examples = "prose"
 	)
 	String named
 ) {
 	@Schema(description = """
 		A predefined analyzer chain. `preserve_terms` tokenizes and normalizes \
-		but keeps every word whole, for names, codes and SKUs. `full_text` \
-		also removes stopwords, splits compound words and stems, for prose.""")
+		text, but keeps each word whole, for names, codes, and SKUs. \
+		`full_text` tokenizes and normalizes text, removes stopwords, splits \
+		compound words, and stems words, for prose.""")
 	public enum Preset {
 		@JsonProperty("preserve_terms")
 		PRESERVE_TERMS,
@@ -80,73 +84,77 @@ public record AnalyzerDefinition(
 	}
 
 	/**
-	 * An analysis chain given in full. The chain describes the indexing side;
-	 * the engine derives the querying side from it.
+	 * A custom analyzer chain that defines character filters, a tokenizer, and
+	 * token filters. The chain describes the indexing process; the engine
+	 * derives the query analyzer from it.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		An analysis chain given in full: character filters, a tokenizer and \
-		token filters. Each component is an object with one key naming its \
-		type, such as `{ "whitespace": {} }`.""")
+		A custom analyzer chain that defines character filters, a tokenizer, \
+		and token filters. Each component is an object with one key that \
+		specifies the component type, for example `{ "whitespace": {} }`.""")
 	public record Custom(
 		/**
-		 * Run over the raw text before tokenization, in order.
+		 * Character filters applied to the raw text before tokenization, in
+		 * order.
 		 */
 		@Schema(description = """
-			Character filters applied to the raw text before tokenization, in \
-			order.""")
+			An array of character filters applied to the raw text before \
+			tokenization, in order.""")
 		List<CharFilter> charFilters,
 
 		/**
-		 * How the text is split into tokens. Left out, the engine picks for
-		 * the locale of the value - Unicode segmentation for most locales,
-		 * the locale's own for Chinese, Japanese and Korean.
+		 * The tokenizer that splits text into tokens. If omitted, the engine
+		 * chooses a tokenizer based on the locale of the value (Unicode
+		 * segmentation for most locales; language-specific segmentation for
+		 * Chinese, Japanese, and Korean).
 		 */
 		@Schema(description = """
-			How the text is split into tokens. Omitted, the engine chooses by \
-			the locale of the value - Unicode segmentation for most locales, \
-			language-specific segmentation for Chinese, Japanese and \
-			Korean.""")
+			The tokenizer that splits text into tokens. If omitted, the engine \
+			chooses a tokenizer based on the locale of the value (Unicode \
+			segmentation for most locales; language-specific segmentation for \
+			Chinese, Japanese, and Korean).""")
 		Tokenizer tokenizer,
 
 		/**
-		 * Run over the tokens, in order.
+		 * Token filters applied to tokens, in order.
 		 */
-		@Schema(description = "Token filters applied to the tokens, in order.")
+		@Schema(description = "An array of token filters applied to tokens, in order.")
 		List<TokenFilter> filters
 	) {
 	}
 
 	/**
-	 * How text is split into tokens. Exactly one kind is given, selected by
+	 * Specifies how text is split into tokens. Specify exactly one tokenizer by
 	 * including its configuration: {@code { "whitespace": {} }}.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		How text is split into tokens. Exactly one kind is given, selected by \
-		including its configuration, such as `{ "whitespace": {} }`.""")
+		Specifies how text is split into tokens. Specify exactly one tokenizer \
+		by including its configuration, for example `{ "whitespace": {} }`.""")
 	public record Tokenizer(
 		/**
-		 * Segment on the rules of Unicode. The engine default.
+		 * Segments text based on Unicode rules. This is the default tokenizer.
 		 */
 		@Schema(description = """
-			Segments text on the rules of Unicode. The engine default.""")
+			Segments text based on Unicode rules. This is the default \
+			tokenizer.""")
 		Icu icu,
 
 		/**
-		 * Split on whitespace only.
+		 * Splits text on whitespace characters.
 		 */
 		@Schema(description = "Splits text on whitespace characters.")
 		Whitespace whitespace,
 
 		/**
-		 * Keep the whole value as one token.
+		 * Retains the entire input value as a single token.
 		 */
 		@Schema(description = "Retains the entire input value as a single token.")
 		Keyword keyword,
 
 		/**
-		 * Split on anything that is not a letter.
+		 * Splits text on non-letter characters.
 		 */
 		@Schema(description = "Splits text on non-letter characters.")
 		Letter letter
@@ -170,7 +178,7 @@ public record AnalyzerDefinition(
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "KeywordTokenizer",
-			description = "Keeps the whole value as one token. Carries no options."
+			description = "Retains the entire input value as a single token. Carries no options."
 		)
 		public record Keyword() {
 		}
@@ -178,36 +186,36 @@ public record AnalyzerDefinition(
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "LetterTokenizer",
-			description = "Splits on non-letter characters. Carries no options."
+			description = "Splits text on non-letter characters. Carries no options."
 		)
 		public record Letter() {
 		}
 	}
 
 	/**
-	 * A transformation of the raw text before it is tokenized. Exactly one
-	 * kind is given, selected by including its configuration.
+	 * A transformation of the raw text before tokenization. Specify exactly one
+	 * character filter by including its configuration.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		A transformation of the raw text before it is tokenized. Exactly one \
-		kind is given, selected by including its configuration.""")
+		A transformation of the raw text before tokenization. Specify exactly \
+		one character filter by including its configuration.""")
 	public record CharFilter(
 		/**
-		 * Strip HTML and XML markup, keeping the text between tags.
+		 * Strips HTML and XML markup and keeps text between tags.
 		 */
 		@Schema(description = """
-			Strips HTML and XML markup, keeping the text between tags.""")
+			Strips HTML and XML markup and keeps text between tags.""")
 		HtmlStrip htmlStrip,
 
 		/**
-		 * Replace occurrences of each key with its value.
+		 * Replaces occurrences of each key with its value.
 		 */
 		@Schema(description = "Replaces occurrences of each key with its value.")
 		Mapping mapping,
 
 		/**
-		 * Replace everything a regular expression matches.
+		 * Replaces substrings that match a regular expression.
 		 */
 		@Schema(description = """
 			Replaces substrings that match a regular expression.""")
@@ -215,7 +223,8 @@ public record AnalyzerDefinition(
 	) {
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(description = """
-			Strips HTML and XML markup. Carries no options.""")
+			Strips HTML and XML markup and keeps text between tags. Carries no \
+			options.""")
 		public record HtmlStrip() {
 		}
 
@@ -226,8 +235,7 @@ public record AnalyzerDefinition(
 		)
 		public record Mapping(
 			@Schema(
-				description = """
-					Replacements to apply, each key replaced by its value.""",
+				description = "Replaces occurrences of each key with its value.",
 				required = true
 			)
 			Map<String, String> mappings
@@ -235,7 +243,7 @@ public record AnalyzerDefinition(
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "A regular-expression replacement applied before tokenization.")
+		@Schema(description = "Replaces substrings that match a regular expression.")
 		public record PatternReplace(
 			@Schema(
 				description = "The regular expression to match.",
@@ -262,85 +270,81 @@ public record AnalyzerDefinition(
 		selected by including its configuration.""")
 	public record TokenFilter(
 		/**
-		 * Unicode normalization, so the different ways of writing the same
-		 * character compare as one. Folding case as part of it is what makes
-		 * analysis case-insensitive.
+		 * Applies Unicode normalization and case folding to make analysis
+		 * case-insensitive.
 		 */
 		@Schema(description = """
-			Applies Unicode normalization, so the different ways of writing the \
-			same character compare as one. Folding case as part of it is what \
-			makes analysis case-insensitive.""")
+			Applies Unicode normalization and case folding to make analysis \
+			case-insensitive.""")
 		Normalize normalize,
 
 		/**
-		 * Drop words that appear too often to tell documents apart.
+		 * Removes frequent words.
 		 */
-		@Schema(description = """
-			Removes words that appear too often to tell documents apart.""")
+		@Schema(description = "Removes frequent words.")
 		Stopwords stopwords,
 
 		/**
-		 * Reduce words to a shared root, so a search for one form finds the
-		 * others.
+		 * Reduces words to a shared root.
 		 */
-		@Schema(description = """
-			Reduces words to a shared root, so a search for one form finds the \
-			others.""")
+		@Schema(description = "Reduces words to a shared root.")
 		Stemming stemming,
 
 		/**
-		 * Fold characters outside ASCII to their closest ASCII equivalent.
+		 * Converts non-ASCII characters to ASCII equivalents.
 		 */
 		@Schema(description = """
-			Converts non-ASCII characters to their closest ASCII \
-			equivalent.""")
+			Converts non-ASCII characters to ASCII equivalents.""")
 		AsciiFolding asciiFolding,
 
 		/**
-		 * Index every prefix of a token, for matching a partially typed word.
+		 * Generates prefix n-grams for tokens within the specified character
+		 * lengths.
 		 */
 		@Schema(description = """
-			Generates prefix n-grams, for matching a partially typed word.""")
+			Generates prefix n-grams for tokens within the specified character \
+			lengths.""")
 		EdgeNgram edgeNgram,
 
 		/**
-		 * Index every substring of a token between the given lengths.
+		 * Generates substring n-grams for tokens within the specified character
+		 * lengths.
 		 */
 		@Schema(description = """
-			Generates substring n-grams within the given character lengths.""")
+			Generates substring n-grams for tokens within the specified \
+			character lengths.""")
 		Ngram ngram,
 
 		/**
-		 * Widen tokens with the words that mean the same thing, from a
-		 * synonym set defined in the resources of the index. Applied when a
-		 * value is indexed, not when it is searched.
+		 * Expands tokens with synonyms from a synonym set defined in the
+		 * resources of the index. Applied when a value is indexed, not when the
+		 * text of a search is analyzed.
 		 */
 		@Schema(description = """
-			Expands tokens with synonyms from a set defined under the index's \
-			`resources`. Applied when a value is indexed, so changing a set \
-			only affects documents indexed from there on.""")
+			Expands tokens with synonyms from a synonym set defined in \
+			`resources`. Applied when a value is indexed, not when the text of \
+			a search is analyzed.""")
 		Synonyms synonyms,
 
 		/**
-		 * Split compound words into their parts, keeping the whole word
-		 * alongside them, so a search for a part finds the compounds built
-		 * from it. Applied when a value is indexed, not when it is searched.
+		 * Splits compound words into parts and retains the original compound
+		 * word. Applied at index time.
 		 */
 		@Schema(description = """
-			Splits compound words into their parts, keeping the whole word \
-			alongside them, so a search for a part finds the compounds built \
-			from it. Applied when a value is indexed. See [Compound \
-			words](https://exofind.dev/reference/analysis/#compound-words).""")
+			Splits compound words into parts and retains the original compound \
+			word. See [Compound \
+			words](https://exofind.dev/reference/analysis/#compound-words). \
+			Applied at index time.""")
 		Decompound decompound
 	) {
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(description = "Unicode normalization and case folding.")
 		public record Normalize(
 			/**
-			 * If case is folded away. Defaults to true.
+			 * Whether case folding is applied. Defaults to true.
 			 */
 			@Schema(
-				description = "Whether case is folded away.",
+				description = "Whether case folding is applied.",
 				defaultValue = "true"
 			)
 			Boolean caseFolding
@@ -348,10 +352,10 @@ public record AnalyzerDefinition(
 		}
 
 		/**
-		 * Where the words come from - the list of a locale, exactly the given
-		 * words, or a list shared through the resources of the index. At most
-		 * one of the three is given; an empty object means the words of the
-		 * locale of the value being analyzed.
+		 * Removes frequent words. Specifies stopwords by locale, an explicit
+		 * list of words, or a stopword list defined in the resources of the
+		 * index. At most one of the three is given; an empty object uses the
+		 * stopwords of the locale of the value being analyzed.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
@@ -363,7 +367,7 @@ public record AnalyzerDefinition(
 		)
 		public record Stopwords(
 			/**
-			 * The locale whose words to drop (BCP-47).
+			 * The BCP-47 locale whose stopwords to remove.
 			 */
 			@Schema(
 				description = "BCP-47 locale whose stopwords to remove.",
@@ -372,9 +376,9 @@ public record AnalyzerDefinition(
 			String locale,
 
 			/**
-			 * Exactly these words and no others.
+			 * A list of words to remove.
 			 */
-			@Schema(description = "Exactly these words and no others.")
+			@Schema(description = "A list of words to remove.")
 			List<String> words,
 
 			/**
@@ -395,13 +399,13 @@ public record AnalyzerDefinition(
 		@Schema(description = "Reduces words to a shared root.")
 		public record Stemming(
 			/**
-			 * The locale whose rules to stem by (BCP-47). Absent means the
-			 * locale of the value being analyzed.
+			 * The BCP-47 locale whose rules to stem by. If omitted, uses the
+			 * stemmer for the locale of the value being analyzed.
 			 */
 			@Schema(
 				description = """
-					BCP-47 locale whose rules to stem by. Omitted, the locale \
-					of the value being analyzed is used.""",
+					BCP-47 locale whose rules to stem by. If omitted, uses the \
+					stemmer for the locale of the value being analyzed.""",
 				examples = "sv"
 			)
 			String locale
@@ -412,13 +416,13 @@ public record AnalyzerDefinition(
 		@Schema(description = "Converts non-ASCII characters to ASCII equivalents.")
 		public record AsciiFolding(
 			/**
-			 * If the unfolded token is kept alongside the folded one.
-			 * Defaults to false.
+			 * Whether to preserve the original non-ASCII token alongside the
+			 * folded one. Defaults to false.
 			 */
 			@Schema(
 				description = """
-					Whether the original non-ASCII token is kept alongside the \
-					folded one.""",
+					Whether to preserve the original non-ASCII token alongside \
+					the folded one.""",
 				defaultValue = "false"
 			)
 			Boolean preserveOriginal
@@ -443,7 +447,9 @@ public record AnalyzerDefinition(
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "Generates substring n-grams for tokens.")
+		@Schema(description = """
+			Generates substring n-grams for tokens within the specified \
+			character lengths.""")
 		public record Ngram(
 			@Schema(description = "The shortest substring to index.")
 			Integer minGram,
@@ -456,7 +462,11 @@ public record AnalyzerDefinition(
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "SynonymsFilter",
-			description = "Expands tokens with synonyms from a named set."
+			description = """
+				Expands tokens with synonyms from a synonym set defined in \
+				`resources`. Applied when a value is indexed, not when the \
+				text of a search is analyzed. See [Applying a synonym set to a \
+				field](https://exofind.dev/reference/analysis/#applying-a-synonym-set-to-a-field)."""
 		)
 		public record Synonyms(
 			/**
@@ -477,7 +487,12 @@ public record AnalyzerDefinition(
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "DecompoundFilter",
-			description = "Splits compound words into their parts."
+			description = """
+				Splits compound words into parts and retains the original \
+				compound word. See [Compound \
+				words](https://exofind.dev/reference/analysis/#compound-words). \
+				If omitted, uses the dictionary for the locale of the value. \
+				Applied at index time."""
 		)
 		public record Decompound(
 			/**

@@ -22,17 +22,15 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
 /**
- * Which node writes which index, for the operator asking what the logs and
- * the storage otherwise hold alone.
+ * Provides indexer candidate nodes and active writer claims across the
+ * deployment.
  *
- * <p>Any node answers, from its own read of the state the deployment shares -
- * a node that only searches included. The answer therefore lags reality by a
- * few seconds, the same way write forwarding does: a claim that just moved may
- * still name the old node for a moment.
+ * <p><p>Any node can serve these requests from its local view of shared
+ * deployment state, including search-only nodes. Responses can lag actual state
+ * by a few seconds.
  *
- * <p>A node storing locally answers with nothing in either list. It is the
- * only node there is and writes everything, which {@code readOnly} on each
- * index already says.
+ * <p><p>On nodes using local storage, both lists are empty; {@code readOnly} on
+ * each index indicates whether the node can modify it.
  */
 @Tag(
 	name = "Indexers",
@@ -55,13 +53,11 @@ public class IndexerResource {
 	}
 
 	/**
-	 * List the nodes competing to write indexes and, per index some node
-	 * writes, which node that is.
+	 * Lists candidate nodes competing to write indexes and active writer claims
+	 * for each index.
 	 *
-	 * <p>A claim on an index no grant of the caller's key covers is left out,
-	 * the same way listing the indexes leaves the index out - this listing is
-	 * not a way around what a key can see. The candidates name no index and
-	 * are listed whole.
+	 * <p><p>Claims on indexes the caller lacks permissions on are omitted,
+	 * matching index listings. Candidates name no index and are listed in full.
 	 *
 	 * @return
 	 */
@@ -71,20 +67,17 @@ public class IndexerResource {
 		operationId = "listIndexers",
 		summary = "List indexer candidates and claims",
 		description = """
-			Lists the candidate nodes competing to write indexes, and the \
-			active writer claim for each index some node writes.
+			Lists candidate nodes competing to write indexes and the active \
+			writer claim for each index.
 
-			Any node answers, including a search-only one, from its own read \
-			of the state the deployment shares - so the answer can lag reality \
-			by a few seconds, and a claim that just moved may still name the \
-			old node for a moment. An index with no active claim is left out \
-			until a write assigns it a writer.
+			Any node can serve this request from its local view of shared \
+			deployment state, including search-only nodes. The response can \
+			lag actual state by a few seconds. Indexes without an active claim \
+			are omitted until a write assigns a writer.
 
-			A claim on an index no grant of the calling key covers is left out, \
-			the way the index listing leaves such indexes out; candidates name \
-			no index and are listed whole. On a node using local storage both \
-			lists are empty - it is the only node there is and writes \
-			everything.
+			If a credential lacks permissions for an index, that index is \
+			omitted from the claims list. On nodes using local storage, both \
+			lists are empty.
 
 			Requires the `indexes.read` permission."""
 	)
@@ -95,20 +88,20 @@ public class IndexerResource {
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `indexes.read` permission.",
+		description = "The credential does not have the `indexes.read` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
 		description = """
-			Leadership assignments could not be read from shared storage \
-			(`indexer:leadership_unreadable`). Send the request again once \
-			storage responds.""",
+			Indexer leadership assignments could not be read from shared \
+			storage (`indexer:leadership_unreadable`). Retrying the request is \
+			expected to work once storage responds.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public IndexerListResponse list() {

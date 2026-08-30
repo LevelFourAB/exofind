@@ -5,65 +5,67 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import se.l4.exofind.engine.reindex.ReindexJob;
 
 /**
- * One reindex job as its record stands.
+ * One reindex job as its durable record stands.
  *
  * @param index
- *   name of the index the job belongs to
+ *   the name of the index
  * @param target
- *   the generation being filled, as {@code index@generation}
+ *   the generation being populated, formatted as {@code index@generation}
  * @param source
- *   the generation the documents are read from
+ *   the generation providing the source documents
  * @param phase
- *   where the job stands: {@code pending}, {@code copying},
+ *   the current phase of the job: {@code pending}, {@code copying},
  *   {@code replaying}, {@code ready}, {@code promoting}, {@code done},
- *   {@code failed} or {@code cancelled}
+ *   {@code failed}, or {@code cancelled}
  * @param promote
- *   {@code auto} when the job promotes on its own, {@code manual} when the
- *   caller does
+ *   the configured promote mode: {@code auto} when the job promotes the target
+ *   itself, or {@code manual} when the caller promotes
  * @param documentsCopied
- *   how many documents the copy has confirmed so far
+ *   the number of confirmed documents copied to the target
  * @param sourceDocuments
- *   how many documents the source held when the copy started
+ *   the document count of the source generation when the copy started
  * @param backlog
- *   how many changed documents were waiting to be carried over when the
- *   record was last written
+ *   the number of changed documents waiting to be replayed when the record was
+ *   last written
  * @param error
- *   why the job failed, or {@code null} in every other phase
+ *   the error message if the job failed, or {@code null} in every other phase
  * @param startedAt
- *   when the job was accepted, as ISO 8601
+ *   the timestamp when the job started, in ISO 8601 format
  * @param updatedAt
- *   when the record was last written, as ISO 8601
+ *   the timestamp when the job record was last updated, in ISO 8601 format
  */
 @Schema(description = """
-	One reindex job as its durable record stands. See [Job record and \
+	A reindex job record. See [Job record and \
 	phases](https://exofind.dev/reference/admin-api/#job-record-and-phases).""")
 public record ReindexInfo(
-	@Schema(description = "Name of the index the job belongs to.", examples = "products")
+	@Schema(description = "The name of the index.", examples = "products")
 	String index,
 
 	@Schema(
-		description = "The generation being filled, as `index@generation`.",
+		description = "The generation being populated, formatted as `index@generation`.",
 		examples = "products@2"
 	)
 	String target,
 
 	@Schema(
-		description = "The generation the documents are read from.",
+		description = "The generation providing the source documents.",
 		examples = "products@1"
 	)
 	String source,
 
 	@Schema(
 		description = """
-			Where the job stands. `pending`: accepted and waiting for a \
-			concurrency slot. `copying`: streaming documents from source to \
-			target in primary key order. `replaying`: copying documents that \
-			changed in the source while the copy ran. `ready`: used only with \
-			`promote: manual`, caught up and waiting for manual promotion. \
+			The current phase of the job. `pending`: accepted and waiting for \
+			a concurrency slot on the node. `copying`: streaming documents \
+			from the source to the target in primary key order. `replaying`: \
+			copying documents that changed in the source while the copy ran. \
+			`ready`: used only with `promote: manual`, caught up and waiting \
+			for manual promotion, while continuing to catch up periodically. \
 			`promoting`: holding writes for the final drain and promotion. \
-			`done`: completed and promoted. `failed`: stopped before promotion \
-			due to an error, named in `error`. `cancelled`: stopped before \
-			completion in response to a cancellation.""",
+			`done`: completed and promoted successfully. `failed`: stopped \
+			before promotion due to an error, indicated by `error`. \
+			`cancelled`: stopped before completion in response to a \
+			cancellation request.""",
 		enumeration = {
 			"pending", "copying", "replaying", "ready", "promoting", "done", "failed",
 			"cancelled"
@@ -74,45 +76,46 @@ public record ReindexInfo(
 
 	@Schema(
 		description = """
-			`auto` when the job promotes the target itself once it has caught \
-			up, `manual` when it stops in the `ready` phase and the caller \
-			promotes.""",
+			The configured promote mode. `auto` automatically promotes the \
+			target generation once it catches up with changes. `manual` pauses \
+			the job in the `ready` phase and keeps the target caught up until \
+			you manually promote it.""",
 		enumeration = {"auto", "manual"},
 		examples = "auto"
 	)
 	String promote,
 
 	@Schema(
-		description = "How many documents the copy has confirmed so far.",
+		description = "The number of confirmed documents copied to the target.",
 		examples = "125000"
 	)
 	long documentsCopied,
 
 	@Schema(
-		description = "How many documents the source held when the copy started.",
+		description = "The document count of the source generation when the copy started.",
 		examples = "2400000"
 	)
 	long sourceDocuments,
 
 	@Schema(
 		description = """
-			How many changed documents were waiting to be replayed when the \
+			The number of changed documents waiting to be replayed when the \
 			record was last written.""",
 		examples = "4100"
 	)
 	long backlog,
 
-	@Schema(description = "Why the job failed, or `null` in every other phase.")
+	@Schema(description = "The error message if the job failed, or `null`.")
 	String error,
 
 	@Schema(
-		description = "When the job was accepted, as an ISO 8601 timestamp.",
+		description = "The timestamp when the job started.",
 		examples = "2026-08-28T10:15:30Z"
 	)
 	String startedAt,
 
 	@Schema(
-		description = "When the record was last written, as an ISO 8601 timestamp.",
+		description = "The timestamp when the job record was last updated.",
 		examples = "2026-08-28T10:16:02Z"
 	)
 	String updatedAt

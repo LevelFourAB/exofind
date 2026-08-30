@@ -69,49 +69,48 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
 
 /**
- * Putting documents into the indexes on this node and taking them out again.
+ * Reads, creates, updates, and deletes documents in an index.
  *
- * A document carries its own primary key, so indexing one is desired state
- * the way a definition is: the same request can be sent again and leaves the
- * index holding what it says, replacing whatever was indexed under that key
- * before. Removing one is the same kind of statement, which is why a key
- * nothing was indexed under is not an error.
+ * <p>A document specifies its own primary key. Indexing a document operates as
+ * an assertion of desired state: repeating the request replaces any existing
+ * document under that key. Removing a document is also a statement of desired
+ * state, so requesting the deletion of an unindexed key produces a success
+ * response.
  *
- * A change to some of the fields of a document says something else, which is
- * why it has endpoints of its own: it describes what to change about a
- * document rather than what should be there, so it needs the document to
- * already be there and is refused when it is not. One change is sent for one
- * document by its key, and the batch takes the same changes with the key in
- * each of them.
+ * <p>Requests that describe modifications rather than desired state require
+ * existing resources. Updating specific fields describes changes to an existing
+ * document and is refused if the document does not exist. You can update a
+ * single document by key in the URL path, or update multiple documents in a
+ * batch by including the key in each change object.
  *
- * What is indexed or removed takes effect for searches when the index is
- * committed, which is also what pushes it to the remote. The indexer commits on
- * its own once enough has been indexed or enough time has passed, and
- * {@code POST /v1alpha1/admin/indexes/{name}/actions/commit} commits whatever is
- * waiting there and then. Loading a dataset is many requests here and one commit
- * at the end, rather than a commit per batch.
+ * <p>Changes become searchable and replicate to remote storage after the index
+ * commits. The writer commits automatically based on indexed document volume or
+ * elapsed time. To commit changes immediately, send a request to {@code POST
+ * /v1alpha1/admin/indexes/{name}/actions/commit}. Loading a dataset involves
+ * sending multiple write requests followed by a single commit, rather than
+ * committing per batch.
  *
- * Documents are taken in the order they were sent, and the first one the
- * index refuses fails the request - the ones before it are already in the
- * index and are committed with everything else. Which document failed is said
- * by the path of the errors, so sending the same request again after fixing
- * it is safe.
+ * <p>Documents in a batch are processed in the order sent. The first invalid
+ * document halts processing and fails the request; documents processed before
+ * the failure remain in the index and commit with the rest. Error paths
+ * identify which document failed, allowing you to safely resend the request
+ * after fixing the error.
  *
- * Reading them back out is the same documents in the other direction: an index
- * that keeps its documents whole answers with them as they were given, in the
- * order of their primary keys, and what comes back is what this endpoint takes
- * back in. That is what lets a new generation be filled from the one it
- * replaces, and what a backup of an index is, without the system the documents
- * first came from. An answer is always bounded, so reading everything is a
- * request per part, each carrying on after the key the one before it ended on.
+ * <p>Reading documents returns them in primary key order, formatted as
+ * originally indexed, matching the format accepted for indexing. This allows
+ * you to populate a new generation from the one it replaces or create backups
+ * without the originating source system. Responses are always bounded, so
+ * reading an entire index requires a sequence of requests, each resuming after
+ * the primary key returned by the previous request.
  *
- * Only the indexer writes, so a request that reaches another node is passed
- * along to the one that does - see {@code IndexerForwardFilter}. Reading is
- * served wherever it lands, from what that node has pulled.
+ * <p>Write requests run on the index writer node; a request received by another
+ * node is forwarded automatically (see {@code IndexerForwardFilter}). Read
+ * requests are served directly by whichever node receives them, using data that
+ * the node has pulled from storage.
  */
 @Tag(
 	name = "Documents",
-	description = "Reads, creates, updates and deletes the documents of an index.",
+	description = "Reads, creates, updates, and deletes documents in an index.",
 	externalDocs = @ExternalDocumentation(
 		description = "Documents API reference",
 		url = "https://exofind.dev/reference/documents-api/"
@@ -280,7 +279,7 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Put documents into an index.
+	 * Indexes documents into an index.
 	 *
 	 * @param name
 	 * @param body
@@ -295,85 +294,91 @@ public class DocumentResource {
 		summary = "Index documents",
 		description = """
 			Indexes one or more documents into the specified index. Each \
-			document carries its own primary key, so repeating the request \
-			replaces whatever was indexed under that key. Documents are taken \
-			in the order sent, and the first one the index refuses fails the \
-			request - the documents before it stay indexed.
+			document specifies its own primary key. Indexing a document with \
+			an existing key replaces the document under that key. Documents in \
+			a batch are processed in the order sent. The first invalid \
+			document halts processing and fails the request; documents \
+			processed before the failure remain in the index.
 
-			Send `application/json` with a `documents` array, or \
-			`application/x-ndjson` with one document object per line and no \
-			outer wrapper. Newline-delimited documents are indexed as they are \
-			read, so the size of such a request is bounded by what the \
-			connection can carry rather than by what fits in memory - which is \
-			what makes it the form to load a dataset with.
+			Format the request body as `application/json` with a `documents` \
+			array, or `application/x-ndjson` with one document object per line \
+			and no outer wrapper. Newline-delimited documents are indexed as \
+			they are read, so request size is bounded by network capacity \
+			rather than available memory, making it suitable for loading large \
+			datasets.
 
-			Changes become searchable and replicate to remote storage when the \
-			index commits, which the writer does on its own once enough has \
-			been indexed or enough time has passed. To commit at once, call \
-			`POST /v1alpha1/admin/indexes/{name}/actions/commit`.
+			Changes become searchable and replicate to remote storage after \
+			the index commits. The writer commits automatically based on \
+			indexed document volume or elapsed time. To commit changes \
+			immediately, call `POST \
+			/v1alpha1/admin/indexes/{name}/actions/commit`.
 
-			Runs on the node that writes the index; a request that reaches \
-			another node is forwarded there. Requires the `documents.write` \
-			permission."""
+			The operation runs on the index writer node. A write request \
+			received by another node is forwarded automatically. Requires the \
+			`documents.write` permission."""
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "The documents were indexed.",
+		description = "The documents were indexed successfully.",
 		content = @Content(schema = @Schema(implementation = DocumentsResponse.class))
 	)
 	@APIResponse(
 		responseCode = "400",
 		description = """
 			A document was rejected by validation, a line could not be read as \
-			JSON (`request:document:malformed`), or the body could not be \
-			read. The `path` of each error names the document and field it \
-			belongs to, such as `documents[1].nonexistent`.""",
+			JSON (`request:document:malformed`), or the request body could not \
+			be parsed. The `path` of each error identifies the document and \
+			field location, such as `documents[1].nonexistent`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `documents.write` permission.",
+		description = "The API key lacks the `documents.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = """
+			No index with the specified name exists on this node, or the API \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			No node is available to write the index \
-			(`indexer:unavailable`), the index is synchronizing \
-			(`index:out-of-date`), this node lost the writer role while \
-			serving the request (`index:readonly`), or the generation is \
-			being filled by a reindex job (`reindex:target_busy`).""",
+			No node is available to write the index (`indexer:unavailable`), \
+			the index is currently synchronizing (`index:out-of-date`), the \
+			node lost the writer role during execution (`index:readonly`), or \
+			the target generation is locked by an active reindex job \
+			(`reindex:target_busy`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
 		description = """
 			The request was forwarded to the index writer and the writer did \
-			not respond (`indexer:unreachable`). Send it again.""",
+			not respond (`indexer:unreachable`). Retrying the same request is \
+			expected to work.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
 		description = """
-			The request raced the index being closed to free local resources \
-			(`index:closed`). Sending it again reopens the index.""",
+			The request raced an index being closed to free local resources on \
+			the node (`index:closed`). Retrying the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public DocumentsResponse add(
 		@Parameter(
 			description = """
-				Name of the index to write to. To write to one generation, add \
-				`@` and the name of the generation, such as `books@2`.""",
+				Name of the index to write to. To write to a specific \
+				generation, append `@` and the name of the generation, such as \
+				`books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name,
@@ -441,14 +446,14 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Change some of the fields of documents already in an index, leaving the
-	 * rest of each document as it is.
+	 * Updates specific fields of existing documents in the index, leaving the
+	 * remaining fields unchanged.
 	 *
 	 * @param name
 	 * @param missing
-	 *   what to do about a key nothing is indexed under: {@code fail}, the
-	 *   default, or {@code skip} to change the rest and answer with the keys
-	 *   that were not there
+	 *   behavior when a document key does not exist: {@code fail} (the default)
+	 *   fails the request, and {@code skip} updates the remaining documents and
+	 *   returns the missing keys
 	 * @param body
 	 * @return
 	 */
@@ -462,30 +467,30 @@ public class DocumentResource {
 		summary = "Update fields of existing documents",
 		description = """
 			Changes named parts of documents already in the index, leaving the \
-			rest of each document as it is. Every key is a path naming a place \
-			in the document: the place is replaced by what the key maps to, a \
-			key set to `null` empties it, and a place no key names is left \
-			alone.
+			rest of each document unchanged. Each key in a change object is a \
+			path naming a location in the document: a path with a value \
+			replaces what the path names, a path set to `null` empties what it \
+			names, and an omitted path leaves the existing value unchanged.
 
-			How deeply a path reaches is what decides how much it replaces. \
-			`variants` replaces every value of the field, \
-			`variants[sku=V-2]` replaces the one object value whose `sku` \
+			The path replaces exactly what it names and leaves surrounding \
+			content unchanged. `variants` replaces every value of the field, \
+			`variants[sku=V-2]` replaces the object value whose `sku` field \
 			reads as `V-2`, and `variants[sku=V-2].price` replaces one field \
-			inside that value. The same holds for locales: `title` replaces \
-			every variant and `title[sv]` replaces the Swedish one. \
-			`variants[]` adds a value to the ones the field holds.
+			inside that value. Similarly, `title` replaces every variant and \
+			`title[sv]` replaces the Swedish variant. `variants[]` adds a \
+			value to the values the field holds.
 
-			Send `application/json` with a `documents` array, or \
-			`application/x-ndjson` with one change object per line and no \
-			outer wrapper.
+			Send `application/json` with a `documents` array containing change \
+			objects, or `application/x-ndjson` with one change object per line \
+			and no outer wrapper.
 
-			Unlike indexing, this describes a change rather than desired \
-			state, so it needs the document to already be there. Several \
-			changes to one document in a batch apply in the order given, and \
-			the updated document is validated as a whole.
+			Unlike indexing, this endpoint describes modifications rather than \
+			desired state and requires existing documents. Multiple updates to \
+			the same document in a single batch apply in the order provided, \
+			and the updated document is validated as a whole.
 
 			Requires the `documents.write` permission, an index that declares \
-			a primary key, and an index that keeps document sources."""
+			a primary key, and an index that retains document source copies."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -495,73 +500,79 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			A change was rejected by validation, a key was not found while \
-			`missing` was `fail` (`request:update:not_found`), the index \
-			declares no primary key (`index:no_primary_key`), or the index \
-			keeps no document sources (`index:source:not_kept`) - resend the \
-			whole document in that case.
+			A change failed validation, a document key was not found when \
+			`missing` was set to `fail` (`request:update:not_found`), the \
+			index definition declares no primary key (`index:no_primary_key`), \
+			or the index does not store document copies \
+			(`index:source:not_kept`) - resend the complete document in that \
+			case.
 
-			A path is refused when it cannot be read \
-			(`request:update:path_invalid`), names a field the index does not \
-			have (`request:update:path_unknown_field`), names one value of a \
-			field holding neither locale variants nor objects \
-			(`request:update:selector_not_supported`), names a locale the \
-			field holds no variant for (`request:update:locale_unknown`), adds \
-			to a field holding a single value \
+			A path is rejected when it cannot be parsed \
+			(`request:update:path_invalid`), reaches into a field the index \
+			does not have (`request:update:path_unknown_field`), names a \
+			single value of a field that holds neither locale variants nor \
+			objects (`request:update:selector_not_supported`), names a locale \
+			the field holds no variant for (`request:update:locale_unknown`), \
+			adds a value to a field that holds a single value \
 			(`request:update:add_not_multiple`), reaches inside a field whose \
 			values are not objects (`request:update:not_an_object`), or \
-			reaches into a list of objects without saying which value \
-			(`request:update:value_required`). A path naming a value the \
-			document does not hold is refused with \
-			`request:update:no_match`.""",
+			reaches into a list of objects without specifying which value \
+			(`request:update:value_required`). A selector that names no value \
+			the document holds is rejected with `request:update:no_match`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `documents.write` permission.",
+		description = "The API key lacks the `documents.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = """
+			No index with the specified name exists on this node, or the API \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			No node is available to write the index, the index is \
-			synchronizing, or the generation is being filled by a reindex \
-			job.""",
+			No node is available to write the index, the index is currently \
+			synchronizing, or the target generation is locked by an active \
+			reindex job.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = "The index writer did not respond to the forwarded request.",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public UpdateResponse update(
 		@Parameter(
 			description = """
-				Name of the index to write to, optionally naming one \
-				generation as `books@2`.""",
+				Name of the index to write to, optionally specifying a \
+				generation such as `books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name,
 		@Parameter(
 			description = """
-				What to do about a key nothing is indexed under: `fail` fails \
-				the request, `skip` changes the rest and lists the keys that \
-				were not there under `missing`.""",
+				Behavior when a document key does not exist: `fail` (default) \
+				fails the request, while `skip` updates the remaining \
+				documents and returns the missing keys under `missing`.""",
 			schema = @Schema(enumeration = {"fail", "skip"}, defaultValue = "fail")
 		)
 		@QueryParam("missing") String missing,
@@ -726,19 +737,20 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Change some of the fields of the document indexed under a primary key.
+	 * Updates specific fields of the document indexed under the specified
+	 * primary key, leaving the remaining fields unchanged.
 	 *
-	 * The key arrives as text and is read as the type of the key field, the way
-	 * a removal reads it, so the body says only what to change.
+	 * <p>The primary key is provided in the URL path and parsed according to
+	 * the defined key field type, so the request body contains only field
+	 * paths.
 	 *
 	 * @param name
 	 * @param key
 	 * @param body
-	 *   the places to change, keyed by path, meaning what one change of the
-	 *   batch means
+	 *   the changes to apply, formatted as field paths mapping to new values
 	 * @return
-	 *   no content, the document having been changed - a key nothing is indexed
-	 *   under is answered as not found instead
+	 *   no content on success; returns not found if no document exists under
+	 *   the key
 	 */
 	@PATCH
 	@Path("/{key}")
@@ -749,24 +761,24 @@ public class DocumentResource {
 		operationId = "updateDocument",
 		summary = "Update fields of one document",
 		description = """
-			Changes named parts of one document, leaving the rest of it as it \
-			is. The body is one change object, meaning exactly what one entry \
-			of `POST /documents/actions/update` means, with the primary key \
-			given by the path instead of by the body: every key is a path \
-			naming a place in the document, the place is replaced by what the \
-			key maps to, a key set to `null` empties it, and a place no key \
-			names is left alone.
+			Changes named parts of a single document, leaving the remaining \
+			fields unchanged. The request body is a single change object \
+			formatted like an entry in `POST /documents/actions/update`, with \
+			the primary key supplied in the URL path: each key is a path \
+			naming a location in the document, a path with a value replaces \
+			what the path names, a path set to `null` empties what it names, \
+			and an omitted path leaves the existing value unchanged.
 
-			The body may name the primary key field, as long as it gives the \
-			key the path already names.
+			The body may repeat the primary key field as long as it matches \
+			the key specified in the path.
 
-			Unlike indexing, this describes a change rather than desired \
-			state, so a key nothing is indexed under is answered `404` rather \
-			than creating a document. The changed document is validated as a \
-			whole.
+			Unlike indexing, this endpoint describes modifications rather than \
+			desired state; requesting an update for an unindexed key returns \
+			`404` rather than creating a document. The updated document is \
+			validated as a whole.
 
 			Requires the `documents.write` permission, an index that declares \
-			a primary key, and an index that keeps document sources."""
+			a primary key, and an index that retains document source copies."""
 	)
 	@APIResponse(
 		responseCode = "204",
@@ -775,74 +787,80 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The change was rejected by validation, the key cannot be read as \
-			the type of the key field (`index:query:invalid_value`), the body \
-			names the primary key field as another document \
-			(`request:update:key_conflicting`), the index declares no primary \
-			key (`index:no_primary_key`), or the index keeps no document \
-			sources (`index:source:not_kept`) - resend the whole document in \
-			that case.
+			The change was rejected by validation, the key value cannot be \
+			parsed as the defined key field type \
+			(`index:query:invalid_value`), the body names the primary key \
+			field as another document than the path does \
+			(`request:update:key_conflicting`), the index definition declares \
+			no primary key (`index:no_primary_key`), or the index does not \
+			store document copies (`index:source:not_kept`) - resend the whole \
+			document in that case.
 
-			A path is refused for the same reasons as in the batch, reported \
-			by the same `request:update:*` codes.""",
+			A path is refused for the same reasons as in batch updates, \
+			reported by the same `request:update:*` codes.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `documents.write` permission.",
+		description = "The API key lacks the `documents.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
 		description = """
 			Nothing is indexed under the key (`index:document:not_found`), no \
-			index has this name, or the key has no grant covering it.""",
+			index with the specified name exists on this node, or the caller \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			No node is available to write the index, the index is \
-			synchronizing, or the generation is being filled by a reindex \
-			job.""",
+			No node is available to write the index, the index is currently \
+			synchronizing, or the target generation is locked by an active \
+			reindex job.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = "The index writer did not respond to the forwarded request.",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public Response patch(
 		@Parameter(
 			description = """
-				Name of the index to write to, optionally naming one \
-				generation as `books@2`.""",
+				Name of the index to write to, optionally specifying a \
+				generation such as `books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name,
 		@Parameter(
 			description = """
-				Primary key of the document to change, read as the type of the \
-				key field - so a numeric key is written the way a document \
-				writes it.""",
+				Primary key of the document to change. Parsed according to the \
+				key field type.""",
 			example = "1"
 		)
 		@PathParam("key") String key,
 		@RequestBody(
 			description = """
 				The places to change, keyed by path. A path with a value \
-				replaces what it names, a path set to `null` empties it, and a \
-				place no path names is left as it is.""",
+				replaces what the path names, a path set to `null` empties \
+				what the path names, and an omitted path leaves what it would \
+				name unchanged.""",
 			required = true,
 			content = @Content(
 				schema = @Schema(type = SchemaType.OBJECT, implementation = Object.class),
@@ -929,16 +947,17 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Remove the document indexed under a primary key.
+	 * Delete the document indexed under a primary key.
 	 *
-	 * The key arrives as text and is read as the type of the key field, so a
-	 * numeric key is written into the path the way it is written in a document.
+	 * <p>Provide the key as text in the URL path, parsed according to the key
+	 * field type.
 	 *
 	 * @param name
 	 * @param key
 	 * @return
-	 *   no content, whether or not anything was indexed under the key - a
-	 *   removal is desired state, so repeating it changes nothing
+	 *   no content, whether or not a document existed under the specified key -
+	 *   removing a document is a statement of desired state, so repeating the
+	 *   request produces the same outcome
 	 */
 	@DELETE
 	@Path("/{key}")
@@ -948,30 +967,31 @@ public class DocumentResource {
 		operationId = "deleteDocument",
 		summary = "Delete a document by key",
 		description = """
-			Removes the document indexed under a primary key. A removal is a \
-			statement of desired state, so a key nothing was indexed under is \
-			not an error and answers `204` all the same.
+			Removes the document indexed under the specified primary key. \
+			Removing a document is a statement of desired state, so requesting \
+			the deletion of an unindexed key is not an error and returns \
+			status `204`.
 
-			Requires the `documents.delete` permission and an index that \
-			declares a primary key."""
+			Requires the `documents.delete` permission and an index definition \
+			that declares a primary key."""
 	)
 	@APIResponse(
 		responseCode = "204",
 		description = """
-			Nothing is indexed under the key any more, whether or not anything \
-			was."""
+			The document was removed, whether or not a document existed under \
+			the specified key."""
 	)
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The key cannot be read as the type of the key field \
-			(`index:query:invalid_value`), or the index declares no primary \
-			key (`index:no_primary_key`).""",
+			The key value cannot be parsed as the defined key field type \
+			(`index:query:invalid_value`), or the index definition declares no \
+			primary key (`index:no_primary_key`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -981,40 +1001,45 @@ public class DocumentResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = """
+			No index with the specified name exists on this node, or the API \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			No node is available to write the index, the index is \
-			synchronizing, or the generation is being filled by a reindex \
-			job.""",
+			No node is available to write the index, the index is currently \
+			synchronizing, or the target generation is locked by an active \
+			reindex job.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = "The index writer did not respond to the forwarded request.",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public Response delete(
 		@Parameter(
 			description = """
-				Name of the index to write to, optionally naming one \
-				generation as `books@2`.""",
+				Name of the index to write to, optionally specifying a \
+				generation such as `books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name,
 		@Parameter(
 			description = """
-				Primary key of the document to remove, read as the type of the \
-				key field - so a numeric key is written the way a document \
-				writes it.""",
+				Primary key of the document to remove. Parsed according to the \
+				key field type.""",
 			example = "1"
 		)
 		@PathParam("key") String key
@@ -1035,8 +1060,8 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Remove documents from an index, naming them by their primary keys or by
-	 * a query they match.
+	 * Deletes documents from an index matching a list of primary keys or a
+	 * search query.
 	 *
 	 * @param name
 	 * @param body
@@ -1051,13 +1076,15 @@ public class DocumentResource {
 		operationId = "deleteDocuments",
 		summary = "Delete documents by keys or query",
 		description = """
-			Removes documents named either by a list of primary keys or by a \
-			query they match. The body must carry exactly one of the two.
+			Deletes multiple documents matching a list of primary keys or a \
+			search query. The request body must include either `keys` or \
+			`query`, but not both.
 
-			Deleting by `keys` validates every key before removing anything, \
-			so an invalid key removes nothing. Deleting by `query` removes the \
-			matching committed searchable documents along with any uncommitted \
-			ones indexed since the last commit.
+			When deleting by `keys`, all keys are validated before any \
+			documents are removed. If any key is invalid, no documents are \
+			removed. When deleting by `query`, the operation removes matching \
+			committed searchable documents along with any uncommitted \
+			documents indexed since the last commit.
 
 			Requires the `documents.delete` permission."""
 	)
@@ -1069,17 +1096,17 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The body names neither `keys` nor `query` \
-			(`request:delete:target_required`), names both \
-			(`request:delete:target_conflicting`), carries a `locale` without \
-			a `query` (`request:delete:locale_without_query`), holds a key \
-			that cannot be read as the key field's type, or holds a query the \
-			index cannot answer.""",
+			The request body includes neither `keys` nor `query` \
+			(`request:delete:target_required`), includes both \
+			(`request:delete:target_conflicting`), specifies a `locale` \
+			without a `query` (`request:delete:locale_without_query`), \
+			contains a key that cannot be parsed as the defined key field \
+			type, or contains a query the index cannot execute.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1089,32 +1116,38 @@ public class DocumentResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = """
+			No index with the specified name exists on this node, or the API \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			No node is available to write the index, the index is \
-			synchronizing, or the generation is being filled by a reindex \
-			job.""",
+			No node is available to write the index, the index is currently \
+			synchronizing, or the target generation is locked by an active \
+			reindex job.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = "The index writer did not respond to the forwarded request.",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public DeleteResponse delete(
 		@Parameter(
 			description = """
-				Name of the index to write to, optionally naming one \
-				generation as `books@2`.""",
+				Name of the index to write to, optionally specifying a \
+				generation such as `books@2`.""",
 			example = "books"
 		)
 		@PathParam("name") String name,
@@ -1180,17 +1213,19 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Read documents back out of an index, in the order of their primary keys.
+	 * Reads documents back out of an index in primary key order.
 	 *
 	 * @param name
 	 * @param after
-	 *   the key to carry on after, which is not itself answered - left out to
-	 *   start at the first document. Written the way it is written in the path
-	 *   of a removal, so a numeric key is written as a number
+	 *   primary key to resume reading after, which is omitted from the
+	 *   response. Formatted as text matching the key in the path of a delete,
+	 *   so numeric keys are written as numbers. Omit to start at the first
+	 *   document
 	 * @param limit
-	 *   how many documents to answer at most
+	 *   maximum number of documents to return
 	 * @return
-	 *   the documents, with the key to carry on after when there may be more
+	 *   documents in primary key order, with the continuation key to resume
+	 *   reading after when more documents are available
 	 */
 	@GET
 	@Produces(MediaType.APPLICATION_JSON)
@@ -1200,29 +1235,30 @@ public class DocumentResource {
 		summary = "Read documents",
 		description = """
 			Reads documents back out of an index in primary key order, \
-			formatted as they were indexed - so what comes back is what the \
-			indexing endpoint takes back in. Whole-number keys come back in \
-			numeric order with negative numbers first, and text keys in UTF-8 \
-			byte order.
+			returning them as originally indexed. Whole-number keys return in \
+			numeric order with negative numbers first, and text keys return in \
+			UTF-8 byte order.
 
-			`Accept` selects the format. `application/json` is the default, \
-			and also what `*/*` gets; `application/x-ndjson` answers one \
-			document per line with no outer wrapper, matching byte for byte \
-			what the indexing endpoint accepts - which is what lets a \
-			generation be filled from the one it replaces. A newline-delimited \
-			body says nothing but the documents, so what says there may be \
-			more is the line count rather than a `next` key.
+			Set the `Accept` request header to select the response format. The \
+			default format is `application/json`, which also applies to \
+			`Accept: */*`. The format `application/x-ndjson` returns one \
+			document per line with no outer wrapper, matching byte-for-byte \
+			the format accepted by the indexing endpoint. A newline-delimited \
+			body contains only documents, so the line count indicates whether \
+			more documents are available rather than a `next` key.
 
-			Every response is bounded, so reading a whole index is a sequence \
-			of requests, each passing the previous response's `next` as \
-			`after`. A single request reads from a point-in-time snapshot and \
-			sees committed data only; across requests, documents indexed under \
-			keys the read has already passed are not returned.
+			Every response is bounded, so reading an entire index requires a \
+			sequence of requests, each passing the previous response's `next` \
+			key in the `after` parameter. A single request reads from a \
+			point-in-time snapshot of the index and sees committed data only. \
+			Across multiple requests, documents indexed under keys that the \
+			read has already passed are omitted from subsequent responses.
 
-			Served by whichever node receives the request, from what that node \
-			has pulled - reads are never forwarded to the writer. Requires the \
-			`documents.read` permission, which the `writer` and `admin` roles \
-			include and the `reader` role does not."""
+			Read requests are served directly by whichever node receives them, \
+			using data that the node has pulled from storage, and are never \
+			forwarded to the writer. Reading documents requires the \
+			`documents.read` permission. The `writer` and `admin` roles \
+			include this permission; the `reader` role does not."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -1232,15 +1268,15 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The index declares no primary key (`index:no_primary_key`), the \
-			index keeps no document sources (`index:source:not_kept`), or \
-			`limit` is not a whole number from 1 to 10000 \
-			(`request:scan:limit_invalid`).""",
+			The index definition declares no primary key \
+			(`index:no_primary_key`), the index does not store document copies \
+			(`index:source:not_kept`), or the `limit` parameter is not a whole \
+			number from 1 to 10000 (`request:scan:limit_invalid`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1250,12 +1286,16 @@ public class DocumentResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the key has no grant covering it.",
+		description = """
+			No index with the specified name exists on this node, or the API \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = "The request raced the index being closed. Send it again.",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ScanResponse scan(
@@ -1268,11 +1308,12 @@ public class DocumentResource {
 		@PathParam("name") String name,
 		@Parameter(
 			description = """
-				Primary key to resume reading after, which is itself left out \
-				of the response. Written the way the key appears in the path \
-				of a delete, so a numeric key is written as a number. If \
-				nothing is indexed under it, reading resumes where the key \
-				would sit in the order. Omit to start at the first document."""
+				Primary key to resume reading after. The specified key is \
+				omitted from the response. Formatted as text matching the key \
+				in the path of a delete (for example, numeric keys are written \
+				as numbers). If no document exists under this key, reading \
+				resumes from where the key would be positioned in the order. \
+				Omit to start at the first document."""
 		)
 		@QueryParam("after") String after,
 		@Parameter(
@@ -1306,13 +1347,16 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Read documents back out of an index as newline delimited JSON, one
-	 * document per line - what the same index, or one being filled to replace
-	 * it, takes back as it stands.
+	 * Reads documents from an index as newline-delimited JSON, containing one
+	 * document object per line with no outer wrapper, matching byte-for-byte
+	 * the format accepted for indexing.
 	 *
-	 * <p>The body says nothing but the documents, so what says there may be
-	 * more is the count: a request that answered with as many documents as it
-	 * asked for is carried on from the key of the last of them.
+	 * <p>The response body contains only documents. To determine if more
+	 * documents are available, check the number of lines returned: if the
+	 * response returns as many lines as requested by the limit, resume the next
+	 * request by passing the primary key of the last document in the
+	 * continuation parameter. When the response returns fewer lines than the
+	 * limit, all documents have been read.
 	 *
 	 * @param name
 	 * @param after

@@ -10,12 +10,13 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * What a field clause looks for in a field, as it is written on the wire.
+ * Criteria evaluated against field values in a field clause.
  *
- * Matchers are a tagged union where {@code type} selects the kind, using the
- * {@link se.l4.exofind.engine.query.matchers.Matcher#id() identifier} the
- * engine gives each matcher. A matcher with no {@code type} is
- * {@code equals}, keeping the common case down to the value being looked for:
+ * <p>Matchers are structured as a tagged union where {@code type} selects the
+ * matcher type, using the
+ * {@link se.l4.exofind.engine.query.matchers.Matcher#id() identifier} assigned
+ * by the engine. If {@code type} is omitted, the matcher defaults to
+ * {@code equals}:
  *
  * <pre>
  * { "value": "fiction" }
@@ -42,16 +43,16 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = Matcher.Distance.class, name = "distance")
 })
 @Schema(description = """
-	Criteria evaluated against the values of a field, structured as a tagged \
-	union where `type` selects the matcher type. If `type` is omitted, the \
-	matcher defaults to `equals`. Specifying a matcher the target field type \
-	does not support returns an error. See \
+	Criteria evaluated against field values in a field clause, structured as a \
+	tagged union where `type` selects the matcher type. If `type` is omitted, \
+	the matcher defaults to `equals`. Specifying a matcher unsupported by the \
+	target field type returns an error. See \
 	[Matchers](https://exofind.dev/reference/search-api/#matchers).""")
 public sealed interface Matcher
 	permits Matcher.Equals, Matcher.In, Matcher.Any, Matcher.Prefix, Matcher.Under,
 		Matcher.Range, Matcher.Ranges, Matcher.Text, Matcher.Distance {
 	/**
-	 * Match values equal to the given one.
+	 * Matches field values equal to the specified value.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -60,7 +61,7 @@ public sealed interface Matcher
 	)
 	record Equals(
 		@Schema(
-			description = "The value a field value has to equal.",
+			description = "The value that the field value must equal.",
 			required = true,
 			examples = "fiction"
 		)
@@ -69,25 +70,24 @@ public sealed interface Matcher
 	}
 
 	/**
-	 * Match values equal to any of the given ones. An empty list matches
-	 * nothing, the way a filter nobody has picked a value in does.
+	 * Matches field values equal to any of the specified values. An empty
+	 * collection matches no documents.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "InMatcher",
 		description = """
 			Matches field values equal to any value in `values`. An empty \
-			array matches no documents, the way a filter nobody has ticked a \
-			value in does."""
+			array matches no documents."""
 	)
 	record In(
-		@Schema(description = "The values a field value may equal.", required = true)
+		@Schema(description = "The values that a field value may equal.", required = true)
 		List<Object> values
 	) implements Matcher {
 	}
 
 	/**
-	 * Match documents that have any value for the field at all.
+	 * Matches any document that contains a value for the field.
 	 */
 	@Schema(
 		name = "AnyMatcher",
@@ -97,19 +97,19 @@ public sealed interface Matcher
 	}
 
 	/**
-	 * Match values starting with the given prefix, compared against the whole
-	 * value rather than the words inside it.
+	 * Matches string field values starting with the specified prefix, evaluated
+	 * against the entire field value.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "PrefixMatcher",
 		description = """
 			Matches string field values starting with `value`, evaluated \
-			against the entire field value rather than the words inside it."""
+			against the entire field value."""
 	)
 	record Prefix(
 		@Schema(
-			description = "The prefix a field value has to start with.",
+			description = "The prefix that a field value must start with.",
 			required = true,
 			examples = "EX-"
 		)
@@ -118,10 +118,10 @@ public sealed interface Matcher
 	}
 
 	/**
-	 * Match values sitting at or below a path of a tree, which is what
-	 * choosing a category asks for. Only a field whose values are read as
-	 * paths can answer it, and levels are matched whole - `Men/Sho` is not a
-	 * level, so it finds nothing where a `prefix` would have found the shoes.
+	 * Matches values at or below the specified path in a hierarchical tree.
+	 * Requires a field configured with hierarchy support. Path segments must
+	 * match complete levels: `Men/Sho` matches nothing where a `prefix` matcher
+	 * matches.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -131,11 +131,11 @@ public sealed interface Matcher
 			tree. Requires a field configured with \
 			[`hierarchy`](https://exofind.dev/reference/field-types/#string). \
 			Path segments must match complete levels, so `Men/Sho` matches \
-			nothing where a `prefix` matcher would have matched the shoes."""
+			nothing where a `prefix` matcher matches."""
 	)
 	record Under(
 		@Schema(
-			description = "Path in the tree to match at or below.",
+			description = "Path in the hierarchical tree to match at or below.",
 			required = true,
 			examples = "Men/Shoes"
 		)
@@ -144,9 +144,8 @@ public sealed interface Matcher
 	}
 
 	/**
-	 * Match values between two bounds, either of which may be left out to
-	 * leave that side open. Each side is written as one of an inclusive and
-	 * an exclusive bound, and at least one side has to be given.
+	 * Matches values within bounds. Accepts inclusive and exclusive bounds;
+	 * either side may be left open, and at least one bound is required.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -158,102 +157,100 @@ public sealed interface Matcher
 	)
 	record Range(
 		/**
-		 * Values have to be this or above it.
+		 * Lower bound, inclusive.
 		 */
 		@Schema(description = "Lower bound, the value itself included.", examples = "10")
 		Object gte,
 
 		/**
-		 * Values have to be above this.
+		 * Lower bound, exclusive.
 		 */
 		@Schema(description = "Lower bound, the value itself excluded.")
 		Object gt,
 
 		/**
-		 * Values have to be this or below it.
+		 * Upper bound, inclusive.
 		 */
 		@Schema(description = "Upper bound, the value itself included.")
 		Object lte,
 
 		/**
-		 * Values have to be below this.
+		 * Upper bound, exclusive.
 		 */
-		@Schema(description = "Upper bound, the value itself excluded.", examples = "20")
+		@Schema(description = "Upper bound, exclusive.", examples = "20")
 		Object lt
 	) implements Matcher {
 	}
 
 	/**
-	 * Match values inside any one of several ranges - what the ticked buckets
-	 * of a range facet turn into, the way ticked values are an `in`. An empty
-	 * list matches nothing, like an empty `in` does.
+	 * Matches values falling within any of the specified ranges. An empty array
+	 * matches no documents, matching the behavior of an empty `in` matcher.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "RangesMatcher",
 		description = """
-			Matches values falling within any of the specified range objects - \
-			what the ticked buckets of a range facet turn into, the way ticked \
-			values become an `in`. An empty array matches no documents."""
+			Matches values falling within any of the specified range objects. \
+			An empty array matches no documents, matching the behavior of an \
+			empty `in` matcher."""
 	)
 	record Ranges(
 		/**
-		 * The ranges to look in, a value matching when any one of them holds
-		 * it. Each is written the way a `range` matcher is and needs at least
-		 * one bound - a bucket sent back from a range facet is its `from` as
-		 * `gte` and its `to` as `lt`.
+		 * The ranges to evaluate, where a value matches when any range contains
+		 * it. Each follows the `range` matcher format and requires at least one
+		 * bound; a bucket returned by a range facet sets `from` as `gte` and
+		 * `to` as `lt`.
 		 */
 		@Schema(
 			description = """
-				The ranges to look in, each requiring at least one bound. A \
-				bucket sent back by a range facet is its `from` as `gte` and \
-				its `to` as `lt`.""",
+				The ranges to evaluate, each requiring at least one bound. A \
+				bucket returned by a range facet sets `from` as `gte` and `to` \
+				as `lt`.""",
 			required = true
 		)
 		List<Range> values
 	) implements Matcher {
 		/**
-		 * One range, each side one of an inclusive and an exclusive bound.
+		 * One range, bounded on each side by an inclusive or exclusive bound.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "MatcherRange",
 			description = """
-				One range of a `ranges` matcher, each side written as one of \
-				an inclusive and an exclusive bound. At least one bound is \
-				required."""
+				One range of a `ranges` matcher, bounded on each side by an \
+				inclusive or exclusive bound. At least one bound is required."""
 		)
 		public record Range(
 			/**
-			 * Values have to be this or above it.
+			 * Lower bound, inclusive.
 			 */
 			@Schema(description = "Lower bound, the value itself included.", examples = "10")
 			Object gte,
 
 			/**
-			 * Values have to be above this.
+			 * Lower bound, exclusive.
 			 */
 			@Schema(description = "Lower bound, the value itself excluded.")
 			Object gt,
 
 			/**
-			 * Values have to be this or below it.
+			 * Upper bound, inclusive.
 			 */
 			@Schema(description = "Upper bound, the value itself included.")
 			Object lte,
 
 			/**
-			 * Values have to be below this.
+			 * Upper bound, exclusive.
 			 */
-			@Schema(description = "Upper bound, the value itself excluded.", examples = "20")
+			@Schema(description = "Upper bound, exclusive.", examples = "20")
 			Object lt
 		) {
 		}
 	}
 
 	/**
-	 * Match values within a distance of an origin - what "near me" asks for.
-	 * Only a geo point field can answer it.
+	 * Matches geopoint field values within a specified distance of the origin
+	 * coordinates.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -264,8 +261,8 @@ public sealed interface Matcher
 	)
 	record Distance(
 		/**
-		 * Degrees north of the equator the origin sits at, {@code -90} to
-		 * {@code 90}.
+		 * Latitude of the origin in degrees north of the equator, {@code -90}
+		 * to {@code 90}.
 		 */
 		@Schema(
 			description = "Latitude of the origin, in degrees.",
@@ -277,8 +274,8 @@ public sealed interface Matcher
 		Double lat,
 
 		/**
-		 * Degrees east of the prime meridian the origin sits at, {@code -180}
-		 * to {@code 180}.
+		 * Longitude of the origin in degrees east of the prime meridian,
+		 * {@code -180} to {@code 180}.
 		 */
 		@Schema(
 			description = "Longitude of the origin, in degrees.",
@@ -290,10 +287,10 @@ public sealed interface Matcher
 		Double lon,
 
 		/**
-		 * How far from the origin a value may be, in meters.
+		 * Maximum distance from the origin in meters.
 		 */
 		@Schema(
-			description = "How far from the origin a value may be, in meters.",
+			description = "Maximum distance from the origin in meters.",
 			required = true,
 			examples = "5000"
 		)
@@ -302,24 +299,23 @@ public sealed interface Matcher
 	}
 
 	/**
-	 * Match text that someone typed, analyzed the same way the field was.
+	 * Matches text within a single field using field-level analysis.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "TextMatcher",
 		description = """
-			Matches text within a single field, analyzed the same way the \
-			field was."""
+			Matches text within a single field using field-level analysis."""
 	)
 	record Text(
 		/**
-		 * What was typed.
+		 * The query text to match.
 		 */
 		@Schema(description = "The query text to match.", required = true)
 		String text,
 
 		/**
-		 * How the words are combined, left out for {@code all}.
+		 * Term matching mode. Defaults to {@code all}.
 		 */
 		@Schema(
 			description = """
@@ -331,7 +327,7 @@ public sealed interface Matcher
 		Match match,
 
 		/**
-		 * How the word still being typed is treated, left out for
+		 * Prefix matching behavior on the final query term. Defaults to
 		 * {@code last_token}.
 		 */
 		@Schema(
@@ -344,8 +340,9 @@ public sealed interface Matcher
 		Prefix prefix,
 
 		/**
-		 * Whether words may contain typing mistakes, left out for
-		 * {@code auto}.
+		 * Typo tolerance handling. Defaults to {@code auto}, which follows the
+		 * field's `typoTolerance` configuration; `off` disables typo tolerance
+		 * for the matcher.
 		 */
 		@Schema(
 			description = """
@@ -357,22 +354,21 @@ public sealed interface Matcher
 		Typos typos,
 
 		/**
-		 * How many other words may sit between the words of a phrase, left
-		 * out for none. Only means something for a {@code phrase} or the
-		 * quoted parts of a {@code user} text.
+		 * Number of intervening words permitted between terms in a phrase,
+		 * defaulting to none. Only applies to a {@code phrase} query or the
+		 * quoted parts of {@code user} text.
 		 */
 		@Schema(
 			description = """
 				Number of intervening words permitted between terms in a \
-				phrase, without changing their relative order. Only means \
-				something for `phrase` or for the quoted parts of a `user` \
-				text.""",
+				phrase, without changing their relative order. Only applies to \
+				`phrase` queries or quoted phrases in `user` mode.""",
 			defaultValue = "0"
 		)
 		Integer slop,
 
 		/**
-		 * What may be let go of rather than find nothing, left out for
+		 * Query relaxation strategy when no documents match. Defaults to
 		 * {@code unmatched}.
 		 */
 		@Schema(
@@ -385,7 +381,7 @@ public sealed interface Matcher
 		Relax relax
 	) implements Matcher {
 		/**
-		 * How the words of the text are combined.
+		 * Term matching mode: how terms in the query text are combined.
 		 */
 		@Schema(description = """
 			Term matching mode: `all` requires every term, `any` requires one, \
@@ -406,12 +402,12 @@ public sealed interface Matcher
 		}
 
 		/**
-		 * How the last word of the text is treated.
+		 * Prefix matching behavior on the final query term.
 		 */
 		@Schema(description = """
-			Prefix matching behavior on the final term: `last_token` matches \
-			the trailing word as a prefix, `off` requires an exact word \
-			match.""")
+			Prefix matching behavior on the final query term: `last_token` \
+			matches the trailing word as a prefix, `off` requires an exact \
+			word match.""")
 		public enum Prefix {
 			@JsonProperty("last_token")
 			LAST_TOKEN,
@@ -421,7 +417,7 @@ public sealed interface Matcher
 		}
 
 		/**
-		 * Whether the words of the text may contain typing mistakes.
+		 * Typo tolerance handling for query terms.
 		 */
 		@Schema(description = """
 			Typo tolerance handling: `auto` follows each field's \
@@ -435,9 +431,9 @@ public sealed interface Matcher
 		}
 
 		/**
-		 * What the words of the text may be let go of rather than find
-		 * nothing. Only ever happens on a search that came back empty, and
-		 * whatever went is answered as {@code relaxed} beside the results.
+		 * Query relaxation strategy when no documents match. Applied only when
+		 * the initial query returns zero matches, and dropped terms are
+		 * reported in {@code relaxed} beside the results.
 		 */
 		@Schema(description = """
 			Query relaxation strategy: `unmatched` drops words that do not \

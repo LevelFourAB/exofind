@@ -12,22 +12,22 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.DocumentSerializer;
 import se.l4.exofind.engine.index.Document;
 
 /**
- * One part of the documents an index holds, read back in the order of their
- * primary keys.
+ * Documents read from an index in primary key order.
  *
  * @param documents
- *   the documents, as they were given, in key order
+ *   the documents in primary key order, formatted as originally indexed
  * @param next
- *   the key to carry on after, present whenever the request read as many
- *   documents as it asked for and left out at the end of the index. A part
- *   that filled up exactly at the last document carries one, and the request
- *   that follows it answers with nothing
+ *   primary key to pass as the after parameter on the next request. Present
+ *   when the response returns as many documents as requested by the limit, and
+ *   omitted at the end of the index. If a batch ends on the last document, this
+ *   key is returned and the next request returns an empty list without a
+ *   continuation key
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	One part of the documents an index holds. A single request reads from a \
+	A batch of documents read from an index. A single request reads from a \
 	point-in-time snapshot and sees committed data only, so uncommitted writes \
-	are not visible. See [Reading \
+	are not visible. For more information, see [Reading \
 	documents](https://exofind.dev/reference/documents-api/#reading-documents).""")
 public record ScanResponse(
 	/*
@@ -40,21 +40,20 @@ public record ScanResponse(
 		type = SchemaType.ARRAY,
 		implementation = Object.class,
 		description = """
-			The documents, each keyed by field name and formatted as \
-			originally indexed, in primary key order. Whole-number keys are \
-			ordered numerically with negative numbers first, and text keys in \
-			UTF-8 byte order."""
+			Documents in primary key order, formatted as originally indexed. \
+			Whole-number keys return in numeric order, with negative numbers \
+			first. Text keys return in UTF-8 byte order."""
 	)
 	@JsonSerialize(contentUsing = DocumentSerializer.class)
 	List<Document> documents,
 
 	@Schema(
 		description = """
-			Primary key to pass as `after` on the next request. Present only \
-			when the response returns as many documents as `limit` asked for. \
-			A part that fills up exactly at the last document of the index \
-			still carries one, and the request that follows it answers with an \
-			empty `documents` array and no `next`.""",
+			Primary key to pass as the `after` parameter on the next request. \
+			Present only when the response returns as many documents as \
+			requested by `limit`. If a batch ends exactly on the last document \
+			of the index, `next` is returned and the subsequent request \
+			returns an empty `documents` array without a `next` field.""",
 		examples = "2"
 	)
 	String next

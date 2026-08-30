@@ -9,10 +9,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 
 /**
- * Which documents to remove from an index, as it is received over the API.
+ * Specifies documents to remove from an index by primary keys or by search
+ * query.
  *
- * Documents are named either by their primary keys or by a query they match,
- * and a request carries exactly one of the two:
+ * <p>The request body must include either `keys` or `query`, but not both:
  *
  * <pre>
  * { "keys": ["1", "2"] }
@@ -21,16 +21,14 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
  * </pre>
  *
  * @param keys
- *   the primary keys of the documents to remove, each as the type of the key
- *   field holds it. A key nothing was indexed under is not an error
+ *   the primary keys of the documents to remove, formatted according to the key
+ *   field type. Deleting an unindexed key produces a success response
  * @param query
- *   the clauses a document has to satisfy to be removed, all of them - the
- *   same clauses a search is written with. An empty list matches every
- *   document and empties the index
+ *   query clauses matching documents to delete, using search query clause
+ *   syntax. An empty list matches and deletes all documents
  * @param locale
- *   the locale locale specific fields are matched in (BCP 47), left out to
- *   leave every field to its own default locale. Only meaningful with
- *   {@code query}
+ *   the BCP 47 locale tag used to match locale-specific fields, or omitted to
+ *   use each field's default locale. Valid only when specifying {@code query}
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
@@ -39,24 +37,24 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 	`request:delete:target_conflicting`).""")
 public record DeleteRequest(
 	@Schema(description = """
-		Primary keys of the documents to remove, each written as the key \
-		field's type holds it. All keys are validated before any document is \
-		removed, so an invalid key removes nothing. An empty array deletes \
-		nothing, and a key nothing was indexed under is not an error.""")
+		List of primary keys to delete, formatted according to the key field \
+		type. All keys are validated before any documents are removed; if any \
+		key is invalid, no documents are removed. An empty array deletes \
+		nothing, and requesting the deletion of an unindexed key produces a \
+		success response.""")
 	List<Object> keys,
 
 	@Schema(description = """
-		Clauses a document must satisfy to be removed, all of them - the same \
-		clauses a search is written with. Removes matching committed \
-		searchable documents along with any uncommitted ones indexed since the \
-		last commit. An empty array matches every document and empties the \
-		index.""")
+		Query clauses matching documents to delete, using search query clause \
+		syntax. Removes matching committed searchable documents and any \
+		uncommitted documents indexed since the last commit. An empty array \
+		matches and deletes all documents.""")
 	List<Clause> query,
 
 	@Schema(
 		description = """
-			BCP-47 locale tag used to match locale-specific fields, defaulting \
-			to each field's own locale. Valid only together with `query` \
+			BCP 47 locale tag used to match locale-specific fields, defaulting \
+			to each field's default locale. Valid only when specifying `query` \
 			(`request:delete:locale_without_query`).""",
 		examples = "sv"
 	)

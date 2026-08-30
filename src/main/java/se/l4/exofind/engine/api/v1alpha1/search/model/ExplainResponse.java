@@ -7,127 +7,133 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * How one hit scores under a search, as it is answered over the API.
+ * Explains how a specific document or value hit scores for a search query.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	How one hit scores under a search. See \
-	[Explaining a result](https://exofind.dev/reference/search-api/#explaining-a-result).""")
+	Explains how a specific document or value hit scores for a search query. \
+	See [Explaining a \
+	result](https://exofind.dev/reference/search-api/#explaining-a-result).""")
 public record ExplainResponse(
 	/**
 	 * Whether the hit satisfies the search.
 	 */
 	@Schema(description = """
-		Whether the hit satisfies the search. A hit that does not appears in no \
-		result page, whatever the steps below scored.""")
+		Whether the hit satisfies the search. A hit that does not match \
+		appears in no search results.""")
 	boolean matched,
 
 	/**
-	 * What the hit scored, zero when it matched nothing.
+	 * The relevance score of the hit, or 0 if the hit does not match.
 	 */
 	@Schema(
 		description = """
-			What the hit scored, `0` when it matched nothing. The same number a \
-			search reports for the hit.""",
+			The relevance score of the hit. Returns `0` if the hit does not \
+			match.""",
 		examples = "7.42"
 	)
 	float score,
 
 	/**
-	 * How the score was arrived at.
+	 * Root score step explaining how the score was calculated.
 	 */
-	@Schema(description = "How the score was arrived at.")
+	@Schema(description = "Root score step explaining how the score was calculated.")
 	Detail detail,
 
 	/**
-	 * What the search let go of to match anything, left out when it let go of
-	 * nothing.
+	 * Relaxation details containing dropped words and the effective query text,
+	 * or null if query relaxation did not run.
 	 */
 	@Schema(description = """
-		What the search let go of to match anything. Omitted when the query was \
-		not relaxed. A search that matches nothing drops words and runs again, \
-		and what is explained is the search that ran.""")
+		Relaxation details containing dropped words and the effective query \
+		text. Omitted if query relaxation did not run. When zero results \
+		trigger query relaxation, the explanation tree reflects the relaxed \
+		query that executed.""")
 	SearchResponse.Relaxed relaxed
 ) {
 	/**
-	 * One step of a score.
+	 * One score step in the explanation tree.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(name = "ExplainDetail", description = "One step of a score.")
+	@Schema(name = "ExplainDetail", description = "One score step in the explanation tree.")
 	public record Detail(
 		/**
 		 * Whether this step was satisfied.
 		 */
 		@Schema(description = """
-			Whether this step was satisfied. A step that was not contributes \
-			nothing, and its `children` say why.""")
+			Whether this step was satisfied. A non-matching step contributes \
+			nothing to the parent score, and its `children` describe the \
+			reason.""")
 		boolean matched,
 
 		/**
-		 * What this step contributed to the step above it.
+		 * Score contributed by this step to its parent step.
 		 */
-		@Schema(description = "What this step contributed to the step above it.")
+		@Schema(description = """
+			Score contributed by this step to its parent step. Returns 0 if \
+			the step did not match.""")
 		float score,
 
 		/**
-		 * What the step is, in words.
+		 * Human-readable explanation of the step.
 		 */
 		@Schema(
-			description = "What the step is, in words.",
+			description = "Human-readable explanation of the step.",
 			examples = "weight(title:bok) [BM25], result of:"
 		)
 		String description,
 
 		/**
-		 * Path of the clause this step was compiled from, left out for a step
-		 * that is not a clause of its own.
+		 * Path to the clause in the request body that produced this step, or
+		 * null when the step is not an individual clause.
 		 */
 		@Schema(
 			description = """
-				Path of the clause this step was compiled from, into the request \
-				body. Omitted for a step that is not a clause of its own.""",
+				Path to the clause in the request body that produced this \
+				step. Omitted when the step is not an individual clause.""",
 			examples = "query[0].clauses[2]"
 		)
 		String clause,
 
 		/**
-		 * The kind of clause, left out wherever {@code clause} is.
+		 * Clause type matching request syntax, or null when {@code clause} is
+		 * omitted.
 		 */
 		@Schema(
 			description = """
-				The kind of clause, as `type` names it in a request. Omitted \
-				wherever `clause` is.""",
+				Clause type matching request syntax in `type`. Omitted when \
+				`clause` is omitted.""",
 			examples = "text"
 		)
 		String clauseType,
 
 		/**
-		 * The field of the definition the step reads, left out when the step
-		 * reads none or reads several.
+		 * Index definition field name evaluated by the step, or null when the
+		 * step reads no fields or multiple fields.
 		 */
 		@Schema(
 			description = """
-				Field of the index definition this step reads. Omitted when the \
-				step reads no field, or reads several.""",
+				Index definition field name evaluated by the step. Omitted \
+				when the step reads no fields or multiple fields.""",
 			examples = "title"
 		)
 		String field,
 
 		/**
-		 * Which way of using the field the step reads it as, left out wherever
-		 * {@code field} is.
+		 * Field usage mode evaluated by the step, or null when {@code field} is
+		 * omitted.
 		 */
 		@Schema(
 			description = """
-				Which way of using the field the step reads it as, such as \
-				`matching` or `filter`. Omitted wherever `field` is.""",
+				Field usage mode evaluated by the step (such as `matching` or \
+				`filter`). Omitted when `field` is omitted.""",
 			examples = "matching"
 		)
 		String usage,
 
 		/**
-		 * Which variant of a locale specific field the step reads, left out for
-		 * a field holding one variant for every language.
+		 * BCP 47 tag of the field variant evaluated by this step. Omitted for
+		 * fields that store a single variant across all languages.
 		 */
 		@Schema(
 			description = """
@@ -138,9 +144,9 @@ public record ExplainResponse(
 		String locale,
 
 		/**
-		 * The steps this one is made of, empty at a leaf.
+		 * Child score steps that compose this step. Empty for leaf steps.
 		 */
-		@Schema(description = "The steps this one is made of. Empty at a leaf.")
+		@Schema(description = "Child score steps that compose this step. Empty for leaf steps.")
 		List<Detail> children
 	) {
 	}

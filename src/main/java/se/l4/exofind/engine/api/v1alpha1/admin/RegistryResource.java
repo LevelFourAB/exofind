@@ -30,28 +30,19 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
 /**
- * The registry of the deployment's indexes checked against the storage they
- * live in, and repaired from it.
+ * Audits and repairs the shared index registry against remote storage.
  *
- * <p>The registry is one object, and it alone says which indexes exist - the
- * nodes never discover them by listing the storage. A deployment whose
- * registry object is lost or corrupted therefore forgets its indexes even
- * though every one of them is still there. The audit reads the storage the way
- * nothing else does and says how the two disagree; the repair registers what
- * the storage holds that the registry does not name.
+ * <p><p>The registry defines which indexes and generations exist across the
+ * deployment. Auditing compares the registry against remote storage without
+ * modifying either. Repairing registers unlisted synced generations found in
+ * storage.
  *
- * <p>The audit is also worth running on a healthy deployment: a generation in
- * the storage the registry does not name is a rollout that was interrupted
- * before it was registered, or storage a delete left behind, and a registered
- * generation with nothing behind it has nowhere left to be pulled from.
+ * <p><p>Repair operations only add entries and never remove indexes,
+ * generations, or stored data. Requests are served by whichever node receives
+ * them and are never forwarded.
  *
- * <p>A repair only ever adds to the registry, so nothing here removes an index
- * or any files. It writes conditionally like every registry change and runs on
- * whichever node receives it - the registry is about the deployment rather
- * than about any index, so these requests are never passed to the indexer.
- *
- * <p>Both endpoints answer only in object storage mode. A node storing locally
- * has no storage to compare its registry with.
+ * <p><p>Both endpoints operate only in object storage mode. In local storage
+ * mode, requests return an error.
  */
 @Tag(
 	name = "Registry",
@@ -80,7 +71,8 @@ public class RegistryResource {
 	}
 
 	/**
-	 * Compare the registry with the storage. Reads both and changes neither.
+	 * Reads the registry and remote storage, comparing the two without changing
+	 * either.
 	 *
 	 * @return
 	 */
@@ -91,40 +83,37 @@ public class RegistryResource {
 		operationId = "auditRegistry",
 		summary = "Audit the registry against storage",
 		description = """
-			Reads the registry and remote storage and reports how the two \
-			disagree, changing neither.
+			Reads the registry and remote storage, comparing the two without \
+			changing either.
 
-			Worth running on a healthy deployment too: a generation in storage \
-			the registry does not name is a rollout interrupted before it was \
-			registered, or storage a delete left behind, and a registered \
-			generation with nothing behind it has nowhere left to be pulled \
-			from.
+			Unregistered generations in storage indicate interrupted rollouts \
+			or leftover storage from deleted generations. Registered \
+			generations missing from storage have no data available to pull.
 
 			Served by whichever node receives the request and never forwarded. \
-			Answers only in object storage mode. Requires the \
-			`registry.audit` permission, which is deployment-scoped."""
+			Answers only in object storage mode. Requires the `registry.audit` \
+			permission (deployment-scoped)."""
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "How the registry and storage compare.",
+		description = "Comparison of the shared registry with remote storage.",
 		content = @Content(schema = @Schema(implementation = RegistryAuditResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `registry.audit` permission.",
+		description = "The credential does not have the `registry.audit` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The node stores locally rather than in a bucket, so there is no \
-			storage to compare the registry with \
-			(`index:registry:audit_unavailable`).""",
+			The endpoint was called on a node configured with local storage \
+			rather than shared storage (`index:registry:audit_unavailable`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public RegistryAuditResponse audit() {
@@ -132,21 +121,19 @@ public class RegistryResource {
 	}
 
 	/**
-	 * Register everything the storage holds that the registry does not name.
-	 * A corrupt registry is replaced with one rebuilt from the storage; a
-	 * readable one is added to, with every entry it already has kept as it
-	 * is.
+	 * Registers every synced generation held in storage that the registry does
+	 * not name.
 	 *
-	 * <p>Which generation a rebuilt index should answer for is not written
-	 * anywhere in the storage, so a created index answers for nothing until a
-	 * generation is promoted - or the request says
-	 * {@code "promoteNewest": true}, which makes each created index answer for
-	 * its highest-numbered generation. The audit says which generation that
-	 * would be before anything is written.
+	 * <p><p>The repair only adds entries, keeping existing entries as stored.
+	 * If the registry is absent, it is written fresh; if corrupt, it is
+	 * replaced with one rebuilt from storage.
+	 *
+	 * <p><p>When {@code "promoteNewest": true}, each index created by the
+	 * repair answers for its highest-numbered generation. Otherwise, a created
+	 * index answers for nothing until a generation is promoted.
 	 *
 	 * @param body
-	 *   how to treat the indexes the repair creates, or nothing for the
-	 *   defaults
+	 *   configuration for created indexes, or omitted for defaults
 	 * @return
 	 */
 	@POST
@@ -159,49 +146,49 @@ public class RegistryResource {
 		summary = "Repair the registry from storage",
 		description = """
 			Registers every `SYNCED` generation that storage holds and the \
-			registry does not name. The repair only ever adds: it keeps \
-			existing entries as they are and never deletes an index, a \
-			generation or any stored data. An absent registry is written \
-			fresh; a corrupt one is replaced with a registry rebuilt from \
-			storage.
+			registry does not name. The repair operation only adds entries: it \
+			keeps existing entries as stored and never deletes an index, a \
+			generation, or storage data. If the registry is absent, the repair \
+			writes it fresh. If the registry is corrupt, the repair replaces \
+			it with one rebuilt from storage.
 
-			Which generation a rebuilt index should answer for is written \
-			nowhere in storage, so a created index answers for nothing until a \
-			generation is promoted - or until the body says \
-			`"promoteNewest": true`. Run the audit first to see which \
-			generation that would be.
+			When `"promoteNewest": true`, each index created by the repair \
+			answers for its highest-numbered generation. Hand-named \
+			generations are not selected. Indexes that are already registered \
+			keep what they answer for. When omitted or false, created indexes \
+			answer for nothing until a generation is promoted.
 
 			The write is conditional and rebuilds on top of concurrent \
 			registry changes. The answering node applies the repaired registry \
-			at once; other nodes pick it up within \
+			immediately; other nodes pick it up within \
 			`EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 			Served by whichever node receives the request and never forwarded. \
 			Answers only in object storage mode. Requires the \
-			`registry.repair` permission, which is deployment-scoped."""
+			`registry.repair` permission (deployment-scoped)."""
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "What the repair added to the registry.",
+		description = "A summary of the changes made by the repair.",
 		content = @Content(schema = @Schema(implementation = RegistryRepairResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `registry.repair` permission.",
+		description = "The credential does not have the `registry.repair` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The node stores locally rather than in a bucket \
-			(`index:registry:audit_unavailable`), or the repaired registry \
-			could not be stored (`index:registry:conflict`, \
-			`index:registry:io_error`). The registry is unchanged.""",
+			The endpoint was called on a node configured with local storage \
+			(`index:registry:audit_unavailable`), or writing the repaired \
+			registry failed (`index:registry:conflict`, \
+			`index:registry:io_error`). The registry remains unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public RegistryRepairResponse repair(RegistryRepairRequest body) {

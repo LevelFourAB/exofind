@@ -7,8 +7,8 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * A second pass over the best results of a search, as it is written on the
- * wire.
+ * Reorders the best results of a search in a second pass without changing which
+ * documents matched.
  *
  * <pre>
  * {
@@ -19,27 +19,28 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * }
  * </pre>
  *
- * The first pass ranks every match by relevance. Its best {@code window}
- * results are scored again by the boosts and signals here, and the two scores
- * are added. Results below the window keep the order relevance gave them, so
- * nothing here can pull a poor match onto the first page.
+ * <p>The first pass ranks every match by relevance. The best {@code window}
+ * results of that pass are scored again by the configured boosts and signals,
+ * and the scores are combined. Results below the window keep their first-pass
+ * relevance score, so rescoring cannot promote irrelevant documents onto the
+ * first page.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	Reorders the best results of a search in a second pass, leaving which \
-	documents matched untouched. Boosts and signals here apply only inside \
-	the window, so they reorder relevant results without promoting \
-	irrelevant ones. Applies only when results are ordered by relevance, so \
-	an explicit `sort` overrides it. See \
+	Reorders the best results of a search in a second pass without changing \
+	which documents matched. Boosts and signals apply only inside the window, \
+	reordering relevant results without promoting non-matching documents. \
+	Applies only when results are ordered by relevance; providing an explicit \
+	`sort` overrides rescoring. See \
 	[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""")
 public record Rescore(
 	/**
-	 * How many of the best results take part.
+	 * Number of best results to score a second time.
 	 */
 	@Schema(
 		description = """
-			How many of the best results are scored a second time. Must be at \
-			least as large as `offset` plus `limit`, and at most \
+			Number of best results to score a second time. Must be at least \
+			`offset` plus `limit`, and at most \
 			`EXOFIND_SEARCH_MAX_RESCORE_WINDOW`.""",
 		required = true,
 		examples = "200"
@@ -47,18 +48,20 @@ public record Rescore(
 	Integer window,
 
 	/**
-	 * The clauses that lift what satisfies them. Nothing here narrows.
+	 * Clauses that lift results satisfying them without filtering or narrowing
+	 * search hits.
 	 */
 	@Schema(description = """
-		Clauses that lift the results satisfying them. Nothing here narrows \
-		a search: a result that satisfies none of them keeps its first-pass \
-		score. Wrap a clause in `boost` to weigh it against the others.""")
+		Clauses that lift results satisfying them. Clauses do not filter or \
+		narrow search hits; a result that satisfies none of them keeps its \
+		first-pass score. Wrap a clause in `boost` to weigh it against the \
+		others.""")
 	List<Clause> boost,
 
 	/**
-	 * The values of the documents themselves to take into the second score.
-	 * These are the whole of what the second pass reads, so the ranking of the
-	 * index is never applied again here.
+	 * Document values evaluated in the second-pass score. These are the whole
+	 * of what the second pass reads; ranking configured on the index is not
+	 * applied again.
 	 */
 	@Schema(description = """
 		Document values taken into the second score, written the same way as \
@@ -68,10 +71,13 @@ public record Rescore(
 	List<Signal> signals,
 
 	/**
-	 * How much the second score counts against the first. Left out for 1.
+	 * Multiplier applied to the second-pass score before adding it to the
+	 * first-pass score. Left out for 1.
 	 */
 	@Schema(
-		description = "How much the second score counts against the first.",
+		description = """
+			Multiplier applied to the second-pass score before adding it to \
+			the first-pass score.""",
 		defaultValue = "1"
 	)
 	Float weight

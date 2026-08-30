@@ -8,13 +8,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * A search as it is received over the API.
+ * A search request sent over the API.
  *
- * Everything is optional - an empty request matches every document and brings
- * back the first few of them. The clause list is an implicit AND, so a search
- * box together with the scope it searches in is a flat list rather than a
- * nested tree. The refinements a user ticks go in {@code filters} instead,
- * which is what lets a facet count sideways of the filter on its own field:
+ * <p>All request properties are optional. An empty request matches all
+ * documents in the index and returns the first page of results. Query clauses
+ * are combined with an implicit AND. Filter refinements are specified in
+ * {@code filters} so that facets can exclude filter entries on their own fields
+ * from match counts:
  *
  * <pre>
  * {
@@ -32,11 +32,11 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * }
  * </pre>
  *
- * Where in the results the answer starts is said with {@code limit} together
- * with at most one of {@code offset}, {@code after} and {@code before}. The
- * cursors are the opaque tokens a previous response handed out - {@code after}
- * continues past the window it came from, {@code before} is the window
- * preceding it, and hits always come back in sort order.
+ * <p>Result pagination is configured using {@code limit} together with at most
+ * one of {@code offset}, {@code after}, or {@code before}. Cursors are opaque
+ * tokens returned in previous responses: {@code after} fetches the next page
+ * following the window, {@code before} fetches the preceding page, and results
+ * are always returned in sort order.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
@@ -44,9 +44,9 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 	documents in the index.""")
 public record SearchRequest(
 	/**
-	 * The clauses a document has to satisfy, all of them. Left out to match
-	 * every document. A clause here narrows every facet count - scope a
-	 * search here, tick filters in {@code filters}.
+	 * Clauses that a matching document must satisfy. If omitted, matches all
+	 * documents. Evaluated clauses narrow all facet counts. Refinement filters
+	 * belong in {@code filters}.
 	 */
 	@Schema(description = """
 		Clauses that a matching document must satisfy. Clauses in the array \
@@ -55,18 +55,16 @@ public record SearchRequest(
 	List<Clause> query,
 
 	/**
-	 * The ticked refinements of a filtering UI, each narrowing the results
-	 * the way a {@code query} clause does. Kept apart from the query because
-	 * facets are counted sideways of them: a facet leaves the entries it
-	 * excludes - by default the ones on its own field - out of its counts,
-	 * so ticking a category still shows what the other categories would
-	 * hold.
+	 * Refinement clauses that narrow matching hits, specified separately from
+	 * {@code query} clauses so that facets can exclude filter entries on their
+	 * own fields from match counts.
 	 *
-	 * Only {@code field} and {@code nested} clauses may sit here - a
-	 * condition on a field inside an object is a {@code nested} clause
-	 * naming it - and no entry may rank, so ticking a filter never
-	 * reshuffles the results. Exclusion is per entry: send one entry per
-	 * facet field, several ticked values through one matcher.
+	 * <p>Only {@code field} and {@code nested} clauses are supported.
+	 * Conditions on fields inside nested objects are specified using
+	 * {@code nested} clauses. Filter clauses do not score results and do not
+	 * affect result ranking. Filter exclusions apply per filter entry: specify
+	 * separate entries per faceted field and combine multiple filter values
+	 * within a single matcher.
 	 */
 	@Schema(description = """
 		Refinement clauses, specified as `field` clauses or `nested` \
@@ -78,8 +76,8 @@ public record SearchRequest(
 	List<Clause> filters,
 
 	/**
-	 * What to count the matches per value of, left out for no counting. The
-	 * response keys each facet's counts by its name.
+	 * Fields to aggregate match counts for. If omitted, no facet counts are
+	 * calculated. Facet results in the response are keyed by facet name.
 	 */
 	@Schema(description = """
 		Fields to aggregate match counts for. See \
@@ -88,7 +86,8 @@ public record SearchRequest(
 	List<Facet> facets,
 
 	/**
-	 * The order results come back in, left out for the best matches first.
+	 * Order in which results are returned. If omitted, results are sorted by
+	 * relevance score in descending order.
 	 */
 	@Schema(description = """
 		Order in which results are returned. If omitted, results are sorted \
@@ -96,8 +95,8 @@ public record SearchRequest(
 	List<Sort> sort,
 
 	/**
-	 * The locale the search reads locale specific fields in (BCP-47), left
-	 * out to leave every field to its own default locale.
+	 * BCP-47 locale tag used to read and return locale-specific fields. If
+	 * omitted, uses each field's default locale.
 	 */
 	@Schema(
 		description = """
@@ -110,10 +109,10 @@ public record SearchRequest(
 	String locale,
 
 	/**
-	 * The fields to bring back with each result, left out for every stored
-	 * field. The primary key is always included. A field inside an object is
-	 * named by its dotted path and comes back inside the object, which then
-	 * holds only the fields that were asked for.
+	 * Document fields to return with each result. If omitted, returns all
+	 * stored fields. The primary key is always included. Fields inside an
+	 * object are specified by dotted path and returned nested inside the
+	 * object, containing only the requested fields.
 	 */
 	@Schema(description = """
 		Document fields to return with each result. Fields inside an \
@@ -125,7 +124,8 @@ public record SearchRequest(
 	List<String> fields,
 
 	/**
-	 * Ask for highlighted fragments with each hit, left out for none.
+	 * Fields to return highlighted snippets for. If omitted, no highlights are
+	 * returned.
 	 */
 	@Schema(description = """
 		Fields to return highlighted snippets for. See \
@@ -133,8 +133,8 @@ public record SearchRequest(
 	Highlight highlight,
 
 	/**
-	 * Ask each hit which values of an object field matched, left out for
-	 * none.
+	 * Nested object fields for which to return matched values with each hit. If
+	 * omitted, matched values are not returned.
 	 */
 	@Schema(description = """
 		Nested object fields for which to return matched values with each \
@@ -143,9 +143,9 @@ public record SearchRequest(
 	Matched matched,
 
 	/**
-	 * Change what a hit stands for: each matched value of an object field
-	 * becomes a hit of its own, instead of the document holding it. Left out
-	 * for hits that are documents. See {@link Hits}.
+	 * Specifies an object field whose matched values return as individual hits
+	 * instead of full documents. If omitted, hits represent documents. See
+	 * {@link Hits}.
 	 */
 	@Schema(description = """
 		Specifies an object field whose matched values return as individual \
@@ -194,9 +194,8 @@ public record SearchRequest(
 	String before,
 
 	/**
-	 * Ask for numbered pages in the response, so a pager can be rendered.
-	 * Being present is what asks, and implies {@code total} being
-	 * {@code exact} - pages can not be numbered against a lower bound.
+	 * Requests numbered page metadata in the response. Implies {@code total}
+	 * being {@code exact}; pages cannot be numbered against a lower bound.
 	 */
 	@Schema(description = """
 		Requests numbered page metadata. Accepts an optional \
@@ -211,11 +210,11 @@ public record SearchRequest(
 	Total total,
 
 	/**
-	 * The values of the documents themselves to take into their relevance,
-	 * left out to rank by the ones the index declares. Given, they are added
-	 * to those unless {@code signalsMode} says otherwise. Only read where
-	 * relevance is the ordering, so a search that gives a {@code sort} of its
-	 * own is unaffected.
+	 * Document ranking signals used to adjust relevance scoring. Added to the
+	 * signals configured on the index unless {@code signalsMode} says
+	 * otherwise. Evaluated only when results are ordered by relevance;
+	 * providing {@code sort} overrides ranking signals. If omitted, uses the
+	 * ranking signals configured on the index.
 	 */
 	@Schema(description = """
 		Document ranking signals used to adjust relevance scoring. Added to \
@@ -226,8 +225,9 @@ public record SearchRequest(
 	List<Signal> signals,
 
 	/**
-	 * How {@code signals} meets the ranking of the index, left out for
-	 * {@code add}. Refused without {@code signals}.
+	 * Controls how {@code signals} meets the ranking configured on the index.
+	 * Defaults to {@code add}. Supplying this without {@code signals} returns
+	 * an error.
 	 */
 	@Schema(
 		description = """
@@ -240,12 +240,13 @@ public record SearchRequest(
 	SignalsMode signalsMode,
 
 	/**
-	 * A second pass reordering the best results, left out to answer in the
-	 * order the ranking gave. Read under the same rule the signals are, and
-	 * refused together with {@code hits}.
+	 * Reorders the best results of a search in a second pass without changing
+	 * which documents matched. Evaluated only when results are ordered by
+	 * relevance. Cannot be combined with {@code hits}.
 	 */
 	@Schema(description = """
-		Reorders the best results in a second pass. See \
+		Reorders the best results of a search in a second pass without \
+		changing which documents matched. See \
 		[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""")
 	Rescore rescore
 ) {
@@ -306,7 +307,8 @@ public record SearchRequest(
 	}
 
 	/**
-	 * How the signals of a search meet the ranking configured on the index.
+	 * Controls how search request signals meet the ranking configured on the
+	 * index.
 	 */
 	@Schema(description = """
 		How search request signals meet the ranking configured on the index: \
@@ -329,7 +331,7 @@ public record SearchRequest(
 	}
 
 	/**
-	 * How far the total of a search is counted.
+	 * Counting mode for the total matching document count.
 	 */
 	@Schema(description = """
 		Counting mode for the total matching document count: `"estimate"` \
@@ -351,9 +353,8 @@ public record SearchRequest(
 	}
 
 	/**
-	 * A request to count the matches per value of one field, for building the
-	 * list of filters a user picks from - or into buckets, when {@code ranges}
-	 * is given.
+	 * Computes match counts for distinct values of a field, or across range
+	 * buckets when {@code ranges} is specified.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -362,9 +363,8 @@ public record SearchRequest(
 		the request returns `index:query:usage_not_enabled`.""")
 	public record Facet(
 		/**
-		 * What the counts are keyed by in the response. Left out to key them
-		 * by the field - only needed when one search counts the same field
-		 * twice.
+		 * Key used for the facet in the response. Defaults to the field name.
+		 * Required when faceting on the same field multiple times.
 		 */
 		@Schema(description = """
 			Key used for the facet in the response. Required when faceting \
@@ -373,8 +373,8 @@ public record SearchRequest(
 		String name,
 
 		/**
-		 * Name of the field to count, as it is called in the definition of
-		 * the index. The field has to be defined for faceting.
+		 * Name of the target field to aggregate, as declared in the index
+		 * definition. The field must have faceting enabled.
 		 */
 		@Schema(
 			description = "Target field to aggregate.",
@@ -384,8 +384,8 @@ public record SearchRequest(
 		String field,
 
 		/**
-		 * How many values to bring back at most, left out for 10. Capped at
-		 * 1000. Does not combine with {@code ranges}.
+		 * Maximum number of facet values to return (1 to 1000). Defaults to 10.
+		 * Cannot be combined with {@code ranges}.
 		 */
 		@Schema(
 			description = "Maximum number of facet values to return.",
@@ -396,8 +396,8 @@ public record SearchRequest(
 		Integer limit,
 
 		/**
-		 * The order values come back in, left out for {@code count}. Does not
-		 * combine with {@code ranges}.
+		 * Sort order of facet values. Defaults to {@code count}. Cannot be
+		 * combined with {@code ranges}.
 		 */
 		@Schema(
 			description = """
@@ -408,9 +408,8 @@ public record SearchRequest(
 		Order order,
 
 		/**
-		 * The buckets to count the matches into instead of per value - what a
-		 * price or date facet shows. Being present is what asks for it; the
-		 * counts come back one per bucket, in this order.
+		 * Array of range bucket definitions to aggregate match counts into.
+		 * Results return one count per bucket in the specified order.
 		 */
 		@Schema(description = """
 			Array of range bucket definitions. See [Range \
@@ -420,10 +419,9 @@ public record SearchRequest(
 		List<Range> ranges,
 
 		/**
-		 * The level of the tree to count the children of, left out to count
-		 * from the top. Only a field whose values are read as paths can
-		 * answer it, and the value to send is the `path` of a level a
-		 * previous response answered with.
+		 * Starting path level for hierarchical fields, defaulting to the root.
+		 * Requires a field configured with hierarchy. Specify the `path`
+		 * returned by a previous facet response.
 		 */
 		@Schema(description = """
 			Starting path level for hierarchical fields. See [Counting down \
@@ -433,8 +431,8 @@ public record SearchRequest(
 		String path,
 
 		/**
-		 * How many levels below `path` to count, left out for one. At most
-		 * 10, and `limit` and `order` apply per level.
+		 * Number of hierarchical levels below `path` to count (1 to 10).
+		 * Defaults to 1. The `limit` and `order` options apply per level.
 		 */
 		@Schema(
 			description = """
@@ -446,12 +444,10 @@ public record SearchRequest(
 		Integer depth,
 
 		/**
-		 * The field paths whose filter entries are left out of this facet's
-		 * counts - an entry is left out when the path it names equals one of
-		 * these or falls under it. Left out for the facet's own field, which
-		 * is the sideways rule a filtering UI wants. An empty list leaves
-		 * nothing out, so the counts are exactly the results; more paths
-		 * widen the scope, for one control backed by several fields.
+		 * List of field paths whose filter entries are excluded from this
+		 * facet's calculation. A filter entry is excluded when its path equals
+		 * or falls under one of these paths. Defaults to the facet's own field
+		 * path. An empty list disables filter exclusion.
 		 */
 		@Schema(description = """
 			List of field paths whose filter entries are excluded from this \
@@ -461,7 +457,8 @@ public record SearchRequest(
 		List<String> excludeFilters
 	) {
 		/**
-		 * The order the values of a facet come back in.
+		 * Sort order of facet values: descending by count or ascending by
+		 * value.
 		 */
 		@Schema(description = """
 			Sort order of facet values: `count` (descending by count) or \
@@ -481,9 +478,8 @@ public record SearchRequest(
 		}
 
 		/**
-		 * One bucket, holding the values from {@code from} up to but not
-		 * including {@code to} - so adjacent buckets sharing a bound count no
-		 * value twice. At least one bound has to be given.
+		 * A range bucket holding values from {@code from} (inclusive) up to
+		 * {@code to} (exclusive). At least one bound is required.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
@@ -500,8 +496,8 @@ public record SearchRequest(
 		)
 		public record Range(
 			/**
-			 * The lowest value the bucket holds, itself included. Left out
-			 * for no lower end.
+			 * Inclusive lower bound for the range bucket. Omit for an
+			 * open-ended lower bound.
 			 */
 			@Schema(
 				description = """
@@ -512,8 +508,8 @@ public record SearchRequest(
 			Object from,
 
 			/**
-			 * Where the bucket ends, itself not included. Left out for no
-			 * upper end.
+			 * Exclusive upper bound for the range bucket. Omit for an
+			 * open-ended upper bound.
 			 */
 			@Schema(
 				description = """
@@ -527,7 +523,7 @@ public record SearchRequest(
 	}
 
 	/**
-	 * How numbered pages are asked for.
+	 * Requests numbered page metadata.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -536,8 +532,7 @@ public record SearchRequest(
 		`after` or `before`.""")
 	public record Pages(
 		/**
-		 * How many page entries the response may hold at most, left out for
-		 * a window of nine.
+		 * Maximum number of page entries to return. Defaults to 9.
 		 */
 		@Schema(
 			description = "Maximum number of page entries to return.",
@@ -548,8 +543,9 @@ public record SearchRequest(
 	}
 
 	/**
-	 * What to highlight. Fragments are built from the text part of the
-	 * search - what only narrows the results is never highlighted.
+	 * Requests highlighted snippets for specified fields. Fragments are
+	 * generated only from scoring clauses; non-scoring filter clauses produce
+	 * no highlights.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -560,10 +556,9 @@ public record SearchRequest(
 		[Highlighting](https://exofind.dev/reference/search-api/#highlighting).""")
 	public record Highlight(
 		/**
-		 * The fields to return fragments for, keyed by the name a field has
-		 * in the definition of the index. An empty options object asks for
-		 * the defaults. A field that was not defined for highlighting is
-		 * refused.
+		 * Fields to return fragments for, keyed by field name in the index
+		 * definition. An empty options object uses the defaults. Fields must
+		 * have highlighting enabled in their field definitions.
 		 */
 		@Schema(
 			description = """
@@ -579,10 +574,8 @@ public record SearchRequest(
 	}
 
 	/**
-	 * What to ask about matched values. The values are the ones the `nested`
-	 * clauses every result had to satisfy asked for - the same values a sort
-	 * or a facet on the field reads. A search that asked nothing of the
-	 * values matched all of them.
+	 * Requests matched values of `nested` object fields for each hit. Returns
+	 * the values that satisfied the query's `nested` clauses.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -592,9 +585,9 @@ public record SearchRequest(
 		values](https://exofind.dev/reference/search-api/#matched-values).""")
 	public record Matched(
 		/**
-		 * The object fields to answer for, keyed by the name a field has in
-		 * the definition of the index. An empty options object asks for the
-		 * defaults. A field that is not a `nested` object is refused.
+		 * Object fields to return matched values for, keyed by field name in
+		 * the index definition. An empty options object uses the defaults.
+		 * Targeting a field that is not a `nested` object returns an error.
 		 */
 		@Schema(
 			description = """
@@ -609,23 +602,24 @@ public record SearchRequest(
 	}
 
 	/**
-	 * What a hit stands for, when it is not a document.
+	 * Specifies an object field whose matched values return as individual hits
+	 * instead of full documents.
 	 *
-	 * With a path given, every matched value of that object field is a hit of
-	 * its own: the total counts values, facets count value hits, and the
-	 * cursors move through values. The query keeps its meaning - clauses on
-	 * the fields of the index still say which documents take part, and
-	 * `nested` clauses on the path still say which of their values matched.
+	 * <p>When a path is specified, each matched value of that object field
+	 * returns as an individual hit. Totals count matching nested values, facets
+	 * count value hits, and pagination cursors step through values. Clauses on
+	 * index fields select matching documents, and `nested` clauses on the path
+	 * select matching values.
 	 *
-	 * With `when` given as well, only the documents satisfying it answer as
-	 * their values and every other document answers as itself, so one page
-	 * holds both kinds of hit. The total then counts hits, a document that
-	 * expanded counting once per value, while the facets count documents.
+	 * <p>With `when` specified, only matching documents expand into value hits;
+	 * other matching documents return as document hits. The total counts hits,
+	 * counting expanded documents once per matching nested value, while facets
+	 * count matching documents.
 	 *
-	 * A search whose hits are values can not also ask for `matched` or
-	 * `highlight`, hold a `knn` clause, or sort by distance or by a field of
-	 * the index - it is ordered by score or by fields inside the path. With
-	 * `when` given it is ordered by score alone.
+	 * <p>Value hits cannot be combined with `matched` or `highlight`, cannot
+	 * include a `knn` clause, and cannot sort by distance or by index root
+	 * fields. Results are ordered by score or by fields inside the path. With
+	 * `when` specified, results are ordered by score alone.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -641,9 +635,9 @@ public record SearchRequest(
 		for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""")
 	public record Hits(
 		/**
-		 * Name of the object field whose matched values are the hits, as it
-		 * is called in the definition of the index. The field has to be an
-		 * object in `nested` mode.
+		 * Name of the object field whose matched values are the hits, as named
+		 * in the index definition. The field must be an object in `nested`
+		 * mode.
 		 */
 		@Schema(
 			description = """
@@ -656,10 +650,10 @@ public record SearchRequest(
 		String path,
 
 		/**
-		 * The fields of each value to bring back, named by their dotted
-		 * paths, left out for all of them. A name that is not inside the
-		 * object, or any name on an index that keeps no copy of its
-		 * documents, is refused.
+		 * Field paths inside the nested object to return with each value hit,
+		 * specified by dotted path. If omitted, returns all object fields.
+		 * Field paths not located inside the object or specified on an index
+		 * that does not store document source are rejected.
 		 */
 		@Schema(description = """
 			Dotted field paths inside the nested object to return in `value`, \
@@ -670,13 +664,13 @@ public record SearchRequest(
 		List<String> fields,
 
 		/**
-		 * The clauses a document has to satisfy to answer as its values,
-		 * left out for all of them. Only `field` and `nested` clauses may
-		 * sit here, and none of them may rank.
+		 * Clauses selecting which documents expand into value hits, defaulting
+		 * to all matching documents. Only `field` and `nested` clauses are
+		 * supported, and clauses must not score.
 		 *
-		 * A document satisfying these with no matching value under `path`
-		 * answers with nothing at all - it is neither expanded nor kept as a
-		 * document hit.
+		 * <p>A document that satisfies these clauses but contains no matching
+		 * values under `path` returns no hit, and is not returned as a document
+		 * hit.
 		 */
 		@Schema(description = """
 			Clauses deciding which documents expand into value hits; every \
@@ -691,14 +685,15 @@ public record SearchRequest(
 	}
 
 	/**
-	 * How the matched values of one field come back.
+	 * Configuration for returning matched values of a nested object field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "How the matched values of one nested object field come back.")
+	@Schema(description = "Configuration for returning matched values of a nested object field.")
 	public record MatchedField(
 		/**
-		 * How many values to bring back at most, between 1 and 100. Left out
-		 * for three. How many matched in all always comes back beside them.
+		 * Maximum number of matched values to return per hit, from 1 to 100.
+		 * Defaults to 3. The total count of matching values is returned
+		 * alongside them.
 		 */
 		@Schema(
 			description = """
@@ -711,10 +706,10 @@ public record SearchRequest(
 		Integer limit,
 
 		/**
-		 * The fields of each value to bring back, named by their dotted
-		 * paths, left out for all of them. A name that is not inside the
-		 * object, or any name on an index that keeps no copy of its
-		 * documents, is refused.
+		 * Field paths inside the nested object to include in each returned
+		 * value, specified by dotted path. If omitted, returns all object
+		 * fields. Specifying fields outside the object or on an index that does
+		 * not store document source is rejected.
 		 */
 		@Schema(description = """
 			Field paths inside the nested object to include in each returned \
@@ -728,13 +723,13 @@ public record SearchRequest(
 	}
 
 	/**
-	 * How to build the fragments of one field.
+	 * Configuration for highlighting text fragments in a single field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "How the fragments of one highlighted field are built.")
+	@Schema(description = "Configuration for highlighting text fragments in a single field.")
 	public record HighlightField(
 		/**
-		 * How many fragments to return at most, left out for three.
+		 * Maximum number of highlighted fragments to return. Defaults to 3.
 		 */
 		@Schema(
 			description = "Maximum number of fragments to return.",
@@ -743,9 +738,9 @@ public record SearchRequest(
 		Integer fragments,
 
 		/**
-		 * How long a fragment aims to be in characters, left out for 150.
-		 * Text shorter than this comes back as a single fragment holding all
-		 * of it.
+		 * Target character length per fragment, defaulting to 150. Fragments
+		 * break on sentence boundaries, and text shorter than this returns as a
+		 * single fragment.
 		 */
 		@Schema(
 			description = """
@@ -759,8 +754,8 @@ public record SearchRequest(
 		Integer length,
 
 		/**
-		 * What to put in front of each match, left out for {@code <em>}. May
-		 * be empty.
+		 * Prefix tag inserted before highlighted terms, defaulting to
+		 * {@code <em>}. May be empty.
 		 */
 		@Schema(
 			description = """
@@ -770,8 +765,8 @@ public record SearchRequest(
 		String pre,
 
 		/**
-		 * What to put after each match, left out for {@code </em>}. May be
-		 * empty.
+		 * Postfix tag inserted after highlighted terms, defaulting to
+		 * {@code </em>}. May be empty.
 		 */
 		@Schema(
 			description = """

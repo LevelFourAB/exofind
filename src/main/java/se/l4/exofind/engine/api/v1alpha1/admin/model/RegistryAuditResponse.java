@@ -9,16 +9,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import se.l4.exofind.engine.index.registry.RegistryAuditReport;
 
 /**
- * The registry compared with what the storage holds. Reported by the engine
+ * The registry compared with what remote storage holds. Reported by the engine
  * and never accepted as input.
  *
  * @param registry
- *   whether the registry object itself could be read
+ *   the state of the registry object
  * @param indexes
- *   every index the registry or the storage names, ordered by name
+ *   every index named by the registry or found in storage, ordered by name
  * @param unusable
- *   prefixes in the storage whose names no index or generation may carry, as
- *   {@code index} or {@code index/generation}. A repair never registers these
+ *   storage prefixes whose names no index or generation may carry, as
+ *   {@code index} or {@code index/generation}; a repair never registers these
  */
 @Schema(description = """
 	The registry compared with what remote storage holds. Reported by the \
@@ -26,18 +26,19 @@ import se.l4.exofind.engine.index.registry.RegistryAuditReport;
 	[Audit](https://exofind.dev/reference/admin-api/#audit).""")
 public record RegistryAuditResponse(
 	@Schema(description = """
-		The state of the registry object. `PRESENT`: it was read. `ABSENT`: \
-		there is no registry object. `CORRUPT`: its contents could not be \
-		parsed.""")
+		The state of the registry object: `PRESENT`, `ABSENT` (no registry \
+		object), or `CORRUPT` (contents cannot be parsed).""")
 	RegistryAuditReport.Registry registry,
 
 	@Schema(description = """
-		Every index the registry names or storage holds, ordered by name.""")
+		Every index named by the registry or found in storage, ordered by \
+		name.""")
 	List<AuditedIndex> indexes,
 
 	@Schema(description = """
-		Storage prefixes whose names no index or generation may carry, written \
-		as `index` or `index/generation`. A repair never registers these.""")
+		Storage prefixes whose names no index or generation may carry (as \
+		`index` or `index/generation`). A repair never registers these \
+		prefixes.""")
 	List<String> unusable
 ) {
 	/**
@@ -46,13 +47,13 @@ public record RegistryAuditResponse(
 	 * @param registered
 	 *   whether the registry has an entry for the index
 	 * @param live
-	 *   the generation the index answers for, absent when it answers for none
-	 *   or is not registered
+	 *   the generation the index answers for, omitted when unregistered or when
+	 *   no generation is live
 	 * @param proposedLive
-	 *   the generation a repair asked to promote would make live, absent when
-	 *   it would promote none
+	 *   the generation that a repair with promoteNewest would make live,
+	 *   omitted when none would be promoted
 	 * @param generations
-	 *   every generation either side names, ordered by name
+	 *   a list of generations found for the index, ordered by name
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = "One index as the registry and storage each describe it.")
@@ -60,26 +61,28 @@ public record RegistryAuditResponse(
 		@Schema(description = "Name of the index.", examples = "products")
 		String name,
 
-		@Schema(description = "Whether the registry has an entry for the index.")
+		@Schema(description = """
+			A boolean indicating whether the registry has an entry for the \
+			index.""")
 		boolean registered,
 
 		@Schema(
 			description = """
-				The generation the index answers for. Omitted when it is \
-				unregistered or answers for none.""",
+				The generation the index answers for. Omitted when \
+				unregistered or when no generation is live.""",
 			examples = "2"
 		)
 		String live,
 
 		@Schema(
 			description = """
-				The generation a repair with `promoteNewest` would make live. \
-				Omitted when none would be promoted.""",
+				The generation that a repair with `promoteNewest` would make \
+				live. Omitted when none would be promoted.""",
 			examples = "1"
 		)
 		String proposedLive,
 
-		@Schema(description = "Every generation either side names, ordered by name.")
+		@Schema(description = "A list of generations found for the index, ordered by name.")
 		List<AuditedGeneration> generations
 	) {
 	}
@@ -90,22 +93,22 @@ public record RegistryAuditResponse(
 	 * @param registered
 	 *   whether the registry names the generation
 	 * @param stored
-	 *   what the storage holds under it
+	 *   what storage holds under it
 	 */
 	@Schema(description = "One generation as the registry and storage each describe it.")
 	public record AuditedGeneration(
-		@Schema(description = "Name of the generation.", examples = "1")
+		@Schema(description = "The name of the generation.", examples = "1")
 		String name,
 
-		@Schema(description = "Whether the registry names the generation.")
+		@Schema(description = "A boolean indicating whether the registry names the generation.")
 		boolean registered,
 
 		@Schema(description = """
-			What storage holds under it. `SYNCED`: a manifest is there, so \
-			nodes can pull and serve this generation. `INCOMPLETE`: a prefix \
-			without a manifest, such as an unfinished push or leftovers from a \
-			deleted generation. `MISSING`: the generation is registered but \
-			nothing exists in storage.""")
+			What storage holds under it. `SYNCED`: storage holds a manifest; \
+			nodes can pull and serve this generation. `INCOMPLETE`: storage \
+			holds a prefix without a manifest (such as an unfinished push or \
+			leftovers from a deleted generation). `MISSING`: the generation is \
+			registered, but nothing exists in storage.""")
 		RegistryAuditReport.Stored stored
 	) {
 	}

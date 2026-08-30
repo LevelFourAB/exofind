@@ -31,22 +31,21 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 /**
- * Filling a new generation by reindexing from the one it replaces, without
- * the documents leaving the engine.
+ * Populates a new generation by copying documents from an existing generation
+ * of the same index inside the engine.
  *
- * A reindex is a job rather than a request: starting one answers at once, the
- * work runs on the node writing the index, and where it stands is read back
- * from a record any node answers the same way - status is served wherever it
- * lands. An index has at most one job at a time, and a finished job stays
- * readable until the next one replaces it.
+ * <p>Reindexing runs as an asynchronous background job on the node holding the
+ * index. An index runs at most one reindex job at a time; a finished job record
+ * remains readable until a new job replaces it.
  *
- * Starting and cancelling run on the indexer, like every change to an index -
- * the job reads and writes both generations, which only their writer holds
- * open for writing.
+ * <p>Status requests are served from durable job records by any node. Starting
+ * and cancelling requests run on the node holding the index.
  */
 @Tag(
 	name = "Reindexes",
-	description = "Fills a new generation from an existing one, inside the engine.",
+	description = """
+		Populates a new generation by copying documents from an existing \
+		generation inside the engine.""",
 	externalDocs = @ExternalDocumentation(
 		description = "Reindex reference",
 		url = "https://exofind.dev/reference/admin-api/#reindex"
@@ -65,18 +64,22 @@ public class ReindexResource {
 	}
 
 	/**
-	 * Fill a generation from another generation of its index. The target has
-	 * to be a generation by name, empty, and not the one the index answers
-	 * for; the source defaults to the one that is.
+	 * Starts a reindex job to populate a generation from another generation of
+	 * the same index.
 	 *
-	 * <p>The job promotes the target itself once it has caught up, unless the
-	 * request says {@code "promote": "manual"} - the job then stops in the
-	 * ready phase and {@code actions/promote} on the target finishes it.
+	 * <p><p>The target generation must be specified by name, must be empty, and
+	 * must not be live. The source generation defaults to the live generation.
+	 *
+	 * <p><p>The job promotes the target generation once caught up unless
+	 * configured with {@code "promote": "manual"}. When manual, the job pauses
+	 * in the ready phase until {@code actions/promote} on the target completes
+	 * it.
 	 *
 	 * @param name
 	 *   the generation to fill, as {@code index@generation}
 	 * @param body
-	 *   what to read from and who promotes, or nothing for the defaults
+	 *   configuration specifying the source generation and promotion mode, or
+	 *   omitted for defaults
 	 * @return
 	 */
 	@POST
@@ -88,67 +91,71 @@ public class ReindexResource {
 		operationId = "startReindex",
 		summary = "Start a reindex job",
 		description = """
-			Starts a job that fills the target generation by copying documents \
-			from another generation of the same index inside the engine, \
-			without the documents leaving it. The request answers at once with \
-			the job record; the work runs in the background on the node \
-			holding the index.
+			Starts a reindex job that populates a new generation by copying \
+			documents from an existing generation of the same index inside the \
+			engine. The request returns immediately with the job record; the \
+			job runs in the background on the node holding the index.
 
-			The target must name a generation, already exist, be empty, and \
-			not be the live one. The source must have a primary key and keep \
-			document sources, and the primary keys of source and target must \
-			share a field name and type. Anything else answers `400`.
+			The target must specify a generation by name, must already exist, \
+			must be empty, and must not be the live generation. The source \
+			generation must have a primary key and keep document sources, and \
+			the primary keys of source and target must share a field name and \
+			type. If the target does not meet these requirements, the server \
+			returns `400`.
 
-			The job promotes the target itself once it has caught up, unless \
-			the body says `"promote": "manual"` - the job then stops in the \
-			`ready` phase, keeping the target caught up, until \
-			`actions/promote` on the target finishes it.
+			The job automatically promotes the target generation once it \
+			catches up with changes, unless the request specifies `"promote": \
+			"manual"`. With manual promotion, the job pauses in the `ready` \
+			phase and keeps the target caught up until `actions/promote` on \
+			the target finishes the job.
 
-			An index runs at most one job at a time, and a finished job's \
-			record stays readable until a new job replaces it. Requires the \
-			`indexes.reindex` permission."""
+			An index can run at most one reindex job at a time. A finished \
+			job's record remains readable until a new job replaces it. \
+			Requires the `indexes.reindex` permission."""
 	)
 	@APIResponse(
 		responseCode = "202",
-		description = "The job was started and runs in the background.",
+		description = "A reindex job was started and runs asynchronously.",
 		content = @Content(schema = @Schema(implementation = ReindexInfo.class))
 	)
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The target does not name a generation, does not exist, is not \
-			empty, is the live generation, or the source and target primary \
-			keys do not match.""",
+			The target does not specify a generation by name, does not exist, \
+			is not empty, is the live generation, or the source and target \
+			primary keys do not match.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `indexes.reindex` permission.",
+		description = "The credential does not have the `indexes.reindex` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No index or generation has this name, or the key has no grant \
-			covering it.""",
+			The specified index or generation does not exist, or the caller \
+			key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			A job is already running for this index (`reindex:in_progress`), \
-			the target is locked by an existing job (`reindex:target_busy`), \
+			A reindex job is already in progress (`reindex:in_progress`), the \
+			target generation is busy being reindexed (`reindex:target_busy`), \
 			or no node is available to write the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = "The index writer did not respond to the forwarded request.",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public Response reindex(
@@ -173,14 +180,14 @@ public class ReindexResource {
 	}
 
 	/**
-	 * Get where the reindex of an index stands, finished ones included.
+	 * Returns the status of a reindex job on an index, including finished jobs.
 	 *
-	 * <p>Answered from the job's record wherever the request lands, so every
-	 * node gives the same checkpoint-granular answer.
+	 * <p>Served from the durable job record, so any node returns the same
+	 * response.
 	 *
 	 * @param name
-	 *   the index, or one generation of it - the job belongs to the index
-	 *   either way
+	 *   the index, or one generation of it; the job belongs to the index either
+	 *   way
 	 * @return
 	 */
 	@GET
@@ -190,12 +197,13 @@ public class ReindexResource {
 		operationId = "getReindex",
 		summary = "Get reindex job status",
 		description = """
-			Returns where the reindex of an index stands, finished jobs \
-			included. Answered from the job's durable record wherever the \
-			request lands, so every node gives the same answer.
+			Returns the status of a reindex job on an index, including \
+			finished jobs. Served from the durable job record, so any node can \
+			serve the request and returns the same response.
 
-			If no job exists for the index, answers `404` with \
-			`reindex:not_found`. Requires the `indexes.read` permission."""
+			If no job exists for the index, the server returns `404` with the \
+			error code `reindex:not_found`. Requires the `indexes.read` \
+			permission."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -204,26 +212,26 @@ public class ReindexResource {
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `indexes.read` permission.",
+		description = "The credential does not have the `indexes.read` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No job exists for this index (`reindex:not_found`), no index has \
-			this name, or the key has no grant covering it.""",
+			No job exists for this index (`reindex:not_found`), the index does \
+			not exist, or the caller key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ReindexInfo status(
 		@Parameter(
 			description = """
-				The index, or one generation of it - the job belongs to the \
-				index either way.""",
+				The index, or one generation of it. The job belongs to the \
+				index in either case.""",
 			example = "products"
 		)
 		@PathParam("name") String name
@@ -236,9 +244,10 @@ public class ReindexResource {
 	}
 
 	/**
-	 * Stop the reindex of an index. Tracking on the source ends and the
-	 * partially filled target is left as it is, for a normal generation
-	 * delete. Cancelling a job that already finished changes nothing.
+	 * Cancels an in-progress reindex job.
+	 *
+	 * <p>Leaves the partially populated target generation in place. Cancelling
+	 * a finished job changes nothing.
 	 *
 	 * @param name
 	 *   the index, or one generation of it
@@ -253,34 +262,33 @@ public class ReindexResource {
 		summary = "Cancel a reindex job",
 		description = """
 			Stops an in-progress job. Tracking on the source ends and the \
-			partially filled target generation is left in place, to be removed \
-			with `DELETE /v1alpha1/admin/indexes/{target}` like any other \
-			generation. Cancelling a job that already finished changes \
-			nothing.
+			partially populated target generation is left in place, to be \
+			removed with `DELETE /v1alpha1/admin/indexes/{target}`. Cancelling \
+			a finished job changes nothing.
 
-			Runs on the node that writes the index. Requires the \
-			`indexes.reindex` permission."""
+			Runs on the node holding the index. Requires the `indexes.reindex` \
+			permission."""
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "The job record as it stands after cancelling.",
+		description = "The job record as it stands after cancellation.",
 		content = @Content(schema = @Schema(implementation = ReindexInfo.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `indexes.reindex` permission.",
+		description = "The credential does not have the `indexes.reindex` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No job exists for this index (`reindex:not_found`), no index has \
-			this name, or the key has no grant covering it.""",
+			No job exists for this index (`reindex:not_found`), the index does \
+			not exist, or the caller key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -290,7 +298,9 @@ public class ReindexResource {
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = "The index writer did not respond to the forwarded request.",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ReindexInfo cancel(
@@ -304,11 +314,9 @@ public class ReindexResource {
 	}
 
 	/**
-	 * List every reindex there is a record of, across the deployment,
-	 * finished ones included.
+	 * Lists every reindex job across the deployment, including finished jobs.
 	 *
-	 * <p>A job on an index no grant of the caller's key covers is left out
-	 * rather than refused, the way the index listing leaves such indexes out.
+	 * <p>Jobs on indexes where the caller lacks permissions are omitted.
 	 *
 	 * @return
 	 */
@@ -319,27 +327,26 @@ public class ReindexResource {
 		operationId = "listReindexes",
 		summary = "List reindex jobs",
 		description = """
-			Lists every reindex job the deployment has a record of, finished \
-			ones included, ordered by index name. Served from the durable job \
-			records, so any node answers the same way.
+			Lists every reindex job across the deployment, including finished \
+			jobs, ordered by index name. Served from durable job records, so \
+			any node can serve the request and returns the same response.
 
-			A job on an index no grant of the calling key covers is left out \
-			rather than refused, the way the index listing leaves such indexes \
-			out. Requires the `indexes.read` permission."""
+			Jobs on indexes where the key lacks permissions are omitted rather \
+			than refused. Requires the `indexes.read` permission."""
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "The job records the key can see, ordered by index name.",
+		description = "The job records visible to the key, ordered by index name.",
 		content = @Content(schema = @Schema(implementation = ReindexListResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
+		description = "The request carries no credential accepted by this node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "403",
-		description = "The API key does not have the `indexes.read` permission.",
+		description = "The credential does not have the `indexes.read` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ReindexListResponse list() {

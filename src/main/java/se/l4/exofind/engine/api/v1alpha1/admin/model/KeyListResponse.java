@@ -5,42 +5,40 @@ import java.util.List;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * The keys of the deployment, and how the node answering is configured to use
- * them.
+ * The deployment API keys and the local key configuration of the answering
+ * node.
  *
- * <p>The keys are shared by every node; the two fields below it are this node's
- * own configuration, so two nodes can answer the same list differently.
+ * <p>Deployment keys are shared across all nodes. The remaining fields reflect
+ * the local configuration of the node answering the request.
  *
  * @param keys
- *   the keys, ordered by id
+ *   deployment keys, ordered by ID
  * @param rootKeyConfigured
- *   whether this node accepts a root key besides the ones listed. The key
- *   itself is never answered with
+ *   whether this node has a root key configured
  * @param anonymousKey
- *   id of the key this node answers requests carrying no credential as, absent
- *   when it refuses them
+ *   ID of the key used for unauthenticated requests, or absent if
+ *   unauthenticated requests are rejected
  */
 @Schema(description = """
-	The keys of the deployment, and how the answering node is configured to use \
-	them. The keys are shared by every node, while the other two fields are \
-	this node's own configuration - so two nodes can answer the same listing \
-	differently.""")
+	Deployment API keys and node key configuration. The keys are shared across \
+	all nodes. The remaining fields reflect the local configuration of the \
+	node answering the request.""")
 public record KeyListResponse(
-	@Schema(description = "The deployment keys, ordered by ID.")
+	@Schema(description = "Deployment keys shared across all nodes, ordered by ID.")
 	List<KeyInfo> keys,
 
 	@Schema(description = """
-		Whether this node accepts a root key besides the ones listed. The root \
-		key is configured per node with `EXOFIND_AUTH_ROOT_KEY`, is not kept \
-		in key storage, and is never answered with.""")
+		Whether this node has a root key configured with \
+		`EXOFIND_AUTH_ROOT_KEY`. The root key is not stored in key storage and \
+		cannot be listed or revoked through the API.""")
 	boolean rootKeyConfigured,
 
 	@Schema(
 		description = """
-			ID of the key this node answers credential-less requests as, set \
-			with `EXOFIND_AUTH_ANONYMOUS_KEY`. Omitted when the node refuses \
-			such requests. Such a key may hold no permission other than \
-			`search`.""",
+			ID of the key used for unauthenticated requests, configured with \
+			`EXOFIND_AUTH_ANONYMOUS_KEY`. Omitted when the node rejects \
+			unauthenticated requests. An anonymous key cannot contain any \
+			permission other than `search`.""",
 		examples = "fe3747c2761ef89d"
 	)
 	String anonymousKey

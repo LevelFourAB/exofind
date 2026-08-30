@@ -7,44 +7,41 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * The indexes the deployment holds that the caller may see.
+ * The indexes held across the deployment that the caller has permission to
+ * view.
  *
- * Definitions and status are not listed. They belong to a generation and
- * require it to be opened, which for a node with many indexes would mean
- * opening all of them to answer a listing, so they are fetched per index
- * instead. Which generations exist comes from the registry and costs nothing,
- * so it is listed here.
+ * <p>Definitions and status are omitted and must be fetched per index.
  *
  * @param indexes
- *   the indexes, ordered by name
+ *   indexes visible to the caller, ordered by name
  */
 @Schema(description = """
-	The indexes the deployment holds. Definitions and status are not listed - \
-	they belong to a generation and require it to be opened - so read one \
-	index to get them.""")
+	The indexes held across the deployment. Definitions and status are \
+	omitted; request a specific index to retrieve them.""")
 public record IndexListResponse(
-	@Schema(description = "The indexes the key may see, ordered by name.")
+	@Schema(description = "The indexes visible to the key, ordered by name.")
 	List<IndexSummary> indexes
 ) {
 	/**
+	 * Summary of an index and its generations.
+	 *
 	 * @param name
-	 *   the name of the index
+	 *   name of the index
 	 * @param generation
-	 *   the generation the index answers from, absent for one that answers from
-	 *   none
+	 *   live generation of the index, or omitted if none is live
 	 * @param generations
-	 *   every generation of the index, ordered by name
+	 *   all generations of the index, ordered by name
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One index and the generations it holds.")
+	@Schema(description = "An index and the generations it holds.")
 	public record IndexSummary(
-		@Schema(description = "Name of the index.", examples = "products")
+		@Schema(description = "The name of the index.", examples = "products")
 		String name,
 
 		@Schema(
 			description = """
-				The generation the index answers from. Omitted for an index \
-				that answers from none.""",
+				The generation the index answers from. Omitted when no \
+				generation is live.""",
 			examples = "2"
 		)
 		String generation,

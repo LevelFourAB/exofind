@@ -8,12 +8,12 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * One step in the order results come back in, as it is written on the wire.
+ * Specifies the ordering of search results.
  *
- * The same tagged union trick as {@link Clause}: no {@code type} means a
- * field sort, as it is the only kind carrying {@code field}. Leaving
- * {@code order} out takes the engine's default for the kind - score
- * descending, field ascending.
+ * <p>Structured as a tagged union like {@link Clause}: an omitted {@code type}
+ * defaults to a field sort, as it is the only kind containing {@code field}. If
+ * {@code order} is omitted, score sorts default to descending and field sorts
+ * default to ascending.
  *
  * <pre>
  * { "type": "score" }
@@ -39,7 +39,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	See [Sorts](https://exofind.dev/reference/search-api/#sorts).""")
 public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	/**
-	 * Which way values are ordered.
+	 * Direction values are ordered in.
 	 */
 	@Schema(description = "Direction values are ordered in: `asc` or `desc`.")
 	enum Order {
@@ -51,7 +51,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	}
 
 	/**
-	 * Order by the value of a field, which has to be defined for sorting.
+	 * Sorts by field value. The target field must have sorting enabled.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -65,7 +65,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	)
 	record Field(
 		/**
-		 * Name of the field, as it is called in the definition of the index.
+		 * Target field, as named in the index definition.
 		 */
 		@Schema(
 			description = "Target field, as named in the index definition.",
@@ -80,7 +80,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	}
 
 	/**
-	 * Order by how well documents match.
+	 * Sorts by document relevance score.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(name = "ScoreSort", description = "Sorts by document relevance score.")
@@ -91,8 +91,8 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	}
 
 	/**
-	 * Order by how far a geo point field's value is from an origin, nearest
-	 * first. There is no farthest first, so this kind carries no order.
+	 * Sorts by distance from the specified geographic coordinate, nearest
+	 * first. Accepts no order property.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -105,7 +105,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	)
 	record Distance(
 		/**
-		 * Name of the field, as it is called in the definition of the index.
+		 * Target geopoint field, as named in the index definition.
 		 */
 		@Schema(
 			description = "Target geopoint field, as named in the index definition.",
@@ -115,8 +115,8 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		String field,
 
 		/**
-		 * Degrees north of the equator the origin sits at, {@code -90} to
-		 * {@code 90}.
+		 * Latitude of the origin in degrees north of the equator, {@code -90}
+		 * to {@code 90}.
 		 */
 		@Schema(
 			description = "Latitude of the origin, in degrees.",
@@ -128,8 +128,8 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		Double lat,
 
 		/**
-		 * Degrees east of the prime meridian the origin sits at, {@code -180}
-		 * to {@code 180}.
+		 * Longitude of the origin in degrees east of the prime meridian,
+		 * {@code -180} to {@code 180}.
 		 */
 		@Schema(
 			description = "Longitude of the origin, in degrees.",

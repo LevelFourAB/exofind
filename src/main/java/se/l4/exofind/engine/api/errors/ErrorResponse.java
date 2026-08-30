@@ -10,15 +10,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 /**
  * The body returned for every failed request.
  *
- * The top level describes what went wrong with the request as a whole, while
- * {@code errors} carries the individual problems found in the request - a
- * definition with two bad fields reports both, so a caller does not have to
- * fix them one request at a time.
+ * <p>The top level describes what went wrong with the request as a whole, while
+ * {@code errors} carries the individual problems found in the request. For
+ * example, a definition with two bad fields reports both, so a caller can fix
+ * them in one pass.
  *
  * @param code
- *   machine readable code for the failure
+ *   machine-readable code for the failure
  * @param message
- *   human readable description of the failure
+ *   human-readable description of the failure
  * @param errors
  *   the individual problems, when the failure has any
  */
@@ -35,10 +35,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record ErrorResponse(
 	@Schema(
 		description = """
-			Identifies the failure type. For validation failures this is \
-			`validation` and the individual problems are listed in `errors`; \
-			for every other failure it matches the `code` of the single entry \
-			in `errors`.""",
+			Identifies the failure type. For validation failures, this is \
+			`validation` and the individual problems are listed in `errors`. \
+			For all other failures, this matches the `code` of the single \
+			entry in `errors`.""",
 		examples = "validation"
 	)
 	String code,
@@ -46,8 +46,8 @@ public record ErrorResponse(
 	@Schema(
 		description = """
 			Human-readable message for log output. Match on `code` rather than \
-			on `message`. When a validation failure holds one problem this is \
-			that problem's message; when it holds several it reads \
+			on `message`. When a validation failure contains one problem, this \
+			is that problem's message. When it contains several, it reads \
 			`Request contains N errors`.""",
 		examples = "Request contains 2 errors"
 	)
@@ -55,15 +55,15 @@ public record ErrorResponse(
 
 	@Schema(description = """
 		All problems found in the request. A validation failure reports every \
-		field it found a problem with, so a caller fixes them in one pass \
-		rather than one request at a time.""")
+		field with a problem, so a caller can fix them in one pass rather than \
+		one request at a time.""")
 	List<ErrorDetail> errors
 ) {
 	/**
 	 * @param code
-	 *   machine readable code for this problem
+	 *   machine-readable code for this problem
 	 * @param message
-	 *   human readable description of this problem
+	 *   human-readable description of this problem
 	 * @param path
 	 *   where in the request the problem is, such as {@code fields.title}, or
 	 *   {@code null} when it applies to the request as a whole

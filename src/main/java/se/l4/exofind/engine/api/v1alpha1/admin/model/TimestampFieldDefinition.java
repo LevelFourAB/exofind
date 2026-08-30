@@ -5,14 +5,15 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Definition of a field holding a point in time.
+ * Definition of a field holding an instant in time formatted as an ISO 8601
+ * date-time string with a timezone offset (such as {@code Z} or
+ * {@code +02:00}).
  *
- * A value is an ISO 8601 date and time with an offset - {@code Z} or one like
- * {@code +02:00} - and is filtered and ordered as the instant it names, at
- * millisecond precision. The offset only says where the clock was read, so
- * {@code 2024-05-01T12:00:00+02:00} and {@code 2024-05-01T10:00:00Z} are the
- * same value; what was given is what results return. A value without an
- * offset is refused, as it names no instant at all.
+ * <p>Timestamps are stored and compared at millisecond precision. Values
+ * representing the same instant (such as {@code 2024-05-01T12:00:00+02:00} and
+ * {@code 2024-05-01T10:00:00Z}) are identical for filtering and sorting. Search
+ * results return the original string format provided during ingestion.
+ * Documents containing timestamps without timezone offsets are rejected.
  *
  * <pre>
  * {
@@ -24,11 +25,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	An instant in time, written as an ISO 8601 date-time with a timezone \
-	offset such as `Z` or `+02:00`. Stored and compared at millisecond \
-	precision, so values naming the same instant are identical for filtering \
-	and sorting; results return the string as it was indexed. A value without \
-	an offset is rejected, as it names no instant at all.""")
+	Represents an instant in time formatted as an ISO 8601 date-time string \
+	with a timezone offset (for example, `Z` or `+02:00`). Timestamps are \
+	stored and compared at millisecond precision. Values representing the same \
+	instant are identical for filtering and sorting; search results return the \
+	original string format provided during ingestion. Documents containing \
+	timestamps without timezone offsets are rejected.""")
 public record TimestampFieldDefinition(
 	/**
 	 * What the field is for, expanded into the usages that serve it before the

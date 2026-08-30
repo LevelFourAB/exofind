@@ -46,21 +46,17 @@ import jakarta.ws.rs.core.MediaType;
 /**
  * Searching the indexes on this node.
  *
- * A search runs on whichever node receives it, against the state that node
- * has - which for a node that is not the indexer is whatever it last pulled.
- * There is nothing here that has to reach the indexer, so nothing is
- * forwarded there.
+ * <p>A search runs on whichever node receives it, using the data that the node
+ * has pulled. Requests are not forwarded to an index writer.
  *
- * How deep offset paging may reach is capped, because skipping results costs
- * as much as ranking them - a request past the cap is refused with its own
- * error code rather than answered slowly. Following `next`/`previous` is the
- * way past the cap: those cursors carry the hit a window ended at rather than
- * a count, so continuing from one costs the same at any depth.
+ * <p>Offset pagination depth is capped because skipping results costs as much
+ * as ranking them. Following `next`/`previous` cursors avoids depth caps
+ * because those cursors carry the hit where a window ended rather than a count,
+ * costing the same at any depth.
  *
- * A search that rescores is the exception. Inside the window a second pass
- * reorders, no key names a position, and the two cursors count results instead
- * - bounded by the window, which is far shallower than the cap. The cursor
- * leaving the window carries a hit again.
+ * <p>Searches with rescoring are an exception. Inside the rescore window, a
+ * second pass reorders results and cursors count results instead. The cursor
+ * moving past the window carries a hit position again.
  */
 @Tag(
 	name = "Search",
@@ -104,7 +100,8 @@ public class SearchResource {
 	 * Search an index.
 	 *
 	 * @param body
-	 *   what to search for, all of it optional - no body matches everything
+	 *   what to search for; all properties are optional, and omitting the body
+	 *   matches all documents
 	 */
 	@POST
 	@Consumes(MediaType.APPLICATION_JSON)
@@ -132,18 +129,17 @@ public class SearchResource {
 			The request is not a valid search. The `code` property names the \
 			reason, such as `search:filter:scores` when a filter clause \
 			affects the score, `index:query:usage_not_enabled` when a field is \
-			used in a way the definition does not enable, or \
-			`search:page:too_deep` when `offset` reaches past \
-			`EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""",
+			not configured for the requested usage, or `search:page:too_deep` \
+			when `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "401",
 		description = """
 			The request carries no credential this node accepts. Absent, \
-			malformed, unknown and lapsed keys all answer this, so a refusal \
-			cannot be used to find out which keys exist. The response carries \
-			`WWW-Authenticate: Bearer`.""",
+			malformed, unknown, and lapsed keys all return this status, so a \
+			refusal cannot be used to find out which keys exist. The response \
+			carries `WWW-Authenticate: Bearer`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -154,15 +150,15 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No index has this name, or the key has no grant covering it - an \
-			index a key was granted nothing on is answered as though it did \
-			not exist.""",
+			The index does not exist, or the key has no permissions on it. An \
+			index on which a key has no permissions returns this status as \
+			though it did not exist.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The index exists but answers for none of its generations \
+			The index currently has no live generation \
 			(`index:no_live_generation`). Promote a generation and send the \
 			request again.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
@@ -170,7 +166,7 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "503",
 		description = """
-			The search raced the index being closed to free local resources \
+			The request raced the index being closed to free local resources \
 			(`index:closed`). Sending the same request again reopens it.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
@@ -282,17 +278,17 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No index has this name, or the key has no grant covering it. Also \
-			when the index holds no document under `key` \
+			The index does not exist, or the key has no permissions on it. \
+			Also returned when no document exists under `key` \
 			(`index:explain:document_not_found`), or that document has no \
-			value of the `hits` path at `index` \
+			value along the `hits` path at `index` \
 			(`index:explain:value_not_found`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The index exists but answers for none of its generations \
+			The index currently has no live generation \
 			(`index:no_live_generation`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
@@ -300,7 +296,7 @@ public class SearchResource {
 		responseCode = "503",
 		description = """
 			The request raced the index being closed to free local resources \
-			(`index:closed`). Sending it again reopens the index.""",
+			(`index:closed`). Sending the same request again reopens it.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ExplainResponse explain(
@@ -314,11 +310,10 @@ public class SearchResource {
 		@PathParam("name") String name,
 		@Parameter(
 			description = """
-				Primary key of the document, read as the type of the key field \
-				- so a numeric key is written the way a document writes it. \
-				For a search whose `hits` names an object field, the key of \
-				the document holding the value, which is what such a hit \
-				reports as its `id`.""",
+				Primary key of the document, read as the type of the key \
+				field. For a search whose `hits` names an object field, \
+				provide the key of the document holding the value, which is \
+				what such a hit reports as its `id`.""",
 			example = "9781234567890",
 			required = true
 		)

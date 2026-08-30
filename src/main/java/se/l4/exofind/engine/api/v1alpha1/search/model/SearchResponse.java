@@ -13,21 +13,20 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import se.l4.exofind.engine.index.Document;
 
 /**
- * What a search found, as it is answered over the API.
+ * Response returned by a search query.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response).")
 public record SearchResponse(
 	/**
-	 * The results asked for, in the order they were asked for.
+	 * List of matching hits in the requested sort order.
 	 */
 	@Schema(description = "The matching hits, in the order that `sort` asked for.")
 	List<Hit> hits,
 
 	/**
-	 * How many hits there are in total, counted in whatever the search
-	 * answers with - so a document that answered with several of its values
-	 * counts once per value.
+	 * Total number of matching hits, counted in the returned hit units: a
+	 * document expanded into nested values counts once per value.
 	 */
 	@Schema(description = """
 		How many hits matched in total, counted in whatever the search answers \
@@ -35,9 +34,9 @@ public record SearchResponse(
 	Total total,
 
 	/**
-	 * How many documents matched, which is what the facets are counted in,
-	 * left out entirely when that is the same number as {@code total}. Only a
-	 * search whose `hits` names a `when` answers both.
+	 * Total count of matching documents, which facet counts aggregate. Present
+	 * only for a search whose `hits` specifies `when`; omitted when identical
+	 * to {@code total}.
 	 */
 	@Schema(description = """
 		How many documents matched, which is what the facets are counted in. \
@@ -49,9 +48,8 @@ public record SearchResponse(
 	Total documents,
 
 	/**
-	 * The counts per value the request asked for, keyed by the name of each
-	 * facet. Present whenever facets were asked for, and left out entirely
-	 * when they were not.
+	 * Map of facet names to facet results. Present when facets are requested;
+	 * omitted otherwise.
 	 */
 	@Schema(description = """
 		Facet results keyed by facet name. Omitted entirely when the request \
@@ -59,14 +57,14 @@ public record SearchResponse(
 	Map<String, Facet> facets,
 
 	/**
-	 * Where in the results this window sits and how to move from it.
+	 * Pagination state and navigation cursors for the current result window.
 	 */
 	@Schema(description = "Where in the results this window sits, and how to move from it.")
 	Page page,
 
 	/**
-	 * What the search let go of to find anything, left out entirely when it
-	 * found what was asked for.
+	 * Details of dropped terms when query relaxation was applied. Omitted if
+	 * the query was not relaxed.
 	 */
 	@Schema(description = """
 		What the search let go of to find anything. Omitted entirely when the \
@@ -75,9 +73,8 @@ public record SearchResponse(
 	Relaxed relaxed,
 
 	/**
-	 * How long answering took, measured around the whole call, in
-	 * milliseconds and fractions of one - a search that answers faster than a
-	 * millisecond still reports what it spent.
+	 * Total execution time for the search request in milliseconds, including
+	 * fractional milliseconds.
 	 */
 	@Schema(
 		description = """
@@ -88,9 +85,9 @@ public record SearchResponse(
 	double tookMs
 ) {
 	/**
-	 * A single result. Usually a document that matched; for a search whose
-	 * `hits` names an object field, one matched value of that field, with
-	 * `index` and `value` present and the document it belongs to under
+	 * A single search result. Represents either a matching document, or - when
+	 * `hits` specifies an object field - an individual matching value of that
+	 * field, with `index` and `value` present and the parent document under
 	 * `document`.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -101,11 +98,11 @@ public record SearchResponse(
 		`document`.""")
 	public record Hit(
 		/**
-		 * The primary key of the document, left out for an index that has no
-		 * primary key. A hit standing for a value carries the key of the
-		 * document holding it, so several hits share an `id` whenever several
-		 * values of one document matched - the identity of such a hit is `id`
-		 * together with `index`, and deduping by `id` alone is a mistake.
+		 * Primary key of the document, omitted on an index without a primary
+		 * key. A value hit carries the primary key of its parent document, so
+		 * multiple hits share an `id` when several values of one document
+		 * match. The identity of such a hit is `id` together with `index`, and
+		 * deduping by `id` alone is a mistake.
 		 */
 		@Schema(
 			description = """
@@ -120,9 +117,8 @@ public record SearchResponse(
 		Object id,
 
 		/**
-		 * The position of the value this hit stands for in the field's value
-		 * array as the document gave it, counted from zero. Present only when
-		 * the search asked for value hits.
+		 * Zero-based position of the value in the parent document array.
+		 * Present only on value hits.
 		 */
 		@Schema(description = """
 			Zero-based position of the value this hit stands for in the \
@@ -133,9 +129,9 @@ public record SearchResponse(
 		Integer index,
 
 		/**
-		 * What the value this hit stands for reads for the key its field
-		 * declares. Present only for a value hit on a field declaring a key,
-		 * on an index that keeps its documents.
+		 * Declared key value for the nested object value. Present only on value
+		 * hits for fields with a declared key, on indexes that store document
+		 * source.
 		 */
 		@Schema(description = """
 			What the value this hit stands for reads for the `key` its object \
@@ -146,10 +142,9 @@ public record SearchResponse(
 		String key,
 
 		/**
-		 * How well the hit matched, left out when the search computed no
-		 * scores rather than defaulted to something that looks like a value.
-		 * A hit standing for a value scores what its document scored plus
-		 * what the value itself scored under the `nested` clauses of its
+		 * Relevance score of the hit. Omitted when the search computes no
+		 * scores. A hit standing for a value scores what its document scored
+		 * plus what the value itself scored under the `nested` clauses of its
 		 * path.
 		 */
 		@Schema(
@@ -164,9 +159,9 @@ public record SearchResponse(
 		Float score,
 
 		/**
-		 * The value this hit stands for, as it was given. Present only when
-		 * the search asked for value hits, and left out on an index that
-		 * keeps no copy of its documents.
+		 * The matched nested value object. Present only when the search
+		 * requests value hits, and omitted on an index that does not retain
+		 * document source copies.
 		 */
 		/*
 		 * Typed as a free-form object rather than by the engine's Document,
@@ -178,212 +173,204 @@ public record SearchResponse(
 			type = SchemaType.OBJECT,
 			implementation = Object.class,
 			description = """
-				The matched nested value, as it was indexed, keyed by field \
-				name. Present only when the search asked for value hits, and \
-				omitted on an index whose `source` is `none`."""
+				The matched nested value object, keyed by field name. Present \
+				only when the search requests value hits, and omitted on an \
+				index whose `source` is `none`."""
 		)
 		@JsonSerialize(using = DocumentSerializer.class)
 		Document value,
 
 		/**
-		 * The fields that were asked for, as they were given. A field with
-		 * several values is an array, and a locale specific field is an
-		 * object keyed by locale tag. For a hit standing for a value, the
-		 * fields of the document holding it.
+		 * The fields requested by the search, shaped as indexed. A field with
+		 * multiple values is an array, and a locale-specific field is an object
+		 * keyed by locale tag. For a value hit, returns the fields of the
+		 * parent document.
 		 */
 		@Schema(
 			type = SchemaType.OBJECT,
 			implementation = Object.class,
 			description = """
-				The fields the request asked for, keyed by field name and \
-				shaped as they were indexed. A field declared `multiple` is an \
-				array, and a locale-specific field is an object holding the \
-				single variant read for the query locale. For a value hit, the \
-				fields of the document holding the value."""
+				Selected fields of the document per the search request \
+				`fields` property, keyed by field name and shaped as indexed. \
+				A field declared `multiple` is an array, and a locale-specific \
+				field is an object holding the single variant read for the \
+				query locale. For a value hit, returns the fields of the \
+				parent document."""
 		)
 		@JsonSerialize(using = DocumentSerializer.class)
 		Document document,
 
 		/**
-		 * The highlighted fragments of the fields the search asked to
-		 * highlight, keyed by field name. Present whenever highlighting was
-		 * asked for, with fields the document holds no match in left out -
-		 * and left out entirely when it was not.
+		 * Highlighted fragments of the requested fields, keyed by field name.
+		 * Present when highlighting is requested, omitting fields with no
+		 * matches. Omitted when highlighting is not requested.
 		 */
 		@Schema(description = """
-			Highlighted fragments keyed by field name. Present whenever \
-			highlighting was asked for, leaving out fields the document holds \
-			no match in - and omitted entirely when it was not.""")
+			Highlighted fragments keyed by field name. Present when \
+			highlighting is requested, omitting fields with no matching text \
+			in the document. Omitted when highlighting is not requested.""")
 		Map<String, List<String>> highlights,
 
 		/**
-		 * Which values of each object field the request asked about matched,
-		 * keyed by field name. Present whenever matched values were asked
-		 * for, with an entry per field asked about - and left out entirely
-		 * when they were not.
+		 * Matched values of each requested nested object field, keyed by field
+		 * name. Present when matched values are requested, with an entry per
+		 * requested field. Omitted when matched values are not requested.
 		 */
 		@Schema(description = """
-			Matched nested values keyed by field name, one entry per field the \
-			request asked about. Omitted entirely when the request asked for \
-			none.""")
+			Matched nested values keyed by field name, with one entry per \
+			requested field. Omitted when matched values are not requested.""")
 		Map<String, MatchedValues> matched
 	) {
 	}
 
 	/**
-	 * Which values of one object field matched for one hit.
+	 * Matched values of an object field for a hit.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Which values of one nested object field matched, for one hit.")
+	@Schema(description = "Matched values of a nested object field for a hit.")
 	public record MatchedValues(
 		/**
-		 * The values that matched, as they were given - at most as many as
-		 * the request asked for, best first when the clauses on the field
-		 * rank and in the order the document gave them otherwise. Left out
-		 * for an index that keeps no copy of its documents.
+		 * The matched values, up to the requested limit. Values are ordered by
+		 * score when scoring clauses exist within the nested clause, and in
+		 * document order otherwise. Omitted on an index that does not retain
+		 * document source copies.
 		 */
 		@Schema(
 			type = SchemaType.ARRAY,
 			implementation = Object.class,
 			description = """
-				The values that matched, each keyed by field name, at most as \
-				many as `limit` asked for. Ordered by score when scoring \
-				clauses exist within the `nested` clause, and in document order \
-				otherwise. Omitted on an index whose `source` is `none`."""
+				Array of matched nested values, each keyed by field name, up \
+				to `limit`. If scoring clauses exist within the `nested` \
+				clause, values are ordered by score; otherwise, they appear in \
+				document order. Omitted on an index whose `source` is `none`."""
 		)
 		@JsonSerialize(contentUsing = DocumentSerializer.class)
 		List<Document> values,
 
 		/**
-		 * How many values matched in all, which is more than the number under
-		 * `values` whenever the limit was reached.
+		 * Total count of matched values for the object field in the document.
+		 * Exceeds the number of entries under `values` when the limit is
+		 * reached.
 		 */
 		@Schema(description = """
-			How many values matched in all, which is more than the number \
-			under `values` whenever the limit was reached.""")
+			Total count of matched values for the nested field in the \
+			document. Exceeds the number of entries under `values` when the \
+			limit is reached.""")
 		int totalValues
 	) {
 	}
 
 	/**
-	 * How many matches held each value of one faceted field, for building the
-	 * list of filters a user picks from.
+	 * Match counts for distinct values of one faceted field.
 	 *
-	 * The counts are sideways of the filters on the facet's own field: what
-	 * ticking a value would leave, with the other values still visible. Every
-	 * other filter and the whole query narrow the counts the way they narrow
-	 * the hits.
+	 * <p>Facet counts exclude filter entries on the facet's own field by
+	 * default, allowing other values to remain visible. Query clauses and other
+	 * filters narrow facet counts.
 	 *
-	 * The shape follows how the facet asked: counting per value answers
-	 * {@code values} with {@code totalValues}, counting into ranges answers
-	 * {@code buckets}, with the other shape left out.
+	 * <p>Counting per value returns {@code values} with {@code totalValues};
+	 * counting into ranges returns {@code buckets}, omitting the other
+	 * representation.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Match counts for one faceted field. Counting per value answers \
-		`values` with `totalValues`; counting into ranges answers `buckets`, \
-		with the other shape omitted. Counts are sideways of the filters on \
-		the facet's own field - what ticking a value would leave, with the \
-		other values still visible.""")
+		Match counts for one faceted field. Counting per value returns \
+		`values` with `totalValues`; counting into ranges returns `buckets`, \
+		omitting the other representation. Facet counts exclude filter entries \
+		on the facet's own field by default.""")
 	public record Facet(
 		/**
-		 * The values with their counts, in the order the facet asked for and
-		 * at most as many as its limit.
+		 * Facet value objects with counts, in the requested sort order and
+		 * limited to the configured maximum.
 		 */
 		@Schema(description = """
-			The values with their counts, in the order the facet asked for and \
-			at most as many as its limit.""")
+			Array of facet value objects, in the requested order and limited \
+			to the configured maximum.""")
 		List<FacetValue> values,
 
 		/**
-		 * How many distinct values the matches held in all, which is more
-		 * than the number of values whenever the limit was reached.
+		 * Total count of distinct values matching the query. Exceeds the number
+		 * of returned values when the limit is reached.
 		 */
 		@Schema(description = """
-			How many distinct values the matches held in all, which is more \
-			than the number under `values` whenever the limit was reached.""")
+			Total count of distinct values matching the query. Exceeds the \
+			number of entries under `values` when the limit is reached.""")
 		Integer totalValues,
 
 		/**
-		 * The buckets with their counts, one per range the facet asked for
-		 * and in the same order.
+		 * Range bucket objects with match counts, in the requested order.
 		 */
 		@Schema(description = """
-			The buckets with their counts, one per range the facet asked for \
-			and in the same order.""")
+			Array of range bucket objects with match counts, in the requested \
+			order.""")
 		List<FacetBucket> buckets
 	) {
 	}
 
 	/**
-	 * One value of a faceted field with how many matches held it.
+	 * One value of a faceted field with its match count.
 	 *
-	 * A field whose values are paths through a tree answers one of these per
-	 * level, and the levels below it under `values`. Every other field
-	 * leaves the shape of a tree out entirely.
+	 * <p>For hierarchical fields, returns an entry per hierarchy level and
+	 * nests child levels under `values`. Other fields omit hierarchical
+	 * properties.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		One value of a faceted field with how many matches held it. A \
-		hierarchical field answers one of these per level, nesting the levels \
-		below it under `values`; every other field leaves the shape of a tree \
-		out entirely.""")
+		One value of a faceted field with its match count. For hierarchical \
+		fields, returns an entry per hierarchy level and nests child levels \
+		under `values`. Other fields omit hierarchical properties.""")
 	public record FacetValue(
 		/**
-		 * The value, in the shape the field returns it in results - a string,
-		 * boolean or number, and an ISO 8601 instant for a timestamp field.
-		 * One level of the path for a field whose values are paths, so it
-		 * reads as a label.
+		 * The facet value in its stored format: a string, boolean, number, or
+		 * ISO 8601 timestamp string. For a hierarchical field, returns the
+		 * label of the current level.
 		 */
 		@Schema(
 			description = """
-				The value, in the shape the field returns it in results - a \
-				string, boolean or number, and an ISO 8601 instant for a \
-				timestamp field. For a hierarchical field, the label of one \
-				level rather than the whole path.""",
+				The facet value in its stored format: a string, boolean, \
+				number, or ISO 8601 timestamp string. For a hierarchical \
+				field, returns the label of the current level.""",
 			examples = "fiction"
 		)
 		Object value,
 
 		/**
-		 * How many matches held the value.
+		 * Number of matching documents containing this value.
 		 */
-		@Schema(description = "How many matches held the value.", examples = "87")
+		@Schema(description = "Number of matching documents containing this value.", examples = "87")
 		long count,
 
 		/**
-		 * The whole path down to this level, which is what a filter on the
-		 * field takes. Left out for a value that is not part of a tree.
+		 * The full path to this level, used in filter matchers. Omitted for
+		 * non-hierarchical fields.
 		 */
 		@Schema(
 			description = """
-				The whole path down to this level, which is what an `under` \
-				matcher takes. Omitted for a value that is not part of a \
-				tree.""",
+				The full path to the level, used in `under` filter matchers. \
+				Omitted for non-hierarchical fields.""",
 			examples = "Men/Shoes"
 		)
 		String path,
 
 		/**
-		 * The levels below this one with their own counts, as far down as the
-		 * facet asked to count. Left out at the deepest level counted, and
-		 * for a value that is not part of a tree.
+		 * Child hierarchy levels with their counts, evaluated up to the
+		 * requested depth. Omitted at the maximum counted depth and for
+		 * non-hierarchical fields.
 		 */
 		@Schema(description = """
-			The levels below this one with their own counts, as far down as \
-			`depth` asked to count. Omitted at the deepest level counted, and \
-			for a value that is not part of a tree.""")
+			Child hierarchy levels with their counts, evaluated up to `depth` \
+			levels below the current path. Omitted at the maximum counted \
+			depth and for non-hierarchical fields.""")
 		List<FacetValue> values,
 
 		/**
-		 * How many levels below this one the matches held in all, which is
-		 * more than the number under `values` whenever the limit was reached.
-		 * Left out for a value that is not part of a tree.
+		 * Total count of distinct child values below this level. Exceeds the
+		 * number of entries under `values` when the limit is reached. Omitted
+		 * for non-hierarchical fields.
 		 */
 		@Schema(description = """
-			How many values below this level the matches held in all, which is \
-			more than the number under `values` whenever the limit was \
-			reached. Omitted for a value that is not part of a tree.""")
+			Total count of distinct child values below this level. Exceeds the \
+			number of entries under `values` when the limit is reached. \
+			Omitted for non-hierarchical fields.""")
 		Integer totalValues
 	) {
 		/**
@@ -396,77 +383,82 @@ public record SearchResponse(
 	}
 
 	/**
-	 * One bucket of a faceted field with how many matches fell in it.
+	 * One bucket of a faceted field with its match count.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One range bucket of a faceted field with how many matches fell in it.")
+	@Schema(description = "One range bucket of a faceted field with its match count.")
 	public record FacetBucket(
 		/**
-		 * The lower bound of the bucket as the request gave it, itself
-		 * included. Left out for an open one.
+		 * Inclusive lower bound of the range bucket, as specified in the
+		 * request. Omitted for open-ended ranges.
 		 */
 		@Schema(
 			description = """
-				The lower bound as the request gave it, itself included. \
-				Omitted for an open-ended bucket.""",
+				Inclusive lower bound of the range bucket, as specified in the \
+				request. Omitted for open-ended ranges.""",
 			examples = "100"
 		)
 		Object from,
 
 		/**
-		 * The upper bound of the bucket as the request gave it, itself not
-		 * included. Left out for an open one.
+		 * Exclusive upper bound of the range bucket, as specified in the
+		 * request. Omitted for open-ended ranges.
 		 */
 		@Schema(
 			description = """
-				The upper bound as the request gave it, itself not included. \
-				Omitted for an open-ended bucket.""",
+				Exclusive upper bound of the range bucket, as specified in the \
+				request. Omitted for open-ended ranges.""",
 			examples = "200"
 		)
 		Object to,
 
 		/**
-		 * How many matches held a value in the bucket.
+		 * Number of matching documents with values falling within the range
+		 * bucket.
 		 */
-		@Schema(description = "How many matches held a value in the bucket.", examples = "17")
+		@Schema(description = """
+			Number of matching documents with values falling within the range \
+			bucket.""", examples = "17")
 		long count
 	) {
 	}
 
 	/**
-	 * What a search let go of to find anything.
+	 * Details of dropped query terms when query relaxation was applied.
 	 *
-	 * Present only when the search would otherwise have come back empty, so it
-	 * always means the results answer less than what was typed - which is the
-	 * whole reason it is here. A page that quietly ignored half of a search is
-	 * worse than an empty one, because the person reading it believes it.
+	 * <p>Present only when the initial query produced zero results. Total
+	 * counts and facet counts reflect the relaxed search.
 	 */
 	@Schema(description = """
-		What a search let go of to find anything. Present only when the search \
-		would otherwise have come back empty, so it always means the results \
-		answer less than what was typed. Total counts and facet counts reflect \
-		the relaxed search.""")
+		Details of dropped query terms when query relaxation was applied. \
+		Present only when the initial query produced zero results. Total \
+		counts and facet counts reflect the relaxed search.""")
 	public record Relaxed(
 		/**
-		 * The words that were let go, in the order they were typed.
+		 * List of dropped words and the reason each was removed, in the order
+		 * they appeared in the query.
 		 */
-		@Schema(description = "The words that were dropped, in the order they were typed.")
+		@Schema(description = """
+			List of dropped words and the reason each was removed, in the \
+			order they appeared in the query.""")
 		List<Dropped> dropped,
 
 		/**
-		 * The text the search ran with in the end, for showing what the
-		 * results actually answer.
+		 * The effective query string used to execute the search.
 		 */
 		@Schema(
-			description = "The query text the search ran with in the end.",
+			description = "The effective query string used to execute the search.",
 			examples = "running shoes"
 		)
 		String text
 	) {
 		/**
-		 * One word a search let go of, and why it went.
+		 * Details of a single dropped query word and the reason for its
+		 * removal.
 		 */
-		@Schema(description = "One word a search dropped, and why it went.")
+		@Schema(description = """
+			Details of a single dropped query word and the reason for its \
+			removal.""")
 		public record Dropped(
 			/**
 			 * The word as it was typed.
@@ -475,18 +467,18 @@ public record SearchResponse(
 			String word,
 
 			/**
-			 * What made it the one to go.
+			 * Reason the word was dropped.
 			 */
-			@Schema(description = "What made it the one to go.")
+			@Schema(description = "Reason the word was dropped.")
 			Reason reason
 		) {
 			/**
-			 * Why a word was let go.
+			 * Reason a query word was dropped.
 			 */
 			@Schema(description = """
-				Why a word was dropped: `unmatched` when nothing in the index \
-				holds it, `common` when it is one of the words the most \
-				documents hold.""")
+				Reason a word was dropped: `unmatched` when the word does not \
+				exist in the index; `common` when it is one of the most common \
+				words across documents.""")
 			public enum Reason {
 				/**
 				 * Nothing in the index holds the word, so keeping it could
@@ -507,163 +499,161 @@ public record SearchResponse(
 	}
 
 	/**
-	 * How many matched, in whichever unit the count is of.
+	 * Total match count, measured in whatever unit the search returns.
 	 */
-	@Schema(description = "How many matched, in whichever unit the count is of.")
+	@Schema(description = "Total match count, measured in whatever unit the search returns.")
 	public record Total(
 		/**
-		 * The number that matched.
+		 * Total number of matching results.
 		 */
-		@Schema(description = "The number that matched.", examples = "128")
+		@Schema(description = "Total number of matching results.", examples = "128")
 		long count,
 
 		/**
-		 * If the count is the whole number rather than at least that many.
+		 * Whether the count is exact or a lower bound. Always true when exact
+		 * counting or facets are requested.
 		 */
 		@Schema(description = """
-			Whether `count` is the whole number rather than a lower bound. \
-			Always true for a search that asked for `"total": "exact"` or for \
-			facets.""")
+			Whether `count` is exact or a lower bound. Always true when \
+			`"total": "exact"` is requested or when calculating facets.""")
 		boolean exact
 	) {
 	}
 
 	/**
-	 * Where in the results this window sits.
+	 * Pagination state and navigation cursors for the result window.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Where in the results this window sits, and how to move from it.")
+	@Schema(description = "Pagination state and navigation cursors for the result window.")
 	public record Page(
 		/**
-		 * How many results the window holds at most.
+		 * Maximum number of results returned in the page window.
 		 */
-		@Schema(description = "How many results the window holds at most.", examples = "20")
+		@Schema(description = "Maximum number of results returned in the page window.", examples = "20")
 		int limit,
 
 		/**
-		 * How many results come before the window, left out when the window
-		 * was reached through {@code next} or {@code previous} - following
-		 * a hit does not count what it skips, which is what lets those go
-		 * deeper than an offset may.
+		 * Number of matching results skipped before the window. Omitted when
+		 * navigating with {@code next} or {@code previous} cursors, which
+		 * encode positions rather than count offsets.
 		 */
 		@Schema(description = """
-			How many results come before the window. Omitted when the window \
-			was reached through a `next` or `previous` cursor, which encodes a \
-			position rather than a count - which is what lets cursors go \
-			deeper than `EXOFIND_SEARCH_MAX_PAGE_DEPTH` allows an offset to.""")
+			Number of matching results skipped before the window. Omitted when \
+			navigating with `next` or `previous` cursors. Cursors encode \
+			positions rather than count offsets and are not restricted by \
+			`EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""")
 		Integer offset,
 
 		/**
-		 * Cursor for the preceding window, left out when this is the first.
+		 * Cursor for the preceding window. Omitted on the first window.
 		 */
 		@Schema(description = """
-			Cursor for the preceding window, to send as `before`. Omitted when \
-			this is the first window.""")
+			Cursor for the preceding window, passed in `before`. Omitted on \
+			the first window.""")
 		String previous,
 
 		/**
-		 * Cursor for the next window, left out when there is nothing after
-		 * this one.
+		 * Cursor for the next window. Omitted on the final window.
 		 */
 		@Schema(description = """
-			Cursor for the next window, to send as `after`. Omitted when there \
-			is nothing after this one.""")
+			Cursor for the next window, passed in `after`. Omitted on the \
+			final window.""")
 		String next,
 
 		/**
-		 * The numbered pages, present when the request asked for them.
+		 * Numbered page metadata, present when requested.
 		 */
-		@Schema(description = "The numbered pages, present when the request asked for them.")
+		@Schema(description = "Numbered page metadata, present when requested.")
 		Pages pages
 	) {
 	}
 
 	/**
-	 * Numbered pages, shaped so a client renders {@code 1 2 3 … 7} with the
-	 * ellipses exactly where a window boundary falls - between {@code start}
-	 * and {@code middle}, and between {@code middle} and {@code end},
-	 * whenever the numbers are not adjacent.
+	 * Numbered page metadata, divided into {@code start}, {@code middle} and
+	 * {@code end} arrays. A client renders them as {@code 1 2 3 … 7}, with an
+	 * ellipsis wherever {@code middle} is not adjacent to the numbers beside
+	 * it.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Numbered pages, split into `start`, `middle` and `end` so a pager \
-		renders `1 2 3 … 7` with the ellipses exactly where a window boundary \
-		falls. Page numbers are 1-based, and the cursors inside encode count \
-		offsets, so they remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""")
+		Numbered page metadata, divided into `start`, `middle`, and `end` \
+		arrays to render `1 2 3 … 7` with ellipses at window boundaries. Page \
+		numbers are 1-based. Cursors inside encode count offsets and remain \
+		subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""")
 	public record Pages(
 		/**
-		 * How many pages there are in total.
+		 * Total number of pages.
 		 */
-		@Schema(description = "How many pages there are in total.", examples = "7")
+		@Schema(description = "Total number of pages.", examples = "7")
 		long count,
 
 		/**
-		 * The page before the current one, left out on the first.
+		 * Metadata for the page preceding the current page. Omitted on the
+		 * first page.
 		 */
-		@Schema(description = "The page before the current one, omitted on the first.")
+		@Schema(description = """
+			Metadata for the page preceding the current page. Omitted on the \
+			first page.""")
 		PageRef previous,
 
 		/**
-		 * The page after the current one, left out on the last - or when it
-		 * would be deeper than paging goes.
+		 * Metadata for the page following the current page. Omitted on the
+		 * final page and when the page exceeds maximum page depth.
 		 */
 		@Schema(description = """
-			The page after the current one. Omitted on the last, and when it \
-			would sit deeper than paging goes.""")
+			Metadata for the page following the current page. Omitted on the \
+			final page and when the page exceeds maximum page depth.""")
 		PageRef next,
 
 		/**
-		 * The pages at the start of the list.
+		 * Page entries at the start of the list.
 		 */
-		@Schema(description = "The pages at the start of the list.")
+		@Schema(description = "Page entries at the start of the list.")
 		List<PageRef> start,
 
 		/**
-		 * The pages around the current one, when they do not touch either
-		 * end.
+		 * Page entries surrounding the current page, present when they touch
+		 * neither end of the list.
 		 */
 		@Schema(description = """
-			The pages around the current one, present when they touch neither \
-			end of the list.""")
+			Page entries surrounding the current page, present when they touch \
+			neither end of the list.""")
 		List<PageRef> middle,
 
 		/**
-		 * The pages at the end of the list, left out when the last page is
-		 * deeper than paging goes - so a pager never offers a jump that
-		 * would be refused.
+		 * Page entries at the end of the list. Omitted when the final page
+		 * exceeds maximum page depth.
 		 */
 		@Schema(description = """
-			The pages at the end of the list. Omitted when the final page \
-			sits deeper than paging goes, so a pager never offers a jump that \
-			would be refused.""")
+			Page entries at the end of the list. Omitted when the final page \
+			exceeds maximum page depth.""")
 		List<PageRef> end
 	) {
 	}
 
 	/**
-	 * One numbered page.
+	 * Metadata for a single numbered page.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One numbered page.")
+	@Schema(description = "Metadata for a single numbered page.")
 	public record PageRef(
 		/**
-		 * The number of the page, counted from one.
+		 * 1-based page number.
 		 */
-		@Schema(description = "The number of the page, counted from one.", examples = "3")
+		@Schema(description = "1-based page number.", examples = "3")
 		long number,
 
 		/**
 		 * Cursor that fetches the page.
 		 */
-		@Schema(description = "Cursor that fetches the page, to send as `after`.")
+		@Schema(description = "Cursor that fetches the page, passed in `after`.")
 		String cursor,
 
 		/**
-		 * Set on the page the response is showing.
+		 * True for the current page; omitted on all other pages.
 		 */
 		@Schema(description = """
-			Set on the page the response is showing, and omitted on every \
-			other.""")
+			True for the current page; omitted on all other pages.""")
 		Boolean current
 	) {
 	}

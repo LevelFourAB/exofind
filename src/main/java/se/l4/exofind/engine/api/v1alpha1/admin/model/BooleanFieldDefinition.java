@@ -5,10 +5,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Definition of a field containing a boolean.
+ * Definition of a field containing a boolean value.
  *
- * A boolean has nothing to analyze, so the only way to search it is to filter
- * on it:
+ * <p>A boolean has nothing to analyze, so filtering is the only way to search
+ * it:
  *
  * <pre>
  * {
@@ -19,8 +19,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	A field holding `true` or `false`. A boolean has nothing to analyze, so \
-	filtering is the only way to search it.""")
+	Represents boolean values (`true` or `false`). A boolean has nothing to \
+	analyze, so filtering is the only way to search it.""")
 public record BooleanFieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,

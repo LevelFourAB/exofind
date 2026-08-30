@@ -5,10 +5,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Definition of a field containing a 64 bit floating point number.
+ * Definition of a field containing a 64-bit floating-point number.
  *
- * A number has nothing to analyze, so it is searched by filtering - which for
- * a number means ranges as well as equality:
+ * <p>A number has nothing to analyze, so it is searched by filtering,
+ * supporting both exact matches and range queries:
  *
  * <pre>
  * {
@@ -20,9 +20,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	A 64-bit floating point number. A number has nothing to analyze, so it is \
-	searched by filtering - which for a number means ranges as well as \
-	equality.""")
+	Represents a 64-bit floating-point number. A number has nothing to \
+	analyze, so it is searched by filtering, which supports both exact matches \
+	and range queries.""")
 public record DoubleFieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,
@@ -49,18 +49,18 @@ public record DoubleFieldDefinition(
 	Facet facet,
 
 	@Schema(description = """
-		Bounds the values the field accepts. A document holding a value \
-		outside them is rejected.""")
+		Sets allowed numeric bounds. Documents containing values outside these \
+		bounds are rejected.""")
 	Validation validation
 ) implements FieldDefinition {
 	/**
-	 * The values the field accepts. A value outside the bounds is refused when
-	 * a document is added.
+	 * The allowed numeric bounds for the field. Documents containing values
+	 * outside these bounds are rejected when indexed.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "DoubleValidation",
-		description = "The values a `double` field accepts."
+		description = "The allowed numeric bounds for a `double` field."
 	)
 	public record Validation(
 		@Schema(description = "Lowest value accepted.")

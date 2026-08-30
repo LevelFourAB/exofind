@@ -5,74 +5,69 @@ import java.util.List;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * An index together with the definition and status of one generation of it.
+ * An index together with the definition and status of one of its generations.
  *
- * <p>A definition belongs to a generation rather than to the index, so what is
- * described here is whichever generation the request named - the live one when
- * it named the index alone. The generations that exist are listed beside it, so
- * that reading an index says what could be promoted as well as what is
- * answering now.
+ * <p>A definition belongs to a generation rather than directly to the index.
+ * This resource describes the generation specified in the request, or the live
+ * generation if omitted.
  *
  * @param name
- *   the name of the index
+ *   name of the index
  * @param generation
- *   the generation this describes
+ *   generation described in this response
  * @param live
- *   whether the index currently answers from this generation
+ *   whether this generation is the live generation
  * @param version
- *   version of the definition, also sent as an {@code ETag} header. Pass it
- *   back in {@code If-Match} when updating to fail instead of overwriting an
- *   update made in the meantime
+ *   version of the definition, returned in the {@code ETag} header. Pass in
+ *   {@code If-Match} on updates to prevent overwriting concurrent changes
  * @param definition
- *   the definition currently in effect for this generation
+ *   active definition for this generation
  * @param status
- *   observed state of this generation on this node
+ *   observed state of this generation on the answering node
  * @param generations
- *   every generation of the index, ordered by name
+ *   all generations of the index, ordered by name
  */
 @Schema(description = """
 	An index together with the definition and status of one of its \
-	generations - the one the request named, or the live one when it named the \
-	index alone. See [Index \
+	generations: the generation specified in the request, or the live \
+	generation if omitted. See [Index \
 	resource](https://exofind.dev/reference/admin-api/#index-resource).""")
 public record IndexInfo(
-	@Schema(description = "Name of the index.", examples = "products")
+	@Schema(description = "The name of the index.", examples = "products")
 	String name,
 
 	@Schema(
 		description = """
-			The generation this response describes. When the request named \
-			only the index, this is the live generation.""",
+			The generation described in the response. When the request \
+			specifies only the index name, this is the live generation.""",
 		examples = "2"
 	)
 	String generation,
 
-	@Schema(description = "Whether the index currently answers from this generation.")
+	@Schema(description = "A boolean indicating whether this generation is the live generation.")
 	boolean live,
 
 	@Schema(
 		description = """
-			Version of the definition, also returned in the `ETag` header. \
-			Send it back in `If-Match` on a `PUT` to be told that someone else \
-			changed the index rather than overwriting their change.""",
+			An identifier for the definition, also returned in the `ETag` \
+			header. Pass this value in the `If-Match` header on `PUT` requests \
+			to prevent overwriting concurrent updates.""",
 		examples = "9f2c1a0b3d4e5f60"
 	)
 	String version,
 
 	@Schema(description = """
-		The definition in effect for this generation. Presets are stored \
-		expanded, so this is the expanded chain rather than the preset \
-		name.""")
+		The active index definition. Presets are stored expanded; the response \
+		returns the expanded chain rather than the preset name.""")
 	IndexDefinition definition,
 
 	@Schema(description = """
-		The state of this generation as the answering node observes it. Never \
-		accepted as input.""")
+		The observed state reported by the answering node. The API does not \
+		accept this object as input.""")
 	IndexStatus status,
 
 	@Schema(description = """
-		Every generation of the index, ordered by name - so reading an index \
-		says what could be promoted as well as what is answering now.""")
+		A list of all generations for the index, ordered by name.""")
 	List<GenerationSummary> generations
 ) {
 }

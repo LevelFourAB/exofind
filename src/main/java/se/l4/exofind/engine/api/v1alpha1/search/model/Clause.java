@@ -13,11 +13,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 /**
  * One clause of a search, as it is written on the wire.
  *
- * Clauses are a tagged union where {@code type} selects the kind, using the
+ * <p>Clauses are a tagged union where {@code type} selects the kind, using the
  * {@link se.l4.exofind.engine.query.Query#type() type} the engine gives each
- * clause. A clause with no {@code type} is a field clause - it is the only
- * kind carrying {@code field} together with {@code match}, so leaving the tag
- * out of the common case is never ambiguous:
+ * clause. A clause with no {@code type} defaults to a field clause containing
+ * {@code field} together with {@code match}:
  *
  * <pre>
  * { "field": "published", "match": { "value": true } }
@@ -51,7 +50,7 @@ public sealed interface Clause
 	permits Clause.Field, Clause.Text, Clause.Knn, Clause.Fuse, Clause.Nested, Clause.And,
 		Clause.Or, Clause.Not, Clause.Boost {
 	/**
-	 * Match documents by what a single field holds.
+	 * Matches documents by the value of a single field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -64,7 +63,7 @@ public sealed interface Clause
 	)
 	record Field(
 		/**
-		 * Name of the field, as it is called in the definition of the index.
+		 * Target field, as named in the index definition.
 		 */
 		@Schema(
 			description = "Target field, as named in the index definition.",
@@ -74,7 +73,7 @@ public sealed interface Clause
 		String field,
 
 		/**
-		 * What to look for in it.
+		 * Criteria evaluated against the field's values.
 		 */
 		@Schema(description = "Criteria evaluated against the field's values.", required = true)
 		Matcher match
@@ -82,9 +81,9 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match text that someone typed, against several fields at once. Carries
-	 * the same options a {@code text} matcher does, flattened into the
-	 * clause, plus {@code combine} for what a match is complete within.
+	 * Matches query text across one or more fields. Accepts the same options as
+	 * a {@code text} matcher, plus {@code combine} for multi-field term
+	 * matching.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -92,13 +91,13 @@ public sealed interface Clause
 		description = """
 			Matches query text across one or more fields. Phrase queries \
 			operate within a single field and match terms exactly as typed, \
-			regardless of a field's `typoTolerance`. Fields defined only for \
+			regardless of field `typoTolerance`. Fields defined only for \
 			`autocomplete` do not support phrase matching. See \
 			[`text`](https://exofind.dev/reference/search-api/#text)."""
 	)
 	record Text(
 		/**
-		 * What was typed.
+		 * The query text to match.
 		 */
 		@Schema(
 			description = "The query text to match.",
@@ -108,9 +107,9 @@ public sealed interface Clause
 		String text,
 
 		/**
-		 * The fields to look in and how much each of them counts, left out
-		 * for every field that can be matched on. A field mapped to
-		 * {@code null} counts as much as its definition says.
+		 * Object mapping field names to score weights. A field mapped to
+		 * {@code null} uses the weight from its field definition. If omitted,
+		 * searches all searchable fields.
 		 */
 		@Schema(description = """
 			Object mapping field names to score weights. A field mapped to \
@@ -120,7 +119,7 @@ public sealed interface Clause
 		Map<String, Float> fields,
 
 		/**
-		 * How the words are combined, left out for {@code all}.
+		 * Term matching mode. Defaults to {@code all}.
 		 */
 		@Schema(
 			description = """
@@ -132,7 +131,7 @@ public sealed interface Clause
 		Matcher.Text.Match match,
 
 		/**
-		 * How the word still being typed is treated, left out for
+		 * Prefix matching behavior on the final query term. Defaults to
 		 * {@code last_token}.
 		 */
 		@Schema(
@@ -145,8 +144,7 @@ public sealed interface Clause
 		Matcher.Text.Prefix prefix,
 
 		/**
-		 * Whether words may contain typing mistakes, left out for
-		 * {@code auto}.
+		 * Typo tolerance handling. Defaults to {@code auto}.
 		 */
 		@Schema(
 			description = """
@@ -158,9 +156,9 @@ public sealed interface Clause
 		Matcher.Text.Typos typos,
 
 		/**
-		 * How many other words may sit between the words of a phrase, left
-		 * out for none. Only means something for a {@code phrase} or the
-		 * quoted parts of a {@code user} text.
+		 * Number of intervening words permitted between terms in a phrase. Only
+		 * applies to {@code phrase} queries or quoted phrases in {@code user}
+		 * mode. Defaults to none.
 		 */
 		@Schema(
 			description = """
@@ -173,7 +171,7 @@ public sealed interface Clause
 		Integer slop,
 
 		/**
-		 * What may be let go of rather than find nothing, left out for
+		 * Query relaxation strategy when no documents match. Defaults to
 		 * {@code unmatched}.
 		 */
 		@Schema(
@@ -186,7 +184,7 @@ public sealed interface Clause
 		Matcher.Text.Relax relax,
 
 		/**
-		 * What a match is complete within, left out for {@code term}.
+		 * Scope for multi-field term matching. Defaults to {@code term}.
 		 */
 		@Schema(
 			description = """
@@ -199,11 +197,10 @@ public sealed interface Clause
 		Combine combine
 	) implements Clause {
 		/**
-		 * What a match is complete within when several fields are searched.
+		 * Scope for multi-field term matching across multiple fields.
 		 */
 		@Schema(description = """
-			Scope a multi-field text match is complete within: `term` or \
-			`field`.""")
+			Scope for multi-field term matching: `term` or `field`.""")
 		public enum Combine {
 			/**
 			 * Each word has to be found in some searched field - the words
@@ -222,8 +219,8 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match the {@code k} documents whose vector in a field is nearest to the
-	 * given one, scored by how near they are.
+	 * Matches the {@code k} nearest documents by vector distance in a specified
+	 * field, scored by proximity.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -235,8 +232,7 @@ public sealed interface Clause
 	)
 	record Knn(
 		/**
-		 * Name of the vector field, as it is called in the definition of the
-		 * index.
+		 * The vector field to search, as named in the index definition.
 		 */
 		@Schema(
 			description = "The vector field to search.",
@@ -246,8 +242,8 @@ public sealed interface Clause
 		String field,
 
 		/**
-		 * The vector to find the neighbours of, with the dimensions the field
-		 * declares.
+		 * The query vector, matching the dimensions declared in the field
+		 * definition.
 		 */
 		@Schema(
 			description = """
@@ -258,14 +254,14 @@ public sealed interface Clause
 		float[] vector,
 
 		/**
-		 * How many neighbours to return.
+		 * Number of nearest documents to return.
 		 */
 		@Schema(description = "Number of nearest documents to return.", required = true)
 		Integer k,
 
 		/**
-		 * Clauses narrowing which documents may be neighbours before the
-		 * nearest are picked, all of which have to be satisfied.
+		 * Clauses that documents must satisfy before nearest-neighbor
+		 * evaluation.
 		 */
 		@Schema(description = """
 			Clauses that documents must satisfy before nearest-neighbor \
@@ -275,11 +271,10 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match documents where a single value of an object field satisfies all
-	 * of the clauses - a condition on several fields of the same value,
-	 * rather than on the document as a whole. Anything that runs against a
-	 * single value may sit inside: {@code field}, {@code text}, {@code and},
-	 * {@code or}, {@code not} and {@code boost}.
+	 * Matches documents where a single value of an object field satisfies all
+	 * child clauses. Evaluates conditions against a single nested value using
+	 * child clauses: {@code field}, {@code text}, {@code and}, {@code or},
+	 * {@code not}, and {@code boost}.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -294,8 +289,7 @@ public sealed interface Clause
 	)
 	record Nested(
 		/**
-		 * Name of the object field, as it is called in the definition of the
-		 * index.
+		 * Name of the nested object field, as named in the index definition.
 		 */
 		@Schema(
 			description = "Name of the nested object field.",
@@ -305,8 +299,8 @@ public sealed interface Clause
 		String path,
 
 		/**
-		 * What has to hold inside a single value, all of it, naming fields by
-		 * their dotted path.
+		 * Clauses evaluated within a single nested object value, naming fields
+		 * by their dotted path.
 		 */
 		@Schema(description = """
 			Clauses evaluated within a single nested object value, naming \
@@ -318,21 +312,20 @@ public sealed interface Clause
 		List<Clause> clauses,
 
 		/**
-		 * Which of the values that matched decides what the document scores,
-		 * left out for {@code max}. Only means something when something
-		 * inside the clause ranks.
+		 * Scoring mode for aggregating matching nested values, defaulting to
+		 * {@code max}. Only applies when child clauses score results.
 		 */
 		@Schema(
 			description = """
 				Scoring mode for aggregating matching nested values. Only \
-				means something when something inside the clause ranks.""",
+				applies when scoring clauses exist within the nested clause.""",
 			defaultValue = "max"
 		)
 		Score score
 	) implements Clause {
 		/**
-		 * How the values that matched inside a document decide what it
-		 * scores.
+		 * Scoring mode for aggregating matching nested values into a document
+		 * score.
 		 */
 		@Schema(description = """
 			How the matching nested values of a document combine into its \
@@ -368,7 +361,7 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match documents that satisfy all of the clauses.
+	 * Matches documents where all child clauses match.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(name = "AndClause", description = "Matches documents where all child clauses match.")
@@ -379,7 +372,7 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match documents that satisfy at least one of the clauses.
+	 * Matches documents where at least one child clause matches.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
@@ -396,7 +389,7 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match documents that satisfy none of the clauses.
+	 * Matches documents where no child clause matches.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(name = "NotClause", description = "Matches documents where no child clause matches.")
@@ -407,26 +400,25 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Rank documents that satisfy all of the clauses higher, without leaving
-	 * out the ones that do not.
+	 * Increases the relevance score of documents that satisfy child clauses
+	 * without excluding non-matching documents.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "BoostClause",
 		description = """
-			Increases the relevance score of documents that satisfy the child \
-			clauses, without excluding documents that do not."""
+			Increases the relevance score of documents that satisfy child \
+			clauses without excluding non-matching documents."""
 	)
 	record Boost(
 		/**
-		 * How much satisfying the clauses counts, relative to the rest of the
-		 * query. Above one lifts, below one holds back.
+		 * Multiplier applied to matching documents. Values greater than 1
+		 * increase score; values between 0 and 1 decrease score.
 		 */
 		@Schema(
 			description = """
 				Multiplier applied to matching documents. Values greater than \
-				`1` increase the score; values between `0` and `1` decrease \
-				it.""",
+				`1` increase score; values between `0` and `1` decrease score.""",
 			examples = "2"
 		)
 		Float weight,
@@ -440,107 +432,104 @@ public sealed interface Clause
 	}
 
 	/**
-	 * Match what several rankings found, scored by where each of them put a
-	 * document rather than by what any of them scored. This is what combines
-	 * a text ranking with a vector ranking without adding two scales that
-	 * have nothing in common.
+	 * Matches documents across several rankings, scored and merged by rank.
+	 *
+	 * <p><p>Because the clause reads only result positions, scores from
+	 * different scales combine without normalization.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "FuseClause",
 		description = """
-			Runs several rankings separately and merges them with reciprocal \
-			rank fusion, scoring each document by the sum of \
-			`weight / (rankConstant + rank)` over the rankings that reached \
-			it. Only the position a ranking gave a document is read, so \
-			scores on different scales - such as BM25 and vector similarity - \
-			combine without normalization. Matches only the `depth` best \
-			results of each ranking. See \
+			Matches documents across several rankings, scored and merged by \
+			rank. Documents are scored by the sum of `weight / (rankConstant + \
+			rank)` across the rankings that reached them. Because the clause \
+			reads only result positions, scores from different scales (such as \
+			BM25 text relevance and vector similarity) combine without \
+			normalization. Matches at most `depth` results per ranking. See \
 			[`fuse`](https://exofind.dev/reference/search-api/#fuse)."""
 	)
 	record Fuse(
 		/**
-		 * The rankings to fuse, at least two.
+		 * Rankings to run and merge. At least two rankings are required.
 		 */
 		@Schema(
 			description = """
-				Rankings to run and merge. At least two are required; fewer \
+				Rankings to run and merge. Specifying fewer than two rankings \
 				returns `search:clause:rankings_invalid`.""",
 			required = true
 		)
 		List<Ranking> rankings,
 
 		/**
-		 * How far down each ranking is read, left out for 100. This is the
-		 * whole of what the clause can match.
+		 * Number of results read from each ranking. Defaults to 100.
 		 */
 		@Schema(
 			description = """
-				Number of results read from each ranking. This bounds what \
-				the clause can match and how deep paging reaches, the way `k` \
-				bounds a `knn` clause. Must be at least `1`.""",
+				Number of results read from each ranking. Pagination cannot \
+				exceed the merged list, similar to `k` in a `knn` clause. Must \
+				be at least `1`.""",
 			defaultValue = "100"
 		)
 		Integer depth,
 
 		/**
-		 * How much the difference between neighbouring ranks counts, left out
-		 * for 60.
+		 * Constant added to each rank before it is inverted. Defaults to 60.
 		 */
 		@Schema(
 			description = """
 				Constant added to each rank before it is inverted. Lower \
-				values make the first results of a ranking count for much \
-				more than the rest; higher values flatten the difference, so \
-				being found by several rankings matters more than being found \
-				first by one. Must be above `0`.""",
+				values increase the weight of the highest-ranked results in \
+				each ranking; higher values flatten the difference across \
+				ranks, giving more weight to documents found by multiple \
+				rankings. Must be above `0`.""",
 			defaultValue = "60"
 		)
 		Float rankConstant,
 
 		/**
-		 * Clauses narrowing every ranking before it is cut to depth.
+		 * Clauses that narrow every ranking before it is cut to depth.
 		 */
 		@Schema(description = """
 			Clauses that narrow every ranking before it is cut to `depth`. A \
-			`knn` inside a ranking takes these as its own pre-filter, so a \
-			narrowed vector ranking still returns `k` results. Conditions \
-			placed beside the `fuse` clause instead only narrow the merged \
-			list afterwards.""")
+			`knn` clause inside a ranking applies `filter` entries as a \
+			pre-filter, ensuring the vector ranking returns `k` results. \
+			Clauses placed beside the `fuse` clause filter the merged list \
+			after each ranking is cut to `depth`.""")
 		List<Clause> filter
 	) implements Clause {
 		/**
-		 * One of the rankings being fused.
+		 * One ranking to run and merge.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "FuseRanking",
 			description = """
-				One ranking of a fusion: what it searches for, and how much \
-				where it placed a document counts."""
+				One ranking of a fusion: search clauses to evaluate and the \
+				ranking's relative weight."""
 		)
 		public record Ranking(
 			/**
-			 * What the ranking searches for, all of which has to be
-			 * satisfied.
+			 * Clauses the ranking searches for, combined with an implicit AND.
+			 * At least one clause is required.
 			 */
 			@Schema(
 				description = """
 					Clauses the ranking searches for, combined with an \
-					implicit `AND`. At least one is required.""",
+					implicit `AND`. At least one clause is required.""",
 				required = true
 			)
 			List<Clause> clauses,
 
 			/**
-			 * How much where this ranking put a document counts against the
-			 * other rankings, left out for 1.
+			 * Multiplier that scales this ranking's contribution relative to
+			 * other rankings. Defaults to 1.
 			 */
 			@Schema(
 				description = """
-					Multiplier for what this ranking contributes. It cannot \
-					reorder the ranking itself, only weigh it against the \
-					others.""",
+					Multiplier that scales the ranking's contribution relative \
+					to other rankings. It cannot reorder results within the \
+					ranking.""",
 				defaultValue = "1"
 			)
 			Float weight

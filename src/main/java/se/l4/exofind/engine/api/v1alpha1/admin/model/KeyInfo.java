@@ -5,69 +5,69 @@ import java.util.List;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * A key as the deployment holds it.
+ * A key as stored by the deployment.
  *
- * <p>The credential itself is not here and cannot be recovered - only a hash of
- * it is stored. A key whose credential was lost is replaced.
+ * <p>Key secrets are stored only as hashes. A lost credential cannot be
+ * recovered and must be replaced.
  *
  * @param id
- *   what the credential names, and what logs record in place of it
+ *   key identifier recorded in server logs in place of the credential
  * @param description
  * @param grants
- *   what the key may do, with any role it was created from already expanded
+ *   grants for the key, with roles expanded into their constituent permissions
  * @param createdAt
- *   ISO-8601 timestamp
+ *   creation timestamp as an ISO-8601 string
  * @param expiresAt
- *   ISO-8601 timestamp, absent for a key that does not expire
+ *   expiration timestamp as an ISO-8601 string, or absent if the key does not
+ *   expire
  */
 @Schema(description = """
-	A key as the deployment holds it. The credential itself is not here and \
-	cannot be recovered - only a hash of it is stored - so a key whose \
-	credential was lost is replaced rather than read back.""")
+	A key as stored by the deployment. Key secrets are stored only as hashes. \
+	A lost credential cannot be recovered and must be replaced.""")
 public record KeyInfo(
 	@Schema(
 		description = """
-			What the credential names, and what server logs record in place of \
-			it.""",
+			Key identifier. Server logs record the key ID, never the \
+			credential value.""",
 		examples = "4ff6b760264c1918"
 	)
 	String id,
 
-	@Schema(description = "What the key is for.", examples = "the search backend")
+	@Schema(description = "A string describing the key.", examples = "the search backend")
 	String description,
 
 	@Schema(description = """
-		What the key may do, with any role it was created from already \
-		expanded into its permissions.""")
+		Grants assigned to the key, with roles expanded into their constituent \
+		permissions.""")
 	List<Grant> grants,
 
 	@Schema(
-		description = "When the key was created, as an ISO 8601 timestamp.",
+		description = "An ISO 8601 timestamp string defining when the key was created.",
 		examples = "2026-08-16T12:09:33.198275Z"
 	)
 	String createdAt,
 
 	@Schema(
 		description = """
-			When the key stops working, as an ISO 8601 timestamp. Omitted for \
-			a key that does not expire.""",
+			An ISO 8601 timestamp string defining when the key expires. \
+			Omitted for a key that does not expire.""",
 		examples = "2027-01-01T00:00:00Z"
 	)
 	String expiresAt
 ) {
 	/**
 	 * @param permissions
-	 *   permission names, ordered
+	 *   ordered list of permission names
 	 * @param indexes
-	 *   index names and prefix patterns, in the order they were given
+	 *   index names and prefix patterns in the order specified
 	 */
-	@Schema(description = "A set of permissions over a set of indexes, as stored.")
+	@Schema(description = "A stored grant combining permissions and index patterns.")
 	public record Grant(
-		@Schema(description = "Permission names, ordered.")
+		@Schema(description = "Permission names, in sorted order.")
 		List<String> permissions,
 
 		@Schema(description = """
-			Index names and prefix patterns, in the order they were given.""")
+			Index names and prefix patterns in the order specified.""")
 		List<String> indexes
 	) {
 	}

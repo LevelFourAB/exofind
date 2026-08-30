@@ -6,11 +6,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Definition of a field containing text.
+ * Defines a field containing text data.
  *
- * The ways a string can be searched are opt-in, and each way is enabled by
- * including its configuration. An empty object enables it with the defaults of
- * the engine:
+ * <p>Field usages are opt-in, each enabled by including its configuration
+ * object. An empty object enables a usage with engine defaults:
  *
  * <pre>
  * {
@@ -22,8 +21,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
-	Text data. The ways a string can be searched are opt-in, each enabled by \
-	including its configuration; an empty object enables it with engine \
+	Represents text data. Field usages are opt-in, each enabled by including \
+	its configuration object. An empty object enables a usage with engine \
 	defaults. See \
 	[`string`](https://exofind.dev/reference/field-types/#string).""")
 public record StringFieldDefinition(
@@ -60,25 +59,20 @@ public record StringFieldDefinition(
 	Facet facet,
 
 	/**
-	 * How values are normalized before they are compared exactly, which is
-	 * what filtering does.
+	 * Configures exact-match normalization for filtering.
 	 */
-	@Schema(description = """
-		Configures exact-match normalization for filtering - how a value is \
-		normalized before it is compared exactly.""")
+	@Schema(description = "Configures exact-match normalization for filtering.")
 	Keyword keyword,
 
 	/**
-	 * Enables searching the field using a query, where the text is analyzed
-	 * into terms.
+	 * Enables full-text search with analyzed terms.
 	 */
 	@Schema(description = """
 		Enables full-text search with analyzed terms.""")
 	TextUsage matching,
 
 	/**
-	 * Enables using the field for autocompletion, where prefixes of the text
-	 * match.
+	 * Enables prefix matching for as-you-type search queries.
 	 */
 	@Schema(description = """
 		Enables prefix matching for as-you-type search queries. A field \
@@ -86,33 +80,30 @@ public record StringFieldDefinition(
 	TextUsage autocomplete,
 
 	/**
-	 * Enables reading values as paths through a tree, such as
-	 * `Men/Shoes/Running`, which is what a category navigation is built out
-	 * of.
+	 * Enables path hierarchy matching (for example, `Men/Shoes/Running`).
 	 */
 	@Schema(description = """
-		Enables reading values as paths through a tree, such as \
-		`Men/Shoes/Running` - what a category navigation is built out of. \
-		Facets on such a field return nested counts per level, and the `under` \
-		matcher filters to a level and everything below it.""")
+		Enables path hierarchy matching (for example, `Men/Shoes/Running`). \
+		Facets on hierarchy fields return nested counts per level, and the \
+		`under` matcher filters to a level and all sub-levels.""")
 	Hierarchy hierarchy
 ) implements FieldDefinition {
 	/**
-	 * How values are read as paths through a tree.
+	 * Enables path hierarchy matching.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "How values are read as paths through a tree.")
+	@Schema(description = "Enables path hierarchy matching.")
 	public record Hierarchy(
 		/**
-		 * What separates one level of a path from the next. Defaults to `/`.
-		 * Part of how values were written, so changing it on an index holding
-		 * documents needs those documents indexed again.
+		 * Specifies the delimiter between hierarchy levels. Defaults to `/`.
+		 * Changing the separator on an index holding documents requires
+		 * reindexing them.
 		 */
 		@Schema(
 			description = """
-				What separates one level of a path from the next. Part of how \
-				values were written, so changing it on an index holding \
-				documents requires reindexing them.""",
+				Specifies the string that separates hierarchy levels. Changing \
+				the separator on an index that contains documents requires \
+				reindexing them.""",
 			defaultValue = "/"
 		)
 		String separator
@@ -120,19 +111,19 @@ public record StringFieldDefinition(
 	}
 
 	/**
-	 * How values are normalized before they are compared exactly.
+	 * Configures exact-match normalization for filtering.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "How values are normalized before they are compared exactly.")
+	@Schema(description = "Configures exact-match normalization for filtering.")
 	public record Keyword(
 		/**
-		 * If case is folded away before values are compared. Defaults to
-		 * true, so filtering on `Fiction` also finds `fiction`.
+		 * When `true`, folds case before values are compared, allowing filters
+		 * on `Fiction` to match `fiction`. Defaults to true.
 		 */
 		@Schema(
 			description = """
-				Whether case is folded away before values are compared, so a \
-				filter on `Fiction` also matches `fiction`.""",
+				When `true`, folds case before values are compared, allowing \
+				filters on `Fiction` to match `fiction`.""",
 			defaultValue = "true"
 		)
 		Boolean caseFolding
@@ -140,123 +131,124 @@ public record StringFieldDefinition(
 	}
 
 	/**
-	 * One shape for every text usage. Which slot it sits in - `matching` or
-	 * `autocomplete` - decides what the engine builds when no analyzer is
-	 * given.
+	 * Configuration properties shared by the `matching` and `autocomplete`
+	 * usages. The usage type determines the default analyzer configuration
+	 * generated by the engine when no analyzer is explicitly provided.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Configuration shared by the `matching` and `autocomplete` usages. \
-		Which slot it sits in decides what the engine builds when no analyzer \
-		is given.""")
+		Configuration properties shared by the `matching` and `autocomplete` \
+		usages. The usage type determines the default analyzer configuration \
+		generated by the engine when no analyzer is explicitly provided.""")
 	public record TextUsage(
 		/**
-		 * How the text is analyzed. Absent means the engine builds analysis
-		 * from the locale of the value and the usage.
+		 * Specifies how the text of this usage is analyzed. If omitted, the
+		 * engine generates an analyzer based on the field usage and locale.
 		 */
 		@Schema(description = """
-			How the text is analyzed. Omitted, the engine generates an \
-			analyzer from the field usage and locale. See \
-			[Analysis](https://exofind.dev/reference/analysis/).""")
+			Specifies how the text of this usage is analyzed. If omitted, the \
+			engine generates an analyzer based on the field usage and locale. \
+			See [Analysis](https://exofind.dev/reference/analysis/).""")
 		AnalyzerDefinition analyzer,
 
 		/**
-		 * How much a hit in this field counts relative to hits in other
-		 * fields when text is searched across several. Defaults to 1.
+		 * Relative score weight of hits in this field when querying across
+		 * multiple fields. Defaults to 1.
 		 */
 		@Schema(
 			description = """
 				Relative score weight of hits in this field when querying \
-				across several fields.""",
+				across multiple fields.""",
 			defaultValue = "1"
 		)
 		Float weight,
 
 		/**
-		 * Enables highlighting where in the text the matches were, which
-		 * requires the text to be stored.
+		 * Enables highlighted snippet extraction in search responses. Text is
+		 * stored for highlighting regardless of whether the field is configured
+		 * as stored.
 		 */
 		@Schema(description = """
 			Enables highlighted snippet extraction in search responses. Text \
-			is stored for highlighting regardless of `stored`. Highlighting \
-			targets `matching` when it is defined; `highlight` on \
+			is stored for highlighting regardless of the `stored` property. \
+			Highlighting targets `matching` when defined; `highlight` on \
 			`autocomplete` takes effect only when `matching` is omitted.""")
 		Highlight highlight,
 
 		/**
-		 * Enables matching words despite typing mistakes, including in the
-		 * word somebody is still typing.
+		 * Enables typo tolerance for matching search terms, including prefixes
+		 * currently being typed.
 		 */
 		@Schema(description = """
-			Enables matching words despite typing mistakes, including in the \
-			word somebody is still typing.""")
+			Enables typo tolerance for matching search terms, including \
+			prefixes currently being typed.""")
 		TypoTolerance typoTolerance,
 
 		/**
-		 * Whether the engine-built chain splits compound words into their
-		 * parts. Absent means the engine decides by the locale of the value.
-		 * Only usable when the engine builds the chain - a chain given
-		 * through {@code analyzer} says itself whether it splits.
+		 * Controls compound word splitting in the engine-generated chain. If
+		 * omitted, splitting is determined by the locale of the value.
+		 * Supported only when using engine-generated analyzers; custom
+		 * analyzers configured via {@code analyzer} define their own
+		 * decompounding behavior.
 		 */
 		@Schema(description = """
-			Controls compound word splitting in the engine-generated chain. \
-			Omitted, the engine decides by the locale of the value. Supported \
-			only when the engine builds the chain - a chain given through \
-			`analyzer` says itself whether it splits. See [Compound \
+			Controls compound word splitting in the engine-generated chain. If \
+			omitted, splitting is determined by the locale of the value. \
+			Supported only when using engine-generated analyzers; custom \
+			analyzers specified via `analyzer` define their own decompounding \
+			behavior. See [Compound \
 			words](https://exofind.dev/reference/analysis/#compound-words).""")
 		Decompound decompound,
 
 		/**
-		 * Enables ranking a value the search matched whole above one that
-		 * merely holds the same words, so a document named what was typed
-		 * comes first.
+		 * Boosts documents where the query matches the full field value,
+		 * ranking full-field matches higher than partial matches.
 		 */
 		@Schema(description = """
-			Boosts documents where the query matches the full field value, so \
-			a document named what was typed comes first. Adjusts ranking only, \
-			without changing hit counts or facet distributions; analyzer \
-			normalization is applied before the comparison.""")
+			Boosts documents where the query matches the full field value. \
+			Adjusts ranking only without modifying hit counts or facet \
+			distributions; analyzer normalization is applied before the \
+			comparison.""")
 		Exact exact,
 
 		/**
-		 * How much the length of a value counts against it. Absent means the
-		 * engine decides, which is {@code moderate}.
+		 * Controls the field length penalty in ranking. If omitted, defaults to
+		 * {@code moderate}.
 		 */
 		@Schema(
 			description = """
-				Controls the field length penalty in ranking. Takes effect at \
-				search time without reindexing.""",
+				Controls the field length penalty in ranking. Changes take \
+				effect at search time without reindexing.""",
 			defaultValue = "moderate"
 		)
 		LengthNormalization lengthNormalization
 	) {
 		/**
-		 * How highlighting matches within the text behaves.
+		 * Enables highlighted snippet extraction within matching text.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(description = """
-			Enables highlighting matches within the text. Carries no \
-			options.""")
+			Enables highlighted snippet extraction within matching text. \
+			Contains no configuration properties.""")
 		public record Highlight() {
 		}
 
 		/**
-		 * How a value the search matched whole is ranked against one that
-		 * merely holds the same words.
+		 * Configures score boosting for queries matching the full field value.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(description = """
-			How a value the search matched whole is ranked against one that \
-			merely holds the same words.""")
+			Configures score boosting for queries matching the full field \
+			value.""")
 		public record Exact(
 			/**
-			 * How much a whole-value match adds, on the scale of what a hit in
-			 * this field counts. Defaults to 2.
+			 * Score boost multiplier applied when a query matches the full
+			 * field value. Defaults to 2.
 			 */
 			@Schema(
 				description = """
-					How much a whole-value match adds, on the scale of what a \
-					hit in this field counts.""",
+					Score boost multiplier applied when a query matches the \
+					full field value.""",
 				defaultValue = "2"
 			)
 			Float boost
@@ -264,14 +256,13 @@ public record StringFieldDefinition(
 		}
 
 		/**
-		 * How much the length of a value counts against it, which is what
-		 * ranks the same words covering a short value above them sitting
-		 * inside a long one.
+		 * Controls the field length penalty applied during ranking to favor
+		 * shorter matches over longer text.
 		 */
 		@Schema(description = """
-			Field length penalty in ranking: `none` applies no penalty, \
-			`moderate` normalizes the way prose reads, and `strong` applies \
-			the full penalty, for a field holding names rather than prose.""")
+			Controls the field length penalty in ranking: `none` applies no \
+			penalty, `moderate` applies standard prose normalization, and \
+			`strong` applies the full penalty for short fields such as titles.""")
 		public enum LengthNormalization {
 			/**
 			 * Length is not counted at all, for a field where a longer value
@@ -296,11 +287,12 @@ public record StringFieldDefinition(
 		}
 
 		/**
-		 * Whether compound words are split into their parts.
+		 * Controls compound word splitting in the engine-generated analyzer
+		 * chain.
 		 */
 		@Schema(description = """
-			Compound word splitting in the engine-generated chain. `none` \
-			disables splitting whatever the locale.""")
+			Controls compound word splitting in the engine-generated analyzer \
+			chain. Set to `none` to disable splitting.""")
 		public enum Decompound {
 			/**
 			 * Never split, whatever the locale.
@@ -310,66 +302,62 @@ public record StringFieldDefinition(
 		}
 
 		/**
-		 * How matching words despite typing mistakes behaves.
+		 * Enables typo tolerance for term matching.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(description = """
-			Enables typo tolerance. Mixed alphanumeric words follow the \
-			standard length thresholds.""")
+			Enables typo tolerance. Mixed alphanumeric words follow standard \
+			length thresholds.""")
 		public record TypoTolerance(
 			/**
-			 * The shortest word that may contain one typo. Defaults to 5.
+			 * Minimum word length required to allow one typo. Defaults to 5.
 			 */
 			@Schema(
-				description = "The shortest word that may contain one typo.",
+				description = "Minimum word length required to allow one typo.",
 				defaultValue = "5"
 			)
 			Integer minLengthOneTypo,
 
 			/**
-			 * The shortest word that may contain two typos. Defaults to 9 for
-			 * `matching`; under `autocomplete` a word carries two typos only
-			 * where this is given, since the second one costs several times
-			 * the first there and finds little.
+			 * Minimum word length required to allow two typos. Defaults to 9
+			 * for `matching`. In `autocomplete`, two typos are permitted only
+			 * when explicitly configured.
 			 */
 			@Schema(
 				description = """
-					The shortest word that may contain two typos. Under \
-					`autocomplete`, two typos are permitted only when this is \
-					set explicitly, since the second costs several times the \
-					first there and finds little.""",
+					Minimum word length required to allow two typos. In \
+					`autocomplete`, two typos are permitted only when \
+					explicitly configured.""",
 				defaultValue = "9"
 			)
 			Integer minLengthTwoTypos,
 
 			/**
-			 * How many leading characters have to match exactly. Defaults
-			 * to 1.
+			 * Number of leading characters that must match exactly. Defaults to
+			 * 1.
 			 */
 			@Schema(
-				description = "How many leading characters must match exactly.",
+				description = "Number of leading characters that must match exactly.",
 				defaultValue = "1"
 			)
 			Integer prefixLength,
 
 			/**
-			 * Enables typos in words of digits alone, which are otherwise
-			 * matched exactly however long they are - a number one digit off
-			 * is a different number rather than a misspelling.
+			 * Enables typo tolerance for digit-only words. If omitted,
+			 * digit-only words require exact matches regardless of length.
 			 */
 			@Schema(description = """
-				Enables typos in digit-only words, which otherwise require \
-				exact matches however long they are - a number one digit off \
-				is a different number rather than a misspelling.""")
+				Enables typo tolerance for digit-only words. If omitted, \
+				digit-only words require exact matches regardless of length.""")
 			Numbers numbers
 		) {
 			/**
-			 * How words of digits alone are matched.
+			 * Enables typo tolerance for digit-only words.
 			 */
 			@JsonInclude(JsonInclude.Include.NON_NULL)
 			@Schema(description = """
-				Enables typo tolerance for digit-only words. Carries no \
-				options.""")
+				Enables typo tolerance for digit-only words. Contains no \
+				configuration properties.""")
 			public record Numbers() {
 			}
 		}
