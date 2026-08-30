@@ -15,7 +15,7 @@ import '../../examples/cleveland/main.css';
 
 <Example
 	title="Cleveland Museum of Art"
-	description="Open access objects from the Cleveland Museum of Art, searched with Exofind - facets counted sideways of what has been ticked, and two ways of paging through the rest."
+	description="30 000 open access objects from the Cleveland Museum of Art, searched with Exofind. Facet counts ignore the filter they belong to, and the results page by number or by cursor."
 	index="cleveland"
 >
 	<section class="ask">
@@ -37,10 +37,9 @@ import '../../examples/cleveland/main.css';
 			<p class="status" id="status" role="status"></p>
 		</div>
 		<p class="lede">
-			Tick a department and the objects narrow while the department
-			counts stay as they were, so the list is still worth reading. What
-			is typed above is the search itself, and that narrows every count
-			there is.
+			Tick a department and the objects narrow, but the department counts
+			stay as they were. Type in the box above and every count narrows,
+			the departments included.
 		</p>
 	</section>
 
@@ -90,11 +89,10 @@ import '../../examples/cleveland/main.css';
 	</div>
 
 	<p slot="footer">
-		Images are served by the museum and shown here by link. Object
-		metadata from
-		<a href="https://openaccess-api.clevelandart.org/">the Cleveland
-		Museum of Art's open access collection</a>, released under
-		<a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>.
+		Images are served by the museum and shown here by link. Object metadata
+		from <a href="https://openaccess-api.clevelandart.org/">the Cleveland
+		Museum of Art's open access collection</a>, released
+		under <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>.
 	</p>
 </Example>
 

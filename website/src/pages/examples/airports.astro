@@ -15,7 +15,7 @@ import '../../examples/airports/main.css';
 
 <Example
 	title="Airport type-ahead"
-	description="Every airport with an IATA code, completed as you type with Exofind - and the milliseconds each keystroke cost."
+	description="Every airport with an IATA code, completed as you type with Exofind. The line above the results says how many milliseconds each keystroke took."
 	index="airports"
 >
 	<section class="ask">
@@ -38,9 +38,10 @@ import '../../examples/airports/main.css';
 		</div>
 
 		<p class="lede">
-			A keystroke is a search. <strong>sto</strong> completes into
-			Stockholm, <strong>stockhlm</strong> is forgiven, and
-			<strong>ES</strong> lists every code that starts with it.
+			Every keystroke runs a search. <strong>sto</strong> completes to
+			Stockholm, <strong>stockhlm</strong> still finds it,
+			and <strong>ES</strong> lists every code that starts with those
+			letters.
 		</p>
 	</section>
 
@@ -80,9 +81,9 @@ import '../../examples/airports/main.css';
 	</div>
 
 	<p slot="footer">
-		Elevations are in feet and distances are as the crow flies. Data from
-		<a href="https://ourairports.com/data/">OurAirports</a>, dedicated to
-		the public domain.
+		Elevations are in feet and distances are as the crow flies. Data
+		from <a href="https://ourairports.com/data/">OurAirports</a>, dedicated
+		to the public domain.
 	</p>
 </Example>
 

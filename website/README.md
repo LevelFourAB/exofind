@@ -135,6 +135,30 @@ Editing this file is the one change the dev server does not pick up. Starlight
 loads it through a virtual module that Vite does not invalidate, so a change
 shows up only after `mise run site` is restarted, or in `mise run site:build`.
 
+## Line breaks in page markup
+
+Astro compresses the HTML it builds. A line break inside a run of text becomes
+a single space, but a line break between text and an inline element is removed,
+and the word runs into the element:
+
+```astro
+<!-- Publishes "called<strong>gravlaxsås</strong>". -->
+Swedish glues words together, so a sauce is called
+<strong>gravlaxsås</strong>.
+
+<!-- Publishes "called <strong>gravlaxsås</strong>". -->
+Swedish glues words together, so a sauce is
+called <strong>gravlaxsås</strong>.
+```
+
+Keep an inline element such as `<a>`, `<strong>`, or `<code>` on the same line
+as the word before it and the word after it, and wrap the paragraph at a break
+between two words. Nothing checks this, and the markup reads correctly in the
+source, so the missing space shows up only on the published page.
+
+Markdown under `docs/` is not affected. Those pages are rendered to HTML
+strings before Astro sees them.
+
 ## Navigation
 
 [`src/components/Head.astro`](src/components/Head.astro) replaces the default

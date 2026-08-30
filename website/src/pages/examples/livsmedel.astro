@@ -8,7 +8,7 @@ import '../../examples/shared/exofind.css';
 
 <Example
 	title="Swedish food search"
-	description="2 606 Swedish foods searched with Exofind, showing what splitting compound words does to a search."
+	description="2 606 Swedish foods, searched with Exofind. A search for sås finds gravlaxsås, because the index splits compound words."
 	index="livsmedel"
 >
 	<section class="ask">
@@ -30,10 +30,10 @@ import '../../examples/shared/exofind.css';
 			<p class="status" id="status" role="status"></p>
 		</div>
 		<p class="lede">
-			Swedish glues words together, so a sauce is called
-			<strong>gravlaxsås</strong>. Searching for <strong>sås</strong>
-			finds it anyway, and the mark under a hit shows where the word was
-			cut.
+			Swedish writes a compound as one word, so a gravlax sauce is
+			a <strong>gravlaxsås</strong>. The index splits the compound, so a
+			search for <strong>sås</strong> finds it. The mark under a hit
+			shows where the word was split.
 		</p>
 	</section>
 
@@ -61,8 +61,8 @@ import '../../examples/shared/exofind.css';
 
 	<p slot="footer">
 		Values are per 100 grams, as published. Data from Livsmedelsverkets
-		livsmedelsdatabas under
-		<a href="https://creativecommons.org/licenses/by/4.0/deed.en">CC BY 4.0</a>.
+		livsmedelsdatabas
+		under <a href="https://creativecommons.org/licenses/by/4.0/deed.en">CC BY 4.0</a>.
 	</p>
 </Example>
 

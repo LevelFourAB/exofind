@@ -16,20 +16,21 @@ import { REPO } from '../../site.mjs';
 <StarlightPage
 	frontmatter={{
 		title: 'Demos',
-		description: 'Pages that search real data through an Exofind node, one per thing worth showing.',
+		description: 'Pages that search real data through an Exofind node: Swedish foods, airports, and museum objects.',
 		tableOfContents: false
 	}}
 >
 	<p>
-		Each page searches a real dataset through a node, and is here to show one
-		thing the engine does.
+		Each page searches a real dataset through a node. The list under a demo
+		names what it shows.
 	</p>
 
 	<DemoList />
 
 	<p>
 		Every page searches the node this site was built for. The index
-		definitions and the scripts that load them are in
-		<a href={`${REPO}/tree/main/examples`}>examples/</a> in the repository.
+		definitions and the scripts that load them are
+		in <a href={`${REPO}/tree/main/examples`}>examples/</a> in the
+		repository.
 	</p>
 </StarlightPage>

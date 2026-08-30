@@ -21,7 +21,7 @@ export const DEMOS = [
 	{
 		name: 'livsmedel',
 		title: 'Swedish food search',
-		summary: '2 606 foods from the Swedish Food Agency. Searching for '
+		summary: '2 606 foods from the Swedish Food Agency. A search for '
 			+ '<strong>sås</strong> finds <strong>gravlaxsås</strong>, because the '
 			+ 'index splits compound words.',
 		shows: [
@@ -35,8 +35,8 @@ export const DEMOS = [
 		name: 'airports',
 		title: 'Airport type-ahead',
 		summary: 'Every airport with an IATA code, completed as you type. '
-			+ '<strong>sto</strong> becomes Stockholm, <strong>stockhlm</strong> is '
-			+ "forgiven, and <strong>ord</strong> finds O'Hare.",
+			+ '<strong>sto</strong> becomes Stockholm, <strong>stockhlm</strong> '
+			+ "still finds it, and <strong>ord</strong> finds O'Hare.",
 		shows: [
 			'autocomplete',
 			'typo tolerance',
@@ -49,8 +49,8 @@ export const DEMOS = [
 		name: 'cleveland',
 		title: 'Cleveland Museum of Art',
 		summary: '30 000 objects from the open access collection. Tick a department '
-			+ 'and the wall of thumbnails changes while the department counts stay '
-			+ 'as they were.',
+			+ 'and the objects narrow, but the department counts stay as they '
+			+ 'were.',
 		shows: [
 			'facet counts that ignore their own filter',
 			'range buckets',
