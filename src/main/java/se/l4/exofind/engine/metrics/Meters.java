@@ -246,6 +246,7 @@ public final class Meters {
 
 	public static final String TRIGGER_CHANGES = "changes";
 	public static final String TRIGGER_INTERVAL = "interval";
+	public static final String TRIGGER_MERGES = "merges";
 	public static final String TRIGGER_EXPLICIT = "explicit";
 
 	public static final String DIRECTION_GAINED = "gained";

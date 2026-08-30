@@ -249,6 +249,13 @@ public class Indexes implements RegistryPoller.Listener {
 	private final CommitPolicy commitPolicy;
 
 	/**
+	 * Segment size in bytes under which Lucene merges the segments of a
+	 * written index toward that size, ahead of its usual tiers. Empty leaves
+	 * Lucene's default floor.
+	 */
+	private final OptionalLong mergeFloorSegment;
+
+	/**
 	 * Cache the stored fields of documents are read through, one for the node
 	 * so that every index draws on the same budget - see {@link DocumentCache}
 	 * for the argument. Disabled unless {@code indexes.document-cache.max-size}
@@ -296,7 +303,8 @@ public class Indexes implements RegistryPoller.Listener {
 			documentCacheMaxSize,
 			diskMinIdle,
 			diskHalfLife,
-			diskSweepInterval
+			diskSweepInterval,
+			Optional.empty()
 		);
 	}
 
@@ -319,7 +327,8 @@ public class Indexes implements RegistryPoller.Listener {
 		@ConfigProperty(name = "exofind.indexes.document-cache.max-size") Optional<String> documentCacheMaxSize,
 		@ConfigProperty(name = "exofind.indexes.disk.min-idle", defaultValue = "24h") Duration diskMinIdle,
 		@ConfigProperty(name = "exofind.indexes.disk.half-life", defaultValue = "168h") Duration diskHalfLife,
-		@ConfigProperty(name = "exofind.indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval
+		@ConfigProperty(name = "exofind.indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval,
+		@ConfigProperty(name = "exofind.indexes.merge.floor-segment") Optional<String> mergeFloorSegment
 	) throws IOException {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;
@@ -338,6 +347,15 @@ public class Indexes implements RegistryPoller.Listener {
 		this.diskMinIdle = diskMinIdle;
 		this.diskHalfLife = diskHalfLife;
 		this.commitPolicy = new CommitPolicy(commitMaxChanges, commitMaxInterval);
+		this.mergeFloorSegment = mergeFloorSegment.isPresent()
+			? OptionalLong.of(parseSize(mergeFloorSegment.get()))
+			: OptionalLong.empty();
+
+		if(this.mergeFloorSegment.orElse(1) == 0) {
+			throw new IllegalArgumentException(
+				"exofind.indexes.merge.floor-segment can not be zero, leave it unset for Lucene's default"
+			);
+		}
 		this.documentCache = documentCacheMaxSize.isPresent()
 			? DocumentCache.sized(parseSize(documentCacheMaxSize.get()))
 			: DocumentCache.disabled();
@@ -1188,7 +1206,8 @@ public class Indexes implements RegistryPoller.Listener {
 				syncProvider.createSync(parsed, dataPath),
 				commitPolicy,
 				documentCache,
-				metrics
+				metrics,
+				mergeFloorSegment
 			);
 
 			/*

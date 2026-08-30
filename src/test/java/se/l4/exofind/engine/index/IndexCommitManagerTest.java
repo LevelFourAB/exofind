@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,6 +22,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -194,6 +196,135 @@ class IndexCommitManagerTest {
 		assertTrue(manager.awaitIdle(WAIT));
 		assertEquals(0, manager.pendingChanges());
 		verify(index, times(1)).commit();
+	}
+
+	@Test
+	void mergesFinishedAfterACommitAreCommittedOnTheirOwn() throws Exception {
+		// The first check finds what a merge produced, the one after finds nothing
+		when(index.hasUncommittedLuceneChanges()).thenReturn(true, false);
+
+		var manager = manager(0, Duration.ofMillis(25));
+		manager.recordChange(1);
+
+		verify(index, timeout(WAIT.toMillis()).times(2)).commit();
+
+		Thread.sleep(SETTLE.toMillis());
+		verify(index, times(2)).commit();
+	}
+
+	@Test
+	void aWriterWithNothingUncommittedIsLeftAlone() throws Exception {
+		var manager = manager(0, Duration.ofMillis(25));
+		manager.recordChange(1);
+
+		assertTrue(manager.awaitIdle(WAIT));
+
+		Thread.sleep(SETTLE.toMillis());
+		verify(index, times(1)).commit();
+	}
+
+	@Test
+	void aMergeStillRunningIsCheckedForAgain() throws Exception {
+		when(index.hasPendingMerges()).thenReturn(true, false);
+		when(index.hasUncommittedLuceneChanges()).thenReturn(false, true, false);
+
+		var manager = manager(0, Duration.ofMillis(25));
+		manager.recordChange(1);
+
+		verify(index, timeout(WAIT.toMillis()).times(2)).commit();
+	}
+
+	@Test
+	void aDisabledIntervalTriggerNeverChecksForMerges() throws Exception {
+		when(index.hasUncommittedLuceneChanges()).thenReturn(true);
+
+		var manager = manager(1, Duration.ZERO);
+		manager.recordChange(1);
+
+		assertTrue(manager.awaitIdle(WAIT));
+
+		Thread.sleep(SETTLE.toMillis());
+		verify(index, times(1)).commit();
+	}
+
+	@Test
+	void aFailedMergeCommitIsCheckedForAgain() throws Exception {
+		// The check that follows the failed commit still finds the merge
+		when(index.hasUncommittedLuceneChanges()).thenReturn(true, true, false);
+
+		var commits = new AtomicInteger();
+		doAnswer(invocation -> {
+			if(commits.incrementAndGet() == 2) {
+				throw new IOException("the remote is not answering");
+			}
+
+			return null;
+		}).when(index).commit();
+
+		var manager = manager(0, Duration.ofMillis(25));
+		manager.recordChange(1);
+
+		// One for the change, a failed one for the merges, and the check after it
+		verify(index, timeout(WAIT.toMillis()).times(3)).commit();
+	}
+
+	@Test
+	void aFailedMergeCommitDoesNotHoldClosingOpen() throws Exception {
+		when(index.hasUncommittedLuceneChanges()).thenReturn(true);
+
+		var commits = new AtomicInteger();
+		var failed = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			if(commits.incrementAndGet() >= 2) {
+				failed.countDown();
+				throw new IOException("the remote is not answering");
+			}
+
+			return null;
+		}).when(index).commit();
+
+		var manager = manager(0, Duration.ofMillis(25));
+		manager.recordChange(1);
+
+		assertTrue(failed.await(WAIT.toMillis(), TimeUnit.MILLISECONDS));
+
+		var started = System.nanoTime();
+		manager.close();
+		var waited = Duration.ofNanos(System.nanoTime() - started);
+
+		assertTrue(
+			waited.compareTo(SETTLE) < 0,
+			"closing waited " + waited + " for a commit that carried no changes"
+		);
+	}
+
+	@Test
+	void aCommitGivenUpOnLeavesTheMergeCheckOff() throws Exception {
+		// The check would find something to commit if it were still armed
+		when(index.hasUncommittedLuceneChanges()).thenReturn(true);
+
+		var commits = new AtomicInteger();
+		doAnswer(invocation -> {
+			if(commits.incrementAndGet() == 2) {
+				throw new SyncConflictException("the remote was written by another node");
+			}
+
+			return null;
+		}).when(index).commit();
+
+		// Changes commit at once, so the second one lands inside the interval
+		var interval = Duration.ofMillis(500);
+		var manager = manager(1, interval);
+
+		manager.recordChange(1);
+		assertTrue(manager.awaitIdle(WAIT));
+
+		// Given up on while the check armed by the first commit is still waiting
+		manager.recordChange(1);
+		assertTrue(manager.awaitIdle(WAIT));
+
+		Thread.sleep(interval.plus(SETTLE).toMillis());
+		verify(index, times(2)).commit();
 	}
 
 	@Test

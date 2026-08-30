@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -24,7 +25,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.metrics.Meters;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
@@ -156,6 +161,82 @@ public class IndexAutoCommitTest {
 		);
 
 		assertThat(index.getState(), is(IndexState.MODIFIED));
+	}
+
+	/**
+	 * A commit starts Lucene merging the segments it wrote, and a merge that
+	 * finishes after the last commit leaves the writer holding work no commit
+	 * has taken. The index commits it without new documents arriving.
+	 */
+	@Test
+	public void aMergeFinishingAfterTheLastCommitIsCommittedOnItsOwn() throws Exception {
+		var registry = new SimpleMeterRegistry();
+
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var state = new NodeState(true);
+		state.updateOwnership(true);
+
+		var index = new Index(
+			state,
+			"test",
+			path,
+			new NoopSync(),
+			new CommitPolicy(1, Duration.ofMillis(25)),
+			DocumentCache.disabled(),
+			new RequestMetrics(registry, false)
+		);
+		indexes.add(index);
+
+		index.pull();
+		index.updateDefinition(definition().build());
+
+		var mergeCommits = registry.timer(
+			Meters.COMMIT,
+			Meters.TAG_TRIGGER, Meters.TRIGGER_MERGES,
+			Meters.TAG_OUTCOME, Meters.OUTCOME_SUCCESS
+		);
+
+		/*
+		 * A commit per document, so every document is its own segment, and the
+		 * writer is left with nothing waiting before the next one arrives.
+		 * Whenever Lucene decides to merge the small segments, the merge
+		 * finishes with no commit coming - only the commit made for the merges
+		 * alone can take what it produced.
+		 */
+		for(var i = 0; i < 200 && mergeCommits.count() == 0; i++) {
+			index.addDocument(new Document(new Document.Value("id", String.valueOf(i))));
+			awaitNoPendingChanges(index);
+			awaitNothingUncommitted(index);
+		}
+
+		assertTrue(
+			mergeCommits.count() > 0,
+			"no commit was made for the merges alone"
+		);
+	}
+
+	private void awaitNothingUncommitted(Index index) throws Exception {
+		var deadline = System.nanoTime() + WAIT.toNanos();
+		while(index.hasUncommittedLuceneChanges() || index.hasPendingMerges()) {
+			if(System.nanoTime() > deadline) {
+				fail("The writer still holds work no commit has taken");
+			}
+
+			Thread.sleep(10);
+		}
+	}
+
+	private void awaitNoPendingChanges(Index index) throws Exception {
+		var deadline = System.nanoTime() + WAIT.toNanos();
+		while(index.getPendingChanges() > 0) {
+			if(System.nanoTime() > deadline) {
+				fail("The change was never committed");
+			}
+
+			Thread.sleep(5);
+		}
 	}
 
 	private Document awaitDocument(Index index, String key) throws Exception {

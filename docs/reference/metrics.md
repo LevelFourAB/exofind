@@ -20,7 +20,7 @@ You can scrape these meters through the Prometheus endpoint or push them to an O
 | `exofind.write` | Timer | Seconds | `operation` (`add`, `update`, `delete`, `delete_by_query`), `outcome` (`success`, `error`) | Duration of a write request on the node that served it. The duration covers reading the request and changing the index, and excludes finding the index. |
 | `exofind.write.documents` | Counter | Documents | `operation` (`add`, `update`, `delete`, `delete_by_query`) | Count of documents processed in write requests. A request that failed counts none, including the documents it wrote before the failure. |
 | `exofind.write.forwarded` | Counter | Requests | `outcome` (`success`, `unreachable`, `unavailable`, `stale`) | Write requests forwarded to the node holding the index. |
-| `exofind.commit` | Timer | Seconds | `trigger` (`changes`, `interval`, `explicit`), `outcome` (`success`, `error`) | Duration of a Lucene commit operation. |
+| `exofind.commit` | Timer | Seconds | `trigger` (`changes`, `interval`, `merges`, `explicit`), `outcome` (`success`, `error`) | Duration of a Lucene commit operation. |
 
 The `operation` tag names the request rather than the endpoint, so the JSON and the newline-delimited form of one request share a value:
 

@@ -49,6 +49,7 @@ import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermsEnum;
+import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.CollectionTerminatedException;
@@ -427,6 +428,13 @@ public class Index {
 	private final RequestMetrics metrics;
 
 	/**
+	 * Segment size in bytes under which Lucene merges segments of this index
+	 * toward that size, ahead of its usual tiers. Empty leaves Lucene's
+	 * default floor.
+	 */
+	private final OptionalLong mergeFloorSegment;
+
+	/**
 	 * Guards {@link #pendingSources}, {@link #mergeReader} and
 	 * {@link #mergeReaderStale}, which a partial update reads and every write
 	 * updates - all of them while only the read lock of the index is held.
@@ -523,7 +531,35 @@ public class Index {
 		DocumentCache documentCache,
 		RequestMetrics metrics
 	) {
+		this(
+			nodeState,
+			name,
+			localPath,
+			sync,
+			commitPolicy,
+			documentCache,
+			metrics,
+			OptionalLong.empty()
+		);
+	}
+
+	/**
+	 * @param mergeFloorSegment
+	 *   segment size in bytes under which Lucene merges segments toward that
+	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
+	 */
+	public Index(
+		NodeState nodeState,
+		String name,
+		Path localPath,
+		StateSync sync,
+		CommitPolicy commitPolicy,
+		DocumentCache documentCache,
+		RequestMetrics metrics,
+		OptionalLong mergeFloorSegment
+	) {
 		this.metrics = metrics;
+		this.mergeFloorSegment = mergeFloorSegment;
 		this.nodeState = nodeState;
 		this.id = name;
 		this.indexName = IndexName.parse(name).index();
@@ -834,6 +870,19 @@ public class Index {
 				config.setIndexDeletionPolicy(snapshots);
 				config.setCodec(new IndexCodec(schema));
 				config.setSimilarity(similarity);
+
+				if(mergeFloorSegment.isPresent()) {
+					/*
+					 * Every commit flushes a segment, and frequent commits flush
+					 * small ones. A raised floor merges them into floor-sized
+					 * segments sooner, so a push carries fewer small files.
+					 */
+					var mergePolicy = new TieredMergePolicy();
+					mergePolicy.setFloorSegmentMB(
+						mergeFloorSegment.getAsLong() / (double) (1 << 20)
+					);
+					config.setMergePolicy(mergePolicy);
+				}
 
 				this.writer = new IndexWriter(directory, config);
 				this.reader = DirectoryReader.open(writer);
@@ -1173,6 +1222,40 @@ public class Index {
 	 */
 	public Duration getPendingAge() {
 		return commitManager.getPendingAge();
+	}
+
+	/**
+	 * Get whether the Lucene writer holds anything its last commit did not
+	 * take. Merges finishing in the background put the writer in this state
+	 * without any document changing, and only a commit takes it out again.
+	 *
+	 * @return
+	 *   {@code false} on a node that does not write the index
+	 */
+	public boolean hasUncommittedLuceneChanges() {
+		syncLock.readLock().lock();
+		try {
+			return writer != null && writer.hasUncommittedChanges();
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Get whether Lucene is merging segments of this index or holds merges
+	 * waiting to run. A merge that finishes leaves the writer with
+	 * {@link #hasUncommittedLuceneChanges() uncommitted changes}.
+	 *
+	 * @return
+	 *   {@code false} on a node that does not write the index
+	 */
+	public boolean hasPendingMerges() {
+		syncLock.readLock().lock();
+		try {
+			return writer != null && writer.hasPendingMerges();
+		} finally {
+			syncLock.readLock().unlock();
+		}
 	}
 
 	/**

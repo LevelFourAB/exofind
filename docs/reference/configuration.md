@@ -173,6 +173,31 @@ while retaining pending changes. Retries are abandoned in two cases: another
 node wrote to storage first (triggering an index pull), or the node lost write
 ownership of the index.
 
+## Segment merging
+
+Each commit creates a Lucene segment, and Lucene merges small segments into
+larger ones in the background on the node that writes the index. A push uploads
+the merged segments and deletes the objects they replaced, so remote storage
+holds the merged form and the object count stays bounded however often the
+index commits.
+
+A merge can finish after the last commit, leaving merged segments that no
+commit has taken. The indexer then commits and pushes them on its own, one
+`EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` after the last commit. With the interval
+trigger disabled, finished merges wait for the next commit.
+
+Frequent commits create many small segments, and each merge uploads its result
+again. Setting `EXOFIND_INDEXES_MERGE_FLOOR_SEGMENT` makes Lucene merge
+segments below that size toward it ahead of its usual tiers, which keeps the
+number of small objects down at the cost of rewriting small segments more
+often. Leave it unset to use Lucene's default.
+
+The following table lists segment merging configuration variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXOFIND_INDEXES_MERGE_FLOOR_SEGMENT` | Segment size below which Lucene merges segments toward that size, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Lucene's default |
+
 ## Disk use
 
 Closing an index retains its files on disk. Setting

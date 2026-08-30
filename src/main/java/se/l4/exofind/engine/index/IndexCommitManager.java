@@ -24,6 +24,13 @@ import se.l4.exofind.engine.metrics.RequestMetrics;
  * running is committed by the next one rather than starting one of its own, so
  * a burst costs the same number of commits as a trickle does.
  *
+ * <p>A commit also starts Lucene merging the segments it wrote, and a merge
+ * that finishes after the last commit leaves the writer holding work no commit
+ * has taken. Once a commit leaves nothing waiting, the manager looks at the
+ * writer again after one commit interval and commits what merging produced, so
+ * an index that goes quiet ends up committed in its merged form. With the
+ * interval trigger disabled, finished merges wait for the next commit.
+ *
  * <p>A commit that fails is retried, waiting twice as long before each attempt
  * up to a minute, and the changes stay counted so that nothing is lost by a
  * remote that is briefly unreachable. Two failures are not retried, because
@@ -88,6 +95,12 @@ public class IndexCommitManager {
 	 * The armed time trigger, or {@code null} when none is waiting to fire.
 	 */
 	private ScheduledFuture<?> timer;
+
+	/**
+	 * The armed check for merges that finished after the last commit, or
+	 * {@code null} when none is waiting to fire.
+	 */
+	private ScheduledFuture<?> mergeTimer;
 
 	/**
 	 * @param executor
@@ -185,6 +198,7 @@ public class IndexCommitManager {
 		try {
 			closed = true;
 			cancelTimer();
+			cancelMergeTimer();
 
 			var deadline = System.nanoTime() + CLOSE_WAIT.toNanos();
 			while(committing) {
@@ -277,6 +291,75 @@ public class IndexCommitManager {
 		}
 	}
 
+	private void cancelMergeTimer() {
+		if(mergeTimer != null) {
+			mergeTimer.cancel(false);
+			mergeTimer = null;
+		}
+	}
+
+	/**
+	 * Arm the check for merges that finished after the last commit, unless one
+	 * is already armed or a commit is running - a commit that ends with nothing
+	 * left waiting arms it again itself, unless it was given up on, which leaves
+	 * the check off for the pull that replaces this copy. The check fires one
+	 * commit interval out; with the interval trigger disabled there is no
+	 * check, and finished merges wait for the next commit.
+	 */
+	private void armMergeCheck() {
+		if(mergeTimer != null || committing || closed || policy.maxInterval().isZero()) {
+			return;
+		}
+
+		try {
+			mergeTimer = executor.schedule(
+				this::onMergeCheck,
+				policy.maxInterval().toNanos(),
+				TimeUnit.NANOSECONDS
+			);
+		} catch(RejectedExecutionException e) {
+			// The node is shutting down; the next writer commits the merges
+		}
+	}
+
+	private void onMergeCheck() {
+		lock.lock();
+		try {
+			mergeTimer = null;
+
+			if(closed || committing || pendingChanges > 0) {
+				// The commit these lead to arms the check again if it needs one
+				return;
+			}
+		} finally {
+			lock.unlock();
+		}
+
+		/*
+		 * Asked without this manager's lock: reading the writer takes a lock
+		 * of the index, and a write path holds one of those while it takes
+		 * ours.
+		 */
+		var uncommitted = index.hasUncommittedLuceneChanges();
+		var merging = index.hasPendingMerges();
+
+		lock.lock();
+		try {
+			if(closed || committing || pendingChanges > 0) {
+				return;
+			}
+
+			if(uncommitted) {
+				startCommit(Duration.ZERO, true);
+			} else if(merging) {
+				// Still running, so what it produces is not there to take yet
+				armMergeCheck();
+			}
+		} finally {
+			lock.unlock();
+		}
+	}
+
 	private void onTimer() {
 		lock.lock();
 		try {
@@ -298,6 +381,15 @@ public class IndexCommitManager {
 	 * which is what keeps a burst of changes from queueing a commit each.
 	 */
 	private void startCommit(Duration delay) {
+		startCommit(delay, false);
+	}
+
+	/**
+	 * @param forMerges
+	 *   whether the commit is being made for merges that finished after the
+	 *   last one, letting it run with no changes counted
+	 */
+	private void startCommit(Duration delay, boolean forMerges) {
 		if(committing || closed) {
 			return;
 		}
@@ -306,14 +398,18 @@ public class IndexCommitManager {
 		committing = true;
 
 		try {
-			executor.schedule(this::runCommit, delay.toNanos(), TimeUnit.NANOSECONDS);
+			executor.schedule(
+				() -> runCommit(forMerges),
+				delay.toNanos(),
+				TimeUnit.NANOSECONDS
+			);
 		} catch(RejectedExecutionException e) {
 			committing = false;
 			idle.signalAll();
 		}
 	}
 
-	private void runCommit() {
+	private void runCommit(boolean forMerges) {
 		long attempted;
 		long startedAt;
 
@@ -322,8 +418,8 @@ public class IndexCommitManager {
 			attempted = pendingChanges;
 			startedAt = System.nanoTime();
 
-			if(closed || attempted == 0) {
-				finish(Outcome.NOTHING_TO_DO, 0, startedAt);
+			if(closed || (attempted == 0 && !forMerges)) {
+				finish(Outcome.NOTHING_TO_DO, 0, startedAt, forMerges);
 				return;
 			}
 		} finally {
@@ -335,17 +431,17 @@ public class IndexCommitManager {
 		 * index, so it runs without this manager's lock - a caller recording a
 		 * change holds a read lock of the index while it takes ours.
 		 */
-		var outcome = commit(attempted);
+		var outcome = commit(attempted, forMerges);
 
 		lock.lock();
 		try {
-			finish(outcome, attempted, startedAt);
+			finish(outcome, attempted, startedAt, forMerges);
 		} finally {
 			lock.unlock();
 		}
 	}
 
-	private Outcome commit(long attempted) {
+	private Outcome commit(long attempted, boolean forMerges) {
 		logger.atDebug()
 			.addKeyValue("index", index.getId())
 			.addKeyValue("changes", attempted)
@@ -356,9 +452,11 @@ public class IndexCommitManager {
 		 * under the lock. Reading the backlog here would race with a change
 		 * being recorded while the commit runs.
 		 */
-		var trigger = policy.maxChanges() > 0 && attempted >= policy.maxChanges()
-			? Meters.TRIGGER_CHANGES
-			: Meters.TRIGGER_INTERVAL;
+		var trigger = forMerges && attempted == 0
+			? Meters.TRIGGER_MERGES
+			: policy.maxChanges() > 0 && attempted >= policy.maxChanges()
+				? Meters.TRIGGER_CHANGES
+				: Meters.TRIGGER_INTERVAL;
 
 		var started = System.nanoTime();
 		try {
@@ -413,8 +511,12 @@ public class IndexCommitManager {
 	 * @param startedAt
 	 *   when the commit started, which is the earliest the changes left waiting
 	 *   can have arrived
+	 * @param forMerges
+	 *   whether the commit was made for finished merges. A failed one of those
+	 *   arms the check again instead of being retried, because it carries no
+	 *   changes that a retry would save
 	 */
-	private void finish(Outcome outcome, long attempted, long startedAt) {
+	private void finish(Outcome outcome, long attempted, long startedAt, boolean forMerges) {
 		committing = false;
 
 		switch(outcome) {
@@ -426,6 +528,12 @@ public class IndexCommitManager {
 			case ABANDONED -> {
 				pendingChanges = 0;
 				failures = 0;
+
+				/*
+				 * This copy is waiting to be pulled over, so a check armed before
+				 * the commit would commit and push what the pull discards.
+				 */
+				cancelMergeTimer();
 			}
 			case FAILED -> failures++;
 			case NOTHING_TO_DO -> {
@@ -435,7 +543,26 @@ public class IndexCommitManager {
 
 		idle.signalAll();
 
-		if(closed || pendingChanges == 0) {
+		if(closed) {
+			return;
+		}
+
+		if(pendingChanges == 0) {
+			if(outcome == Outcome.COMMITTED) {
+				armMergeCheck();
+			} else if(forMerges && outcome == Outcome.FAILED) {
+				/*
+				 * Nothing is at stake - the merged segments are on disk and only
+				 * miss a commit point - so the check is armed again rather than a
+				 * retry scheduled. A scheduled retry would count as a commit
+				 * running for its whole backoff and hold close() open for it.
+				 * The backoff is reset with it, so a later commit that carries
+				 * changes starts over from the first delay.
+				 */
+				failures = 0;
+				armMergeCheck();
+			}
+
 			return;
 		}
 
