@@ -205,7 +205,7 @@ public class DocumentMapper {
 			text,
 			DocumentPatch.Selector.ALL,
 			null,
-			mapped(index, index.getField(text), text, null, value)
+			mapped(index, index.getField(text), text, text, null, value)
 		);
 	}
 
@@ -240,7 +240,7 @@ public class DocumentMapper {
 			path.field(),
 			DocumentPatch.Selector.ADDED,
 			null,
-			mapped(index, Optional.of(field), path.field(), null, value)
+			mapped(index, Optional.of(field), path.field(), path.field(), null, value)
 		);
 	}
 
@@ -284,7 +284,7 @@ public class DocumentMapper {
 			path.field(),
 			selector,
 			null,
-			mapped(index, Optional.of(field), path.field(), null, value)
+			mapped(index, Optional.of(field), path.field(), path.field(), null, value)
 		);
 	}
 
@@ -330,7 +330,7 @@ public class DocumentMapper {
 			path.field(),
 			new DocumentPatch.Selector.InLocale(locale),
 			null,
-			mapped(index, Optional.of(field), path.field(), locale, value)
+			mapped(index, Optional.of(field), path.field(), path.field(), locale, value)
 		);
 	}
 
@@ -388,7 +388,7 @@ public class DocumentMapper {
 			objectName,
 			selector,
 			inner,
-			mapped(index, field, inner, null, value)
+			mapped(index, field, inner, path, null, value)
 		);
 	}
 
@@ -404,15 +404,16 @@ public class DocumentMapper {
 		Index index,
 		Optional<Field> field,
 		String name,
+		String path,
 		String locale,
 		Object value
 	) {
 		var values = new ArrayList<Document.Value>();
 
 		if(locale == null) {
-			appendValues(index, field, name, value, values);
+			appendValues(index, field, name, path, value, values);
 		} else {
-			appendIn(index, field.get(), name, locale, value, values);
+			appendIn(index, field.get(), name, path, locale, value, values);
 		}
 
 		return Lists.immutable.ofAll(values);
@@ -437,7 +438,7 @@ public class DocumentMapper {
 
 		for(var entry : json.entrySet()) {
 			var name = entry.getKey();
-			appendValues(index, index.getField(name), name, entry.getValue(), values);
+			appendValues(index, index.getField(name), name, name, entry.getValue(), values);
 		}
 
 		return new Document(values.toArray(Document.Value[]::new));
@@ -455,6 +456,9 @@ public class DocumentMapper {
 	 * @param name
 	 *   the name the value is added under, which for a field inside an object
 	 *   is the name within that object rather than the path
+	 * @param path
+	 *   full dotted path of the field, which any objects further in resolve
+	 *   beneath - the same as {@code name} for a field of the document
 	 * @param value
 	 * @param target
 	 */
@@ -462,6 +466,7 @@ public class DocumentMapper {
 		Index index,
 		Optional<Field> field,
 		String name,
+		String path,
 		Object value,
 		List<Document.Value> target
 	) {
@@ -495,6 +500,7 @@ public class DocumentMapper {
 					index,
 					field0,
 					name,
+					path,
 					String.valueOf(entry.getKey()),
 					entry.getValue(),
 					target
@@ -504,7 +510,7 @@ public class DocumentMapper {
 			return;
 		}
 
-		appendIn(index, field0, name, null, value, target);
+		appendIn(index, field0, name, path, null, value, target);
 	}
 
 	/**
@@ -519,6 +525,7 @@ public class DocumentMapper {
 		Index index,
 		Field field,
 		String name,
+		String path,
 		String locale,
 		Object value,
 		List<Document.Value> target
@@ -528,7 +535,7 @@ public class DocumentMapper {
 		}
 
 		for(var single : each(field, value)) {
-			target.add(new Document.Value(name, toValue(index, field, name, single), locale));
+			target.add(new Document.Value(name, toValue(index, field, path, single), locale));
 		}
 	}
 
@@ -563,16 +570,16 @@ public class DocumentMapper {
 	 *
 	 * @param index
 	 * @param field
-	 * @param name
-	 *   the name the value was given under, which the fields inside an object
-	 *   are looked up beneath - the field's own name says nothing about which
-	 *   of its names this value is, when that name is a pattern
+	 * @param path
+	 *   full dotted path the value was given under, which the fields inside
+	 *   an object are looked up beneath - the field's own name says nothing
+	 *   about which of its names this value is, when that name is a pattern
 	 * @param value
 	 * @return
 	 */
-	private static Object toValue(Index index, Field field, String name, Object value) {
+	private static Object toValue(Index index, Field field, String path, Object value) {
 		if(field.isObject() && value instanceof Map<?, ?> object) {
-			return toNestedDocument(index, name, object);
+			return toNestedDocument(index, path, object);
 		}
 
 		var type = field.getType();
@@ -636,6 +643,7 @@ public class DocumentMapper {
 					.map(nested -> nested.field())
 					.or(() -> index.getField(nestedPath)),
 				name,
+				nestedPath,
 				entry.getValue(),
 				values
 			);

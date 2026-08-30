@@ -242,17 +242,19 @@ public class FieldRolesTest {
 		assertThat(exception.getCode(), is("index:field:role:not_valid_in_object"));
 	}
 
+	/**
+	 * A nested list keeps every value in a document of its own, so a role
+	 * below one keeps everything the value's document can answer for.
+	 */
 	@Test
-	public void testRoleInsideAnObjectLeavesWhatAnObjectRefuses() {
+	public void testRoleInsideANestedListKeepsItsUsages() {
 		var object = (ObjectFieldDefinition) expand(
 			object(ObjectFieldDefinition.Mode.NESTED, string(Role.TITLE))
 		);
 		var field = (StringFieldDefinition) object.fields().get("inner");
 
-		assertThat(field.stored(), is(nullValue()));
-		assertThat(field.matching().highlight(), is(nullValue()));
-
-		// Sorting works inside a nested object, so the role keeps it
+		assertThat(field.stored(), is(Boolean.TRUE));
+		assertThat(field.matching().highlight(), is(notNullValue()));
 		assertThat(field.sort(), is(notNullValue()));
 		assertThat(field.matching().weight(), is(3f));
 	}
@@ -266,6 +268,34 @@ public class FieldRolesTest {
 
 		assertThat(field.sort(), is(nullValue()));
 		assertThat(field.matching(), is(notNullValue()));
+	}
+
+	/**
+	 * A single object keeps its values apart from nothing, so a role inside
+	 * one may keep the value for reading back.
+	 */
+	@Test
+	public void testRoleInsideASingleObjectKeepsStored() {
+		var object = (ObjectFieldDefinition) expand(new ObjectFieldDefinition(
+			null, null, null, null, null,
+			null, null, null,
+			null,
+			null,
+			Map.of("inner", string(Role.TITLE))
+		));
+		var field = (StringFieldDefinition) object.fields().get("inner");
+
+		assertThat(field.stored(), is(Boolean.TRUE));
+	}
+
+	@Test
+	public void testRoleInsideAFlattenedListLeavesStored() {
+		var object = (ObjectFieldDefinition) expand(
+			object(ObjectFieldDefinition.Mode.FLATTENED, string(Role.TITLE))
+		);
+		var field = (StringFieldDefinition) object.fields().get("inner");
+
+		assertThat(field.stored(), is(nullValue()));
 	}
 
 	/**

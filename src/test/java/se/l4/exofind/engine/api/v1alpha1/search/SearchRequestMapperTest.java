@@ -1828,7 +1828,7 @@ public class SearchRequestMapperTest {
 	}
 
 	@Test
-	public void testHitsWithHighlightAreRefused() {
+	public void testHitsWithHighlightOutsideThePathAreRefused() {
 		var fields = new HashMap<String, SearchRequest.HighlightField>();
 		fields.put("name", null);
 
@@ -1846,7 +1846,25 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:with_highlight"));
-		assertThat(pathsOf(e), contains("/highlight"));
+		assertThat(pathsOf(e), contains("/highlight/fields"));
+	}
+
+	@Test
+	public void testHitsWithHighlightInsideThePathAreAccepted() {
+		var fields = new HashMap<String, SearchRequest.HighlightField>();
+		fields.put("variants.note", null);
+
+		var request = SearchRequestMapper.toEngine(
+			withHits(
+				null, null,
+				new SearchRequest.Highlight(fields),
+				null,
+				new SearchRequest.Hits("variants", null, null)
+			),
+			MAX_DEPTH, MAX_WINDOW
+		);
+
+		assertThat(request.request().highlight().containsKey("variants.note"), is(true));
 	}
 
 	@Test

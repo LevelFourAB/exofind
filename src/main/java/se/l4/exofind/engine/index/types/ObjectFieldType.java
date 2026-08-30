@@ -53,16 +53,18 @@ import se.l4.exofind.engine.query.matchers.Matcher;
  * one value, a value hit saying which value it is. What the name may point at
  * is {@link #validateKey}.
  *
- * In the nested mode the fields inside are held to the usages that work
- * across a join to the document a value belongs to. Filtering, matching,
- * sorting and faceting all do: a value says whether its document matches, how
- * well, where it is ordered and what it is counted under, and which values
- * answer is what the {@code nested} clauses of a search decide. Refused are
- * the usages that only mean something for a document of the index - being its
- * primary key, being highlighted, which reads the fields of the document
- * rather than of a value - as are locale variants, stored values and objects
- * inside objects. A flattened list refuses sorting besides, because its
- * values are independent and no one of them stands for the document.
+ * The fields inside are fields like any other, objects included - objects
+ * nest, judged by these same rules at every level. Two positions follow a
+ * field down however deep the objects go. Below a flattened list the values of
+ * every object mix in one document, so sorting and stored values are refused
+ * there: no single value stands for the document, and nothing says which value
+ * a stored one came from. Below a nested list a field lives in a value's own
+ * document, which holds its stored values, offsets and highlight text the way
+ * the index's documents hold theirs; what is refused there is another nested
+ * list - values join to the document across one such level only. A primary
+ * key is refused inside any object, because it names the document itself.
+ * Locale variants work everywhere, each object value filling its own missing
+ * locales.
  */
 public class ObjectFieldType implements FieldType {
 	/**
@@ -93,11 +95,13 @@ public class ObjectFieldType implements FieldType {
 			"Field `{{name}}` is inside an object, where `{{usage}}` is not supported"
 		);
 
-	private static final ErrorType INNER_OBJECT = ErrorType
-		.withCode("index:field:object:inner_object")
+	private static final ErrorType NESTED_IN_NESTED = ErrorType
+		.withCode("index:field:object:nested_in_nested")
 		.withArguments("name")
 		.withMessage(
-			"Field `{{name}}` is an object inside an object, which is not supported"
+			"Field `{{name}}` is a nested list below a nested list, and values "
+			+ "only join to the document across one such level - keep the inner "
+			+ "list `flattened`, or lift it out"
 		);
 
 	private static final ErrorType MODE_REQUIRED = ErrorType
@@ -144,6 +148,16 @@ public class ObjectFieldType implements FieldType {
 			+ "keeping the values apart is the `nested` mode"
 		);
 
+	private static final ErrorType FLATTENED_STORED = ErrorType
+		.withCode("index:field:object:flattened_stored")
+		.withArguments("name")
+		.withMessage(
+			"Field `{{name}}` is inside a flattened list of objects, whose values "
+			+ "mix in the document with nothing saying which value each came from, "
+			+ "so it can not be defined for `stored` - keeping the values apart is "
+			+ "the `nested` mode"
+		);
+
 	@Override
 	public boolean isSortingSupported() {
 		return false;
@@ -159,6 +173,31 @@ public class ObjectFieldType implements FieldType {
 		ObjectLocation location,
 		FieldDef def,
 		ResourcesDef resources
+	) {
+		return validate(location, def, resources, false, false);
+	}
+
+	/**
+	 * Validate an object field somewhere in a definition, told what sits above
+	 * it. The two flags are sticky: once a path passes through a flattened
+	 * list, every field below shares one document with values it can not be
+	 * told apart from, and once it passes through a nested list, every field
+	 * below lives in a value's own document rather than the document a search
+	 * answers with. Both follow a field however deep the objects nest, which
+	 * is why they arrive as arguments rather than being read off the
+	 * definition itself.
+	 *
+	 * @param underFlattenedList
+	 *   whether a flattened list sits anywhere on the path above this field
+	 * @param underNested
+	 *   whether a nested list sits anywhere on the path above this field
+	 */
+	private ListIterable<ErrorMessage> validate(
+		ObjectLocation location,
+		FieldDef def,
+		ResourcesDef resources,
+		boolean underFlattenedList,
+		boolean underNested
 	) {
 		var errors = Lists.mutable.<ErrorMessage>empty();
 
@@ -198,13 +237,16 @@ public class ObjectFieldType implements FieldType {
 
 		var flattenedList = def.getMultiple()
 			&& objectType.getMode() != ObjectFieldTypeDef.Mode.MODE_NESTED;
+		var nestedList = def.getMultiple()
+			&& objectType.getMode() == ObjectFieldTypeDef.Mode.MODE_NESTED;
 
 		for(var entry : objectType.getFieldsMap().entrySet()) {
 			validateInner(
 				location.forField("fields").forField(entry.getKey()),
 				entry.getKey(),
 				entry.getValue(),
-				flattenedList,
+				underFlattenedList || flattenedList,
+				underNested || nestedList,
 				resources,
 				errors
 			);
@@ -286,57 +328,55 @@ public class ObjectFieldType implements FieldType {
 		}
 	}
 
-	private static void validateInner(
+	private void validateInner(
 		ObjectLocation location,
 		String name,
 		FieldDef def,
-		boolean flattenedList,
+		boolean underFlattenedList,
+		boolean underNested,
 		ResourcesDef resources,
 		MutableCollection<ErrorMessage> errors
 	) {
-		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
-			/*
-			 * Refused before the general validation runs, which would recurse
-			 * into it and report its fields as if they could exist.
-			 */
-			errors.add(INNER_OBJECT.toMessage(location, "name", name));
-			return;
-		}
-
 		if(def.getPrimaryKey()) {
 			errors.add(INNER_USAGE_NOT_SUPPORTED.toMessage(
 				location, "name", name, "usage", "primary_key"
 			));
 		}
 
-		if(def.hasStored() && def.getStored()) {
-			errors.add(INNER_USAGE_NOT_SUPPORTED.toMessage(
-				location, "name", name, "usage", "stored"
-			));
-		}
+		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
+			if(underNested && def.getMultiple()
+					&& def.getType().getObject().getMode() == ObjectFieldTypeDef.Mode.MODE_NESTED) {
+				errors.add(NESTED_IN_NESTED.toMessage(location, "name", name));
+			}
 
-		if(def.hasLocales()) {
-			errors.add(INNER_USAGE_NOT_SUPPORTED.toMessage(
-				location, "name", name, "usage", "locales"
-			));
-		}
-
-		if(flattenedList && def.hasSort()) {
-			errors.add(FLATTENED_SORT.toMessage(location, "name", name));
+			/*
+			 * The recursion carries the position flags, which the type dispatch
+			 * of Field.validate can not, so the two halves are called apart.
+			 */
+			var fieldType = Field.validateSettings(location, name, def, resources, errors);
+			if(fieldType instanceof ObjectFieldType objectType) {
+				errors.addAllIterable(objectType.validate(
+					location, def, resources, underFlattenedList, underNested
+				));
+			}
+			return;
 		}
 
 		/*
-		 * Highlighting reads the text a search matched back out of the document
-		 * it is shown for, and a value is not that document. Refused rather
-		 * than written and never readable.
+		 * A stored value reads back to the value it belongs to. A flattened
+		 * list mixes the values of every object in one document with nothing
+		 * saying which value each came from, so nothing there can answer. A
+		 * nested list keeps every value's fields in a document of its own, so
+		 * a stored value reads back from that document the way it reads back
+		 * from the index's - refused only where a flattened list sits on the
+		 * chain, above the nested list or inside its values.
 		 */
-		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.STRING) {
-			var string = def.getType().getString();
-			if(string.getMatching().hasHighlight() || string.getAutocomplete().hasHighlight()) {
-				errors.add(INNER_USAGE_NOT_SUPPORTED.toMessage(
-					location, "name", name, "usage", "highlight"
-				));
-			}
+		if(def.hasStored() && def.getStored() && underFlattenedList) {
+			errors.add(FLATTENED_STORED.toMessage(location, "name", name));
+		}
+
+		if(underFlattenedList && def.hasSort()) {
+			errors.add(FLATTENED_SORT.toMessage(location, "name", name));
 		}
 
 		errors.addAllIterable(Field.validate(location, name, def, resources));

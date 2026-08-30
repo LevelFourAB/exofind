@@ -390,6 +390,46 @@ public class QueryCompiler {
 	}
 
 	/**
+	 * Compile the part of a search that ranks the values of one object field,
+	 * for highlighting the hits that stand for those values.
+	 *
+	 * What {@link #compileScoring} answers at the level of the index this
+	 * answers at the level of the values: the conditions the {@code nested}
+	 * clauses every result had to satisfy put on a value, kept to the ones
+	 * that rank, compiled against the values' own documents. Compiled apart
+	 * rather than taken out of the search's own query, because there the
+	 * conditions sit inside the join to the document above - a shape term
+	 * extraction does not see through.
+	 *
+	 * @param path
+	 *   name of the object field whose values are the hits
+	 * @param clauses
+	 *   the clauses of the search
+	 * @return
+	 *   the ranking part, or {@code null} when nothing the search asked of
+	 *   the values ranks and there is nothing to highlight
+	 */
+	public org.apache.lucene.search.Query compileValueScoring(
+		String path,
+		ListIterable<Query> clauses
+	) {
+		var required = Lists.mutable.<Query>empty();
+		requiredValues(clauses, path, required);
+
+		var scoring = pruneToScoring(required);
+		if(scoring.isEmpty()) {
+			return null;
+		}
+
+		encounter.updateForHighlighting(true);
+		try {
+			return valuesOf(path, scoring, false, false);
+		} finally {
+			encounter.updateForHighlighting(false);
+		}
+	}
+
+	/**
 	 * Keep the clauses that take part in ranking, descending into nesting to
 	 * drop the filters it holds.
 	 *
@@ -434,6 +474,45 @@ public class QueryCompiler {
 	 */
 	public String highlightField(String name) {
 		var field = field(name);
+		select(name, field);
+
+		return field.getType().getHighlightFieldName(encounter);
+	}
+
+	/**
+	 * Resolve the Lucene field a highlight reads for a search whose hits are
+	 * the values of one object field. The fields that can answer are the ones
+	 * inside that field: each hit carries fragments of its own value, whose
+	 * document is what holds the offsets and the text.
+	 *
+	 * @param path
+	 *   name of the object field whose values are the hits
+	 * @param name
+	 *   the field to highlight, by its dotted path
+	 * @return
+	 * @throws IndexFieldNotFoundException
+	 *   if the index has no field by the name
+	 * @throws IndexException
+	 *   with {@code index:query:nested:not_in_path} if the field is not
+	 *   inside the objects of the path
+	 * @throws IndexFieldUsageException
+	 *   if the field was not defined for highlighting
+	 */
+	public String highlightValueField(String path, String name) {
+		var nested = schema.getNestedField(name);
+		if(nested.isEmpty()) {
+			if(schema.getField(name).isPresent()) {
+				throw new IndexException(FIELD_NOT_IN_PATH, "name", name, "path", path);
+			}
+
+			throw new IndexFieldNotFoundException(name);
+		}
+
+		if(!nested.get().path().equals(path)) {
+			throw new IndexException(FIELD_NOT_IN_PATH, "name", name, "path", path);
+		}
+
+		var field = nested.get().field();
 		select(name, field);
 
 		return field.getType().getHighlightFieldName(encounter);

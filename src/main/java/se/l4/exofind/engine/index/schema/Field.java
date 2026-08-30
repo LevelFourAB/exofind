@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import org.apache.lucene.index.DocValues;
+import org.eclipse.collections.api.collection.MutableCollection;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
@@ -202,6 +203,33 @@ public class Field {
 	) {
 		var errors = Lists.mutable.<ErrorMessage>empty();
 
+		var fieldType = validateSettings(location, name, def, resources, errors);
+		if(fieldType != null) {
+			errors.addAllIterable(fieldType.validate(location, def, resources));
+		}
+
+		return errors;
+	}
+
+	/**
+	 * Validate everything about a field except what its type judges, resolving
+	 * the type along the way. This is the half of {@link #validate} a caller
+	 * uses when it dispatches to the type itself, such as an object field
+	 * carrying its position down into the fields inside it.
+	 *
+	 * @param errors
+	 *   where the errors go
+	 * @return
+	 *   the resolved type, or {@code null} when the type is missing or unknown
+	 *   and nothing type specific can be checked
+	 */
+	public static FieldType validateSettings(
+		ObjectLocation location,
+		String name,
+		FieldDef def,
+		ResourcesDef resources,
+		MutableCollection<ErrorMessage> errors
+	) {
 		if(!VALID_NAME_PATTERN.matcher(name).matches()) {
 			errors.add(INVALID_NAME.toMessage(location, "name", name));
 		}
@@ -256,7 +284,7 @@ public class Field {
 		if(!def.hasType() || type.getTypeCase() == TypeCase.TYPE_NOT_SET) {
 			// Without a type there is nothing type specific left to check
 			errors.add(MISSING_TYPE.toMessage(location, "name", name));
-			return errors;
+			return null;
 		}
 
 		var fieldType = FieldTypes.forDef(type);
@@ -270,7 +298,7 @@ public class Field {
 			errors.add(
 				UNSUPPORTED_TYPE.toMessage(location, "name", name, "type", typeName(type))
 			);
-			return errors;
+			return null;
 		}
 
 		if(def.getPrimaryKey() && !fieldType.get().isPrimaryKeySupported()) {
@@ -292,9 +320,7 @@ public class Field {
 			);
 		}
 
-		errors.addAllIterable(fieldType.get().validate(location, def, resources));
-
-		return errors;
+		return fieldType.get();
 	}
 
 	/**

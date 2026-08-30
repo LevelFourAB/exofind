@@ -17,6 +17,7 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.query.Facet;
@@ -581,5 +582,154 @@ public class LocaleFallbackSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(ids(result), is(empty()));
+	}
+
+	/**
+	 * Each object value is its own unit of translation: a value that gave no
+	 * Swedish is filled from its own English, never from a sibling value's
+	 * Swedish.
+	 */
+	@Test
+	public void testEachObjectValueFillsItsOwnLocales() throws IOException {
+		var index = create(
+			"tagged",
+			IndexDef.newBuilder()
+				.setLocaleFallback(
+					IndexDef.LocaleFallbackConfig.newBuilder().addChain("en")
+				)
+				.putFields("id", string(StringFieldTypeDef.newBuilder()).setPrimaryKey(true).build())
+				.putFields(
+					"tags",
+					FieldDef.newBuilder()
+						.setMultiple(true)
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+									.putFields(
+										"label",
+										string(
+											StringFieldTypeDef.newBuilder().setMatching(
+												StringFieldTypeDef.TextUsageConfig
+													.getDefaultInstance()
+											)
+										)
+											.setLocales(
+												FieldDef.LocaleConfig.newBuilder()
+													.setDefaultLocale("en")
+													.addLocales("sv")
+											)
+											.build()
+									)
+							)
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value(
+					"tags",
+					new Document(
+						new Document.Value("label", "shoes", "en"),
+						new Document.Value("label", "skor", "sv")
+					)
+				),
+				new Document.Value(
+					"tags",
+					new Document(new Document.Value("label", "gloves", "en"))
+				)
+			)
+		);
+		index.commit();
+
+		// The untranslated value is found in Swedish through its own English
+		var filled = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("gloves"))
+				.withLocale("sv")
+				.build()
+		);
+		assertThat(ids(filled), contains("1"));
+
+		// And the translated value answers Swedish with its own Swedish
+		var translated = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("skor"))
+				.withLocale("sv")
+				.build()
+		);
+		assertThat(ids(translated), contains("1"));
+	}
+
+	/**
+	 * A field inside a single object fills the way one at the root does, and
+	 * comes back as the variant that was read.
+	 */
+	@Test
+	public void testFieldInsideAnObjectIsFilledAndReadBack() throws IOException {
+		var index = create(
+			"products",
+			IndexDef.newBuilder()
+				.setLocaleFallback(
+					IndexDef.LocaleFallbackConfig.newBuilder().addChain("en")
+				)
+				.putFields("id", string(StringFieldTypeDef.newBuilder()).setPrimaryKey(true).build())
+				.putFields(
+					"product",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"name",
+									string(
+										StringFieldTypeDef.newBuilder().setMatching(
+											StringFieldTypeDef.TextUsageConfig
+												.getDefaultInstance()
+										)
+									)
+										.setLocales(
+											FieldDef.LocaleConfig.newBuilder()
+												.setDefaultLocale("en")
+												.addLocales("sv")
+										)
+										.build()
+								)
+							)
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value(
+					"product",
+					new Document(new Document.Value("name", "gloves", "en"))
+				)
+			)
+		);
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("gloves"))
+				.withLocale("sv")
+				.build()
+		);
+		assertThat(ids(result), contains("1"));
+
+		// The filled variant answers as the variant it fills
+		var hit = result.hits().detect(candidate -> candidate.id().equals("1"));
+		var product = (Document) hit.document().get("product");
+		var names = Arrays.stream(product.fields())
+			.filter(value -> value.name().equals("name"))
+			.map(value -> value.locale() + ":" + value.value())
+			.toList();
+
+		assertThat(names, contains("sv:gloves"));
 	}
 }

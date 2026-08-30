@@ -113,7 +113,8 @@ class Highlighter {
 	 * @param documents
 	 *   the stored fields of every document that will be highlighted, keyed by
 	 *   Lucene id, each holding at least the {@link #storedField(String)} of
-	 *   every target
+	 *   every target. A hit with no entry - a document answering as itself on
+	 *   a page whose highlights belong to values - answers with no fragments
 	 * @param offsetsInPostings
 	 *   whether the index keeps the offsets in the postings of the fields,
 	 *   rather than in term vectors
@@ -421,8 +422,10 @@ class Highlighter {
 			) {
 				var document = documents.get(docId);
 				var perField = new CharSequence[stored.length];
-				for(var i = 0; i < stored.length; i++) {
-					perField[i] = text(document, stored[i]);
+				if(document != null) {
+					for(var i = 0; i < stored.length; i++) {
+						perField[i] = text(document, stored[i]);
+					}
 				}
 
 				values.add(perField);

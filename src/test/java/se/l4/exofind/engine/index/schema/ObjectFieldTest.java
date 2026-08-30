@@ -212,52 +212,559 @@ public class ObjectFieldTest {
 	}
 
 	@Test
-	public void testInnerFieldCanNotBeHighlighted() {
-		assertInnerRefused(
+	public void testInnerFieldOfAFlattenedObjectCanBeHighlighted() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(singleObject(builder -> builder.putFields(
+				"note",
+				highlightable().build()
+			))).build()
+		);
+
+		assertThat(schema.getField("variants.note").isPresent(), is(true));
+
+		var features = IndexFeatures.requiredBy(
+			definition(singleObject(builder -> builder.putFields(
+				"note",
+				highlightable().build()
+			))).build()
+		);
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_HIGHLIGHT));
+	}
+
+	@Test
+	public void testInnerFieldOfAFlattenedListCanBeHighlighted() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+								.putFields("note", highlightable().build())
+						)
+					)
+			).build()
+		);
+
+		assertThat(schema.getField("variants.note").isPresent(), is(true));
+	}
+
+	@Test
+	public void testInnerFieldOfANestedListCanBeHighlighted() {
+		var nested = definition(
 			FieldDef.newBuilder()
+				.setMultiple(true)
 				.setType(
-					FieldTypeDef.newBuilder().setString(
-						StringFieldTypeDef.newBuilder().setMatching(
-							StringFieldTypeDef.TextUsageConfig.newBuilder()
-								.setHighlight(
-									StringFieldTypeDef.TextUsageConfig.HighlightConfig
-										.getDefaultInstance()
+					FieldTypeDef.newBuilder().setObject(
+						ObjectFieldTypeDef.newBuilder()
+							.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							.putFields("note", highlightable().build())
+					)
+				)
+		).build();
+
+		var schema = new IndexSchema();
+		schema.setDefinition(nested);
+		assertThat(schema.getNestedField("variants.note").isPresent(), is(true));
+
+		assertThat(
+			IndexFeatures.requiredBy(nested).toList(),
+			hasItem(IndexFeatures.TYPE_OBJECT_HIGHLIGHT_NESTED)
+		);
+
+		/*
+		 * The same usage folded into the document asks for nothing beyond the
+		 * highlight feature itself, so the name stays off definitions an
+		 * older node serves correctly.
+		 */
+		var single = definition(singleObject(builder -> builder.putFields(
+			"note",
+			highlightable().build()
+		))).build();
+
+		assertThat(
+			IndexFeatures.requiredBy(single).toList(),
+			not(hasItem(IndexFeatures.TYPE_OBJECT_HIGHLIGHT_NESTED))
+		);
+	}
+
+	@Test
+	public void testInnerFieldOfASingleObjectCanBeStored() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				singleObject(builder -> builder.putFields(
+					"color",
+					string().setStored(true).build()
+				))
+			).build()
+		);
+
+		assertThat(schema.getField("variants.color").orElseThrow().isStored(), is(true));
+	}
+
+	@Test
+	public void testStoredRequiresItsOwnFeatureInsideAnObject() {
+		var features = IndexFeatures.requiredBy(
+			definition(
+				singleObject(builder -> builder.putFields(
+					"color",
+					string().setStored(true).build()
+				))
+			).build()
+		);
+
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_STORED));
+
+		var without = IndexFeatures.requiredBy(definition(variants()).build());
+		assertThat(without.toList(), not(hasItem(IndexFeatures.TYPE_OBJECT_STORED)));
+	}
+
+	@Test
+	public void testInnerFieldOfAFlattenedListCanNotBeStored() {
+		var flattened = FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setObject(
+					ObjectFieldTypeDef.newBuilder()
+						.putFields("color", string().setStored(true).build())
+						.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+				)
+			)
+			.setMultiple(true);
+
+		assertRefused(definition(flattened), "index:field:object:flattened_stored");
+	}
+
+	@Test
+	public void testStoredRefusedBelowAFlattenedListThroughAnObject() {
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+								.putFields(
+									"dims",
+									singleObject(inner -> inner.putFields(
+										"width",
+										string().setStored(true).build()
+									)).build()
 								)
 						)
 					)
-				),
-			"index:field:object:inner_usage_not_supported"
+			),
+			"index:field:object:flattened_stored"
 		);
 	}
 
 	@Test
-	public void testInnerFieldCanNotBeStored() {
-		assertInnerRefused(
-			string().setStored(true),
-			"index:field:object:inner_usage_not_supported"
+	public void testInnerFieldOfANestedListCanBeStored() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.putFields("color", string().setStored(true).build())
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+						)
+					)
+					.setMultiple(true)
+			).build()
 		);
+
+		var color = schema.getNestedField("variants.color").orElseThrow().field();
+		assertThat(color.isStored(), is(true));
+		assertThat(schema.hasNestedStoredFields(), is(true));
 	}
 
 	@Test
-	public void testInnerFieldCanNotBeLocaleSpecific() {
-		assertInnerRefused(
-			string().setLocales(FieldDef.LocaleConfig.getDefaultInstance()),
-			"index:field:object:inner_usage_not_supported"
-		);
-	}
-
-	@Test
-	public void testInnerFieldCanNotBeAnObject() {
-		assertInnerRefused(
+	public void testStoredBelowANestedListRequiresItsOwnFeature() {
+		var nested = definition(
 			FieldDef.newBuilder()
 				.setType(
 					FieldTypeDef.newBuilder().setObject(
 						ObjectFieldTypeDef.newBuilder()
-							.putFields("deep", string().build())
+							.putFields("color", string().setStored(true).build())
+							.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 					)
-				),
-			"index:field:object:inner_object"
+				)
+				.setMultiple(true)
+		).build();
+
+		assertThat(
+			IndexFeatures.requiredBy(nested).toList(),
+			hasItem(IndexFeatures.TYPE_OBJECT_STORED_NESTED)
 		);
+
+		/*
+		 * The same setting folded into the document asks for nothing beyond
+		 * the stored feature itself, so the name stays off definitions an
+		 * older node reads correctly.
+		 */
+		var single = definition(
+			singleObject(builder -> builder.putFields(
+				"color",
+				string().setStored(true).build()
+			))
+		).build();
+
+		assertThat(
+			IndexFeatures.requiredBy(single).toList(),
+			not(hasItem(IndexFeatures.TYPE_OBJECT_STORED_NESTED))
+		);
+	}
+
+	/**
+	 * A flattened list inside a nested value mixes its values in the value's
+	 * document the way one at the root mixes them in the index's, so stored
+	 * stays refused below it.
+	 */
+	@Test
+	public void testStoredRefusedBelowAFlattenedListInsideANestedValue() {
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields(
+									"tags",
+									FieldDef.newBuilder()
+										.setMultiple(true)
+										.setType(
+											FieldTypeDef.newBuilder().setObject(
+												ObjectFieldTypeDef.newBuilder()
+													.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+													.putFields(
+														"label",
+														string().setStored(true).build()
+													)
+											)
+										)
+										.build()
+								)
+						)
+					)
+			),
+			"index:field:object:flattened_stored"
+		);
+	}
+
+	/**
+	 * A nested list below a flattened list keeps documents per value, but
+	 * which flattened value each belongs to is what nothing says - the walk
+	 * that judges stored treats the flattened list above the same as one
+	 * inside.
+	 */
+	@Test
+	public void testStoredRefusedBelowANestedListUnderAFlattenedList() {
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+								.putFields(
+									"reviews",
+									FieldDef.newBuilder()
+										.setMultiple(true)
+										.setType(
+											FieldTypeDef.newBuilder().setObject(
+												ObjectFieldTypeDef.newBuilder()
+													.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+													.putFields(
+														"author",
+														string().setStored(true).build()
+													)
+											)
+										)
+										.build()
+								)
+						)
+					)
+			),
+			"index:field:object:flattened_stored"
+		);
+	}
+
+	@Test
+	public void testInnerFieldCanBeLocaleSpecific() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				singleObject(builder -> builder.putFields(
+					"color",
+					string()
+						.setLocales(FieldDef.LocaleConfig.newBuilder().addLocales("sv"))
+						.build()
+				))
+			).build()
+		);
+
+		var color = schema.getField("variants.color").orElseThrow();
+		assertThat(color.isLocaleSpecific(), is(true));
+	}
+
+	@Test
+	public void testLocalesRequireTheirOwnFeatureInsideAnObject() {
+		var features = IndexFeatures.requiredBy(
+			definition(
+				singleObject(builder -> builder.putFields(
+					"color",
+					string()
+						.setLocales(FieldDef.LocaleConfig.newBuilder().addLocales("sv"))
+						.build()
+				))
+			).build()
+		);
+
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_LOCALES));
+		assertThat(features.toList(), hasItem(IndexFeatures.FIELD_LOCALES));
+
+		var without = IndexFeatures.requiredBy(definition(variants()).build());
+		assertThat(without.toList(), not(hasItem(IndexFeatures.TYPE_OBJECT_LOCALES)));
+	}
+
+	@Test
+	public void testInnerFieldOfANestedListCanBeLocaleSpecific() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields(
+									"description",
+									string()
+										.setLocales(
+											FieldDef.LocaleConfig.newBuilder().addLocales("sv")
+										)
+										.build()
+								)
+						)
+					)
+			).build()
+		);
+
+		var description = schema.getNestedField("variants.description").orElseThrow();
+		assertThat(description.field().isLocaleSpecific(), is(true));
+	}
+
+	@Test
+	public void testInnerFieldCanBeAnObject() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			IndexDef.newBuilder()
+				.putFields(
+					"product",
+					singleObject(builder -> builder.putFields(
+						"dims",
+						singleObject(inner -> inner.putFields(
+							"width",
+							string().setFilter(FilterConfig.getDefaultInstance()).build()
+						)).build()
+					)).build()
+				)
+				.build()
+		);
+
+		var width = schema.getField("product.dims.width");
+		assertThat(width.isPresent(), is(true));
+		assertThat(width.get().isFiltered(), is(true));
+
+		// A document gives the value at the root of the chain
+		assertThat(
+			schema.getFlattenedObjectOf("product.dims.width").orElseThrow(),
+			is("product")
+		);
+		assertThat(
+			schema.getFlattenedObjectOf("product.dims").orElseThrow(),
+			is("product")
+		);
+	}
+
+	@Test
+	public void testNestedListCanSitBelowAnObject() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			IndexDef.newBuilder()
+				.putFields(
+					"product",
+					singleObject(builder -> builder.putFields(
+						"variants",
+						variants().build()
+					)).build()
+				)
+				.build()
+		);
+
+		assertThat(schema.hasNestedFields(), is(true));
+		assertThat(
+			schema.getField("product.variants").orElseThrow().isNestedObject(),
+			is(true)
+		);
+
+		// The block a field belongs to is the nested list, not the chain root
+		var color = schema.getNestedField("product.variants.color");
+		assertThat(color.isPresent(), is(true));
+		assertThat(color.get().path(), is("product.variants"));
+	}
+
+	@Test
+	public void testNestedListCanHoldAnObject() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields(
+									"dims",
+									singleObject(inner -> inner.putFields(
+										"width",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)).build()
+								)
+						)
+					)
+			).build()
+		);
+
+		// The object folds into the value's document, so its block is the list
+		var width = schema.getNestedField("variants.dims.width");
+		assertThat(width.isPresent(), is(true));
+		assertThat(width.get().path(), is("variants"));
+
+		var inside = schema.getNestedFields("variants");
+		assertThat(inside.collect(Field::getName).toList(), hasItem("variants.dims.width"));
+	}
+
+	@Test
+	public void testNestedListInsideANestedListIsRefused() {
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields("sizes", variants().build())
+						)
+					)
+			),
+			"index:field:object:nested_in_nested"
+		);
+	}
+
+	@Test
+	public void testNestedListBelowANestedListIsRefused() {
+		// The rule follows the path through objects in between
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields(
+									"dims",
+									singleObject(inner -> inner.putFields(
+										"sizes",
+										variants().build()
+									)).build()
+								)
+						)
+					)
+			),
+			"index:field:object:nested_in_nested"
+		);
+	}
+
+	@Test
+	public void testSortRefusedBelowAFlattenedListThroughAnObject() {
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+								.putFields(
+									"dims",
+									singleObject(inner -> inner.putFields(
+										"width",
+										string()
+											.setSort(SortConfig.getDefaultInstance())
+											.build()
+									)).build()
+								)
+						)
+					)
+			),
+			"index:field:object:flattened_sort"
+		);
+	}
+
+	@Test
+	public void testDeepObjectPathsCanNotCollide() {
+		// `a` > `b.c` and `a` > `b` > `c` both spell `a.b.c`
+		assertRefused(
+			IndexDef.newBuilder()
+				.putFields(
+					"a",
+					singleObject(builder -> builder
+						.putFields("b.c", string().build())
+						.putFields(
+							"b",
+							singleObject(inner -> inner.putFields("c", string().build()))
+								.build()
+						)
+					).build()
+				),
+			"index:schema:object_path_taken"
+		);
+	}
+
+	@Test
+	public void testInnerObjectRequiresTheFeature() {
+		var features = IndexFeatures.requiredBy(
+			IndexDef.newBuilder()
+				.putFields(
+					"product",
+					singleObject(builder -> builder.putFields(
+						"dims",
+						dimensions().build()
+					)).build()
+				)
+				.build()
+		);
+
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_NESTING));
+
+		var flat = IndexFeatures.requiredBy(definition(variants()).build());
+		assertThat(flat.toList(), not(hasItem(IndexFeatures.TYPE_OBJECT_NESTING)));
 	}
 
 	@Test
@@ -743,6 +1250,19 @@ public class ObjectFieldTest {
 			.setMultiple(true);
 	}
 
+	/**
+	 * A single object holding whatever fields the change puts in it.
+	 */
+	private static FieldDef.Builder singleObject(
+		UnaryOperator<ObjectFieldTypeDef.Builder> fields
+	) {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setObject(fields.apply(ObjectFieldTypeDef.newBuilder()))
+			);
+	}
+
 	private static FieldDef.Builder dimensions() {
 		return FieldDef.newBuilder()
 			.setType(
@@ -759,6 +1279,21 @@ public class ObjectFieldTest {
 	private static FieldDef.Builder string() {
 		return FieldDef.newBuilder()
 			.setType(FieldTypeDef.newBuilder().setString(StringFieldTypeDef.getDefaultInstance()));
+	}
+
+	private static FieldDef.Builder highlightable() {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder().setString(
+					StringFieldTypeDef.newBuilder().setMatching(
+						StringFieldTypeDef.TextUsageConfig.newBuilder()
+							.setHighlight(
+								StringFieldTypeDef.TextUsageConfig.HighlightConfig
+									.getDefaultInstance()
+							)
+					)
+				)
+			);
 	}
 
 	private static FieldDef.Builder matching() {

@@ -102,9 +102,9 @@ public record SearchResult(
 	 *   for a hit standing for a value of a field that declares a key: what
 	 *   that value reads for it. Unlike {@code index} this names the same
 	 *   value after a reindex, positions being free to move. {@code null} for
-	 *   a hit standing for a document, for a field declaring no key, and for
-	 *   an index that keeps no copy of its documents, which is where the key
-	 *   is read from
+	 *   a hit standing for a document, for a field declaring no key, and on
+	 *   an index that keeps no copy of its documents when the key's field is
+	 *   not stored - stored, it answers from the value's own document
 	 * @param score
 	 *   how well the hit matched. Only means something when the search held a
 	 *   clause that scores, see {@link Query#scores()}. A hit standing for a
@@ -118,17 +118,19 @@ public record SearchResult(
 	 *   standing for a value, the fields of the document holding it
 	 * @param value
 	 *   for a hit standing for a value: the value itself, as it was given.
-	 *   {@code null} for a hit standing for a document, and for an index that
-	 *   keeps no copy of its documents, which has no value to hand back
+	 *   On an index that keeps no copy of its documents it holds what the
+	 *   value's stored fields answer. {@code null} for a hit standing for a
+	 *   document, and where neither a copy nor a stored field could answer
 	 * @param key
 	 *   where the hit sits in the order it came back in, for continuing from
 	 *   it with {@link SearchRequest.Builder#withAfter(SortKey)} or
 	 *   {@link SearchRequest.Builder#withBefore(SortKey)}
 	 * @param highlights
 	 *   the highlighted fragments of the fields the search asked to
-	 *   highlight, keyed by field name. A field the document holds no match
-	 *   in has no entry, and a search that asked for no highlighting leaves
-	 *   the map empty
+	 *   highlight, keyed by field name. For a hit standing for a value the
+	 *   fields sit inside the value, and the fragments are cut from that
+	 *   value alone. A field the hit holds no match in has no entry, and a
+	 *   search that asked for no highlighting leaves the map empty
 	 * @param matched
 	 *   which values of each object field the search asked about matched,
 	 *   keyed by field name. One entry per field asked about, and a search
@@ -180,9 +182,10 @@ public record SearchResult(
 	 * @param values
 	 *   the values that matched, as they were given - at most as many as the
 	 *   search asked for, ordered by how well each matched when the clauses on
-	 *   the field rank and in the order the document gave them otherwise.
-	 *   {@code null} for an index that keeps no copy of its documents, which
-	 *   has no values to hand back
+	 *   the field rank and in the order the document gave them otherwise. On
+	 *   an index that keeps no copy of its documents each value holds what its
+	 *   stored fields answer; {@code null} where neither a copy nor a stored
+	 *   field could answer
 	 * @param totalValues
 	 *   how many values matched in all, which is more than the number of
 	 *   values whenever the limit was reached

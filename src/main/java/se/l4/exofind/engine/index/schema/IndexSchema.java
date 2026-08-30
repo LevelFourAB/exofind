@@ -10,7 +10,9 @@ import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.ImmutableMap;
+import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.set.ImmutableSet;
+import org.eclipse.collections.api.set.MutableSet;
 
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -77,6 +79,31 @@ public class IndexSchema {
 		 */
 		final ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath;
 
+		/**
+		 * The object field each inner field is declared directly inside, keyed
+		 * by the field's full path with the parent's full path as the value -
+		 * patterns when either name holds a wildcard. Fields at the root have
+		 * no entry. Where {@link #flattenedPaths} remembers where a document
+		 * gives its values, this remembers one step of the chain, which is what
+		 * tells a field of an object apart from a field of an object further
+		 * in.
+		 */
+		final ImmutableMap<String, String> parents;
+
+		/**
+		 * Whether any field of the definition, at any depth, differs per
+		 * locale - what says whether a document has to be walked for variants
+		 * at all.
+		 */
+		final boolean localeSpecific;
+
+		/**
+		 * Whether any field below a nested list asks to be stored - what says
+		 * whether a read without the copy of the document has the documents of
+		 * any list's values to look at.
+		 */
+		final boolean nestedStoredFields;
+
 		final Field primaryKey;
 		final ImmutableSet<String> requiredFields;
 
@@ -107,6 +134,9 @@ public class IndexSchema {
 			ImmutableList<NestedPattern> nestedWildcardFields,
 			ImmutableMap<String, FlattenedOwner> flattenedPaths,
 			ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath,
+			ImmutableMap<String, String> parents,
+			boolean localeSpecific,
+			boolean nestedStoredFields,
 			Field primaryKey,
 			ImmutableSet<String> requiredFields,
 			ImmutableList<Field> fieldList,
@@ -123,6 +153,9 @@ public class IndexSchema {
 			this.nestedWildcardFields = nestedWildcardFields;
 			this.flattenedPaths = flattenedPaths;
 			this.nestedFieldsByPath = nestedFieldsByPath;
+			this.parents = parents;
+			this.localeSpecific = localeSpecific;
+			this.nestedStoredFields = nestedStoredFields;
 			this.primaryKey = primaryKey;
 			this.requiredFields = requiredFields;
 			this.fieldList = fieldList;
@@ -243,7 +276,7 @@ public class IndexSchema {
 		ErrorType.withCode("index:schema:object_path_taken")
 			.withArguments("name")
 			.withMessage(
-				"Field `{{name}}` is defined both at the root and inside an object, and a path can only mean one of them"
+				"Field `{{name}}` is declared more than once, at the root or through the objects on its path, and a path can only mean one of them"
 			);
 
 	private static ErrorType UNSUPPORTED_FEATURES =
@@ -312,6 +345,126 @@ public class IndexSchema {
 	private record FlattenedOwner(String name, int segments) {
 	}
 
+	/**
+	 * The lookup structures the fields of one definition build, filled by
+	 * walking the tree of fields once. Objects nest, so every field is reached
+	 * by the same walk wherever it sits; what changes with depth is only what
+	 * the walk carries - the enclosing object, where a document gives the
+	 * values, and the nested list a path passed through, if any.
+	 */
+	private static final class Registration {
+		final MutableMap<String, Field> fields = Maps.mutable.empty();
+		final MutableList<Field> wildcardFields = Lists.mutable.empty();
+		final MutableMap<String, NestedField> nestedFields = Maps.mutable.empty();
+		final MutableList<NestedPattern> nestedWildcardFields = Lists.mutable.empty();
+		final MutableMap<String, MutableList<Field>> nestedFieldsByPath = Maps.mutable.empty();
+		final MutableMap<String, FlattenedOwner> flattenedPaths = Maps.mutable.empty();
+		final MutableMap<String, String> parents = Maps.mutable.empty();
+
+		boolean localeSpecific;
+		boolean nestedStoredFields;
+
+		/**
+		 * Register one field and everything below it.
+		 *
+		 * <p>A field on no nested chain is a field of the index like any other -
+		 * resolved, searched across and counted with no join in between - and
+		 * lands in {@link #fields}. Only how documents give their values
+		 * differs, which is what {@link #flattenedPaths} remembers, pointing at
+		 * the field at the root of the chain because that is the one a document
+		 * names. Once a path passes through a nested list its fields live in
+		 * the documents of that list's values instead, keyed under the list in
+		 * {@link #nestedFields} however deep below it they are declared - a
+		 * single or flattened object inside a nested value folds into the
+		 * value's document the way it would fold into the index's.
+		 *
+		 * <p>A path holding a wildcard - from any segment of it - stands for
+		 * names that only exist once documents give them, so it is kept to be
+		 * matched rather than looked up.
+		 *
+		 * @param path
+		 *   full declared path of the field
+		 * @param def
+		 * @param parent
+		 *   declared path of the object the field is declared directly
+		 *   inside, or {@code null} for a field at the root
+		 * @param owner
+		 *   where a document gives this field's values - the root of the
+		 *   object chain - or {@code null} for a field documents give
+		 *   directly
+		 * @param nestedList
+		 *   declared path of the nested list the field sits below, or
+		 *   {@code null} when the chain holds none
+		 * @return
+		 *   the registered field
+		 */
+		Field register(
+			String path,
+			FieldDef def,
+			String parent,
+			FlattenedOwner owner,
+			String nestedList
+		) {
+			var field = new Field(path, def);
+
+			if(field.isLocaleSpecific()) {
+				localeSpecific = true;
+			}
+
+			if(parent != null) {
+				parents.put(path, parent);
+			}
+
+			if(nestedList == null) {
+				fields.put(path, field);
+				if(field.nameHasWildcard()) {
+					wildcardFields.add(field);
+				}
+
+				if(owner != null) {
+					flattenedPaths.put(path, owner);
+				}
+			} else {
+				if(field.isStored()) {
+					nestedStoredFields = true;
+				}
+
+				if(field.nameHasWildcard()) {
+					nestedWildcardFields.add(
+						new NestedPattern(segmentsIn(nestedList), field)
+					);
+				} else {
+					nestedFields.put(path, new NestedField(nestedList, field));
+				}
+
+				nestedFieldsByPath
+					.getIfAbsentPut(nestedList, Lists.mutable::empty)
+					.add(field);
+			}
+
+			if(field.isObject()) {
+				var childOwner = owner != null
+					? owner
+					: new FlattenedOwner(path, segmentsIn(path));
+				var childNested = nestedList != null
+					? nestedList
+					: field.isNestedObject() ? path : null;
+
+				for(var inner : def.getType().getObject().getFieldsMap().entrySet()) {
+					register(
+						path + '.' + inner.getKey(),
+						inner.getValue(),
+						path,
+						childOwner,
+						childNested
+					);
+				}
+			}
+
+			return field;
+		}
+	}
+
 	public IndexSchema() {
 		this.state = new State(
 			Maps.immutable.empty(),
@@ -320,6 +473,9 @@ public class IndexSchema {
 			Lists.immutable.empty(),
 			Maps.immutable.empty(),
 			Maps.immutable.empty(),
+			Maps.immutable.empty(),
+			false,
+			false,
 			null,
 			Sets.immutable.empty(),
 			Lists.immutable.empty(),
@@ -471,24 +627,16 @@ public class IndexSchema {
 
 		/*
 		 * The fields inside an object are addressed by the dotted path through
-		 * it, so a root field on the same path would make the path ambiguous.
+		 * it, so two declarations reaching the same path would make the path
+		 * ambiguous - a root field on an object's path, or with objects
+		 * nesting, a field named `b.c` beside an object `b` holding `c`.
+		 * Compared as written, patterns included: two declarations spelling
+		 * the same path are ambiguous, while different patterns that merely
+		 * overlap are settled by resolution order.
 		 */
+		var pathsSeen = Sets.mutable.<String>empty();
 		for(var entry : definition.getFieldsMap().entrySet()) {
-			if(entry.getValue().getType().getTypeCase() != FieldTypeDef.TypeCase.OBJECT) {
-				continue;
-			}
-
-			for(var inner : entry.getValue().getType().getObject().getFieldsMap().keySet()) {
-				var path = entry.getKey() + '.' + inner;
-				if(definition.getFieldsMap().containsKey(path)) {
-					errors.add(
-						OBJECT_PATH_TAKEN.toMessage(
-							ObjectLocation.root().forField(path),
-							"name", path
-						)
-					);
-				}
-			}
+			collectPaths(entry.getKey(), entry.getValue(), pathsSeen, errors);
 		}
 
 		// Check for multiple primary keys
@@ -506,6 +654,35 @@ public class IndexSchema {
 
 		if(!errors.isEmpty()) {
 			throw new ValidationException(errors);
+		}
+	}
+
+	/**
+	 * Collect the full path of every declared field, refusing a path spelled
+	 * by two declarations. Objects recurse, so a path is collected however
+	 * deep it is declared - and the objects themselves are collected too,
+	 * because a field on an object's own path is just as ambiguous as one on
+	 * a field's.
+	 */
+	private static void collectPaths(
+		String path,
+		FieldDef def,
+		MutableSet<String> seen,
+		MutableList<ErrorMessage> errors
+	) {
+		if(!seen.add(path)) {
+			errors.add(
+				OBJECT_PATH_TAKEN.toMessage(
+					ObjectLocation.root().forField(path),
+					"name", path
+				)
+			);
+		}
+
+		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
+			for(var inner : def.getType().getObject().getFieldsMap().entrySet()) {
+				collectPaths(path + '.' + inner.getKey(), inner.getValue(), seen, errors);
+			}
 		}
 	}
 
@@ -588,10 +765,20 @@ public class IndexSchema {
 	 * @param errors
 	 */
 	private void validateLocaleFallback(IndexDef definition, MutableList<ErrorMessage> errors) {
+		/*
+		 * Every field of the definition by its dotted path, however deep the
+		 * objects nest - a locale specific field takes part in the fallback
+		 * from wherever it sits.
+		 */
+		var allFields = Maps.mutable.<String, FieldDef>empty();
+		for(var entry : definition.getFieldsMap().entrySet()) {
+			collectFieldDefs(entry.getKey(), entry.getValue(), allFields);
+		}
+
 		var held = Sets.mutable.<String>empty();
 		var localeSpecific = false;
 
-		for(var field : definition.getFieldsMap().values()) {
+		for(var field : allFields.values()) {
 			if(!field.hasLocales()) {
 				continue;
 			}
@@ -615,17 +802,17 @@ public class IndexSchema {
 			 * goes on saying what it means once the index does declare a
 			 * chain.
 			 */
-			for(var entry : definition.getFieldsMap().entrySet()) {
-				if(entry.getValue().getLocales().getFallback()
+			allFields.forEachKeyValue((path, field) -> {
+				if(field.getLocales().getFallback()
 					== FieldDef.LocaleConfig.Fallback.FALLBACK_ENABLED) {
 					errors.add(
 						FALLBACK_ENABLED_WITHOUT_INDEX.toMessage(
-							ObjectLocation.root().forField(entry.getKey()),
-							"name", entry.getKey()
+							ObjectLocation.root().forField(path),
+							"name", path
 						)
 					);
 				}
-			}
+			});
 
 			return;
 		}
@@ -655,6 +842,24 @@ public class IndexSchema {
 
 			if(!held.contains(locale)) {
 				errors.add(FALLBACK_LOCALE_NOT_HELD.toMessage(entry, "locale", locale));
+			}
+		}
+	}
+
+	/**
+	 * Collect a field and every field below it by dotted path, for the checks
+	 * that read across the whole definition.
+	 */
+	private static void collectFieldDefs(
+		String path,
+		FieldDef def,
+		MutableMap<String, FieldDef> out
+	) {
+		out.put(path, def);
+
+		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
+			for(var inner : def.getType().getObject().getFieldsMap().entrySet()) {
+				collectFieldDefs(path + '.' + inner.getKey(), inner.getValue(), out);
 			}
 		}
 	}
@@ -965,71 +1170,13 @@ public class IndexSchema {
 	public synchronized void setDefinition(IndexDef definition) {
 		this.validate(definition);
 
-		var fields = Maps.mutable.<String, Field>empty();
-		var wildcardFields = Lists.mutable.<Field>empty();
-		var nestedFields = Maps.mutable.<String, NestedField>empty();
-		var nestedWildcardFields = Lists.mutable.<NestedPattern>empty();
-		var nestedFieldsByPath = Maps.mutable.<String, MutableList<Field>>empty();
-		var flattenedPaths = Maps.mutable.<String, FlattenedOwner>empty();
+		var registration = new Registration();
 		var requiredFields = Sets.mutable.<String>empty();
 		Field primaryKey = null;
 
 		var fieldDefs = definition.getFieldsMap();
 		for(var entry : fieldDefs.entrySet()) {
-			var fieldDef = entry.getValue();
-			var field = new Field(entry.getKey(), fieldDef);
-
-			fields.put(field.getName(), field);
-			if(field.nameHasWildcard()) {
-				wildcardFields.add(field);
-			}
-
-			if(field.isNestedObject()) {
-				var inside = Lists.mutable.<Field>empty();
-				var objectSegments = segmentsIn(field.getName());
-
-				for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
-					var path = field.getName() + '.' + inner.getKey();
-					var innerField = new Field(path, inner.getValue());
-
-					/*
-					 * A path holding a wildcard - from either half of it -
-					 * stands for names that only exist once documents give
-					 * them, so it is kept to be matched rather than looked up.
-					 */
-					if(innerField.nameHasWildcard()) {
-						nestedWildcardFields.add(new NestedPattern(objectSegments, innerField));
-					} else {
-						nestedFields.put(path, new NestedField(field.getName(), innerField));
-					}
-
-					inside.add(innerField);
-				}
-
-				inside.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
-				nestedFieldsByPath.put(field.getName(), inside);
-			} else if(field.isObject()) {
-				/*
-				 * A flattened object folds into the document, so the fields
-				 * inside it are fields of the index like any other -
-				 * resolved, searched across and counted with no join in
-				 * between. Only how documents give their values differs,
-				 * which is what flattenedPaths remembers.
-				 */
-				var owner = new FlattenedOwner(field.getName(), segmentsIn(field.getName()));
-
-				for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
-					var path = field.getName() + '.' + inner.getKey();
-					var innerField = new Field(path, inner.getValue());
-
-					fields.put(path, innerField);
-					if(innerField.nameHasWildcard()) {
-						wildcardFields.add(innerField);
-					}
-
-					flattenedPaths.put(path, owner);
-				}
-			}
+			var field = registration.register(entry.getKey(), entry.getValue(), null, null, null);
 
 			if(field.getDef().getPrimaryKey()) {
 				primaryKey = field;
@@ -1039,10 +1186,20 @@ public class IndexSchema {
 			}
 		}
 
+		var fields = registration.fields;
+		var wildcardFields = registration.wildcardFields;
+		var nestedFields = registration.nestedFields;
+		var nestedWildcardFields = registration.nestedWildcardFields;
+		var nestedFieldsByPath = registration.nestedFieldsByPath;
+		var flattenedPaths = registration.flattenedPaths;
+
 		// Sort wildcard fields by name to maintain consistent ordering
 		wildcardFields.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
 		nestedWildcardFields.sort(
 			(a, b) -> compareFieldNames(a.field().getName(), b.field().getName())
+		);
+		nestedFieldsByPath.forEach(
+			inside -> inside.sort((a, b) -> compareFieldNames(a.getName(), b.getName()))
 		);
 
 		this.state = new State(
@@ -1054,6 +1211,9 @@ public class IndexSchema {
 			nestedFieldsByPath
 				.collectValues((path, inside) -> inside.toImmutable())
 				.toImmutable(),
+			registration.parents.toImmutable(),
+			registration.localeSpecific,
+			registration.nestedStoredFields,
 			primaryKey,
 			requiredFields.toImmutable(),
 			fields.valuesView()
@@ -1207,6 +1367,53 @@ public class IndexSchema {
 		}
 
 		return Optional.ofNullable(prefixOf(name, owner.segments()));
+	}
+
+	/**
+	 * Get the concrete name of the object field a resolved field is declared
+	 * directly inside. Where {@link #getFlattenedObjectOf(String)} answers
+	 * where a document gives its values - the root of the object chain - this
+	 * answers one step of it, which is what indexing a value's fields checks:
+	 * a name reaching past the object it was given to resolves somewhere, but
+	 * not to a field of that object.
+	 *
+	 * @param field
+	 *   the field a name resolved to
+	 * @param name
+	 *   the concrete name it resolved under, which the enclosing object's
+	 *   concrete name is cut from - the declared name may be a pattern
+	 * @return
+	 *   concrete name of the object directly declaring the field, or empty
+	 *   for a field declared at the root
+	 */
+	public Optional<String> getEnclosingObjectOf(Field field, String name) {
+		var parent = state.parents.get(field.getName());
+		if(parent == null) {
+			return Optional.empty();
+		}
+
+		return Optional.ofNullable(prefixOf(name, segmentsIn(parent)));
+	}
+
+	/**
+	 * Get whether any field of the index, at any depth, differs per locale -
+	 * what says whether a document has to be walked for variants at all.
+	 *
+	 * @return
+	 */
+	public boolean hasLocaleSpecificFields() {
+		return state.localeSpecific;
+	}
+
+	/**
+	 * Get whether any field below a nested list, at any depth, asks to be
+	 * stored - what says whether a read without the copy of the document has
+	 * the documents of any list's values to look at.
+	 *
+	 * @return
+	 */
+	public boolean hasNestedStoredFields() {
+		return state.nestedStoredFields;
 	}
 
 	/**

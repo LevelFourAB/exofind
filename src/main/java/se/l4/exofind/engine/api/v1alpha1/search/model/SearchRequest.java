@@ -628,10 +628,11 @@ public record SearchRequest(
 	 * counting expanded documents once per matching nested value, while facets
 	 * count matching documents.
 	 *
-	 * <p>Value hits cannot be combined with `matched` or `highlight`, cannot
-	 * include a `knn` clause, and cannot sort by distance or by index root
-	 * fields. Results are ordered by score or by fields inside the path. With
-	 * `when` specified, results are ordered by score alone.
+	 * <p>Value hits cannot be combined with `matched`, cannot include a `knn`
+	 * clause, and cannot sort by distance or by index root fields. `highlight`
+	 * may name fields inside the path, and each hit returns fragments of its
+	 * own value. Results are ordered by score or by fields inside the path.
+	 * With `when` specified, results are ordered by score alone.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -641,9 +642,10 @@ public record SearchRequest(
 		`when`, only the documents it matches expand and the rest stay \
 		document hits, totals count hits of both kinds and facets count \
 		documents. Cannot be combined with `matched` \
-		(`search:hits:with_matched`), `highlight` \
-		(`search:hits:with_highlight`) or `knn` clauses \
-		(`search:hits:with_knn`). See [What a hit stands \
+		(`search:hits:with_matched`) or `knn` clauses \
+		(`search:hits:with_knn`); `highlight` may only name fields inside \
+		`path` (`search:hits:with_highlight`), and each hit returns fragments \
+		of its own value. See [What a hit stands \
 		for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""")
 	public record Hits(
 		/**
@@ -664,15 +666,16 @@ public record SearchRequest(
 		/**
 		 * Field paths inside the nested object to return with each value hit,
 		 * specified by dotted path. If omitted, returns all object fields.
-		 * Field paths not located inside the object or specified on an index
-		 * that does not store document source are rejected.
+		 * Field paths not located inside the object are rejected, and an index
+		 * that does not store document source answers only stored fields.
 		 */
 		@Schema(description = """
 			Dotted field paths inside the nested object to return in `value`, \
 			defaulting to all of them. Names must be prefixed by `path` \
 			(`search:hits:field_not_inside`) and exist in the index \
 			(`index:query:field_not_found`). On an index whose `source` is \
-			`none`, naming any field returns `index:query:source_not_kept`.""")
+			`none`, a named field has to be `stored` \
+			(`index:query:usage_not_enabled`).""")
 		List<String> fields,
 
 		/**
@@ -720,16 +723,17 @@ public record SearchRequest(
 		/**
 		 * Field paths inside the nested object to include in each returned
 		 * value, specified by dotted path. If omitted, returns all object
-		 * fields. Specifying fields outside the object or on an index that does
-		 * not store document source is rejected.
+		 * fields. Specifying fields outside the object is rejected, and an
+		 * index that does not store document source answers only stored
+		 * fields.
 		 */
 		@Schema(description = """
 			Field paths inside the nested object to include in each returned \
 			value, defaulting to all of them. Paths must reside under the \
 			target object path (`search:matched:field_not_inside`) and exist \
 			in the schema (`index:query:field_not_found`). On an index whose \
-			`source` is `none`, naming any field returns \
-			`index:query:source_not_kept`.""")
+			`source` is `none`, a named field has to be `stored` \
+			(`index:query:usage_not_enabled`).""")
 		List<String> fields
 	) {
 	}

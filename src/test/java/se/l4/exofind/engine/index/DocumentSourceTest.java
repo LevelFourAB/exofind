@@ -171,7 +171,9 @@ public class DocumentSourceTest extends AbstractIndexTest {
 
 	/**
 	 * An object holds no value of its own to store, so the copy of the document
-	 * is the only thing that could ever answer for one.
+	 * is the only thing that could ever answer for one. A field inside it can
+	 * be stored on its own though, so what is missing there is the field's
+	 * setting rather than the copy.
 	 */
 	@Test
 	public void testAskingForAnObjectWithoutTheKeptDocumentIsRefused() throws IOException {
@@ -185,11 +187,87 @@ public class DocumentSourceTest extends AbstractIndexTest {
 		assertThat(e.getCode(), is("index:query:source_not_kept"));
 
 		var inside = assertThrows(
-			IndexSourceRequiredException.class,
+			IndexFieldUsageException.class,
 			() -> index.search(SearchRequest.create().withFields("dimensions.width").build())
 		);
 
-		assertThat(inside.getCode(), is("index:query:source_not_kept"));
+		assertThat(inside.getCode(), is("index:query:usage_not_enabled"));
+	}
+
+	/**
+	 * A stored field below single objects answers without the copy, and comes
+	 * back in the shape it was given in - rebuilt around the path, because
+	 * only its own values were stored.
+	 */
+	@Test
+	public void testAskingForAStoredFieldInsideObjectsIsAnsweredWithoutTheCopy() throws IOException {
+		var index = create(
+			"albums",
+			IndexDef.newBuilder()
+				.setSource(IndexDef.SourceMode.SOURCE_MODE_NONE)
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"release",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields(
+										"label",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setObject(
+													ObjectFieldTypeDef.newBuilder().putFields(
+														"name",
+														string().setStored(true).build()
+													)
+												)
+											)
+											.build()
+									)
+									.putFields("year", string().setStored(true).build())
+									.putFields(
+										"note",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+							)
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value(
+					"release",
+					new Document(
+						new Document.Value(
+							"label",
+							new Document(new Document.Value("name", "Verve"))
+						),
+						new Document.Value("year", "1964"),
+						new Document.Value("note", "first pressing")
+					)
+				)
+			)
+		);
+		index.commit();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withFields("release.label.name", "release.year")
+				.build()
+		);
+
+		var release = (Document) result.hits().get(0).document().get("release");
+		assertThat(release.get("year"), is("1964"));
+		assertThat(release.get("note"), is(nullValue()));
+
+		var label = (Document) release.get("label");
+		assertThat(label.get("name"), is("Verve"));
 	}
 
 	/**

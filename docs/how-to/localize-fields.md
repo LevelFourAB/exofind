@@ -25,6 +25,7 @@ Follow these steps to declare locales on your fields, optionally configure fallb
    - The `defaultLocale` applies to values that do not specify a locale.
    - The `locales` array defines which language variants the field accepts. If you submit a value with an undeclared locale, the engine rejects it with `index:update:locale_not_declared`.
    - Every locale tag must be valid according to the [locale reference](../reference/locales.md). If you use an unsupported tag, the schema fails validation.
+   - A field inside an `object` field declares `locales` the same way. Each object value resolves its locales on its own, and fills its missing locales from its own given values.
 
 2. **Configure fallback for untranslated documents (optional)**: By default, searching with a specific locale matches only documents translated into that locale. If you want untranslated documents to appear in search results, define a `localeFallback` chain in your schema:
 

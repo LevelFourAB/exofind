@@ -360,6 +360,66 @@ public class DocumentResourceTest {
 	}
 
 	@Test
+	public void testAnObjectInsideAnObjectReadsItsInnerTypes() throws IOException {
+		var index = indexes.create(
+			"products",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"product",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"dims",
+									FieldDef.newBuilder()
+										.setType(
+											FieldTypeDef.newBuilder().setObject(
+												ObjectFieldTypeDef.newBuilder().putFields(
+													"width",
+													FieldDef.newBuilder()
+														.setType(
+															FieldTypeDef.newBuilder().setDouble(
+																DoubleFieldTypeDef.getDefaultInstance()
+															)
+														)
+														.setFilter(FilterConfig.getDefaultInstance())
+														.build()
+												)
+											)
+										)
+										.build()
+								)
+							)
+						)
+						.build()
+				)
+				.build()
+		);
+
+		resource.add(
+			"products",
+			new DocumentsRequest(
+				List.of(
+					document(
+						"id", "1",
+						"product", Map.of("dims", Map.of("width", 12.5))
+					)
+				)
+			)
+		);
+
+		index.commit();
+
+		var product = (se.l4.exofind.engine.index.Document) index.getDocument("1")
+			.get("product");
+		var dims = (se.l4.exofind.engine.index.Document) product.get("dims");
+
+		// Read through the inner field's own type, resolved by the full path
+		assertThat(dims.get("width"), is(12.5));
+	}
+
+	@Test
 	public void testDocumentsCanBeSentAsOnePerLine() throws IOException {
 		var index = foods();
 

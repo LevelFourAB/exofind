@@ -15,6 +15,7 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
@@ -746,6 +747,182 @@ public class HighlightSearchTest extends AbstractIndexTest {
 			highlightsOf(result, "1", "name"),
 			contains("<em>Spring</em> <em>Cleaning</em>")
 		);
+	}
+
+	@Test
+	public void testFieldInsideAnObjectIsHighlighted() throws IOException {
+		var index = shop();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("leather"))
+				.addHighlight("product.note")
+				.build()
+		);
+
+		assertThat(
+			highlightsOf(result, "1", "product.note"),
+			contains("full grain <em>leather</em> upper")
+		);
+	}
+
+	@Test
+	public void testFieldBelowTwoObjectsIsHighlighted() throws IOException {
+		var index = shop();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("resoled"))
+				.addHighlight("product.care.advice")
+				.build()
+		);
+
+		assertThat(
+			highlightsOf(result, "1", "product.care.advice"),
+			contains("can be <em>resoled</em>")
+		);
+	}
+
+	/**
+	 * The values of a flattened list store as values of one field, so a
+	 * fragment says where a word matched but not which value it came from -
+	 * the same answer a multiple field of the index gives.
+	 */
+	@Test
+	public void testFieldInsideAFlattenedListIsHighlighted() throws IOException {
+		var index = shop();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("waterproof"))
+				.addHighlight("tags.label")
+				.build()
+		);
+
+		assertThat(
+			highlightsOf(result, "1", "tags.label"),
+			contains("<em>waterproof</em> shell")
+		);
+	}
+
+	@Test
+	public void testHighlightOnAFieldInsideANestedListIsRefused() throws IOException {
+		var index = shop();
+
+		var e = assertThrows(
+			IndexException.class,
+			() -> index.search(
+				SearchRequest.create()
+					.withQuery(Query.text("leather"))
+					.addHighlight("variants.color")
+					.build()
+			)
+		);
+
+		assertThat(e.getCode(), is("index:query:nested:outside"));
+	}
+
+	/**
+	 * A shop whose highlightable text sits inside objects: a single
+	 * {@code product} holding a note and a {@code care} object of its own, a
+	 * flattened {@code tags} list, and a nested {@code variants} list whose
+	 * fields never highlight.
+	 */
+	private Index shop() throws IOException {
+		var index = create(
+			"shop",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"product",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields("note", string(highlightedMatching()).build())
+									.putFields(
+										"care",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setObject(
+													ObjectFieldTypeDef.newBuilder().putFields(
+														"advice",
+														string(highlightedMatching()).build()
+													)
+												)
+											)
+											.build()
+									)
+							)
+						)
+						.build()
+				)
+				.putFields(
+					"tags",
+					FieldDef.newBuilder()
+						.setMultiple(true)
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.setMode(ObjectFieldTypeDef.Mode.MODE_FLATTENED)
+									.putFields("label", string(highlightedMatching()).build())
+							)
+						)
+						.build()
+				)
+				.putFields(
+					"variants",
+					FieldDef.newBuilder()
+						.setMultiple(true)
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+									.putFields(
+										"color",
+										string(
+											StringFieldTypeDef.newBuilder().setMatching(
+												StringFieldTypeDef.TextUsageConfig
+													.getDefaultInstance()
+											)
+										).build()
+									)
+							)
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value(
+					"product",
+					new Document(
+						new Document.Value("note", "full grain leather upper"),
+						new Document.Value(
+							"care",
+							new Document(new Document.Value("advice", "can be resoled"))
+						)
+					)
+				),
+				new Document.Value(
+					"tags",
+					new Document(new Document.Value("label", "waterproof shell"))
+				),
+				new Document.Value(
+					"tags",
+					new Document(new Document.Value("label", "lined"))
+				),
+				new Document.Value(
+					"variants",
+					new Document(new Document.Value("color", "brown leather"))
+				)
+			)
+		);
+
+		index.commit();
+		return index;
 	}
 
 	private static StringFieldTypeDef.Builder highlightedMatching() {

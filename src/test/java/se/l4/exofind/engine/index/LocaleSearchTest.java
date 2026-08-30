@@ -18,12 +18,14 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortBy;
+import se.l4.exofind.engine.query.matchers.Matchers;
 
 /**
  * Tests for locale specific fields end to end - a value is analyzed and
@@ -670,5 +672,232 @@ public class LocaleSearchTest extends AbstractIndexTest {
 				.build()
 		);
 		assertThat(names(byDefault, "1"), contains("en:shoes"));
+	}
+
+	/**
+	 * A shop whose translated text sits inside objects: a single
+	 * {@code product} holding a locale specific {@code name}, and a nested
+	 * {@code variants} list holding a locale specific {@code description}
+	 * beside a plain {@code color}.
+	 */
+	private Index localizedObjects() throws IOException {
+		var index = create(
+			"localized-objects",
+			IndexDef.newBuilder()
+				.putFields("id", string(StringFieldTypeDef.newBuilder()).setPrimaryKey(true).build())
+				.putFields(
+					"product",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"name",
+									string(
+										StringFieldTypeDef.newBuilder().setMatching(
+											StringFieldTypeDef.TextUsageConfig.getDefaultInstance()
+										)
+									)
+										.setLocales(
+											FieldDef.LocaleConfig.newBuilder()
+												.setDefaultLocale("en")
+												.addLocales("sv")
+										)
+										.build()
+								)
+							)
+						)
+						.build()
+				)
+				.putFields(
+					"variants",
+					FieldDef.newBuilder()
+						.setMultiple(true)
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+									.putFields(
+										"description",
+										string(
+											StringFieldTypeDef.newBuilder().setMatching(
+												StringFieldTypeDef.TextUsageConfig
+													.getDefaultInstance()
+											)
+										)
+											.setLocales(
+												FieldDef.LocaleConfig.newBuilder()
+													.setDefaultLocale("en")
+													.addLocales("sv")
+											)
+											.build()
+									)
+									.putFields(
+										"color",
+										string(StringFieldTypeDef.newBuilder())
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+							)
+						)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value(
+					"product",
+					new Document(
+						new Document.Value("name", "red running shoes", "en"),
+						new Document.Value("name", "röda löparskor", "sv")
+					)
+				),
+				new Document.Value(
+					"variants",
+					new Document(
+						new Document.Value("description", "soft suede", "en"),
+						new Document.Value("description", "mjuk mocka", "sv"),
+						new Document.Value("color", "red")
+					)
+				)
+			)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value(
+					"product",
+					new Document(
+						new Document.Value("name", "fast cars", "en"),
+						new Document.Value("name", "snabba bilar", "sv")
+					)
+				)
+			)
+		);
+
+		index.commit();
+		return index;
+	}
+
+	/**
+	 * The Swedish `bilar` stems to `bil` only by Swedish rules, so a match
+	 * says the value was analyzed by the locale it carries - inside an object
+	 * the same as at the root.
+	 */
+	@Test
+	public void testFieldInsideAnObjectAnalyzesByTheLocale() throws IOException {
+		var index = localizedObjects();
+
+		var swedish = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("bil"))
+				.withLocale("sv")
+				.build()
+		);
+		assertThat(ids(swedish), contains("2"));
+
+		var english = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("bil"))
+				.build()
+		);
+		assertThat(ids(english), is(empty()));
+	}
+
+	@Test
+	public void testObjectValueComesBackInTheLocaleRead() throws IOException {
+		var index = localizedObjects();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text("bil"))
+				.withLocale("sv")
+				.build()
+		);
+
+		var hit = result.hits().detect(candidate -> candidate.id().equals("2"));
+		var product = (Document) hit.document().get("product");
+
+		var names = Arrays.stream(product.fields())
+			.filter(value -> value.name().equals("name"))
+			.map(value -> value.locale() + ":" + value.value())
+			.toList();
+
+		assertThat(names, contains("sv:snabba bilar"));
+	}
+
+	@Test
+	public void testNestedValueComesBackInTheLocaleRead() throws IOException {
+		var index = localizedObjects();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(
+					Query.nested(
+						"variants",
+						Query.field("variants.color", Matchers.equalTo("red"))
+					)
+				)
+				.withLocale("sv")
+				.withFields("variants.description")
+				.build()
+		);
+
+		var hit = result.hits().detect(candidate -> candidate.id().equals("1"));
+		var variant = (Document) hit.document().get("variants");
+
+		var descriptions = Arrays.stream(variant.fields())
+			.filter(value -> value.name().equals("description"))
+			.map(value -> value.locale() + ":" + value.value())
+			.toList();
+
+		assertThat(descriptions, contains("sv:mjuk mocka"));
+	}
+
+	@Test
+	public void testUndeclaredLocaleInsideAnObjectIsRefused() throws IOException {
+		var index = localizedObjects();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> index.addDocument(
+				new Document(
+					new Document.Value("id", "3"),
+					new Document.Value(
+						"product",
+						new Document(new Document.Value("name", "chaussures", "fr"))
+					)
+				)
+			)
+		);
+
+		assertThat(e.getErrors().size(), is(1));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_declared"));
+	}
+
+	@Test
+	public void testLocaleOnAPlainFieldInsideAnObjectIsRefused() throws IOException {
+		var index = localizedObjects();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> index.addDocument(
+				new Document(
+					new Document.Value("id", "3"),
+					new Document.Value(
+						"variants",
+						new Document(
+							new Document.Value("description", "stiff canvas", "en"),
+							new Document.Value("color", "red", "sv")
+						)
+					)
+				)
+			)
+		);
+
+		assertThat(e.getErrors().size(), is(1));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_allowed"));
 	}
 }

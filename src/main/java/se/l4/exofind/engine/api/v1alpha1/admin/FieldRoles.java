@@ -30,10 +30,9 @@ import se.l4.exofind.engine.errors.ErrorType;
  * takes the weight from the caller and the rest of {@code matching} from the
  * role.
  *
- * <p>A role turns on only what its surroundings accept. Inside an object field
- * that leaves {@code stored} and {@code highlight} alone, and inside a
- * flattened list it leaves {@code sort} alone as well, because an object field
- * refuses those.
+ * <p>A role turns on only what its surroundings accept. Below a flattened list
+ * that leaves {@code stored} and {@code sort} alone, because an object field
+ * refuses those there.
  *
  * <p>Adding a role is a name in {@link Role}, a template here, and a row in the
  * field types reference. A name, once released, is written by callers and can
@@ -80,27 +79,40 @@ public class FieldRoles {
 		new AnalyzerDefinition(AnalyzerDefinition.Preset.PRESERVE_TERMS, null, null);
 
 	/**
-	 * Where a field sits, which decides what a role may turn on.
+	 * Where a field sits, which decides what a role may turn on. The two list
+	 * flags are sticky the way the validation in {@code ObjectFieldType}
+	 * treats them: once a path passes through a flattened or nested list,
+	 * every field below it shares that position however deep the objects
+	 * nest.
+	 *
+	 * @param inObject
+	 *   whether the field sits inside any object
+	 * @param underFlattenedList
+	 *   whether a flattened list sits anywhere on the path above the field
+	 * @param underNested
+	 *   whether a nested list sits anywhere on the path above the field
 	 */
-	private enum Context {
-		/**
-		 * A field of the index itself, where every usage is available.
-		 */
-		ROOT,
+	private record Context(
+		boolean inObject,
+		boolean underFlattenedList,
+		boolean underNested
+	) {
+		static final Context ROOT = new Context(false, false, false);
 
 		/**
-		 * A field inside an object that a search reads as one unit - a single
-		 * object, or a nested list.
+		 * The context of the fields inside an object field sitting in this
+		 * one.
 		 */
-		OBJECT,
+		Context inside(ObjectFieldDefinition field) {
+			var multiple = Boolean.TRUE.equals(field.multiple());
 
-		/**
-		 * A field inside a flattened list, which additionally refuses sorting.
-		 */
-		FLATTENED_LIST;
-
-		boolean inObject() {
-			return this != ROOT;
+			return new Context(
+				true,
+				underFlattenedList
+					|| (multiple && field.mode() == ObjectFieldDefinition.Mode.FLATTENED),
+				underNested
+					|| (multiple && field.mode() == ObjectFieldDefinition.Mode.NESTED)
+			);
 		}
 	}
 
@@ -155,24 +167,25 @@ public class FieldRoles {
 			case StringFieldDefinition string -> expandString(name, string, context);
 			case TimestampFieldDefinition timestamp -> expandTimestamp(name, timestamp);
 			case GeoPointFieldDefinition geo -> expandGeoPoint(name, geo);
-			case ObjectFieldDefinition object -> expandObject(object);
+			case ObjectFieldDefinition object -> expandObject(object, context);
 			default -> field;
 		};
 	}
 
-	private static ObjectFieldDefinition expandObject(ObjectFieldDefinition field) {
+	private static ObjectFieldDefinition expandObject(
+		ObjectFieldDefinition field,
+		Context outside
+	) {
 		if(field.fields() == null) {
 			return field;
 		}
 
 		/*
 		 * A single object is one unit whether or not it says so, so only a
-		 * list that says it is flattened loses sorting.
+		 * list that says it is flattened loses sorting - and whatever list
+		 * the object itself sits below follows its fields down.
 		 */
-		var context = Boolean.TRUE.equals(field.multiple())
-			&& field.mode() == ObjectFieldDefinition.Mode.FLATTENED
-				? Context.FLATTENED_LIST
-				: Context.OBJECT;
+		var context = outside.inside(field);
 
 		return new ObjectFieldDefinition(
 			field.primaryKey(),
@@ -447,26 +460,30 @@ public class FieldRoles {
 	}
 
 	/**
-	 * Whether a role may keep a value for reading back, which an object field
-	 * refuses.
+	 * Whether a role may keep a value for reading back, which a flattened
+	 * list refuses however deep below it the field sits - a single object and
+	 * a nested list keep it.
 	 */
 	private static Boolean stored(Context context) {
-		return context.inObject() ? null : Boolean.TRUE;
+		return context.underFlattenedList() ? null : Boolean.TRUE;
 	}
 
 	/**
-	 * Whether a role may order by the field, which a flattened list refuses.
+	 * Whether a role may order by the field, which a flattened list refuses
+	 * however deep below it the field sits.
 	 */
 	private static FieldDefinition.Sort sort(Context context) {
-		return context == Context.FLATTENED_LIST ? null : SORT;
+		return context.underFlattenedList() ? null : SORT;
 	}
 
 	/**
-	 * Whether a role may mark where the matches were, which an object field
-	 * refuses.
+	 * Whether a role may mark where the matches were, which every position
+	 * accepts - a flattened field's text lives in the document the way a root
+	 * field's does, and a field below a nested list highlights on the hits
+	 * that stand for the list's values.
 	 */
 	private static StringFieldDefinition.TextUsage.Highlight highlight(Context context) {
-		return context.inObject() ? null : HIGHLIGHT;
+		return HIGHLIGHT;
 	}
 
 	private static EngineException notValidForType(String name, Role role, String type) {

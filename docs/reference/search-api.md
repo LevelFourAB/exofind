@@ -575,6 +575,7 @@ Highlighting rules:
 - Locale-specific fields highlight the variant matched by the search.
 - Text beyond the first 10,000 characters of a field value is not evaluated for highlighting.
 - Highlighted text is not HTML-escaped.
+- A field below a `nested` list highlights only on value hits for that list. Naming a nested field on a search that returns document hits returns `index:query:nested:outside`. See [What a hit stands for](#what-a-hit-stands-for).
 
 ## Matched values
 
@@ -595,7 +596,7 @@ Targeting a field that is not a `nested` object returns `index:query:matched:not
 | `limit` | Integer | `3` | Maximum number of matched values to return per hit (1 to 100). |
 | `fields` | Array | All object fields | Field paths inside the nested object to include in each returned value. |
 
-Field paths in `fields` must reside under the target object path (`search:matched:field_not_inside`) and exist in the schema (`index:query:field_not_found`). If the index has [document source](field-types.md#document-source) set to `none`, specifying `fields` returns `index:query:source_not_kept`.
+Field paths in `fields` must reside under the target object path (`search:matched:field_not_inside`) and exist in the schema (`index:query:field_not_found`). If the index has [document source](field-types.md#document-source) set to `none`, a named field must be `stored` (`index:query:usage_not_enabled`). Naming a child object returns `index:query:source_not_kept`.
 
 Response format under each hit:
 
@@ -608,7 +609,7 @@ Response format under each hit:
 }
 ```
 
-- `values`: Array of matched nested values, up to `limit`. If scoring clauses exist within the `nested` clause, values are ordered by score; otherwise, they appear in document order. If document source is `none`, `values` is omitted.
+- `values`: Array of matched nested values, up to `limit`. If scoring clauses exist within the `nested` clause, values are ordered by score; otherwise, they appear in document order. If document source is `none`, each value contains its `stored` fields, and `values` is omitted when none of the value's fields are stored.
 - `totalValues`: Total count of matched values for that nested field in the document.
 
 ## What a hit stands for
@@ -629,7 +630,7 @@ Adding `when` narrows expansion to the documents it matches, leaving the rest as
 | `fields` | Array | All object fields | Dotted field paths inside the nested object to return in `value`. |
 | `when` | Array | All matching documents | Clauses selecting which documents expand into value hits; other matching documents return as document hits. See [Expanding only some documents](#expanding-only-some-documents). |
 
-Field names in `fields` must be prefixed by `path` (`search:hits:field_not_inside`) and exist in the index (`index:query:field_not_found`). If document source is `none`, specifying `fields` returns `index:query:source_not_kept`.
+Field names in `fields` must be prefixed by `path` (`search:hits:field_not_inside`) and exist in the index (`index:query:field_not_found`). If document source is `none`, a named field must be `stored` (`index:query:usage_not_enabled`). Naming a child object returns `index:query:source_not_kept`.
 
 Hit response structure:
 
@@ -646,8 +647,8 @@ Hit response structure:
 
 - `id`: Primary key of the parent document. Multiple hits share an `id` when a document contains multiple matching values.
 - `index`: Zero-based array index of the value in the parent document. Present on every value hit.
-- `key`: What the value reads for the key when the object field declares a `key`. Present even when `hits.fields` does not ask for the key child field. Omitted for document hits, for fields with no key, and on an index whose source is `none`. See the [`object`](field-types.md#object) section of the field types reference for how to declare a key.
-- `value`: The matched nested value object. Omitted if document source is `none`.
+- `key`: Value of the key field when the object field declares a `key`. Present even when `hits.fields` does not request the key child field. Omitted for document hits, for fields with no key, and on an index whose source is `none` when the key child field is not `stored`. See the [`object`](field-types.md#object) section of the field types reference for how to declare a key.
+- `value`: The matched nested value object. If document source is `none`, it contains the value's `stored` fields, and is omitted when none of the value's fields are stored.
 - `document`: Selected fields of the parent document per the search request's `fields` property.
 
 The identity of a value hit is `id` combined with `key` where a key is declared, and `id` combined with `index` otherwise. The `key` survives a reindex, while `index` does not because reindexing can reorder values. Cursors over value hits still step by position.
@@ -657,10 +658,11 @@ Value hit scoring combines the parent document score (including signals) with th
 Setting `hits` cannot be combined with:
 
 - `matched` (`search:hits:with_matched`)
-- `highlight` (`search:hits:with_highlight`)
 - `knn` clauses on a field of the index (`search:hits:with_knn`)
 
 A `knn` clause inside a `nested` clause for the same path is allowed, and makes the nearest values the hits. See [Searching vectors inside a nested path](#searching-vectors-inside-a-nested-path).
+
+`highlight` can name fields inside `path`, and each value hit returns fragments cut from its own value. Naming any other field returns `search:hits:with_highlight`. A document returning as a document hit under `when` carries no fragments. See [Highlight matches inside sub-documents](../how-to/use-sub-documents.md#highlight-matches-inside-sub-documents).
 
 ### Expanding only some documents
 

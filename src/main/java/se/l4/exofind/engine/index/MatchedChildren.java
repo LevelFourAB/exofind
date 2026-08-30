@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.function.Predicate;
 
 import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.search.DocIdSetIterator;
@@ -9,9 +10,14 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.BytesRef;
+import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.primitive.FloatLists;
 import org.eclipse.collections.api.factory.primitive.IntLists;
 import org.eclipse.collections.api.factory.primitive.IntObjectMaps;
+import org.eclipse.collections.api.list.primitive.IntList;
+import org.eclipse.collections.api.list.primitive.MutableIntList;
+import org.eclipse.collections.api.map.MapIterable;
+import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.map.primitive.IntObjectMap;
 
 /**
@@ -283,6 +289,121 @@ final class MatchedChildren {
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Enumerate the children of each given document, grouped by path and in
+	 * block order - which is the order the document gave the values of each
+	 * path in, so a position among them is a position among the values.
+	 *
+	 * The walk is the same single forward pass per segment {@link #find}
+	 * makes, without a query: every child of each document's block is visited
+	 * once, and the {@link FieldNames#NESTED} doc values say which path each
+	 * belongs to.
+	 *
+	 * @param searcher
+	 * @param parents
+	 *   the documents of the index per segment, which is what tells where the
+	 *   block of each one starts
+	 * @param paths
+	 *   which paths to gather, asked once per distinct path a segment holds -
+	 *   a path this answers {@code false} for is skipped
+	 * @param docIds
+	 *   Lucene ids of the documents to answer for, in any order
+	 * @return
+	 *   the children of each document keyed by its Lucene id, each holding the
+	 *   child ids per path. A document with no children of any gathered path
+	 *   has no entry
+	 * @throws IOException
+	 */
+	static IntObjectMap<MapIterable<String, IntList>> children(
+		IndexSearcher searcher,
+		BitSetProducer parents,
+		Predicate<String> paths,
+		int[] docIds
+	) throws IOException {
+		var result = IntObjectMaps.mutable.<MapIterable<String, IntList>>empty();
+		if(docIds.length == 0) {
+			return result;
+		}
+
+		var ordered = docIds.clone();
+		Arrays.sort(ordered);
+
+		var position = 0;
+
+		for(var context : searcher.getIndexReader().leaves()) {
+			var leafEnd = context.docBase + context.reader().maxDoc();
+			var from = position;
+			while(position < ordered.length && ordered[position] < leafEnd) {
+				position++;
+			}
+
+			if(from == position) {
+				continue;
+			}
+
+			var parentBits = parents.getBitSet(context);
+			var nested = context.reader().getSortedDocValues(FieldNames.NESTED);
+			if(parentBits == null || nested == null) {
+				// The segment holds no values at all
+				continue;
+			}
+
+			/*
+			 * The path of each child is told by the ordinal of its doc value,
+			 * resolved once per distinct ordinal rather than once per child.
+			 * An unwanted path is remembered as null so it is not asked about
+			 * again either.
+			 */
+			var byOrd = IntObjectMaps.mutable.<String>empty();
+
+			for(var i = from; i < position; i++) {
+				var parent = ordered[i] - context.docBase;
+				var blockStart = parent == 0 ? 0 : parentBits.prevSetBit(parent - 1) + 1;
+				if(blockStart == parent) {
+					// The document was written without children
+					continue;
+				}
+
+				if(nested.docID() < blockStart) {
+					nested.advance(blockStart);
+				}
+
+				MutableMap<String, MutableIntList> byPath = null;
+				while(nested.docID() < parent) {
+					var ord = nested.ordValue();
+					String path;
+					if(byOrd.containsKey(ord)) {
+						path = byOrd.get(ord);
+					} else {
+						var name = nested.lookupOrd(ord).utf8ToString();
+						path = paths.test(name) ? name : null;
+						byOrd.put(ord, path);
+					}
+
+					if(path != null) {
+						if(byPath == null) {
+							byPath = Maps.mutable.empty();
+						}
+
+						byPath.getIfAbsentPut(path, IntLists.mutable::empty)
+							.add(context.docBase + nested.docID());
+					}
+
+					nested.nextDoc();
+				}
+
+				if(byPath != null) {
+					result.put(
+						ordered[i],
+						byPath.collectValues((path, ids) -> (IntList) ids)
+					);
+				}
+			}
+		}
+
+		return result;
 	}
 
 	/**

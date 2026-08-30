@@ -280,12 +280,14 @@ public record SearchRequest(
 	 * its document scored, so what a document answers as never decides where
 	 * it ranks.
 	 *
-	 * A search whose hits are values can not also ask for {@code highlight} or
-	 * {@code matched} - once the hits are the matched values, {@code matched}
-	 * would ask a hit about itself - and can only be ordered by score or by
-	 * fields inside the path. Ordering by a field is refused as soon as
-	 * {@code when} is given, as a page holding both kinds of hit has no one
-	 * level to read a sort field at.
+	 * A search whose hits are values can not also ask for {@code matched} -
+	 * once the hits are the matched values, {@code matched} would ask a hit
+	 * about itself - and can only be ordered by score or by fields inside the
+	 * path. Ordering by a field is refused as soon as {@code when} is given,
+	 * as a page holding both kinds of hit has no one level to read a sort
+	 * field at. {@code highlight} may name fields inside the path and nothing
+	 * else: each hit carries fragments of its own value, and a document
+	 * answering as itself under {@code when} carries none.
 	 *
 	 * @param path
 	 *   name of the object field whose matched values are the hits. The field
@@ -500,10 +502,21 @@ public record SearchRequest(
 			);
 		}
 
-		if(hits != null && highlight.notEmpty()) {
-			throw new IllegalArgumentException(
-				"A search whose hits are matched values can not highlight"
-			);
+		/*
+		 * A hit standing for a value carries fragments of its own fields - the
+		 * value's document is what holds the text and the offsets. A field of
+		 * the index has no place on such a hit: its text lives in the document
+		 * above, which the hit does not stand for.
+		 */
+		if(hits != null) {
+			for(var name : highlight.keysView()) {
+				if(!name.startsWith(hits.path() + '.')) {
+					throw new IllegalArgumentException(
+						"A search whose hits are matched values can only highlight "
+							+ "fields inside `" + hits.path() + "`, not `" + name + "`"
+					);
+				}
+			}
 		}
 
 		if(total == null) {

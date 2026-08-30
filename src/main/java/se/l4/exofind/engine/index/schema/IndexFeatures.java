@@ -115,6 +115,69 @@ public final class IndexFeatures {
 	public static final String TYPE_OBJECT_WILDCARD = "type.object.wildcard";
 
 	/**
+	 * An object field declares a field that is itself an object.
+	 *
+	 * Named because a node without it refuses the definition instead of
+	 * indexing paths it registers one level of: it would report every deeper
+	 * path as a field the index does not have and refuse the documents that
+	 * give values there, so an index written from both nodes would hold the
+	 * deeper fields of whichever node happened to take each document.
+	 */
+	public static final String TYPE_OBJECT_NESTING = "type.object.nesting";
+
+	/**
+	 * A field inside an object asks to be stored.
+	 *
+	 * Named because a node without it drops the setting and goes on indexing:
+	 * its documents would hold no stored copy of the value, and a search
+	 * answered without the document's own copy would quietly miss the field
+	 * from every document that node wrote.
+	 */
+	public static final String TYPE_OBJECT_STORED = "type.object.stored";
+
+	/**
+	 * A field below a nested list asks to be stored.
+	 *
+	 * Named besides {@link #TYPE_OBJECT_STORED}, which says nothing about the
+	 * list: the stored values live in the documents of the list's values, and
+	 * a node that only knows stored fields folded into the document would
+	 * never read them back - it would answer documents with the values of
+	 * their nested lists quietly missing.
+	 */
+	public static final String TYPE_OBJECT_STORED_NESTED = "type.object.stored.nested";
+
+	/**
+	 * A field inside an object differs per locale.
+	 *
+	 * Named besides {@link #FIELD_LOCALES}, which says nothing about where the
+	 * field sits: a node knowing locale specific fields of the index refuses
+	 * them inside an object, so it would refuse every document that gives a
+	 * translated value there while an aware node takes them.
+	 */
+	public static final String TYPE_OBJECT_LOCALES = "type.object.locales";
+
+	/**
+	 * A field inside an object is highlightable.
+	 *
+	 * Named besides {@link #FIELD_HIGHLIGHT}, which says nothing about where
+	 * the field sits: a node knowing highlightable fields of the index refuses
+	 * them inside an object, so it would refuse the definition an aware node
+	 * wrote and the two could not serve one index.
+	 */
+	public static final String TYPE_OBJECT_HIGHLIGHT = "type.object.highlight";
+
+	/**
+	 * A field below a nested list is highlightable.
+	 *
+	 * Named besides {@link #TYPE_OBJECT_HIGHLIGHT}, which says nothing about
+	 * the list: the offsets and the stored text live in the documents of the
+	 * list's values, and a node that only knows highlighting folded into the
+	 * document would refuse the definition it cannot serve rather than write
+	 * values whose searches answer highlights it cannot build.
+	 */
+	public static final String TYPE_OBJECT_HIGHLIGHT_NESTED = "type.object.highlight.nested";
+
+	/**
 	 * The index keeps documents as they were given.
 	 *
 	 * Named because a node without it would store only the fields that ask to
@@ -354,6 +417,12 @@ public final class IndexFeatures {
 			TYPE_OBJECT_FLATTENED,
 			TYPE_OBJECT_KEY,
 			TYPE_OBJECT_WILDCARD,
+			TYPE_OBJECT_NESTING,
+			TYPE_OBJECT_STORED,
+			TYPE_OBJECT_STORED_NESTED,
+			TYPE_OBJECT_LOCALES,
+			TYPE_OBJECT_HIGHLIGHT,
+			TYPE_OBJECT_HIGHLIGHT_NESTED,
 			TYPE_INT32,
 			TYPE_INT64,
 			TYPE_FLOAT,
@@ -535,6 +604,24 @@ public final class IndexFeatures {
 		FieldDef field,
 		MutableSet<String> features
 	) {
+		collectField(name, field, features, false);
+	}
+
+	/**
+	 * Gather what one field asks for, told where it sits. The flag is sticky
+	 * the way validation carries it: once a path passes through a nested list,
+	 * every field below lives in the documents of the list's values, and some
+	 * settings ask for more there than they do folded into the document.
+	 *
+	 * @param underNested
+	 *   whether a nested list sits anywhere on the path above this field
+	 */
+	private static void collectField(
+		String name,
+		FieldDef field,
+		MutableSet<String> features,
+		boolean underNested
+	) {
 		var localeTags = declaredLocales(field);
 
 		switch(field.getType().getTypeCase()) {
@@ -608,7 +695,12 @@ public final class IndexFeatures {
 
 				// The fields inside need their own features besides this one
 				for(var inner : field.getType().getObject().getFieldsMap().entrySet()) {
-					collectField(inner.getKey(), inner.getValue(), features);
+					collectField(
+						inner.getKey(),
+						inner.getValue(),
+						features,
+						underNested || nested
+					);
 
 					if(inner.getKey().contains("*")) {
 						features.add(TYPE_OBJECT_WILDCARD);
@@ -623,6 +715,41 @@ public final class IndexFeatures {
 					 */
 					if(nested && usesMoreThanFiltering(inner.getValue())) {
 						features.add(TYPE_OBJECT_USAGES);
+					}
+
+					/*
+					 * The placements a node may know nowhere but inside an
+					 * object, named besides the usages themselves for the
+					 * same reason as above. Each level of objects names its
+					 * own inner fields, so these fire however deep the field
+					 * sits.
+					 */
+					if(inner.getValue().getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
+						features.add(TYPE_OBJECT_NESTING);
+					}
+
+					if(inner.getValue().getStored()) {
+						features.add(TYPE_OBJECT_STORED);
+
+						if(underNested || nested) {
+							features.add(TYPE_OBJECT_STORED_NESTED);
+						}
+					}
+
+					if(inner.getValue().hasLocales()) {
+						features.add(TYPE_OBJECT_LOCALES);
+					}
+
+					if(inner.getValue().getType().getTypeCase() == FieldTypeDef.TypeCase.STRING) {
+						var string = inner.getValue().getType().getString();
+						if(string.getMatching().hasHighlight()
+							|| string.getAutocomplete().hasHighlight()) {
+							features.add(TYPE_OBJECT_HIGHLIGHT);
+
+							if(underNested || nested) {
+								features.add(TYPE_OBJECT_HIGHLIGHT_NESTED);
+							}
+						}
 					}
 				}
 			}

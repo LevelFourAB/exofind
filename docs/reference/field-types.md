@@ -68,10 +68,10 @@ Notes on specific roles:
 
 ### Roles inside object fields
 
-An `object` field does not support `stored` or `highlight`, and flattened lists do not support `sort`. A role turns on only what its enclosing object context accepts:
+A role turns on only what the field's position accepts. The flattened list position carries down through any objects between it and the field:
 
-- Inside any `object` field, a role does not set `stored` and does not set `highlight` on `matching`.
-- Inside a list with `multiple: true` and `mode: "flattened"`, a role does not set `sort`. Single objects and `nested` lists retain sorting.
+- Below a list with `mode: "flattened"`, a role does not set `sort` or `stored`.
+- Below a list with `mode: "nested"` and inside single objects, a role sets every usage that it sets at the root.
 - Setting `role: "id"` inside an object field is rejected because an object field cannot define a primary key.
 
 ### Errors
@@ -142,7 +142,7 @@ Represents an array of floating-point numbers searched by similarity using the `
 
 ## `object`
 
-Represents structured object values containing nested field definitions. Nested fields are referenced by dot notation (for example, `variants.price`) and support any non-object type.
+Represents structured object values containing nested field definitions. Child fields are referenced by dot notation (for example, `variants.price`) and support any type, including `object`: objects nest to any depth.
 
 ```json
 {
@@ -160,7 +160,7 @@ Represents structured object values containing nested field definitions. Nested 
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `fields` | object | None | Map of child field names to field definitions. Child fields cannot use the `object` type. |
+| `fields` | object | None | Map of child field names to field definitions. Child fields can be `object` fields in turn; a `nested` list cannot contain another `nested` list. |
 | `mode` | string | None | Storage mode for multiple objects. Required when `multiple: true`. Must be omitted when `multiple: false`. Values: `"flattened"` or `"nested"`. |
 | `key` | string | None | Names a child field as the identity of an object value. Supported in both `"flattened"` and `"nested"` modes. |
 
@@ -193,13 +193,18 @@ For targeting object values by key in update operations, see [Update parts of do
 
 ### Constraints and restrictions
 
-- **Supported child field options:** `filter`, `matching`, `autocomplete`, `facet`, `validation`, `required`, and `multiple`. Setting `required: true` on a child field requires that field in every object instance.
-- **Sorting on child fields:** Supported in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)). Rejected in `flattened` mode with `index:field:object:flattened_sort`.
+Child fields support the same options as fields of the index. What a child field cannot configure follows from its position, and the two list positions apply at any depth below the list:
+
+- **Objects inside objects:** Single objects and `flattened` lists nest to any depth. A `nested` list can contain single objects and `flattened` lists, but a `nested` list below a `nested` list is rejected with `index:field:object:nested_in_nested`, through any objects between the two.
+- **Below a `flattened` list:** `sort` is rejected with `index:field:object:flattened_sort` and `stored` with `index:field:object:flattened_stored`. The values of every object mix in the document, so no single value stands for it and nothing says which value a stored one came from. Sorting works in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)).
+- **Below a `nested` list:** `stored` and `highlight` are supported. Each value keeps its own document, storing values and highlight text the same way root documents do. Highlighted fragments return only on value hits (see [What a hit stands for](search-api.md#what-a-hit-stands-for)). A search returning document hits cannot name a field below a `nested` list in `highlight` (`index:query:nested:outside`).
+- **`primaryKey`:** Rejected inside any object with `index:field:object:inner_usage_not_supported`.
+- **`locales`:** Supported everywhere. Each object value resolves its locales on its own and fills its missing locales from its own given ones. See [Localize fields](../how-to/localize-fields.md).
+- **`required` on child fields:** Setting `required: true` on a child field requires that field in every object instance.
 - **Vector child fields:** In `nested` mode, search a child `vector` field with a `knn` clause inside a `nested` clause for the path (see [Searching vectors inside a nested path](search-api.md#searching-vectors-inside-a-nested-path)).
-- **Unsupported options:** `primaryKey`, `highlight`, `locales`, `stored`, and nested `object` types cannot be used inside object fields.
 - **Wildcard names:** A child field name can contain `*`, and so can the name of the `object` field itself. See [Wildcard names on object fields](#wildcard-names-on-object-fields).
 - **Top-level object options:** An `object` field cannot configure `filter`, `sort`, `facet`, `locales`, or `stored`.
-- **Document source requirement:** Object fields are returned in search results only when full documents are preserved in [Document source](#document-source).
+- **Reading object fields back:** Search results return object fields from documents preserved in [Document source](#document-source). When the index preserves no documents, search results also return `stored` child fields: below single objects as document fields, and below a `nested` list from each value's sub-document.
 
 ### Errors
 
@@ -210,7 +215,10 @@ For targeting object values by key in update operations, see [Update parts of do
 | `index:field:object:key_without_multiple` | `key` is specified on an `object` field where `multiple` is `false` or omitted. |
 | `index:field:object:key_not_found` | `key` names a child field that is not defined in `fields`. |
 | `index:field:object:key_not_valid` | The child field named by `key` is not `required: true`, has `multiple: true`, or is not of type `string`, `int32`, or `int64`. |
-| `index:field:object:flattened_sort` | `sort` is configured on a child field inside a `flattened` object field. |
+| `index:field:object:flattened_sort` | `sort` is configured on a child field below a `flattened` list. |
+| `index:field:object:flattened_stored` | `stored` is configured on a child field below a `flattened` list. |
+| `index:field:object:inner_usage_not_supported` | A child field configures `primaryKey`, which is rejected inside an object. |
+| `index:field:object:nested_in_nested` | A `nested` list is declared below another `nested` list. |
 | `index:update:object:key_duplicate` | A document contains multiple object values with the same key value. |
 
 ### Wildcard names on object fields
@@ -265,6 +273,8 @@ Search and update operations:
 - `flattened` objects require the `type.object.flattened` feature flag.
 - Setting `key` on an `object` field requires the `type.object.key` feature flag.
 - Wildcard patterns in `object` field names or child field names require the `type.object.wildcard` feature flag.
+- An `object` child field requires the `type.object.nesting` feature flag.
+- `stored`, `locales`, and `highlight` on child fields require `type.object.stored`, `type.object.locales`, and `type.object.highlight`. Below a `nested` list, `stored` also requires `type.object.stored.nested`, and `highlight` also requires `type.object.highlight.nested`.
 
 ## Wildcard fields
 

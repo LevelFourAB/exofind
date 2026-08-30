@@ -734,6 +734,11 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 		);
 	}
 
+	/**
+	 * Without the copy a value's fields answer from their own stored Lucene
+	 * fields, so what is missing for a field that is not stored is the
+	 * field's own setting rather than the copy.
+	 */
 	@Test
 	public void testHitsFieldsWithoutSourceAreRefused() throws IOException {
 		var index = productsWithoutSource();
@@ -750,7 +755,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:source_not_kept"));
+		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
 	}
 
 	@Test

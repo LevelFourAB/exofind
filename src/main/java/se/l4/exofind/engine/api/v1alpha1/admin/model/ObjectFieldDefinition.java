@@ -43,21 +43,33 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * {@code variants[V-2]}, and a search hit returns the key beside the position.
  * Key values must be unique within a document.
  *
- * <p>Child fields support filtering, matching, autocomplete, faceting,
- * validation, and being marked required or multiple. Sorting on child fields is
- * supported in single objects and nested mode. Primary keys, highlighting,
- * locales, stored values, and nested object fields are rejected inside object
- * fields. Object fields are returned in search results only when the index
- * preserves document sources.
+ * <p>Child fields are fields like any other, the {@code object} type included:
+ * objects nest to any depth, with one limit - a {@code nested} list cannot
+ * contain another {@code nested} list. What a child field may configure
+ * follows from where it sits. Below a {@code flattened} list, sorting and
+ * stored values are rejected, because the values of every object mix in the
+ * document with nothing saying which value each came from. Below a
+ * {@code nested} list every value keeps a document of its own, so stored
+ * values and highlighting work - the highlighted fragments come back on value
+ * hits, which are the hits that stand for the values. Primary keys are
+ * rejected inside any object. Locale specific child fields work everywhere,
+ * and each object value fills its own missing locales.
+ *
+ * <p>Object fields are returned in search results through the preserved
+ * document source; a stored child field answers without it - below single
+ * objects like a field of the document, below a {@code nested} list from the
+ * value's own sub-document.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = """
 	Represents structured object values containing nested field definitions, \
 	referenced by dot notation (such as `variants.price`). An object field \
-	cannot configure `filter`, `sort`, `facet`, `locales`, or `stored`, and \
-	its name cannot use wildcards. An array of objects can specify a `key` to \
-	identify each object value. Object fields are returned in search results \
-	only when the index preserves document sources. See \
+	cannot configure `filter`, `sort`, `facet`, `locales`, or `stored` on \
+	itself. Child fields can be objects in turn, though a `nested` array \
+	cannot contain another `nested` array. An array of objects can specify a \
+	`key` to identify each object value. Object fields are returned in search \
+	results through the preserved document source; a stored child field below \
+	single objects also answers when the index keeps none. See \
 	[`object`](https://exofind.dev/reference/field-types/#object).""")
 public record ObjectFieldDefinition(
 	@Schema(description = "Not supported on an object field; setting it is rejected.")
@@ -120,13 +132,16 @@ public record ObjectFieldDefinition(
 	 * Map of child field names to field definitions.
 	 */
 	@Schema(description = """
-		Map of child field names to field definitions. Child fields can \
-		configure `filter`, `matching`, `autocomplete`, `facet`, `validation`, \
-		`required`, and `multiple`. Setting `primaryKey`, `highlight`, \
-		`locales`, `stored`, wildcard names, or nested `object` types is \
-		rejected. Sorting on a child field is supported in single objects and \
-		in `nested` mode, and is rejected in `flattened` mode with \
-		`index:field:object:flattened_sort`.""")
+		Map of child field names to field definitions, the `object` type \
+		included - objects nest, though a `nested` array cannot contain \
+		another `nested` array (`index:field:object:nested_in_nested`). What \
+		a child field may configure follows from where it sits: `sort` and \
+		`stored` are rejected below a `flattened` array \
+		(`index:field:object:flattened_sort`, \
+		`index:field:object:flattened_stored`), and `primaryKey` is rejected \
+		inside any object (`index:field:object:inner_usage_not_supported`). \
+		Below a `nested` array `stored` and `highlight` work - highlighted \
+		fragments come back on value hits. `locales` works everywhere.""")
 	Map<String, FieldDefinition> fields
 ) implements FieldDefinition {
 	/**

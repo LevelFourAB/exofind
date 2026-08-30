@@ -33,8 +33,9 @@ Keep the following rules in mind when you configure the field:
 
 - Setting `multiple: true` makes the field a list. A list field must specify its `mode`. In flattened mode, conditions such as `color = red` and `price < 20` can match two different variants. Therefore, list fields do not have a default mode.
 - A field without `multiple: true` holds a single value, always flattens, and does not accept a `mode`. If a document provides multiple values for a non-multiple field, the engine rejects the document with `index:update:not_multiple`. Use non-multiple objects for grouped fields that represent a single unit, such as a `dimensions` object with `width` and `height`.
-- Define fields inside the object using the same options as top-level index fields. Inner fields support `filter`, `matching`, `autocomplete`, `sort`, `facet`, `validation`, `required`, and `multiple`. Setting `required: true` on an inner field makes that field required in every sub-document value.
-- Inner fields do not support top-level index features: `primaryKey`, `highlight`, `locales`, `stored`, and nested objects inside objects.
+- Define fields inside the object using the same options as top-level index fields. Inner fields support `filter`, `matching`, `autocomplete`, `sort`, `facet`, `stored`, `highlight`, `locales`, `validation`, `required`, and `multiple`. Setting `required: true` on an inner field makes that field required in every sub-document value.
+- Inner fields do not support `primaryKey`, which names the document itself. Highlighted fragments of inner fields return only on value hits. See [Highlight matches inside sub-documents](#highlight-matches-inside-sub-documents).
+- An inner field can be an object itself: a single object or a `flattened` list. A `nested` list inside a `nested` list is rejected with `index:field:object:nested_in_nested`. For the full position rules, see [Constraints and restrictions](../reference/field-types.md#constraints-and-restrictions).
 - An inner field name can contain `*`, which accepts attributes you do not define in advance. See [Accept attributes you did not define](#accept-attributes-you-did-not-define).
 - The parent `object` field holds no direct value. Setting `filter`, `sort`, `facet`, `locales`, or `stored` on the parent object is rejected.
 
@@ -64,7 +65,7 @@ The engine validates sub-document values using these rules:
 
 Documents are written whole. Indexing a document with an existing key replaces all previous values in the object field. Deleting a parent document deletes all of its sub-documents.
 
-Search results return sub-documents from the document copy stored in the index. An object field cannot be set to `stored` on its own. If you define an index with `"source": "none"`, the engine returns search results without sub-document values.
+Search results return sub-documents from the document copy stored in the index. An object field cannot be set to `stored` on its own. If you define an index with `"source": "none"`, sub-document values contain only the inner fields set to `stored: true`. If no inner fields are stored, search results omit sub-document values.
 
 ## Query sub-documents
 
@@ -146,7 +147,28 @@ A top-level `text` clause searches only top-level document fields. To search bot
 
 Use `score` to define how matching sub-documents determine the parent document score: `max` (default), `min`, `avg`, or `total`. The `score` setting applies only when an inner clause scores results.
 
-Sub-document fields do not support highlighting. Highlighting extracts fragments from the parent document text, so configuring `highlight` on an inner field is rejected. Highlight top-level fields instead.
+## Highlight matches inside sub-documents
+
+To return highlighted fragments of inner text fields, configure `highlight` on the inner field and search with value hits (`"hits": { "path": "variants" }`, see [What a hit stands for](../reference/search-api.md#what-a-hit-stands-for)). Each hit represents one sub-document value, and its fragments come from that value alone:
+
+```json
+{
+  "query": [
+    { "type": "nested", "path": "variants", "clauses": [
+      { "type": "text", "text": "waterproof" }
+    ] }
+  ],
+  "hits": { "path": "variants" },
+  "highlight": { "fields": { "variants.material": {} } }
+}
+```
+
+When highlighting inner fields:
+
+- Highlighted fields must sit inside the `hits` path. Naming a top-level field fails with `search:hits:with_highlight`.
+- A search whose hits are documents cannot highlight an inner field of a `nested` list. Naming an inner field in `highlight` fails with `index:query:nested:outside`. Fragments belong to a value, and only a value hit represents one.
+- With [`when`](../reference/search-api.md#expanding-only-some-documents) set, documents that return as whole documents return no fragments.
+- Fragments show what the `nested` clauses matched in the value. The options and markers work as described in [Highlighting](../reference/search-api.md#highlighting).
 
 ## Sort and facet by sub-document fields
 
@@ -202,7 +224,7 @@ When replacing the whole list, if you do not have the existing sub-documents, re
 
 Set `fields` to `variants` to return all inner fields, or specify a dotted path such as `variants.price` to return a specific inner field. Retrieving a document by key with this method requires the key field to be configured with `filter`.
 
-If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies and cannot return existing sub-documents. Requesting fields on such an index fails with `index:query:source_not_kept`. Retain source data on indexes where you need to retrieve or update sub-documents.
+If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies. Sub-document values then return only their inner fields set to `stored: true`. Requesting the whole object field fails with `index:query:source_not_kept`, and requesting an inner field without `stored` fails with `index:query:usage_not_enabled`. Retain source data on indexes where you need to update sub-documents, because a replacement built from partial values drops the fields it never saw.
 
 ## Accept attributes you did not define
 

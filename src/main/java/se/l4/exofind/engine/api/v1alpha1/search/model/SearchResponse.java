@@ -166,15 +166,16 @@ public record SearchResponse(
 
 		/**
 		 * Declared key value for the nested object value. Present only on value
-		 * hits for fields with a declared key, on indexes that store document
-		 * source.
+		 * hits for fields with a declared key. On an index that does not store
+		 * document source, present when the key's field is stored.
 		 */
 		@Schema(description = """
 			What the value this hit stands for reads for the `key` its object \
 			field declares. Two values of one document never read the same, so \
 			`id` and `key` name one value and go on naming it after a reindex. \
 			Omitted for a document hit, for a field that declares no key, and \
-			on an index whose `source` is `none`.""")
+			on an index whose `source` is `none` when the key's field is not \
+			`stored`.""")
 		String key,
 
 		/**
@@ -196,8 +197,8 @@ public record SearchResponse(
 
 		/**
 		 * The matched nested value object. Present only when the search
-		 * requests value hits, and omitted on an index that does not retain
-		 * document source copies.
+		 * requests value hits. On an index that does not retain document
+		 * source copies, holds the stored fields of the value.
 		 */
 		/*
 		 * Typed as a free-form object rather than by the engine's Document,
@@ -210,8 +211,9 @@ public record SearchResponse(
 			implementation = Object.class,
 			description = """
 				The matched nested value object, keyed by field name. Present \
-				only when the search requests value hits, and omitted on an \
-				index whose `source` is `none`."""
+				only when the search requests value hits. On an index whose \
+				`source` is `none` it holds the value's `stored` fields, and \
+				is omitted when nothing of the value is stored."""
 		)
 		@JsonSerialize(using = DocumentSerializer.class)
 		Document value,
@@ -239,12 +241,14 @@ public record SearchResponse(
 		/**
 		 * Highlighted fragments of the requested fields, keyed by field name.
 		 * Present when highlighting is requested, omitting fields with no
-		 * matches. Omitted when highlighting is not requested.
+		 * matches. For a value hit, the fragments are cut from the hit's own
+		 * value. Omitted when highlighting is not requested.
 		 */
 		@Schema(description = """
 			Highlighted fragments keyed by field name. Present when \
 			highlighting is requested, omitting fields with no matching text \
-			in the document. Omitted when highlighting is not requested.""")
+			in the hit - for a value hit the fragments are cut from the hit's \
+			own value. Omitted when highlighting is not requested.""")
 		Map<String, List<String>> highlights,
 
 		/**
@@ -268,8 +272,8 @@ public record SearchResponse(
 		/**
 		 * The matched values, up to the requested limit. Values are ordered by
 		 * score when scoring clauses exist within the nested clause, and in
-		 * document order otherwise. Omitted on an index that does not retain
-		 * document source copies.
+		 * document order otherwise. On an index that does not retain document
+		 * source copies, each value holds its stored fields.
 		 */
 		@Schema(
 			type = SchemaType.ARRAY,
@@ -278,7 +282,9 @@ public record SearchResponse(
 				Array of matched nested values, each keyed by field name, up \
 				to `limit`. If scoring clauses exist within the `nested` \
 				clause, values are ordered by score; otherwise, they appear in \
-				document order. Omitted on an index whose `source` is `none`."""
+				document order. On an index whose `source` is `none` each \
+				value holds its `stored` fields, and the array is omitted when \
+				nothing of the values is stored."""
 		)
 		@JsonSerialize(contentUsing = DocumentSerializer.class)
 		List<Document> values,

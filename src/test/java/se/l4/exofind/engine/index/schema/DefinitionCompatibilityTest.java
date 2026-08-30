@@ -632,6 +632,101 @@ public class DefinitionCompatibilityTest {
 		assertThat(paths(current, incoming), contains("variants.sku"));
 	}
 
+	/**
+	 * Turning on `stored` inside an object is the same change as at the root:
+	 * documents already written hold no stored copy of the value.
+	 */
+	@Test
+	public void turningOnStoredInsideAnObjectIsIncompatible() {
+		UnaryOperator<FieldDef.Builder> single = inner -> FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setObject(
+						ObjectFieldTypeDef.newBuilder()
+							.putFields("name", inner.build())
+					)
+			);
+
+		var current = base()
+			.putFields(
+				"label",
+				single.apply(
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(StringFieldTypeDef.getDefaultInstance())
+						)
+				).build()
+			)
+			.build();
+
+		var incoming = base()
+			.putFields(
+				"label",
+				single.apply(
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(StringFieldTypeDef.getDefaultInstance())
+						)
+						.setStored(true)
+				).build()
+			)
+			.build();
+
+		assertThat(codes(current, incoming), contains("index:definition:usage_added"));
+		assertThat(paths(current, incoming), contains("label.name"));
+	}
+
+	/**
+	 * Below a nested list the stored copy is written into the value's own
+	 * document, so turning it on reaches nothing already written there - the
+	 * same trade as at the root, reported the same way.
+	 */
+	@Test
+	public void turningOnStoredBelowANestedListIsIncompatible() {
+		UnaryOperator<FieldDef.Builder> nested = inner -> FieldDef.newBuilder()
+			.setMultiple(true)
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setObject(
+						ObjectFieldTypeDef.newBuilder()
+							.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							.putFields("name", inner.build())
+					)
+			);
+
+		var current = base()
+			.putFields(
+				"variants",
+				nested.apply(
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(StringFieldTypeDef.getDefaultInstance())
+						)
+				).build()
+			)
+			.build();
+
+		var incoming = base()
+			.putFields(
+				"variants",
+				nested.apply(
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(StringFieldTypeDef.getDefaultInstance())
+						)
+						.setStored(true)
+				).build()
+			)
+			.build();
+
+		assertThat(codes(current, incoming), contains("index:definition:usage_added"));
+		assertThat(paths(current, incoming), contains("variants.name"));
+	}
+
 	@Test
 	public void changingHowAnObjectKeepsItsValuesIsIncompatible() {
 		var current = base()

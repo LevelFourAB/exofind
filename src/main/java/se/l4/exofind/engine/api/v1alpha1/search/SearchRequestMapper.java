@@ -376,7 +376,11 @@ public class SearchRequestMapper {
 
 	private static final ErrorType HITS_WITH_HIGHLIGHT =
 		ErrorType.withCode("search:hits:with_highlight")
-			.withMessage("Highlighting can not be combined with hits that stand for values");
+			.withArguments("field", "path")
+			.withMessage(
+				"Hits that stand for values highlight their own fields, so "
+				+ "`{{field}}` has to be inside `{{path}}` - named by its dotted path"
+			);
 
 	private static final ErrorType HITS_WITH_KNN =
 		ErrorType.withCode("search:hits:with_knn")
@@ -958,11 +962,12 @@ public class SearchRequestMapper {
 	 * return {@code null}.
 	 *
 	 * Most of what value hits can not combine with is refused here, where the
-	 * shape of the request is on hand: highlighting and {@code matched} have
-	 * no meaning once the hits are the matched values, a {@code knn} clause
-	 * picks the nearest documents and has no per-value reading, and a
-	 * distance sort reads a document. Whether the path itself can answer as
-	 * hits is the index's to judge, when the request runs.
+	 * shape of the request is on hand: {@code matched} has no meaning once
+	 * the hits are the matched values, highlighting can only name fields
+	 * inside the path, a {@code knn} clause picks the nearest documents and
+	 * has no per-value reading, and a distance sort reads a document. Whether
+	 * the path itself can answer as hits is the index's to judge, when the
+	 * request runs.
 	 *
 	 * A {@code when} narrows that further: its page holds document hits and
 	 * value hits together, and a field sort would have to be read at whichever
@@ -986,8 +991,22 @@ public class SearchRequestMapper {
 			errors.add(HITS_WITH_MATCHED.toMessage(Location.create("/matched")));
 		}
 
-		if(body.highlight() != null) {
-			errors.add(HITS_WITH_HIGHLIGHT.toMessage(Location.create("/highlight")));
+		/*
+		 * Value hits highlight fields inside the path - the fragments are cut
+		 * from each hit's own value. A field of the document has no place on
+		 * such a hit, and is a mistake that needs no index to judge.
+		 */
+		if(body.highlight() != null && body.highlight().fields() != null) {
+			for(var name : body.highlight().fields().keySet()) {
+				if(name == null || !name.startsWith(path + ".")
+					|| name.length() == path.length() + 1) {
+					errors.add(HITS_WITH_HIGHLIGHT.toMessage(
+						Location.create("/highlight/fields"),
+						"field", name == null ? "" : name,
+						"path", path
+					));
+				}
+			}
 		}
 
 		refuseKnn(body.query(), "/query", errors);

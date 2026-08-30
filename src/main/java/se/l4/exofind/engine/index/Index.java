@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -25,6 +26,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.LongConsumer;
+import java.util.function.Predicate;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.StoredField;
@@ -82,6 +84,7 @@ import org.eclipse.collections.api.map.ImmutableMap;
 import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.map.primitive.IntObjectMap;
+import org.eclipse.collections.api.set.MutableSet;
 import org.eclipse.collections.api.set.SetIterable;
 import org.eclipse.collections.api.tuple.Pair;
 import org.eclipse.collections.impl.factory.Lists;
@@ -1689,30 +1692,12 @@ public class Index {
 						continue;
 					}
 
-					var key = field0.getObjectKey();
-					if(key != null) {
-						/*
-						 * A value with no key at all is left to the required
-						 * check inside it, which points at the field rather
-						 * than at a duplicate that is not there.
-						 */
-						var reads = subDocument.get(key);
-						if(reads != null
-							&& !keysSeen.add(
-								Tuples.pair(value.name(), String.valueOf(reads))
-							)) {
-							errors.add(
-								ERROR_OBJECT_KEY_DUPLICATE.toMessage(
-									ObjectLocation.root()
-										.forField(value.name())
-										.forIndex(position),
-									"name", value.name(),
-									"key", key,
-									"value", String.valueOf(reads)
-								)
-							);
-							continue;
-						}
+					if(duplicateObjectKey(
+						value.name(), value.name(), field0, subDocument,
+						ObjectLocation.root().forField(value.name()).forIndex(position),
+						keysSeen, errors
+					)) {
+						continue;
 					}
 
 					if(field0.isNestedObject()) {
@@ -1723,17 +1708,22 @@ public class Index {
 								subDocument,
 								ObjectLocation.root().forField(value.name()).forIndex(position),
 								encounter,
+								childDocs,
+								keysSeen,
 								errors
 							)
 						);
 					} else {
-						flattenFields(
+						indexObjectValue(
 							field0,
 							value.name(),
 							subDocument,
 							ObjectLocation.root().forField(value.name()).forIndex(position),
 							encounter,
 							luceneDoc,
+							childDocs,
+							null,
+							keysSeen,
 							errors
 						);
 					}
@@ -2045,13 +2035,8 @@ public class Index {
 	}
 
 	/**
-	 * Turn one value of an object field into the Lucene document it is indexed
-	 * as, checking its fields the way {@link #addDocument} checks the
-	 * document's own.
-	 *
-	 * The names inside the value are the ones the object declares; what they
-	 * are written under is the dotted path through the object, so a search
-	 * finds them by the name it knows.
+	 * Turn one value of a nested object field into the Lucene document it is
+	 * indexed as.
 	 *
 	 * <p>Everything is written under the name the document gave the object.
 	 * That is the definition's own name for it unless the name is a pattern.
@@ -2067,6 +2052,11 @@ public class Index {
 	 * @param location
 	 *   where the value sits in the document, used to point at errors
 	 * @param encounter
+	 * @param childDocs
+	 *   where the values of nested object fields land as documents
+	 * @param keysSeen
+	 *   what every value of a keyed object field read for its key, shared
+	 *   across the whole document
 	 * @param errors
 	 *   where problems with the value are collected
 	 * @return
@@ -2077,112 +2067,35 @@ public class Index {
 		Document value,
 		ObjectLocation location,
 		IndexEncounterImpl encounter,
+		MutableList<org.apache.lucene.document.Document> childDocs,
+		MutableSet<Pair<String, String>> keysSeen,
 		MutableList<ErrorMessage> errors
 	) {
 		var child = new org.apache.lucene.document.Document();
 		NestedDocuments.mark(child, objectName);
 
-		var valuesSeen = Sets.mutable.<String>empty();
-		var fieldsFound = Sets.mutable.<String>empty();
-
-		for(var inner : value.fields()) {
-			var path = objectName + '.' + inner.name();
-			var nested = schema.getNestedField(path);
-
-			/*
-			 * A path that resolves inside another object is not a field of this
-			 * one, which only a name reaching past the object it was given to
-			 * can do.
-			 */
-			if(nested.isPresent() && !nested.get().path().equals(objectName)) {
-				nested = Optional.empty();
-			}
-
-			if(nested.isEmpty()) {
-				errors.add(
-					ERROR_FIELD_NOT_FOUND.toMessage(
-						location.forField(inner.name()),
-						"name", inner.name()
-					)
-				);
-				continue;
-			}
-
-			var innerField = nested.get().field();
-
-			// Fields inside an object are never locale specific
-			if(inner.locale() != null) {
-				errors.add(
-					ERROR_LOCALE_NOT_ALLOWED.toMessage(
-						location.forField(inner.name()),
-						"name", inner.name(),
-						"locale", inner.locale()
-					)
-				);
-				continue;
-			}
-
-			if(inner.value() instanceof Document) {
-				errors.add(
-					ERROR_UNEXPECTED_DOCUMENT.toMessage(
-						location.forField(inner.name()),
-						"name", inner.name()
-					)
-				);
-				continue;
-			}
-
-			if(!valuesSeen.add(inner.name()) && !innerField.isMultiple()) {
-				errors.add(
-					ERROR_NOT_MULTIPLE.toMessage(
-						location.forField(inner.name()),
-						"name", inner.name()
-					)
-				);
-				continue;
-			}
-
-			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
-			encounter.updateValue(path, innerField.getDef());
-
-			try {
-				for(var indexableField : innerField.getType().createFields(encounter, inner.value())) {
-					child.add(indexableField);
-				}
-			} catch(ValidationException e) {
-				errors.addAllIterable(e.getErrors());
-				continue;
-			}
-
-			fieldsFound.add(inner.name());
-		}
-
-		// Being required means required in every value, not once per document
-		var objectDef = objectField.getDef().getType().getObject();
-		for(var entry : objectDef.getFieldsMap().entrySet()) {
-			if(entry.getValue().getRequired() && !fieldsFound.contains(entry.getKey())) {
-				errors.add(
-					ERROR_REQUIRED_FIELD_MISSING.toMessage(
-						location.forField(entry.getKey()),
-						"name", entry.getKey()
-					)
-				);
-			}
-		}
+		indexObjectValue(
+			objectField, objectName, value, location, encounter,
+			child, childDocs, objectName, keysSeen, errors
+		);
 
 		return child;
 	}
 
 	/**
-	 * Fold one value of a flattened object field into the document that holds
-	 * it, checking its fields the way {@link #childDocument} checks a nested
-	 * value's.
+	 * Index one value of an object field into the document that holds its
+	 * fields, checking them the way {@link #addDocument} checks the document's
+	 * own. For a flattened object that document is the one the value arrived
+	 * in; for a nested object it is the value's own, built by
+	 * {@link #childDocument}. Objects nest, so this recurses: a single or
+	 * flattened object inside folds into the same target, and a nested list
+	 * inside starts a document of its own.
 	 *
 	 * The names inside the value are the ones the object declares; what they
-	 * are written under is the dotted path through the object, which is the
-	 * root field the schema registered for each of them. A field allowed once
-	 * per value may still be written by every value of the object, so being
-	 * given more than once is judged within the value alone.
+	 * are written under is the dotted path through the object, so a search
+	 * finds them by the name it knows. A field allowed once per value may
+	 * still be written by every value of the object, so being given more than
+	 * once is judged within the value alone.
 	 *
 	 * @param objectField
 	 *   the object field the value was given to
@@ -2194,32 +2107,67 @@ public class Index {
 	 * @param location
 	 *   where the value sits in the document, used to point at errors
 	 * @param encounter
-	 * @param luceneDoc
+	 * @param targetDoc
 	 *   the document being built, which the fields are added to
+	 * @param childDocs
+	 *   where the values of nested object fields land as documents of their
+	 *   own
+	 * @param nestedList
+	 *   concrete name of the nested list the value sits below, or {@code
+	 *   null} when the target is the index's own document. Decides the
+	 *   namespace the paths inside resolve in
+	 * @param keysSeen
+	 *   what every value of a keyed object field read for its key, shared
+	 *   across the whole document so a key reaches one value wherever its
+	 *   list sits
 	 * @param errors
 	 *   where problems with the value are collected
 	 */
-	private void flattenFields(
+	private void indexObjectValue(
 		Field objectField,
 		String objectName,
 		Document value,
 		ObjectLocation location,
 		IndexEncounterImpl encounter,
-		org.apache.lucene.document.Document luceneDoc,
+		org.apache.lucene.document.Document targetDoc,
+		MutableList<org.apache.lucene.document.Document> childDocs,
+		String nestedList,
+		MutableSet<Pair<String, String>> keysSeen,
 		MutableList<ErrorMessage> errors
 	) {
-		var valuesSeen = Sets.mutable.<String>empty();
+		var valuesSeen = Sets.mutable.<Pair<String, String>>empty();
 		var fieldsFound = Sets.mutable.<String>empty();
+		var childCounts = Maps.mutable.<String, Integer>empty();
+
+		/*
+		 * The locales this value's fields were given in, so the locales it
+		 * left empty can be filled from the ones it gave - per value, because
+		 * each object value is its own unit of translation.
+		 */
+		var localized = schema.hasLocaleFallback()
+			? Maps.mutable.<String, LocalizedValues>empty()
+			: null;
 
 		for(var inner : value.fields()) {
 			var path = objectName + '.' + inner.name();
 
 			/*
-			 * Only the fields this object folded out. A root pattern that
-			 * happens to match the path was never part of it, and neither was
-			 * a field another object folded out under the same path.
+			 * Only the fields declared directly inside this object. The path
+			 * resolves in the namespace the target document reads from - the
+			 * index's own fields, or those of the nested list's values - and
+			 * a name that resolves elsewhere in it was never part of this
+			 * object: a root pattern that happens to match, or a field of an
+			 * object further in, which only a name reaching past the object
+			 * it was given to can name.
 			 */
-			if(!schema.getFlattenedObjectOf(path).filter(objectName::equals).isPresent()) {
+			var resolved = nestedList == null
+				? schema.getField(path)
+				: schema.getNestedField(path).map(IndexSchema.NestedField::field);
+
+			if(resolved.isEmpty()
+				|| !schema.getEnclosingObjectOf(resolved.get(), path)
+					.filter(objectName::equals)
+					.isPresent()) {
 				errors.add(
 					ERROR_FIELD_NOT_FOUND.toMessage(
 						location.forField(inner.name()),
@@ -2229,17 +2177,80 @@ public class Index {
 				continue;
 			}
 
-			var innerField = schema.getField(path).orElseThrow();
+			var innerField = resolved.get();
 
-			// Fields inside an object are never locale specific
-			if(inner.locale() != null) {
-				errors.add(
-					ERROR_LOCALE_NOT_ALLOWED.toMessage(
-						location.forField(inner.name()),
-						"name", inner.name(),
-						"locale", inner.locale()
-					)
-				);
+			if(innerField.isObject()) {
+				if(inner.locale() != null) {
+					errors.add(
+						ERROR_LOCALE_NOT_ALLOWED.toMessage(
+							location.forField(inner.name()),
+							"name", inner.name(),
+							"locale", inner.locale()
+						)
+					);
+					continue;
+				}
+
+				if(!valuesSeen.add(Tuples.pair(inner.name(), (String) null))
+					&& !innerField.isMultiple()) {
+					errors.add(
+						ERROR_NOT_MULTIPLE.toMessage(
+							location.forField(inner.name()),
+							"name", inner.name()
+						)
+					);
+					continue;
+				}
+
+				var position = childCounts.merge(inner.name(), 1, Integer::sum) - 1;
+
+				if(!(inner.value() instanceof Document subDocument)) {
+					errors.add(
+						ERROR_NOT_A_DOCUMENT.toMessage(
+							location.forField(inner.name()).forIndex(position),
+							"name", inner.name()
+						)
+					);
+					continue;
+				}
+
+				if(duplicateObjectKey(
+					path, inner.name(), innerField, subDocument,
+					location.forField(inner.name()).forIndex(position),
+					keysSeen, errors
+				)) {
+					continue;
+				}
+
+				if(innerField.isNestedObject()) {
+					childDocs.add(
+						childDocument(
+							innerField,
+							path,
+							subDocument,
+							location.forField(inner.name()).forIndex(position),
+							encounter,
+							childDocs,
+							keysSeen,
+							errors
+						)
+					);
+				} else {
+					indexObjectValue(
+						innerField,
+						path,
+						subDocument,
+						location.forField(inner.name()).forIndex(position),
+						encounter,
+						targetDoc,
+						childDocs,
+						nestedList,
+						keysSeen,
+						errors
+					);
+				}
+
+				fieldsFound.add(inner.name());
 				continue;
 			}
 
@@ -2253,29 +2264,95 @@ public class Index {
 				continue;
 			}
 
-			if(!valuesSeen.add(inner.name()) && !innerField.isMultiple()) {
+			/*
+			 * The locale of each value is resolved the way addDocument
+			 * resolves it for a field of the index - a field inside an
+			 * object holds its variants the same way.
+			 */
+			String tag = null;
+			if(innerField.isLocaleSpecific()) {
+				if(inner.locale() == null) {
+					tag = innerField.getDefaultLocale();
+				} else {
+					var resolvedLocale = innerField.resolveLocale(inner.locale());
+					if(resolvedLocale.isEmpty()) {
+						errors.add(
+							ERROR_LOCALE_NOT_DECLARED.toMessage(
+								location.forField(inner.name()),
+								"name", inner.name(),
+								"locale", inner.locale()
+							)
+						);
+						continue;
+					}
+
+					tag = resolvedLocale.get();
+				}
+
+				encounter.updateLocale(Locales.get(tag).orElseThrow());
+			} else {
+				if(inner.locale() != null) {
+					errors.add(
+						ERROR_LOCALE_NOT_ALLOWED.toMessage(
+							location.forField(inner.name()),
+							"name", inner.name(),
+							"locale", inner.locale()
+						)
+					);
+					continue;
+				}
+
+				encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+			}
+
+			if(!valuesSeen.add(Tuples.pair(inner.name(), tag)) && !innerField.isMultiple()) {
 				errors.add(
-					ERROR_NOT_MULTIPLE.toMessage(
-						location.forField(inner.name()),
-						"name", inner.name()
-					)
+					tag == null
+						? ERROR_NOT_MULTIPLE.toMessage(
+							location.forField(inner.name()),
+							"name", inner.name()
+						)
+						: ERROR_NOT_MULTIPLE_IN_LOCALE.toMessage(
+							location.forField(inner.name()),
+							"name", inner.name(),
+							"locale", tag
+						)
 				);
 				continue;
 			}
 
-			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
 			encounter.updateValue(path, innerField.getDef());
 
 			try {
 				for(var indexableField : innerField.getType().createFields(encounter, inner.value())) {
-					luceneDoc.add(indexableField);
+					targetDoc.add(indexableField);
 				}
 			} catch(ValidationException e) {
 				errors.addAllIterable(e.getErrors());
 				continue;
 			}
 
+			if(localized != null && tag != null) {
+				localized
+					.getIfAbsentPut(
+						path,
+						() -> new LocalizedValues(innerField, Maps.mutable.empty())
+					)
+					.byLocale()
+					.getIfAbsentPut(tag, Lists.mutable::empty)
+					.add(inner.value());
+			}
+
 			fieldsFound.add(inner.name());
+		}
+
+		/*
+		 * Each object value fills its own missing locales from its own given
+		 * ones - and only for a value the index is going to accept, the way
+		 * addDocument holds off for a document being refused.
+		 */
+		if(localized != null && localized.notEmpty() && errors.isEmpty()) {
+			fillMissingLocales(localized, encounter, targetDoc, errors);
 		}
 
 		// Being required means required in every value, not once per document
@@ -2290,6 +2367,64 @@ public class Index {
 				);
 			}
 		}
+	}
+
+	/**
+	 * Check the key one value of a keyed object field reads, refusing it when
+	 * an earlier value of the same list already read the same. Nothing else
+	 * checks, and every place that names a value by its key relies on the
+	 * name reaching one value.
+	 *
+	 * <p>A value with no key at all is left to the required check inside it,
+	 * which points at the field rather than at a duplicate that is not there.
+	 *
+	 * @param path
+	 *   concrete dotted path of the object field, which keeps the keys of
+	 *   same-named lists inside different objects apart
+	 * @param name
+	 *   the name the value was given under, used to point at errors
+	 * @param objectField
+	 *   the object field the value was given to
+	 * @param value
+	 *   the value, a document of its own
+	 * @param location
+	 *   where the value sits in the document
+	 * @param keysSeen
+	 *   what every keyed value of the document read so far
+	 * @param errors
+	 *   where a duplicate is reported
+	 * @return
+	 *   whether the value duplicates an earlier one and has to be skipped
+	 */
+	private static boolean duplicateObjectKey(
+		String path,
+		String name,
+		Field objectField,
+		Document value,
+		ObjectLocation location,
+		MutableSet<Pair<String, String>> keysSeen,
+		MutableList<ErrorMessage> errors
+	) {
+		var key = objectField.getObjectKey();
+		if(key == null) {
+			return false;
+		}
+
+		var reads = value.get(key);
+		if(reads == null || keysSeen.add(Tuples.pair(path, String.valueOf(reads)))) {
+			return false;
+		}
+
+		errors.add(
+			ERROR_OBJECT_KEY_DUPLICATE.toMessage(
+				location,
+				"name", name,
+				"key", key,
+				"value", String.valueOf(reads)
+			)
+		);
+
+		return true;
 	}
 
 	/**
@@ -2838,9 +2973,23 @@ public class Index {
 					null
 				);
 
-				return DocumentReader
-					.everyVariant(schema, Sets.immutable.<String>empty())
-					.read(doc);
+				var reader = DocumentReader.everyVariant(schema, Sets.immutable.<String>empty());
+				if(reader.needsChildren()) {
+					/*
+					 * Without a copy, the values of the document's nested
+					 * lists are read out of their own documents and handed
+					 * along, so the document comes back with them inside.
+					 */
+					var children = readChildren(
+						searcher,
+						new int[] { hits.scoreDocs[0].doc },
+						reader::wantsChildren
+					);
+
+					return reader.read(doc, children.get(hits.scoreDocs[0].doc));
+				}
+
+				return reader.read(doc);
 			}
 		} finally {
 			syncLock.readLock().unlock();
@@ -3479,13 +3628,16 @@ public class Index {
 				/*
 				 * Resolved before anything runs, so a field that can not be
 				 * highlighted is refused however many results the search brings
-				 * back.
+				 * back. On a value page the fields are resolved inside the
+				 * path: each hit carries fragments of its own value.
 				 */
 				var highlightTargets = Lists.mutable.<Highlighter.Target>empty();
 				for(var pair : request.highlight().keyValuesView()) {
 					highlightTargets.add(new Highlighter.Target(
 						pair.getOne(),
-						compiler.highlightField(pair.getOne()),
+						hitsPath == null
+							? compiler.highlightField(pair.getOne())
+							: compiler.highlightValueField(hitsPath, pair.getOne()),
 						pair.getTwo()
 					));
 				}
@@ -3686,12 +3838,14 @@ public class Index {
 				var names = reader.namesOf();
 				var primaryKey = schema.getPrimaryKey();
 
-				if(!highlightTargets.isEmpty() && names != null) {
+				if(!highlightTargets.isEmpty() && hitsPath == null && names != null) {
 					/*
 					 * The text a fragment is cut out of is a stored field of
 					 * the same document the hit is built from, so it is read
 					 * with the rest of the page rather than on a pass of its
-					 * own.
+					 * own. On a value page the text sits in the values' own
+					 * documents instead, which are read below whatever is
+					 * loaded here.
 					 */
 					for(var target : highlightTargets) {
 						names.add(Highlighter.storedField(target.luceneField()));
@@ -3760,6 +3914,42 @@ public class Index {
 
 				var page = readStored(searcher, stored, names);
 
+				/*
+				 * Without copies of the documents, the values of nested lists
+				 * live in documents of their own. Read here for whatever needs
+				 * them: the fields being answered and the matched values being
+				 * reported.
+				 */
+				IntObjectMap<MapIterable<String, ListIterable<org.apache.lucene.document.Document>>> children = null;
+				if(!schema.isSourceStored()) {
+					var matchedBlocks = request.matched().keysView()
+						.select(path -> schema.getNestedFields(path)
+							.anySatisfy(Field::isStored))
+						.toSet();
+
+					if(reader.needsChildren() || matchedBlocks.notEmpty()) {
+						children = readChildren(
+							searcher,
+							stored,
+							path -> reader.wantsChildren(path) || matchedBlocks.contains(path)
+						);
+					}
+				}
+
+				/*
+				 * The documents of the hits standing for values, holding what
+				 * only they can hold: the value's stored fields when the index
+				 * keeps no copies, and the text highlighting cuts fragments
+				 * from either way.
+				 */
+				IntObjectMap<org.apache.lucene.document.Document> valueDocs = null;
+				if(hitsPath != null
+					&& (!highlightTargets.isEmpty()
+						|| (!schema.isSourceStored()
+							&& schema.getNestedFields(hitsPath).anySatisfy(Field::isStored)))) {
+					valueDocs = readValueDocuments(searcher, locations, docIds);
+				}
+
 				ListIterable<ImmutableMap<String, ImmutableList<String>>> highlights = null;
 				if(!highlightTargets.isEmpty()) {
 					highlights = highlight(
@@ -3767,8 +3957,9 @@ public class Index {
 						compiler,
 						highlightTargets,
 						request,
+						hitsPath,
 						docIds,
-						page
+						hitsPath == null ? page : valueDocs
 					);
 				}
 
@@ -3806,7 +3997,14 @@ public class Index {
 					matchedPaths = found;
 				}
 
-				var matchedNames = request.matched().keysView().toSet();
+				/*
+				 * The copy holds a deep path's values inside the field at the
+				 * root of its object chain, so that is the field to keep
+				 * readable.
+				 */
+				var matchedNames = request.matched().keysView()
+					.collect(path -> schema.getFlattenedObjectOf(path).orElse(path))
+					.toSet();
 
 				var hits = Lists.mutable.<SearchResult.Hit>empty();
 				if(hitsPath != null) {
@@ -3816,7 +4014,9 @@ public class Index {
 					 * once per hit.
 					 */
 					var decoded = IntObjectMaps.mutable.<DocumentReader.WithSource>empty();
-					var alsoDecode = Sets.immutable.of(hitsPath);
+					var alsoDecode = Sets.immutable.of(
+						schema.getFlattenedObjectOf(hitsPath).orElse(hitsPath)
+					);
 
 					/*
 					 * The request names fields by their dotted paths; cut()
@@ -3842,14 +4042,26 @@ public class Index {
 							 * answering as itself among the values of the ones
 							 * it was.
 							 */
-							var itself = reader.read(page.get(scoreDoc.doc));
+							var itself = reader.read(
+								page.get(scoreDoc.doc),
+								children == null ? null : children.get(scoreDoc.doc)
+							);
 							hits.add(
 								new SearchResult.Hit(
 									primaryKey.map(field -> itself.get(field.getName())).orElse(null),
 									Float.isNaN(scoreDoc.score) ? 0f : scoreDoc.score,
 									itself,
 									SortKeys.keyOf(scoreDoc, backwards),
-									null,
+									/*
+									 * The highlighted fields are inside the
+									 * path, and a document answering as itself
+									 * holds no value of it - the entry is
+									 * empty rather than absent, so one page
+									 * reads uniformly.
+									 */
+									highlights == null
+										? null
+										: highlights.get(i - request.offset()),
 									null
 								)
 							);
@@ -3860,7 +4072,8 @@ public class Index {
 						if(withSource == null) {
 							withSource = reader.readWithSource(
 								page.get(location.parent()),
-								alsoDecode
+								alsoDecode,
+								children == null ? null : children.get(location.parent())
 							);
 							decoded.put(location.parent(), withSource);
 						}
@@ -3879,7 +4092,7 @@ public class Index {
 						Document value = null;
 						String valueKey = null;
 						if(withSource.source() != null) {
-							var all = withSource.source().getAll(hitsPath);
+							var all = valuesAt(withSource.source(), hitsPath);
 							if(location.ordinal() < all.size()
 								&& all.get(location.ordinal()) instanceof Document valueDoc) {
 								/*
@@ -3888,6 +4101,24 @@ public class Index {
 								 * key - it says which value the hit is, not
 								 * what the hit shows.
 								 */
+								if(hitsKey != null) {
+									var reads = valueDoc.get(hitsKey);
+									valueKey = reads == null ? null : String.valueOf(reads);
+								}
+
+								value = inside == null
+									? valueDoc
+									: cut(valueDoc, inside);
+							}
+						} else if(valueDocs != null) {
+							/*
+							 * Without a copy the hit's own document is what
+							 * holds the value - as far as its stored fields
+							 * reach, the way any document reads without one.
+							 */
+							var valueStored = valueDocs.get(scoreDoc.doc);
+							if(valueStored != null) {
+								var valueDoc = reader.readNestedValue(hitsPath, valueStored);
 								if(hitsKey != null) {
 									var reads = valueDoc.get(hitsKey);
 									valueKey = reads == null ? null : String.valueOf(reads);
@@ -3908,7 +4139,9 @@ public class Index {
 								document,
 								value,
 								SortKeys.keyOf(scoreDoc, backwards),
-								null,
+								highlights == null
+									? null
+									: highlights.get(i - request.offset()),
 								null
 							)
 						);
@@ -3920,18 +4153,24 @@ public class Index {
 						Document document;
 						ImmutableMap<String, SearchResult.Matched> matched = null;
 						if(matchedPaths == null) {
-							document = reader.read(page.get(scoreDoc.doc));
+							document = reader.read(
+								page.get(scoreDoc.doc),
+								children == null ? null : children.get(scoreDoc.doc)
+							);
 						} else {
 							var withSource = reader.readWithSource(
 								page.get(scoreDoc.doc),
-								matchedNames
+								matchedNames,
+								children == null ? null : children.get(scoreDoc.doc)
 							);
 							document = withSource.document();
 							matched = matchedOf(
 								request,
 								matchedPaths,
 								scoreDoc.doc,
-								withSource.source()
+								withSource.source(),
+								reader,
+								children == null ? null : children.get(scoreDoc.doc)
 							);
 						}
 
@@ -4439,20 +4678,31 @@ public class Index {
 	 * @param fields
 	 *   the fields of each value asked back, by their dotted paths
 	 * @throws IndexSourceRequiredException
-	 *   if fields were named on an index that keeps no copy of its documents,
-	 *   which is the only place a value could be read back from
+	 *   if only the copy of the document could answer a name and the index
+	 *   keeps none - an object inside the value, or a field below a flattened
+	 *   list there
+	 * @throws IndexFieldUsageException
+	 *   if a name could answer without the copy by being stored, and is not
 	 * @throws IndexFieldNotFoundException
 	 *   if a name is not a field inside the object
 	 */
 	private void valueFieldsReturnable(String path, SetIterable<String> fields) {
 		for(var name : fields) {
-			if(!schema.isSourceStored()) {
-				throw new IndexSourceRequiredException(name);
-			}
-
 			var nested = schema.getNestedField(name);
 			if(nested.isEmpty() || !nested.get().path().equals(path)) {
 				throw new IndexFieldNotFoundException(name);
+			}
+
+			if(!schema.isSourceStored()) {
+				var field = nested.get().field();
+				if(field.isObject()
+					|| DocumentReader.underFlattenedList(schema, field, name)) {
+					throw new IndexSourceRequiredException(name);
+				}
+
+				if(!field.isStored()) {
+					throw new IndexFieldUsageException(name, "stored");
+				}
 			}
 		}
 	}
@@ -4487,15 +4737,23 @@ public class Index {
 	 * @param doc
 	 *   Lucene id of the hit
 	 * @param source
-	 *   the copy of the hit's document, or {@code null} when it has none - the
-	 *   values are then left out and only their number answers
+	 *   the copy of the hit's document, or {@code null} when it has none
+	 * @param reader
+	 *   the reader of the page, which is what turns a value's own document
+	 *   back into the value when there is no copy to read it from
+	 * @param children
+	 *   the documents of the hit's nested lists' values per path, or
+	 *   {@code null} when none were read - without them and without a copy
+	 *   the values are left out and only their number answers
 	 * @return
 	 */
-	private static ImmutableMap<String, SearchResult.Matched> matchedOf(
+	private ImmutableMap<String, SearchResult.Matched> matchedOf(
 		SearchRequest request,
 		MapIterable<String, MatchedPath> matchedPaths,
 		int doc,
-		Document source
+		Document source,
+		DocumentReader reader,
+		MapIterable<String, ListIterable<org.apache.lucene.document.Document>> children
 	) {
 		var result = Maps.mutable.<String, SearchResult.Matched>empty();
 
@@ -4513,7 +4771,7 @@ public class Index {
 
 			ImmutableList<Document> values = null;
 			if(source != null) {
-				var all = source.getAll(path);
+				var all = valuesAt(source, path);
 				var picked = Lists.mutable.<Document>empty();
 				var wanted = Math.min(options.limit(), ordinals.length);
 				for(var i = 0; i < wanted; i++) {
@@ -4535,6 +4793,28 @@ public class Index {
 				}
 
 				values = picked.toImmutable();
+			} else if(children != null && children.containsKey(path)) {
+				/*
+				 * Without a copy the values answer from their own documents,
+				 * as far as their stored fields reach. The children come in
+				 * block order, so the position found among them indexes
+				 * straight into the list.
+				 */
+				var all = children.get(path);
+				var picked = Lists.mutable.<Document>empty();
+				var wanted = Math.min(options.limit(), ordinals.length);
+				for(var i = 0; i < wanted; i++) {
+					if(ordinals[i] < all.size()) {
+						var value = reader.readNestedValue(path, all.get(ordinals[i]));
+						picked.add(
+							forPath.inside() == null
+								? value
+								: cut(value, forPath.inside())
+						);
+					}
+				}
+
+				values = picked.toImmutable();
 			}
 
 			result.put(path, new SearchResult.Matched(values, matches.count()));
@@ -4545,19 +4825,77 @@ public class Index {
 
 	/**
 	 * Cut one matched value down to the fields that were asked for inside it.
-	 * A field is kept by the name it has inside the value, so every locale
+	 * A field is kept by the name it has inside the value - a deeper one by
+	 * the remaining path through the objects between - so every locale
 	 * variant of a named field comes along, the same as when {@code fields}
 	 * cuts an object.
 	 */
 	private static Document cut(Document value, SetIterable<String> names) {
-		var kept = Lists.mutable.<Document.Value>empty();
-		for(var field : value.fields()) {
-			if(names.contains(field.name())) {
-				kept.add(field);
+		return DocumentReader.cutInner(value, names);
+	}
+
+	/**
+	 * The values a document's copy holds at a concrete dotted path, in the
+	 * order the document gave them. For a path below other objects that is
+	 * the depth first order over the chain, which is the order the values'
+	 * documents were written to the block in - so the position found among
+	 * the children of a path is the position here.
+	 *
+	 * <p>Walked along the object chain the schema declares rather than by
+	 * splitting the path, because a declared name may itself hold a dot and
+	 * only the chain says where one object's name ends.
+	 *
+	 * @param source
+	 *   the copy of the document
+	 * @param path
+	 *   concrete dotted path of an object field
+	 * @return
+	 *   the values, empty when the document holds none
+	 */
+	private List<Object> valuesAt(Document source, String path) {
+		var chain = Lists.mutable.<String>empty();
+
+		var name = path;
+		var field = schema.getField(name).orElse(null);
+		while(field != null) {
+			var parent = schema.getEnclosingObjectOf(field, name).orElse(null);
+			if(parent == null) {
+				chain.add(0, name);
+				break;
 			}
+
+			chain.add(0, name.substring(parent.length() + 1));
+			name = parent;
+			field = schema.getField(parent).orElse(null);
 		}
 
-		return new Document(kept.toArray(new Document.Value[0]));
+		if(field == null) {
+			return List.of();
+		}
+
+		var values = Lists.mutable.empty();
+		collectAt(source, chain, 0, values);
+		return values;
+	}
+
+	private static void collectAt(
+		Document doc,
+		ListIterable<String> chain,
+		int level,
+		MutableList<Object> values
+	) {
+		var name = chain.get(level);
+		for(var value : doc.fields()) {
+			if(!name.equals(value.name())) {
+				continue;
+			}
+
+			if(level == chain.size() - 1) {
+				values.add(value.value());
+			} else if(value.value() instanceof Document inner) {
+				collectAt(inner, chain, level + 1, values);
+			}
+		}
 	}
 
 	/**
@@ -5485,6 +5823,89 @@ public class Index {
 	}
 
 	/**
+	 * Read the documents of the nested lists' values for a page of documents,
+	 * for reads that have no copy of the document to answer from.
+	 *
+	 * Every stored field of a child is read: a child holds nothing but its own
+	 * value's fields, and the paths of a list whose name holds a wildcard are
+	 * names documents gave, which nothing could enumerate up front.
+	 *
+	 * @param searcher
+	 * @param docIds
+	 *   Lucene ids of the documents to read children for
+	 * @param paths
+	 *   which nested lists are needed, asked with concrete paths
+	 * @return
+	 *   the children per document, keyed by Lucene id and grouped by path in
+	 *   block order - the order the document gave the values in
+	 * @throws IOException
+	 */
+	private IntObjectMap<MapIterable<String, ListIterable<org.apache.lucene.document.Document>>> readChildren(
+		IndexSearcher searcher,
+		int[] docIds,
+		Predicate<String> paths
+	) throws IOException {
+		var ids = MatchedChildren.children(searcher, nestedParents, paths, docIds);
+
+		var result = IntObjectMaps.mutable
+			.<MapIterable<String, ListIterable<org.apache.lucene.document.Document>>>ofInitialCapacity(ids.size());
+		var storedFields = searcher.storedFields();
+		for(var pair : ids.keyValuesView()) {
+			var byPath = Maps.mutable
+				.<String, ListIterable<org.apache.lucene.document.Document>>empty();
+			for(var pathPair : pair.getTwo().keyValuesView()) {
+				var docs = Lists.mutable.<org.apache.lucene.document.Document>empty();
+				var iterator = pathPair.getTwo().intIterator();
+				while(iterator.hasNext()) {
+					docs.add(documentCache.read(searcher, storedFields, iterator.next(), null));
+				}
+
+				byPath.put(pathPair.getOne(), docs);
+			}
+
+			result.put(pair.getOne(), byPath);
+		}
+
+		return result;
+	}
+
+	/**
+	 * Read the stored fields of the hits of a value page that stand for
+	 * values, for a page read without copies of the documents - the value a
+	 * hit answers with is then read out of the hit's own document.
+	 *
+	 * @param searcher
+	 * @param locations
+	 *   where each value hit sits, which is what tells a hit standing for a
+	 *   value from a document answering as itself
+	 * @param docIds
+	 *   Lucene ids of the hits of the page
+	 * @return
+	 *   the documents of the value hits, keyed by Lucene id
+	 * @throws IOException
+	 */
+	private IntObjectMap<org.apache.lucene.document.Document> readValueDocuments(
+		IndexSearcher searcher,
+		IntObjectMap<MatchedChildren.Location> locations,
+		int[] docIds
+	) throws IOException {
+		var ordered = docIds.clone();
+		Arrays.sort(ordered);
+
+		var storedFields = searcher.storedFields();
+		var result = IntObjectMaps.mutable.<org.apache.lucene.document.Document>empty();
+		for(var docId : ordered) {
+			if(locations.get(docId) == null) {
+				continue;
+			}
+
+			result.put(docId, documentCache.read(searcher, storedFields, docId, null));
+		}
+
+		return result;
+	}
+
+	/**
 	 * Highlight the page of results a search brings back.
 	 *
 	 * @param searcher
@@ -5493,11 +5914,17 @@ public class Index {
 	 * @param targets
 	 *   the fields the search asked to highlight, already resolved, never empty
 	 * @param request
+	 * @param hitsPath
+	 *   name of the object field whose values are the hits, or {@code null}
+	 *   when the hits are documents. On a value page the fragments are cut
+	 *   per value, from the conditions the search put on the values
 	 * @param docIds
-	 *   Lucene ids of the documents of the page, in page order
+	 *   Lucene ids of the hits of the page, in page order
 	 * @param stored
-	 *   the stored fields of those documents, read by
-	 *   {@link #readStored(IndexSearcher, int[], Set)}
+	 *   the stored fields of those hits, read by
+	 *   {@link #readStored(IndexSearcher, int[], Set)} - or by
+	 *   {@link #readValueDocuments} on a value page, where a hit standing for
+	 *   a document has no entry and answers with no fragments
 	 * @return
 	 *   one map per hit of the page, in page order - or {@code null} when the
 	 *   search holds nothing that ranks, which every hit answers with no
@@ -5509,10 +5936,13 @@ public class Index {
 		QueryCompiler compiler,
 		ListIterable<Highlighter.Target> targets,
 		SearchRequest request,
+		String hitsPath,
 		int[] docIds,
 		IntObjectMap<org.apache.lucene.document.Document> stored
 	) throws IOException {
-		var scoring = compiler.compileScoring(request.query());
+		var scoring = hitsPath == null
+			? compiler.compileScoring(request.query())
+			: compiler.compileValueScoring(hitsPath, request.query());
 		if(scoring == null) {
 			return null;
 		}

@@ -1335,7 +1335,7 @@ components:
             \ object field declares. Two values of one document never read the same,\
             \ so `id` and `key` name one value and go on naming it after a reindex.\
             \ Omitted for a document hit, for a field that declares no key, and on\
-            \ an index whose `source` is `none`."
+            \ an index whose `source` is `none` when the key's field is not `stored`."
         score:
           type: number
           format: float
@@ -1347,8 +1347,9 @@ components:
           - 8.42
         value:
           description: "The matched nested value object, keyed by field name. Present\
-            \ only when the search requests value hits, and omitted on an index whose\
-            \ `source` is `none`."
+            \ only when the search requests value hits. On an index whose `source`\
+            \ is `none` it holds the value's `stored` fields, and is omitted when\
+            \ nothing of the value is stored."
           type: object
         document:
           description: "Selected fields of the document per the search request `fields`\
@@ -1364,8 +1365,9 @@ components:
             items:
               type: string
           description: "Highlighted fragments keyed by field name. Present when highlighting\
-            \ is requested, omitting fields with no matching text in the document.\
-            \ Omitted when highlighting is not requested."
+            \ is requested, omitting fields with no matching text in the hit - for\
+            \ a value hit the fragments are cut from the hit's own value. Omitted\
+            \ when highlighting is not requested."
         matched:
           type: object
           additionalProperties:
@@ -1379,8 +1381,10 @@ components:
         \ count value hits, and pagination cursors step through values. With `when`,\
         \ only the documents it matches expand and the rest stay document hits, totals\
         \ count hits of both kinds and facets count documents. Cannot be combined\
-        \ with `matched` (`search:hits:with_matched`), `highlight` (`search:hits:with_highlight`)\
-        \ or `knn` clauses (`search:hits:with_knn`). See [What a hit stands for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for)."
+        \ with `matched` (`search:hits:with_matched`) or `knn` clauses (`search:hits:with_knn`);\
+        \ `highlight` may only name fields inside `path` (`search:hits:with_highlight`),\
+        \ and each hit returns fragments of its own value. See [What a hit stands\
+        \ for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for)."
       required:
       - path
       properties:
@@ -1397,7 +1401,7 @@ components:
           description: "Dotted field paths inside the nested object to return in `value`,\
             \ defaulting to all of them. Names must be prefixed by `path` (`search:hits:field_not_inside`)\
             \ and exist in the index (`index:query:field_not_found`). On an index\
-            \ whose `source` is `none`, naming any field returns `index:query:source_not_kept`."
+            \ whose `source` is `none`, a named field has to be `stored` (`index:query:usage_not_enabled`)."
         when:
           type: array
           items:
@@ -2151,7 +2155,7 @@ components:
             \ value, defaulting to all of them. Paths must reside under the target\
             \ object path (`search:matched:field_not_inside`) and exist in the schema\
             \ (`index:query:field_not_found`). On an index whose `source` is `none`,\
-            \ naming any field returns `index:query:source_not_kept`."
+            \ a named field has to be `stored` (`index:query:usage_not_enabled`)."
     MatchedValues:
       type: object
       description: Matched values of a nested object field for a hit.
@@ -2160,7 +2164,8 @@ components:
           description: "Array of matched nested values, each keyed by field name,\
             \ up to `limit`. If scoring clauses exist within the `nested` clause,\
             \ values are ordered by score; otherwise, they appear in document order.\
-            \ Omitted on an index whose `source` is `none`."
+            \ On an index whose `source` is `none` each value holds its `stored` fields,\
+            \ and the array is omitted when nothing of the values is stored."
           type: array
           items: {}
         totalValues:
@@ -2276,10 +2281,12 @@ components:
     ObjectFieldDefinition:
       description: "Represents structured object values containing nested field definitions,\
         \ referenced by dot notation (such as `variants.price`). An object field cannot\
-        \ configure `filter`, `sort`, `facet`, `locales`, or `stored`, and its name\
-        \ cannot use wildcards. An array of objects can specify a `key` to identify\
-        \ each object value. Object fields are returned in search results only when\
-        \ the index preserves document sources. See [`object`](https://exofind.dev/reference/field-types/#object)."
+        \ configure `filter`, `sort`, `facet`, `locales`, or `stored` on itself. Child\
+        \ fields can be objects in turn, though a `nested` array cannot contain another\
+        \ `nested` array. An array of objects can specify a `key` to identify each\
+        \ object value. Object fields are returned in search results through the preserved\
+        \ document source; a stored child field below single objects also answers\
+        \ when the index keeps none. See [`object`](https://exofind.dev/reference/field-types/#object)."
       type: object
       properties:
         primaryKey:
@@ -2334,12 +2341,15 @@ components:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/FieldDefinition"
-          description: "Map of child field names to field definitions. Child fields\
-            \ can configure `filter`, `matching`, `autocomplete`, `facet`, `validation`,\
-            \ `required`, and `multiple`. Setting `primaryKey`, `highlight`, `locales`,\
-            \ `stored`, wildcard names, or nested `object` types is rejected. Sorting\
-            \ on a child field is supported in single objects and in `nested` mode,\
-            \ and is rejected in `flattened` mode with `index:field:object:flattened_sort`."
+          description: "Map of child field names to field definitions, the `object`\
+            \ type included - objects nest, though a `nested` array cannot contain\
+            \ another `nested` array (`index:field:object:nested_in_nested`). What\
+            \ a child field may configure follows from where it sits: `sort` and `stored`\
+            \ are rejected below a `flattened` array (`index:field:object:flattened_sort`,\
+            \ `index:field:object:flattened_stored`), and `primaryKey` is rejected\
+            \ inside any object (`index:field:object:inner_usage_not_supported`).\
+            \ Below a `nested` array `stored` and `highlight` work - highlighted fragments\
+            \ come back on value hits. `locales` works everywhere."
     OrClause:
       description: Matches documents where at least one child clause matches.
       type: object
