@@ -49,6 +49,19 @@ Unchanged files retain their keys across epochs, and the manifest records each k
 
 When pushing an update, the system diffs the old and new manifests to identify and delete unreferenced objects. If this cleanup is interrupted, a periodic listing sweep removes any remaining unreferenced objects. The sweep only processes objects older than a grace period to avoid racing against uploads that are not yet recorded in a manifest.
 
+## How merged files leave the bucket
+
+When Lucene merges small segments into larger ones, the files of the merged segments stop belonging to the index once a commit includes the merged segment. Nothing is deleted from the bucket when the merge finishes. Instead, the push following the next commit deletes the objects that the new manifest stopped naming.
+
+The commit triggers determine how long obsolete objects remain in the bucket:
+
+- `EXOFIND_INDEXES_COMMIT_MAX_CHANGES` triggers a commit after reaching a change threshold (default 10,000 changes).
+- `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` triggers a commit after a time threshold (default 5 seconds).
+
+Under a normal write load, obsolete objects are deleted within seconds of the merge. However, if writes stop—such as when an index becomes read-only, the node loses the writer role, or the node stops—no further pushes occur. Because the hourly sweep for orphans only runs at the end of a push, an index that no node writes is never swept, and unreferenced objects remain in the bucket.
+
+A push uploads all new files before writing the manifest conditionally. If a push stops halfway and uploads only some of its files, readers remain unharmed because they continue following the previous manifest. The unreferenced uploads sit harmlessly in the bucket until a later sweep removes them after the one-hour grace period. In contrast, publishing a manifest that names a missing object would break readers by causing their pulls to fail. To prevent missing objects, a push uploads all required files before updating the manifest, checks the remote baseline by entity tag before uploading, and treats a missing remote manifest as empty so all files are uploaded again.
+
 ## Leadership is liveness, not safety
 
 The bucket maintains a single leadership table that tracks which node writes to each index. The table contains a claim entry for each index naming its holder, alongside an entry for each candidate node indicating that the candidate is alive. The table is updated as a whole, conditionally based on its version. If two candidates attempt concurrent updates, only one write succeeds.
