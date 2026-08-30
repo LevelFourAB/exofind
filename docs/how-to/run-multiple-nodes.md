@@ -16,7 +16,7 @@ Reader nodes discover indexes in the bucket, pull them locally, and answer searc
 To add search capacity:
 
 1. Start one or more nodes with the same remote storage configuration and leave `EXOFIND_INDEXER_ENABLED` unset or set to `false`.
-2. (Optional) Set `EXOFIND_INDEXES_REFRESH_INTERVAL` to adjust how often the node checks the bucket for updates. The default is `30s`. Lower values provide fresher reads at the cost of more storage traffic. You can also trigger the `pull` action on a node to fetch the latest state of an index immediately.
+2. (Optional) Set `EXOFIND_INDEXES_REFRESH_INTERVAL` to adjust how long the node may go before it considers pulling an index, and how often it may pull the same one. The default is `30s`. Lower values provide fresher reads at the cost of more storage traffic. You can also trigger the `pull` action on a node to fetch the latest state of an index immediately.
 3. (Optional) Set `EXOFIND_INDEXES_MAX_OPEN` to limit how many open indexes a node keeps in memory at once. When the limit is reached, the node closes the least recently used indexes and reopens them when requested.
 
 ## Configure and start writer candidates

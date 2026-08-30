@@ -32,15 +32,21 @@ public class SearchSettingsHintTest {
 		registry = new IndexRegistry(new InMemoryRegistryStorage(), Duration.ofMinutes(5));
 		registry.create("books", "1");
 
-		settings = newSettings(Duration.ofMinutes(10));
+		settings = newSettings(Duration.ZERO, Duration.ofMinutes(10));
 	}
 
-	private SearchSettings newSettings(Duration verifyInterval) {
+	/**
+	 * @param refreshInterval
+	 *   shortest time between two reads of one index's object; zero for the
+	 *   tests that ask what the hints alone decide
+	 * @param verifyInterval
+	 */
+	private SearchSettings newSettings(Duration refreshInterval, Duration verifyInterval) {
 		return new SearchSettings(
 			storage,
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
-			Duration.ofSeconds(10),
+			refreshInterval,
 			verifyInterval
 		);
 	}
@@ -102,9 +108,29 @@ public class SearchSettingsHintTest {
 	 * unmoved hint only defers the read, it never removes it. The verify
 	 * interval is where the deferral ends.
 	 */
+	/**
+	 * The refresh interval is the shortest time between two reads of one
+	 * index's object, so a node polling faster than it - because something
+	 * else on the node wants the registry more often - does not read the
+	 * settings of a busy index every time.
+	 */
+	@Test
+	public void testRefreshIntervalHoldsBackARepeatedRead() {
+		var holding = newSettings(Duration.ofMinutes(5), Duration.ofMinutes(10));
+
+		storage.set("books", SearchSettingsStore.getDefaultInstance());
+		holding.get("books");
+		var reads = storage.reads;
+
+		holding.refresh();
+		holding.refresh();
+
+		assertThat(storage.reads, is(reads));
+	}
+
 	@Test
 	public void testVerifyIntervalReadsPastAnUnmovedHint() {
-		var verifying = newSettings(Duration.ZERO);
+		var verifying = newSettings(Duration.ZERO, Duration.ZERO);
 
 		storage.set("books", SearchSettingsStore.getDefaultInstance());
 		var version = verifying.get("books").orElseThrow().version();

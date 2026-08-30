@@ -72,7 +72,7 @@ The `EXOFIND_INDEXES_MAX_OPEN` variable caps how many indexes a node keeps open 
 
 Each active index commits and pushes updates to object storage based on `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` (defaulting to 5 seconds). With hundreds of active indexes, frequent commits produce a high volume of upload requests and conditional manifest writes against the storage backend.
 
-Search nodes poll storage for changes based on `EXOFIND_INDEXES_REFRESH_INTERVAL` (defaulting to 30 seconds). Committing to storage more frequently than the search refresh interval generates storage API operations without making changes visible to searchers any sooner. Aligning `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` with `EXOFIND_INDEXES_REFRESH_INTERVAL` reduces commit overhead.
+Search nodes pull an index at most once per `EXOFIND_INDEXES_REFRESH_INTERVAL` (defaulting to 30 seconds). Committing to storage more frequently than that generates storage API operations without making changes visible to searchers any sooner. Aligning `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` with `EXOFIND_INDEXES_REFRESH_INTERVAL` reduces commit overhead.
 
 ### Write throughput per index
 

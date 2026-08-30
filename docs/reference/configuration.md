@@ -135,11 +135,19 @@ The following table lists index management configuration variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXOFIND_INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. | Unbounded |
-| `EXOFIND_INDEXES_REFRESH_INTERVAL` | Interval at which the node checks storage for index and generation changes and pulls updates for open indexes. Also specifies how long promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
+| `EXOFIND_INDEXES_REFRESH_INTERVAL` | Longest a node waits before it considers pulling an open index, and the shortest it leaves between two storage requests for the same generation. Also the longest that promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
 | `EXOFIND_INDEXES_REFRESH_CONCURRENCY` | Number of indexes refreshed concurrently. | `4` |
-| `EXOFIND_INDEXES_VERIFY_INTERVAL` | Maximum time an index's manifest or search settings go unchecked against storage when the registry reports no change for them. The registry's change hints are what let a refresh skip per-index requests; this interval bounds the staleness if a hint is lost. | `10m` |
-| `EXOFIND_SETTINGS_REFRESH_INTERVAL` | Interval at which the node refreshes the search settings of the indexes it serves from storage. Changing or removing settings can take up to this interval to reach other nodes; the node that served the change applies it immediately. | `10s` |
+| `EXOFIND_INDEXES_VERIFY_INTERVAL` | Maximum time an index's manifest or search settings go unchecked against storage when the registry reports no change for them. The registry's change hints let a refresh skip per-index requests; this interval bounds the staleness if a hint is lost. Keep it above both refresh intervals, which are otherwise held down to it. | `10m` |
+| `EXOFIND_SETTINGS_REFRESH_INTERVAL` | Longest a node waits before it considers re-reading the search settings of an index it serves, and the shortest it leaves between two reads of the same index's settings. Changing or removing settings can take up to this interval to reach other nodes; the node that served the change applies it immediately. | `10s` |
 | `EXOFIND_INDEXES_CLOSE_GRACE_PERIOD` | Grace period that an evicted index waits for in-flight requests before closing. | `10s` |
+
+A node reads the index registry once for everything that works from it, at the
+shorter of `EXOFIND_INDEXES_REFRESH_INTERVAL` and
+`EXOFIND_SETTINGS_REFRESH_INTERVAL`. The registry names what changed, so a
+change often reaches a node sooner than its own interval promises. Each
+interval remains the guarantee: the node makes no two storage requests for the
+same index inside it, and lets nothing go longer than it without a look.
+Lowering either interval therefore also makes the other react faster.
 
 ## Committing
 

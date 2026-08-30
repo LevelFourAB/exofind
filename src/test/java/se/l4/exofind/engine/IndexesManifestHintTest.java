@@ -87,10 +87,16 @@ public class IndexesManifestHintTest {
 		return state;
 	}
 
+	/**
+	 * @param refreshInterval
+	 *   shortest time between two manifest requests for one generation; zero
+	 *   for the tests that ask what the hints alone decide
+	 */
 	private Indexes newNode(
 		boolean indexer,
 		IndexRegistry registry,
 		StateSyncProvider syncProvider,
+		Duration refreshInterval,
 		Duration verifyInterval
 	) throws IOException {
 		return new Indexes(
@@ -100,7 +106,7 @@ public class IndexesManifestHintTest {
 			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
 			OptionalInt.empty(),
-			Duration.ofMinutes(5),
+			refreshInterval,
 			verifyInterval,
 			4,
 			Duration.ofMillis(100),
@@ -114,40 +120,26 @@ public class IndexesManifestHintTest {
 		);
 	}
 
-	/**
-	 * Wait until no pull has arrived for a while, so the pass the constructor
-	 * schedules cannot land in the middle of a counted sequence.
-	 */
-	private static void awaitQuiescence(CountingSync sync) throws InterruptedException {
-		var last = sync.pulls.get();
-		var stableSince = System.nanoTime();
-
-		while(System.nanoTime() - stableSince < Duration.ofMillis(200).toNanos()) {
-			Thread.sleep(10);
-
-			var now = sync.pulls.get();
-			if(now != last) {
-				last = now;
-				stableSince = System.nanoTime();
-			}
-		}
-	}
-
 	@Test
 	public void testHintsDecideWhetherAnOpenGenerationIsPulled() throws Exception {
 		var registryStorage = new InMemoryRegistryStorage();
 		var registry = new IndexRegistry(registryStorage, Duration.ofMinutes(5));
 
-		var writer = newNode(true, registry, new NoopSyncProvider(), Duration.ofMinutes(10));
+		var writer = newNode(
+			true,
+			registry,
+			new NoopSyncProvider(),
+			Duration.ZERO,
+			Duration.ofMinutes(10)
+		);
 		writer.create("books", IndexDef.getDefaultInstance());
 		writer.close();
 
 		var provider = new CountingSyncProvider();
-		var reader = newNode(false, registry, provider, Duration.ofMinutes(10));
+		var reader = newNode(false, registry, provider, Duration.ZERO, Duration.ofMinutes(10));
 		try {
 			reader.getOrThrow("books");
 			var sync = provider.syncs.get("books@1");
-			awaitQuiescence(sync);
 
 			// Nothing is said about the generation yet, so a pass pulls as it always did
 			var before = sync.pulls.get();
@@ -189,23 +181,76 @@ public class IndexesManifestHintTest {
 		var registryStorage = new InMemoryRegistryStorage();
 		var registry = new IndexRegistry(registryStorage, Duration.ofMinutes(5));
 
-		var writer = newNode(true, registry, new NoopSyncProvider(), Duration.ofMinutes(10));
+		var writer = newNode(
+			true,
+			registry,
+			new NoopSyncProvider(),
+			Duration.ZERO,
+			Duration.ofMinutes(10)
+		);
 		writer.create("books", IndexDef.getDefaultInstance());
 		writer.close();
 
 		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4)));
 
 		var provider = new CountingSyncProvider();
-		var reader = newNode(false, registry, provider, Duration.ZERO);
+		var reader = newNode(false, registry, provider, Duration.ZERO, Duration.ZERO);
 		try {
 			reader.getOrThrow("books");
 			var sync = provider.syncs.get("books@1");
 			sync.synced = OptionalLong.of(4);
-			awaitQuiescence(sync);
 
 			var before = sync.pulls.get();
 			reader.refresh();
 			assertThat(sync.pulls.get(), is(before + 1));
+		} finally {
+			reader.close();
+		}
+	}
+
+	/**
+	 * The refresh interval is the shortest time between two manifest requests
+	 * for one generation, so a node polling faster than it - because something
+	 * else on the node wants the registry more often - does not pull a
+	 * continuously written index every time.
+	 */
+	@Test
+	public void testRefreshIntervalHoldsBackARepeatedPull() throws Exception {
+		var registryStorage = new InMemoryRegistryStorage();
+		var registry = new IndexRegistry(registryStorage, Duration.ofMinutes(5));
+
+		var writer = newNode(
+			true,
+			registry,
+			new NoopSyncProvider(),
+			Duration.ZERO,
+			Duration.ofMinutes(10)
+		);
+		writer.create("books", IndexDef.getDefaultInstance());
+		writer.close();
+
+		var provider = new CountingSyncProvider();
+		var reader = newNode(
+			false,
+			registry,
+			provider,
+			Duration.ofMinutes(5),
+			Duration.ofMinutes(10)
+		);
+		try {
+			reader.getOrThrow("books");
+			var sync = provider.syncs.get("books@1");
+
+			// The first pass has nothing to hold it back and ties the generation to a time
+			reader.refresh();
+			var before = sync.pulls.get();
+
+			// Even a hint past the copy waits out the interval
+			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 5)));
+			reader.refresh();
+			reader.refresh();
+
+			assertThat(sync.pulls.get(), is(before));
 		} finally {
 			reader.close();
 		}

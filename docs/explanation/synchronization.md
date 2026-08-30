@@ -15,13 +15,29 @@ Replacing the remote manifest requires a conditional write using an `If-Match` h
 
 ## The registry carries change hints
 
-Nodes periodically poll storage for two objects: the manifest of each open index (to pull changes) and the search settings object of each served index. Both reads are conditional. However, checking quiet indexes still incurs one request per index per interval per node.
+A node keeps its own copy of the manifest of each open index and of the search settings object of each index it serves. Keeping a copy current means asking storage whether the object changed. Both reads are conditional, but asking about each index separately still costs one request per index per interval per node, so the cost grows with the number of indexes rather than with the number of changes.
 
-To reduce polling requests, the registry includes version hints for each index. Every node already polls the registry regardless of how many indexes exist. For each index, the registry records the version of the most recent manifest push for each generation and the version of the stored settings object. A node skips storage requests if its local copy matches the hinted version, and fetches the object only when the hint changes. This design keeps steady-state request costs proportional to the number of nodes rather than the number of indexes.
+To reduce polling requests, the registry includes version hints for each index. For each index, the registry records the version of the most recent manifest push for each generation and the version of the stored settings object. A node skips storage requests if its local copy matches the hinted version, and fetches the object only when the hint changes. This design keeps steady-state request costs proportional to the number of nodes rather than the number of indexes.
 
 The node that updates an object also reports its hint. A manifest push reports the manifest version, and updating settings reports the settings version. Because both document writes and settings updates execute on the designated index writer, the writer always reports its own updates. The writer buffers hints for several seconds and applies them to the registry in a single conditional write. This batching avoids contending for the registry on every push. For entries that predate hints, the index writer reads storage and populates hints over multiple passes, avoiding request bursts during upgrades.
 
-Hints provide efficiency rather than authoritative state. Even if hints indicate no change, nodes verify every local copy directly against storage after at most `EXOFIND_INDEXES_VERIFY_INTERVAL`. If a writer crashes before reporting a hint, or if an older node overwrites the registry without hints, the system experiences temporary staleness or extra requests, but never corrupted state. Like the leadership table, hints optimize performance while conditional reads and writes enforce safety.
+A single read of the index registry serves the whole node. Two parts of a node work from the registry: open indexes (which pull manifests) and the search settings of the indexes the node serves. Each part receives the result of that one read. Each part states how often it wants the registry read, and the node reads at the shortest interval any part requests:
+
+- The open indexes request `EXOFIND_INDEXES_REFRESH_INTERVAL` (default 30 seconds).
+- The search settings request `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds), and request nothing while the node holds no settings. A node that has served no searches reads at the index interval alone.
+
+Each refresh interval provides two guarantees for the objects it names:
+
+- The node makes no two storage requests for the same index inside the interval. An index written continuously therefore costs a reader at most one manifest request per interval, regardless of how often the registry reports a new version.
+- The node considers every index at least that often.
+
+Because a part acts on every read rather than on a schedule of its own, a change usually reaches a node sooner than its own interval promises. An index that has been quiet is pulled on the first read after its version changes.
+
+A part never runs on the reading thread, and a part still working from an earlier read is passed over until it finishes. A pull that takes minutes does not delay search settings from reaching the node.
+
+The read reports whether the registry changed. A node removes the local copies of indexes and generations the deployment no longer holds only when it changed, and once when the node starts. A registry that says the same thing twice costs the node nothing.
+
+Hints stay advisory rather than authoritative state. A node verifies every local copy directly against storage after at most `EXOFIND_INDEXES_VERIFY_INTERVAL` (default 10 minutes), whatever the hints say. Both refresh intervals are held under the verify interval, so a refresh interval configured above it cannot suppress the verification it promises. If a writer crashes before reporting a hint, or if an older node overwrites the registry without hints, the system experiences temporary staleness or extra requests, but never corrupted state. Like the leadership table, hints optimize performance while conditional reads and writes enforce safety.
 
 ## Why writes are scoped to epochs
 

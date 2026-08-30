@@ -174,7 +174,7 @@ For the search pool:
 - **`<search-volume>`:** Sized for the total size of indexes a single pod holds, plus room for index downloads during updates. To decide whether a pod holds all indexes or a subset, see [Spread the indexes across the search pool](#spread-the-indexes-across-the-search-pool).
 - **`<disk-budget>`:** Set below `<search-volume>` so that the disk sweep runs before the volume fills. The sweeper frees disk space down to 10% below this bound and only removes copies that are fully uploaded to object storage.
 - **`<search-max-open>`:** The number of unique indexes a single pod serves within a few minutes. Setting this too low results in HTTP 503 errors and causes pods to repeatedly close and reopen indexes under load.
-- **`<refresh-concurrency>`:** Increase this value from the default of 4 if a refresh pass exceeds `EXOFIND_INDEXES_REFRESH_INTERVAL`. A refresh pass makes one conditional request per open index, so concurrency depends on storage latency rather than query load.
+- **`<refresh-concurrency>`:** Increase this value from the default of 4 if a refresh pass exceeds `EXOFIND_INDEXES_REFRESH_INTERVAL`. A pass makes at most one conditional request per open index, and none for an index the registry reports as unchanged, so concurrency depends on storage latency rather than query load.
 - **`<search-grace>`:** Set long enough to finish in-flight search requests. Search nodes have no uncommitted data to push.
 
 For the indexer pool:
@@ -310,7 +310,7 @@ Deployments with hundreds of indexes reach their limits on the indexer pool firs
 
 - Set `EXOFIND_INDEXES_MAX_OPEN` to the number of indexes written at the same time, not the total number of indexes.
 - Set `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` to match `EXOFIND_INDEXES_REFRESH_INTERVAL`. Committing more often than the search pool polls produces storage requests without making changes visible any sooner.
-- Raise `EXOFIND_INDEXES_REFRESH_CONCURRENCY` above its default of 4 if a refresh pass does not finish within `EXOFIND_INDEXES_REFRESH_INTERVAL`. The requests themselves are cheap: a search node checks with `If-None-Match` and gets `304 Not Modified` for an index that has not changed.
+- Raise `EXOFIND_INDEXES_REFRESH_CONCURRENCY` above its default of 4 if a refresh pass does not finish within `EXOFIND_INDEXES_REFRESH_INTERVAL`. Passes are cheap: a node skips an index the registry reports as unchanged, and checks the rest with `If-None-Match`.
 
 For what each of these limits is, and why adding candidates does not make one index write faster, see [Separating search and indexing nodes](../explanation/deployment-shapes.md#scaling-limits-with-many-indexes).
 

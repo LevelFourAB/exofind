@@ -30,8 +30,9 @@ public class SearchSettingsTest {
 
 	/**
 	 * Settings over the given storage, with a registry of their own the way a
-	 * node without indexes has one, and a verify interval long enough that the
-	 * fallback never fires inside a test.
+	 * node without indexes has one, a verify interval long enough that the
+	 * fallback never fires inside a test, and no interval between reads so that
+	 * a pass called twice in a row reads twice.
 	 */
 	private static SearchSettings newSettings(SearchSettingsStorage storage) {
 		var registry = new IndexRegistry(
@@ -43,7 +44,7 @@ public class SearchSettingsTest {
 			storage,
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
-			Duration.ofSeconds(10),
+			Duration.ZERO,
 			Duration.ofMinutes(10)
 		);
 	}

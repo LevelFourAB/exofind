@@ -11,12 +11,14 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -46,6 +48,7 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.registry.RegistryHints;
+import se.l4.exofind.engine.index.registry.RegistryPoller;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.IndexUsageFile;
 import se.l4.exofind.engine.index.state.LocalCopy;
@@ -67,7 +70,7 @@ import jakarta.inject.Inject;
  * without anything else being read.
  */
 @ApplicationScoped
-public class Indexes {
+public class Indexes implements RegistryPoller.Listener {
 	private static final Log logger = Log.of(Indexes.class);
 
 	private static final ErrorType GENERATION_NOT_CREATABLE =
@@ -126,8 +129,10 @@ public class Indexes {
 	private final ConcurrentHashMap<String, ReentrantLock> nameLocks;
 
 	/**
-	 * Runs {@link #refresh()}, owned here so that shutting this down also
-	 * stops the node from synchronizing.
+	 * Runs the refresh passes {@link RegistryPoller} hands over, the disk
+	 * sweep and the reopening an ownership change asks for. One thread, so
+	 * none of them ever runs next to another. Owned here so that shutting this
+	 * down also stops the node from synchronizing.
 	 */
 	private final ScheduledExecutorService refreshExecutor;
 
@@ -159,24 +164,42 @@ public class Indexes {
 	private final ConcurrentHashMap<String, RetiringIndex> retiring;
 
 	/**
-	 * How often {@link #refresh()} is scheduled to run.
+	 * Shortest time between two manifest requests for the same open
+	 * generation. A pass that arrives sooner leaves the generation alone
+	 * however far its version hint has moved, so the interval bounds what a
+	 * continuously written index costs a node that reads it.
 	 */
 	private final Duration refreshInterval;
 
 	/**
 	 * How long an open generation may go without its manifest being asked for
 	 * from the storage, when the registry's version hint says the copy is
-	 * current. The hint is what makes skipping the request safe enough; this
-	 * is what bounds the staleness when a hint is stale or was lost.
+	 * current. A hint makes skipping the request safe enough; this bounds the
+	 * staleness when a hint is stale or was lost.
 	 */
 	private final Duration verifyInterval;
 
 	/**
+	 * {@link #refreshInterval} held under {@link #verifyInterval}, so a
+	 * refresh interval configured above the verify interval cannot suppress
+	 * the check the verify interval promises.
+	 */
+	private final Duration minManifestCheck;
+
+	/**
 	 * When each open generation last had its manifest asked for, as
-	 * {@link System#nanoTime()}, toward {@link #verifyInterval}. Entries of
-	 * generations no longer open are dropped at the end of a refresh pass.
+	 * {@link System#nanoTime()}. Both {@link #minManifestCheck} and
+	 * {@link #verifyInterval} are measured against it. Entries of generations
+	 * no longer open are dropped at the end of a refresh pass.
 	 */
 	private final ConcurrentHashMap<String, Long> lastManifestChecks;
+
+	/**
+	 * Whether the local copies have been checked against the registry since
+	 * this node started. Until they have, a registry that has not changed is
+	 * still reason to look for copies of indexes it does not hold.
+	 */
+	private boolean sweptUnregistered;
 
 	/**
 	 * When the refresh loop last finished a pass, as {@link System#nanoTime()}.
@@ -349,20 +372,12 @@ public class Indexes {
 		this.closeExecutor = Executors.newSingleThreadScheduledExecutor();
 		this.pullExecutor = Executors.newFixedThreadPool(refreshConcurrency);
 
-		/*
-		 * The first refresh runs right away rather than in this constructor, a
-		 * remote that is slow to answer should delay indexes showing up and
-		 * not the node starting.
-		 */
 		this.refreshInterval = refreshInterval;
+		this.minManifestCheck = refreshInterval.compareTo(verifyInterval) < 0
+			? refreshInterval
+			: verifyInterval;
 		this.lastRefreshNanos = System.nanoTime();
 		this.refreshExecutor = Executors.newSingleThreadScheduledExecutor();
-		this.refreshExecutor.scheduleWithFixedDelay(
-			this::refresh,
-			0,
-			refreshInterval.toMillis(),
-			TimeUnit.MILLISECONDS
-		);
 
 		/*
 		 * The sweep shares the refresh thread, so it can never run next to a
@@ -654,6 +669,32 @@ public class Indexes {
 		indexes.invalidateAll();
 	}
 
+	@Override
+	public Optional<Duration> pollInterval() {
+		return Optional.of(refreshInterval);
+	}
+
+	@Override
+	public Executor executor() {
+		return refreshExecutor;
+	}
+
+	@Override
+	public void onRegistryPolled(boolean changed) {
+		refresh(changed);
+	}
+
+	/**
+	 * Read the registry and bring this node in step with what it says, for a
+	 * caller that wants the node current here and now.
+	 */
+	void refresh() {
+		var before = registry.version();
+		var read = registry.refresh();
+
+		refresh(read && !Objects.equals(before, registry.version()));
+	}
+
 	/**
 	 * Bring this node in step with the remote, learning what the deployment
 	 * holds and pulling the generations it holds open.
@@ -661,11 +702,17 @@ public class Indexes {
 	 * A node that does not index has no other way of finding out that an index
 	 * has changed, that a generation was promoted, or that either was removed;
 	 * one that does needs this to pick up an index whose pull failed earlier.
+	 *
+	 * @param registryChanged
+	 *   whether the last read moved this node's copy of the registry. Copies
+	 *   of indexes the registry no longer holds are looked for only then, and
+	 *   once when the node starts.
 	 */
-	void refresh() {
+	void refresh(boolean registryChanged) {
 		refreshing = true;
 		try {
-			if(registry.refresh()) {
+			if(registryChanged || !sweptUnregistered) {
+				sweptUnregistered = true;
 				removeUnregisteredCopies();
 			}
 
@@ -719,17 +766,27 @@ public class Indexes {
 
 	/**
 	 * Whether a refresh pass has reason to ask the storage about an open
-	 * generation. It always does when the index is not in step with the
-	 * remote, when the registry says nothing about the generation's manifest,
-	 * or when {@link #verifyInterval} has passed since it last asked - a hint
-	 * is only ever what makes skipping the request safe, never what makes it
-	 * wrong.
+	 * generation.
 	 *
-	 * <p>The skip is what turns the steady state of many open indexes from
-	 * one storage request each per pass into none: the registry, read once
-	 * per pass for all of them, already said nothing changed.
+	 * <p>Two intervals bound the answer. Nothing is asked within
+	 * {@link #minManifestCheck} of the last request, so passes arriving faster
+	 * than the refresh interval cost a busy index nothing. Past that, the
+	 * registry's version hint decides: the storage is asked when the index is
+	 * not in step with the remote, when the registry says nothing about the
+	 * generation's manifest, or when {@link #verifyInterval} has passed. A
+	 * hint only ever makes skipping a request safe, never wrong.
+	 *
+	 * <p>Skipping turns the steady state of many open indexes from one storage
+	 * request each per pass into none. The registry, read once per pass for
+	 * all of them, already said nothing changed.
 	 */
 	private boolean needsManifestCheck(String name, Index index) {
+		var lastCheck = lastManifestChecks.get(name);
+		if(lastCheck != null
+			&& System.nanoTime() - lastCheck < minManifestCheck.toNanos()) {
+			return false;
+		}
+
 		if(index.getState() != IndexState.USABLE) {
 			return true;
 		}
@@ -756,7 +813,6 @@ public class Indexes {
 			return true;
 		}
 
-		var lastCheck = lastManifestChecks.get(name);
 		return lastCheck == null
 			|| System.nanoTime() - lastCheck >= verifyInterval.toNanos();
 	}
@@ -1282,8 +1338,9 @@ public class Indexes {
 	}
 
 	/**
-	 * Get how long the refresh loop waits between passes, as
-	 * {@code EXOFIND_INDEXES_REFRESH_INTERVAL} names it.
+	 * Get the shortest time this node leaves between two storage requests for
+	 * the same open generation, as {@code EXOFIND_INDEXES_REFRESH_INTERVAL}
+	 * names it. Passes arrive at least this often.
 	 *
 	 * @return
 	 */

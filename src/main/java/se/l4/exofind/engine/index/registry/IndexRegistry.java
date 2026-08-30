@@ -40,11 +40,11 @@ import jakarta.inject.Singleton;
  * replaced conditionally on the version it was read at, so a node that raced
  * another is refused and rebuilds its change on top of what the other wrote.
  *
- * <p>Each node keeps its own copy and re-reads it as part of the index refresh,
- * which is also how long promoting a generation takes to reach a node still
- * answering from the old one. A name this node has not seen is looked up at
- * once, at most once per interval, so an index created a moment ago on another
- * node can be used without waiting for the next read.
+ * <p>Each node keeps its own copy, re-read by {@link RegistryPoller} for
+ * everything on the node that works from it. A name this node has not seen is
+ * looked up at once, at most once per {@code exofind.indexes.refresh-interval},
+ * so an index created a moment ago on another node can be used without waiting
+ * for the next read.
  *
  * <p>Safe for concurrent use.
  */
@@ -191,6 +191,17 @@ public class IndexRegistry {
 	 */
 	public boolean hasBeenRead() {
 		return readEver;
+	}
+
+	/**
+	 * Get the storage version this node's copy stands at, or {@code null} when
+	 * it holds no copy. A version that has not moved between two reads means
+	 * no index, generation or version hint changed in between.
+	 *
+	 * @return
+	 */
+	public String version() {
+		return snapshot.version();
 	}
 
 	/**

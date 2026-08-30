@@ -13,9 +13,9 @@ Write -> [Commit delay on writer] -> Remote storage -> [Refresh delay on readers
 1. **The commit on the writer node**: Only one node writes to an index at a time. Changes become searchable on the writer when that node commits them to Lucene and pushes the commit to remote storage. A commit triggers automatically based on two configuration variables:
    - `EXOFIND_INDEXES_COMMIT_MAX_CHANGES` (default: `10000`): Triggers a commit when this many uncommitted changes accumulate.
    - `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` (default: `5s`): Triggers a commit when the oldest uncommitted change waits this long.
-2. **The refresh on reader nodes**: Every other node serves searches from its own local copy of the index. Reader nodes discover changes by polling remote storage at the interval set by `EXOFIND_INDEXES_REFRESH_INTERVAL` (default: `30s`). The variable `EXOFIND_INDEXES_VERIFY_INTERVAL` (default: `10m`) sets the maximum time a node can go without verifying an index manifest.
+2. **The refresh on reader nodes**: Every other node serves searches from its own local copy of the index. A reader node polls the index registry, which names the version of every index the deployment holds, and pulls an index whose version has moved past its copy. `EXOFIND_INDEXES_REFRESH_INTERVAL` (default: `30s`) sets the longest a node waits before it considers pulling, and the shortest it leaves between two pulls of the same generation. The variable `EXOFIND_INDEXES_VERIFY_INTERVAL` (default: `10m`) sets the maximum time a node can go without verifying an index manifest.
 
-With default settings, a write takes about 5 seconds to become searchable on the writer node and about 35 seconds to become searchable on every node in the deployment.
+With default settings, a write takes about 5 seconds to become searchable on the writer node. It becomes searchable on every node about 15 seconds after the write on an index that is otherwise quiet, and within about 35 seconds on an index that is written continuously.
 
 In `LOCAL` storage mode, there is only one node and one copy of the index, so only the commit delay exists. In `OBJECT` storage mode with multiple nodes, both delays exist.
 

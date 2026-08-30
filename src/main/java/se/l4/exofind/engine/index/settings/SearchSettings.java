@@ -5,20 +5,19 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegistryHints;
+import se.l4.exofind.engine.index.registry.RegistryPoller;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.logging.Log;
-import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
-import jakarta.enterprise.event.Observes;
 import jakarta.inject.Singleton;
 
 /**
@@ -26,15 +25,16 @@ import jakarta.inject.Singleton;
  *
  * <p>Settings live in the storage rather than in the definitions, so a change
  * made on one node reaches every node without waiting for an index sync. Each
- * node keeps its own copy per index; every
- * {@code exofind.settings.refresh-interval} it re-reads the registry - one
- * object however many indexes there are - and asks the storage for an index's
- * own object only when the registry's version hint says it changed, when the
- * registry says nothing about it, or when {@code indexes.verify-interval} has
- * passed since it last asked. The refresh interval is how long a change can
- * take to reach a node already serving the index - a search on the node that
- * stored the change sees it at once - and the verify interval bounds the
- * staleness when a hint was lost.
+ * node keeps its own copy per index. {@link RegistryPoller} hands over the
+ * registry - one object however many indexes there are - and an index's own
+ * object is read only when the registry's version hint says it changed, when
+ * the registry says nothing about it, or when {@code indexes.verify-interval}
+ * has passed since the last read. The poller reads at least every
+ * {@code exofind.settings.refresh-interval}, and no index's object is read
+ * twice inside that interval, so it bounds both how long a change takes to
+ * reach a node already serving the index and what a node spends on one that
+ * changes continuously. A search on the node that stored the change sees it at
+ * once.
  *
  * <p>Writing settings needs no coordination of its own. Each index's settings
  * are a single object replaced conditionally on the version it was read at, so
@@ -50,7 +50,7 @@ import jakarta.inject.Singleton;
  * <p>Safe for concurrent use.
  */
 @Singleton
-public class SearchSettings {
+public class SearchSettings implements RegistryPoller.Listener {
 	private static final Log logger = Log.of(SearchSettings.class);
 
 	/**
@@ -61,11 +61,12 @@ public class SearchSettings {
 	private static final int WRITE_ATTEMPTS = 3;
 
 	/**
-	 * How many refresh intervals an index's settings are kept without anyone
-	 * asking for them before this node stops polling for changes. A deleted or
-	 * idle index would otherwise be read forever.
+	 * How long an index's settings are kept without anyone asking for them
+	 * before this node lets go of them. A deleted or idle index would
+	 * otherwise be read forever. A search arriving later is answered from a
+	 * fresh read of the object.
 	 */
-	private static final int IDLE_INTERVALS = 10;
+	private static final Duration IDLE_PERIOD = Duration.ofMinutes(2);
 
 	private final SearchSettingsStorage storage;
 	private final IndexRegistry registry;
@@ -79,8 +80,20 @@ public class SearchSettings {
 	 */
 	private final Duration verifyInterval;
 
+	/**
+	 * {@link #refreshInterval} held under {@link #verifyInterval}, so a
+	 * refresh interval configured above the verify interval cannot suppress
+	 * the read the verify interval promises.
+	 */
+	private final Duration minRead;
+
 	private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
-	private final ScheduledExecutorService executor;
+
+	/**
+	 * Runs the refresh passes {@link RegistryPoller} hands over. One thread,
+	 * so two never run next to each other.
+	 */
+	private final ExecutorService executor;
 
 	/**
 	 * The settings of one index as of one read of the storage, together with
@@ -170,26 +183,39 @@ public class SearchSettings {
 		this.registryHints = registryHints;
 		this.refreshInterval = refreshInterval;
 		this.verifyInterval = verifyInterval;
+		this.minRead = refreshInterval.compareTo(verifyInterval) < 0
+			? refreshInterval
+			: verifyInterval;
 
-		this.executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+		this.executor = Executors.newSingleThreadExecutor(runnable -> {
 			var thread = new Thread(runnable, "search-settings");
 			thread.setDaemon(true);
 			return thread;
 		});
 	}
 
-	void onStart(@Observes StartupEvent event) {
-		executor.scheduleWithFixedDelay(
-			this::refresh,
-			refreshInterval.toMillis(),
-			refreshInterval.toMillis(),
-			TimeUnit.MILLISECONDS
-		);
-	}
-
 	@PreDestroy
 	void stop() {
 		executor.shutdownNow();
+	}
+
+	@Override
+	public Optional<Duration> pollInterval() {
+		/*
+		 * An index nobody has asked about has no copy to keep current, so a
+		 * node serving no searches asks for no reads at all.
+		 */
+		return entries.isEmpty() ? Optional.empty() : Optional.of(refreshInterval);
+	}
+
+	@Override
+	public Executor executor() {
+		return executor;
+	}
+
+	@Override
+	public void onRegistryPolled(boolean changed) {
+		refresh();
 	}
 
 	/**
@@ -389,31 +415,29 @@ public class SearchSettings {
 
 	/**
 	 * Bring this node's copy of every index it was recently asked about up to
-	 * date, and let go of the ones nobody asks about any more.
+	 * date, and let go of the ones nobody asks about any more. Works from the
+	 * registry as the node already holds it, so a pass costs no read of its
+	 * own.
 	 *
-	 * <p>The registry is what says whether a copy is worth questioning: it is
-	 * re-read here - one conditional request whatever the number of indexes -
-	 * and an index's own object is read only when its hint moved since the
-	 * copy was last read, the registry says nothing about it, or the verify
-	 * interval has passed. Skipping on an unmoved hint is what turns the
-	 * steady state from one request per index per interval into none.
+	 * <p>The registry says whether a copy is worth questioning. An index's own
+	 * object is read only when its hint moved since the copy was last read,
+	 * the registry says nothing about it, or the verify interval has passed -
+	 * and never twice within the refresh interval. Skipping on an unmoved hint
+	 * turns the steady state from one request per index per interval into
+	 * none.
 	 */
 	void refresh() {
-		var idleNanos = refreshInterval.toNanos() * IDLE_INTERVALS;
 		var now = System.nanoTime();
-
-		if(entries.isEmpty()) {
-			// Nothing to keep current, so nothing to ask even the registry for
-			return;
-		}
-
-		registry.refresh();
 
 		for(var pair : entries.entrySet()) {
 			var entry = pair.getValue();
 
-			if(now - entry.lastAccessNanos > idleNanos) {
+			if(now - entry.lastAccessNanos > IDLE_PERIOD.toNanos()) {
 				entries.remove(pair.getKey(), entry);
+				continue;
+			}
+
+			if(entry.cached != null && now - entry.lastReadNanos < minRead.toNanos()) {
 				continue;
 			}
 
