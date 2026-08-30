@@ -25,6 +25,7 @@ import java.util.zip.CRC32C;
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.util.IOUtils;
 
 import se.l4.exofind.engine.index.LuceneCompatibility;
 import se.l4.exofind.engine.logging.Log;
@@ -51,8 +52,10 @@ public class ObjectStorageSync implements StateSync {
 	private static final String MANIFEST_NAME = LocalCopy.MANIFEST_FILE;
 
 	/**
-	 * Name the manifest is written under before being moved into place, so an
-	 * interrupted write can never leave a truncated manifest behind.
+	 * Name the manifest is written under before being moved into place. The
+	 * manifest is only ever replaced by a rename of a file already on disk, so
+	 * neither a process that stops nor a machine that loses power can leave a
+	 * half written one under the name the local copy is read from.
 	 */
 	private static final String MANIFEST_TEMP_NAME = MANIFEST_NAME + ".tmp";
 
@@ -399,6 +402,7 @@ public class ObjectStorageSync implements StateSync {
 				currentFiles.put(file.getName(), file);
 			}
 
+			var renamedInto = new LinkedHashSet<Path>();
 			for(var file : manifest.getFilesList()) {
 				var localFile = resolveLocal(file.getName());
 
@@ -410,6 +414,18 @@ public class ObjectStorageSync implements StateSync {
 				}
 
 				downloadFile(file, localFile);
+				renamedInto.add(localFile.getParent());
+			}
+
+			/*
+			 * The names the downloads were moved to are made to survive a power
+			 * loss before the manifest that lists them is, so that the two can
+			 * never come back in the other order. Each file reached the disk as
+			 * it was downloaded; what is left is the renames, which live in the
+			 * directories rather than in the files.
+			 */
+			for(var directory : renamedInto) {
+				IOUtils.fsync(directory, true);
 			}
 
 			/*
@@ -730,6 +746,15 @@ public class ObjectStorageSync implements StateSync {
 						+ " but it is missing from object storage"
 				);
 			}
+
+			/*
+			 * On the disk before it is given the name the manifest knows it
+			 * by. The manifest written at the end of the pull says every file
+			 * it lists is present, and a file whose contents never left the
+			 * page cache would make that a lie after a machine loses power -
+			 * the name would be there and the contents would not.
+			 */
+			IOUtils.fsync(tempFile, false);
 
 			moveIntoPlace(tempFile, localFile);
 		} catch(IOException e) {
@@ -1219,7 +1244,24 @@ public class ObjectStorageSync implements StateSync {
 			manifest.writeTo(out);
 		}
 
+		/*
+		 * On the disk before the rename, so that what the rename publishes is
+		 * a manifest and never a file of the right name holding nothing. A
+		 * write that has only reached the page cache survives a process that
+		 * stops but not a machine that loses power, and the rename can reach
+		 * the disk first.
+		 */
+		IOUtils.fsync(tempFile, false);
+
 		moveIntoPlace(tempFile, localPath.resolve(MANIFEST_NAME));
+
+		/*
+		 * The rename itself lives in the directory rather than in the file, so
+		 * it takes a sync of its own to survive. Without it a machine that
+		 * loses power here comes back to the manifest it held before, which
+		 * describes files that have since been replaced.
+		 */
+		IOUtils.fsync(localPath, true);
 	}
 
 	/**

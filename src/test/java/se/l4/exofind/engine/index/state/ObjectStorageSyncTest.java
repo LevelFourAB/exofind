@@ -491,6 +491,26 @@ public class ObjectStorageSyncTest {
 		verifyLocalFile(segment);
 	}
 
+	/**
+	 * A manifest may name a file below the directory of the index, which is
+	 * downloaded into a directory of its own. Every directory a download was
+	 * moved into is made durable before the manifest that lists it, so a pull
+	 * that creates one has to reach that directory rather than only the
+	 * directory of the index.
+	 */
+	@Test
+	void testPullFileBelowTheIndexDirectory() throws Exception {
+		var segment = createRemoteFile("segments_1", 10);
+		var nested = createRemoteFile("nested/data.bin", 32);
+		var manifest = createRemoteManifest(1, segment, nested);
+
+		assertThat(sync.pull(), is(true));
+
+		verifyLocalFile(manifest);
+		verifyLocalFile(segment);
+		verifyLocalFile(nested);
+	}
+
 	@Test
 	void testPullOneSegmentAndDataFiles() throws Exception {
 		var segment = createRemoteFile("segments_1", 10);
