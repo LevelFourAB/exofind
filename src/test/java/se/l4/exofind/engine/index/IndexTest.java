@@ -76,6 +76,27 @@ public class IndexTest {
 		return create("test", def);
 	}
 
+	/**
+	 * Open an index over the given node state and synchronization, for a test
+	 * that is about what one of them says rather than about the index itself.
+	 */
+	private Index create(
+		String name,
+		NodeState nodeState,
+		StateSync sync,
+		IndexDef.Builder def
+	) throws IOException {
+		var path = indexRoot.resolve(name);
+		Files.createDirectories(path);
+
+		var index = new Index(nodeState, name, path, sync);
+		indexes.add(index);
+
+		index.pull();
+		index.updateDefinition(def.build());
+		return index;
+	}
+
 	@Test
 	public void testDefinitionStoredOnDisk() throws IOException {
 		var index = create(
@@ -960,6 +981,102 @@ public class IndexTest {
 	 * Sync that fails every pull until the remote is said to be reachable,
 	 * standing in for object storage that is briefly unavailable.
 	 */
+	/**
+	 * A claim that lapses while a commit runs is only noticed a round later,
+	 * and by then a successor has taken the index over from the manifest the
+	 * remote holds. Pushing anyway can still win the manifest race and leave
+	 * that successor giving up documents it has already answered for, so the
+	 * push asks again rather than trusting the answer the commit started from.
+	 */
+	@Test
+	public void testCommitPushesNothingWhenTheIndexWasLostWhileItRan() throws IOException {
+		var nodeState = new LapsingNodeState();
+		var sync = new RecordingSync();
+		var index = create("test", nodeState, sync, oneStringField(false));
+
+		index.addDocument(new Document(new Document.Value("id", "1")));
+
+		var pushesBefore = sync.pushes;
+		nodeState.lapseAfterNextAnswer();
+
+		assertThrows(IndexReadonlyException.class, index::commit);
+
+		assertThat(sync.pushes, is(pushesBefore));
+	}
+
+	/**
+	 * A handover this node chose is the other way round: the node has already
+	 * stopped holding the index by the time the flush runs, which is the order
+	 * that keeps a successor from pulling before the flush lands. What the
+	 * index holds has to reach the remote regardless of what the node state
+	 * says now, or every rebalance would drop the documents it answered for.
+	 */
+	@Test
+	public void testClosingPushesEvenAfterTheIndexWasHandedOver() throws IOException {
+		var nodeState = nodeState(true);
+		var sync = new RecordingSync();
+		var index = create("test", nodeState, sync, oneStringField(false));
+
+		index.addDocument(new Document(new Document.Value("id", "1")));
+
+		var pushesBefore = sync.pushes;
+
+		// The listener hears about the loss before the flush is asked for
+		nodeState.updateOwnership(false);
+		index.close(true);
+
+		assertThat(sync.pushes, is(pushesBefore + 1));
+	}
+
+	/**
+	 * Node state standing for a claim that lapses while a commit is running.
+	 * The index is still held the first time it is asked after
+	 * {@link #lapseAfterNextAnswer()}, which is the answer the commit starts
+	 * from, and gone every time after that.
+	 */
+	private static final class LapsingNodeState extends NodeState {
+		private boolean arming;
+		private boolean lapsed;
+
+		LapsingNodeState() {
+			super(true);
+			updateOwnership(true);
+		}
+
+		void lapseAfterNextAnswer() {
+			this.arming = true;
+		}
+
+		@Override
+		public boolean isIndexer(String index) {
+			if(lapsed) {
+				return false;
+			}
+
+			if(arming) {
+				this.arming = false;
+				this.lapsed = true;
+				return true;
+			}
+
+			return super.isIndexer(index);
+		}
+	}
+
+	/**
+	 * Counts what reached the remote, for telling a push that was made from
+	 * one that was refused.
+	 */
+	private static class RecordingSync extends NoopSync {
+		int pushes;
+
+		@Override
+		public void push(Set<String> files) throws IOException {
+			pushes++;
+			super.push(files);
+		}
+	}
+
 	private static class UnreachableSync implements StateSync {
 		boolean reachable;
 

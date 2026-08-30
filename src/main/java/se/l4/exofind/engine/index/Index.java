@@ -931,7 +931,7 @@ public class Index {
 			 * are put where the successor will pull them from.
 			 */
 			try {
-				commitChanges();
+				commitChanges(PushReason.HANDOVER);
 			} catch(IOException | RuntimeException e) {
 				logger.atWarn()
 					.addKeyValue("index", id)
@@ -957,7 +957,39 @@ public class Index {
 		pull();
 	}
 
-	private void sync() throws IOException {
+	/**
+	 * Why a push is being made, which is what decides whether the node having
+	 * stopped holding the index stops it.
+	 */
+	private enum PushReason {
+		/**
+		 * The ordinary work of a node that holds the index.
+		 */
+		HELD,
+
+		/**
+		 * A handover this node chose, or an instance on its way out. The node
+		 * has already stopped holding the index by the time such a flush runs
+		 * - that order is what keeps a successor from pulling before the flush
+		 * lands - so what the index holds is pushed whatever the node state
+		 * says now.
+		 */
+		HANDOVER
+	}
+
+	/**
+	 * Push what the index holds to the remote.
+	 *
+	 * @param reason
+	 *   why the push is being made, see {@link PushReason}
+	 * @throws IndexReadonlyException
+	 *   if the node stopped holding the index while the commit ran, where the
+	 *   push was the ordinary work of holding it
+	 * @throws SyncConflictException
+	 *   if the remote was written by another node
+	 * @throws IOException
+	 */
+	private void sync(PushReason reason) throws IOException {
 		var started = System.nanoTime();
 		var pushed = false;
 
@@ -970,6 +1002,19 @@ public class Index {
 				 * remote manifest with one that lists no files.
 				 */
 				return;
+			}
+
+			/*
+			 * Asked again here rather than taken from where the commit started.
+			 * A claim that lapses is noticed a round later, and by then the
+			 * successor has taken the index over from the manifest the remote
+			 * holds - so a push from here can still win the manifest race and
+			 * leave the successor giving up documents it has already answered
+			 * for. What is here is dropped instead, which the pull that follows
+			 * the loss does.
+			 */
+			if(reason == PushReason.HELD && isReadOnly()) {
+				throw new IndexReadonlyException(id);
 			}
 
 			/*
@@ -1398,7 +1443,7 @@ public class Index {
 			Files.write(localPath.resolve(DEFINITION_FILE), described.toByteArray());
 			this.definition = described;
 			this.definitionVersion = version(described);
-			sync();
+			sync(PushReason.HELD);
 		} finally {
 			syncLock.writeLock().unlock();
 		}
@@ -6177,7 +6222,7 @@ public class Index {
 			throw new IndexReadonlyException(id);
 		}
 
-		commitChanges();
+		commitChanges(PushReason.HELD);
 	}
 
 	/**
@@ -6185,8 +6230,13 @@ public class Index {
 	 * node may still write. Closing goes through here, as an index that is on
 	 * its way out is committed for the state it was opened in rather than the
 	 * one the node is in now.
+	 *
+	 * @param reason
+	 *   why the push that follows the commit is being made, which is what
+	 *   decides whether the node having stopped holding the index stops it -
+	 *   see {@link PushReason}
 	 */
-	private void commitChanges() throws IOException {
+	private void commitChanges(PushReason reason) throws IOException {
 		this.syncLock.writeLock().lock();
 		try {
 			if(this.writer == null) {
@@ -6242,7 +6292,7 @@ public class Index {
 
 		this.syncLock.readLock().lock();
 		try {
-			sync();
+			sync(reason);
 		} finally {
 			this.syncLock.readLock().unlock();
 		}
@@ -6277,7 +6327,7 @@ public class Index {
 		this.commitManager.close();
 
 		if(commit) {
-			this.commitChanges();
+			this.commitChanges(PushReason.HANDOVER);
 		}
 
 		this.syncLock.writeLock().lock();
