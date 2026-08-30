@@ -36,6 +36,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.documents.DocumentResource;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
+import se.l4.exofind.engine.api.v1alpha1.search.SearchLimits;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchResource;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchResourceTest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
@@ -127,8 +128,8 @@ public class GenerationRolloutTest {
 			indexes,
 			searchSettings,
 			SearchResourceTest.metrics(),
-			10_000,
-			1_000
+			SearchLimits.defaults(),
+			Duration.ZERO
 		);
 
 		uriInfo = mock(UriInfo.class);

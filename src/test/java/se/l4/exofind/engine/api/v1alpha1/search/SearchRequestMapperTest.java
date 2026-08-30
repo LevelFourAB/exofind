@@ -50,13 +50,19 @@ import se.l4.exofind.engine.query.matchers.UnderMatcher;
  * has, each pointing into the body.
  */
 public class SearchRequestMapperTest {
-	private static final int MAX_DEPTH = 10_000;
-	private static final int MAX_WINDOW = 1_000;
+	private static final SearchLimits LIMITS = SearchLimits.defaults();
 
 	private static SearchRequest withQuery(Clause... clauses) {
 		return new SearchRequest(
 			Arrays.asList(clauses),
 			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null
+		);
+	}
+
+	private static SearchRequest withLimit(Integer limit) {
+		return new SearchRequest(
+			null, null, null, null, null, null, null, null, null, limit, null, null, null, null,
+			null, null
 		);
 	}
 
@@ -70,7 +76,7 @@ public class SearchRequestMapperTest {
 
 	@Test
 	public void testNoBodyMatchesEverything() {
-		var mapped = SearchRequestMapper.toEngine(null, MAX_DEPTH, MAX_WINDOW);
+		var mapped = SearchRequestMapper.toEngine(null, LIMITS);
 
 		assertThat(mapped.request().query().isEmpty(), is(true));
 		assertThat(
@@ -89,7 +95,7 @@ public class SearchRequestMapperTest {
 	public void testFieldClauseWithShortForms() {
 		var mapped = SearchRequestMapper.toEngine(
 			withQuery(new Clause.Field("published", new Matcher.Equals(true))),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (FieldQuery) mapped.request().query().get(0);
@@ -101,7 +107,7 @@ public class SearchRequestMapperTest {
 	public void testRangeIsFoldedIntoBounds() {
 		var mapped = SearchRequestMapper.toEngine(
 			withQuery(new Clause.Field("price", new Matcher.Range(10, null, null, 20))),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (FieldQuery) mapped.request().query().get(0);
@@ -127,7 +133,7 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (TextQuery) mapped.request().query().get(0);
@@ -156,7 +162,7 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (TextQuery) mapped.request().query().get(0);
@@ -178,7 +184,7 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (TextQuery) mapped.request().query().get(0);
@@ -200,7 +206,7 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (TextQuery) mapped.request().query().get(0);
@@ -225,7 +231,7 @@ public class SearchRequestMapperTest {
 						null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -255,7 +261,7 @@ public class SearchRequestMapperTest {
 						null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -279,7 +285,7 @@ public class SearchRequestMapperTest {
 				)
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (FieldQuery) mapped.request().query().get(0);
@@ -303,7 +309,7 @@ public class SearchRequestMapperTest {
 					Clause.Text.Combine.FIELD
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (TextQuery) mapped.request().query().get(0);
@@ -320,7 +326,7 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (NestedQuery) mapped.request().query().get(0);
@@ -344,7 +350,7 @@ public class SearchRequestMapperTest {
 						null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -360,7 +366,7 @@ public class SearchRequestMapperTest {
 				List.of(new Sort.Score(null), new Sort.Field("name", Sort.Order.DESC)),
 				null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -388,7 +394,7 @@ public class SearchRequestMapperTest {
 
 	@Test
 	public void testSignalsAreLeftToTheIndexWhenNoneAreGiven() {
-		var mapped = SearchRequestMapper.toEngine(withSignals(null), MAX_DEPTH, MAX_WINDOW);
+		var mapped = SearchRequestMapper.toEngine(withSignals(null), LIMITS);
 
 		// Absent, rather than empty, is what leaves the index's ranking in place
 		assertThat(mapped.request().signals(), is(nullValue()));
@@ -396,7 +402,7 @@ public class SearchRequestMapperTest {
 
 	@Test
 	public void testAnEmptySignalListIsKept() {
-		var mapped = SearchRequestMapper.toEngine(withSignals(List.of()), MAX_DEPTH, MAX_WINDOW);
+		var mapped = SearchRequestMapper.toEngine(withSignals(List.of()), LIMITS);
 
 		assertThat(mapped.request().signals().signals().isEmpty(), is(true));
 	}
@@ -405,7 +411,7 @@ public class SearchRequestMapperTest {
 	public void testSignalsAreAddedToTheIndexRankingWhenNoModeIsGiven() {
 		var mapped = SearchRequestMapper.toEngine(
 			withSignals(List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null))),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -421,7 +427,7 @@ public class SearchRequestMapperTest {
 				List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null)),
 				SearchRequest.SignalsMode.REPLACE
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -436,7 +442,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withSignals(null, SearchRequest.SignalsMode.REPLACE),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -453,7 +459,7 @@ public class SearchRequestMapperTest {
 					new Signal("published", null, new Signal.Decay(604800L), null)
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -485,7 +491,7 @@ public class SearchRequestMapperTest {
 						new Signal("purchases", new Signal.Saturation(50.0), null, -1f)
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -521,7 +527,7 @@ public class SearchRequestMapperTest {
 				new SearchRequest.Pages(null),
 				null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.pagesMax(), is(SearchRequestMapper.DEFAULT_PAGES_MAX));
@@ -552,7 +558,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().offset(), is(40));
@@ -567,7 +573,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null, null, null, null, null, null, null, 20, null, token, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().offset(), is(0));
@@ -583,7 +589,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null, null, null, null, null, null, null, 20, null, null, token, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().offset(), is(0));
@@ -603,7 +609,7 @@ public class SearchRequestMapperTest {
 					List.of(new Sort.Field("name", null)),
 					null, null, null, null, null, null, null, token, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -626,7 +632,7 @@ public class SearchRequestMapperTest {
 				List.of(new Sort.Field("name", null)),
 				null, null, null, null, null, null, null, token, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().offset(), is(40));
@@ -641,7 +647,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null, null, null, null, null, null, null, 10, null, token, null, null, null, null
 			),
-			10, MAX_WINDOW
+			LIMITS.withMaxPageDepth(10)
 		);
 
 		assertThat(mapped.request().after(), is(key(1.5f)));
@@ -659,7 +665,7 @@ public class SearchRequestMapperTest {
 					new SearchRequest.Pages(null),
 					null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -676,7 +682,7 @@ public class SearchRequestMapperTest {
 					null, null, null, null, null, null, null, null, null, null, null, null,
 					"??not-a-cursor??", null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -692,7 +698,7 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 				null, null, null, null, null, null, null, null, null, null, 20, "token", null, null, null, null
 			),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -707,7 +713,7 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 				null, null, null, null, null, null, null, null, null, 10, 95, null, null, null, null, null
 			),
-				100, MAX_WINDOW
+				LIMITS.withMaxPageDepth(100)
 			)
 		);
 
@@ -728,7 +734,7 @@ public class SearchRequestMapperTest {
 					new Clause.Field("price", new Matcher.Range(null, null, null, null)),
 					new Clause.Field("price", new Matcher.Range(10, 10, null, null))
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -758,7 +764,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withQuery(new Clause.Knn("embedding", null, 0, null)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -787,7 +793,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Field("published", new Matcher.Equals(true)))
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var clause = (FuseQuery) mapped.request().query().getFirst();
@@ -817,7 +823,7 @@ public class SearchRequestMapperTest {
 					null, null, null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var clause = (FuseQuery) mapped.request().query().getFirst();
@@ -840,7 +846,7 @@ public class SearchRequestMapperTest {
 						null, null, null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -867,7 +873,7 @@ public class SearchRequestMapperTest {
 						null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -904,7 +910,7 @@ public class SearchRequestMapperTest {
 					null, null, null,
 					new SearchRequest.Hits("variants", null, null)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -923,7 +929,7 @@ public class SearchRequestMapperTest {
 						List.of(new Clause.Field("staffPick", new Matcher.Equals(true)))
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -940,7 +946,7 @@ public class SearchRequestMapperTest {
 					new Clause.Field("category", new Matcher.Equals("fiction")),
 					new Clause.Field("price", new Matcher.Range(null, null, null, null))
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -956,7 +962,7 @@ public class SearchRequestMapperTest {
 				new SearchRequest(
 				null, null, null, null, "xx", null, null, null, null, null, null, null, null, null, null, null
 			),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -970,7 +976,7 @@ public class SearchRequestMapperTest {
 			new SearchRequest(
 				null, null, null, null, "sv", null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().locale(), is("sv"));
@@ -981,7 +987,7 @@ public class SearchRequestMapperTest {
 		// An empty or matches nothing, which the engine has an opinion on - not the API
 		var mapped = SearchRequestMapper.toEngine(
 			withQuery(new Clause.Or(List.of())),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (OrQuery) mapped.request().query().get(0);
@@ -996,7 +1002,7 @@ public class SearchRequestMapperTest {
 				List.of(new Clause.Field("category", new Matcher.Equals("fiction"))),
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1018,7 +1024,7 @@ public class SearchRequestMapperTest {
 				)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1040,7 +1046,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Or(List.of())),
 					null, null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1064,7 +1070,7 @@ public class SearchRequestMapperTest {
 					)),
 					null, null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1079,7 +1085,7 @@ public class SearchRequestMapperTest {
 				new Matcher.Ranges.Range(10, null, null, 20),
 				new Matcher.Ranges.Range(50, null, null, null)
 			)))),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (FieldQuery) mapped.request().query().get(0);
@@ -1094,7 +1100,7 @@ public class SearchRequestMapperTest {
 		// An empty list matches nothing, which the engine has an opinion on - not the API
 		var mapped = SearchRequestMapper.toEngine(
 			withQuery(new Clause.Field("price", new Matcher.Ranges(List.of()))),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var query = (FieldQuery) mapped.request().query().get(0);
@@ -1110,7 +1116,7 @@ public class SearchRequestMapperTest {
 					new Matcher.Ranges.Range(10, 10, null, null),
 					new Matcher.Ranges.Range(null, null, null, null)
 				)))),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1135,7 +1141,7 @@ public class SearchRequestMapperTest {
 				)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1156,7 +1162,7 @@ public class SearchRequestMapperTest {
 					)),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1172,7 +1178,7 @@ public class SearchRequestMapperTest {
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var facet = mapped.request().facets().get(0);
@@ -1194,7 +1200,7 @@ public class SearchRequestMapperTest {
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1211,7 +1217,7 @@ public class SearchRequestMapperTest {
 				List.of(new SearchRequest.Facet(null, "category", null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var facet = mapped.request().facets().get(0);
@@ -1231,7 +1237,7 @@ public class SearchRequestMapperTest {
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var facet = mapped.request().facets().get(0);
@@ -1258,7 +1264,7 @@ public class SearchRequestMapperTest {
 					),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1284,7 +1290,7 @@ public class SearchRequestMapperTest {
 	public void testUnderMatcherCarriesAcross() {
 		var mapped = SearchRequestMapper.toEngine(
 			withQuery(new Clause.Field("category", new Matcher.Under("Men/Shoes"))),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1299,7 +1305,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withQuery(new Clause.Field("category", new Matcher.Under(null))),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1322,7 +1328,7 @@ public class SearchRequestMapperTest {
 				),
 				null, null, null, null, null, null, null, null, null, null, null, null, null
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1358,7 +1364,7 @@ public class SearchRequestMapperTest {
 					),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1398,7 +1404,7 @@ public class SearchRequestMapperTest {
 					),
 					null, null, null, null, null, null, null, null, null, null, null, null, null
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1440,7 +1446,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			withHighlight(new SearchRequest.Highlight(fields)),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var highlight = mapped.request().highlight();
@@ -1461,7 +1467,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			withHighlight(new SearchRequest.Highlight(fields)),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().highlight().get("name").pre(), is(""));
@@ -1474,7 +1480,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withHighlight(new SearchRequest.Highlight(new HashMap<>())),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1491,7 +1497,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withHighlight(new SearchRequest.Highlight(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1508,7 +1514,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withHighlight(new SearchRequest.Highlight(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1525,7 +1531,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withHighlight(new SearchRequest.Highlight(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1547,7 +1553,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			withMatched(new SearchRequest.Matched(fields)),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var matched = mapped.request().matched();
@@ -1567,7 +1573,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withMatched(new SearchRequest.Matched(new HashMap<>())),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1584,7 +1590,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withMatched(new SearchRequest.Matched(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1602,7 +1608,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withMatched(new SearchRequest.Matched(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1629,7 +1635,7 @@ public class SearchRequestMapperTest {
 
 		var mapped = SearchRequestMapper.toEngine(
 			withMatched(new SearchRequest.Matched(fields)),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var matched = mapped.request().matched().get("variants");
@@ -1652,7 +1658,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withMatched(new SearchRequest.Matched(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1672,7 +1678,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withMatched(new SearchRequest.Matched(fields)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1709,7 +1715,7 @@ public class SearchRequestMapperTest {
 	public void testHitsMapThePath() {
 		var mapped = SearchRequestMapper.toEngine(
 			withHits(null, null, null, null, new SearchRequest.Hits("variants", null, null)),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1721,7 +1727,7 @@ public class SearchRequestMapperTest {
 		 * Cursors are keyed on what a hit stands for, so the same sort
 		 * fingerprints differently once the hits are values.
 		 */
-		var documents = SearchRequestMapper.toEngine(null, MAX_DEPTH, MAX_WINDOW);
+		var documents = SearchRequestMapper.toEngine(null, LIMITS);
 		assertThat(mapped.fingerprint(), is(not(documents.fingerprint())));
 	}
 
@@ -1736,7 +1742,7 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(
@@ -1754,7 +1760,7 @@ public class SearchRequestMapperTest {
 					null, null, null, null,
 					new SearchRequest.Hits("variants", List.of(), null)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1775,7 +1781,7 @@ public class SearchRequestMapperTest {
 						null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1798,7 +1804,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withHits(null, null, null, null, new SearchRequest.Hits(" ", null, null)),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1819,7 +1825,7 @@ public class SearchRequestMapperTest {
 					new SearchRequest.Matched(fields),
 					new SearchRequest.Hits("variants", null, null)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1841,7 +1847,7 @@ public class SearchRequestMapperTest {
 					null,
 					new SearchRequest.Hits("variants", null, null)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1861,7 +1867,7 @@ public class SearchRequestMapperTest {
 				null,
 				new SearchRequest.Hits("variants", null, null)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(request.request().highlight().containsKey("variants.note"), is(true));
@@ -1883,7 +1889,7 @@ public class SearchRequestMapperTest {
 					null, null, null,
 					new SearchRequest.Hits("variants", null, null)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1907,7 +1913,7 @@ public class SearchRequestMapperTest {
 				null, null, null,
 				new SearchRequest.Hits("variants", null, null)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(request.request().hits().path(), is("variants"));
@@ -1925,7 +1931,7 @@ public class SearchRequestMapperTest {
 					null, null,
 					new SearchRequest.Hits("variants", null, null)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -1944,7 +1950,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Field("split", new Matcher.Equals(true)))
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().hits().when().size(), is(1));
@@ -1963,7 +1969,7 @@ public class SearchRequestMapperTest {
 		 */
 		var everyDocument = SearchRequestMapper.toEngine(
 			withHits(null, null, null, null, new SearchRequest.Hits("variants", null, null)),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 		assertThat(mapped.fingerprint(), is(not(everyDocument.fingerprint())));
 	}
@@ -1983,7 +1989,7 @@ public class SearchRequestMapperTest {
 						)))
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2010,7 +2016,7 @@ public class SearchRequestMapperTest {
 						))
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2033,7 +2039,7 @@ public class SearchRequestMapperTest {
 						List.of(new Clause.Field("split", new Matcher.Equals(true)))
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2050,7 +2056,7 @@ public class SearchRequestMapperTest {
 				null, null,
 				new SearchRequest.Hits("variants", null, null)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().sort().size(), is(1));
@@ -2075,7 +2081,7 @@ public class SearchRequestMapperTest {
 				),
 				10, 0
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		var rescore = mapped.request().rescore();
@@ -2097,7 +2103,7 @@ public class SearchRequestMapperTest {
 				),
 				10, 0
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().rescore().weight(), is(1f));
@@ -2118,7 +2124,7 @@ public class SearchRequestMapperTest {
 					),
 					10, 0
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2133,14 +2139,14 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(
 				withRescore(
 					new Rescore(
-						MAX_WINDOW + 1,
+						LIMITS.maxRescoreWindow() + 1,
 						List.of(new Clause.Field("brand", new Matcher.Equals("aurora"))),
 						null,
 						null
 					),
 					10, 0
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2162,7 +2168,7 @@ public class SearchRequestMapperTest {
 					),
 					20, 40
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2176,7 +2182,7 @@ public class SearchRequestMapperTest {
 			ValidationException.class,
 			() -> SearchRequestMapper.toEngine(
 				withRescore(new Rescore(200, null, null, null), 10, 0),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2198,7 +2204,7 @@ public class SearchRequestMapperTest {
 					),
 					10, 0
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2220,7 +2226,7 @@ public class SearchRequestMapperTest {
 					),
 					10, 0
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2244,7 +2250,7 @@ public class SearchRequestMapperTest {
 						null
 					)
 				),
-				MAX_DEPTH, MAX_WINDOW
+				LIMITS
 			)
 		);
 
@@ -2267,9 +2273,161 @@ public class SearchRequestMapperTest {
 					null
 				)
 			),
-			MAX_DEPTH, MAX_WINDOW
+			LIMITS
 		);
 
 		assertThat(mapped.request().rescore().window(), is(10));
+	}
+
+	@Test
+	public void testALimitAtTheCapIsKept() {
+		var mapped = SearchRequestMapper.toEngine(withLimit(LIMITS.maxLimit()), LIMITS);
+
+		assertThat(mapped.request().limit(), is(LIMITS.maxLimit()));
+	}
+
+	@Test
+	public void testALimitPastTheCapIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(withLimit(LIMITS.maxLimit() + 1), LIMITS)
+		);
+
+		assertThat(codesOf(e), contains("search:limit:too_large"));
+		assertThat(pathsOf(e), contains("/limit"));
+	}
+
+	@Test
+	public void testTheClausesOfARequestAreCountedTogether() {
+		var limits = LIMITS.withMaxClauses(4);
+
+		var clause = new Clause.Field("brand", new Matcher.Equals("aurora"));
+		var request = new SearchRequest(
+			List.of(clause, clause, clause),
+			List.of(clause, clause),
+			null, null, null, null, null, null, null, null, null, null, null, null, null, null
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(request, limits)
+		);
+
+		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(pathsOf(e), contains("/filters/1"));
+	}
+
+	@Test
+	public void testClausesInsideAClauseAreCounted() {
+		var limits = LIMITS.withMaxClauses(2);
+
+		var clause = new Clause.Field("brand", new Matcher.Equals("aurora"));
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(new Clause.And(List.of(clause, clause))),
+				limits
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(pathsOf(e), contains("/query/0/clauses/1"));
+	}
+
+	@Test
+	public void testARequestOverItsClauseCountIsRefusedWhole() {
+		var limits = LIMITS.withMaxClauses(1);
+
+		// A second problem the mapper would report if it read the rest
+		var request = new SearchRequest(
+			List.of(
+				new Clause.Field("brand", new Matcher.Equals("aurora")),
+				new Clause.Field(null, new Matcher.Equals("aurora"))
+			),
+			null, null, null, null, null, null, null, null, -1, null, null, null, null, null, null
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(request, limits)
+		);
+
+		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+	}
+
+	@Test
+	public void testClausesNestedPastTheCapAreRefused() {
+		var limits = LIMITS.withMaxClauseDepth(3);
+
+		Clause clause = new Clause.Field("brand", new Matcher.Equals("aurora"));
+		for(var i = 0; i < 3; i++) {
+			clause = new Clause.And(List.of(clause));
+		}
+
+		var nested = clause;
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(withQuery(nested), limits)
+		);
+
+		assertThat(codesOf(e), contains("search:query:too_deep"));
+		assertThat(pathsOf(e), contains("/query/0/clauses/0/clauses/0/clauses"));
+	}
+
+	@Test
+	public void testClausesNestedToTheCapAreKept() {
+		var limits = LIMITS.withMaxClauseDepth(3);
+
+		Clause clause = new Clause.Field("brand", new Matcher.Equals("aurora"));
+		for(var i = 0; i < 2; i++) {
+			clause = new Clause.And(List.of(clause));
+		}
+
+		var mapped = SearchRequestMapper.toEngine(withQuery(clause), limits);
+
+		assertThat(mapped.request().query().size(), is(1));
+	}
+
+	@Test
+	public void testNeighboursPastTheCapAreRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Knn("embedding", new float[] { 1f }, LIMITS.maxKnnK() + 1, null)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:k_too_large"));
+		assertThat(pathsOf(e), contains("/query/0/k"));
+	}
+
+	@Test
+	public void testAFusionDepthPastTheCapIsRefused() {
+		var ranking = new Clause.Fuse.Ranking(
+			List.of(new Clause.Field("brand", new Matcher.Equals("aurora"))),
+			null
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Fuse(
+						List.of(ranking, ranking),
+						LIMITS.maxFuseDepth() + 1,
+						null,
+						null
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:depth_too_large"));
+		assertThat(pathsOf(e), contains("/query/0/depth"));
 	}
 }

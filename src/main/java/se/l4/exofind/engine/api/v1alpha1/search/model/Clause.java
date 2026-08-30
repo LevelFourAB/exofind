@@ -256,7 +256,12 @@ public sealed interface Clause
 		/**
 		 * Number of nearest documents to return.
 		 */
-		@Schema(description = "Number of nearest documents to return.", required = true)
+		@Schema(
+			description = """
+				Number of nearest documents to return, at most \
+				`EXOFIND_SEARCH_MAX_KNN_K`.""",
+			required = true
+		)
 		Integer k,
 
 		/**
@@ -468,7 +473,8 @@ public sealed interface Clause
 			description = """
 				Number of results read from each ranking. Pagination cannot \
 				exceed the merged list, similar to `k` in a `knn` clause. Must \
-				be at least `1`.""",
+				be at least `1`, and at most \
+				`EXOFIND_SEARCH_MAX_FUSE_DEPTH`.""",
 			defaultValue = "100"
 		)
 		Integer depth,

@@ -38,6 +38,7 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
+import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
@@ -115,7 +116,9 @@ public class SearchResourceTest {
 			Duration.ofSeconds(10),
 			Duration.ofMinutes(10)
 		);
-		resource = new SearchResource(indexes, searchSettings, metrics(),10_000, 1_000);
+		resource = new SearchResource(
+			indexes, searchSettings, metrics(), SearchLimits.defaults(), Duration.ZERO
+		);
 	}
 
 	@AfterEach
@@ -1152,7 +1155,13 @@ public class SearchResourceTest {
 	public void testCursorsGoPastTheOffsetCap() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, searchSettings, metrics(),10, 1_000);
+		var shallow = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults().withMaxPageDepth(10),
+			Duration.ZERO
+		);
 
 		var first = shallow.search(
 			"many",
@@ -1337,7 +1346,13 @@ public class SearchResourceTest {
 	public void testPagesPastTheCapAreNeverOffered() throws IOException {
 		many(25);
 
-		var shallow = new SearchResource(indexes, searchSettings, metrics(),10, 1_000);
+		var shallow = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults().withMaxPageDepth(10),
+			Duration.ZERO
+		);
 
 		var response = shallow.search(
 			"many",
@@ -1524,5 +1539,41 @@ public class SearchResourceTest {
 			ValidationException.class,
 			() -> resource.search("many", paged(5, 20, null, boostingCode(10, "C-0007")))
 		);
+	}
+
+	@Test
+	public void testASearchPastItsTimeBudgetIsRefused() throws IOException {
+		many(25);
+
+		// A budget of a nanosecond has run out before the first hit is collected
+		var impatient = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults(),
+			Duration.ofNanos(1)
+		);
+
+		assertThrows(
+			SearchTimeoutException.class,
+			() -> impatient.search("many", null)
+		);
+	}
+
+	@Test
+	public void testASearchInsideItsTimeBudgetAnswers() throws IOException {
+		many(25);
+
+		var patient = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults(),
+			Duration.ofMinutes(1)
+		);
+
+		var response = patient.search("many", null);
+
+		assertThat(response.hits().size(), is(10));
 	}
 }

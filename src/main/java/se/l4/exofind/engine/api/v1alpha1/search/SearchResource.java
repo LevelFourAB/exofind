@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.search;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,11 +32,14 @@ import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.SearchDeadline;
+import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.POST;
@@ -79,23 +83,91 @@ public class SearchResource {
 	private final Indexes indexes;
 	private final SearchSettings searchSettings;
 	private final RequestMetrics metrics;
-	private final int maxPageDepth;
-	private final int maxRescoreWindow;
+	private final SearchLimits limits;
+	private final Duration timeout;
 
+	@Inject
 	public SearchResource(
 		Indexes indexes,
 		SearchSettings searchSettings,
 		RequestMetrics metrics,
-		@ConfigProperty(name = "exofind.search.max-page-depth", defaultValue = "10000")
+		@ConfigProperty(
+			name = "exofind.search.max-limit",
+			defaultValue = SearchLimits.DEFAULT_MAX_LIMIT
+		)
+		int maxLimit,
+		@ConfigProperty(
+			name = "exofind.search.max-page-depth",
+			defaultValue = SearchLimits.DEFAULT_MAX_PAGE_DEPTH
+		)
 		int maxPageDepth,
-		@ConfigProperty(name = "exofind.search.max-rescore-window", defaultValue = "1000")
-		int maxRescoreWindow
+		@ConfigProperty(
+			name = "exofind.search.max-rescore-window",
+			defaultValue = SearchLimits.DEFAULT_MAX_RESCORE_WINDOW
+		)
+		int maxRescoreWindow,
+		@ConfigProperty(
+			name = "exofind.search.max-knn-k",
+			defaultValue = SearchLimits.DEFAULT_MAX_KNN_K
+		)
+		int maxKnnK,
+		@ConfigProperty(
+			name = "exofind.search.max-fuse-depth",
+			defaultValue = SearchLimits.DEFAULT_MAX_FUSE_DEPTH
+		)
+		int maxFuseDepth,
+		@ConfigProperty(
+			name = "exofind.search.max-clauses",
+			defaultValue = SearchLimits.DEFAULT_MAX_CLAUSES
+		)
+		int maxClauses,
+		@ConfigProperty(
+			name = "exofind.search.max-clause-depth",
+			defaultValue = SearchLimits.DEFAULT_MAX_CLAUSE_DEPTH
+		)
+		int maxClauseDepth,
+		@ConfigProperty(name = "exofind.search.timeout", defaultValue = "30s")
+		Duration timeout
+	) {
+		this(
+			indexes,
+			searchSettings,
+			metrics,
+			new SearchLimits(
+				maxLimit,
+				maxPageDepth,
+				maxRescoreWindow,
+				maxKnnK,
+				maxFuseDepth,
+				maxClauses,
+				maxClauseDepth
+			),
+			timeout
+		);
+	}
+
+	/**
+	 * Create a resource with its limits given directly, the way a test does,
+	 * instead of reading them from the configuration.
+	 *
+	 * @param limits
+	 *   how much of the node one search may ask for
+	 * @param timeout
+	 *   how long a search may collect for. {@code null}, zero and negative
+	 *   durations let a search run until it finishes
+	 */
+	public SearchResource(
+		Indexes indexes,
+		SearchSettings searchSettings,
+		RequestMetrics metrics,
+		SearchLimits limits,
+		Duration timeout
 	) {
 		this.indexes = indexes;
 		this.searchSettings = searchSettings;
 		this.metrics = metrics;
-		this.maxPageDepth = maxPageDepth;
-		this.maxRescoreWindow = maxRescoreWindow;
+		this.limits = limits;
+		this.timeout = timeout;
 	}
 
 	/**
@@ -139,7 +211,14 @@ public class SearchResource {
 			reason, such as `search:filter:scores` when a filter clause \
 			affects the score, `index:query:usage_not_enabled` when a field is \
 			not configured for the requested usage, or `search:page:too_deep` \
-			when `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""",
+			when `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
+
+			A request that asks for more than the node allows is refused with \
+			the same status. The `code` names the cap it exceeded: \
+			`search:limit:too_large`, `search:query:too_many_clauses`, \
+			`search:query:too_deep`, `search:clause:k_too_large`, or \
+			`search:clause:depth_too_large`. See \
+			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -176,7 +255,12 @@ public class SearchResource {
 		responseCode = "503",
 		description = """
 			The request raced the index being closed to free local resources \
-			(`index:closed`). Sending the same request again reopens it.""",
+			(`index:closed`). Sending the same request again reopens it.
+
+			Also returned when the search collected for longer than \
+			`EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The results collected \
+			before the node stopped are dropped, so narrow the search instead \
+			of repeating it.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public SearchResponse search(
@@ -200,7 +284,7 @@ public class SearchResource {
 		var started = System.nanoTime();
 
 		var index = indexes.getOrThrow(name);
-		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth, maxRescoreWindow);
+		var mapped = SearchRequestMapper.toEngine(body, limits);
 
 		/*
 		 * Settings belong to the index name, so a search naming one generation
@@ -209,14 +293,26 @@ public class SearchResource {
 		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
 
 		SearchResult result;
-		try {
+		boolean timedOut;
+		try(var budget = SearchDeadline.start(timeout)) {
 			result = index.search(mapped.request(), settings);
+			timedOut = budget.exceeded();
 		} catch(IOException e) {
 			metrics.recordSearch(name, System.nanoTime() - started, false);
 			throw new IndexException(IO_ERROR, e, "index", name);
 		} catch(RuntimeException e) {
 			metrics.recordSearch(name, System.nanoTime() - started, false);
 			throw e;
+		}
+
+		/*
+		 * A search that ran out of time returns what it collected before it
+		 * stopped, and that page reads like a complete one. Refused here
+		 * instead of answered.
+		 */
+		if(timedOut) {
+			metrics.recordSearch(name, System.nanoTime() - started, false);
+			throw new SearchTimeoutException(name, timeout);
 		}
 
 		var took = System.nanoTime() - started;
@@ -316,7 +412,8 @@ public class SearchResource {
 		responseCode = "503",
 		description = """
 			The request raced the index being closed to free local resources \
-			(`index:closed`). Sending the same request again reopens it.""",
+			(`index:closed`), or the search behind the explanation collected \
+			for longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ExplainResponse explain(
@@ -357,21 +454,27 @@ public class SearchResource {
 		SearchRequest body
 	) {
 		var index = indexes.getOrThrow(name);
-		var mapped = SearchRequestMapper.toEngine(body, maxPageDepth, maxRescoreWindow);
+		var mapped = SearchRequestMapper.toEngine(body, limits);
 
 		// Settings belong to the index name, the way they do for a search
 		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
 
 		SearchExplanation explanation;
-		try {
+		boolean timedOut;
+		try(var budget = SearchDeadline.start(timeout)) {
 			explanation = index.explain(
 				mapped.request(),
 				index.parsePrimaryKey(key),
 				valueIndex,
 				settings
 			);
+			timedOut = budget.exceeded();
 		} catch(IOException e) {
 			throw new IndexException(IO_ERROR, e, "index", name);
+		}
+
+		if(timedOut) {
+			throw new SearchTimeoutException(name, timeout);
 		}
 
 		return new ExplainResponse(
@@ -690,7 +793,7 @@ public class SearchResource {
 		 * Pages past it would be refused if asked for, so they are never
 		 * offered - which is why the end of the list can be missing.
 		 */
-		var lastReachable = maxPageDepth / limit;
+		var lastReachable = limits.maxPageDepth() / limit;
 
 		if(count == 0) {
 			return new SearchResponse.Pages(0, null, null, List.of(), List.of(), List.of());

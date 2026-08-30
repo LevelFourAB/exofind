@@ -46,7 +46,7 @@ All request properties are optional. An empty request matches all documents in t
 | `highlight` | Object | None | Fields to return highlighted snippets for. See [Highlighting](#highlighting). |
 | `matched` | Object | None | Nested object fields for which to return matched values with each hit. See [Matched values](#matched-values). |
 | `hits` | Object | None | Specifies an object field whose matched values return as individual hits instead of full documents. See [What a hit stands for](#what-a-hit-stands-for). |
-| `limit` | Integer | `10` | Maximum number of results to return. Setting `limit` to `0` returns the total match count without hits. |
+| `limit` | Integer | `10` | Maximum number of results to return, at most `EXOFIND_SEARCH_MAX_LIMIT` (default `1000`). Setting `limit` to `0` returns the total match count without hits. |
 | `offset` | Integer | `0` | Number of matching results to skip. Specify at most one of `offset`, `after`, or `before`. |
 | `after` | String | None | Cursor string from the `next` property of a previous response to fetch the next page. |
 | `before` | String | None | Cursor string from the `previous` property of a previous response to fetch the preceding page. |
@@ -158,7 +158,7 @@ Matches the `k` nearest documents by vector distance in a specified field:
 
 - `field`: The vector field to search.
 - `vector`: The query vector array. The array length must match the dimensions declared in the field definition.
-- `k`: Number of nearest documents to return.
+- `k`: Number of nearest documents to return, at most `EXOFIND_SEARCH_MAX_KNN_K` (default `1000`).
 - `filter`: Array of filter clauses that documents must satisfy before nearest-neighbor evaluation.
 
 To search a vector field inside a nested object, place the `knn` clause inside a [`nested`](#nested) clause for that path. See [Searching vectors inside a nested path](#searching-vectors-inside-a-nested-path).
@@ -177,7 +177,7 @@ Matches documents across several rankings, scored and merged by rank:
 ```
 
 - `rankings`: Array of rankings to run and merge. Each entry contains a `clauses` array combined with an implicit `AND`, and an optional `weight` (default `1`).
-- `depth`: Number of results read from each ranking. Defaults to `100`.
+- `depth`: Number of results read from each ranking. Defaults to `100`, and is at most `EXOFIND_SEARCH_MAX_FUSE_DEPTH` (default `1000`).
 - `rankConstant`: Constant added to each rank before it is inverted. Defaults to `60`.
 - `filter`: Array of clauses that narrow every ranking before it is cut to `depth`.
 
@@ -861,6 +861,7 @@ Properties of a score step (`detail` and each entry in `children`):
 | `404` | `index:explain:value_not_found` | The document contains no value at `index` along the `hits.path`. |
 | `409` | `index:no_live_generation` | No live index generation is available. |
 | `503` | `index:closed` | The index is closed. |
+| `503` | `search:timeout` | The search behind the explanation ran longer than `EXOFIND_SEARCH_TIMEOUT`. |
 
 ## Paging rules
 
@@ -869,3 +870,21 @@ Properties of a score step (`detail` and each entry in `children`):
 - Cursors inside `pages` encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
 - `pages` can be combined with `offset` or page cursors, but cannot be combined with `after` or `before`.
 - A search carrying a `rescore` block pages by counting inside the window and by cursor below it. See [Paging a rescored search](#paging-a-rescored-search).
+
+## Request limits
+
+A node caps what one request may ask it to do. Each cap is a configuration variable, so a deployment can set it higher or lower. For the settings and their defaults, see [Search configuration](configuration.md#search).
+
+| Setting | Applies to | Error code |
+|---|---|---|
+| `EXOFIND_SEARCH_MAX_LIMIT` | `limit` | `search:limit:too_large` |
+| `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | `offset` plus `limit` | `search:page:too_deep` |
+| `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | `rescore.window` | `search:rescore:window_invalid` |
+| `EXOFIND_SEARCH_MAX_KNN_K` | `k` of a `knn` clause | `search:clause:k_too_large` |
+| `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_too_large` |
+| `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, and `rescore.boost`, counted together | `search:query:too_many_clauses` |
+| `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Nesting of clauses inside clauses | `search:query:too_deep` |
+
+Each of these returns `400`, and the `path` of the error names where in the body the request went over. A request over `EXOFIND_SEARCH_MAX_CLAUSES` or `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` is answered with that error alone; the rest of the body is not read.
+
+A search that passes these caps and then runs longer than `EXOFIND_SEARCH_TIMEOUT` returns `503` with `search:timeout`. The results it collected are dropped, so narrow the search instead of repeating it.

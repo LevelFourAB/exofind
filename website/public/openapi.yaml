@@ -1089,7 +1089,7 @@ components:
           format: int32
           description: "Number of results read from each ranking. Pagination cannot\
             \ exceed the merged list, similar to `k` in a `knn` clause. Must be at\
-            \ least `1`."
+            \ least `1`, and at most `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
           default: 100
         rankConstant:
           type: number
@@ -2061,7 +2061,7 @@ components:
         k:
           type: integer
           format: int32
-          description: Number of nearest documents to return.
+          description: "Number of nearest documents to return, at most `EXOFIND_SEARCH_MAX_KNN_K`."
         filter:
           type: array
           items:
@@ -3208,8 +3208,8 @@ components:
         limit:
           type: integer
           format: int32
-          description: Maximum number of results to return. Setting `limit` to `0`
-            returns the total match count without hits.
+          description: "Maximum number of results to return, at most `EXOFIND_SEARCH_MAX_LIMIT`.\
+            \ Setting `limit` to `0` returns the total match count without hits."
           default: 10
         offset:
           type: integer
@@ -6613,11 +6613,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchResponse"
         "400":
-          description: "The request is not a valid search. The `code` property names\
-            \ the reason, such as `search:filter:scores` when a filter clause affects\
-            \ the score, `index:query:usage_not_enabled` when a field is not configured\
-            \ for the requested usage, or `search:page:too_deep` when `offset` reaches\
-            \ past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`."
+          description: |-
+            The request is not a valid search. The `code` property names the reason, such as `search:filter:scores` when a filter clause affects the score, `index:query:usage_not_enabled` when a field is not configured for the requested usage, or `search:page:too_deep` when `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
+
+            A request that asks for more than the node allows is refused with the same status. The `code` names the cap it exceeded: `search:limit:too_large`, `search:query:too_many_clauses`, `search:query:too_deep`, `search:clause:k_too_large`, or `search:clause:depth_too_large`. See [Search configuration](https://exofind.dev/reference/configuration/#search).
           content:
             application/json:
               schema:
@@ -6653,8 +6652,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: The request raced the index being closed to free local resources
-            (`index:closed`). Sending the same request again reopens it.
+          description: |-
+            The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
+
+            Also returned when the search collected for longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The results collected before the node stopped are dropped, so narrow the search instead of repeating it.
           content:
             application/json:
               schema:
@@ -6795,8 +6796,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: The request raced the index being closed to free local resources
-            (`index:closed`). Sending the same request again reopens it.
+          description: "The request raced the index being closed to free local resources\
+            \ (`index:closed`), or the search behind the explanation collected for\
+            \ longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`)."
           content:
             application/json:
               schema:

@@ -893,9 +893,7 @@ public class Index {
 			 * The searcher manager takes over the reader that was in use, and
 			 * closes it once the searches still holding it are done.
 			 */
-			var searcher = new IndexSearcher(reader);
-			searcher.setSimilarity(similarity);
-			searcherManager.refreshLatest(searcher);
+			searcherManager.refreshLatest(newSearcher(reader));
 
 			state = IndexState.USABLE;
 		} catch(IOException e) {
@@ -913,6 +911,27 @@ public class Index {
 		} finally {
 			syncLock.writeLock().unlock();
 		}
+	}
+
+	/**
+	 * Open a searcher over a reader: it scores with the similarity of this
+	 * index, and it stops collecting when the thread searching has run out of
+	 * time.
+	 *
+	 * @see SearchDeadline
+	 */
+	private IndexSearcher newSearcher(IndexReader reader) {
+		var searcher = new IndexSearcher(reader);
+		searcher.setSimilarity(similarity);
+
+		/*
+		 * One searcher answers many requests at once, so the timeout reads the
+		 * budget of the thread that collects. Setting a deadline here would
+		 * bound every request from the moment the searcher opened.
+		 */
+		searcher.setTimeout(SearchDeadline.INSTANCE);
+
+		return searcher;
 	}
 
 	/**
@@ -3672,6 +3691,11 @@ public class Index {
 	 * have is skipped rather than failing the search, and logged once per
 	 * version of the settings rather than once per search.
 	 *
+	 * <p>Collecting stops when the {@link SearchDeadline} of the calling thread
+	 * runs out, and what was collected until then is returned as a result of
+	 * its own. A caller that opened a budget asks the scope whether it ran out
+	 * before it uses the result.
+	 *
 	 * @param request
 	 *   what to look for, how to order it and how much to bring back
 	 * @param settings
@@ -4393,6 +4417,9 @@ public class Index {
 	 * <p>A hit the search does not match is explained rather than refused, with
 	 * the clauses that ruled it out marked as not matching.
 	 *
+	 * <p>The {@link SearchDeadline} of the calling thread bounds this the way
+	 * it bounds a search.
+	 *
 	 * @param request
 	 * @param primaryKey
 	 *   the key of the document, as the type of the key field holds it
@@ -4439,8 +4466,7 @@ public class Index {
 				 * which loses every clause a filter was compiled from. Explaining
 				 * visits one document, so there is nothing for a cache to save.
 				 */
-				var searcher = new IndexSearcher(handle.getSearcher().getIndexReader());
-				searcher.setSimilarity(similarity);
+				var searcher = newSearcher(handle.getSearcher().getIndexReader());
 				searcher.setQueryCache(null);
 
 				if(request.locale() != null && Locales.resolve(request.locale()).isEmpty()) {
@@ -6359,9 +6385,7 @@ public class Index {
 
 			this.reader = DirectoryReader.open(writer);
 
-			var searcher = new IndexSearcher(reader);
-			searcher.setSimilarity(similarity);
-			this.searcherManager.refreshLatest(searcher);
+			this.searcherManager.refreshLatest(newSearcher(reader));
 
 			/*
 			 * Everything remembered is in the commit, so the next partial

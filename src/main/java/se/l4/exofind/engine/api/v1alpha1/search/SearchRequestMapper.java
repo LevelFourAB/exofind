@@ -74,6 +74,12 @@ public class SearchRequestMapper {
 	private static final ErrorType LIMIT_NEGATIVE = ErrorType.withCode("search:limit:negative")
 		.withMessage("A search can not return fewer than no results");
 
+	private static final ErrorType LIMIT_TOO_LARGE = ErrorType.withCode("search:limit:too_large")
+		.withArguments("max")
+		.withMessage(
+			"A page holds at most {{max}} results - ask for fewer and follow `next` for the rest"
+		);
+
 	private static final ErrorType OFFSET_NEGATIVE = ErrorType.withCode("search:offset:negative")
 		.withMessage("A search can not skip fewer than no results");
 
@@ -447,16 +453,13 @@ public class SearchRequestMapper {
 	 * @param body
 	 *   the request as received, or {@code null} for a request without a
 	 *   body - which matches everything, the way an empty request does
-	 * @param maxPageDepth
-	 *   how deep into the results offset paging may reach
-	 * @param maxRescoreWindow
-	 *   how many results a second pass may reach
-	 * @return
+	 * @param limits
+	 *   how much of the node one search may ask for
 	 * @throws ValidationException
 	 *   when the request is not one that can be run, carrying every problem
 	 *   found
 	 */
-	public static Mapped toEngine(SearchRequest body, int maxPageDepth, int maxRescoreWindow) {
+	public static Mapped toEngine(SearchRequest body, SearchLimits limits) {
 		if(body == null) {
 			body = new SearchRequest(
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
@@ -466,10 +469,24 @@ public class SearchRequestMapper {
 
 		var errors = Lists.mutable.<ErrorMessage>empty();
 
+		/*
+		 * Measured before anything is mapped: a body holding more clauses than
+		 * the node allows is refused without being read the rest of the way.
+		 * Describing everything else wrong with it is the work the cap exists
+		 * to avoid.
+		 */
+		if(!QueryBudget.check(body, limits, errors)) {
+			throw new ValidationException(errors);
+		}
+
 		var limit = se.l4.exofind.engine.query.SearchRequest.DEFAULT_LIMIT;
 		if(body.limit() != null) {
 			if(body.limit() < 0) {
 				errors.add(LIMIT_NEGATIVE.toMessage(Location.create("/limit")));
+			} else if(body.limit() > limits.maxLimit()) {
+				errors.add(
+					LIMIT_TOO_LARGE.toMessage(Location.create("/limit"), "max", limits.maxLimit())
+				);
 			} else {
 				limit = body.limit();
 			}
@@ -525,8 +542,8 @@ public class SearchRequestMapper {
 		 * nothing - which is exactly what makes `next`/`previous` the way
 		 * past it.
 		 */
-		if(position.offset() != null && (long) position.offset() + limit > maxPageDepth) {
-			errors.add(PAGE_TOO_DEEP.toMessage(Location.create(""), "max", maxPageDepth));
+		if(position.offset() != null && (long) position.offset() + limit > limits.maxPageDepth()) {
+			errors.add(PAGE_TOO_DEEP.toMessage(Location.create(""), "max", limits.maxPageDepth()));
 		}
 
 		var rescore = toRescore(
@@ -534,7 +551,7 @@ public class SearchRequestMapper {
 			hits,
 			limit,
 			position.offset(),
-			maxRescoreWindow,
+			limits.maxRescoreWindow(),
 			errors
 		);
 

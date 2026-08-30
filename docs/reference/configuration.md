@@ -242,12 +242,20 @@ The following table lists document cache configuration variables:
 
 ## Search
 
+Each variable in this section caps what a single request may ask a node to do. For the reasoning behind the caps, see [Cost of a single search](../explanation/node-resources.md#cost-of-a-single-search).
+
 The following table lists search configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `EXOFIND_SEARCH_MAX_LIMIT` | Maximum number of results one page may hold. Requests asking for a larger `limit` are rejected with `search:limit:too_large`. The node ranks, reads, and highlights every result on the page, so this caps what one response costs. | `1000` |
 | `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | Maximum result depth allowed for offset-based pagination. Requests exceeding this depth are rejected with `search:page:too_deep`, and page numbers past the limit are not returned. Cursor-based pagination using `next` and `previous` is not capped. | `10000` |
 | `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | Maximum number of results a `rescore` block may score a second time. Requests asking for a larger window are rejected with `search:rescore:window_invalid`. Every result in the window is scored again on every request, so this caps what one search costs. | `1000` |
+| `EXOFIND_SEARCH_MAX_KNN_K` | Maximum number of neighbours one `knn` clause may ask for. Requests with a larger `k` are rejected with `search:clause:k_too_large`. The vector index collects `k` candidates per segment, so this caps what one clause costs. | `1000` |
+| `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | Maximum number of results read from each ranking of a `fuse` clause. Requests with a larger `depth` are rejected with `search:clause:depth_too_large`. Every ranking runs as its own search and is read to this depth. | `1000` |
+| `EXOFIND_SEARCH_MAX_CLAUSES` | Maximum number of clauses one request may hold, counted across `query`, `filters`, `hits.when`, and `rescore.boost`, including the clauses nested inside other clauses. Requests holding more are rejected with `search:query:too_many_clauses`. | `1024` |
+| `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Maximum nesting depth of clauses. A clause the request carries directly counts as depth one, and the clauses inside it as depth two. Requests nesting deeper are rejected with `search:query:too_deep`. | `20` |
+| `EXOFIND_SEARCH_TIMEOUT` | How long one search may collect results for. A search that runs longer is abandoned and answered with `search:timeout`, and the results it collected are dropped. The budget covers collecting matches, not the time spent reading stored fields or building fragments. Set to `0` to let every search run to completion. | `30s` |
 
 ## Metrics
 

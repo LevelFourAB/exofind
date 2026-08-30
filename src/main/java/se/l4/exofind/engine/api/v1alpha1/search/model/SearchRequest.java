@@ -148,8 +148,9 @@ public record SearchRequest(
 	 */
 	@Schema(
 		description = """
-			Maximum number of results to return. Setting `limit` to `0` \
-			returns the total match count without hits.""",
+			Maximum number of results to return, at most \
+			`EXOFIND_SEARCH_MAX_LIMIT`. Setting `limit` to `0` returns the \
+			total match count without hits.""",
 		defaultValue = "10"
 	)
 	Integer limit,

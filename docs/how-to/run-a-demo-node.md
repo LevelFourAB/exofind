@@ -54,7 +54,7 @@ A public search endpoint consumes public compute resources. To limit costs and p
 
 - **Configure read-only storage credentials:** Set `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` to grant read-only access to the bucket. Combined with `EXOFIND_INDEXER_ENABLED=false`, this prevents modifications to an index.
 - **Configure rate limiting:** Place a Content Delivery Network (CDN) or reverse proxy in front of the node. The search engine does not provide rate limiting.
-- **Cap queries:** Set `EXOFIND_SEARCH_MAX_PAGE_DEPTH` to bound offset pagination depth. The node refuses searches that exceed this depth rather than answering them slowly.
+- **Cap queries:** Lower `EXOFIND_SEARCH_MAX_LIMIT`, `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, and `EXOFIND_SEARCH_MAX_CLAUSES` to what your demo pages ask for, and set `EXOFIND_SEARCH_TIMEOUT` to the longest answer you are willing to pay for. The node refuses a request over a cap instead of answering it slowly. See [Search configuration](../reference/configuration.md#search).
 
 ## Loading example data
 

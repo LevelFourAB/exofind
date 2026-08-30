@@ -83,6 +83,21 @@ When a node exhausts its heap, remaining alive in an unstable state causes clust
 
 Setting `-XX:+ExitOnOutOfMemoryError` ensures that a failing node terminates immediately. Process termination releases local file locks and stops lease renewal heartbeats, allowing standby candidate nodes to take over indexing immediately.
 
+## Cost of a single search
+
+Heap sizing decides how much memory a node has. How much of it one request may spend is a separate question. A search request describes its own work: how many results to rank, how far into a vector index to read, and how many clauses to evaluate. A caller asking for a page of a million hits, or a query of a hundred thousand clauses, exhausts the heap of a node that was sized correctly.
+
+The caps in the [search configuration](../reference/configuration.md#search) bound each of those numbers. A node answers whoever reaches it, and the [Trust model](trust-model.md) allows browsers to search a public node directly. A rate limit in front of the node counts requests, and one request can cost a thousand times more than another.
+
+Two kinds of cap do the work:
+
+- **Caps on the request** bound what a caller may ask for before the search runs: the size of a page, the depth of a `knn` or `fuse` clause, and the number and nesting of clauses. A request over any of them is rejected with a `400` naming the setting it exceeded, and the node does no search work.
+- **The time budget** bounds what a search costs once it runs. `EXOFIND_SEARCH_TIMEOUT` stops collection that runs longer, and the node answers `search:timeout` with a `503`.
+
+The results collected before the budget ran out are dropped. A partial page carries no mark of being partial. Its totals, facet counts, and cursors describe an index the node did not finish reading, and a caller cannot tell that page from a complete one.
+
+The two kinds are not interchangeable. Request caps are predictable, so a client can be written against them, but they bound a description of the work instead of the work itself. A two-clause query over a large index costs more than a twenty-clause query over a small one. The time budget bounds the work itself, and a caller cannot tell in advance which searches it stops.
+
 ## Kernel memory mapping limits
 
 Lucene maps multiple files for each index segment. A node serving numerous indexes or handling frequent segment merges can open tens of thousands of memory mappings.

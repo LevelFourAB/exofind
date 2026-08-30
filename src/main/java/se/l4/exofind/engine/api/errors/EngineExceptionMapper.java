@@ -30,6 +30,7 @@ import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
+import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.registry.RegistryAuditUnavailableException;
 import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.settings.SearchSettingsException;
@@ -244,6 +245,14 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			 * so the state is what has to change rather than the request.
 			 */
 			return Response.Status.CONFLICT;
+		} else if(e instanceof SearchTimeoutException) {
+			/*
+			 * The search is well formed and the node could not answer it in the
+			 * time it allows. A narrower search is answered, and so is the same
+			 * one on a node under less load. The caller is told to retry rather
+			 * than that something is wrong.
+			 */
+			return Response.Status.SERVICE_UNAVAILABLE;
 		} else if(e instanceof IndexClosedException) {
 			/*
 			 * The request raced the index being closed to make room on this
