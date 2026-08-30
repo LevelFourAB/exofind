@@ -218,8 +218,14 @@ public class ObjectStorageSync implements StateSync {
 			 * manifest is what actually decides the push, but that happens
 			 * last - checking first keeps a node that has already lost from
 			 * uploading files nobody will reference.
+			 *
+			 * What comes back is what the remote is known to hold, which is
+			 * what the uploads below skip against. It is not the baseline this
+			 * push was built from when the remote no longer holds a manifest:
+			 * there is nothing left to have uploaded the files to, whatever
+			 * this node last synchronized.
 			 */
-			ensurePushBaseline(previousManifest);
+			var baseline = ensurePushBaseline(previousManifest);
 
 			/*
 			 * The epoch is claimed before the first upload of this session, so
@@ -228,7 +234,7 @@ public class ObjectStorageSync implements StateSync {
 			 * can be writing to.
 			 */
 			if(sessionEpoch < 0) {
-				claimEpoch();
+				claimEpoch(baseline);
 			}
 
 			manifest = manifest.toBuilder()
@@ -243,7 +249,7 @@ public class ObjectStorageSync implements StateSync {
 				.log("Pushing changes to remote");
 
 			var currentFiles = new HashMap<String, ManifestFile>();
-			for(var file : previousManifest.getFilesList()) {
+			for(var file : baseline.getFilesList()) {
 				currentFiles.put(file.getName(), file);
 			}
 
@@ -279,7 +285,7 @@ public class ObjectStorageSync implements StateSync {
 			writeManifest(manifest);
 			this.lastSyncedManifest = manifest;
 
-			deleteObsoleteRemoteObjects(previousManifest, manifest);
+			deleteObsoleteRemoteObjects(baseline, manifest);
 			maybeSweepRemote(manifest);
 		} finally {
 			lock.unlock();
@@ -293,15 +299,19 @@ public class ObjectStorageSync implements StateSync {
 	 * before its first upload, the loser walks away without having overwritten
 	 * anything at all.
 	 *
+	 * @param baseline
+	 *   what the remote is known to hold, which is what the claim is written
+	 *   on top of. Naming files the remote does not have would publish a
+	 *   manifest a reader cannot follow for as long as the claim stands
 	 * @throws SyncConflictException
 	 *   if another node changed the remote manifest first
 	 * @throws IOException
 	 *   if the claim could not be written
 	 */
-	private void claimEpoch() throws IOException {
-		var claimed = lastSyncedManifest.toBuilder()
-			.setVersion(lastSyncedManifest.getVersion() + 1)
-			.setEpoch(lastSyncedManifest.getEpoch() + 1)
+	private void claimEpoch(Manifest baseline) throws IOException {
+		var claimed = baseline.toBuilder()
+			.setVersion(baseline.getVersion() + 1)
+			.setEpoch(baseline.getEpoch() + 1)
 			.build();
 
 		logger.atInfo()
@@ -474,16 +484,20 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	/**
-	 * Make sure the remote manifest is still the one a push builds on.
+	 * Make sure the remote manifest is still the one a push builds on, and say
+	 * what the remote is known to hold.
 	 *
 	 * @param baseline
 	 *   manifest describing what this node believes the remote holds
+	 * @return
+	 *   {@code baseline} while the remote still holds it, and a manifest
+	 *   listing no files when the remote holds no manifest at all
 	 * @throws SyncConflictException
 	 *   if the remote holds a manifest this node has never synchronized
 	 * @throws IOException
 	 *   if the remote could not be asked
 	 */
-	private void ensurePushBaseline(Manifest baseline) throws IOException {
+	private Manifest ensurePushBaseline(Manifest baseline) throws IOException {
 		if(lastSyncedManifestETag == null) {
 			/*
 			 * This node has not seen the remote manifest since it started.
@@ -495,12 +509,12 @@ public class ObjectStorageSync implements StateSync {
 
 			if(pulled == null) {
 				// The remote holds no manifest, the push is the first write
-				return;
+				return emptyBaseline(baseline);
 			}
 
 			if(pulled.manifest().equals(baseline)) {
 				this.lastSyncedManifestETag = quoteETag(pulled.eTag());
-				return;
+				return baseline;
 			}
 
 			throw new SyncConflictException(
@@ -518,7 +532,7 @@ public class ObjectStorageSync implements StateSync {
 			 * as a first write and recreates it.
 			 */
 			this.lastSyncedManifestETag = null;
-			return;
+			return emptyBaseline(baseline);
 		}
 
 		if(!etag.equals(lastSyncedManifestETag)) {
@@ -527,6 +541,27 @@ public class ObjectStorageSync implements StateSync {
 					+ " was replaced by another node; pull before pushing"
 			);
 		}
+
+		return baseline;
+	}
+
+	/**
+	 * What a push builds on when the remote holds no manifest. Nothing is
+	 * known to be there, so every file is uploaded rather than skipped for
+	 * matching what this node last synchronized - a manifest listing files
+	 * that were never uploaded is one no reader can ever follow, and only
+	 * whoever removed the manifest could tell that the objects went with it.
+	 *
+	 * <p>The version and the epoch carry over rather than starting again. A
+	 * version that went backwards would leave readers skipping the manifest
+	 * for standing below the one they were told about, and an epoch reused
+	 * from an earlier session would write the keys of files that session
+	 * uploaded.
+	 */
+	private static Manifest emptyBaseline(Manifest baseline) {
+		return baseline.toBuilder()
+			.clearFiles()
+			.build();
 	}
 
 	/**

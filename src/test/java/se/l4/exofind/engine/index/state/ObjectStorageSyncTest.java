@@ -1204,6 +1204,77 @@ public class ObjectStorageSyncTest {
 		push(segment, next);
 
 		verifyRemoteManifest(2, segment, next);
+		verifyRemoteFile(segment);
+		verifyRemoteFile(next);
+	}
+
+	/**
+	 * A remote emptied under this node - a prefix removed by hand, objects a
+	 * lifecycle rule expired - holds none of the files the last push put
+	 * there, however much of them this node's manifest still describes. The
+	 * push has to upload every file again: a manifest naming a file no object
+	 * backs is one every reader fails to pull, and the writer, which reads its
+	 * own disk, would never find out.
+	 */
+	@Test
+	void testPushUploadsEveryFileWhenTheRemoteWasEmptied() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var data = createLocalFile("_0.cfs", 64);
+		push(segment, data);
+
+		removeRemotePrefix();
+
+		var next = createLocalFile("segments_2", 12);
+		push(segment, data, next);
+
+		verifyRemoteManifest(2, data, segment, next);
+		verifyRemoteFile(segment);
+		verifyRemoteFile(data);
+		verifyRemoteFile(next);
+	}
+
+	/**
+	 * The same emptied remote, met by a node that has just started: it has its
+	 * manifest from disk and no tag, so the fetch that tells a first write
+	 * apart from another node's manifest is what finds the remote empty.
+	 */
+	@Test
+	void testPushAfterRestartUploadsEveryFileWhenTheRemoteWasEmptied() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var data = createLocalFile("_0.cfs", 64);
+		push(segment, data);
+
+		removeRemotePrefix();
+
+		var restarted = newSync(s3Client);
+		var next = createLocalFile("segments_2", 12);
+		push(restarted, segment, data, next);
+
+		verifyRemoteManifest(2, data, segment, next);
+		verifyRemoteFile(segment);
+		verifyRemoteFile(data);
+		verifyRemoteFile(next);
+	}
+
+	/**
+	 * Remove everything the index has in the remote, manifest and objects
+	 * alike, the way emptying the prefix by hand would.
+	 */
+	private void removeRemotePrefix() {
+		var pages = s3Client.listObjectsV2Paginator(
+			b -> b.bucket(TestObjectStorage.BUCKET).prefix(bucketPrefix + "/")
+		);
+
+		for(var page : pages) {
+			for(var object : page.contents()) {
+				s3Client.deleteObject(
+					DeleteObjectRequest.builder()
+						.bucket(TestObjectStorage.BUCKET)
+						.key(object.key())
+						.build()
+				);
+			}
+		}
 	}
 
 	/**
