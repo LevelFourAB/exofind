@@ -5,6 +5,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 import { DEMOS } from './src/examples/demos.mjs';
+import { DOCS_INDEX, PARTS } from './src/parts.mjs';
 import { remarkRewriteLinks, remarkStripTitle } from './src/plugins/remark-docs.mjs';
 import { sidebarFrom } from './src/sidebar.mjs';
 import { BASE, REPO, SITE } from './src/site.mjs';
@@ -23,6 +24,18 @@ export default defineConfig({
 	 * page run over every document rather than the files being changed. What
 	 * each one does is on the plugin.
 	 */
+	/*
+	 * The parts of the manual are read from `docs/README.md` here and handed
+	 * to the pages as a constant, because a rendered page is a bundle and a
+	 * path relative to a source file no longer leads to the repository from
+	 * one. What reads it is `./src/nav.mjs`.
+	 */
+	vite: {
+		define: {
+			__DOCS_PARTS__: JSON.stringify(PARTS)
+		}
+	},
+
 	markdown: {
 		remarkPlugins: [
 			remarkStripTitle,
@@ -65,11 +78,11 @@ export default defineConfig({
 			},
 
 			sidebar: [
-				...sidebarFrom(new URL('README.md', docsRoot)),
+				...sidebarFrom(DOCS_INDEX),
 				{
 					label: 'Demos',
-					/* Collapsed for the reason the documentation sections are. */
-					collapsed: true,
+					/* Open for the reason the documentation groups are. */
+					collapsed: false,
 					items: [
 						{ label: 'All demos', link: '/examples/' },
 						...DEMOS.map(entry => ({

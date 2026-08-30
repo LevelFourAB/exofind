@@ -262,18 +262,50 @@ starlight-menu-button[aria-expanded='true'] button {
 	padding-block-start: 1.875rem;
 }
 
-/*
- * A section that is not the one being read is one line. The manual is
- * forty-odd pages, and a column that lists every one of them at once cannot be
- * read at a glance; which section is open is set where the sidebar is built,
- * in `../sidebar.mjs`.
- */
+/* A section heading is a line of the column rather than a control on it. */
 .sidebar-content summary {
 	padding-inline: 0;
 }
 
 .sidebar-content ul.top-level > li + li {
 	margin-top: 1.625rem;
+}
+
+/*
+ * A page listed at the top of the column, above the first section - a tutorial
+ * is - is a page like the ones under a heading and is set like one, hairline
+ * and all. Starlight sets a link that is in no group as a heading instead,
+ * which is what these are not: what they are is where the manual starts.
+ */
+.sidebar-content ul.top-level > li:has(> a) {
+	border-inline-start: 1px solid var(--sl-color-gray-5);
+}
+
+.sidebar-content ul.top-level > li:has(> a[aria-current='page']) {
+	border-inline-start: 2px solid var(--sl-color-text-accent);
+}
+
+.sidebar-content ul.top-level > li:has(> a[aria-current='page']) > a {
+	padding-inline-start: 0.8125rem;
+}
+
+.sidebar-content ul.top-level > li > a.large {
+	font-size: var(--sl-text-sm);
+}
+
+/* Where the reader is keeps the mark every other page in the column gets. */
+.sidebar-content ul.top-level > li > a.large:not([aria-current='page']) {
+	color: var(--sl-color-gray-2);
+	font-weight: 400;
+}
+
+.sidebar-content ul.top-level > li > a.large:not([aria-current='page']):hover {
+	color: var(--sl-color-white);
+}
+
+/* They are one list, so they stand together; the sections stand apart. */
+.sidebar-content ul.top-level > li:has(> a) + li:has(> a) {
+	margin-top: 0;
 }
 
 .sidebar-content ul.top-level > li > details > summary:hover .large,

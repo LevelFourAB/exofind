@@ -24,7 +24,14 @@ Three components handle documentation loading:
   [`docs/README.md`](../docs/README.md). Adding a document to `docs/README.md`
   includes it in the sidebar. Each `##` heading becomes a sidebar group, and a
   `###` heading under it becomes a group nested inside that one, which is how
-  a long section such as the how-to guides is divided.
+  a long section such as the how-to guides is divided. The sections named in
+  `FLATTENED` are shown as their contents instead of as a group: the tutorials
+  become top-level links, and the sub-sections of the how-to guides become the
+  groups. Every group is open, and Starlight remembers the ones a reader
+  closes.
+- [`src/parts.mjs`](src/parts.mjs) reads the same file for which documents each
+  `##` section holds. `astro.config.mjs` defines the result into the bundle,
+  because a rendered page cannot read the repository.
 
 To add a new document, create a file in `docs/` and add a link to
 `docs/README.md`. You do not need to edit files in this directory.
@@ -37,12 +44,14 @@ the sidebar, which hides documentation links from visitors on those pages.
 [`src/components/Header.astro`](src/components/Header.astro) replaces the
 default header to provide section links:
 
-- [`src/nav.mjs`](src/nav.mjs) reads documentation sections from the sidebar
-  definition. Each section links to its first page. Adding a section to
-  `docs/README.md` updates both the sidebar and the header.
-- `src/nav.mjs` excludes the tutorial from the header because the front page
-  links to it directly. If `nav.mjs` references a section that does not exist,
-  the build fails.
+- [`src/nav.mjs`](src/nav.mjs) lists the parts of the manual, whatever shape
+  the sidebar shows them in, and then the demo pages. Each section links to its
+  first page. Adding a section to `docs/README.md` updates both the sidebar and
+  the header. The same file supplies the label over a page title, which names
+  every part rather than only the ones the header carries.
+- `src/nav.mjs` excludes the tutorials from the header because the front page
+  links to them directly. If `nav.mjs` references a section that does not
+  exist, the build fails.
 
 The custom header also places search alongside the theme toggle and links.
 By default, Starlight aligns search with the prose column, but the front page

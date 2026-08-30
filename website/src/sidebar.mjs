@@ -20,27 +20,90 @@ const SECTION = /^##\s+(.+?)\s*$/;
 /** A `### Sub-section` heading, which divides a long section. */
 const SUBSECTION = /^###\s+(.+?)\s*$/;
 
+/*
+ * Sections the sidebar shows as what is in them rather than as a group of
+ * their own. Both are sections a reader is in most of the time: the tutorials
+ * are two documents, which cost less room than the heading over them, and the
+ * how-to guides are most of the manual, so a group holding all of them is a
+ * step between the reader and every page they came for. Their sub-sections
+ * become the groups instead. The other sections stay whole, because each is a
+ * kind of documentation a reader goes to deliberately.
+ *
+ * A name here that matches no section is an error rather than a section
+ * quietly returning to a group of its own once it is renamed. The part of the
+ * manual a page belongs to is still named in the header and over the page
+ * title, and that is read from the same index - see `./parts.mjs`.
+ */
+const FLATTENED = ['Tutorials', 'How-to guides'];
+
 /**
- * Build the sidebar groups from a documentation index.
+ * Build the sidebar entries from a documentation index.
  *
  * A `##` heading is a group and a `###` heading under it is a group nested
  * inside that one, so a section long enough to need dividing is divided in the
- * index rather than here. A heading that lists no document is left out.
+ * index rather than here. A heading that lists no document is left out, and a
+ * section named in `FLATTENED` is replaced by what it holds.
  *
- * Sections arrive collapsed, so that only the one being read is open: the
- * manual is forty-odd pages, and a column that lists every one of them at once
- * is a column nobody reads. Starlight opens whichever group holds the current
- * page regardless of this, and remembers any the reader opens themselves.
- * Sub-sections are left open, because a reader who has opened a section is
- * looking at what is in it.
+ * Groups arrive open. The column is long enough to scroll, but a reader who
+ * has to open a group to find out whether what they want is in it is reading
+ * labels rather than pages, and the labels are not the manual. Starlight
+ * remembers whichever groups the reader closes themselves.
  *
  * @param {URL} index the `README.md` that lists the documentation
- * @returns Starlight sidebar groups, one per section that lists documents
- * @throws {Error} if the index lists no document at all
+ * @returns Starlight sidebar entries, groups and links both
+ * @throws {Error} if the index lists no document at all, or if a section that
+ *   is to be flattened is not in it
  */
 export function sidebarFrom(index) {
-	const groups = [];
-	let group = null;
+	const flattened = new Set(FLATTENED);
+
+	const listing = sectionsIn(index).flatMap(section => flattened.delete(section.label)
+		? section.items.map(open)
+		: [open(section)]);
+
+	if(flattened.size > 0) {
+		throw new Error(
+			`The sidebar is told to flatten sections the documentation index does not have: ${[...flattened].join(', ')}`
+		);
+	}
+
+	if(listing.length === 0) {
+		throw new Error(`No documents listed in ${index.pathname}`);
+	}
+
+	return listing;
+}
+
+/**
+ * @typedef {object} Part
+ * @property {string} label what the documentation index calls the part
+ * @property {string[]} slugs every document in it, in the order it lists them
+ */
+
+/**
+ * The parts of the manual - what the `##` headings of the documentation index
+ * are, and which documents are under each. This is what the header and the
+ * label over a page title are built from: the sidebar shows some sections as
+ * their contents, and a reader still has to be told which kind of
+ * documentation they have landed in.
+ *
+ * @param {URL} index the `README.md` that lists the documentation
+ * @returns {Part[]} one per section that lists documents, in index order
+ */
+export function partsFrom(index) {
+	return sectionsIn(index).map(section => ({
+		label: section.label,
+		slugs: slugsIn(section)
+	}));
+}
+
+/**
+ * The `##` sections of a documentation index, each holding links and the
+ * sub-groups its `###` headings make, and none of them empty.
+ */
+function sectionsIn(index) {
+	const sections = [];
+	let section = null;
 	let subgroup = null;
 
 	/*
@@ -55,39 +118,30 @@ export function sidebarFrom(index) {
 		 * which heading is the more specific one without relying on that.
 		 */
 		const subsection = line.match(SUBSECTION);
-		if(subsection && group) {
+		if(subsection && section) {
 			subgroup = { label: subsection[1], items: [] };
-			group.items.push(subgroup);
+			section.items.push(subgroup);
 			continue;
 		}
 
-		const section = line.match(SECTION);
-		if(section) {
-			group = { label: section[1], items: [] };
+		const heading = line.match(SECTION);
+		if(heading) {
+			section = { label: heading[1], items: [] };
 			subgroup = null;
-			groups.push(group);
+			sections.push(section);
 			continue;
 		}
 
 		const entry = line.match(ENTRY);
-		if(entry && group) {
-			(subgroup ?? group).items.push({
+		if(entry && section) {
+			(subgroup ?? section).items.push({
 				label: entry[1],
 				slug: entry[2].replace(/\.md$/, '')
 			});
 		}
 	}
 
-	const listing = groups
-		.map(pruned)
-		.filter(candidate => candidate !== null)
-		.map(group => ({ ...group, collapsed: true }));
-
-	if(listing.length === 0) {
-		throw new Error(`No documents listed in ${index.pathname}`);
-	}
-
-	return listing;
+	return sections.map(pruned).filter(candidate => candidate !== null);
 }
 
 /**
@@ -101,4 +155,14 @@ function pruned(group) {
 		.filter(item => item !== null);
 
 	return items.length > 0 ? { ...group, items } : null;
+}
+
+/** A group as Starlight takes it, open rather than collapsed. A link as it is. */
+function open(item) {
+	return item.items ? { ...item, collapsed: false } : item;
+}
+
+/** Every document under a group, however deeply it is grouped. */
+function slugsIn(item) {
+	return item.items ? item.items.flatMap(slugsIn) : [item.slug];
 }
