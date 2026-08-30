@@ -211,6 +211,33 @@ public class ObjectStorage {
 	}
 
 	/**
+	 * Whether a failed conditional write says this writer did not get its
+	 * change in, rather than that something went wrong. What follows either
+	 * way is the same: read what the storage holds now, build the change on
+	 * top of it, and write again.
+	 *
+	 * <p>A storage that evaluated the condition against what it holds answers
+	 * {@code 412}. AWS S3 answers {@code 409} instead when a write to the same
+	 * key at the same moment kept it from deciding, and asks for the request to
+	 * be made again. Nothing was written in either case, so a caller that
+	 * rereads before retrying has the same work to do for both - and a caller
+	 * that treated {@code 409} as an error would report a lost race as a
+	 * storage failure.
+	 *
+	 * <p>Not for a caller whose answer to a refusal is to give something up:
+	 * {@code 409} does not say another writer won, only that the write did not
+	 * happen. See {@link se.l4.exofind.engine.index.state.ObjectStorageSync},
+	 * where a refused manifest costs the node its unpushed documents and the
+	 * conflict is only concluded once a write has actually been refused.
+	 *
+	 * @param e
+	 * @return
+	 */
+	public static boolean isConditionalWriteLost(S3Exception e) {
+		return e.statusCode() == 412 || e.statusCode() == 409;
+	}
+
+	/**
 	 * Check that the storage enforces conditional writes. A storage that
 	 * predates them ignores the condition instead of refusing the request, so
 	 * the only way to know is to write against conditions that do not hold and
@@ -300,7 +327,7 @@ public class ObjectStorage {
 				client.putObject(builder.build(), RequestBody.fromBytes(contents));
 				return true;
 			} catch(S3Exception e) {
-				if(e.statusCode() == 412) {
+				if(isConditionalWriteLost(e)) {
 					return false;
 				}
 

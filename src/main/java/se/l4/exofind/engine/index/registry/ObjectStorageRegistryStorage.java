@@ -101,7 +101,7 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 
 			return ObjectStorageSync.quoteETag(response.eTag());
 		} catch(S3Exception e) {
-			if(e.statusCode() == 412) {
+			if(ObjectStorage.isConditionalWriteLost(e)) {
 				return null;
 			}
 

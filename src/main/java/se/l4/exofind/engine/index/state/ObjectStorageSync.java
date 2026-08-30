@@ -568,6 +568,15 @@ public class ObjectStorageSync implements StateSync {
 					return resolveRefusedManifest(manifest);
 				}
 
+				/*
+				 * A storage that could not decide the condition - the conflict
+				 * it reports rather than the refusal, see
+				 * ObjectStorage.isConditionalWriteLost - is left to the retries.
+				 * Concluding a conflict here is what costs this node the
+				 * documents it has not pushed, and a write that did not happen
+				 * is no reason to give them up: the attempt that follows is
+				 * refused outright if another writer really did take over.
+				 */
 				throw e;
 			}
 		});
@@ -1370,6 +1379,17 @@ public class ObjectStorageSync implements StateSync {
 		if(e instanceof AwsServiceException service) {
 			// Anything the remote reports as its own problem may pass
 			if(service.statusCode() >= 500) {
+				return true;
+			}
+
+			/*
+			 * A conditional write the storage could not decide because
+			 * something else wrote the same key at that moment. Nothing was
+			 * written, and the storage asks for the request to be made again -
+			 * which is also how a writer that has actually lost finds out, by
+			 * being refused outright the next time.
+			 */
+			if(service.statusCode() == 409) {
 				return true;
 			}
 
