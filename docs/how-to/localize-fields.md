@@ -108,3 +108,12 @@ Declaring a locale applies the following analysis and sorting behaviors:
 ### Multiple values per locale
 
 Localized fields support one value per locale without declaring `multiple`. To store multiple values within the same locale, declare `multiple` on the field.
+
+## Related
+
+- [Locales](../reference/locales.md) - The languages with rules, and what each one gets.
+- [Analysis](../reference/analysis.md) - Chains, compound words, and collation.
+- [Define an index](define-an-index.md) - Declaring a field as localized.
+- [Update parts of documents](update-parts-of-documents.md) - Changing one locale without resending the rest.
+- [Search an index](search-an-index.md) - Choosing the locale a search runs in.
+- [Customize text analysis](customize-analysis.md) - Overriding the chain a locale gives a field.

@@ -85,3 +85,11 @@ Verify that your client handles failure conditions as expected:
 1. Send a request with an invalid field name to confirm your client parses the `errors` array, extracts `path` and `arguments`, and surfaces a `400` validation error without retrying.
 2. Send a `PUT` request with an outdated `If-Match` header to confirm your client detects `412 Precondition Failed`, fetches the fresh `ETag`, and reapplies the update.
 3. Simulate a `503 Service Unavailable` response to verify that your client waits and retries idempotent operations.
+
+## Related
+
+- [Errors](../reference/errors.md) - The error body and the code vocabulary.
+- [API conventions](../reference/api-conventions.md) - Media types, conditional requests, forwarding, and what each status code means.
+- [Generate an API client](generate-a-client.md) - Building the client the error handling sits in.
+- [Index documents](index-documents.md) - Recovering from a refused batch.
+- [Operate a deployment](operate-a-deployment.md) - Telling a node that is behind from one that is broken.

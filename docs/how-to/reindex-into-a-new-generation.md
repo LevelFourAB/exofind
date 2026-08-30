@@ -195,3 +195,12 @@ DELETE /v1alpha1/admin/indexes/products@1
 ```
 
 **Note:** You cannot delete the generation that an index currently answers from. Unremoved generations continue to consume storage and local disk space.
+
+## Related
+
+- [Roll out a definition change](roll-out-a-definition-change.md) - The rollout the reindex job fills a generation for.
+- [Survive Lucene upgrades](survive-lucene-upgrades.md) - Reindexing an index before it becomes unreadable.
+- [Admin API](../reference/admin-api.md) - The generation and reindex job endpoints.
+- [Generations](../explanation/generations.md) - Why an index is a name with generations under it.
+- [Operate a deployment](operate-a-deployment.md) - Watching disk while two generations are held.
+- [Read documents back](read-documents.md) - Refilling from a source outside the engine instead.

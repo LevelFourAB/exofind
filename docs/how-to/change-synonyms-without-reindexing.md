@@ -82,3 +82,11 @@ If a synonym rule does not produce the expected search results, check the follow
 - **The analysis chain removed the term**: Synonym terms pass through the target field's analysis chain. If the chain removes a term completely (such as a stopword or stripped punctuation), that term matches nothing, and the engine omits the rule from the set while leaving other rules active.
 - **Partial word input in autocomplete fields**: On fields with `autocomplete` usage, synonym rules take effect only when a term is typed in full. Prefixes typed before the full word do not trigger synonym expansion.
 - **Unsupported features on the node**: If a node runs a version that does not support `query_synonyms`, it sets the search settings object aside and searches using the index definition alone. Inspect the settings response or the index status to check if `unsupportedFeatures` or `settingsUnsupportedFeatures` lists `query_synonyms`.
+
+## Related
+
+- [Customize text analysis](customize-analysis.md) - Synonym sets that apply when values are indexed.
+- [Exclude words from typo tolerance](exclude-words-from-typo-tolerance.md) - The other search setting that changes matching without a reindex.
+- [Analysis](../reference/analysis.md) - Rule syntax and where a synonym filter sits in a chain.
+- [Admin API](../reference/admin-api.md) - The search settings endpoints and their patch paths.
+- [Relevance](../explanation/relevance.md) - Which layers a change reaches without reindexing.

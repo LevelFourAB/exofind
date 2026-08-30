@@ -77,3 +77,11 @@ If typo exclusions do not produce the expected search behavior, check the follow
 - **Field removed in a newer generation**: Search settings outlive generations. If a newly promoted generation lacks a field named by the exclusion list, searches in that field forgive mistakes as declared in the index definition rather than failing.
 - **Unsupported features on the node**: If a node runs a version that does not support the `typo_exclusions` capability, it sets the search settings object aside and searches using the index definition alone. Check if `unsupportedFeatures` in the settings response or `status.settingsUnsupportedFeatures` in the index status lists `typo_exclusions`.
 - **Query disables typos entirely**: A search clause sent with `"typos": "off"` matches every word exactly as typed. Typo exclusion lists change nothing for queries where typo tolerance is already turned off.
+
+## Related
+
+- [Search API](../reference/search-api.md) - The `typos` option on a clause.
+- [Change synonyms without reindexing](change-synonyms-without-reindexing.md) - The other search setting that changes matching without a reindex.
+- [Define an index](define-an-index.md) - Declaring typo tolerance on a field.
+- [Admin API](../reference/admin-api.md) - The search settings endpoints and their patch paths.
+- [Find out why a result ranked where it did](explain-a-result.md) - Checking which words a clause matched on.

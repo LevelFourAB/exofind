@@ -121,3 +121,12 @@ The exception is a page that you permit anyone to search in full, as described i
 ## Disabling credential checking
 
 Setting `EXOFIND_AUTH_MODE=none` answers every request as though it were allowed everything. Dev mode runs this way. In any environment reachable by more than your own laptop, this setting allows anyone who can reach the port to delete every index. For both modes, see [Modes](../reference/auth.md#modes).
+
+## Related
+
+- [Authentication](../reference/auth.md) - Keys, permissions, roles, and the keys API.
+- [Trust model](../explanation/trust-model.md) - What a key reaches, and why it cannot be narrowed per end user.
+- [Run a public demo node](run-a-demo-node.md) - Answering searches with no credentials on purpose.
+- [Configuration](../reference/configuration.md) - The authentication settings and the bootstrap key.
+- [Generate an API client](generate-a-client.md) - Giving a generated client its key.
+- [Deploy on Kubernetes](deploy-on-kubernetes.md) - Holding keys in a cluster.

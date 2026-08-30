@@ -93,6 +93,11 @@ To switch to object storage:
 2. Define the indexes again.
 3. Load the documents again from their original data source.
 
-For more information, see [Run more than one node](run-multiple-nodes.md), and
-[Architecture](../explanation/architecture.md) for why the storage mode is
-configured explicitly rather than guessed.
+## Related
+
+- [Run more than one node](run-multiple-nodes.md) - Moving to a deployment that survives losing a node.
+- [Architecture](../explanation/architecture.md) - Why the storage mode is configured explicitly.
+- [Configuration](../reference/configuration.md) - The local and object storage settings.
+- [Secure a deployment](secure-a-deployment.md) - Keys for a node reachable by more than your laptop.
+- [Operate a deployment](operate-a-deployment.md) - Index status, disk, and upgrades.
+- [Getting started](../tutorials/getting-started.md) - Defining and searching a first index.

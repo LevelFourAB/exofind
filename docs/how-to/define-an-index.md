@@ -235,3 +235,14 @@ The score is multiplied by `1 + weight * shape`, where `shape` is a value betwee
 Documents with no value in the signal field retain their original match score.
 
 Choose a `pivot` value that represents a typical popular item in your catalog rather than the highest value. Fields used in signals must have sorting enabled. Signals do not rewrite stored documents, so you can add, modify, or remove them without reindexing.
+
+## Related
+
+- [Field types](../reference/field-types.md) - The types a field can have and the ways each can be used.
+- [Admin API](../reference/admin-api.md) - The definition endpoints, conditional requests, and index states.
+- [Index documents](index-documents.md) - Sending documents once the index exists.
+- [Customize text analysis](customize-analysis.md) - Presets, custom chains, and shared resources.
+- [Localize fields](localize-fields.md) - Holding values in several languages.
+- [Use sub-documents](use-sub-documents.md) - Fields whose values are documents of their own.
+- [Roll out a definition change](roll-out-a-definition-change.md) - Changing a definition for documents already indexed.
+- [Relevance](../explanation/relevance.md) - How boosts, tie breakers, and signals order results.
