@@ -23,8 +23,8 @@ package se.l4.exofind.engine.index.schema;
  * n-gram, is swapped for its querying counterpart.
  *
  * A component that takes a locale and has none set uses the locale of the
- * value being analyzed, which is what makes one chain serve a field whose
- * values come in several locales.
+ * value being analyzed, so one chain serves a field whose values come in
+ * several locales.
  */
 message AnalyzerDef {
 	/*
@@ -108,7 +108,15 @@ message CharFilterDef {
 	 * Replace everything a regular expression matches.
 	 */
 	message PatternReplace {
+		/*
+		 * The expression to match, in `java.util.regex` syntax.
+		 */
 		optional string pattern = 1;
+
+		/*
+		 * What each match becomes. `$1` and the other group references of
+		 * `java.util.regex` stand for the groups the expression captured.
+		 */
 		optional string replacement = 2;
 	}
 
@@ -125,8 +133,8 @@ message CharFilterDef {
 message TokenFilterDef {
 	/*
 	 * Unicode normalization (NFKC), so that the different ways of writing the
-	 * same character compare as one. Folding case as part of it is what makes
-	 * analysis case-insensitive.
+	 * same character compare as one. Folding case as part of it makes analysis
+	 * case-insensitive.
 	 */
 	message Normalize {
 		/*
@@ -200,10 +208,9 @@ message TokenFilterDef {
 	}
 
 	/*
-	 * Index every prefix of a token, which is what lets a partially typed word
-	 * be looked up as a term. At query time the token is kept whole and cut to
-	 * the longest prefix that was indexed, so both sides meet at the same
-	 * terms.
+	 * Index every prefix of a token, so a partially typed word can be looked
+	 * up as a term. At query time the token is kept whole and cut to the
+	 * longest prefix that was indexed, so both sides meet at the same terms.
 	 */
 	message EdgeNgram {
 		/*
@@ -218,10 +225,18 @@ message TokenFilterDef {
 	}
 
 	/*
-	 * Index every substring of a token between the given lengths.
+	 * Index every substring of a token between the given lengths, so a word
+	 * can be looked up by a piece taken from anywhere inside it.
 	 */
 	message Ngram {
+		/*
+		 * The shortest substring to index. Defaults to 1.
+		 */
 		optional int32 min_gram = 1;
+
+		/*
+		 * The longest substring to index. Defaults to 20.
+		 */
 		optional int32 max_gram = 2;
 	}
 

@@ -27,9 +27,9 @@ import "se/l4/exofind/engine/index/schema/analyzers.proto";
 /*
  * Config that enables filtering documents by the value of a field.
  *
- * Filtering is exact and does not score, which is what separates it from the
- * matching of a string field. How a string is normalized before it is compared
- * exactly lives on the string type, so this reads the same for every type.
+ * Filtering is exact and does not score, unlike the matching of a string
+ * field. How a string is normalized before it is compared exactly lives on the
+ * string type, so this reads the same for every type.
  */
 message FilterConfig {
 }
@@ -84,13 +84,23 @@ message SortConfig {
 message FacetConfig {
 }
 
+/*
+ * StringFieldTypeDef is a field holding text.
+ *
+ * The usages that depend on how the text is read live here: matching and
+ * autocomplete, which analyze it, and hierarchy, which reads it as a path.
+ * The usages that work the same whatever the value is - filtering, sorting
+ * and faceting - are declared on FieldDef, and `keyword` here says how a value
+ * is normalized before a filter compares it.
+ */
 message StringFieldTypeDef {
+	/*
+	 * Holds no rules yet. It exists so rules can be added later without
+	 * changing what is already stored.
+	 */
 	message ValidationConfig {
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 
 	/*
@@ -189,9 +199,9 @@ message StringFieldTypeDef {
 		optional string analyzer_ref = 5;
 
 		/*
-		 * Whether the engine-built chain splits compound words. On unless
-		 * turned off, so absence has to stay tellable apart from off - which
-		 * is why this is an enum rather than a message.
+		 * Whether the engine-built chain splits compound words. Splitting is
+		 * on unless turned off, so absence has to stay distinguishable from
+		 * off, which is why this is an enum and not a message.
 		 */
 		enum DecompoundMode {
 			/*
@@ -241,10 +251,10 @@ message StringFieldTypeDef {
 		ExactConfig exact = 7;
 
 		/*
-		 * How much the length of a value counts against it, which is what
-		 * ranks the same words covering a short value above them sitting
-		 * inside a long one. Counted unless turned off, so absence has to stay
-		 * tellable apart from off - which is why this is an enum rather than a
+		 * How much the length of a value counts against it. The same words
+		 * covering a short value rank above them sitting inside a long one.
+		 * Length is counted unless turned off, so absence has to stay
+		 * distinguishable from off, which is why this is an enum and not a
 		 * message.
 		 *
 		 * Read where the search runs rather than where the value was indexed,
@@ -293,11 +303,10 @@ message StringFieldTypeDef {
 	 * Config that reads values as paths through a tree, such as
 	 * `Men/Shoes/Running`, rather than as values standing on their own.
 	 *
-	 * Lives on the type rather than on FieldDef because it is about how a
-	 * value is read: what makes a path a path is the separator inside it.
-	 * Each value is written once per level it passes through, which is what
-	 * lets a facet count a level at a time and the `under` matcher narrow to
-	 * a subtree.
+	 * Lives on the type and not on FieldDef because it is about how a value is
+	 * read: a value becomes a path through the separator inside it. Each value
+	 * is written once per level it passes through, so a facet can count a
+	 * level at a time and the `under` matcher can narrow to a subtree.
 	 */
 	message HierarchyConfig {
 		/*
@@ -316,68 +325,65 @@ message StringFieldTypeDef {
 }
 
 /*
- * Int32FieldTypeDef is a definition of an int32 field.
+ * Int32FieldTypeDef is a field holding a 32-bit signed integer.
  */
 message Int32FieldTypeDef {
+	/*
+	 * The range a value has to fall in. A bound that is absent is not
+	 * enforced, and both bounds are inclusive. Documents indexed before a
+	 * bound was added keep the values they were given.
+	 */
 	message ValidationConfig {
-		/*
-		 * The minimum value of the field.
-		 */
 		optional int32 min = 1;
-		/*
-		 * The maximum value of the field.
-		 */
 		optional int32 max = 2;
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
 /*
- * Int64FieldTypeDef is a definition of an int64 field.
+ * Int64FieldTypeDef is a field holding a 64-bit signed integer.
  */
 message Int64FieldTypeDef {
+	/*
+	 * The range a value has to fall in, read like Int32FieldTypeDef's.
+	 */
 	message ValidationConfig {
 		optional int64 min = 1;
 		optional int64 max = 2;
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
 /*
- * FloatFieldTypeDef is a definition of a float field.
+ * FloatFieldTypeDef is a field holding a 32-bit floating point number.
  */
 message FloatFieldTypeDef {
+	/*
+	 * The range a value has to fall in, read like Int32FieldTypeDef's. A
+	 * bound that is not a finite number is refused.
+	 */
 	message ValidationConfig {
 		optional float min = 1;
 		optional float max = 2;
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
 /*
- * DoubleFieldTypeDef is a definition of a double field.
+ * DoubleFieldTypeDef is a field holding a 64-bit floating point number.
  */
 message DoubleFieldTypeDef {
+	/*
+	 * The range a value has to fall in, read like FloatFieldTypeDef's.
+	 */
 	message ValidationConfig {
 		optional double min = 1;
 		optional double max = 2;
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
@@ -387,15 +393,16 @@ message DoubleFieldTypeDef {
  * A value is an ISO 8601 date and time with an offset - `Z` or `+02:00` - and
  * is compared, filtered and ordered as the instant it names, at millisecond
  * precision. The offset only says where the clock was read; two values naming
- * the same instant are the same value. What was given is what results return.
+ * the same instant are the same value. Results return the value as it was
+ * given, offset and all.
  */
 message TimestampFieldTypeDef {
+	/*
+	 * Holds no rules yet, read like StringFieldTypeDef's.
+	 */
 	message ValidationConfig {
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
@@ -405,73 +412,95 @@ message TimestampFieldTypeDef {
  * an origin, and ordered by that distance, rather than filtered on as a value.
  */
 message GeoPointFieldTypeDef {
+	/*
+	 * Holds no rules yet, read like StringFieldTypeDef's.
+	 */
 	message ValidationConfig {
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
 /*
- * BooleanFieldTypeDef is a definition of a boolean field.
+ * BooleanFieldTypeDef is a field holding true or false.
  */
 message BooleanFieldTypeDef {
+	/*
+	 * Holds no rules yet, read like StringFieldTypeDef's.
+	 */
 	message ValidationConfig {
 	}
 
-	/**
-	 * Defines the validation rules for the field.
-	 */
 	ValidationConfig validation = 1;
 }
 
 /*
- * VectorFieldTypeDef is a definition of a vector field. Vectors are used for
- * similarity search, such as semantic search.
+ * VectorFieldTypeDef is a field holding a vector of floats, searched by
+ * similarity to another vector rather than by its own value.
  */
 message VectorFieldTypeDef {
+	/*
+	 * How many components every value has. Has to be given, and to be between
+	 * 1 and 4096. Lucene fixes the width of a vector field at the first value
+	 * written, so a value of any other width is refused and changing this
+	 * needs a new generation.
+	 */
 	optional int32 dimensions = 1;
 
-	/**
-	 * Different types of similarity metrics to use for the vector.
+	/*
+	 * How the distance between two vectors is measured.
 	 */
 	enum SimilarityMetric {
 		SIMILARITY_METRIC_UNSPECIFIED = 0;
+		/*
+		 * Ranks by the angle between the vectors, ignoring their length.
+		 */
 		SIMILARITY_METRIC_COSINE = 1;
-		/**
+		/*
 		 * Ranks by the dot product of the vectors, which only orders sensibly
 		 * when every vector is unit length. That is a promise the caller makes
 		 * about the model the vectors come from, not something checked per
 		 * value.
 		 */
 		SIMILARITY_METRIC_DOT_PRODUCT = 2;
+		/*
+		 * Ranks by the straight-line distance between the vectors, so their
+		 * length counts as much as their direction.
+		 */
 		SIMILARITY_METRIC_EUCLIDEAN = 3;
 	}
 
-	/**
+	/*
 	 * The similarity metric to use for the vector. Defaults to COSINE.
 	 */
 	optional SimilarityMetric similarity = 2;
 
+	/*
+	 * How the graph the vectors are searched through is built. Both settings
+	 * buy recall with index size and indexing time. Both describe a graph that
+	 * has already been written, so changing either on an index that holds
+	 * documents is refused and a new generation is filled instead.
+	 */
 	message HNSWConfig {
-		/**
-		 * The number of neighbors to consider for the vector.
+		/*
+		 * How many neighbors each node of the graph keeps. Defaults to 16,
+		 * and has to be between 1 and 512.
 		 */
 		optional int32 m = 1;
-		/**
-		 * The number of ef construction to use for the vector.
+
+		/*
+		 * How many candidates are held open while the graph is built.
+		 * Defaults to 100, and has to be between 1 and 3200.
 		 */
 		optional int32 ef_construction = 2;
 	}
 
-	/**
-	 * The HNSW configuration to use for the vector.
+	/*
+	 * How the search graph is built. Absent means the engine defaults.
 	 */
 	HNSWConfig hnsw = 3;
 
-	/**
+	/*
 	 * How much precision a stored vector gives up for space. A choice among
 	 * modes that is off unless asked for, so an enum with an unspecified zero
 	 * rather than a message - absence means full precision.
@@ -479,19 +508,19 @@ message VectorFieldTypeDef {
 	enum Quantization {
 		QUANTIZATION_UNSPECIFIED = 0;
 		QUANTIZATION_NONE = 1;
-		/**
+		/*
 		 * Scalar quantization to 7 bits per component, the "int8" of vector
 		 * stores. What a value means here is written to disk, so a future
 		 * true 8-bit mode is a new value, never a change to this one.
 		 */
 		QUANTIZATION_INT8 = 2;
-		/**
+		/*
 		 * Scalar quantization to 4 bits per component, packed two to a byte.
 		 */
 		QUANTIZATION_INT4 = 3;
 	}
 
-	/**
+	/*
 	 * How stored vectors are quantized. Defaults to NONE.
 	 */
 	optional Quantization quantization = 4;
@@ -554,7 +583,8 @@ message ObjectFieldTypeDef {
 }
 
 /*
- * FieldType represents the types of data that can be indexed and queried.
+ * FieldTypeDef declares what a field holds, as a tagged union over the types
+ * the engine can index. A field naming no type is refused.
  */
 message FieldTypeDef {
 	oneof type {
@@ -572,33 +602,39 @@ message FieldTypeDef {
 }
 
 /*
- * FieldDef is a definition of a field that is available to be used in an
- * index.
+ * FieldDef is one field of an index: what its values are, and the usages that
+ * read the same way whatever type it holds.
  */
 message FieldDef {
 	/*
-	 * If the field is the primary key.
+	 * Whether the field identifies a document among the others. At most one
+	 * field of an index is the primary key; when there is one, indexing a
+	 * document whose key is already there replaces that document. An index
+	 * that declares none refuses every request that names a document by key.
 	 */
 	optional bool primary_key = 1;
 
 	/*
-	 * The type of the field.
+	 * What the values of the field are.
 	 */
 	FieldTypeDef type = 2;
 
 	/*
-	 * If the field is required to be present when a document is added.
-	 * Can not be set to true if the name contains a wildcard.
+	 * Whether a document is refused when it carries no value for the field.
+	 * Can not be true for a name that contains a wildcard.
 	 */
 	optional bool required = 3;
 
 	/*
-	 * If the field can have multiple values.
+	 * Whether the field holds more than one value per document. A single
+	 * valued field refuses a document that gives it several.
 	 */
 	optional bool multiple = 4;
 
 	/*
-	 * If the field is stored, meaning it can be retrieved in the search results.
+	 * Whether the value comes back in search results. Storing a field costs
+	 * disk beside the index, and a field that is not stored can still be
+	 * matched, filtered, sorted and faceted on.
 	 */
 	optional bool stored = 5;
 
@@ -614,17 +650,17 @@ message FieldDef {
 
 		/*
 		 * The locales the field holds values in, besides the default. Listing
-		 * them is what lets the schema know every variant a field can have -
-		 * which stored variants to load when only some fields are wanted, and
-		 * which locales a search can ask for. A value carrying a locale that
-		 * is not listed here (or the default) is refused.
+		 * them tells the schema every variant a field can have: which stored
+		 * variants to load when only some fields are wanted, and which locales
+		 * a search can ask for. A value carrying a locale that is not listed
+		 * here, and is not the default, is refused.
 		 */
 		repeated string locales = 2;
 
 		/*
 		 * Whether the field takes part in IndexDef.locale_fallback. Unset
-		 * means it does, so the index turning fallback on is what fills every
-		 * field that has not said otherwise.
+		 * means it does, so an index that turns fallback on fills every field
+		 * that has not said otherwise.
 		 */
 		enum Fallback {
 			FALLBACK_UNSPECIFIED = 0;
@@ -787,9 +823,9 @@ message RankingConfig {
 	 *
 	 * Every shape is bounded, so however far a value runs it can lift a
 	 * document by at most its weight and never drown out how well the document
-	 * matched. Shaping happens where the search runs rather than where the
-	 * document was indexed, which is what lets a ranking be changed, or two of
-	 * them compared, without touching the documents.
+	 * matched. Shaping happens where the search runs and not where the
+	 * document was indexed, so a ranking can be changed, or two of them
+	 * compared, without touching the documents.
 	 */
 	message Signal {
 		/*
@@ -811,7 +847,7 @@ message RankingConfig {
 			/*
 			 * The value that counts for half of what the signal can give. Has
 			 * to be given, and to be above zero - there is no pivot that is
-			 * right for every catalogue, and guessing one would rank quietly
+			 * right for every catalog, and guessing one would rank quietly
 			 * wrong rather than refuse.
 			 */
 			optional double pivot = 1;
@@ -832,9 +868,9 @@ message RankingConfig {
 		}
 
 		/*
-		 * How the value is shaped into what it contributes. Presence is what
-		 * picks the shape, so a signal naming none is refused rather than
-		 * quietly counting for nothing.
+		 * How the value is shaped into what it contributes. Presence picks the
+		 * shape, and a signal naming none is refused instead of counting for
+		 * nothing without reporting anything.
 		 */
 		oneof shape {
 			Saturation saturation = 2;
@@ -855,6 +891,15 @@ message RankingConfig {
 	repeated Signal signals = 2;
 }
 
+/*
+ * IndexDef is what one generation of an index holds: its fields, what they
+ * share, and the opinions the index has about its own results.
+ *
+ * A definition is carried in the sync manifest and applies to the generation
+ * it sits on. Changing it changes what is written from there on; documents
+ * already indexed keep the terms and doc values they were given, so a change
+ * existing documents were not indexed under means filling a new generation.
+ */
 message IndexDef {
 	/*
 	 * How much of a document is kept alongside the index it was written to.
@@ -883,8 +928,9 @@ message IndexDef {
 	 */
 	optional SourceMode source = 4;
 
-	/**
-	 * User supplied metadata for the index.
+	/*
+	 * Whatever the creator of the index wants to carry with it. Returned as it
+	 * was given; the engine reads nothing from it.
 	 */
 	map<string, string> metadata = 1;
 
@@ -894,7 +940,8 @@ message IndexDef {
 	map<string, FieldDef> fields = 2;
 
 	/*
-	 * How the index breaks ties in the order of results.
+	 * The index's standing opinion about the order of results. Search settings
+	 * stored for the index name replace this whole, when they carry one.
 	 */
 	RankingConfig ranking = 5;
 
@@ -913,10 +960,10 @@ message IndexDef {
 	 * written to the Lucene fields alone, so a document read back still holds
 	 * only the locales it was given in.
 	 *
-	 * Writing the copy is what keeps a variant answerable at all, which
-	 * reading around the gap at query time would not. Collation keys from two
-	 * locales are not comparable, so a sort that read a different variant per
-	 * document would order by nothing, and term statistics are per field, so
+	 * Writing the copy keeps a variant answerable at all, where reading around
+	 * the gap at query time would not. Collation keys from two locales are not
+	 * comparable, so a sort that read a different variant per document would
+	 * order by nothing, and term statistics are per field, so
 	 * a search across variants would rank by whichever of them had the
 	 * sparser corpus. One filled variant means one field, one collator and
 	 * one set of statistics, and every reader below stays as it was.
@@ -978,8 +1025,8 @@ message IndexDef {
 	 * and carried unchanged through every update of its definition, because
 	 * Lucene refuses a field whose layout changes once it is written - an
 	 * index moves to another layout by filling a new generation. Absent means
-	 * term vectors, which is what every index created before layouts had a
-	 * name holds.
+	 * term vectors, the layout every index created before layouts had a name
+	 * holds.
 	 */
 	optional HighlightLayout highlight_layout = 8;
 }

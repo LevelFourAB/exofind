@@ -11,8 +11,8 @@ package se.l4.exofind.engine.index.source;
  * told apart from the zero value, and a field number is never reused.
  *
  * What is here describes itself. Reading a document back needs no definition,
- * which is what lets one be indexed again after its definition has changed and
- * the values are no longer available from wherever they first came from.
+ * so a document can be indexed again after its definition changed, even when
+ * the values are no longer available from where they first came.
  */
 
 /*
@@ -30,8 +30,8 @@ message SourceField {
 	string name = 1;
 
 	/*
-	 * The locale the value is in, unset when it is the same in every
-	 * language.
+	 * The locale the value is in (BCP-47). Unset when the value is the same in
+	 * every language.
 	 */
 	optional string locale = 2;
 

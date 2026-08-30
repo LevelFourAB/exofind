@@ -12,10 +12,10 @@ package se.l4.exofind.engine.index.state;
  * apart from the zero value, and a field number is never reused.
  */
 
-/**
+/*
  * IndexUsage records when and how often the local copy of an index has been
- * used, which decides the order local copies are given up in when their disk
- * space is bounded.
+ * used. A node with bounded disk space gives up its least used copies first,
+ * and reads that order from here.
  */
 message IndexUsage {
 	/*

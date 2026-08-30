@@ -33,8 +33,8 @@ import "se/l4/exofind/engine/index/schema/definitions.proto";
  * The definition rides the sync manifest and every change to it goes through
  * the index's writer; these settings are one object replaced conditionally on
  * the version the writer read, so any node changes them and every node picks
- * the change up on its own refresh. They are scoped to the index name rather
- * than to a generation, which is what lets a promotion keep them.
+ * the change up on its own refresh. They are scoped to the index name and not
+ * to a generation, so a promotion keeps them.
  */
 message SearchSettingsStore {
 	/*
@@ -49,18 +49,18 @@ message SearchSettingsStore {
 	 *
 	 * The sets a definition holds widen a value as it is indexed, so a rule
 	 * added to one reaches only the documents indexed after it. These widen
-	 * the search instead, which is what lets a rule take effect over documents
-	 * that were indexed long before it.
+	 * the search instead, so a rule takes effect over documents that were
+	 * indexed long before it.
 	 */
 	map<string, QuerySynonyms> synonyms = 3;
 
 	/*
 	 * Words that are matched as they are spelled, by set name.
 	 *
-	 * Where typo tolerance is declared belongs to the definition, which is
-	 * about the fields a search may spend a fuzzy walk on. These are about the
-	 * words: a name or a code inside a field that is otherwise worth forgiving
-	 * mistakes in.
+	 * The definition declares where typo tolerance applies, which is about the
+	 * fields a search may spend a fuzzy walk on. These are about the words: a
+	 * name or a code inside a field that is otherwise worth forgiving mistakes
+	 * in.
 	 */
 	map<string, QueryTypoExclusions> typo_exclusions = 4;
 
@@ -72,7 +72,7 @@ message SearchSettingsStore {
 	 * newer version sees a field it has no code for and would quietly search
 	 * without it. Listing what an object needs turns that into something a
 	 * node can check: one that does not know a name here searches with the
-	 * definition alone instead of honouring half of what was written.
+	 * definition alone instead of honoring half of what was written.
 	 */
 	repeated string required_features = 2;
 }
@@ -98,8 +98,8 @@ message QuerySynonyms {
 
 	/*
 	 * The fields the set is applied to, named as a search names them. Empty
-	 * applies it to every field a search reads as text, which is what a set
-	 * written for a whole catalogue means.
+	 * applies it to every field a search reads as text, the way a set written
+	 * for a whole catalog is meant to work.
 	 */
 	repeated string fields = 2;
 
@@ -136,7 +136,7 @@ message QueryTypoExclusions {
 	/*
 	 * The fields the words are excluded in, named as a search names them.
 	 * Empty covers every field a search reads as text, such as a list of brand
-	 * names written for a whole catalogue.
+	 * names written for a whole catalog.
 	 */
 	repeated string fields = 2;
 }

@@ -12,19 +12,20 @@ package se.l4.exofind.engine.index.state;
  * the zero value, and a field number is never reused.
  */
 
-/**
- * ManifestFile represents a file in the index storage.
+/*
+ * ManifestFile is one file of an index, as Lucene named it and as the remote
+ * holds it.
  */
 message ManifestFile {
-	/**
-	 * The name of the file.
+	/*
+	 * Name Lucene knows the file by, unique within a commit.
 	 */
 	string name = 1;
-	/**
-	 * The size of the file.
+	/*
+	 * Size of the file in bytes.
 	 */
 	int64 size = 2;
-	/**
+	/*
 	 * CRC-32C of the contents, used to tell two versions of a file apart when
 	 * they happen to be the same length.
 	 *
@@ -34,7 +35,7 @@ message ManifestFile {
 	 * value it finds here.
 	 */
 	optional fixed32 checksum = 3;
-	/**
+	/*
 	 * Key the file is stored under in the remote, relative to the index's
 	 * prefix. Files are written under a prefix named for the epoch of the
 	 * writer that uploaded them, and keep that key for as long as their
@@ -47,21 +48,26 @@ message ManifestFile {
 	optional string key = 4;
 }
 
-/**
- * Manifest is a list of files in the index storage.
+/*
+ * Manifest is one generation of an index as the remote holds it: every file
+ * that makes it up, and what a node needs to tell one push from another
+ * before downloading anything.
+ *
+ * It is replaced whole with a conditional write, so two writers pushing at
+ * the same time cannot merge into a state neither of them wrote.
  */
 message Manifest {
-	/**
+	/*
 	 * The latest segment number, as named by Lucene. Kept for describing what
 	 * a manifest holds rather than for deciding whether it is current, as it
 	 * only moves when Lucene commits and the manifest covers more than that.
 	 */
 	int64 latest_segment = 1;
-	/**
+	/*
 	 * The list of files in the index storage, ordered by name.
 	 */
 	repeated ManifestFile files = 2;
-	/**
+	/*
 	 * Incremented every time a manifest is pushed, so that two manifests can
 	 * be ordered relative to each other.
 	 *
@@ -69,7 +75,7 @@ message Manifest {
 	 * before every version a node writes.
 	 */
 	optional int64 version = 3;
-	/**
+	/*
 	 * Epoch of the writer that produced this manifest. A writer session
 	 * claims an epoch by rewriting the manifest with the next one before it
 	 * uploads anything, and writes its files under a key prefix named for it,
@@ -80,18 +86,18 @@ message Manifest {
 	 * epoch zero.
 	 */
 	optional int64 epoch = 4;
-	/**
+	/*
 	 * Major Lucene version the index was created with, which never changes for
 	 * as long as the index exists. Lucene reads an index created by the
-	 * current major and the one before it, and refuses anything older, so this
-	 * is what says whether a build can still open the files - and, being in
-	 * the manifest, says it before any of them are downloaded.
+	 * current major and the one before it, and refuses anything older. A node
+	 * therefore knows from this alone whether its build can open the files,
+	 * and knows it before downloading any of them.
 	 *
 	 * Unset in a manifest written before the version was recorded, where the
 	 * only way to find out is to read the segments after pulling them.
 	 */
 	optional int32 lucene_created_major = 5;
-	/**
+	/*
 	 * Lucene version that wrote the newest commit, as it names itself. Kept
 	 * for describing what produced the files rather than for deciding whether
 	 * they can be read, which only the creating major has a say in.
@@ -102,83 +108,83 @@ message Manifest {
 	optional string lucene_written_version = 6;
 }
 
-/**
+/*
  * IndexerLease was the claim a node held on being the one that indexes,
  * before leadership became per index. No longer written or read; the object
  * it was stored in may still exist in deployments that ran those versions,
  * and the message stays readable so the object can be understood if found.
  */
 message IndexerLease {
-	/**
-	 * Node holding the lease.
+	/*
+	 * Name of the node holding the lease.
 	 */
 	optional string node = 1;
-	/**
+	/*
 	 * When the claim lapses unless renewed, as milliseconds since the Unix
 	 * epoch. Compared against the clock of whoever reads it, so skew between
 	 * nodes stretches or shrinks the wait - renewal happens well inside the
 	 * duration to absorb that.
 	 */
 	optional int64 expires_at = 2;
-	/**
+	/*
 	 * Address the node serves writes on, for pointing callers at it. Unset
 	 * when the node has none to offer.
 	 */
 	optional string address = 3;
 }
 
-/**
+/*
  * IndexerLeadership is which node writes each index, next to which nodes
- * could. One object next to the indexes, replaced whole with a conditional
- * write like the manifests are, so two nodes changing it race for one write
- * exactly one of them wins.
+ * could. It is one object beside the indexes, replaced whole with a
+ * conditional write like the manifests are, so exactly one of two nodes
+ * changing it at the same time wins.
  *
- * Holding a claim is a liveness matter - it decides who tries to write that
- * index. The conditional writes of the manifests are what keep a node that
- * wrongly still believes it holds a claim from doing damage, so a reader of
- * this message must never treat it as proof.
+ * Holding a claim is a liveness matter: it decides who tries to write an
+ * index. The conditional writes of the manifests keep a node that wrongly
+ * still believes it holds a claim from doing damage, so a reader of this
+ * message must never treat it as proof of who may write.
  */
 message IndexerLeadership {
-	/**
+	/*
 	 * One node's hold on writing one index.
 	 */
 	message Claim {
-		/**
+		/*
 		 * Name of the index, without a generation - every generation of a
 		 * name is written by the same node.
 		 */
 		optional string index = 1;
-		/**
-		 * Node holding the claim.
+		/*
+		 * Name of the node holding the claim.
 		 */
 		optional string node = 2;
-		/**
+		/*
 		 * Address the node serves writes to this index on. Unset when the
 		 * node has none to offer.
 		 */
 		optional string address = 3;
-		/**
+		/*
 		 * When the claim lapses unless renewed, as milliseconds since the
 		 * Unix epoch. Compared against the clock of whoever reads it, so skew
 		 * between nodes stretches or shrinks the wait - renewal happens well
 		 * inside the duration to absorb that.
 		 */
 		optional int64 expires_at = 4;
-		/**
+		/*
 		 * How heavily the index has recently been written where it is held:
 		 * the bit length of a changed-document count that halves as it ages,
 		 * so the value only moves when the load roughly doubles or halves.
-		 * Absent or zero means idle. What candidates compare when they move
-		 * indexes by write load rather than by count.
+		 * Absent or zero means idle. Candidates compare this when they
+		 * balance indexes by write load instead of by count.
 		 */
 		optional uint32 load_bucket = 5;
-		/**
+		/*
 		 * Set when the holder carries more write load than another candidate
 		 * and offers this index up. Withdrawn by the holder writing the claim
 		 * without it once the imbalance is gone.
 		 */
 		optional bool offered = 6;
-		/**
+		/*
 		 * Candidate that answered the offer. Written into the holder's claim
 		 * by the taker; the holder alone moves the claim, by rewriting it to
 		 * name the taker, so setting this never takes an index by force.
@@ -186,42 +192,42 @@ message IndexerLeadership {
 		optional string taker = 7;
 	}
 
-	/**
+	/*
 	 * A node that competes for claims, kept current by the same renewals that
-	 * keep its claims. Being listed is what lets the other candidates count
-	 * heads when they divide the indexes up, and what gives an index with no
-	 * claim somewhere to send a write.
+	 * keep its claims. The other candidates count heads from these entries
+	 * when they divide the indexes up, and an index with no claim sends its
+	 * writes to one of them.
 	 */
 	message Candidate {
-		/**
-		 * Node competing.
+		/*
+		 * Name of the node competing.
 		 */
 		optional string node = 1;
-		/**
+		/*
 		 * Address the node serves writes on. Unset when the node has none to
 		 * offer.
 		 */
 		optional string address = 2;
-		/**
+		/*
 		 * When this entry lapses unless renewed, as milliseconds since the
 		 * Unix epoch, read like the expiry of a claim.
 		 */
 		optional int64 expires_at = 3;
 	}
 
-	/**
+	/*
 	 * At most one claim per index. A claim past its expiry is free to be
 	 * taken, not merely stale.
 	 */
 	repeated Claim claims = 1;
 
-	/**
+	/*
 	 * The candidates that have renewed recently, one entry per node.
 	 */
 	repeated Candidate candidates = 2;
 }
 
-/**
+/*
  * ChangeLogStore is which documents of an index have changed since the index
  * began tracking its changes, stored next to the index files and carried in
  * the manifest while tracking runs.
@@ -233,7 +239,7 @@ message IndexerLeadership {
  * missing.
  */
 message ChangeLogStore {
-	/**
+	/*
 	 * Primary key terms of the documents that changed, as Lucene indexed them,
 	 * one entry per document ordered by bytes. Comparable only with terms of
 	 * an index whose primary key field has the same type.
