@@ -95,9 +95,9 @@ To switch to object storage:
 
 ## Related
 
-- [Run more than one node](run-multiple-nodes.md) - Moving to a deployment that survives losing a node.
+- [Running multiple nodes](run-multiple-nodes.md) - Moving to a deployment that survives losing a node.
 - [Architecture](../explanation/architecture.md) - Why the storage mode is configured explicitly.
 - [Configuration](../reference/configuration.md) - The local and object storage settings.
-- [Secure a deployment](secure-a-deployment.md) - Keys for a node reachable by more than your laptop.
-- [Operate a deployment](operate-a-deployment.md) - Index status, disk, and upgrades.
+- [Securing a deployment](secure-a-deployment.md) - Keys for a node reachable by more than your laptop.
+- [Operating a deployment](operate-a-deployment.md) - Index status, disk, and upgrades.
 - [Getting started](../tutorials/getting-started.md) - Defining and searching a first index.

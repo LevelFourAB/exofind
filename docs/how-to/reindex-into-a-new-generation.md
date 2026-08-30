@@ -198,9 +198,9 @@ DELETE /v1alpha1/admin/indexes/products@1
 
 ## Related
 
-- [Roll out a definition change](roll-out-a-definition-change.md) - The rollout the reindex job fills a generation for.
-- [Survive Lucene upgrades](survive-lucene-upgrades.md) - Reindexing an index before it becomes unreadable.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - The rollout the reindex job fills a generation for.
+- [Surviving Lucene upgrades](survive-lucene-upgrades.md) - Reindexing an index before it becomes unreadable.
 - [Admin API](../reference/admin-api.md) - The generation and reindex job endpoints.
 - [Generations](../explanation/generations.md) - Why an index is a name with generations under it.
-- [Operate a deployment](operate-a-deployment.md) - Watching disk while two generations are held.
-- [Read documents back](read-documents.md) - Refilling from a source outside the engine instead.
+- [Operating a deployment](operate-a-deployment.md) - Watching disk while two generations are held.
+- [Reading documents back](read-documents.md) - Refilling from a source outside the engine instead.

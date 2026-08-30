@@ -1,4 +1,4 @@
-# Metrics reference
+# Metrics
 
 The engine registers Micrometer meters to monitor search performance, indexing, synchronization, cluster state, and node resources.
 

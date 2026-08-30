@@ -94,8 +94,8 @@ To confirm that the public demo node functions correctly:
 
 ## Related
 
-- [Secure a deployment](secure-a-deployment.md) - Keys, scopes, and rotation for a deployment that is not public.
+- [Securing a deployment](secure-a-deployment.md) - Keys, scopes, and rotation for a deployment that is not public.
 - [Trust model](../explanation/trust-model.md) - What a key reaches, and why a browser must not hold one.
 - [Authentication](../reference/auth.md) - Permissions, index patterns, and the keys API.
 - [Configuration](../reference/configuration.md) - The limits that cap what a search may cost.
-- [Run on one node](run-on-one-node.md) - Running the demo without a bucket.
+- [Running on one node](run-on-one-node.md) - Running the demo without a bucket.

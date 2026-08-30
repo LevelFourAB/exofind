@@ -174,9 +174,9 @@ Nothing in the API tells you whether a particular node holds a particular write:
 
 ## Related
 
-- [Index documents](index-documents.md) - Sending documents, loading a dataset, and committing once at the end.
-- [Search an index](search-an-index.md) - The search request.
-- [Run more than one node](run-multiple-nodes.md) - Configuring which nodes take the writes.
+- [Indexing documents](index-documents.md) - Sending documents, loading a dataset, and committing once at the end.
+- [Searching an index](search-an-index.md) - The search request.
+- [Running multiple nodes](run-multiple-nodes.md) - Configuring which nodes take the writes.
 - [Configuration](../reference/configuration.md) - Every commit and refresh variable.
 - [Admin API](../reference/admin-api.md) - Index status, index states, and the actions.
 - [API conventions](../reference/api-conventions.md) - Why a write is forwarded to the writer while a search is served where it lands.

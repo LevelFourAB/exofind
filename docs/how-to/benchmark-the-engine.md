@@ -167,10 +167,10 @@ Common options:
 
 ## Related
 
-- [Search an index](search-an-index.md) - The requests the search benchmarks send.
-- [Index documents](index-documents.md) - The write path the indexing benchmarks measure.
-- [Use sub-documents](use-sub-documents.md) - The field shape the grouping layouts compare.
-- [Monitor a deployment](monitor-a-deployment.md) - Measuring a running node instead of a local run.
+- [Searching an index](search-an-index.md) - The requests the search benchmarks send.
+- [Indexing documents](index-documents.md) - The write path the indexing benchmarks measure.
+- [Using sub-documents](use-sub-documents.md) - The field shape the grouping layouts compare.
+- [Monitoring a deployment](monitor-a-deployment.md) - Measuring a running node instead of a local run.
 - [How sub-documents are stored](../explanation/document-blocks.md) - Why one layout costs more than another.
 - [Node memory and JVM configuration](../explanation/node-resources.md) - The heap and page cache the numbers depend on.
 

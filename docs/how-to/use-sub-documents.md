@@ -291,7 +291,7 @@ Each value is a Lucene document of its own, written in the same block as the doc
 - [Modeling dynamic attributes](model-dynamic-attributes.md) - Wildcard fields at the root of a document.
 - [The `nested` clause](../reference/search-api.md#nested) - Reference documentation for nested queries, [ordering by](../reference/search-api.md#ordering-by-a-value-inside-an-object), and [counting](../reference/search-api.md#counting-a-value-inside-an-object) sub-document values.
 - [Documents API](../reference/documents-api.md#how-a-document-is-shaped) - Document payload format and updating documents.
-- [Update parts of documents](update-parts-of-documents.md) - Change one sub-document without resending the others.
-- [Search by vector](search-by-vector.md) - Vector fields, and searching a document held as a list of chunks.
-- [Define an index](define-an-index.md) - Complete index definition reference.
-- [Roll out a definition change](roll-out-a-definition-change.md) - Reindexing existing documents after schema changes.
+- [Updating parts of documents](update-parts-of-documents.md) - Change one sub-document without resending the others.
+- [Searching by vector](search-by-vector.md) - Vector fields, and searching a document held as a list of chunks.
+- [Defining an index](define-an-index.md) - Complete index definition reference.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - Reindexing existing documents after schema changes.

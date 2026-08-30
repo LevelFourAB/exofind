@@ -102,8 +102,8 @@ Read back the schema definition from the engine to verify the configuration.
 ## Related
 
 - [Analysis](../reference/analysis.md) - Every preset, tokenizer, char filter, and token filter.
-- [Define an index](define-an-index.md) - Attaching a chain to a field and picking what the field is for.
-- [Localize fields](localize-fields.md) - The rules a locale applies on top of a chain.
-- [Change synonyms without reindexing](change-synonyms-without-reindexing.md) - Synonyms that apply to search text instead.
-- [Roll out a definition change](roll-out-a-definition-change.md) - Reindexing after the chain changes.
+- [Defining an index](define-an-index.md) - Attaching a chain to a field and picking what the field is for.
+- [Localizing fields](localize-fields.md) - The rules a locale applies on top of a chain.
+- [Changing synonyms without reindexing](change-synonyms-without-reindexing.md) - Synonyms that apply to search text instead.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - Reindexing after the chain changes.
 - [Locales](../reference/locales.md) - The languages with rules, and what each one gets.

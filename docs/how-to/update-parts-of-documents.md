@@ -240,7 +240,7 @@ The update endpoint validates paths and returns specific error codes when a path
 
 - [Documents API](../reference/documents-api.md) - Path syntax, request schemas, response formats, and error codes.
 - [Field types](../reference/field-types.md) - Field type definitions, settings, and declaring a key on object fields.
-- [Indexing documents](index-documents.md) - Send whole documents, load a dataset, and remove documents.
-- [Using sub-documents](use-sub-documents.md) - Hold a list of values that are documents of their own, and search inside them.
-- [Localizing fields](localize-fields.md) - Hold values in several languages and search them by locale.
+- [Indexing documents](index-documents.md) - Sending whole documents, loading a dataset, and removing documents.
+- [Using sub-documents](use-sub-documents.md) - Holding a list of values that are documents of their own, and searching inside them.
+- [Localizing fields](localize-fields.md) - Holding values in several languages and searching them by locale.
 - [How sub-documents are stored](../explanation/document-blocks.md) - Why a change to one sub-document rewrites the whole document.

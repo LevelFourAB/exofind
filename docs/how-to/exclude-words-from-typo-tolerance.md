@@ -81,7 +81,7 @@ If typo exclusions do not produce the expected search behavior, check the follow
 ## Related
 
 - [Search API](../reference/search-api.md) - The `typos` option on a clause.
-- [Change synonyms without reindexing](change-synonyms-without-reindexing.md) - The other search setting that changes matching without a reindex.
-- [Define an index](define-an-index.md) - Declaring typo tolerance on a field.
+- [Changing synonyms without reindexing](change-synonyms-without-reindexing.md) - The other search setting that changes matching without a reindex.
+- [Defining an index](define-an-index.md) - Declaring typo tolerance on a field.
 - [Admin API](../reference/admin-api.md) - The search settings endpoints and their patch paths.
 - [Find out why a result ranked where it did](explain-a-result.md) - Checking which words a clause matched on.

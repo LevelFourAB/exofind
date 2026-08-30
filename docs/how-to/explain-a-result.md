@@ -162,5 +162,5 @@ Inspect the response from the explain endpoint to confirm the scoring breakdown:
 - [Search API](../reference/search-api.md) - Request bodies, clauses, matchers, and parameters.
 - [Relevance](../explanation/relevance.md) - How scoring and ranking signals determine result order.
 - [Searching an index](search-an-index.md) - Constructing search requests and filter clauses.
-- [Use sub-documents](use-sub-documents.md) - Querying and scoring individual object values.
-- [Errors reference](../reference/errors.md) - Error codes returned by index actions.
+- [Using sub-documents](use-sub-documents.md) - Querying and scoring individual object values.
+- [Errors](../reference/errors.md) - Error codes returned by index actions.

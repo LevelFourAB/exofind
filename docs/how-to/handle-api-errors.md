@@ -90,6 +90,6 @@ Verify that your client handles failure conditions as expected:
 
 - [Errors](../reference/errors.md) - The error body and the code vocabulary.
 - [API conventions](../reference/api-conventions.md) - Media types, conditional requests, forwarding, and what each status code means.
-- [Generate an API client](generate-a-client.md) - Building the client the error handling sits in.
-- [Index documents](index-documents.md) - Recovering from a refused batch.
-- [Operate a deployment](operate-a-deployment.md) - Telling a node that is behind from one that is broken.
+- [Generating an API client](generate-a-client.md) - Building the client the error handling sits in.
+- [Indexing documents](index-documents.md) - Recovering from a refused batch.
+- [Operating a deployment](operate-a-deployment.md) - Telling a node that is behind from one that is broken.

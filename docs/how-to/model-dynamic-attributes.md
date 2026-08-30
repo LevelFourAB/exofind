@@ -197,7 +197,7 @@ A catalogue with tens of distinct attribute names is unremarkable. Accepting arb
 - [Field types](../reference/field-types.md) - Supported types and field usages.
 - [Facets](../reference/search-api.md#facets) - Facet configuration and `excludeFilters` behavior.
 - [Changing some of the fields](../reference/documents-api.md#changing-some-of-the-fields) - The partial update endpoint reference.
-- [Define an index](define-an-index.md) - Creating and updating index definitions.
-- [Roll out a definition change](roll-out-a-definition-change.md) - Creating and promoting new index generations.
+- [Defining an index](define-an-index.md) - Creating and updating index definitions.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - Creating and promoting new index generations.
 - [Using sub-documents](use-sub-documents.md) - Nested objects for attributes that must match together, including dynamic ones.
 - [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields) - Patterns inside an object field and on its own name.

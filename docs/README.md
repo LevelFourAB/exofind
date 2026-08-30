@@ -31,44 +31,44 @@ The documentation includes the following how-to guides.
 - [Handle errors in a client](how-to/handle-api-errors.md): Read the error body,
   decide what to do with each class of failure, and retry without indexing
   anything twice.
-- [Generate an API client](how-to/generate-a-client.md): Fetch the OpenAPI
+- [Generating an API client](how-to/generate-a-client.md): Fetch the OpenAPI
   document, build a client from it, give it a key, and keep it current with the
   node.
 
 ### Indexes and documents
 
-- [Define an index](how-to/define-an-index.md): Create and update an index as
+- [Defining an index](how-to/define-an-index.md): Create and update an index as
   desired state, pick what each field is for, and avoid overwriting concurrent
   changes.
-- [Index documents](how-to/index-documents.md): Send documents, load a
+- [Indexing documents](how-to/index-documents.md): Send documents, load a
   dataset, keep it current with feeds and deletes, and recover from a refused
   request.
-- [Update parts of documents](how-to/update-parts-of-documents.md): Change one
+- [Updating parts of documents](how-to/update-parts-of-documents.md): Change one
   field, one sub-document, or one locale without resending the rest of the
   document.
-- [Read documents back](how-to/read-documents.md): Page an index back out again
+- [Reading documents back](how-to/read-documents.md): Page an index back out again
   to export it, load it somewhere else, or see what a document holds.
 - [Make a write visible to search](how-to/make-writes-visible.md): Find out why
   a document you just indexed is not in the results yet, and choose how to
   close the gap.
-- [Use sub-documents](how-to/use-sub-documents.md): Hold a list of values that
+- [Using sub-documents](how-to/use-sub-documents.md): Hold a list of values that
   are documents of their own, ask several things of one of them, and order,
   count, and change them.
-- [Model dynamic attributes](how-to/model-dynamic-attributes.md): Hold
+- [Modeling dynamic attributes](how-to/model-dynamic-attributes.md): Hold
   attributes the definition does not name in advance, filter and count by them,
   and change them one at a time.
-- [Localize fields](how-to/localize-fields.md): Hold values in several languages
+- [Localizing fields](how-to/localize-fields.md): Hold values in several languages
   and search them by locale.
-- [Customize text analysis](how-to/customize-analysis.md): Configure presets,
+- [Customizing text analysis](how-to/customize-analysis.md): Configure presets,
   custom chains, and stopwords and synonyms shared between fields.
 
 ### Searching
 
-- [Search an index](how-to/search-an-index.md): Work with the search box, the
+- [Searching an index](how-to/search-an-index.md): Work with the search box, the
   scope it runs in, user-selected filters, facets, ordering, and highlighting.
-- [Search by vector](how-to/search-by-vector.md): Index the vectors that a model
+- [Searching by vector](how-to/search-by-vector.md): Index the vectors that a model
   produces, find the nearest of them, and combine that with a text search.
-- [Paginate search results](how-to/paginate-search-results.md): Use offsets,
+- [Paginating search results](how-to/paginate-search-results.md): Use offsets,
   cursors, and numbered pages, and choose when each is the right tool.
 - [Find out why a result ranked where it did](how-to/explain-a-result.md): Read
   a hit's score back as the clauses and fields you wrote, and find out why a
@@ -76,47 +76,47 @@ The documentation includes the following how-to guides.
 
 ### Changing an index
 
-- [Roll out a definition change](how-to/roll-out-a-definition-change.md):
+- [Rolling out a definition change](how-to/roll-out-a-definition-change.md):
   Change what an index holds for documents already in it, without callers
   noticing.
-- [Reindex into a new generation](how-to/reindex-into-a-new-generation.md):
+- [Reindexing into a new generation](how-to/reindex-into-a-new-generation.md):
   Have the engine fill the new generation from the one it replaces, instead
   of sending every document again.
-- [Change synonyms without reindexing](how-to/change-synonyms-without-reindexing.md):
+- [Changing synonyms without reindexing](how-to/change-synonyms-without-reindexing.md):
   Make a synonym take effect over a catalogue that is already indexed, and
   decide which side of the search a set belongs on.
-- [Exclude words from typo tolerance](how-to/exclude-words-from-typo-tolerance.md):
+- [Excluding words from typo tolerance](how-to/exclude-words-from-typo-tolerance.md):
   Hold a brand name or a model code to its spelling inside a field that
   forgives mistakes in every other word.
-- [Survive Lucene upgrades](how-to/survive-lucene-upgrades.md): Notice an index
+- [Surviving Lucene upgrades](how-to/survive-lucene-upgrades.md): Notice an index
   nearing the end of its readable life and reindex it in time.
 
 ### Running a deployment
 
-- [Run on one node](how-to/run-on-one-node.md): Keep everything on disk with
+- [Running on one node](how-to/run-on-one-node.md): Keep everything on disk with
   nothing else running, and manage what that costs.
-- [Run more than one node](how-to/run-multiple-nodes.md): Configure indexer
+- [Running multiple nodes](how-to/run-multiple-nodes.md): Configure indexer
   candidacy, failover, and how writes find the node that serves them.
-- [Deploy on Kubernetes](how-to/deploy-on-kubernetes.md): Configure a pool that
+- [Deploying on Kubernetes](how-to/deploy-on-kubernetes.md): Configure a pool that
   searches and a pool that writes, route writes, and handle host requirements for
   many indexes.
-- [Secure a deployment](how-to/secure-a-deployment.md): Bootstrap the first key,
+- [Securing a deployment](how-to/secure-a-deployment.md): Bootstrap the first key,
   hand out one key per client, and rotate keys.
-- [Run a public demo node](how-to/run-a-demo-node.md): Answer searches from a
+- [Running a public demo node](how-to/run-a-demo-node.md): Answer searches from a
   browser with no credentials, and narrow what that can cost.
 
 ### Operating a deployment
 
-- [Operate a deployment](how-to/operate-a-deployment.md): See what each node is
+- [Operating a deployment](how-to/operate-a-deployment.md): See what each node is
   serving, tell a node that is behind from one that is broken, and manage disk
   and upgrades.
-- [Monitor a deployment](how-to/monitor-a-deployment.md): Send the meters a node
+- [Monitoring a deployment](how-to/monitor-a-deployment.md): Send the meters a node
   exposes to Grafana Cloud or another backend, keep what a deployment holding
   hundreds of indexes pays for under control, and choose what to alert on.
-- [Repair the index registry](how-to/repair-the-index-registry.md): Audit the
+- [Repairing the index registry](how-to/repair-the-index-registry.md): Audit the
   registry against what the storage holds, rebuild one that is lost or
   corrupt, and spot drift before it matters.
-- [Benchmark the engine](how-to/benchmark-the-engine.md): Measure searching and
+- [Benchmarking the engine](how-to/benchmark-the-engine.md): Measure searching and
   indexing, and compare a change against what came before it.
 
 ## Reference

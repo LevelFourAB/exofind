@@ -240,9 +240,9 @@ Choose a `pivot` value that represents a typical popular item in your catalog ra
 
 - [Field types](../reference/field-types.md) - The types a field can have and the ways each can be used.
 - [Admin API](../reference/admin-api.md) - The definition endpoints, conditional requests, and index states.
-- [Index documents](index-documents.md) - Sending documents once the index exists.
-- [Customize text analysis](customize-analysis.md) - Presets, custom chains, and shared resources.
-- [Localize fields](localize-fields.md) - Holding values in several languages.
-- [Use sub-documents](use-sub-documents.md) - Fields whose values are documents of their own.
-- [Roll out a definition change](roll-out-a-definition-change.md) - Changing a definition for documents already indexed.
+- [Indexing documents](index-documents.md) - Sending documents once the index exists.
+- [Customizing text analysis](customize-analysis.md) - Presets, custom chains, and shared resources.
+- [Localizing fields](localize-fields.md) - Holding values in several languages.
+- [Using sub-documents](use-sub-documents.md) - Fields whose values are documents of their own.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - Changing a definition for documents already indexed.
 - [Relevance](../explanation/relevance.md) - How boosts, tie breakers, and signals order results.

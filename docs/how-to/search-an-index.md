@@ -183,19 +183,11 @@ Inspect the JSON response from the search endpoint to verify the results:
 
 ## Related
 
-- [Search API](../reference/search-api.md) - every clause, matcher, sort and
-  option.
-- [Architecture](../explanation/architecture.md) - why a search runs on
-  whichever node receives it and never has to reach a writer.
-- [Relevance](../explanation/relevance.md) - what decides the order when the
-  search asks for none.
-- [Search by vector](search-by-vector.md) - finding documents by meaning
-  rather than by words.
-- [Use sub-documents](use-sub-documents.md) - asking several things of one
-  value of an `object` field, and ordering and counting by it.
-- [Paginate search results](paginate-search-results.md) - offsets, cursors
-  and numbered pages.
-- [Localize fields](localize-fields.md) - holding and searching values in
-  several languages.
-- [Define an index](define-an-index.md) - opting fields into the ways a
-  search may use them.
+- [Search API](../reference/search-api.md) - Every clause, matcher, sort, and option.
+- [Architecture](../explanation/architecture.md) - Why a search runs on whichever node receives it and never has to reach a writer.
+- [Relevance](../explanation/relevance.md) - What decides the order when the search asks for none.
+- [Searching by vector](search-by-vector.md) - Finding documents by meaning rather than by words.
+- [Using sub-documents](use-sub-documents.md) - Asking several things of one value of an `object` field, and ordering and counting by it.
+- [Paginating search results](paginate-search-results.md) - Offsets, cursors, and numbered pages.
+- [Localizing fields](localize-fields.md) - Holding and searching values in several languages.
+- [Defining an index](define-an-index.md) - Opting fields into the ways a search may use them.

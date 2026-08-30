@@ -80,7 +80,7 @@ To recover the documents, use one of the following methods:
 ## Related
 
 - [Lucene compatibility](../explanation/lucene-compatibility.md) - Why an index can outlive the code that reads it.
-- [Reindex into a new generation](reindex-into-a-new-generation.md) - Refilling an index without sending every document again.
+- [Reindexing into a new generation](reindex-into-a-new-generation.md) - Refilling an index without sending every document again.
 - [Admin API](../reference/admin-api.md) - The index status fields that report compatibility.
-- [Operate a deployment](operate-a-deployment.md) - Rolling an upgrade across nodes.
-- [Read documents back](read-documents.md) - Reading documents out of an index that is still readable.
+- [Operating a deployment](operate-a-deployment.md) - Rolling an upgrade across nodes.
+- [Reading documents back](read-documents.md) - Reading documents out of an index that is still readable.

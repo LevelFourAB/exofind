@@ -64,7 +64,7 @@ To return only the number of matching documents without fetching results:
 ## Related
 
 - [Search API](../reference/search-api.md) - The paging fields on the request and the response.
-- [Search an index](search-an-index.md) - The search request the paging options sit on.
-- [Read documents back](read-documents.md) - Paging a whole index out rather than a result set.
-- [Search by vector](search-by-vector.md) - How paging behaves for a nearest-neighbour search.
+- [Searching an index](search-an-index.md) - The search request the paging options sit on.
+- [Reading documents back](read-documents.md) - Paging a whole index out rather than a result set.
+- [Searching by vector](search-by-vector.md) - How paging behaves for a nearest-neighbour search.
 - [Make a write visible to search](make-writes-visible.md) - Why a count can change between pages.

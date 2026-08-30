@@ -216,6 +216,6 @@ Vector distance computations use the JVM vector module, which is enabled in the 
 - [`vector` fields](../reference/field-types.md#vector) - Complete field property reference.
 - [The `knn` clause](../reference/search-api.md#knn) - Search clause syntax and options.
 - [The `fuse` clause](../reference/search-api.md#fuse) - Merging several rankings by rank.
-- [Use sub-documents](use-sub-documents.md) - Holding a list of objects, which is how a document is held as chunks.
-- [Search an index](search-an-index.md) - General search request configuration.
-- [Roll out a definition change](roll-out-a-definition-change.md) - Procedures for updating field definitions and models.
+- [Using sub-documents](use-sub-documents.md) - Holding a list of objects, which is how a document is held as chunks.
+- [Searching an index](search-an-index.md) - General search request configuration.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - Procedures for updating field definitions and models.

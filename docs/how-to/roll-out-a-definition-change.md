@@ -92,9 +92,9 @@ DELETE /v1alpha1/admin/indexes/products@1
 
 ## Related
 
-- [Define an index](define-an-index.md) - Writing the definition the new generation uses.
-- [Reindex into a new generation](reindex-into-a-new-generation.md) - Filling the new generation from the one it replaces.
+- [Defining an index](define-an-index.md) - Writing the definition the new generation uses.
+- [Reindexing into a new generation](reindex-into-a-new-generation.md) - Filling the new generation from the one it replaces.
 - [Generations](../explanation/generations.md) - Why the bare name is what callers hold.
 - [Admin API](../reference/admin-api.md) - The generation, promotion, and deletion endpoints.
-- [Change synonyms without reindexing](change-synonyms-without-reindexing.md) - Changes that need no new generation.
-- [Operate a deployment](operate-a-deployment.md) - Watching nodes pull the new generation.
+- [Changing synonyms without reindexing](change-synonyms-without-reindexing.md) - Changes that need no new generation.
+- [Operating a deployment](operate-a-deployment.md) - Watching nodes pull the new generation.

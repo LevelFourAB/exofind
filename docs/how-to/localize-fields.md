@@ -113,7 +113,7 @@ Localized fields support one value per locale without declaring `multiple`. To s
 
 - [Locales](../reference/locales.md) - The languages with rules, and what each one gets.
 - [Analysis](../reference/analysis.md) - Chains, compound words, and collation.
-- [Define an index](define-an-index.md) - Declaring a field as localized.
-- [Update parts of documents](update-parts-of-documents.md) - Changing one locale without resending the rest.
-- [Search an index](search-an-index.md) - Choosing the locale a search runs in.
-- [Customize text analysis](customize-analysis.md) - Overriding the chain a locale gives a field.
+- [Defining an index](define-an-index.md) - Declaring a field as localized.
+- [Updating parts of documents](update-parts-of-documents.md) - Changing one locale without resending the rest.
+- [Searching an index](search-an-index.md) - Choosing the locale a search runs in.
+- [Customizing text analysis](customize-analysis.md) - Overriding the chain a locale gives a field.

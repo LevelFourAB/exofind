@@ -85,8 +85,8 @@ If a synonym rule does not produce the expected search results, check the follow
 
 ## Related
 
-- [Customize text analysis](customize-analysis.md) - Synonym sets that apply when values are indexed.
-- [Exclude words from typo tolerance](exclude-words-from-typo-tolerance.md) - The other search setting that changes matching without a reindex.
+- [Customizing text analysis](customize-analysis.md) - Synonym sets that apply when values are indexed.
+- [Excluding words from typo tolerance](exclude-words-from-typo-tolerance.md) - The other search setting that changes matching without a reindex.
 - [Analysis](../reference/analysis.md) - Rule syntax and where a synonym filter sits in a chain.
 - [Admin API](../reference/admin-api.md) - The search settings endpoints and their patch paths.
 - [Relevance](../explanation/relevance.md) - Which layers a change reaches without reindexing.

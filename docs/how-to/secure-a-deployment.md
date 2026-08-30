@@ -126,7 +126,7 @@ Setting `EXOFIND_AUTH_MODE=none` answers every request as though it were allowed
 
 - [Authentication](../reference/auth.md) - Keys, permissions, roles, and the keys API.
 - [Trust model](../explanation/trust-model.md) - What a key reaches, and why it cannot be narrowed per end user.
-- [Run a public demo node](run-a-demo-node.md) - Answering searches with no credentials on purpose.
+- [Running a public demo node](run-a-demo-node.md) - Answering searches with no credentials on purpose.
 - [Configuration](../reference/configuration.md) - The authentication settings and the bootstrap key.
-- [Generate an API client](generate-a-client.md) - Giving a generated client its key.
-- [Deploy on Kubernetes](deploy-on-kubernetes.md) - Holding keys in a cluster.
+- [Generating an API client](generate-a-client.md) - Giving a generated client its key.
+- [Deploying on Kubernetes](deploy-on-kubernetes.md) - Holding keys in a cluster.

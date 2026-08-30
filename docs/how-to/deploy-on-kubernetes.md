@@ -316,7 +316,7 @@ For what each of these limits is, and why adding candidates does not make one in
 
 ## Related
 
-- [Run more than one node](run-multiple-nodes.md) - Candidacy, failover, and write routing mechanisms.
-- [Operate a deployment](operate-a-deployment.md) - Operational checks, upgrades, and log messages.
+- [Running multiple nodes](run-multiple-nodes.md) - Candidacy, failover, and write routing mechanisms.
+- [Operating a deployment](operate-a-deployment.md) - Operational checks, upgrades, and log messages.
 - [Configuration](../reference/configuration.md) - Environment variables and JVM configuration options.
 - [Architecture](../explanation/architecture.md) - Storage model and stateless node architecture.

@@ -83,4 +83,4 @@ Verify that the export completed and retrieved the expected dataset:
 - [Documents API](../reference/documents-api.md) - Endpoint reference, query parameters, permissions, and error codes.
 - [Indexing documents](index-documents.md) - Adding, updating, and removing documents in an index.
 - [Make a write visible to search](make-writes-visible.md) - Commit intervals and replication delays between writes and reads.
-- [Reindex into a new generation](reindex-into-a-new-generation.md) - Refill an index from another generation without exporting documents.
+- [Reindexing into a new generation](reindex-into-a-new-generation.md) - Refill an index from another generation without exporting documents.

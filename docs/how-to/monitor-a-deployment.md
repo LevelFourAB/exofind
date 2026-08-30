@@ -7,8 +7,8 @@ control label cardinality, configure histogram modes, and define alerts.
 
 On a backend that bills per active series, the number of indexes decides the
 bill. Dropping or collapsing index labels at your collector controls this cost.
-For a complete catalog of available meters and tags, see the
-[Metrics reference](../reference/metrics.md).
+For a complete catalog of available meters and tags, see
+[Metrics](../reference/metrics.md).
 
 ## Prerequisites
 
@@ -219,11 +219,7 @@ Verify that metrics are arriving in your backend:
 
 ## Related
 
-- [Metrics reference](../reference/metrics.md) - Complete meter catalog, types,
-  and tag values.
-- [Operating a deployment](operate-a-deployment.md) - Health checks and node
-  inspection.
-- [Configuration](../reference/configuration.md) - Full list of engine and
-  metrics environment variables.
-- [Synchronization](../explanation/synchronization.md) - Explanation of sync
-  conflicts and index leases.
+- [Metrics](../reference/metrics.md) - Every meter, its type, and its tag values.
+- [Operating a deployment](operate-a-deployment.md) - Health checks and node inspection.
+- [Configuration](../reference/configuration.md) - Every engine and metrics environment variable.
+- [Synchronization](../explanation/synchronization.md) - What sync conflicts and index leases are.

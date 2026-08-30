@@ -191,7 +191,7 @@ default).
 ## Related
 
 - [Admin API](../reference/admin-api.md) - Endpoints and payload structures for index management.
-- [Authentication and authorization](../reference/auth.md) - API key permissions, roles, and the root key.
+- [Authentication](../reference/auth.md) - API key permissions, roles, and the root key.
 - [Operating a deployment](operate-a-deployment.md) - Monitoring node health, writer assignments, and storage operations.
 - [Rolling out a definition change](roll-out-a-definition-change.md) - Creating and switching between index generations safely.
 - [Generations](../explanation/generations.md) - How generation numbering, promotion, and immutable storage layouts work.
