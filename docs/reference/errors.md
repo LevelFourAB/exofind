@@ -56,6 +56,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:field:analyzer:*` | Analysis chain validation failure | `index:field:analyzer:unknown_ref`, `index:field:analyzer:unsupported_locale` |
 | `index:schema:*` | Index-wide schema rule failure | `index:schema:multiple_primary_keys`, `index:schema:unsupported_features` |
 | `index:ranking:*` | Ranking signal or tie-breaker configuration error | `index:ranking:field_not_sortable`, `index:ranking:signal:shape_not_supported`, `index:ranking:signal:invalid_pivot` |
+| `index:locales:*` | Index locale declaration error | `index:locales:default_locale_required` |
 | `index:locale_fallback:*` | Locale fallback chain configuration error | `index:locale_fallback:locale_not_held`, `index:locale_fallback:unsupported_locale` |
 | `index:resources:*` | Shared resource validation failure | `index:resources:synonyms:one_sided` |
 | `index:definition:*` | Stored index definition incompatible with this API version | `index:definition:unrepresentable` |

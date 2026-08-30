@@ -4,7 +4,8 @@ This reference lists the supported locales and their language analysis features.
 
 A locale is identified by its BCP 47 tag. Locales are used in the following configurations:
 
-- The `defaultLocale` and `locales` properties of a [locale-specific field](field-types.md#properties-on-every-type).
+- The `defaultLocale` and `supported` properties of the [locales an index declares](field-types.md#declared-locales).
+- The `defaultLocale`, `locales` and `only` properties of a [locale-specific field](field-types.md#properties-on-every-type).
 - The `locale` property of an analysis component.
 - The chain of a [locale fallback](field-types.md#locale-fallback).
 - A search query that reads locale-specific fields.
@@ -109,5 +110,15 @@ The engine rejects unsupported locale tags. The following table lists the error 
 | `index:field:analyzer:unsupported_locale` | An analysis chain specifies an unsupported locale tag. |
 | `index:locale_fallback:unsupported_locale` | A fallback chain specifies an unsupported locale tag. |
 | `search:locale:unsupported` | A search query specifies an unsupported locale tag. |
+
+The following table lists the error codes returned for index-level locale declarations:
+
+| Error | Condition |
+| --- | --- |
+| `index:locales:default_locale_required` | An index definition specifies `locales` without `defaultLocale`. |
+| `index:field:locales:not_declared` | A field definition specifies a locale in `only` or `defaultLocale` that the index does not declare. |
+| `index:field:locales:default_not_in_only` | A field definition specifies an `only` list that does not contain the default locale of the field. |
+| `index:field:locales:list_with_declaration` | A field definition specifies a `locales` array on an index that declares `locales`. |
+| `index:field:locales:only_without_declaration` | A field definition specifies `only` on an index that does not declare `locales`. |
 
 Each definition records its required locales in its features as `locale.<tag>`. A node built without a locale rejects an index that uses that locale instead of indexing the text as English.

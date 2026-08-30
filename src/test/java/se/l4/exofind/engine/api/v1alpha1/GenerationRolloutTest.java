@@ -170,6 +170,7 @@ public class GenerationRolloutTest {
 			),
 			null,
 			null,
+			null,
 			null
 		);
 	}

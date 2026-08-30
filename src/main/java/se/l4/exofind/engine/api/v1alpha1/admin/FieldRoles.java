@@ -143,6 +143,7 @@ public class FieldRoles {
 			expandFields(definition.fields(), Context.ROOT),
 			definition.ranking(),
 			definition.resources(),
+			definition.locales(),
 			definition.localeFallback()
 		);
 	}

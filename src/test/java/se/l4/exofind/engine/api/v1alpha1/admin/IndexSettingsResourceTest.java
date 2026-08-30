@@ -179,7 +179,7 @@ public class IndexSettingsResourceTest {
 			);
 		}
 
-		return new IndexDefinition(null, null, fields, null, null, null);
+		return new IndexDefinition(null, null, fields, null, null, null, null);
 	}
 
 	private static SearchSettingsDefinition rankBySales(
@@ -829,7 +829,7 @@ public class IndexSettingsResourceTest {
 		);
 
 		admin.put("shoes", null, null, false, uriInfo, new IndexDefinition(
-			null, null, fields, null, null, null
+			null, null, fields, null, null, null, null
 		));
 
 		documents.add("shoes", new DocumentsRequest(List.of(
@@ -1124,7 +1124,7 @@ public class IndexSettingsResourceTest {
 		);
 
 		admin.put("cameras", null, null, false, uriInfo, new IndexDefinition(
-			null, null, fields, null, null, null
+			null, null, fields, null, null, null, null
 		));
 
 		documents.add("cameras", new DocumentsRequest(List.of(

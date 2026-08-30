@@ -27,7 +27,7 @@ The following properties apply to all field types:
 | `required` | boolean | `false` | When `true`, the engine rejects documents that lack a value for this field. |
 | `multiple` | boolean | `false` | When `true`, the field accepts multiple values in a single document. If `false`, the engine rejects documents containing multiple values for the field. |
 | `stored` | boolean | `false` | When `true`, the engine stores field values to return in search results. This setting applies only when [Document source](#document-source) is set to `"source": "none"`. |
-| `locales` | object | None | Configures locale-specific field values. See [Localize fields](../how-to/localize-fields.md). Sub-properties: `defaultLocale` (fallback locale for non-localized values), `locales` (list of supported locales), and `fallback` (set to `"disabled"` to exclude the field from [Locale fallback](#locale-fallback)). |
+| `locales` | object | None | Configures locale-specific field values. Sub-properties: `defaultLocale` (locale for values without an explicit locale), `only` (locales accepted from index [Declared locales](#declared-locales)), `locales` (list of supported locales when the index declares none), and `fallback` (set to `"disabled"` to exclude the field from [Locale fallback](#locale-fallback)). See [Localize fields](../how-to/localize-fields.md). |
 | `filter` | object | None | Enables filtering search results by exact field value. |
 | `sort` | object | None | Enables sorting search results by field value. Sub-properties: `collation` (`"locale"` by default, or `"binary"` for byte order; strings only) and `missing` (`"last"` by default, or `"first"` to place documents without values first in ascending order). |
 | `facet` | object | None | Enables value count aggregations. On numeric and timestamp fields, enables [range buckets](search-api.md#range-buckets). See [Facets](search-api.md#facets). |
@@ -360,6 +360,23 @@ A signal computes a value between `0` and `1` and multiplies the relevance score
 | `decay` | `timestamp` | Halves the multiplier every `halfLife` seconds of age. Values dated at or after the current time evaluate to `1`. `halfLife` is required and must be greater than `0`. |
 
 Signals are evaluated at search time without reindexing. Signals apply only when sorting by relevance. Query-level signals override index-level signals (see [Search API signals](search-api.md#signals)).
+
+## Declared locales
+
+Declares the locales available to localized fields in the index:
+
+```json
+"locales": { "defaultLocale": "en", "supported": ["sv", "de"] }
+```
+
+- `defaultLocale`: Locale for values without an explicit locale. Required when `locales` is present. Fields inherit this default unless they specify their own `defaultLocale`.
+- `supported`: List of additional locales supported by the index.
+- Localized fields configure `"locales": {}` to accept all declared locales.
+- Fields without a `locales` configuration remain unlocalized.
+- Localized fields can restrict locales with `"locales": { "only": [...] }`. Each locale in `only` must be declared by the index, and `only` must include the field default locale.
+- Localized fields cannot specify a `locales` array when the index declares `locales`.
+- The engine expands the declaration onto each field before storing the index definition. Reading the definition returns `defaultLocale` and `locales` on each field.
+- For the errors these rules produce, see [Locales](locales.md#errors).
 
 ## Locale fallback
 

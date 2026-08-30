@@ -63,7 +63,7 @@ public class IndexDefinitionJsonTest {
 		assertThat(id.matching(), is(nullValue()));
 
 		var name = (StringFieldDefinition) definition.fields().get("name");
-		assertThat(name.locales(), is(new FieldDefinition.Locales("en", null, null)));
+		assertThat(name.locales(), is(new FieldDefinition.Locales("en", null, null, null)));
 		assertThat(name.keyword(), is(new StringFieldDefinition.Keyword(false)));
 		assertThat(
 			name.matching(),
@@ -203,7 +203,36 @@ public class IndexDefinitionJsonTest {
 		var name = (StringFieldDefinition) definition.fields().get("name");
 		assertThat(
 			name.locales(),
-			is(new FieldDefinition.Locales("en", List.of("sv", "de"), null))
+			is(new FieldDefinition.Locales("en", List.of("sv", "de"), null, null))
+		);
+	}
+
+	@Test
+	public void testReadDeclaredLocales() throws Exception {
+		var json = """
+			{
+				"locales": { "defaultLocale": "en", "supported": ["sv", "de"] },
+				"fields": {
+					"name": { "type": "string", "locales": {} },
+					"description": { "type": "string", "locales": { "only": ["en"] } }
+				}
+			}
+			""";
+
+		var definition = mapper.readValue(json, IndexDefinition.class);
+
+		assertThat(
+			definition.locales(),
+			is(new IndexDefinition.Locales("en", List.of("sv", "de")))
+		);
+
+		var name = (StringFieldDefinition) definition.fields().get("name");
+		assertThat(name.locales(), is(new FieldDefinition.Locales(null, null, null, null)));
+
+		var description = (StringFieldDefinition) definition.fields().get("description");
+		assertThat(
+			description.locales(),
+			is(new FieldDefinition.Locales(null, null, List.of("en"), null))
 		);
 	}
 
@@ -242,6 +271,7 @@ public class IndexDefinitionJsonTest {
 	@Test
 	public void testWriteLocaleFallback() throws Exception {
 		var definition = new IndexDefinition(
+			null,
 			null,
 			null,
 			null,
@@ -340,6 +370,7 @@ public class IndexDefinitionJsonTest {
 				Map.of("brands", List.of("acme")),
 				null
 			),
+			null,
 			null
 		);
 
@@ -380,6 +411,7 @@ public class IndexDefinitionJsonTest {
 					null
 				)
 			),
+			null,
 			null,
 			null,
 			null
@@ -437,6 +469,7 @@ public class IndexDefinitionJsonTest {
 			),
 			null,
 			null,
+			null,
 			null
 		);
 
@@ -474,6 +507,7 @@ public class IndexDefinitionJsonTest {
 					null
 				)
 			),
+			null,
 			null,
 			null,
 			null
@@ -565,6 +599,7 @@ public class IndexDefinitionJsonTest {
 				),
 				null
 			),
+			null,
 			null,
 			null
 		);
@@ -713,6 +748,7 @@ public class IndexDefinitionJsonTest {
 			),
 			null,
 			null,
+			null,
 			null
 		);
 
@@ -732,7 +768,7 @@ public class IndexDefinitionJsonTest {
 			"2",
 			true,
 			"abc123",
-			new IndexDefinition(null, null, Map.of(), null, null, null),
+			new IndexDefinition(null, null, Map.of(), null, null, null, null),
 			new IndexStatus(
 				IndexState.USABLE,
 				false,

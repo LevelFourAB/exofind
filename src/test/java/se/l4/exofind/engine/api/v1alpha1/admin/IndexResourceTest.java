@@ -142,6 +142,7 @@ public class IndexResourceTest {
 			),
 			null,
 			null,
+			null,
 			null
 		);
 	}
@@ -306,6 +307,7 @@ public class IndexResourceTest {
 			),
 			null,
 			null,
+			null,
 			null
 		);
 
@@ -371,6 +373,7 @@ public class IndexResourceTest {
 			definition().fields(),
 			null,
 			null,
+			null,
 			null
 		);
 
@@ -393,7 +396,8 @@ public class IndexResourceTest {
 			false,
 			uriInfo,
 			new IndexDefinition(
-				null, Map.of("owner", "search"), definition().fields(), null, null, null
+				null, Map.of("owner", "search"), definition().fields(), null, null, null,
+				null
 			)
 		);
 
@@ -413,7 +417,8 @@ public class IndexResourceTest {
 				false,
 				uriInfo,
 				new IndexDefinition(
-					null, Map.of("owner", "search"), definition().fields(), null, null, null
+					null, Map.of("owner", "search"), definition().fields(), null, null, null,
+					null
 				)
 			)
 		);
@@ -430,7 +435,8 @@ public class IndexResourceTest {
 			false,
 			uriInfo,
 			new IndexDefinition(
-				null, Map.of("owner", "search"), definition().fields(), null, null, null
+				null, Map.of("owner", "search"), definition().fields(), null, null, null,
+				null
 			)
 		);
 
@@ -460,6 +466,7 @@ public class IndexResourceTest {
 					null
 				)
 			),
+			null,
 			null,
 			null,
 			null

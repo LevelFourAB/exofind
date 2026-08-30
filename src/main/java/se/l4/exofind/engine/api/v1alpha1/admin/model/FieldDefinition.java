@@ -97,8 +97,10 @@ public sealed interface FieldDefinition
 		documents are otherwise preserved in full.""";
 
 	String LOCALES_DESCRIPTION = """
-		Configures locale-specific field values, so analysis and collation \
-		follow the locale each value carries.""";
+		Configures locale-specific field values so that analysis and collation \
+		follow the locale of each value. On an index that declares `locales`, \
+		configuring `{}` gives the field every declared locale, and `only` \
+		narrows the field to a subset of those locales.""";
 
 	String FILTER_DESCRIPTION = """
 		Enables filtering search results by exact field value. On numeric and \
@@ -249,17 +251,28 @@ public sealed interface FieldDefinition
 
 	/**
 	 * Configures locale-specific field values.
+	 *
+	 * <p>An index that declares {@link IndexDefinition.Locales} gives its
+	 * locales to every field that opts in with {@code "locales": {}}.
+	 * {@code only} narrows a field to fewer of them.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
-		Configures locale-specific field values. See [Localize \
+		Configures locale-specific field values. On an index that declares \
+		`locales`, configuring `{}` gives the field every declared locale, and \
+		`only` narrows the field to a subset of those locales. See [Localize \
 		fields](https://exofind.dev/how-to/localize-fields/).""")
 	record Locales(
 		/**
 		 * The BCP-47 fallback locale assumed for values that carry no locale.
+		 * Defaults to the {@code defaultLocale} of the index on an index that
+		 * declares {@code locales}.
 		 */
 		@Schema(
-			description = "BCP-47 fallback locale for non-localized values.",
+			description = """
+				Specifies the BCP-47 fallback locale for values that carry no \
+				explicit locale. On an index that declares `locales`, this \
+				property defaults to the `defaultLocale` of the index.""",
 			examples = "sv"
 		)
 		String defaultLocale,
@@ -268,12 +281,41 @@ public sealed interface FieldDefinition
 		 * List of supported locales for the field, in addition to the default
 		 * locale. A value carrying a locale that is neither listed here nor set
 		 * as default is rejected, and queries can target any listed locale.
+		 *
+		 * <p>Rejected on an index that declares {@code locales}, which narrows
+		 * a field with {@code only} instead. Reading a definition back always
+		 * returns this list.
 		 */
 		@Schema(description = """
-			List of supported locales for the field, in addition to the \
-			default locale. Documents containing values with unlisted locales \
-			are rejected, and queries can target any listed locale.""")
+			Lists the supported locales for the field, in addition to the \
+			default locale. The engine rejects documents containing values \
+			with unlisted locales, and queries can target any listed locale. \
+			The engine rejects this property on an index that declares \
+			`locales`, which narrows a field with `only` instead. Reading an \
+			index definition back always returns this list on each field.""")
 		List<String> locales,
+
+		/**
+		 * The locales this field holds, out of the ones the index declares.
+		 * Omitted, the field holds all of them.
+		 *
+		 * <p>Every tag must be one the index declares, and the list must
+		 * contain the locale the field defaults to. A shorter list means fewer
+		 * fallback copies for a document that carries no value in every locale.
+		 *
+		 * <p>Expanded into {@code defaultLocale} and {@code locales} before the
+		 * definition is stored. Reading a definition back returns those
+		 * instead.
+		 */
+		@Schema(description = """
+			Specifies the locales this field holds from the locales declared \
+			in index-level `locales`. If omitted, the field holds all declared \
+			locales. Every tag must be one the index declares, and the list \
+			must contain the default locale of the field. The engine expands \
+			this property into `defaultLocale` and `locales` before storing \
+			the index definition, so reading a definition back returns those \
+			properties instead.""")
+		List<String> only,
 
 		/**
 		 * Controls whether this field participates in the

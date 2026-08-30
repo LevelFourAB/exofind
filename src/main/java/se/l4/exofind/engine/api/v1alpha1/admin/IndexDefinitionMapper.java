@@ -56,12 +56,13 @@ import se.l4.exofind.engine.index.schema.VectorFieldTypeDef;
  *
  * Values that were not set stay unset in both directions, so the engine
  * decides what the defaults are rather than the API baking them in. The
- * deliberate exceptions are the two shorthands, which are expanded on the way
- * in so that what they mean can never shift under an index that already
- * exists: an analyzer preset becomes the chain it names, and a field role
- * becomes the usages it stands for - see {@link FieldRoles}. Reading a
- * definition back therefore shows the chain and the usages rather than the
- * names.
+ * deliberate exceptions are the shorthands, which are expanded on the way in so
+ * that what they mean can never shift under an index that already exists: an
+ * analyzer preset becomes the chain it names, a field role becomes the usages
+ * it stands for - see {@link FieldRoles} - and the locales an index declares
+ * become the locales of each field - see {@link IndexLocales}. Reading a
+ * definition back therefore shows the chain, the usages and the per-field
+ * locales rather than the names.
  *
  * Locale tags are canonicalized on the way in, so that everything below this
  * class - the variants of a field, the features a definition requires, the
@@ -209,6 +210,7 @@ public class IndexDefinitionMapper {
 	 */
 	public static IndexDef toStored(IndexDefinition definition) {
 		definition = FieldRoles.expand(definition);
+		definition = IndexLocales.expand(definition);
 
 		var builder = IndexDef.newBuilder();
 
@@ -983,6 +985,13 @@ public class IndexDefinitionMapper {
 			fields,
 			ranking,
 			toApi(definition.getResources()),
+			/*
+			 * A stored definition holds the locales of each field, so there is
+			 * no declaration to read back. Reading one back would also break
+			 * checkRepresentable, which needs one stored definition to map to
+			 * one API definition.
+			 */
+			null,
 			localeFallback
 		);
 	}
@@ -1073,6 +1082,7 @@ public class IndexDefinitionMapper {
 			locales = new FieldDefinition.Locales(
 				config.hasDefaultLocale() ? config.getDefaultLocale() : null,
 				config.getLocalesCount() > 0 ? List.copyOf(config.getLocalesList()) : null,
+				null,
 				toApi(config.getFallback())
 			);
 		}

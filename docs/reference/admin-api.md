@@ -120,7 +120,7 @@ On a generation that holds documents, refused changes include:
 - Changing `keyword.caseFolding`, `sort.collation` on a string field, or `hierarchy.separator`.
 - Changing a vector field's `dimensions`, `similarity`, `hnsw`, or `quantization`.
 - Changing the `mode` of an object field between nested and flattened.
-- Changing `locales.defaultLocale` or adding a locale to the list.
+- Changing `locales.defaultLocale`, adding a locale to a field's `locales` list, or adding one to the `supported` list the index declares.
 - Enabling or changing `localeFallback`.
 
 Accepted changes on a generation that holds documents include:

@@ -37,7 +37,9 @@ public class FieldRolesTest {
 
 	private static FieldDefinition expand(FieldDefinition field) {
 		return FieldRoles
-			.expand(new IndexDefinition(null, null, Map.of("field", field), null, null, null))
+			.expand(
+				new IndexDefinition(null, null, Map.of("field", field), null, null, null, null)
+			)
 			.fields()
 			.get("field");
 	}
@@ -327,6 +329,7 @@ public class FieldRolesTest {
 				null,
 				null,
 				Map.of("name", string(Role.TITLE)),
+				null,
 				null,
 				null,
 				null

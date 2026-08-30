@@ -38,6 +38,16 @@ import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.schema.VectorFieldTypeDef;
 
 public class IndexDefinitionMapperTest {
+	private static StringFieldDefinition localized(FieldDefinition.Locales locales) {
+		return new StringFieldDefinition(
+			null,
+			null, null, null, null, locales,
+			null, null, null,
+			null, null, null,
+			null
+		);
+	}
+
 	private static StringFieldDefinition string(
 		StringFieldDefinition.Keyword keyword,
 		StringFieldDefinition.TextUsage matching,
@@ -55,13 +65,13 @@ public class IndexDefinitionMapperTest {
 	}
 
 	private static IndexDefinition withFields(Map<String, FieldDefinition> fields) {
-		return new IndexDefinition(null, null, fields, null, null, null);
+		return new IndexDefinition(null, null, fields, null, null, null, null);
 	}
 
 	@Test
 	public void testEmptyDefinition() {
 		var stored = IndexDefinitionMapper.toStored(
-			new IndexDefinition(null, null, null, null, null, null)
+			new IndexDefinition(null, null, null, null, null, null, null)
 		);
 
 		assertThat(stored.getFieldsCount(), is(0));
@@ -71,7 +81,9 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testMetadataIsKept() {
 		var stored = IndexDefinitionMapper.toStored(
-			new IndexDefinition(null, Map.of("owner", "search"), Map.of(), null, null, null)
+			new IndexDefinition(
+				null, Map.of("owner", "search"), Map.of(), null, null, null, null
+			)
 		);
 
 		assertThat(stored.getMetadataMap(), is(Map.of("owner", "search")));
@@ -84,7 +96,7 @@ public class IndexDefinitionMapperTest {
 	public void testEmptyMetadataIsNotReturned() {
 		var api = IndexDefinitionMapper.toApi(
 			IndexDefinitionMapper.toStored(
-				new IndexDefinition(null, Map.of(), Map.of(), null, null, null)
+				new IndexDefinition(null, Map.of(), Map.of(), null, null, null, null)
 			)
 		);
 
@@ -182,7 +194,7 @@ public class IndexDefinitionMapperTest {
 		var field = new StringFieldDefinition(
 			null,
 			null, null, null, null,
-			new FieldDefinition.Locales("en", null, null),
+			new FieldDefinition.Locales("en", null, null, null),
 			null, null, null,
 			null, null, null,
 			null
@@ -203,7 +215,7 @@ public class IndexDefinitionMapperTest {
 		var field = new StringFieldDefinition(
 			null,
 			null, null, null, null,
-			new FieldDefinition.Locales("en", List.of("sv", "de"), null),
+			new FieldDefinition.Locales("en", List.of("sv", "de"), null, null),
 			null, null, null,
 			null, null, null,
 			null
@@ -219,6 +231,48 @@ public class IndexDefinitionMapperTest {
 	}
 
 	/**
+	 * The locales an index declares reach storage as the locales of each field,
+	 * and a definition read back holds those instead of the declaration.
+	 */
+	@Test
+	public void testDeclaredIndexLocalesAreStoredOnEveryField() {
+		var opted = new FieldDefinition.Locales(null, null, null, null);
+		var narrowed = new FieldDefinition.Locales(null, null, List.of("en"), null);
+
+		var definition = new IndexDefinition(
+			null,
+			null,
+			Map.of(
+				"title", localized(opted),
+				"summary", localized(narrowed)
+			),
+			null,
+			null,
+			new IndexDefinition.Locales("en", List.of("sv", "de")),
+			null
+		);
+
+		var stored = IndexDefinitionMapper.toStored(definition);
+
+		var title = stored.getFieldsOrThrow("title").getLocales();
+		assertThat(title.getDefaultLocale(), is("en"));
+		assertThat(title.getLocalesList(), is(List.of("sv", "de")));
+
+		var summary = stored.getFieldsOrThrow("summary").getLocales();
+		assertThat(summary.getDefaultLocale(), is("en"));
+		assertThat(summary.getLocalesCount(), is(0));
+
+		var api = IndexDefinitionMapper.toApi(stored);
+		assertThat(api.locales(), is(nullValue()));
+		assertThat(
+			api.fields().get("title").locales(),
+			is(new FieldDefinition.Locales("en", List.of("sv", "de"), null, null))
+		);
+
+		IndexDefinitionMapper.checkRepresentable(stored);
+	}
+
+	/**
 	 * Case carries no meaning in a locale tag. Two spellings of one tag would
 	 * become two variants of the field, and a feature name the node offering
 	 * the locale does not recognize, so the stored definition holds the
@@ -229,7 +283,7 @@ public class IndexDefinitionMapperTest {
 		var field = new StringFieldDefinition(
 			null,
 			null, null, null, null,
-			new FieldDefinition.Locales("EN", List.of("zh-hant", "PT-br"), null),
+			new FieldDefinition.Locales("EN", List.of("zh-hant", "PT-br"), null, null),
 			null, null, null,
 			null, null, null,
 			null
@@ -254,7 +308,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testAnUnreadableLocaleTagIsStoredAsWritten() {
 		var definition = new IndexDefinition(
-			null, null, null, null, null,
+			null, null, null, null, null, null,
 			new IndexDefinition.LocaleFallback(List.of("not a tag"))
 		);
 
@@ -266,7 +320,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testLocaleFallbackIsStoredCanonically() {
 		var definition = new IndexDefinition(
-			null, null, null, null, null,
+			null, null, null, null, null, null,
 			new IndexDefinition.LocaleFallback(List.of("DA", "en-us"))
 		);
 
@@ -278,7 +332,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testLocaleFallbackRoundTrips() {
 		var definition = new IndexDefinition(
-			null, null, null, null, null,
+			null, null, null, null, null, null,
 			new IndexDefinition.LocaleFallback(List.of("da", "en"))
 		);
 
@@ -299,7 +353,7 @@ public class IndexDefinitionMapperTest {
 	@Test
 	public void testLocaleFallbackWithoutAChainRoundTrips() {
 		var definition = new IndexDefinition(
-			null, null, null, null, null,
+			null, null, null, null, null, null,
 			new IndexDefinition.LocaleFallback(null)
 		);
 
@@ -314,7 +368,7 @@ public class IndexDefinitionMapperTest {
 	public void testNoLocaleFallbackIsNotReturned() {
 		var api = IndexDefinitionMapper.toApi(
 			IndexDefinitionMapper.toStored(
-				new IndexDefinition(null, null, null, null, null, null)
+				new IndexDefinition(null, null, null, null, null, null, null)
 			)
 		);
 
@@ -329,6 +383,7 @@ public class IndexDefinitionMapperTest {
 			new FieldDefinition.Locales(
 				"en",
 				List.of("sv"),
+				null,
 				FieldDefinition.Locales.Fallback.DISABLED
 			),
 			null, null, null,
@@ -964,7 +1019,7 @@ public class IndexDefinitionMapperTest {
 		);
 
 		var stored = IndexDefinitionMapper.toStored(
-			new IndexDefinition(null, null, null, null, resources, null)
+			new IndexDefinition(null, null, null, null, resources, null, null)
 		);
 
 		assertThat(stored.hasResources(), is(true));
@@ -1001,6 +1056,7 @@ public class IndexDefinitionMapperTest {
 					null,
 					null,
 					new IndexDefinition.Resources(null, null, null),
+					null,
 					null
 				)
 			)
@@ -1024,7 +1080,7 @@ public class IndexDefinitionMapperTest {
 		assertThrows(
 			EngineException.class,
 			() -> IndexDefinitionMapper.toStored(
-				new IndexDefinition(null, null, null, null, resources, null)
+				new IndexDefinition(null, null, null, null, resources, null, null)
 			)
 		);
 	}
@@ -1045,7 +1101,7 @@ public class IndexDefinitionMapperTest {
 		assertThrows(
 			EngineException.class,
 			() -> IndexDefinitionMapper.toStored(
-				new IndexDefinition(null, null, null, null, resources, null)
+				new IndexDefinition(null, null, null, null, resources, null, null)
 			)
 		);
 	}
@@ -1363,7 +1419,7 @@ public class IndexDefinitionMapperTest {
 		);
 
 		var stored = IndexDefinitionMapper.toStored(
-			new IndexDefinition(null, null, null, ranking, null, null)
+			new IndexDefinition(null, null, null, ranking, null, null, null)
 		);
 
 		assertThat(stored.hasRanking(), is(true));
@@ -1400,7 +1456,7 @@ public class IndexDefinitionMapperTest {
 		);
 
 		var stored = IndexDefinitionMapper.toStored(
-			new IndexDefinition(null, null, null, ranking, null, null)
+			new IndexDefinition(null, null, null, ranking, null, null, null)
 		);
 
 		assertThat(stored.getRanking().getSignalsCount(), is(2));
@@ -1431,7 +1487,7 @@ public class IndexDefinitionMapperTest {
 		assertThrows(
 			EngineException.class,
 			() -> IndexDefinitionMapper.toStored(
-				new IndexDefinition(null, null, null, ranking, null, null)
+				new IndexDefinition(null, null, null, ranking, null, null, null)
 			)
 		);
 	}
@@ -1446,7 +1502,7 @@ public class IndexDefinitionMapperTest {
 		assertThrows(
 			EngineException.class,
 			() -> IndexDefinitionMapper.toStored(
-				new IndexDefinition(null, null, null, ranking, null, null)
+				new IndexDefinition(null, null, null, ranking, null, null, null)
 			)
 		);
 	}
@@ -1465,6 +1521,7 @@ public class IndexDefinitionMapperTest {
 				null,
 				null,
 				new IndexDefinition.Resources(null, null, null),
+				null,
 				null
 			)
 		);
@@ -1513,6 +1570,7 @@ public class IndexDefinitionMapperTest {
 					new FieldDefinition.Locales(
 						"en",
 						List.of("en", "sv"),
+						null,
 						FieldDefinition.Locales.Fallback.DISABLED
 					),
 					null,
@@ -1594,6 +1652,7 @@ public class IndexDefinitionMapperTest {
 					)
 				)
 			),
+			null,
 			new IndexDefinition.LocaleFallback(List.of("en"))
 		);
 

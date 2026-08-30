@@ -10,9 +10,52 @@ Before you begin, ensure that you have:
 
 ## Localizing a field
 
-Follow these steps to declare locales on your fields, optionally configure fallback behavior for untranslated documents, and run localized searches.
+Follow these steps to declare the locales of the index, opt fields in, optionally configure fallback behavior for untranslated documents, and run localized searches.
 
-1. **Declare locales in the field definition**: In your index schema, add a `locales` object to each field that requires language-specific values. Define `defaultLocale` and list all other supported tags in the `locales` array:
+1. **Declare the locales of the index**: Add a `locales` object beside `fields`. Set `defaultLocale` to the default locale tag, and list the additional locales in `supported`:
+
+   ```json
+   {
+     "locales": { "defaultLocale": "en", "supported": ["sv", "de"] },
+     "fields": {
+       "name": { "type": "string", "locales": {}, "matching": {} },
+       "sku": { "type": "string", "filter": {} }
+     }
+   }
+   ```
+
+   - Set `"locales": {}` on a field to opt in. The field then supports every locale declared on the index.
+   - Leave `locales` unset to keep a field unlocalized. Unlocalized fields store a single value, such as a SKU or an identifier.
+   - Values without a locale tag use the `defaultLocale`.
+   - The engine validates document values against the declared locales. If a document carries a value in an undeclared locale, the engine rejects the document with `index:update:locale_not_declared`.
+   - Every locale tag must be valid according to the [locale reference](../reference/locales.md). Unsupported tags fail schema validation.
+   - The engine expands the index declaration onto individual fields before storing the schema. Reading the definition back returns `defaultLocale` and `locales` on each field.
+   - To add a locale later, add the tag to `supported`. Because the engine rejects changes to `supported` on a generation with documents, roll out the change through [a new generation](roll-out-a-definition-change.md).
+
+2. **Narrow a field to fewer locales (optional)**: To restrict a field to a subset of the index locales, list the allowed tags in `only`:
+
+   ```json
+   "description": {
+     "type": "string",
+     "locales": { "only": ["en"] },
+     "matching": {}
+   }
+   ```
+
+   - Every tag in `only` must be declared in the index `locales` object.
+   - The `only` list must include the field default locale. To use a default other than the index default, set `defaultLocale` on the field:
+
+   ```json
+   "legalNotice": {
+     "type": "string",
+     "locales": { "defaultLocale": "sv", "only": ["sv"] }
+   }
+   ```
+
+   - Narrowing a field reduces the number of fallback copies generated for untranslated documents.
+   - Sub-fields inside an `object` field opt in and narrow the same way. Each object value resolves locales independently and fills missing values from its own data.
+
+3. **Declare locales on individual fields (alternative)**: If an index does not declare index-level locales, define them on each field instead. Set `defaultLocale` and list the other tags in the `locales` array:
 
    ```json
    "name": {
@@ -22,20 +65,19 @@ Follow these steps to declare locales on your fields, optionally configure fallb
    }
    ```
 
-   - The `defaultLocale` applies to values that do not specify a locale.
-   - The `locales` array defines which language variants the field accepts. If you submit a value with an undeclared locale, the engine rejects it with `index:update:locale_not_declared`.
-   - Every locale tag must be valid according to the [locale reference](../reference/locales.md). If you use an unsupported tag, the schema fails validation.
-   - A field inside an `object` field declares `locales` the same way. Each object value resolves its locales on its own, and fills its missing locales from its own given values.
+   - Use this format when fields in the same index require unrelated sets of languages.
+   - Do not combine index-level declarations and per-field lists. An index that declares root `locales` rejects per-field locale lists with `index:field:locales:list_with_declaration`.
 
-2. **Configure fallback for untranslated documents (optional)**: By default, searching with a specific locale matches only documents translated into that locale. If you want untranslated documents to appear in search results, define a `localeFallback` chain in your schema:
+4. **Configure fallback for untranslated documents (optional)**: By default, localized searches match only documents translated into the search locale. To include untranslated documents in search results, define a `localeFallback` chain:
 
    ```json
    {
+     "locales": { "defaultLocale": "en", "supported": ["da", "no"] },
      "localeFallback": { "chain": ["da", "en"] },
      "fields": {
        "name": {
          "type": "string",
-         "locales": { "defaultLocale": "en", "locales": ["da", "no"] },
+         "locales": {},
          "matching": {},
          "sort": {},
          "facet": {}
@@ -44,24 +86,20 @@ Follow these steps to declare locales on your fields, optionally configure fallb
    }
    ```
 
-   - The engine evaluates the `chain` in order. If a document lacks a translation in the search locale, the engine fills the value from the first available locale in the chain. For example, a document with both `da` and `en` values fills the missing `no` variant from `da`.
-   - If you omit the `chain` property (`"localeFallback": {}`), each field falls back to its own `defaultLocale`.
-   - If you specify a locale in `chain` that no field in the index uses, the engine rejects the configuration.
-   - If a specific field should not generate fallback copies (such as large description fields), disable fallback on that field:
+   - The engine evaluates `chain` in order. If a document lacks a value for the search locale, the engine copies the value from the first available locale in the chain. For example, a document with `da` and `en` values fills a missing `no` variant from `da`.
+   - If you omit `chain` (`"localeFallback": {}`), each field falls back to its own `defaultLocale`.
+   - If `chain` specifies a locale that no field uses, the engine rejects the schema.
+   - To prevent a field from generating fallback copies, set `"fallback": "disabled"` on that field:
 
    ```json
    "description": {
      "type": "string",
-     "locales": {
-       "defaultLocale": "en",
-       "locales": ["da", "no"],
-       "fallback": "disabled"
-     },
+     "locales": { "fallback": "disabled" },
      "matching": {}
    }
    ```
 
-3. **Query using a specific locale**: When sending a search request, include the `locale` parameter to read localized fields in that language:
+5. **Query using a specific locale**: When sending a search request, include the `locale` parameter to read localized fields in that language:
 
    ```json
    {
@@ -103,8 +141,9 @@ Declaring a locale applies the following analysis and sorting behaviors:
 
 ### Fallback index storage and updates
 
-- **Storage costs**: Fallback values are generated and stored during indexing for each missing locale. Fully translated fields require no extra storage. Fallback indexing duplicates the inverted index, doc values, term vectors, and stored values for the localized field, but does not duplicate the source document.
-- **Re-indexing on changes**: Fallback values are generated at index time. Adding, changing, or removing a `localeFallback` chain affects only documents indexed after the change. To apply new fallback rules to existing documents, re-index them.
+- **Storage costs**: The engine generates and stores fallback values at index time for each missing locale. Fully translated fields require no extra storage. Fallback indexing duplicates the inverted index, doc values, term vectors, and stored values for the localized field, but does not duplicate the source document.
+- **Narrowed fields**: A field narrowed with `only` generates fallback copies only for its supported locales, rather than every locale declared on the index. Narrow fields that contain large text values to reduce index storage.
+- **Reindexing on changes**: Fallback values are generated at index time. Adding, changing, or removing a `localeFallback` chain affects only documents indexed after the change. To apply new fallback rules to existing documents, reindex them.
 
 ### Multiple values per locale
 

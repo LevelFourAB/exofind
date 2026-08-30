@@ -32,6 +32,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *   things shared between fields rather than owned by one - named analysis
  *   chains, stopword lists and synonym sets - referred to by name from the
  *   fields
+ * @param locales
+ *   the locales the localized fields of the index hold. Left out to declare
+ *   locales on each field instead
  * @param localeFallback
  *   how the locales a document holds no value in are filled from the ones it
  *   does. Left out to leave them empty, so a search in a locale only finds the
@@ -83,6 +86,15 @@ public record IndexDefinition(
 	Resources resources,
 
 	@Schema(description = """
+		Declares the locales that localized fields in the index support. A \
+		field opts in with `"locales": {}` to hold all declared locales, or \
+		narrows to fewer with `"locales": { "only": [...] }`. The engine \
+		expands the declaration onto each field before storing the index \
+		definition, so reading a definition back returns the locales on each \
+		field. If omitted, each field declares its own locales.""")
+	Locales locales,
+
+	@Schema(description = """
 		Configures how missing locale values in a document are populated from \
 		available locales during indexing. When omitted, missing locales \
 		remain empty, and searches in a locale find only documents translated \
@@ -103,6 +115,71 @@ public record IndexDefinition(
 		    "published": { "type": "boolean", "filter": {} }
 		  }
 		}""";
+
+	/**
+	 * The locales the localized fields of an index hold, declared once instead
+	 * of on every field:
+	 *
+	 * <pre>
+	 * "locales": { "defaultLocale": "en", "supported": [ "sv", "de" ] },
+	 * "fields": {
+	 *   "name":        { "type": "string", "locales": {} },
+	 *   "description": { "type": "string", "locales": { "only": [ "en" ] } }
+	 * }
+	 * </pre>
+	 *
+	 * <p>A field opts in with {@code "locales": {}} and holds every locale
+	 * declared here. A field left without the key stays unlocalized, so a code
+	 * or an identifier is not translated by accident. {@code only} narrows a
+	 * field to fewer locales, and a narrowed field is given fewer fallback
+	 * copies.
+	 *
+	 * <p>The declaration is expanded onto the fields before the definition is
+	 * stored. Reading a definition back returns the locales of each field, not
+	 * this declaration.
+	 *
+	 * <p>Adding a locale here is rejected on a generation that holds documents,
+	 * the same as adding one to a field.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(
+		name = "IndexLocales",
+		description = """
+			Declares the locales that localized fields in an index support, \
+			defined once at the index level instead of on every field. The \
+			engine expands these locales onto each field before storing the \
+			index definition."""
+	)
+	public record Locales(
+		/**
+		 * The BCP-47 locale that values carrying no locale are in. A field
+		 * takes this as its default unless it names its own
+		 * {@code defaultLocale}. Required whenever an index declares locales.
+		 */
+		@Schema(
+			description = """
+				Specifies the BCP-47 locale for values that carry no explicit \
+				locale. A field uses this value as its default locale unless \
+				the field defines its own `defaultLocale`. This property is \
+				required whenever an index declares `locales`.""",
+			required = true,
+			examples = "en"
+		)
+		String defaultLocale,
+
+		/**
+		 * The other BCP-47 locales the index holds, besides
+		 * {@code defaultLocale}. A field narrows to a subset of these and the
+		 * default with {@code only}, and can name any of them as its own
+		 * {@code defaultLocale}.
+		 */
+		@Schema(description = """
+			Lists additional BCP-47 locales that the index supports, in \
+			addition to `defaultLocale`. A field can narrow to a subset of \
+			these supported locales and the default locale by using `only`.""")
+		List<String> supported
+	) {
+	}
 
 	/**
 	 * Fills missing locale values in a document from available translations

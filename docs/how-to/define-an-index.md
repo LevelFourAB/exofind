@@ -115,6 +115,23 @@ A role is expanded before storage, so reading the definition back shows the usag
 }
 ```
 
+### Declare the languages once
+
+To hold text in multiple languages, declare `locales` beside `fields`. A field opts in with `"locales": {}` to support all declared locales:
+
+```json
+{
+  "locales": { "defaultLocale": "en", "supported": ["sv", "de"] },
+  "fields": {
+    "name": { "type": "string", "role": "title", "locales": {} },
+    "description": { "type": "string", "role": "description", "locales": { "only": ["en"] } },
+    "sku": { "type": "string", "role": "code" }
+  }
+}
+```
+
+A field without the `locales` key stays unlocalized and holds a single value, such as `sku`. To restrict a field to fewer languages, specify them with `only`. This reduces the number of fallback copies the engine creates. To add a language later, add the tag to `supported`. For the full rules, see [Localize fields](localize-fields.md).
+
 ### Enable more than one value
 
 A field holds a single value unless you set `"multiple": true`. If a document provides multiple values for a single-valued field, the server rejects the document. A locale-specific field holds one value per locale by default; setting `multiple` allows multiple values within the same locale.

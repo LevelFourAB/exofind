@@ -138,6 +138,7 @@ public class ReindexResourceTest {
 			),
 			null,
 			null,
+			null,
 			null
 		);
 	}
