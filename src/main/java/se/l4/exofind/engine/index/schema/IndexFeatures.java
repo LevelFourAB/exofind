@@ -101,6 +101,20 @@ public final class IndexFeatures {
 	public static final String TYPE_OBJECT_KEY = "type.object.key";
 
 	/**
+	 * A wildcard stands for the name of an object field, or for the name of a
+	 * field inside one.
+	 *
+	 * One name covers both halves because they shipped together and are one
+	 * capability - a path through an object resolving by pattern rather than
+	 * by lookup. Named because a node without it refuses the definition
+	 * instead of taking documents whose dynamic names it has nowhere to put:
+	 * it would report every such name as a field the index does not have, and
+	 * an index written from both nodes would hold the attributes of whichever
+	 * node happened to take each document.
+	 */
+	public static final String TYPE_OBJECT_WILDCARD = "type.object.wildcard";
+
+	/**
 	 * The index keeps documents as they were given.
 	 *
 	 * Named because a node without it would store only the fields that ask to
@@ -339,6 +353,7 @@ public final class IndexFeatures {
 			TYPE_OBJECT_USAGES,
 			TYPE_OBJECT_FLATTENED,
 			TYPE_OBJECT_KEY,
+			TYPE_OBJECT_WILDCARD,
 			TYPE_INT32,
 			TYPE_INT64,
 			TYPE_FLOAT,
@@ -486,8 +501,8 @@ public final class IndexFeatures {
 			collectChain(chain, features, decompoundingLocales());
 		}
 
-		for(var field : definition.getFieldsMap().values()) {
-			collectField(field, features);
+		for(var field : definition.getFieldsMap().entrySet()) {
+			collectField(field.getKey(), field.getValue(), features);
 		}
 
 		/*
@@ -504,7 +519,22 @@ public final class IndexFeatures {
 		return features.toSortedList().toImmutable();
 	}
 
-	private static void collectField(FieldDef field, MutableSet<String> features) {
+	/**
+	 * Gather what one field asks for, named so that a wildcard in the name can
+	 * be described - what a field is called decides how it is resolved, which
+	 * is as much a capability as what it holds.
+	 *
+	 * @param name
+	 *   the name the field is defined under, which for a field inside an
+	 *   object is its name there rather than the path through it
+	 * @param field
+	 * @param features
+	 */
+	private static void collectField(
+		String name,
+		FieldDef field,
+		MutableSet<String> features
+	) {
 		var localeTags = declaredLocales(field);
 
 		switch(field.getType().getTypeCase()) {
@@ -567,9 +597,22 @@ public final class IndexFeatures {
 					features.add(TYPE_OBJECT_KEY);
 				}
 
+				/*
+				 * A pattern for the object's own name is named here, and one
+				 * for a field inside it below - both are the same capability,
+				 * so they carry the same name.
+				 */
+				if(name.contains("*")) {
+					features.add(TYPE_OBJECT_WILDCARD);
+				}
+
 				// The fields inside need their own features besides this one
-				for(var inner : field.getType().getObject().getFieldsMap().values()) {
-					collectField(inner, features);
+				for(var inner : field.getType().getObject().getFieldsMap().entrySet()) {
+					collectField(inner.getKey(), inner.getValue(), features);
+
+					if(inner.getKey().contains("*")) {
+						features.add(TYPE_OBJECT_WILDCARD);
+					}
 
 					/*
 					 * Named besides the usages themselves, which say nothing
@@ -578,7 +621,7 @@ public final class IndexFeatures {
 					 * answers across a join. A flattened field is a field of
 					 * the index, so its usages carry no name beyond their own.
 					 */
-					if(nested && usesMoreThanFiltering(inner)) {
+					if(nested && usesMoreThanFiltering(inner.getValue())) {
 						features.add(TYPE_OBJECT_USAGES);
 					}
 				}

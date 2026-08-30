@@ -2,7 +2,7 @@
 
 This guide shows you how to model, index, query, and update dynamic attributes in an index. Use this guide when your catalogue contains items with attributes that the index definition does not name in advance, such as e-commerce product specifications where new attributes appear over time.
 
-To match multiple known attributes together in a single variant value, use sub-documents instead. For details, see [Using sub-documents](use-sub-documents.md).
+To match attributes together within a single variant value, use sub-documents instead. For details, see [Using sub-documents](use-sub-documents.md).
 
 ## Prerequisites
 
@@ -153,12 +153,19 @@ Verify that the response returns the matching documents and includes facet count
 
 ## Limitations of wildcard fields
 
-Wildcard fields have four limitations:
+Wildcard fields have three limitations:
 
 - **Skipped by general text search:** A `text` clause without explicit `fields` does not search wildcard namespaces. To search dynamic attributes in a single search box, copy their values to an explicit `multiple: true` text field.
 - **No field name discovery:** The engine does not provide an endpoint or facet to list all attribute names in use. Your catalogue system must track which attributes exist and request the relevant facets for a given category.
-- **No wildcard fields inside objects:** You cannot use wildcard field names inside an `object` field (`index:field:object:inner_wildcard`), and you cannot define an `object` field with a wildcard name (`index:field:object:wildcard_name`). To store varying attributes on product variants, index each variant as an individual document.
 - **No index-level ranking on wildcard names:** You cannot reference wildcard patterns or dynamic attribute names in `ranking.tieBreakers` or `ranking.signals` within the index definition or search settings. Defining a pattern fails with `index:ranking:wildcard_field` or `index:ranking:signal:wildcard_field`, and defining a concrete dynamic name fails as an unknown field. To rank results by a dynamic attribute, specify the concrete field in the `signals` parameter of the search request.
+
+## Choosing where the pattern goes
+
+Choose the placement of a pattern based on where the attributes sit:
+
+- **Attributes on the document:** A root pattern (such as `attr.*`) indexes dynamic attributes directly on the document when attributes do not need to match together within a variant.
+- **Attributes on a variant:** A pattern inside a `nested` `object` field indexes dynamic attributes on individual variants so two or more attributes can match together within the same variant. For details, see [Accept attributes you did not define](use-sub-documents.md#accept-attributes-you-did-not-define).
+- **Dynamic attribute groups:** A pattern on the `object` field name itself (such as `spec.*`) indexes dynamic attribute groups whose inner fields (such as `value` and `unit`) must match together. For details, see [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields).
 
 ## Why name and value pairs in nested objects fail for faceting
 
@@ -192,4 +199,5 @@ A catalogue with tens of distinct attribute names is unremarkable. Accepting arb
 - [Changing some of the fields](../reference/documents-api.md#changing-some-of-the-fields) - The partial update endpoint reference.
 - [Define an index](define-an-index.md) - Creating and updating index definitions.
 - [Roll out a definition change](roll-out-a-definition-change.md) - Creating and promoting new index generations.
-- [Using sub-documents](use-sub-documents.md) - Nested objects for predefined attributes that must match together.
+- [Using sub-documents](use-sub-documents.md) - Nested objects for attributes that must match together, including dynamic ones.
+- [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields) - Patterns inside an object field and on its own name.

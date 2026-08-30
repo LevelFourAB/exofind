@@ -101,11 +101,48 @@ public class ObjectFieldTest {
 	}
 
 	@Test
-	public void testObjectNameCanNotHoldWildcard() {
-		var builder = IndexDef.newBuilder()
-			.putFields("variants*", variants().build());
+	public void testObjectNameCanHoldWildcard() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			IndexDef.newBuilder()
+				.putFields("spec.*", variants().build())
+				.build()
+		);
 
-		assertRefused(builder, "index:field:object:wildcard_name");
+		assertThat(schema.hasNestedFields(), is(true));
+
+		var object = schema.getField("spec.weight");
+		assertThat(object.isPresent(), is(true));
+		assertThat(object.get().isNestedObject(), is(true));
+
+		/*
+		 * The path a field inside carries is the name the object matched
+		 * under, which is what keeps the values of one dynamic object apart
+		 * from another's.
+		 */
+		var color = schema.getNestedField("spec.weight.color");
+		assertThat(color.isPresent(), is(true));
+		assertThat(color.get().path(), is("spec.weight"));
+
+		var other = schema.getNestedField("spec.voltage.color");
+		assertThat(other.isPresent(), is(true));
+		assertThat(other.get().path(), is("spec.voltage"));
+
+		// The pattern itself is not a name a document gives values under
+		assertThat(schema.getNestedField("spec.color").isPresent(), is(false));
+	}
+
+	@Test
+	public void testWildcardObjectCoversItsFields() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			IndexDef.newBuilder()
+				.putFields("spec.*", variants().build())
+				.build()
+		);
+
+		var inside = schema.getNestedFields("spec.weight");
+		assertThat(inside.collect(Field::getName).toList(), hasItem("spec.*.color"));
 	}
 
 	@Test
@@ -224,18 +261,150 @@ public class ObjectFieldTest {
 	}
 
 	@Test
-	public void testInnerNameCanNotHoldWildcard() {
-		assertRefused(
+	public void testInnerNameCanHoldWildcard() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields("sku", string().build())
+								.putFields(
+									"attr.*",
+									string().setFilter(FilterConfig.getDefaultInstance()).build()
+								)
+						)
+					)
+			).build()
+		);
+
+		var color = schema.getNestedField("variants.attr.color");
+		assertThat(color.isPresent(), is(true));
+		assertThat(color.get().path(), is("variants"));
+		assertThat(color.get().field().getName(), is("variants.attr.*"));
+
+		// A pattern never crosses a dot, so it stands for one segment only
+		assertThat(schema.getNestedField("variants.attr.a.b").isPresent(), is(false));
+	}
+
+	/**
+	 * A settled name wins over a pattern, and among patterns the one
+	 * {@link IndexSchema} orders first does - the same rule root names resolve
+	 * by.
+	 */
+	@Test
+	public void testInnerNameResolvesExactBeforePattern() {
+		var schema = new IndexSchema();
+		schema.setDefinition(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder()
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields(
+									"attr.color",
+									string().setFilter(FilterConfig.getDefaultInstance()).build()
+								)
+								.putFields(
+									"attr.*",
+									string().setFilter(FilterConfig.getDefaultInstance()).build()
+								)
+								.putFields(
+									"*",
+									string().setFilter(FilterConfig.getDefaultInstance()).build()
+								)
+						)
+					)
+			).build()
+		);
+
+		assertThat(
+			schema.getNestedField("variants.attr.color").get().field().getName(),
+			is("variants.attr.color")
+		);
+		assertThat(
+			schema.getNestedField("variants.attr.size").get().field().getName(),
+			is("variants.attr.*")
+		);
+		assertThat(
+			schema.getNestedField("variants.sku").get().field().getName(),
+			is("variants.*")
+		);
+	}
+
+	@Test
+	public void testWildcardInsideObjectRequiresTheFeature() {
+		var features = IndexFeatures.requiredBy(
 			definition(
 				FieldDef.newBuilder()
 					.setType(
 						FieldTypeDef.newBuilder().setObject(
+							ObjectFieldTypeDef.newBuilder().putFields("attr.*", string().build())
+						)
+					)
+			).build()
+		);
+
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_WILDCARD));
+	}
+
+	@Test
+	public void testWildcardObjectNameRequiresTheFeature() {
+		var features = IndexFeatures.requiredBy(
+			IndexDef.newBuilder()
+				.putFields("spec.*", variants().build())
+				.build()
+		);
+
+		assertThat(features.toList(), hasItem(IndexFeatures.TYPE_OBJECT_WILDCARD));
+	}
+
+	@Test
+	public void testObjectWithoutWildcardsDoesNotNeedTheFeature() {
+		var features = IndexFeatures.requiredBy(definition(variants()).build());
+
+		assertThat(features.toList(), not(hasItem(IndexFeatures.TYPE_OBJECT_WILDCARD)));
+	}
+
+	@Test
+	public void testWildcardInsideObjectCanNotBeTheKey() {
+		assertRefused(
+			definition(
+				FieldDef.newBuilder()
+					.setMultiple(true)
+					.setType(
+						FieldTypeDef.newBuilder().setObject(
 							ObjectFieldTypeDef.newBuilder()
-								.putFields("color*", string().build())
+								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+								.putFields("*", string().setRequired(true).build())
+								.setKey("*")
 						)
 					)
 			),
-			"index:field:object:inner_wildcard"
+			"index:field:object:key_not_valid"
+		);
+	}
+
+	@Test
+	public void testWildcardInsideObjectCanNotBeRequired() {
+		assertInnerRefusedNamed(
+			"attr.*",
+			string().setRequired(true),
+			"index:field:invalid_required"
+		);
+	}
+
+	@Test
+	public void testWildcardInsideObjectCanNotBePrimaryKey() {
+		assertInnerRefusedNamed(
+			"attr.*",
+			string().setPrimaryKey(true),
+			"index:field:object:inner_usage_not_supported"
 		);
 	}
 
@@ -494,12 +663,20 @@ public class ObjectFieldTest {
 	}
 
 	private static void assertInnerRefused(FieldDef.Builder inner, String code) {
+		assertInnerRefusedNamed("color", inner, code);
+	}
+
+	private static void assertInnerRefusedNamed(
+		String name,
+		FieldDef.Builder inner,
+		String code
+	) {
 		assertRefused(
 			definition(
 				FieldDef.newBuilder()
 					.setType(
 						FieldTypeDef.newBuilder().setObject(
-							ObjectFieldTypeDef.newBuilder().putFields("color", inner.build())
+							ObjectFieldTypeDef.newBuilder().putFields(name, inner.build())
 						)
 					)
 			),

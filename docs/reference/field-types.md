@@ -183,6 +183,9 @@ Definition rules:
 Uniqueness rule:
 - Key values must be unique within a single document. If a document contains duplicate key values for the same object field, indexing is rejected with `index:update:object:key_duplicate`. Different documents can use the same key value.
 
+Wildcard rule:
+- `key` cannot name a child field whose name contains `*`. Configuring a wildcard field as `key` is rejected with `index:field:object:key_not_valid`.
+
 Modifying `key`:
 - Adding, removing, or changing `key` on an index that contains documents is rejected by definition compatibility (`index:definition:setting_changed`, naming `key`). Modifying `key` requires reindexing into a new generation.
 
@@ -193,8 +196,9 @@ For targeting object values by key in update operations, see [Update parts of do
 - **Supported child field options:** `filter`, `matching`, `autocomplete`, `facet`, `validation`, `required`, and `multiple`. Setting `required: true` on a child field requires that field in every object instance.
 - **Sorting on child fields:** Supported in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)). Rejected in `flattened` mode with `index:field:object:flattened_sort`.
 - **Vector child fields:** In `nested` mode, search a child `vector` field with a `knn` clause inside a `nested` clause for the path (see [Searching vectors inside a nested path](search-api.md#searching-vectors-inside-a-nested-path)).
-- **Unsupported options:** `primaryKey`, `highlight`, `locales`, `stored`, wildcard field names, and nested `object` types cannot be used inside object fields.
-- **Top-level object options:** An `object` field cannot configure `filter`, `sort`, `facet`, `locales`, or `stored`, and cannot use wildcard characters in its name.
+- **Unsupported options:** `primaryKey`, `highlight`, `locales`, `stored`, and nested `object` types cannot be used inside object fields.
+- **Wildcard names:** A child field name can contain `*`, and so can the name of the `object` field itself. See [Wildcard names on object fields](#wildcard-names-on-object-fields).
+- **Top-level object options:** An `object` field cannot configure `filter`, `sort`, `facet`, `locales`, or `stored`.
 - **Document source requirement:** Object fields are returned in search results only when full documents are preserved in [Document source](#document-source).
 
 ### Errors
@@ -209,11 +213,58 @@ For targeting object values by key in update operations, see [Update parts of do
 | `index:field:object:flattened_sort` | `sort` is configured on a child field inside a `flattened` object field. |
 | `index:update:object:key_duplicate` | A document contains multiple object values with the same key value. |
 
+### Wildcard names on object fields
+
+An `object` field name and child field names inside `fields` can contain `*`.
+
+A child pattern accepts attributes the definition does not name in advance:
+
+```json
+"variants": {
+  "type": "object", "multiple": true, "mode": "nested", "key": "sku",
+  "fields": {
+    "sku": { "type": "string", "filter": {}, "required": true },
+    "attr.*": { "type": "string", "filter": {}, "facet": {} }
+  }
+}
+```
+
+A pattern on the object's own name accepts attribute groups the definition does not name in advance:
+
+```json
+"spec.*": {
+  "type": "object",
+  "fields": {
+    "value": { "type": "string", "filter": {} },
+    "unit": { "type": "string", "filter": {} }
+  }
+}
+```
+
+Resolution rules:
+- Names resolve by the rules in [Wildcard fields](#wildcard-fields): an explicit name first, then the pattern with the longest literal prefix, then the shorter pattern on an equal prefix.
+- Properties in documents that match no declared field or pattern are rejected with `index:update:field_not_found`.
+
+Storage modes:
+- `nested`: Each matched object path forms an independent sub-document scope. Clauses inside a `nested` query target inner fields using their full dotted path (for example, `variants.attr.color` or `spec.weight.value`). Faceting, sorting, and matched value retrieval work the same as on declared fields.
+- `flattened`: Matched child fields fold into the document under their dot-notation path and are queried directly without a `nested` clause. Values must be provided inside the object structure; sending flattened paths at the document root is rejected with `index:update:field_inside_object`.
+
+Restrictions:
+- Wildcard fields cannot set `required: true` (`index:field:invalid_required`).
+- Wildcard fields inside objects cannot set `primaryKey: true` (`index:field:object:inner_usage_not_supported`).
+- Wildcard fields cannot be configured as the `key` field (`index:field:object:key_not_valid`).
+
+Search and update operations:
+- Unfielded `text` queries skip wildcard fields. To include dynamic attributes in unfielded text queries, copy values into a declared field configured with `matching`.
+- Partial update paths target dynamic properties by their concrete name in the document (for example, `variants[V-1].attr.color` or `spec.weight.value`), not the pattern name.
+- Adding a wildcard pattern to an existing index definition does not require reindexing.
+
 ### Feature requirements
 
 - `nested` objects require the `type.object` feature flag, and `type.object.usages` when configuring child usages beyond `filter`.
 - `flattened` objects require the `type.object.flattened` feature flag.
 - Setting `key` on an `object` field requires the `type.object.key` feature flag.
+- Wildcard patterns in `object` field names or child field names require the `type.object.wildcard` feature flag.
 
 ## Wildcard fields
 
@@ -222,6 +273,7 @@ Field names can contain `*` to define dynamic field schemas (for example, `metad
 - The `*` wildcard matches exactly one path segment (`metadata.*` matches `metadata.color`, but not `metadata.a.b`).
 - Explicit field definitions take precedence over wildcard definitions.
 - When multiple wildcard definitions match a field name, the pattern with the longest literal prefix takes precedence (for example, `a.b*` takes precedence over `a.*` for `a.bc`). When literal prefixes have equal length, the shorter pattern takes precedence.
+- The same rules apply to a name inside an `object` field and to the name of an `object` field. See [Wildcard names on object fields](#wildcard-names-on-object-fields).
 
 ## Document source
 

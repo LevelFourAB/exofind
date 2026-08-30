@@ -36,13 +36,6 @@ public class Field {
 			"Field `{{name}}` is marked as a primary key, but names with wildcards can not be primary keys"
 		);
 
-	private static ErrorType INVALID_OBJECT_WILDCARD = ErrorType
-		.withCode("index:field:object:wildcard_name")
-		.withArguments("name")
-		.withMessage(
-			"Field `{{name}}` is an object, and names with wildcards can not be objects"
-		);
-
 	private static ErrorType PRIMARY_KEY_NOT_REQUIRED =
 		ErrorType.withCode("index:schema:primary_key_not_required")
 			.withArguments("name")
@@ -219,16 +212,6 @@ public class Field {
 
 		if(def.getPrimaryKey() && name.contains("*")) {
 			errors.add(INVALID_PRIMARY_KEY_WILDCARD.toMessage(location, "name", name));
-		}
-
-		/*
-		 * A pattern stands for fields that only exist once documents name them,
-		 * and the fields inside an object are addressed by the dotted path
-		 * through it - a path through a field with no settled name never
-		 * resolves.
-		 */
-		if(def.getType().getTypeCase() == TypeCase.OBJECT && name.contains("*")) {
-			errors.add(INVALID_OBJECT_WILDCARD.toMessage(location, "name", name));
 		}
 
 		if(def.getPrimaryKey() && def.getMultiple()) {

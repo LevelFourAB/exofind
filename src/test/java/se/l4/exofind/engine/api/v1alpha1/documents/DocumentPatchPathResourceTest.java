@@ -547,8 +547,67 @@ public class DocumentPatchPathResourceTest {
 		assertThat(inLocale(stored, "title", "en"), is("Blueberry jam"));
 	}
 
+	/**
+	 * A name a pattern stands for is the name the document holds its values
+	 * by, so a path names the value it wrote rather than the pattern that
+	 * accepted it.
+	 */
+	@Test
+	public void aValueIsAddedToAFieldWhoseNameIsAPattern() throws IOException {
+		var index = dynamic();
+
+		updateIn("dynamic", document("id", "1", "attr.tags[]", "b"));
+
+		index.commit();
+
+		assertThat(index.getDocument("1").getAll("attr.tags"), contains("a", "b"));
+	}
+
+	@Test
+	public void oneLocaleOfAFieldWhoseNameIsAPatternIsChanged() throws IOException {
+		var index = dynamic();
+
+		updateIn("dynamic", document("id", "1", "text.title[sv]", "Ny titel"));
+
+		index.commit();
+
+		var stored = index.getDocument("1");
+		assertThat(inLocale(stored, "text.title", "sv"), is("Ny titel"));
+		assertThat(inLocale(stored, "text.title", "en"), is("A title"));
+	}
+
+	@Test
+	public void aDynamicAttributeInsideOneObjectValueIsChangedByItsKey() throws IOException {
+		var index = dynamic();
+
+		updateIn("dynamic", document("id", "1", "variants[V-1].attr.color", "red"));
+
+		index.commit();
+
+		var variant = (Document) index.getDocument("1").getAll("variants").get(0);
+		assertThat(variant.get("attr.color"), is("red"));
+		assertThat(variant.get("sku"), is("V-1"));
+	}
+
+	@Test
+	public void aFieldInsideAnObjectWhoseNameIsAPatternIsChanged() throws IOException {
+		var index = dynamic();
+
+		updateIn("dynamic", document("id", "1", "spec.weight.value", "200"));
+
+		index.commit();
+
+		var weight = (Document) index.getDocument("1").get("spec.weight");
+		assertThat(weight.get("value"), is("200"));
+		assertThat(weight.get("unit"), is("g"));
+	}
+
 	private void update(Map<String, Object> change) {
-		resource.update("catalogue", null, new UpdateRequest(List.of(change)));
+		updateIn("catalogue", change);
+	}
+
+	private void updateIn(String index, Map<String, Object> change) {
+		resource.update(index, null, new UpdateRequest(List.of(change)));
 	}
 
 	/**
@@ -603,6 +662,101 @@ public class DocumentPatchPathResourceTest {
 			.setType(
 				FieldTypeDef.newBuilder().setString(StringFieldTypeDef.getDefaultInstance())
 			);
+	}
+
+	/**
+	 * An index whose names are patterns wherever a name can be one - at the
+	 * root, inside an object, and for the object itself.
+	 */
+	private Index dynamic() throws IOException {
+		var index = indexes.create(
+			"dynamic",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"attr.*",
+					string()
+						.setMultiple(true)
+						.setFilter(FilterConfig.getDefaultInstance())
+						.build()
+				)
+				.putFields(
+					"text.*",
+					string()
+						.setLocales(
+							FieldDef.LocaleConfig.newBuilder()
+								.setDefaultLocale("en")
+								.addLocales("sv")
+						)
+						.build()
+				)
+				.putFields(
+					"variants",
+					FieldDef.newBuilder()
+						.setMultiple(true)
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+									.setKey("sku")
+									.putFields(
+										"sku",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.setRequired(true)
+											.build()
+									)
+									.putFields(
+										"attr.*",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+							)
+						)
+						.build()
+				)
+				.putFields(
+					"spec.*",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields(
+										"value",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+									.putFields(
+										"unit",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+							)
+						)
+						.build()
+				)
+				.build()
+		);
+
+		resource.add(
+			"dynamic",
+			new DocumentsRequest(
+				List.of(
+					document(
+						"id", "1",
+						"attr.tags", List.of("a"),
+						"text.title", Map.of("en", "A title", "sv", "En titel"),
+						"variants", List.of(Map.of("sku", "V-1", "attr.color", "blue")),
+						"spec.weight", Map.of("value", "180", "unit", "g")
+					)
+				)
+			)
+		);
+
+		return index;
 	}
 
 	private static FieldDef.Builder number() {

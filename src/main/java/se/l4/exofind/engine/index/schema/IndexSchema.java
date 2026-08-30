@@ -43,20 +43,37 @@ public class IndexSchema {
 	private static final class State {
 		final ImmutableMap<String, Field> fields;
 		final ImmutableList<Field> wildcardFields;
+
+		/**
+		 * The fields inside nested objects whose path is settled, keyed by that
+		 * path.
+		 */
 		final ImmutableMap<String, NestedField> nestedFields;
 
 		/**
-		 * The object field each flattened path folds out of, keyed by the path.
-		 * The fields themselves live in {@link #fields} and answer searches as
-		 * any root field does; this is what remembers that a document gives
-		 * their values inside the object rather than under the path.
+		 * The fields inside nested objects whose path holds a wildcard, in the
+		 * order {@link #compareFieldNames} puts them. What
+		 * {@link #getNestedField} falls back to when no exact path matches, so
+		 * that a name resolves inside an object by the rule it resolves by at
+		 * the root.
 		 */
-		final ImmutableMap<String, String> flattenedPaths;
+		final ImmutableList<NestedPattern> nestedWildcardFields;
+
+		/**
+		 * The object field each flattened path folds out of, keyed by the name
+		 * the folded field goes by - a pattern when the object's name or the
+		 * field's own name holds a wildcard. The fields themselves live in
+		 * {@link #fields} and answer searches as any root field does; this is
+		 * what remembers that a document gives their values inside the object
+		 * rather than under the path.
+		 */
+		final ImmutableMap<String, FlattenedOwner> flattenedPaths;
 
 		/**
 		 * The fields inside each object field, keyed by the name of the
 		 * object - what a search naming no fields covers while it is inside a
-		 * {@code nested} clause.
+		 * {@code nested} clause. Keyed by the name the definition gives the
+		 * object, which is a pattern when the object's name holds a wildcard.
 		 */
 		final ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath;
 
@@ -87,7 +104,8 @@ public class IndexSchema {
 			ImmutableMap<String, Field> fields,
 			ImmutableList<Field> wildcardFields,
 			ImmutableMap<String, NestedField> nestedFields,
-			ImmutableMap<String, String> flattenedPaths,
+			ImmutableList<NestedPattern> nestedWildcardFields,
+			ImmutableMap<String, FlattenedOwner> flattenedPaths,
 			ImmutableMap<String, ImmutableList<Field>> nestedFieldsByPath,
 			Field primaryKey,
 			ImmutableSet<String> requiredFields,
@@ -102,6 +120,7 @@ public class IndexSchema {
 			this.fields = fields;
 			this.wildcardFields = wildcardFields;
 			this.nestedFields = nestedFields;
+			this.nestedWildcardFields = nestedWildcardFields;
 			this.flattenedPaths = flattenedPaths;
 			this.nestedFieldsByPath = nestedFieldsByPath;
 			this.primaryKey = primaryKey;
@@ -263,11 +282,42 @@ public class IndexSchema {
 	public record NestedField(String path, Field field) {
 	}
 
+	/**
+	 * A field inside a nested object whose path holds a wildcard, together
+	 * with how much of a matching name the object itself takes.
+	 *
+	 * <p>The object's name is a fixed number of segments however many names it
+	 * stands for, so the split between the object and the field inside it is
+	 * counted rather than searched for: the object {@code spec.*} takes the
+	 * first two segments of {@code spec.weight.value}, leaving {@code value}
+	 * as the field.
+	 *
+	 * @param objectSegments
+	 *   how many dot separated segments the name of the object field is
+	 * @param field
+	 *   the field itself, named by the pattern its full path is
+	 */
+	private record NestedPattern(int objectSegments, Field field) {
+	}
+
+	/**
+	 * The object field a flattened field folds out of.
+	 *
+	 * @param name
+	 *   the name the definition gives the object, a pattern when it holds a
+	 *   wildcard
+	 * @param segments
+	 *   how many dot separated segments that name is
+	 */
+	private record FlattenedOwner(String name, int segments) {
+	}
+
 	public IndexSchema() {
 		this.state = new State(
 			Maps.immutable.empty(),
 			Lists.immutable.empty(),
 			Maps.immutable.empty(),
+			Lists.immutable.empty(),
 			Maps.immutable.empty(),
 			Maps.immutable.empty(),
 			null,
@@ -918,8 +968,9 @@ public class IndexSchema {
 		var fields = Maps.mutable.<String, Field>empty();
 		var wildcardFields = Lists.mutable.<Field>empty();
 		var nestedFields = Maps.mutable.<String, NestedField>empty();
+		var nestedWildcardFields = Lists.mutable.<NestedPattern>empty();
 		var nestedFieldsByPath = Maps.mutable.<String, MutableList<Field>>empty();
-		var flattenedPaths = Maps.mutable.<String, String>empty();
+		var flattenedPaths = Maps.mutable.<String, FlattenedOwner>empty();
 		var requiredFields = Sets.mutable.<String>empty();
 		Field primaryKey = null;
 
@@ -935,12 +986,23 @@ public class IndexSchema {
 
 			if(field.isNestedObject()) {
 				var inside = Lists.mutable.<Field>empty();
+				var objectSegments = segmentsIn(field.getName());
 
 				for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
 					var path = field.getName() + '.' + inner.getKey();
 					var innerField = new Field(path, inner.getValue());
 
-					nestedFields.put(path, new NestedField(field.getName(), innerField));
+					/*
+					 * A path holding a wildcard - from either half of it -
+					 * stands for names that only exist once documents give
+					 * them, so it is kept to be matched rather than looked up.
+					 */
+					if(innerField.nameHasWildcard()) {
+						nestedWildcardFields.add(new NestedPattern(objectSegments, innerField));
+					} else {
+						nestedFields.put(path, new NestedField(field.getName(), innerField));
+					}
+
 					inside.add(innerField);
 				}
 
@@ -954,11 +1016,18 @@ public class IndexSchema {
 				 * between. Only how documents give their values differs,
 				 * which is what flattenedPaths remembers.
 				 */
+				var owner = new FlattenedOwner(field.getName(), segmentsIn(field.getName()));
+
 				for(var inner : fieldDef.getType().getObject().getFieldsMap().entrySet()) {
 					var path = field.getName() + '.' + inner.getKey();
+					var innerField = new Field(path, inner.getValue());
 
-					fields.put(path, new Field(path, inner.getValue()));
-					flattenedPaths.put(path, field.getName());
+					fields.put(path, innerField);
+					if(innerField.nameHasWildcard()) {
+						wildcardFields.add(innerField);
+					}
+
+					flattenedPaths.put(path, owner);
 				}
 			}
 
@@ -972,11 +1041,15 @@ public class IndexSchema {
 
 		// Sort wildcard fields by name to maintain consistent ordering
 		wildcardFields.sort((a, b) -> compareFieldNames(a.getName(), b.getName()));
+		nestedWildcardFields.sort(
+			(a, b) -> compareFieldNames(a.field().getName(), b.field().getName())
+		);
 
 		this.state = new State(
 			fields.toImmutable(),
 			wildcardFields.toImmutable(),
 			nestedFields.toImmutable(),
+			nestedWildcardFields.toImmutable(),
 			flattenedPaths.toImmutable(),
 			nestedFieldsByPath
 				.collectValues((path, inside) -> inside.toImmutable())
@@ -1044,23 +1117,62 @@ public class IndexSchema {
 	 * variants.price}. Fields at the root are found through
 	 * {@link #getField(String)}, never here.
 	 *
+	 * <p>A settled path wins over any pattern; otherwise the patterns are
+	 * tried in the order {@link #compareFieldNames} defines and the first that
+	 * matches is the field. This is the rule {@link #getField(String)} follows,
+	 * so which field a name resolves to reads the same wherever the name sits.
+	 *
+	 * <p>The answer carries the name of the object the field was found in. For
+	 * an object whose own name is a pattern that is the name this one matched
+	 * under - {@code spec.weight}, never {@code spec.*}. Lucene marks the
+	 * values of an object by that name, so a {@code nested} clause naming one
+	 * dynamic object never reaches the values of another.
+	 *
 	 * @param name
 	 * @return
 	 */
 	public Optional<NestedField> getNestedField(String name) {
-		return Optional.ofNullable(state.nestedFields.get(name));
+		var state = this.state;
+
+		var exact = state.nestedFields.get(name);
+		if(exact != null) {
+			return Optional.of(exact);
+		}
+
+		for(var pattern : state.nestedWildcardFields) {
+			if(pattern.field().nameMatches(name)) {
+				var path = prefixOf(name, pattern.objectSegments());
+				if(path != null) {
+					return Optional.of(new NestedField(path, pattern.field()));
+				}
+			}
+		}
+
+		return Optional.empty();
 	}
 
 	/**
 	 * Get the fields inside an object field, named by their dotted path. Empty
 	 * for a name that is not an object field of the index.
 	 *
+	 * <p>A field whose name is a pattern is among them. It stands for the names
+	 * it accepts, so a caller covering the fields that exist leaves it out, the
+	 * way {@link #getFields()} is read at the root.
+	 *
 	 * @param path
-	 *   name of the object field
+	 *   name of the object field, or a name its pattern matches
 	 * @return
 	 */
 	public ImmutableList<Field> getNestedFields(String path) {
+		var state = this.state;
+
 		var inside = state.nestedFieldsByPath.get(path);
+		if(inside == null) {
+			inside = getField(path)
+				.map(field -> state.nestedFieldsByPath.get(field.getName()))
+				.orElse(null);
+		}
+
 		return inside == null ? Lists.immutable.empty() : inside;
 	}
 
@@ -1070,13 +1182,31 @@ public class IndexSchema {
 	 * does; what this answers is where a document gives its values - inside
 	 * the object, never under the path directly.
 	 *
+	 * <p>Answered by resolving the name first and asking what the field it
+	 * resolved to folded out of, so that this and {@link #getField(String)}
+	 * can never disagree: a name belongs to whichever field it resolves to,
+	 * and only if that field came out of an object are its values given inside
+	 * one.
+	 *
 	 * @param name
 	 * @return
 	 *   name of the object field, or empty when the name is not a flattened
 	 *   path
 	 */
 	public Optional<String> getFlattenedObjectOf(String name) {
-		return Optional.ofNullable(state.flattenedPaths.get(name));
+		var state = this.state;
+
+		var field = getField(name).orElse(null);
+		if(field == null) {
+			return Optional.empty();
+		}
+
+		var owner = state.flattenedPaths.get(field.getName());
+		if(owner == null) {
+			return Optional.empty();
+		}
+
+		return Optional.ofNullable(prefixOf(name, owner.segments()));
 	}
 
 	/**
@@ -1087,7 +1217,48 @@ public class IndexSchema {
 	 * @return
 	 */
 	public boolean hasNestedFields() {
-		return state.nestedFields.notEmpty();
+		var state = this.state;
+		return state.nestedFields.notEmpty() || state.nestedWildcardFields.notEmpty();
+	}
+
+	/**
+	 * Count the dot separated segments of a name.
+	 *
+	 * @param name
+	 * @return
+	 */
+	private static int segmentsIn(String name) {
+		var segments = 1;
+		for(var i = 0; i < name.length(); i++) {
+			if(name.charAt(i) == '.') {
+				segments++;
+			}
+		}
+
+		return segments;
+	}
+
+	/**
+	 * Take the first segments of a dotted name. A path that reached inside an
+	 * object gives back the object's own name this way.
+	 *
+	 * @param name
+	 * @param segments
+	 *   how many segments to keep
+	 * @return
+	 *   the name up to that segment, or {@code null} when the name does not
+	 *   reach past it - which a path through an object always does
+	 */
+	private static String prefixOf(String name, int segments) {
+		var index = -1;
+		for(var i = 0; i < segments; i++) {
+			index = name.indexOf('.', index + 1);
+			if(index < 0) {
+				return null;
+			}
+		}
+
+		return name.substring(0, index);
 	}
 
 	/**

@@ -37,6 +37,15 @@ import se.l4.exofind.engine.query.matchers.Matcher;
  * {@code Index}, so the two field-producing methods here are never reached;
  * what this class owns is judging the definition.
  *
+ * The name of a field inside an object may hold a wildcard, and so may the
+ * name of the object itself. Both stand for names that only exist once a
+ * document gives them, and a path through either resolves by the rule the root
+ * resolves by - the settled name first, then the patterns, the most specific
+ * winning. An object whose name is a pattern keeps the values of each name it
+ * matched apart, so a {@code nested} clause naming one of them never reaches
+ * the values of another. What a pattern can not be is whatever has to name one
+ * settled field: a primary key, a required field, or the {@code key} below.
+ *
  * A list of values may name one of its own fields as its {@code key}, which is
  * what a value is called rather than where it sits. Two values of one document
  * reading the same under it are refused when the document is indexed, and that
@@ -89,13 +98,6 @@ public class ObjectFieldType implements FieldType {
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is an object inside an object, which is not supported"
-		);
-
-	private static final ErrorType INNER_WILDCARD = ErrorType
-		.withCode("index:field:object:inner_wildcard")
-		.withArguments("name")
-		.withMessage(
-			"Field `{{name}}` is inside an object, where names with wildcards are not supported"
 		);
 
 	private static final ErrorType MODE_REQUIRED = ErrorType
@@ -242,6 +244,21 @@ public class ObjectFieldType implements FieldType {
 			return;
 		}
 
+		/*
+		 * Judged before the settings below, which a pattern can not carry
+		 * anyway - being told it is not `required` would point at a setting
+		 * rather than at the name being the wrong kind of name.
+		 */
+		if(key.contains("*")) {
+			errors.add(KEY_NOT_VALID.toMessage(
+				location,
+				"key", key,
+				"reason", "it is a pattern, which stands for whichever fields "
+					+ "documents name rather than for one every value holds"
+			));
+			return;
+		}
+
 		if(!keyField.getRequired()) {
 			errors.add(KEY_NOT_VALID.toMessage(
 				location,
@@ -277,10 +294,6 @@ public class ObjectFieldType implements FieldType {
 		ResourcesDef resources,
 		MutableCollection<ErrorMessage> errors
 	) {
-		if(name.contains("*")) {
-			errors.add(INNER_WILDCARD.toMessage(location, "name", name));
-		}
-
 		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
 			/*
 			 * Refused before the general validation runs, which would recurse

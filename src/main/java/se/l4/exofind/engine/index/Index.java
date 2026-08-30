@@ -1719,6 +1719,7 @@ public class Index {
 						childDocs.add(
 							childDocument(
 								field0,
+								value.name(),
 								subDocument,
 								ObjectLocation.root().forField(value.name()).forIndex(position),
 								encounter,
@@ -1728,6 +1729,7 @@ public class Index {
 					} else {
 						flattenFields(
 							field0,
+							value.name(),
 							subDocument,
 							ObjectLocation.root().forField(value.name()).forIndex(position),
 							encounter,
@@ -2051,8 +2053,15 @@ public class Index {
 	 * are written under is the dotted path through the object, so a search
 	 * finds them by the name it knows.
 	 *
+	 * <p>Everything is written under the name the document gave the object.
+	 * That is the definition's own name for it unless the name is a pattern.
+	 * A {@code nested} clause is scoped by the mark on the value, so writing
+	 * the pattern would put the values of every name it matched in one place.
+	 *
 	 * @param objectField
 	 *   the object field the value was given to
+	 * @param objectName
+	 *   the name the document gave it under
 	 * @param value
 	 *   the value, a document of its own
 	 * @param location
@@ -2064,19 +2073,31 @@ public class Index {
 	 */
 	private org.apache.lucene.document.Document childDocument(
 		Field objectField,
+		String objectName,
 		Document value,
 		ObjectLocation location,
 		IndexEncounterImpl encounter,
 		MutableList<ErrorMessage> errors
 	) {
 		var child = new org.apache.lucene.document.Document();
-		NestedDocuments.mark(child, objectField.getName());
+		NestedDocuments.mark(child, objectName);
 
 		var valuesSeen = Sets.mutable.<String>empty();
 		var fieldsFound = Sets.mutable.<String>empty();
 
 		for(var inner : value.fields()) {
-			var nested = schema.getNestedField(objectField.getName() + '.' + inner.name());
+			var path = objectName + '.' + inner.name();
+			var nested = schema.getNestedField(path);
+
+			/*
+			 * A path that resolves inside another object is not a field of this
+			 * one, which only a name reaching past the object it was given to
+			 * can do.
+			 */
+			if(nested.isPresent() && !nested.get().path().equals(objectName)) {
+				nested = Optional.empty();
+			}
+
 			if(nested.isEmpty()) {
 				errors.add(
 					ERROR_FIELD_NOT_FOUND.toMessage(
@@ -2122,7 +2143,7 @@ public class Index {
 			}
 
 			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
-			encounter.updateValue(innerField.getName(), innerField.getDef());
+			encounter.updateValue(path, innerField.getDef());
 
 			try {
 				for(var indexableField : innerField.getType().createFields(encounter, inner.value())) {
@@ -2165,6 +2186,9 @@ public class Index {
 	 *
 	 * @param objectField
 	 *   the object field the value was given to
+	 * @param objectName
+	 *   the name the document gave it under, which the paths of the fields
+	 *   inside are built from
 	 * @param value
 	 *   the value, an object of its own
 	 * @param location
@@ -2177,6 +2201,7 @@ public class Index {
 	 */
 	private void flattenFields(
 		Field objectField,
+		String objectName,
 		Document value,
 		ObjectLocation location,
 		IndexEncounterImpl encounter,
@@ -2187,14 +2212,14 @@ public class Index {
 		var fieldsFound = Sets.mutable.<String>empty();
 
 		for(var inner : value.fields()) {
-			var path = objectField.getName() + '.' + inner.name();
+			var path = objectName + '.' + inner.name();
 
 			/*
-			 * Only the declared fields of the object, which are the paths the
-			 * schema folded out of it - a root pattern that happens to match
-			 * the path was never part of this object.
+			 * Only the fields this object folded out. A root pattern that
+			 * happens to match the path was never part of it, and neither was
+			 * a field another object folded out under the same path.
 			 */
-			if(schema.getFlattenedObjectOf(path).isEmpty()) {
+			if(!schema.getFlattenedObjectOf(path).filter(objectName::equals).isPresent()) {
 				errors.add(
 					ERROR_FIELD_NOT_FOUND.toMessage(
 						location.forField(inner.name()),
@@ -2239,7 +2264,7 @@ public class Index {
 			}
 
 			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
-			encounter.updateValue(innerField.getName(), innerField.getDef());
+			encounter.updateValue(path, innerField.getDef());
 
 			try {
 				for(var indexableField : innerField.getType().createFields(encounter, inner.value())) {

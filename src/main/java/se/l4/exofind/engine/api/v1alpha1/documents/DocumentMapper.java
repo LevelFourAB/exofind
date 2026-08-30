@@ -192,6 +192,7 @@ public class DocumentMapper {
 				return insideObject(
 					index,
 					outer.get(),
+					text.substring(0, dot),
 					null,
 					text.substring(dot + 1),
 					text,
@@ -226,15 +227,20 @@ public class DocumentMapper {
 
 		if(!field.isMultiple()) {
 			throw new ValidationException(
-				ADD_NOT_MULTIPLE.toMessage(at(text), "path", text, "field", field.getName())
+				ADD_NOT_MULTIPLE.toMessage(at(text), "path", text, "field", path.field())
 			);
 		}
 
+		/*
+		 * Named as the path named it rather than as the definition names the
+		 * field, which are the same thing unless the field's name is a
+		 * pattern - the document holds its values by the name it was given.
+		 */
 		return new DocumentPatch.Change(
-			field.getName(),
+			path.field(),
 			DocumentPatch.Selector.ADDED,
 			null,
-			mapped(index, Optional.of(field), field.getName(), null, value)
+			mapped(index, Optional.of(field), path.field(), null, value)
 		);
 	}
 
@@ -262,7 +268,7 @@ public class DocumentMapper {
 					KEY_NOT_DECLARED.toMessage(
 						at(text),
 						"path", text,
-						"field", field.getName()
+						"field", path.field()
 					)
 				);
 			}
@@ -271,14 +277,14 @@ public class DocumentMapper {
 		}
 
 		if(path.inner() != null) {
-			return insideObject(index, field, selector, path.inner(), text, value);
+			return insideObject(index, field, path.field(), selector, path.inner(), text, value);
 		}
 
 		return new DocumentPatch.Change(
-			field.getName(),
+			path.field(),
 			selector,
 			null,
-			mapped(index, Optional.of(field), field.getName(), null, value)
+			mapped(index, Optional.of(field), path.field(), null, value)
 		);
 	}
 
@@ -294,13 +300,13 @@ public class DocumentMapper {
 	) {
 		if(!field.isLocaleSpecific()) {
 			throw new ValidationException(
-				SELECTOR_NOT_SUPPORTED.toMessage(at(text), "path", text, "field", field.getName())
+				SELECTOR_NOT_SUPPORTED.toMessage(at(text), "path", text, "field", path.field())
 			);
 		}
 
 		if(path.inner() != null) {
 			throw new ValidationException(
-				NOT_AN_OBJECT.toMessage(at(text), "path", text, "field", field.getName())
+				NOT_AN_OBJECT.toMessage(at(text), "path", text, "field", path.field())
 			);
 		}
 
@@ -314,23 +320,28 @@ public class DocumentMapper {
 				LOCALE_UNKNOWN.toMessage(
 					at(text),
 					"path", text,
-					"field", field.getName(),
+					"field", path.field(),
 					"locale", path.selectorValue()
 				)
 			)
 		);
 
 		return new DocumentPatch.Change(
-			field.getName(),
+			path.field(),
 			new DocumentPatch.Selector.InLocale(locale),
 			null,
-			mapped(index, Optional.of(field), field.getName(), locale, value)
+			mapped(index, Optional.of(field), path.field(), locale, value)
 		);
 	}
 
 	/**
 	 * Map a path that reaches into the values of an object field.
 	 *
+	 * @param object
+	 *   the object field, which the settings of the values come from
+	 * @param objectName
+	 *   the name the path gave it under, which is the name the document holds
+	 *   its values by
 	 * @param selector
 	 *   which values, {@code null} for a path that named none - which a field
 	 *   holding a list of values refuses
@@ -338,6 +349,7 @@ public class DocumentMapper {
 	private static DocumentPatch.Change insideObject(
 		Index index,
 		Field object,
+		String objectName,
 		DocumentPatch.Selector selector,
 		String inner,
 		String text,
@@ -351,10 +363,10 @@ public class DocumentMapper {
 					VALUE_REQUIRED.toMessage(
 						at(text),
 						"path", text,
-						"field", object.getName(),
+						"field", objectName,
 						"how", key == null
-							? "`" + object.getName() + "[field=value]`"
-							: "`" + object.getName() + "[" + key + " of the value]`"
+							? "`" + objectName + "[field=value]`"
+							: "`" + objectName + "[" + key + " of the value]`"
 					)
 				);
 			}
@@ -362,7 +374,7 @@ public class DocumentMapper {
 			selector = DocumentPatch.Selector.ALL;
 		}
 
-		var path = object.getName() + '.' + inner;
+		var path = objectName + '.' + inner;
 
 		/*
 		 * The fields of a nested object resolve through the path; the fields of
@@ -373,7 +385,7 @@ public class DocumentMapper {
 			.or(() -> index.getField(path));
 
 		return new DocumentPatch.Change(
-			object.getName(),
+			objectName,
 			selector,
 			inner,
 			mapped(index, field, inner, null, value)
@@ -516,7 +528,7 @@ public class DocumentMapper {
 		}
 
 		for(var single : each(field, value)) {
-			target.add(new Document.Value(name, toValue(index, field, single), locale));
+			target.add(new Document.Value(name, toValue(index, field, name, single), locale));
 		}
 	}
 
@@ -551,17 +563,16 @@ public class DocumentMapper {
 	 *
 	 * @param index
 	 * @param field
+	 * @param name
+	 *   the name the value was given under, which the fields inside an object
+	 *   are looked up beneath - the field's own name says nothing about which
+	 *   of its names this value is, when that name is a pattern
 	 * @param value
 	 * @return
 	 */
-	private static Object toValue(Index index, Field field, Object value) {
+	private static Object toValue(Index index, Field field, String name, Object value) {
 		if(field.isObject() && value instanceof Map<?, ?> object) {
-			/*
-			 * The fields inside an object are declared under the name the
-			 * definition gives the object, which is what a value given to a
-			 * wildcard pattern has to be looked up under.
-			 */
-			return toNestedDocument(index, field.getName(), object);
+			return toNestedDocument(index, name, object);
 		}
 
 		var type = field.getType();

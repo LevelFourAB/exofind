@@ -8,7 +8,7 @@ If you only need structural grouping without matching multiple fields in the sam
 
 Before you use sub-documents, ensure you have the following:
 
-- A node with the `type.object` feature enabled. If you use usages beyond `filter` inside the object, the node also requires the `type.object.usages` feature.
+- A node with the `type.object` feature enabled. If you use usages beyond `filter` inside the object, the node also requires the `type.object.usages` feature. If you use a wildcard in a field name, it also requires `type.object.wildcard`.
 - An index where you can define fields, or permissions to create a new index.
 
 ## Define the object field
@@ -34,7 +34,8 @@ Keep the following rules in mind when you configure the field:
 - Setting `multiple: true` makes the field a list. A list field must specify its `mode`. In flattened mode, conditions such as `color = red` and `price < 20` can match two different variants. Therefore, list fields do not have a default mode.
 - A field without `multiple: true` holds a single value, always flattens, and does not accept a `mode`. If a document provides multiple values for a non-multiple field, the engine rejects the document with `index:update:not_multiple`. Use non-multiple objects for grouped fields that represent a single unit, such as a `dimensions` object with `width` and `height`.
 - Define fields inside the object using the same options as top-level index fields. Inner fields support `filter`, `matching`, `autocomplete`, `sort`, `facet`, `validation`, `required`, and `multiple`. Setting `required: true` on an inner field makes that field required in every sub-document value.
-- Inner fields do not support top-level index features: `primaryKey`, `highlight`, `locales`, `stored`, nested objects inside objects, and wildcard field names.
+- Inner fields do not support top-level index features: `primaryKey`, `highlight`, `locales`, `stored`, and nested objects inside objects.
+- An inner field name can contain `*`, which accepts attributes you do not define in advance. See [Accept attributes you did not define](#accept-attributes-you-did-not-define).
 - The parent `object` field holds no direct value. Setting `filter`, `sort`, `facet`, `locales`, or `stored` on the parent object is rejected.
 
 **Note:** Adding a usage to an inner field on an index that already contains documents applies only to values indexed after the change. To apply the usage to existing documents, roll out the change to [a new generation](roll-out-a-definition-change.md).
@@ -203,6 +204,61 @@ Set `fields` to `variants` to return all inner fields, or specify a dotted path 
 
 If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies and cannot return existing sub-documents. Requesting fields on such an index fails with `index:query:source_not_kept`. Retain source data on indexes where you need to retrieve or update sub-documents.
 
+## Accept attributes you did not define
+
+To accept variant attributes that your catalogue adds over time without changing your index definition, use wildcard inner field names.
+
+1. Define wildcard patterns inside the `fields` object. Because each pattern assigns one data type and one set of usages, group attributes into namespaces by type:
+
+   ```json
+   "variants": {
+     "type": "object",
+     "multiple": true,
+     "mode": "nested",
+     "key": "sku",
+     "fields": {
+       "sku": { "type": "string", "filter": {}, "required": true },
+       "attr.*": { "type": "string", "filter": {}, "facet": {} },
+       "num.*": { "type": "double", "filter": {}, "sort": {} }
+     }
+   }
+   ```
+
+2. Index documents with dynamic attributes inside the variant under names that match your patterns:
+
+   ```http
+   POST /v1alpha1/indexes/products/documents
+   Content-Type: application/x-ndjson
+
+   {"id": "1", "variants": [{"sku": "V-1", "attr.color": "red", "attr.size": "L", "num.weight": 180}]}
+   ```
+
+3. Query the dynamic attributes by their dotted paths inside a `nested` clause:
+
+   ```json
+   {
+     "query": [
+       { "type": "nested", "path": "variants", "clauses": [
+         { "field": "variants.attr.color", "match": { "value": "red" } },
+         { "field": "variants.attr.size", "match": { "value": "L" } }
+       ] }
+     ]
+   }
+   ```
+
+   Both conditions must match within the same variant.
+
+Keep the following rules in mind when using wildcard inner fields:
+
+- An explicit inner field name takes precedence over a pattern. Among patterns, the longest literal prefix wins. If prefixes are equal, the shorter pattern wins.
+- A wildcard `*` matches exactly one dot-separated segment. `attr.*` matches `attr.color` but not `attr.a.b`.
+- A pattern cannot be configured as `required`, `primaryKey`, or as the `key` of an object list.
+- An inner name that matches no declared field and no pattern fails indexing with `index:update:field_not_found`.
+- Adding a pattern to an existing index does not require reindexing.
+- A `text` clause that specifies no fields skips patterns. To search dynamic attributes from a single search box, copy their values into a declared field configured with `matching`.
+
+To accept dynamic attribute group names rather than individual attributes, define a wildcard on the object field name itself. See [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields).
+
 ## Confirm the results
 
 To verify that the sub-documents are indexed and queryable, run a search request with a `nested` clause and the `matched` field:
@@ -231,6 +287,8 @@ Each value is a Lucene document of its own, written in the same block as the doc
 ## Related
 
 - [`object` fields](../reference/field-types.md#object) - Property reference and supported inner field options.
+- [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields) - Pattern rules for an inner name and for the object's own name.
+- [Modeling dynamic attributes](model-dynamic-attributes.md) - Wildcard fields at the root of a document.
 - [The `nested` clause](../reference/search-api.md#nested) - Reference documentation for nested queries, [ordering by](../reference/search-api.md#ordering-by-a-value-inside-an-object), and [counting](../reference/search-api.md#counting-a-value-inside-an-object) sub-document values.
 - [Documents API](../reference/documents-api.md#how-a-document-is-shaped) - Document payload format and updating documents.
 - [Update parts of documents](update-parts-of-documents.md) - Change one sub-document without resending the others.
