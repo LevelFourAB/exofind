@@ -22,8 +22,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param metadata
  *   metadata for the index, not interpreted by the engine
  * @param fields
- *   the fields of the index, keyed by field name. Names may contain {@code *}
- *   to define several fields at once, such as {@code metadata.*}
+ *   the fields of the index, keyed by field name. A name holds letters,
+ *   numbers, underscores and {@code *}, which defines several fields at once;
+ *   dots belong to paths through {@code object} fields, never to a name
  * @param ranking
  *   how the index breaks ties in the order of results. Left out for no opinion
  *   beyond how well documents match
@@ -62,11 +63,12 @@ public record IndexDefinition(
 	Map<String, String> metadata,
 
 	@Schema(description = """
-		The fields of the index, keyed by field name. A name can contain `*` \
-		to define multiple fields at once, such as `metadata.*`. The wildcard \
-		matches exactly one path segment. Explicit definitions take \
-		precedence, and the longest literal prefix wins among multiple \
-		wildcard patterns.""")
+		The fields of the index, keyed by field name. A name contains \
+		letters, numbers, underscores, and `*`, which defines multiple \
+		fields at once; a name never contains a dot, which addresses fields \
+		inside `object` fields. The wildcard matches exactly one name. \
+		Explicit definitions take precedence, and the longest literal prefix \
+		wins among multiple wildcard patterns.""")
 	Map<String, FieldDefinition> fields,
 
 	@Schema(description = """

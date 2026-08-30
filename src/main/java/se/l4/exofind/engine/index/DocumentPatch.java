@@ -107,17 +107,20 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	 * One change of a patch.
 	 *
 	 * @param field
-	 *   name of the field the change is about
+	 *   name of the field the change is about. A dotted name reaches it
+	 *   through single object values, walked into and made as the change
+	 *   applies
 	 * @param selector
 	 *   which of its values
 	 * @param inner
 	 *   the field inside those values that the change is about, {@code null}
 	 *   when the change is about the values themselves. Only ever set for a
-	 *   field whose values are objects
+	 *   field whose values are objects, and dotted when it sits behind single
+	 *   objects inside them
 	 * @param values
 	 *   what the named place becomes, empty to empty it. Each carries the name
-	 *   the place goes by where it sits, which for a change reaching inside an
-	 *   object value is {@code inner} rather than {@code field}
+	 *   the place goes by where it sits - the last name of {@code inner}, or
+	 *   of {@code field} when the change has no inner
 	 */
 	public record Change(
 		String field,
@@ -186,41 +189,98 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	}
 
 	private static void apply(MutableList<Document.Value> values, Change change) {
+		apply(values, change.field(), change);
+	}
+
+	/**
+	 * Apply one change at the place a name points to, descending through the
+	 * objects a dotted name spells. The name arrives on its own so descending
+	 * can shorten it; the change keeps the path as written, and errors point
+	 * at that.
+	 */
+	private static void apply(MutableList<Document.Value> values, String field, Change change) {
+		var dot = field.indexOf('.');
+		if(dot >= 0) {
+			descend(values, field.substring(0, dot), field.substring(dot + 1), change);
+			return;
+		}
+
 		switch(change.selector()) {
 			case Selector.All ignored -> {
 				if(change.inner() == null) {
-					values.removeIf(value -> value.name().equals(change.field()));
+					values.removeIf(value -> value.name().equals(field));
 					values.addAllIterable(change.values());
 				} else {
-					applyToOnlyValue(values, change);
+					applyToOnlyValue(values, field, change);
 				}
 			}
 			case Selector.Added ignored -> values.addAllIterable(change.values());
 			case Selector.InLocale inLocale -> {
-				values.removeIf(value -> value.name().equals(change.field())
+				values.removeIf(value -> value.name().equals(field)
 					&& inLocale.locale().equals(value.locale()));
 				values.addAllIterable(change.values());
 			}
 			case Selector.Matching matching -> applyToMatching(
-				values, change, matching.field(), matching.value()
+				values, field, change, matching.field(), matching.value()
 			);
 			case Selector.ByKey byKey -> applyToMatching(
-				values, change, byKey.field(), byKey.value()
+				values, field, change, byKey.field(), byKey.value()
 			);
 		}
+	}
+
+	/**
+	 * Apply a change inside the single object value one name of its path
+	 * holds, making that value where the document has none - the way
+	 * {@link #applyToOnlyValue} makes the value it reaches into.
+	 */
+	private static void descend(
+		MutableList<Document.Value> values,
+		String name,
+		String rest,
+		Change change
+	) {
+		for(var i = 0; i < values.size(); i++) {
+			var value = values.get(i);
+
+			if(value.name().equals(name) && value.value() instanceof Document object) {
+				var inside = Lists.mutable.of(object.fields());
+				apply(inside, rest, change);
+
+				values.set(i, new Document.Value(
+					name,
+					new Document(inside.toArray(new Document.Value[0])),
+					value.locale()
+				));
+
+				return;
+			}
+		}
+
+		var inside = Lists.mutable.<Document.Value>empty();
+		apply(inside, rest, change);
+
+		values.add(new Document.Value(
+			name,
+			new Document(inside.toArray(new Document.Value[0]))
+		));
 	}
 
 	/**
 	 * Change one field inside the single object value a field holds, making
 	 * that value where the document has none.
 	 */
-	private static void applyToOnlyValue(MutableList<Document.Value> values, Change change) {
+	private static void applyToOnlyValue(
+		MutableList<Document.Value> values,
+		String field,
+		Change change
+	) {
 		for(var i = 0; i < values.size(); i++) {
 			var value = values.get(i);
 
-			if(value.name().equals(change.field()) && value.value() instanceof Document object) {
+			if(value.name().equals(field) && value.value() instanceof Document object) {
 				values.set(i, new Document.Value(
-					change.field(),
+					field,
 					replaceInside(object, change.inner(), change.values()),
 					value.locale()
 				));
@@ -230,7 +290,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 		}
 
 		values.add(new Document.Value(
-			change.field(),
+			field,
 			replaceInside(new Document(), change.inner(), change.values())
 		));
 	}
@@ -242,6 +302,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	 */
 	private static void applyToMatching(
 		MutableList<Document.Value> values,
+		String field,
 		Change change,
 		String inside,
 		String reads
@@ -255,7 +316,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 		for(var i = values.size() - 1; i >= 0; i--) {
 			var value = values.get(i);
 
-			if(!value.name().equals(change.field())
+			if(!value.name().equals(field)
 				|| !(value.value() instanceof Document object)
 				|| !holds(object, inside, reads)) {
 				continue;
@@ -265,7 +326,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 
 			if(change.inner() != null) {
 				values.set(i, new Document.Value(
-					change.field(),
+					field,
 					replaceInside(object, change.inner(), change.values()),
 					value.locale()
 				));
@@ -300,13 +361,43 @@ public record DocumentPatch(ListIterable<Change> changes) {
 	}
 
 	/**
-	 * Replace one field of an object value, leaving the rest of it.
+	 * Replace one field of an object value, leaving the rest of it. A dotted
+	 * name reaches the field through single object values inside this one,
+	 * made where the value holds none.
 	 */
 	private static Document replaceInside(
 		Document object,
 		String inner,
 		ListIterable<Document.Value> values
 	) {
+		var dot = inner.indexOf('.');
+		if(dot >= 0) {
+			var name = inner.substring(0, dot);
+			var rest = inner.substring(dot + 1);
+
+			var merged = Lists.mutable.of(object.fields());
+			for(var i = 0; i < merged.size(); i++) {
+				var value = merged.get(i);
+
+				if(value.name().equals(name) && value.value() instanceof Document below) {
+					merged.set(i, new Document.Value(
+						name,
+						replaceInside(below, rest, values),
+						value.locale()
+					));
+
+					return new Document(merged.toArray(new Document.Value[0]));
+				}
+			}
+
+			merged.add(new Document.Value(
+				name,
+				replaceInside(new Document(), rest, values)
+			));
+
+			return new Document(merged.toArray(new Document.Value[0]));
+		}
+
 		var merged = Lists.mutable.<Document.Value>ofInitialCapacity(
 			object.fields().length + values.size()
 		);

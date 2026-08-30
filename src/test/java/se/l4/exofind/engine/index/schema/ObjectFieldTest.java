@@ -105,7 +105,11 @@ public class ObjectFieldTest {
 		var schema = new IndexSchema();
 		schema.setDefinition(
 			IndexDef.newBuilder()
-				.putFields("spec.*", variants().build())
+				.putFields(
+					"spec",
+					singleObject(builder -> builder.putFields("*", variants().build()))
+						.build()
+				)
 				.build()
 		);
 
@@ -137,7 +141,11 @@ public class ObjectFieldTest {
 		var schema = new IndexSchema();
 		schema.setDefinition(
 			IndexDef.newBuilder()
-				.putFields("spec.*", variants().build())
+				.putFields(
+					"spec",
+					singleObject(builder -> builder.putFields("*", variants().build()))
+						.build()
+				)
 				.build()
 		);
 
@@ -728,22 +736,12 @@ public class ObjectFieldTest {
 	}
 
 	@Test
-	public void testDeepObjectPathsCanNotCollide() {
-		// `a` > `b.c` and `a` > `b` > `c` both spell `a.b.c`
-		assertRefused(
-			IndexDef.newBuilder()
-				.putFields(
-					"a",
-					singleObject(builder -> builder
-						.putFields("b.c", string().build())
-						.putFields(
-							"b",
-							singleObject(inner -> inner.putFields("c", string().build()))
-								.build()
-						)
-					).build()
-				),
-			"index:schema:object_path_taken"
+	public void testInnerNameCanNotHoldDot() {
+		// `b.c` would spell the path of an object `b` holding `c` without declaring it
+		assertInnerRefusedNamed(
+			"b.c",
+			string(),
+			"index:field:invalid_name"
 		);
 	}
 
@@ -780,8 +778,13 @@ public class ObjectFieldTest {
 								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 								.putFields("sku", string().build())
 								.putFields(
-									"attr.*",
-									string().setFilter(FilterConfig.getDefaultInstance()).build()
+									"attr",
+									singleObject(attr -> attr.putFields(
+										"*",
+										string()
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)).build()
 								)
 						)
 					)
@@ -814,12 +817,21 @@ public class ObjectFieldTest {
 							ObjectFieldTypeDef.newBuilder()
 								.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
 								.putFields(
-									"attr.color",
-									string().setFilter(FilterConfig.getDefaultInstance()).build()
-								)
-								.putFields(
-									"attr.*",
-									string().setFilter(FilterConfig.getDefaultInstance()).build()
+									"attr",
+									singleObject(attr -> attr
+										.putFields(
+											"color",
+											string()
+												.setFilter(FilterConfig.getDefaultInstance())
+												.build()
+										)
+										.putFields(
+											"*",
+											string()
+												.setFilter(FilterConfig.getDefaultInstance())
+												.build()
+										)
+									).build()
 								)
 								.putFields(
 									"*",
@@ -851,7 +863,7 @@ public class ObjectFieldTest {
 				FieldDef.newBuilder()
 					.setType(
 						FieldTypeDef.newBuilder().setObject(
-							ObjectFieldTypeDef.newBuilder().putFields("attr.*", string().build())
+							ObjectFieldTypeDef.newBuilder().putFields("*", string().build())
 						)
 					)
 			).build()
@@ -864,7 +876,7 @@ public class ObjectFieldTest {
 	public void testWildcardObjectNameRequiresTheFeature() {
 		var features = IndexFeatures.requiredBy(
 			IndexDef.newBuilder()
-				.putFields("spec.*", variants().build())
+				.putFields("*", variants().build())
 				.build()
 		);
 
@@ -900,7 +912,7 @@ public class ObjectFieldTest {
 	@Test
 	public void testWildcardInsideObjectCanNotBeRequired() {
 		assertInnerRefusedNamed(
-			"attr.*",
+			"*",
 			string().setRequired(true),
 			"index:field:invalid_required"
 		);
@@ -909,18 +921,18 @@ public class ObjectFieldTest {
 	@Test
 	public void testWildcardInsideObjectCanNotBePrimaryKey() {
 		assertInnerRefusedNamed(
-			"attr.*",
+			"*",
 			string().setPrimaryKey(true),
 			"index:field:object:inner_usage_not_supported"
 		);
 	}
 
 	@Test
-	public void testRootFieldCanNotTakeAnObjectPath() {
+	public void testRootNameCanNotHoldDot() {
 		var builder = definition(variants());
 		builder.putFields("variants.color", string().build());
 
-		assertRefused(builder, "index:schema:object_path_taken");
+		assertRefused(builder, "index:field:invalid_name");
 	}
 
 	@Test

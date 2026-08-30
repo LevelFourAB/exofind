@@ -124,8 +124,9 @@ public final class FieldNames {
 	/**
 	 * Build the name a value is written under.
 	 *
-	 * Field names are checked to hold nothing but letters, numbers, underscores,
-	 * dots and wildcards, so the separator can never turn up inside one and the
+	 * A field here is a declared name or a dotted path of declared names.
+	 * Declared names hold nothing but letters, numbers, underscores and
+	 * wildcards, so the separator can never turn up inside a field and the
 	 * name can always be taken apart again.
 	 *
 	 * @param field

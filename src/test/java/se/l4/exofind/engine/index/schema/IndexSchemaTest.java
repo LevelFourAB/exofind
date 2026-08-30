@@ -129,8 +129,19 @@ public class IndexSchemaTest {
 		IndexSchema schema = new IndexSchema();
 
 		var builder = IndexDef.newBuilder();
-		for(var name : new String[] { "*", "a.*", "a.b*", "a.*x", "a.exact" }) {
-			builder.putFields(
+		builder.putFields(
+			"*",
+			FieldDef.newBuilder()
+				.setType(
+					FieldTypeDef.newBuilder().setBoolean(BooleanFieldTypeDef.getDefaultInstance())
+				)
+				.build()
+		);
+
+		// The names under `a` fold out of an object, resolving as any field does
+		var inA = ObjectFieldTypeDef.newBuilder();
+		for(var name : new String[] { "*", "b*", "*x", "exact" }) {
+			inA.putFields(
 				name,
 				FieldDef.newBuilder()
 					.setType(
@@ -139,6 +150,12 @@ public class IndexSchemaTest {
 					.build()
 			);
 		}
+		builder.putFields(
+			"a",
+			FieldDef.newBuilder()
+				.setType(FieldTypeDef.newBuilder().setObject(inA))
+				.build()
+		);
 		schema.setDefinition(builder.build());
 
 		// An exact field wins over every pattern that also covers the name
@@ -708,8 +725,8 @@ public class IndexSchemaTest {
 		var e = assertThrows(
 			ValidationException.class,
 			() -> schema.setDefinition(
-				sortableField("meta.*")
-					.setRanking(RankingConfig.newBuilder().addTieBreakers(tieBreaker("meta.*")))
+				sortableField("meta*")
+					.setRanking(RankingConfig.newBuilder().addTieBreakers(tieBreaker("meta*")))
 					.build()
 			)
 		);
@@ -846,9 +863,9 @@ public class IndexSchemaTest {
 		var e = assertThrows(
 			ValidationException.class,
 			() -> schema.setDefinition(
-				countedField("counts.*")
+				countedField("counts*")
 					.setRanking(
-						RankingConfig.newBuilder().addSignals(saturation("counts.*", 50))
+						RankingConfig.newBuilder().addSignals(saturation("counts*", 50))
 					)
 					.build()
 			)

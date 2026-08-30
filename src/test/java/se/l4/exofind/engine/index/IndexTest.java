@@ -443,7 +443,7 @@ public class IndexTest {
 		var index = create(
 			IndexDef.newBuilder()
 				.putFields(
-					"metadata.*",
+					"*",
 					FieldDef.newBuilder()
 						.setType(
 							FieldTypeDef.newBuilder()
@@ -456,14 +456,14 @@ public class IndexTest {
 
 		index.addDocument(
 			new Document(
-				new Document.Value("metadata.color", "red"),
-				new Document.Value("metadata.size", "42")
+				new Document.Value("color", "red"),
+				new Document.Value("size", "42")
 			)
 		);
 
 		var doc = new Document(
-			new Document.Value("metadata.color", "red"),
-			new Document.Value("metadata.color", "blue")
+			new Document.Value("color", "red"),
+			new Document.Value("color", "blue")
 		);
 		var e = assertThrows(ValidationException.class, () -> index.addDocument(doc));
 		assertThat(e.getErrors().size(), is(1));

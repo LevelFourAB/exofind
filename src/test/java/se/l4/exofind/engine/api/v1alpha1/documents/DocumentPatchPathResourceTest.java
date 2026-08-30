@@ -560,7 +560,8 @@ public class DocumentPatchPathResourceTest {
 
 		index.commit();
 
-		assertThat(index.getDocument("1").getAll("attr.tags"), contains("a", "b"));
+		var attr = (Document) index.getDocument("1").get("attr");
+		assertThat(attr.getAll("tags"), contains("a", "b"));
 	}
 
 	@Test
@@ -571,9 +572,9 @@ public class DocumentPatchPathResourceTest {
 
 		index.commit();
 
-		var stored = index.getDocument("1");
-		assertThat(inLocale(stored, "text.title", "sv"), is("Ny titel"));
-		assertThat(inLocale(stored, "text.title", "en"), is("A title"));
+		var text = (Document) index.getDocument("1").get("text");
+		assertThat(inLocale(text, "title", "sv"), is("Ny titel"));
+		assertThat(inLocale(text, "title", "en"), is("A title"));
 	}
 
 	@Test
@@ -585,7 +586,7 @@ public class DocumentPatchPathResourceTest {
 		index.commit();
 
 		var variant = (Document) index.getDocument("1").getAll("variants").get(0);
-		assertThat(variant.get("attr.color"), is("red"));
+		assertThat(((Document) variant.get("attr")).get("color"), is("red"));
 		assertThat(variant.get("sku"), is("V-1"));
 	}
 
@@ -597,7 +598,8 @@ public class DocumentPatchPathResourceTest {
 
 		index.commit();
 
-		var weight = (Document) index.getDocument("1").get("spec.weight");
+		var spec = (Document) index.getDocument("1").get("spec");
+		var weight = (Document) spec.get("weight");
 		assertThat(weight.get("value"), is("200"));
 		assertThat(weight.get("unit"), is("g"));
 	}
@@ -665,8 +667,8 @@ public class DocumentPatchPathResourceTest {
 	}
 
 	/**
-	 * An index whose names are patterns wherever a name can be one - at the
-	 * root, inside an object, and for the object itself.
+	 * An index whose names are patterns wherever a name can be one - inside a
+	 * flattened object, inside a nested one, and for an object itself.
 	 */
 	private Index dynamic() throws IOException {
 		var index = indexes.create(
@@ -674,19 +676,37 @@ public class DocumentPatchPathResourceTest {
 			IndexDef.newBuilder()
 				.putFields("id", string().setPrimaryKey(true).build())
 				.putFields(
-					"attr.*",
-					string()
-						.setMultiple(true)
-						.setFilter(FilterConfig.getDefaultInstance())
+					"attr",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"*",
+									string()
+										.setMultiple(true)
+										.setFilter(FilterConfig.getDefaultInstance())
+										.build()
+								)
+							)
+						)
 						.build()
 				)
 				.putFields(
-					"text.*",
-					string()
-						.setLocales(
-							FieldDef.LocaleConfig.newBuilder()
-								.setDefaultLocale("en")
-								.addLocales("sv")
+					"text",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"*",
+									string()
+										.setLocales(
+											FieldDef.LocaleConfig.newBuilder()
+												.setDefaultLocale("en")
+												.addLocales("sv")
+										)
+										.build()
+								)
+							)
 						)
 						.build()
 				)
@@ -707,9 +727,18 @@ public class DocumentPatchPathResourceTest {
 											.build()
 									)
 									.putFields(
-										"attr.*",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
+										"attr",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setObject(
+													ObjectFieldTypeDef.newBuilder().putFields(
+														"*",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.build()
+													)
+												)
+											)
 											.build()
 									)
 							)
@@ -717,23 +746,32 @@ public class DocumentPatchPathResourceTest {
 						.build()
 				)
 				.putFields(
-					"spec.*",
+					"spec",
 					FieldDef.newBuilder()
 						.setType(
 							FieldTypeDef.newBuilder().setObject(
-								ObjectFieldTypeDef.newBuilder()
-									.putFields(
-										"value",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
-											.build()
-									)
-									.putFields(
-										"unit",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
-											.build()
-									)
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"*",
+									FieldDef.newBuilder()
+										.setType(
+											FieldTypeDef.newBuilder().setObject(
+												ObjectFieldTypeDef.newBuilder()
+													.putFields(
+														"value",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.build()
+													)
+													.putFields(
+														"unit",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.build()
+													)
+											)
+										)
+										.build()
+								)
 							)
 						)
 						.build()
@@ -747,10 +785,12 @@ public class DocumentPatchPathResourceTest {
 				List.of(
 					document(
 						"id", "1",
-						"attr.tags", List.of("a"),
-						"text.title", Map.of("en", "A title", "sv", "En titel"),
-						"variants", List.of(Map.of("sku", "V-1", "attr.color", "blue")),
-						"spec.weight", Map.of("value", "180", "unit", "g")
+						"attr", Map.of("tags", List.of("a")),
+						"text", Map.of("title", Map.of("en", "A title", "sv", "En titel")),
+						"variants", List.of(
+							Map.of("sku", "V-1", "attr", Map.of("color", "blue"))
+						),
+						"spec", Map.of("weight", Map.of("value", "180", "unit", "g"))
 					)
 				)
 			)

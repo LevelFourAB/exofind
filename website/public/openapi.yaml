@@ -1488,10 +1488,12 @@ components:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/FieldDefinition"
-          description: "The fields of the index, keyed by field name. A name can contain\
-            \ `*` to define multiple fields at once, such as `metadata.*`. The wildcard\
-            \ matches exactly one path segment. Explicit definitions take precedence,\
-            \ and the longest literal prefix wins among multiple wildcard patterns."
+          description: "The fields of the index, keyed by field name. A name contains\
+            \ letters, numbers, underscores, and `*`, which defines multiple fields\
+            \ at once; a name never contains a dot, which addresses fields inside\
+            \ `object` fields. The wildcard matches exactly one name. Explicit definitions\
+            \ take precedence, and the longest literal prefix wins among multiple\
+            \ wildcard patterns."
         ranking:
           description: "Tie-breaking rules and ranking signals. Omitted to order results\
             \ by match score alone. Replaced entirely while an index has [search settings](https://exofind.dev/reference/admin-api/#search-settings)."

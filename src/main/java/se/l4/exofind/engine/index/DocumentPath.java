@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.index;
 
+import java.util.regex.Pattern;
+
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -32,9 +34,9 @@ import se.l4.exofind.engine.index.schema.Field;
  * {@code =} without becoming the other shape.
  *
  * <p>A path without brackets carries its whole name in {@link #field()}, dots
- * included: whether {@code dimensions.width} names a field of that name or the
- * field {@code width} inside the object {@code dimensions} is a question for
- * the definition of the index, which this does not read.
+ * included: which objects sit on the path {@code dimensions.width} and where
+ * it stops being one is a question for the definition of the index, which this
+ * does not read.
  *
  * @param field
  *   the name before the brackets
@@ -55,6 +57,13 @@ public record DocumentPath(
 	String selectorValue,
 	String inner
 ) {
+	/**
+	 * What one name of a path may hold. Unlike {@link Field#VALID_NAME_PATTERN}
+	 * this keeps dots, because a name here may be a dotted path through
+	 * objects - declared names hold none.
+	 */
+	private static final Pattern VALID_PATH_NAME = Pattern.compile("[a-zA-Z0-9_\\.\\*]+");
+
 	private static final ErrorType MALFORMED = ErrorType
 		.withCode("request:update:path_invalid")
 		.withArguments("path", "reason")
@@ -156,7 +165,7 @@ public record DocumentPath(
 			throw malformed(text, whenEmpty);
 		}
 
-		if(!Field.VALID_NAME_PATTERN.matcher(name).matches()) {
+		if(!VALID_PATH_NAME.matcher(name).matches()) {
 			throw malformed(
 				text,
 				"`" + name + "` is not a field name"

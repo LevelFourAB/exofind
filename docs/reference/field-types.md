@@ -232,19 +232,27 @@ A child pattern accepts attributes the definition does not name in advance:
   "type": "object", "multiple": true, "mode": "nested", "key": "sku",
   "fields": {
     "sku": { "type": "string", "filter": {}, "required": true },
-    "attr.*": { "type": "string", "filter": {}, "facet": {} }
+    "attr": {
+      "type": "object",
+      "fields": { "*": { "type": "string", "filter": {}, "facet": {} } }
+    }
   }
 }
 ```
 
-A pattern on the object's own name accepts attribute groups the definition does not name in advance:
+A pattern on the name of an `object` field accepts attribute groups the definition does not name in advance:
 
 ```json
-"spec.*": {
+"spec": {
   "type": "object",
   "fields": {
-    "value": { "type": "string", "filter": {} },
-    "unit": { "type": "string", "filter": {} }
+    "*": {
+      "type": "object",
+      "fields": {
+        "value": { "type": "string", "filter": {} },
+        "unit": { "type": "string", "filter": {} }
+      }
+    }
   }
 }
 ```
@@ -276,13 +284,17 @@ Search and update operations:
 - An `object` child field requires the `type.object.nesting` feature flag.
 - `stored`, `locales`, and `highlight` on child fields require `type.object.stored`, `type.object.locales`, and `type.object.highlight`. Below a `nested` list, `stored` also requires `type.object.stored.nested`, and `highlight` also requires `type.object.highlight.nested`.
 
+## Field names
+
+A field name contains letters, numbers, underscores, and the wildcard `*`. A name containing anything else, including a dot, is rejected with `index:field:invalid_name`. Dots appear only in paths: a path such as `dimensions.width` addresses the field `width` inside the [`object`](#object) field `dimensions`, so every dot in a path stands for one level of objects the definition declares.
+
 ## Wildcard fields
 
-Field names can contain `*` to define dynamic field schemas (for example, `metadata.*`).
+Field names can contain `*` to define dynamic field schemas (for example, a field named `*` inside the `object` field `metadata`).
 
-- The `*` wildcard matches exactly one path segment (`metadata.*` matches `metadata.color`, but not `metadata.a.b`).
+- The `*` wildcard matches exactly one name, never a dotted path (the `*` inside `metadata` accepts `metadata.color`, but not `metadata.a.b`).
 - Explicit field definitions take precedence over wildcard definitions.
-- When multiple wildcard definitions match a field name, the pattern with the longest literal prefix takes precedence (for example, `a.b*` takes precedence over `a.*` for `a.bc`). When literal prefixes have equal length, the shorter pattern takes precedence.
+- When multiple wildcard definitions cover a name, the pattern with the longest literal prefix takes precedence (for example, `b*` takes precedence over `*` for `bc`). When literal prefixes have equal length, the shorter pattern takes precedence.
 - The same rules apply to a name inside an `object` field and to the name of an `object` field. See [Wildcard names on object fields](#wildcard-names-on-object-fields).
 
 ## Document source

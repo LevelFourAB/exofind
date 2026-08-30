@@ -13,7 +13,7 @@ Before you model dynamic attributes, ensure you have the following:
 
 ## Define typed wildcard namespaces
 
-To accept attribute names that you do not define in advance, add field names that contain `*` to your index definition. Because a pattern carries one type and set of usages, group dynamic attributes into namespaces by data type:
+To accept attribute names that you do not define in advance, add an `object` field per namespace, holding a field named `*`. Because a pattern carries one type and set of usages, group dynamic attributes into namespaces by data type:
 
 ```json
 {
@@ -25,10 +25,22 @@ To accept attribute names that you do not define in advance, add field names tha
       "sort": {}
     },
 
-    "attr.*": { "type": "string", "filter": {}, "facet": {}, "multiple": true },
-    "num.*":  { "type": "double", "filter": {}, "facet": {}, "sort": {} },
-    "flag.*": { "type": "boolean", "filter": {} },
-    "date.*": { "type": "timestamp", "filter": {}, "facet": {}, "sort": {} },
+    "attr": {
+      "type": "object",
+      "fields": { "*": { "type": "string", "filter": {}, "facet": {}, "multiple": true } }
+    },
+    "num": {
+      "type": "object",
+      "fields": { "*": { "type": "double", "filter": {}, "facet": {}, "sort": {} } }
+    },
+    "flag": {
+      "type": "object",
+      "fields": { "*": { "type": "boolean", "filter": {} } }
+    },
+    "date": {
+      "type": "object",
+      "fields": { "*": { "type": "timestamp", "filter": {}, "facet": {}, "sort": {} } }
+    },
 
     "attrText": { "type": "string", "multiple": true, "matching": {} }
   }
@@ -37,7 +49,7 @@ To accept attribute names that you do not define in advance, add field names tha
 
 The engine resolves wildcard field names using these rules:
 
-- The `*` character matches exactly one field name segment. For example, `attr.*` matches `attr.color`, but does not match `attr.a.b`.
+- The `*` character matches exactly one field name. For example, the `*` inside `attr` accepts `attr.color`, but does not accept the deeper name `attr.a.b`.
 - An explicit field definition takes precedence over any matching pattern.
 - When multiple patterns match a field name, the pattern with the longest literal prefix wins. If literal prefixes have the same length, the shorter pattern wins.
 - A field name in a document that matches no explicit field and no pattern is rejected.
@@ -46,16 +58,16 @@ The engine resolves wildcard field names using these rules:
 
 ## Index documents with dynamic attributes
 
-Write dynamic attributes under their matching namespace prefix:
+Write dynamic attributes inside their namespace object:
 
 ```http
 POST /v1alpha1/indexes/products/documents
 Content-Type: application/x-ndjson
 
-{"sku": "TT-1", "name": "Trail Tee", "attr.color": "red", "attr.material": "merino", "num.weight": 180, "flag.waterproof": false, "attrText": ["red", "merino"]}
+{"sku": "TT-1", "name": "Trail Tee", "attr": {"color": "red", "material": "merino"}, "num": {"weight": 180}, "flag": {"waterproof": false}, "attrText": ["red", "merino"]}
 ```
 
-New attribute names require no definition updates or reindexing. When a document introduces a new attribute name that matches a namespace pattern (such as `attr.material`), the engine accepts and indexes the field immediately.
+New attribute names require no definition updates or reindexing. When a document introduces a new attribute name inside a namespace (such as `material` inside `attr`), the engine accepts and indexes the field immediately.
 
 When a pattern sets `"multiple": true`, you can provide a single value or an array of values for that attribute.
 
@@ -124,6 +136,7 @@ Content-Type: application/json
 
 The update endpoint modifies fields using these rules:
 
+- Each key is a path: `attr.color` names the field `color` inside the `attr` object.
 - Fields specified in the request replace their previous values.
 - Setting a field value to `null` removes that attribute from the document.
 - Unspecified fields retain their existing values.
@@ -163,9 +176,9 @@ Wildcard fields have three limitations:
 
 Choose the placement of a pattern based on where the attributes sit:
 
-- **Attributes on the document:** A root pattern (such as `attr.*`) indexes dynamic attributes directly on the document when attributes do not need to match together within a variant.
+- **Attributes on the document:** A pattern inside a single namespace object (such as the `*` inside `attr`) indexes dynamic attributes directly on the document when attributes do not need to match together within a variant.
 - **Attributes on a variant:** A pattern inside a `nested` `object` field indexes dynamic attributes on individual variants so two or more attributes can match together within the same variant. For details, see [Accept attributes you did not define](use-sub-documents.md#accept-attributes-you-did-not-define).
-- **Dynamic attribute groups:** A pattern on the `object` field name itself (such as `spec.*`) indexes dynamic attribute groups whose inner fields (such as `value` and `unit`) must match together. For details, see [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields).
+- **Dynamic attribute groups:** An `object` field named `*` inside a namespace (such as the group objects inside `spec`) indexes dynamic attribute groups whose inner fields (such as `value` and `unit`) must match together. For details, see [Wildcard names on object fields](../reference/field-types.md#wildcard-names-on-object-fields).
 
 ## Why name and value pairs in nested objects fail for faceting
 
@@ -181,7 +194,7 @@ Because nested objects cannot isolate facet exclusions per attribute, use wildca
 ## What a definition change costs
 
 - **Adding a new pattern is free:** Adding a new wildcard pattern to an index definition requires no reindexing. Existing documents were not indexed with that pattern, so no stale data exists.
-- **Adding usages to an existing pattern requires a rollout:** Enabling a new usage on an existing pattern (such as adding `facet` to `attr.*`) when documents already exist is rejected with `index:definition:usage_added`. To apply the new usage to existing documents, [roll out a new generation](roll-out-a-definition-change.md).
+- **Adding usages to an existing pattern requires a rollout:** Enabling a new usage on an existing pattern (such as adding `facet` to the `*` inside `attr`) when documents already exist is rejected with `index:definition:usage_added`. To apply the new usage to existing documents, [roll out a new generation](roll-out-a-definition-change.md).
 
 To avoid generation rollouts, define all required usages when creating a namespace. If an existing namespace needs a new usage, add a new namespace prefix instead.
 

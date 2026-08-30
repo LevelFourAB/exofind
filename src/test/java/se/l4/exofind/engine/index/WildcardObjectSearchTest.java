@@ -120,8 +120,8 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 		var index = products();
 
 		/*
-		 * The pattern is `attr.*`, so a name under no namespace at all belongs
-		 * to no field of the object.
+		 * The only pattern sits inside `attr`, so a name under no namespace at
+		 * all belongs to no field of the object.
 		 */
 		var e = assertThrows(
 			ValidationException.class,
@@ -156,7 +156,12 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 					new Document.Value("id", "9"),
 					new Document.Value(
 						"variants",
-						new Document(new Document.Value("attr.a.b", "red"))
+						new Document(
+							new Document.Value(
+								"attr",
+								new Document(new Document.Value("a.b", "red"))
+							)
+						)
 					)
 				)
 			)
@@ -204,7 +209,8 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 		var index = specs();
 
 		var doc = index.getDocument("1");
-		var weight = (Document) doc.get("spec.weight");
+		var spec = (Document) doc.get("spec");
+		var weight = (Document) spec.get("weight");
 
 		assertThat(weight.get("value"), is("180"));
 		assertThat(weight.get("unit"), is("g"));
@@ -276,10 +282,19 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 											.build()
 									)
 									.putFields(
-										"attr.*",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
-											.setFacet(FacetConfig.getDefaultInstance())
+										"attr",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setObject(
+													ObjectFieldTypeDef.newBuilder().putFields(
+														"*",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.setFacet(FacetConfig.getDefaultInstance())
+															.build()
+													)
+												)
+											)
 											.build()
 									)
 							)
@@ -304,9 +319,18 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 											.build()
 									)
 									.putFields(
-										"extra.*",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
+										"extra",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setObject(
+													ObjectFieldTypeDef.newBuilder().putFields(
+														"*",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.build()
+													)
+												)
+											)
 											.build()
 									)
 							)
@@ -322,15 +346,23 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 					"variants",
 					new Document(
 						new Document.Value("sku", "1-red"),
-						new Document.Value("attr.color", "red"),
-						new Document.Value("attr.size", "L")
+						new Document.Value(
+							"attr",
+							new Document(
+								new Document.Value("color", "red"),
+								new Document.Value("size", "L")
+							)
+						)
 					)
 				),
 				new Document.Value(
 					"dimensions",
 					new Document(
 						new Document.Value("width", 12d),
-						new Document.Value("extra.finish", "matte")
+						new Document.Value(
+							"extra",
+							new Document(new Document.Value("finish", "matte"))
+						)
 					)
 				)
 			)
@@ -343,16 +375,26 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 					"variants",
 					new Document(
 						new Document.Value("sku", "2-red"),
-						new Document.Value("attr.color", "red"),
-						new Document.Value("attr.size", "S")
+						new Document.Value(
+							"attr",
+							new Document(
+								new Document.Value("color", "red"),
+								new Document.Value("size", "S")
+							)
+						)
 					)
 				),
 				new Document.Value(
 					"variants",
 					new Document(
 						new Document.Value("sku", "2-blue"),
-						new Document.Value("attr.color", "blue"),
-						new Document.Value("attr.size", "L")
+						new Document.Value(
+							"attr",
+							new Document(
+								new Document.Value("color", "blue"),
+								new Document.Value("size", "L")
+							)
+						)
 					)
 				)
 			)
@@ -373,27 +415,36 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 			IndexDef.newBuilder()
 				.putFields("id", string().setPrimaryKey(true).build())
 				.putFields(
-					"spec.*",
+					"spec",
 					FieldDef.newBuilder()
 						.setType(
 							FieldTypeDef.newBuilder().setObject(
-								ObjectFieldTypeDef.newBuilder()
-									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
-									.putFields(
-										"value",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
-											.build()
-									)
-									.putFields(
-										"unit",
-										string()
-											.setFilter(FilterConfig.getDefaultInstance())
-											.build()
-									)
+								ObjectFieldTypeDef.newBuilder().putFields(
+									"*",
+									FieldDef.newBuilder()
+										.setType(
+											FieldTypeDef.newBuilder().setObject(
+												ObjectFieldTypeDef.newBuilder()
+													.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+													.putFields(
+														"value",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.build()
+													)
+													.putFields(
+														"unit",
+														string()
+															.setFilter(FilterConfig.getDefaultInstance())
+															.build()
+													)
+											)
+										)
+										.setMultiple(true)
+										.build()
+								)
 							)
 						)
-						.setMultiple(true)
 						.build()
 				)
 		);
@@ -402,17 +453,22 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 			new Document(
 				new Document.Value("id", "1"),
 				new Document.Value(
-					"spec.weight",
+					"spec",
 					new Document(
-						new Document.Value("value", "180"),
-						new Document.Value("unit", "g")
-					)
-				),
-				new Document.Value(
-					"spec.voltage",
-					new Document(
-						new Document.Value("value", "230"),
-						new Document.Value("unit", "V")
+						new Document.Value(
+							"weight",
+							new Document(
+								new Document.Value("value", "180"),
+								new Document.Value("unit", "g")
+							)
+						),
+						new Document.Value(
+							"voltage",
+							new Document(
+								new Document.Value("value", "230"),
+								new Document.Value("unit", "V")
+							)
+						)
 					)
 				)
 			)

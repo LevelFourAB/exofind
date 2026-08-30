@@ -705,8 +705,8 @@ public class DocumentReader {
 	/**
 	 * The relative names along a flattened path - the name of the top object,
 	 * each object below it, and the field's own name inside the last. Walked
-	 * along the chain the schema declares rather than split on dots, because
-	 * a declared name may itself hold one.
+	 * along the chain the schema declares rather than split on dots, so the
+	 * split can never disagree with which objects the schema puts on the path.
 	 */
 	private ListIterable<String> chainOf(String path) {
 		var chain = Lists.mutable.<String>empty();
@@ -864,7 +864,8 @@ public class DocumentReader {
 	 * The relative names along a path below a nested list - each object
 	 * between the list and the field, and the field's own name inside the
 	 * last. Walked along the chain the schema declares rather than split on
-	 * dots, because a declared name may itself hold one.
+	 * dots, so the split can never disagree with which objects the schema
+	 * puts on the path.
 	 */
 	private ListIterable<String> chainBelow(String block, String name, Field field) {
 		var chain = Lists.mutable.<String>empty();

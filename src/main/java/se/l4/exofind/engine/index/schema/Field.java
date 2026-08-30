@@ -22,12 +22,19 @@ import se.l4.exofind.engine.index.types.FieldType;
 import se.l4.exofind.engine.index.types.FieldTypes;
 
 public class Field {
-	public static final Pattern VALID_NAME_PATTERN = Pattern.compile("[a-zA-Z0-9_\\.\\*]+");
+	/**
+	 * What a declared name may hold: letters, numbers, underscores and
+	 * wildcards. Never a dot - a dotted name spells a path through
+	 * {@code object} fields, and a path is declared by declaring the objects
+	 * on it. Paths keep their dots; see {@code DocumentPath}.
+	 */
+	public static final Pattern VALID_NAME_PATTERN = Pattern.compile("[a-zA-Z0-9_\\*]+");
 
 	private static ErrorType INVALID_NAME = ErrorType.withCode("index:field:invalid_name")
 		.withArguments("name")
 		.withMessage(
-			"Field `{{name}}` should only contain letters, numbers, underscores, dots, and wildcards"
+			"Field `{{name}}` should only contain letters, numbers, underscores, and wildcards"
+			+ " - to hold fields under a dotted path, declare an `object` field"
 		);
 
 	private static ErrorType INVALID_PRIMARY_KEY_WILDCARD = ErrorType

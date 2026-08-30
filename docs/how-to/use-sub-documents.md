@@ -230,7 +230,7 @@ If the index uses [`source`](../reference/field-types.md#document-source) set to
 
 To accept variant attributes that your catalogue adds over time without changing your index definition, use wildcard inner field names.
 
-1. Define wildcard patterns inside the `fields` object. Because each pattern assigns one data type and one set of usages, group attributes into namespaces by type:
+1. Define namespace objects holding a wildcard field named `*`. Because each pattern assigns one data type and one set of usages, group attributes into namespaces by type:
 
    ```json
    "variants": {
@@ -240,19 +240,25 @@ To accept variant attributes that your catalogue adds over time without changing
      "key": "sku",
      "fields": {
        "sku": { "type": "string", "filter": {}, "required": true },
-       "attr.*": { "type": "string", "filter": {}, "facet": {} },
-       "num.*": { "type": "double", "filter": {}, "sort": {} }
+       "attr": {
+         "type": "object",
+         "fields": { "*": { "type": "string", "filter": {}, "facet": {} } }
+       },
+       "num": {
+         "type": "object",
+         "fields": { "*": { "type": "double", "filter": {}, "sort": {} } }
+       }
      }
    }
    ```
 
-2. Index documents with dynamic attributes inside the variant under names that match your patterns:
+2. Index documents with dynamic attributes inside the variant, nested inside their namespace object:
 
    ```http
    POST /v1alpha1/indexes/products/documents
    Content-Type: application/x-ndjson
 
-   {"id": "1", "variants": [{"sku": "V-1", "attr.color": "red", "attr.size": "L", "num.weight": 180}]}
+   {"id": "1", "variants": [{"sku": "V-1", "attr": {"color": "red", "size": "L"}, "num": {"weight": 180}}]}
    ```
 
 3. Query the dynamic attributes by their dotted paths inside a `nested` clause:
@@ -273,7 +279,7 @@ To accept variant attributes that your catalogue adds over time without changing
 Keep the following rules in mind when using wildcard inner fields:
 
 - An explicit inner field name takes precedence over a pattern. Among patterns, the longest literal prefix wins. If prefixes are equal, the shorter pattern wins.
-- A wildcard `*` matches exactly one dot-separated segment. `attr.*` matches `attr.color` but not `attr.a.b`.
+- A wildcard `*` matches exactly one name. The `*` inside `attr` accepts `attr.color` but nothing deeper, such as `attr.a.b`.
 - A pattern cannot be configured as `required`, `primaryKey`, or as the `key` of an object list.
 - An inner name that matches no declared field and no pattern fails indexing with `index:update:field_not_found`.
 - Adding a pattern to an existing index does not require reindexing.

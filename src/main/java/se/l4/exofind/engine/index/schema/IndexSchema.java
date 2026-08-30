@@ -12,7 +12,6 @@ import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.ImmutableMap;
 import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.api.set.ImmutableSet;
-import org.eclipse.collections.api.set.MutableSet;
 
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -270,13 +269,6 @@ public class IndexSchema {
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` takes part in locale fallback, but the index does not declare one"
-			);
-
-	private static ErrorType OBJECT_PATH_TAKEN =
-		ErrorType.withCode("index:schema:object_path_taken")
-			.withArguments("name")
-			.withMessage(
-				"Field `{{name}}` is declared more than once, at the root or through the objects on its path, and a path can only mean one of them"
 			);
 
 	private static ErrorType UNSUPPORTED_FEATURES =
@@ -625,20 +617,6 @@ public class IndexSchema {
 			);
 		}
 
-		/*
-		 * The fields inside an object are addressed by the dotted path through
-		 * it, so two declarations reaching the same path would make the path
-		 * ambiguous - a root field on an object's path, or with objects
-		 * nesting, a field named `b.c` beside an object `b` holding `c`.
-		 * Compared as written, patterns included: two declarations spelling
-		 * the same path are ambiguous, while different patterns that merely
-		 * overlap are settled by resolution order.
-		 */
-		var pathsSeen = Sets.mutable.<String>empty();
-		for(var entry : definition.getFieldsMap().entrySet()) {
-			collectPaths(entry.getKey(), entry.getValue(), pathsSeen, errors);
-		}
-
 		// Check for multiple primary keys
 		var primaryKeyCount = definition.getFieldsMap().values().stream()
 			.filter(FieldDef::getPrimaryKey)
@@ -654,35 +632,6 @@ public class IndexSchema {
 
 		if(!errors.isEmpty()) {
 			throw new ValidationException(errors);
-		}
-	}
-
-	/**
-	 * Collect the full path of every declared field, refusing a path spelled
-	 * by two declarations. Objects recurse, so a path is collected however
-	 * deep it is declared - and the objects themselves are collected too,
-	 * because a field on an object's own path is just as ambiguous as one on
-	 * a field's.
-	 */
-	private static void collectPaths(
-		String path,
-		FieldDef def,
-		MutableSet<String> seen,
-		MutableList<ErrorMessage> errors
-	) {
-		if(!seen.add(path)) {
-			errors.add(
-				OBJECT_PATH_TAKEN.toMessage(
-					ObjectLocation.root().forField(path),
-					"name", path
-				)
-			);
-		}
-
-		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
-			for(var inner : def.getType().getObject().getFieldsMap().entrySet()) {
-				collectPaths(path + '.' + inner.getKey(), inner.getValue(), seen, errors);
-			}
 		}
 	}
 
@@ -1470,9 +1419,9 @@ public class IndexSchema {
 
 	/**
 	 * Get whether a wildcard field could give a document of the index a field
-	 * whose name starts with the given path and a dot. When it cannot - and
-	 * validation keeps declared names off the paths of objects - a dotted name
-	 * under the path can only belong to the values of the object field there.
+	 * whose name starts with the given path and a dot. Declared names hold no
+	 * dots, so when no pattern can either, a dotted name under the path can
+	 * only belong to the values of the object field there.
 	 *
 	 * @param path
 	 *   name of an object field

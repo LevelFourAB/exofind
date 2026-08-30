@@ -53,9 +53,11 @@ Before you define an index, ensure you have:
          "type": "boolean",
          "filter": {}
        },
-       "metadata.*": {
-         "type": "string",
-         "filter": {}
+       "metadata": {
+         "type": "object",
+         "fields": {
+           "*": { "type": "string", "filter": {} }
+         }
        }
      }
    }
@@ -149,7 +151,7 @@ When you configure `sort`, `facet`, or `matching` on nested fields, the matching
 
 ### Cover many names with one field
 
-A field name can contain a wildcard `*` to define multiple fields at once, such as `metadata.*`. The `*` matches exactly one name segment. When patterns overlap, the pattern with the longer literal prefix takes precedence. For full matching rules, see [Field types](../reference/field-types.md#wildcard-fields). Every distinct name a pattern accepts becomes a field of its own in the index, and `facet` and `sort` keep per-field structures on top of that, so the set of names must stay bounded and owned by the catalogue rather than by whatever document arrives. To hold attributes that are not named in advance, see [Model dynamic attributes](model-dynamic-attributes.md).
+A field name can contain a wildcard `*` to define multiple fields at once. A field named `*` inside an `object` field such as `metadata` accepts any name a document gives there, addressed as `metadata.color`. The `*` matches exactly one name. When patterns overlap, the pattern with the longer literal prefix takes precedence. For full matching rules, see [Field types](../reference/field-types.md#wildcard-fields). Every distinct name a pattern accepts becomes a field of its own in the index, and `facet` and `sort` keep per-field structures on top of that, so the set of names must stay bounded and owned by the catalogue rather than by whatever document arrives. To hold attributes that are not named in advance, see [Model dynamic attributes](model-dynamic-attributes.md).
 
 A wildcard field is also a starting point while the shape of a catalogue is still settling. A single `*` field of type `string` with `matching` set makes every string a document carries searchable, so the index answers queries before its fields are named:
 

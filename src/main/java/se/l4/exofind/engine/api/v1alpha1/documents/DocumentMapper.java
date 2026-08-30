@@ -182,8 +182,8 @@ public class DocumentMapper {
 	 */
 	private static DocumentPatch.Change withoutSelector(Index index, String text, Object value) {
 		/*
-		 * Tried from the last dot back, so that a field whose own name holds
-		 * dots is preferred over reading that name as a path through an object.
+		 * Tried from the last dot back, so the innermost object on the path is
+		 * the one the change is read against.
 		 */
 		for(var dot = text.lastIndexOf('.'); dot > 0; dot = text.lastIndexOf('.', dot - 1)) {
 			var outer = index.getField(text.substring(0, dot));
@@ -235,12 +235,14 @@ public class DocumentMapper {
 		 * Named as the path named it rather than as the definition names the
 		 * field, which are the same thing unless the field's name is a
 		 * pattern - the document holds its values by the name it was given.
+		 * The values carry the last name of the path, the name of the place
+		 * they sit in; the patch walks the objects above it.
 		 */
 		return new DocumentPatch.Change(
 			path.field(),
 			DocumentPatch.Selector.ADDED,
 			null,
-			mapped(index, Optional.of(field), path.field(), path.field(), null, value)
+			mapped(index, Optional.of(field), leafOf(path.field()), path.field(), null, value)
 		);
 	}
 
@@ -284,7 +286,7 @@ public class DocumentMapper {
 			path.field(),
 			selector,
 			null,
-			mapped(index, Optional.of(field), path.field(), path.field(), null, value)
+			mapped(index, Optional.of(field), leafOf(path.field()), path.field(), null, value)
 		);
 	}
 
@@ -330,7 +332,7 @@ public class DocumentMapper {
 			path.field(),
 			new DocumentPatch.Selector.InLocale(locale),
 			null,
-			mapped(index, Optional.of(field), path.field(), path.field(), locale, value)
+			mapped(index, Optional.of(field), leafOf(path.field()), path.field(), locale, value)
 		);
 	}
 
@@ -388,8 +390,16 @@ public class DocumentMapper {
 			objectName,
 			selector,
 			inner,
-			mapped(index, field, inner, path, null, value)
+			mapped(index, field, leafOf(inner), path, null, value)
 		);
+	}
+
+	/**
+	 * The last name of a dotted path: the name a value goes by where it sits.
+	 * The patch walks the names before it as objects.
+	 */
+	private static String leafOf(String path) {
+		return path.substring(path.lastIndexOf('.') + 1);
 	}
 
 	/**
