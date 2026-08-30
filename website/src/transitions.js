@@ -17,8 +17,32 @@ const SIDEBAR = 'starlight__sidebar';
 /** Compare two paths without letting a trailing slash decide it. */
 const samePath = (a, b) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
 
+/** The class that draws the bar saying a page is on its way. */
+const NAVIGATING = 'is-navigating';
+
 /** How far the sidebar was scrolled when the swap began. */
 let scrolled = 0;
+
+/*
+ * A click on a link paints nothing until the next page has been fetched, and
+ * on a slow connection that is a page that looks like it ignored the click.
+ * The class is the whole indicator - what it draws, and the wait before it
+ * draws anything, are in `./styles/site.css`.
+ *
+ * Preparation is the fetch, so the class is on for exactly as long as the
+ * reader is waiting on the network. `page-load` clears it as well, because a
+ * navigation that fails or is abandoned ends the fetch without ending it the
+ * way the pair below expects.
+ */
+document.addEventListener('astro:before-preparation', () => {
+	document.documentElement.classList.add(NAVIGATING);
+});
+
+for(const event of ['astro:after-preparation', 'astro:page-load']) {
+	document.addEventListener(event, () => {
+		document.documentElement.classList.remove(NAVIGATING);
+	});
+}
 
 document.addEventListener('astro:before-swap', event => {
 	const arriving = event.newDocument.documentElement;

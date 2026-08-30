@@ -977,3 +977,82 @@ h1:not(:where(.not-content *)) {
 .sl-link-button svg {
 	font-size: 0.9375rem;
 }
+
+/* ----------------------------------------------------------------------- */
+/* Routed navigation                                                       */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * A routed navigation swaps the content in place, and the browser crosses the
+ * two frames with a fade unless it is told otherwise. The fade is what a
+ * reader clicking down the sidebar reads as the page being slow: the words
+ * they are moving to arrive faint and settle a quarter of a second later,
+ * which is longer than the swap itself took. Cutting the animation makes the
+ * next page the first thing painted after the click.
+ *
+ * The rule covers the whole document, because the root snapshot is the only
+ * one this site names - nothing here opts an element into a transition of its
+ * own. `mix-blend-mode` goes with it: the two snapshots are stacked to be
+ * blended while they cross, and one that is not crossing should paint plainly.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation: none;
+	mix-blend-mode: normal;
+}
+
+/*
+ * What a click looks like while the next page is being fetched. A swap is
+ * usually over before the eye takes it in, so the bar waits out the delay
+ * below before it shows at all and a reader on a fast connection never sees
+ * it; when the network is slow enough to notice, the click has an answer.
+ *
+ * It is drawn on the root element rather than in the body, because the body is
+ * what the router replaces. The class is settled on the root as well, and the
+ * swap dropping it along with the rest of the root attributes is harmless:
+ * `../transitions.js` has removed it by then.
+ */
+:root.is-navigating::after {
+	content: '';
+	position: fixed;
+	inset-block-start: 0;
+	inset-inline: 0;
+	z-index: 100;
+	height: 2px;
+	background: var(--sl-color-accent);
+	transform-origin: 0 50%;
+	opacity: 0;
+	animation: exofind-navigating 8s 150ms ease-out forwards;
+}
+
+/*
+ * The bar cannot know how much is left, so it moves the way waiting feels:
+ * quickly across the first half, then slower the further it goes, and never
+ * to the end. The end is the class being removed.
+ */
+@keyframes exofind-navigating {
+	from {
+		opacity: 1;
+		transform: scaleX(0);
+	}
+
+	to {
+		opacity: 1;
+		transform: scaleX(0.95);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* Held still and full width, so it is a state rather than a movement. */
+	:root.is-navigating::after {
+		animation-name: exofind-navigating-still;
+	}
+
+	@keyframes exofind-navigating-still {
+		from,
+		to {
+			opacity: 1;
+			transform: scaleX(1);
+		}
+	}
+}

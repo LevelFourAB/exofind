@@ -15,6 +15,13 @@
  * A document the router finds no marker in is navigated to the old way, so
  * leaving the tag off those pages is the whole opt-out, in both directions.
  *
+ * Nothing on this site crosses from one page to the next, so the swap is
+ * asked for without an animation: the browser's own is cut in the stylesheet,
+ * and `fallback="swap"` is the same answer for a browser that has no view
+ * transitions to cut, where the router would otherwise imitate the fade in
+ * script. What a reader sees instead, while the next page is being fetched, is
+ * the bar in `../transitions.js`.
+ *
  * Two pieces of state do not survive a swap on their own, because Starlight
  * settles both in the head of a document that is about to be replaced. What
  * carries them is `../transitions.js`.
@@ -32,7 +39,7 @@ const routed = !DEMOS.some(
 
 <Default />
 
-{routed && <ClientRouter />}
+{routed && <ClientRouter fallback="swap" />}
 
 <script>
 	import '../transitions.js';
