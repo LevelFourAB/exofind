@@ -410,27 +410,27 @@ starlight-menu-button[aria-expanded='true'] button {
  * is not among them: on this site blue means the page you are on.
  */
 .sidebar-content .sl-openapi-method-get,
-.sl-markdown-content .method-path > .get {
+.sl-markdown-content .sl-openapi-operation-method-badge.get {
 	--method: var(--sl-color-gray-3);
 }
 
 .sidebar-content .sl-openapi-method-post,
-.sl-markdown-content .method-path > .post {
+.sl-markdown-content .sl-openapi-operation-method-badge.post {
 	--method: light-dark(#1f7a4d, #55b98a);
 }
 
 .sidebar-content .sl-openapi-method-put,
-.sl-markdown-content .method-path > .put {
+.sl-markdown-content .sl-openapi-operation-method-badge.put {
 	--method: light-dark(#8a5a06, #d3a04f);
 }
 
 .sidebar-content .sl-openapi-method-patch,
-.sl-markdown-content .method-path > .patch {
+.sl-markdown-content .sl-openapi-operation-method-badge.patch {
 	--method: light-dark(#0f6d75, #4bb6bf);
 }
 
 .sidebar-content .sl-openapi-method-delete,
-.sl-markdown-content .method-path > .delete {
+.sl-markdown-content .sl-openapi-operation-method-badge.delete {
 	--method: light-dark(#a72f2f, #e58585);
 }
 
@@ -454,7 +454,7 @@ starlight-menu-button[aria-expanded='true'] button {
 }
 
 /* On the page it is read as the endpoint, so it keeps its size and its rule. */
-.sl-markdown-content .method-path > .method {
+.sl-markdown-content .sl-openapi-operation-method-badge {
 	background: none;
 	border-color: var(--method, var(--sl-color-gray-3));
 	color: var(--method, var(--sl-color-gray-3));
@@ -756,18 +756,18 @@ main .content-panel + .content-panel {
  * breaks `index:query:usage_not_enabled` over three lines. That is the failure
  * the tables above are given a floor to avoid. A phone stacks them instead.
  *
- * Both selectors are a step longer than they look as though they need to be.
- * These are a component's own classes, and the rule that sets the width being
- * reset here is scoped, which carries a class of its own.
+ * A field is a row of the grid its list makes, and stacking it is dropping out
+ * of that grid rather than narrowing a column: the name and the description
+ * are placed by column number, and neither number means anything once the row
+ * lays its own children out. The selector is a step longer than it looks as
+ * though it needs to be, because the rule being reset is a component's own and
+ * scoped, which carries a class of its own.
  */
 @media (max-width: 49.999rem) {
-	.sl-markdown-content .key {
+	.sl-markdown-content .sl-openapi-keys .sl-openapi-key {
+		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
-	}
-
-	.sl-markdown-content .key > .name {
-		max-width: none;
 	}
 }
 

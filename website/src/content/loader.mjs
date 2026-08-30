@@ -17,6 +17,13 @@
  * `renderMarkdown`, because that renders a string and cannot be told which
  * file the string came from - and without that a relative link has nothing to
  * resolve against.
+ *
+ * It renders through the processor the configuration holds rather than through
+ * one built here from the same settings. The two are not the same pipeline: an
+ * integration extends the site's processor by adding to it, and Expressive Code
+ * is one, so a processor built here renders a code block as plain preformatted
+ * text - unhighlighted, and without the frame that makes a long line scroll
+ * rather than run past the column.
  */
 
 import { existsSync } from 'node:fs';
@@ -24,7 +31,6 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createMarkdownProcessor } from '@astrojs/markdown-remark';
 import { parse as parseYaml } from 'yaml';
 
 /** Longest description taken from a document, in characters. */
@@ -48,7 +54,7 @@ export function docsFromRepository({ roots, repoRoot }) {
 
 			const projectRoot = fileURLToPath(config.root);
 			const repoPath = join(projectRoot, repoRoot);
-			const processor = await createMarkdownProcessor(config.markdown);
+			const renderer = await config.markdown.processor.createRenderer(config.markdown);
 
 			const stale = new Set(store.keys());
 
@@ -81,7 +87,7 @@ export function docsFromRepository({ roots, repoRoot }) {
 				 * only channel the processor offers into a remark plugin. It
 				 * is not part of the entry's data and never reaches a page.
 				 */
-				const { code, metadata } = await processor.render(body, {
+				const { code, metadata } = await renderer.render(body, {
 					frontmatter: { ...data, docsPath }
 				});
 

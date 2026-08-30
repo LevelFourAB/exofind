@@ -266,6 +266,19 @@ components:
     CreatedKey:
       description: A newly created key. This is the only response its credential ever
         appears in.
+      examples:
+      - credential: exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH
+        key:
+          id: 4ff6b760264c1918
+          description: the search backend
+          grants:
+          - permissions:
+            - search
+            - indexes.read
+            indexes:
+            - products
+          createdAt: 2026-08-16T12:09:33.198275Z
+          expiresAt: 2027-01-01T00:00:00Z
       type: object
       properties:
         credential:
@@ -340,6 +353,14 @@ components:
     DeleteRequest:
       description: "Which documents to remove. The request must carry either `keys`\
         \ or `query`, but not both (`request:delete:target_required`, `request:delete:target_conflicting`)."
+      examples:
+      - keys:
+        - "1"
+        - "2"
+      - query:
+        - field: category
+          match:
+            value: sylt
       type: object
       properties:
         keys:
@@ -366,6 +387,8 @@ components:
           - sv
     DeleteResponse:
       description: The count of deleted documents.
+      examples:
+      - deleted: 3
       type: object
       properties:
         deleted:
@@ -450,6 +473,16 @@ components:
         \ Indexing a document with an existing key replaces the document under that\
         \ key; if an index definition does not declare a primary key, each request\
         \ adds a new document. See [How a document is shaped](https://exofind.dev/reference/documents-api/#how-a-document-is-shaped)."
+      examples:
+      - documents:
+        - id: "1"
+          name:
+            sv: blåbärssylt
+            en: blueberry jam
+          tags:
+          - sylt
+          - bär
+          energy: 234
       type: object
       required:
       - documents
@@ -466,6 +499,8 @@ components:
             \ ISO 8601 string. A field set to `null` is treated as omitted."
     DocumentsResponse:
       description: The count of indexed documents.
+      examples:
+      - indexed: 2
       type: object
       properties:
         indexed:
@@ -702,6 +737,21 @@ components:
     ExplainResponse:
       description: "Explains how a specific document or value hit scores for a search\
         \ query. See [Explaining a result](https://exofind.dev/reference/search-api/#explaining-a-result)."
+      examples:
+      - matched: true
+        score: 8.42
+        detail:
+          matched: true
+          score: 8.42
+          description: "sum of:"
+          children:
+          - matched: true
+            score: 8.42
+            description: "weight(name:spring) [BM25], result of:"
+            clause: "query[0]"
+            clauseType: text
+            field: name
+            usage: matching
       type: object
       properties:
         matched:
@@ -1394,6 +1444,27 @@ components:
         \ is the state a caller wants: it is sent in full and anything left out is\
         \ removed. Observed state, such as whether the index is usable, is reported\
         \ separately under `status`."
+      examples:
+      - fields:
+          id:
+            type: string
+            primaryKey: true
+            required: true
+          name:
+            type: string
+            matching: {}
+            sort: {}
+          category:
+            type: string
+            filter: {}
+            facet: {}
+          price:
+            type: float
+            filter: {}
+            sort: {}
+          published:
+            type: boolean
+            filter: {}
       type: object
       properties:
         source:
@@ -1438,6 +1509,35 @@ components:
       description: "An index together with the definition and status of one of its\
         \ generations: the generation specified in the request, or the live generation\
         \ if omitted. See [Index resource](https://exofind.dev/reference/admin-api/#index-resource)."
+      examples:
+      - name: products
+        generation: "2"
+        live: true
+        version: 9f2c1a0b3d4e5f60
+        definition:
+          fields:
+            id:
+              type: string
+              primaryKey: true
+              required: true
+            name:
+              type: string
+              matching: {}
+              sort: {}
+        status:
+          state: USABLE
+          readOnly: false
+          indexer:
+            node: node-a-7f21
+            address: http://node-a:8080
+          luceneCompatibility: CURRENT
+        generations:
+        - name: "1"
+          live: false
+          createdAt: 2026-08-16T11:02:07Z
+        - name: "2"
+          live: true
+          createdAt: 2026-08-28T10:15:30Z
       type: object
       properties:
         name:
@@ -1479,6 +1579,17 @@ components:
     IndexListResponse:
       description: The indexes held across the deployment. Definitions and status
         are omitted; request a specific index to retrieve them.
+      examples:
+      - indexes:
+        - name: products
+          generation: "2"
+          generations:
+          - name: "1"
+            live: false
+            createdAt: 2026-08-16T11:02:07Z
+          - name: "2"
+            live: true
+            createdAt: 2026-08-28T10:15:30Z
       type: object
       properties:
         indexes:
@@ -1501,6 +1612,14 @@ components:
       type: object
       description: "The observed state reported by the answering node. The API does\
         \ not accept this object as input. See [Index states](https://exofind.dev/reference/admin-api/#index-states)."
+      examples:
+      - state: USABLE
+        readOnly: false
+        indexer:
+          node: node-a-7f21
+          address: http://node-a:8080
+        luceneCompatibility: CURRENT
+        luceneCreatedMajor: 10
       properties:
         state:
           description: "The remote synchronization state as observed by the answering\
@@ -1594,6 +1713,16 @@ components:
         \ claim for each index. The response reflects the answering node's view of\
         \ shared deployment state and can lag actual state by a few seconds. On nodes\
         \ using local storage, both lists are empty."
+      examples:
+      - candidates:
+        - node: node-a-7f21
+          address: http://node-a:8080
+          expiresAt: 2026-08-21T10:15:30Z
+        claims:
+        - index: products
+          node: node-a-7f21
+          address: http://node-a:8080
+          expiresAt: 2026-08-21T10:15:30Z
       type: object
       properties:
         candidates:
@@ -1747,6 +1876,13 @@ components:
           description: Highest value accepted.
     KeyDefinition:
       description: "What a key should be allowed to do. See [Permissions](https://exofind.dev/reference/auth/#permissions)."
+      examples:
+      - description: the search backend
+        grants:
+        - role: reader
+          indexes:
+          - products
+        expiresAt: 2027-01-01T00:00:00Z
       type: object
       properties:
         description:
@@ -1807,6 +1943,18 @@ components:
       description: Deployment API keys and node key configuration. The keys are shared
         across all nodes. The remaining fields reflect the local configuration of
         the node answering the request.
+      examples:
+      - keys:
+        - id: 4ff6b760264c1918
+          description: the search backend
+          grants:
+          - permissions:
+            - search
+            - indexes.read
+            indexes:
+            - products
+          createdAt: 2026-08-16T12:09:33.198275Z
+        rootKeyConfigured: true
       type: object
       properties:
         keys:
@@ -2488,6 +2636,20 @@ components:
     RegistryAuditResponse:
       description: "The registry compared with what remote storage holds. Reported\
         \ by the engine and never accepted as input. See [Audit](https://exofind.dev/reference/admin-api/#audit)."
+      examples:
+      - registry: PRESENT
+        indexes:
+        - name: products
+          registered: true
+          live: "2"
+          generations:
+          - name: "1"
+            registered: true
+            stored: SYNCED
+          - name: "2"
+            registered: true
+            stored: SYNCED
+        unusable: []
       type: object
       properties:
         registry:
@@ -2510,6 +2672,8 @@ components:
     RegistryRepairRequest:
       description: How a repair should treat the indexes it creates. The entire body
         is optional.
+      examples:
+      - promoteNewest: true
       type: object
       properties:
         promoteNewest:
@@ -2523,6 +2687,13 @@ components:
       description: Summary of the changes made by a repair. All three lists empty
         means the registry already named everything storage holds and nothing was
         written.
+      examples:
+      - createdIndexes:
+        - products
+        addedGenerations:
+        - products@2
+        promoted:
+        - products@2
       type: object
       properties:
         createdIndexes:
@@ -2544,6 +2715,16 @@ components:
             \ and ordered by name."
     ReindexInfo:
       description: "A reindex job record. See [Job record and phases](https://exofind.dev/reference/admin-api/#job-record-and-phases)."
+      examples:
+      - index: products
+        target: products@2
+        source: products@1
+        phase: copying
+        promote: auto
+        documentsCopied: 125000
+        sourceDocuments: 2400000
+        startedAt: 2026-08-28T10:15:30Z
+        updatedAt: 2026-08-28T10:16:02Z
       type: object
       properties:
         index:
@@ -2629,6 +2810,17 @@ components:
           - 2026-08-28T10:16:02Z
     ReindexListResponse:
       description: "Every reindex job across the deployment, finished ones included."
+      examples:
+      - reindexes:
+        - index: products
+          target: products@2
+          source: products@1
+          phase: copying
+          promote: auto
+          documentsCopied: 125000
+          sourceDocuments: 2400000
+          startedAt: 2026-08-28T10:15:30Z
+          updatedAt: 2026-08-28T10:16:02Z
       type: object
       properties:
         reindexes:
@@ -2640,6 +2832,9 @@ components:
     ReindexRequest:
       description: Configuration for a reindex job. Both fields are optional; an empty
         body reads from the live generation and promotes automatically.
+      examples:
+      - from: products@1
+        promote: manual
       type: object
       properties:
         from:
@@ -2801,6 +2996,17 @@ components:
       description: "A batch of documents read from an index. A single request reads\
         \ from a point-in-time snapshot and sees committed data only, so uncommitted\
         \ writes are not visible. For more information, see [Reading documents](https://exofind.dev/reference/documents-api/#reading-documents)."
+      examples:
+      - documents:
+        - id: "1"
+          name:
+            sv: blåbärssylt
+          energy: 234
+        - id: "2"
+          name:
+            sv: hallonsylt
+          energy: 241
+        next: "2"
       type: object
       properties:
         documents:
@@ -2839,6 +3045,32 @@ components:
     SearchRequest:
       description: All request properties are optional. An empty request matches all
         documents in the index.
+      examples:
+      - query:
+        - type: text
+          text: silent spr
+          fields:
+            name: 3
+        - field: published
+          match:
+            value: true
+        filters:
+        - field: category
+          match:
+            type: in
+            values:
+            - fiction
+            - poetry
+        facets:
+        - field: category
+        sort:
+        - type: score
+        - field: name
+          order: asc
+        fields:
+        - name
+        - price
+        limit: 20
       type: object
       properties:
         query:
@@ -2953,6 +3185,34 @@ components:
           $ref: "#/components/schemas/Rescore"
     SearchResponse:
       description: "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response)."
+      examples:
+      - hits:
+        - id: "9781234567890"
+          score: 8.42
+          document:
+            name: Silent Spring
+            price: 12.5
+        - id: "9780007458424"
+          score: 3.17
+          document:
+            name: Spring Snow
+            price: 9.95
+        total:
+          count: 128
+          exact: true
+        facets:
+          category:
+            values:
+            - value: fiction
+              count: 87
+            - value: poetry
+              count: 41
+            totalValues: 2
+        page:
+          limit: 20
+          offset: 0
+          next: c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0
+        tookMs: 7.412
       type: object
       properties:
         hits:
@@ -3003,6 +3263,24 @@ components:
         \ in full and replacing what was stored. Search settings belong to the index\
         \ name rather than to a generation, so promoting a generation preserves existing\
         \ search settings."
+      examples:
+      - ranking:
+          signals:
+          - field: purchases
+            saturation:
+              pivot: 50
+            weight: 0.5
+          tieBreakers:
+          - field: sales
+            direction: descending
+        synonyms:
+          products:
+            rules:
+            - equivalent:
+              - laptop
+              - notebook
+            fields:
+            - name
       type: object
       properties:
         ranking:
@@ -3034,6 +3312,17 @@ components:
     SearchSettingsInfo:
       description: "The search settings of an index as stored, together with the observed\
         \ status reported by the answering node. See [Search settings](https://exofind.dev/reference/admin-api/#search-settings)."
+      examples:
+      - ranking:
+          signals:
+          - field: purchases
+            saturation:
+              pivot: 50
+            weight: 0.5
+          tieBreakers:
+          - field: sales
+            direction: descending
+        version: 9f2c1a0b3d4e5f60
       type: object
       properties:
         ranking:
@@ -3721,6 +4010,8 @@ components:
             \ those values."
     UpdateResponse:
       description: "The count of updated documents, and any keys that were skipped."
+      examples:
+      - updated: 1998
       type: object
       properties:
         updated:
@@ -3882,6 +4173,18 @@ paths:
           description: The candidate nodes and the claims the key can see.
           content:
             application/json:
+              examples:
+                indexers:
+                  value:
+                    candidates:
+                    - node: node-a-7f21
+                      address: http://node-a:8080
+                      expiresAt: 2026-08-21T10:15:30Z
+                    claims:
+                    - index: products
+                      node: node-a-7f21
+                      address: http://node-a:8080
+                      expiresAt: 2026-08-21T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexerListResponse"
         "401":
@@ -3923,6 +4226,19 @@ paths:
           description: "The indexes the key can see, ordered by name."
           content:
             application/json:
+              examples:
+                indexes:
+                  value:
+                    indexes:
+                    - name: products
+                      generation: "2"
+                      generations:
+                      - name: "1"
+                        live: false
+                        createdAt: 2026-08-16T11:02:07Z
+                      - name: "2"
+                        live: true
+                        createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexListResponse"
         "401":
@@ -3991,6 +4307,30 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              definition:
+                summary: A primary key and four searchable fields
+                value:
+                  fields:
+                    id:
+                      type: string
+                      primaryKey: true
+                      required: true
+                    name:
+                      type: string
+                      matching: {}
+                      sort: {}
+                    category:
+                      type: string
+                      filter: {}
+                      facet: {}
+                    price:
+                      type: float
+                      filter: {}
+                      sort: {}
+                    published:
+                      type: boolean
+                      filter: {}
             schema:
               $ref: "#/components/schemas/IndexDefinition"
         required: true
@@ -4000,6 +4340,37 @@ paths:
             the `ETag` header.
           content:
             application/json:
+              examples:
+                index:
+                  value:
+                    name: products
+                    generation: "2"
+                    live: true
+                    version: 9f2c1a0b3d4e5f60
+                    definition:
+                      fields:
+                        id:
+                          type: string
+                          primaryKey: true
+                          required: true
+                        name:
+                          type: string
+                          matching: {}
+                          sort: {}
+                    status:
+                      state: USABLE
+                      readOnly: false
+                      indexer:
+                        node: node-a-7f21
+                        address: http://node-a:8080
+                      luceneCompatibility: CURRENT
+                    generations:
+                    - name: "1"
+                      live: false
+                      createdAt: 2026-08-16T11:02:07Z
+                    - name: "2"
+                      live: true
+                      createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "201":
@@ -4007,6 +4378,37 @@ paths:
             `ETag` header and the location in `Location`.
           content:
             application/json:
+              examples:
+                index:
+                  value:
+                    name: products
+                    generation: "2"
+                    live: true
+                    version: 9f2c1a0b3d4e5f60
+                    definition:
+                      fields:
+                        id:
+                          type: string
+                          primaryKey: true
+                          required: true
+                        name:
+                          type: string
+                          matching: {}
+                          sort: {}
+                    status:
+                      state: USABLE
+                      readOnly: false
+                      indexer:
+                        node: node-a-7f21
+                        address: http://node-a:8080
+                      luceneCompatibility: CURRENT
+                    generations:
+                    - name: "1"
+                      live: false
+                      createdAt: 2026-08-16T11:02:07Z
+                    - name: "2"
+                      live: true
+                      createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "400":
@@ -4098,6 +4500,37 @@ paths:
             \ than the preset name."
           content:
             application/json:
+              examples:
+                index:
+                  value:
+                    name: products
+                    generation: "2"
+                    live: true
+                    version: 9f2c1a0b3d4e5f60
+                    definition:
+                      fields:
+                        id:
+                          type: string
+                          primaryKey: true
+                          required: true
+                        name:
+                          type: string
+                          matching: {}
+                          sort: {}
+                    status:
+                      state: USABLE
+                      readOnly: false
+                      indexer:
+                        node: node-a-7f21
+                        address: http://node-a:8080
+                      luceneCompatibility: CURRENT
+                    generations:
+                    - name: "1"
+                      live: false
+                      createdAt: 2026-08-16T11:02:07Z
+                    - name: "2"
+                      live: true
+                      createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "401":
@@ -4218,6 +4651,16 @@ paths:
           description: The resulting status of the index.
           content:
             application/json:
+              examples:
+                status:
+                  value:
+                    state: USABLE
+                    readOnly: false
+                    indexer:
+                      node: node-a-7f21
+                      address: http://node-a:8080
+                    luceneCompatibility: CURRENT
+                    luceneCreatedMajor: 10
               schema:
                 $ref: "#/components/schemas/IndexStatus"
         "401":
@@ -4286,6 +4729,37 @@ paths:
           description: The index now answers from this generation.
           content:
             application/json:
+              examples:
+                index:
+                  value:
+                    name: products
+                    generation: "2"
+                    live: true
+                    version: 9f2c1a0b3d4e5f60
+                    definition:
+                      fields:
+                        id:
+                          type: string
+                          primaryKey: true
+                          required: true
+                        name:
+                          type: string
+                          matching: {}
+                          sort: {}
+                    status:
+                      state: USABLE
+                      readOnly: false
+                      indexer:
+                        node: node-a-7f21
+                        address: http://node-a:8080
+                      luceneCompatibility: CURRENT
+                    generations:
+                    - name: "1"
+                      live: false
+                      createdAt: 2026-08-16T11:02:07Z
+                    - name: "2"
+                      live: true
+                      createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "400":
@@ -4354,6 +4828,16 @@ paths:
           description: The resulting status of the index on this node.
           content:
             application/json:
+              examples:
+                status:
+                  value:
+                    state: USABLE
+                    readOnly: false
+                    indexer:
+                      node: node-a-7f21
+                      address: http://node-a:8080
+                    luceneCompatibility: CURRENT
+                    luceneCreatedMajor: 10
               schema:
                 $ref: "#/components/schemas/IndexStatus"
         "401":
@@ -4408,6 +4892,18 @@ paths:
           description: The job record.
           content:
             application/json:
+              examples:
+                job:
+                  value:
+                    index: products
+                    target: products@2
+                    source: products@1
+                    phase: copying
+                    promote: auto
+                    documentsCopied: 125000
+                    sourceDocuments: 2400000
+                    startedAt: 2026-08-28T10:15:30Z
+                    updatedAt: 2026-08-28T10:16:02Z
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
@@ -4456,6 +4952,11 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              job:
+                value:
+                  from: products@1
+                  promote: manual
             schema:
               $ref: "#/components/schemas/ReindexRequest"
         required: true
@@ -4464,6 +4965,18 @@ paths:
           description: A reindex job was started and runs asynchronously.
           content:
             application/json:
+              examples:
+                job:
+                  value:
+                    index: products
+                    target: products@2
+                    source: products@1
+                    phase: copying
+                    promote: auto
+                    documentsCopied: 125000
+                    sourceDocuments: 2400000
+                    startedAt: 2026-08-28T10:15:30Z
+                    updatedAt: 2026-08-28T10:16:02Z
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "400":
@@ -4533,6 +5046,18 @@ paths:
           description: The job record as it stands after cancellation.
           content:
             application/json:
+              examples:
+                job:
+                  value:
+                    index: products
+                    target: products@2
+                    source: products@1
+                    phase: copying
+                    promote: auto
+                    documentsCopied: 125000
+                    sourceDocuments: 2400000
+                    startedAt: 2026-08-28T10:15:30Z
+                    updatedAt: 2026-08-28T10:16:02Z
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
@@ -4605,6 +5130,27 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              settings:
+                summary: "A ranking signal, a tie-breaker and a synonym set"
+                value:
+                  ranking:
+                    signals:
+                    - field: purchases
+                      saturation:
+                        pivot: 50
+                      weight: 0.5
+                    tieBreakers:
+                    - field: sales
+                      direction: descending
+                  synonyms:
+                    products:
+                      rules:
+                      - equivalent:
+                        - laptop
+                        - notebook
+                      fields:
+                      - name
             schema:
               $ref: "#/components/schemas/SearchSettingsDefinition"
         required: true
@@ -4614,6 +5160,19 @@ paths:
             \ header."
           content:
             application/json:
+              examples:
+                settings:
+                  value:
+                    ranking:
+                      signals:
+                      - field: purchases
+                        saturation:
+                          pivot: 50
+                        weight: 0.5
+                      tieBreakers:
+                      - field: sales
+                        direction: descending
+                    version: 9f2c1a0b3d4e5f60
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "400":
@@ -4722,6 +5281,19 @@ paths:
             \ header."
           content:
             application/json:
+              examples:
+                settings:
+                  value:
+                    ranking:
+                      signals:
+                      - field: purchases
+                        saturation:
+                          pivot: 50
+                        weight: 0.5
+                      tieBreakers:
+                      - field: sales
+                        direction: descending
+                    version: 9f2c1a0b3d4e5f60
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "400":
@@ -4803,6 +5375,19 @@ paths:
           description: "The stored settings, with their version in the `ETag` header."
           content:
             application/json:
+              examples:
+                settings:
+                  value:
+                    ranking:
+                      signals:
+                      - field: purchases
+                        saturation:
+                          pivot: 50
+                        weight: 0.5
+                      tieBreakers:
+                      - field: sales
+                        direction: descending
+                    version: 9f2c1a0b3d4e5f60
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "401":
@@ -4908,6 +5493,20 @@ paths:
           description: The deployment keys and this node's key configuration.
           content:
             application/json:
+              examples:
+                keys:
+                  value:
+                    keys:
+                    - id: 4ff6b760264c1918
+                      description: the search backend
+                      grants:
+                      - permissions:
+                        - search
+                        - indexes.read
+                        indexes:
+                        - products
+                      createdAt: 2026-08-16T12:09:33.198275Z
+                    rootKeyConfigured: true
               schema:
                 $ref: "#/components/schemas/KeyListResponse"
         "401":
@@ -4945,6 +5544,16 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              key:
+                summary: "A reader of one index, expiring at a date"
+                value:
+                  description: the search backend
+                  grants:
+                  - role: reader
+                    indexes:
+                    - products
+                  expiresAt: 2027-01-01T00:00:00Z
             schema:
               $ref: "#/components/schemas/KeyDefinition"
         required: true
@@ -4954,6 +5563,21 @@ paths:
             only copy returned.
           content:
             application/json:
+              examples:
+                created:
+                  value:
+                    credential: exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH
+                    key:
+                      id: 4ff6b760264c1918
+                      description: the search backend
+                      grants:
+                      - permissions:
+                        - search
+                        - indexes.read
+                        indexes:
+                        - products
+                      createdAt: 2026-08-16T12:09:33.198275Z
+                      expiresAt: 2027-01-01T00:00:00Z
               schema:
                 $ref: "#/components/schemas/CreatedKey"
         "400":
@@ -5055,6 +5679,10 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              repair:
+                value:
+                  promoteNewest: true
             schema:
               $ref: "#/components/schemas/RegistryRepairRequest"
         required: true
@@ -5063,6 +5691,15 @@ paths:
           description: A summary of the changes made by the repair.
           content:
             application/json:
+              examples:
+                repaired:
+                  value:
+                    createdIndexes:
+                    - products
+                    addedGenerations:
+                    - products@2
+                    promoted:
+                    - products@2
               schema:
                 $ref: "#/components/schemas/RegistryRepairResponse"
         "401":
@@ -5107,6 +5744,22 @@ paths:
           description: Comparison of the shared registry with remote storage.
           content:
             application/json:
+              examples:
+                audit:
+                  value:
+                    registry: PRESENT
+                    indexes:
+                    - name: products
+                      registered: true
+                      live: "2"
+                      generations:
+                      - name: "1"
+                        registered: true
+                        stored: SYNCED
+                      - name: "2"
+                        registered: true
+                        stored: SYNCED
+                    unusable: []
               schema:
                 $ref: "#/components/schemas/RegistryAuditResponse"
         "401":
@@ -5145,6 +5798,19 @@ paths:
           description: "The job records visible to the key, ordered by index name."
           content:
             application/json:
+              examples:
+                jobs:
+                  value:
+                    reindexes:
+                    - index: products
+                      target: products@2
+                      source: products@1
+                      phase: copying
+                      promote: auto
+                      documentsCopied: 125000
+                      sourceDocuments: 2400000
+                      startedAt: 2026-08-28T10:15:30Z
+                      updatedAt: 2026-08-28T10:16:02Z
               schema:
                 $ref: "#/components/schemas/ReindexListResponse"
         "401":
@@ -5199,6 +5865,19 @@ paths:
           content:
             application/x-ndjson: {}
             application/json:
+              examples:
+                batch:
+                  value:
+                    documents:
+                    - id: "1"
+                      name:
+                        sv: blåbärssylt
+                      energy: 234
+                    - id: "2"
+                      name:
+                        sv: hallonsylt
+                      energy: 241
+                    next: "2"
               schema:
                 $ref: "#/components/schemas/ScanResponse"
         "400":
@@ -5266,6 +5945,19 @@ paths:
               type: string
               format: binary
           application/json:
+            examples:
+              documents:
+                summary: One document with a locale-specific field
+                value:
+                  documents:
+                  - id: "1"
+                    name:
+                      sv: blåbärssylt
+                      en: blueberry jam
+                    tags:
+                    - sylt
+                    - bär
+                    energy: 234
             schema:
               $ref: "#/components/schemas/DocumentsRequest"
         required: true
@@ -5276,6 +5968,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DocumentsResponse"
+              examples:
+                indexed:
+                  value:
+                    indexed: 2
         "400":
           description: "A document was rejected by validation, a line could not be\
             \ read as JSON (`request:document:malformed`), or the request body could\
@@ -5364,6 +6060,20 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              keys:
+                summary: By primary key
+                value:
+                  keys:
+                  - "1"
+                  - "2"
+              query:
+                summary: By query
+                value:
+                  query:
+                  - field: category
+                    match:
+                      value: sylt
             schema:
               $ref: "#/components/schemas/DeleteRequest"
         required: true
@@ -5372,6 +6082,10 @@ paths:
           description: The documents were removed.
           content:
             application/json:
+              examples:
+                deleted:
+                  value:
+                    deleted: 3
               schema:
                 $ref: "#/components/schemas/DeleteResponse"
         "400":
@@ -5458,6 +6172,17 @@ paths:
               type: string
               format: binary
           application/json:
+            examples:
+              changes:
+                summary: Two documents changed by path
+                value:
+                  documents:
+                  - id: "1"
+                    price: 34.5
+                    inStock: true
+                  - id: "2"
+                    price: 12.0
+                    variants[sku=V-2].price: 29.0
             schema:
               $ref: "#/components/schemas/UpdateRequest"
         required: true
@@ -5468,6 +6193,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdateResponse"
+              examples:
+                updated:
+                  value:
+                    updated: 1998
         "400":
           description: |-
             A change failed validation, a document key was not found when `missing` was set to `fail` (`request:update:not_found`), the index definition declares no primary key (`index:no_primary_key`), or the index does not store document copies (`index:source:not_kept`) - resend the complete document in that case.
@@ -5736,6 +6465,35 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              search:
+                summary: "Text and a filter, counted by category"
+                value:
+                  query:
+                  - type: text
+                    text: silent spr
+                    fields:
+                      name: 3
+                  - field: published
+                    match:
+                      value: true
+                  filters:
+                  - field: category
+                    match:
+                      type: in
+                      values:
+                      - fiction
+                      - poetry
+                  facets:
+                  - field: category
+                  sort:
+                  - type: score
+                  - field: name
+                    order: asc
+                  fields:
+                  - name
+                  - price
+                  limit: 20
             schema:
               $ref: "#/components/schemas/SearchRequest"
         required: true
@@ -5744,6 +6502,37 @@ paths:
           description: "The matching documents, in the order that `sort` asks for."
           content:
             application/json:
+              examples:
+                results:
+                  summary: The answer to the example request
+                  value:
+                    hits:
+                    - id: "9781234567890"
+                      score: 8.42
+                      document:
+                        name: Silent Spring
+                        price: 12.5
+                    - id: "9780007458424"
+                      score: 3.17
+                      document:
+                        name: Spring Snow
+                        price: 9.95
+                    total:
+                      count: 128
+                      exact: true
+                    facets:
+                      category:
+                        values:
+                        - value: fiction
+                          count: 87
+                        - value: poetry
+                          count: 41
+                        totalValues: 2
+                    page:
+                      limit: 20
+                      offset: 0
+                      next: c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0
+                    tookMs: 7.412
               schema:
                 $ref: "#/components/schemas/SearchResponse"
         "400":
@@ -5838,6 +6627,35 @@ paths:
       requestBody:
         content:
           application/json:
+            examples:
+              search:
+                summary: The search to explain the hit against
+                value:
+                  query:
+                  - type: text
+                    text: silent spr
+                    fields:
+                      name: 3
+                  - field: published
+                    match:
+                      value: true
+                  filters:
+                  - field: category
+                    match:
+                      type: in
+                      values:
+                      - fiction
+                      - poetry
+                  facets:
+                  - field: category
+                  sort:
+                  - type: score
+                  - field: name
+                    order: asc
+                  fields:
+                  - name
+                  - price
+                  limit: 20
             schema:
               $ref: "#/components/schemas/SearchRequest"
         required: true
@@ -5846,6 +6664,23 @@ paths:
           description: How the hit scores.
           content:
             application/json:
+              examples:
+                explanation:
+                  value:
+                    matched: true
+                    score: 8.42
+                    detail:
+                      matched: true
+                      score: 8.42
+                      description: "sum of:"
+                      children:
+                      - matched: true
+                        score: 8.42
+                        description: "weight(name:spring) [BM25], result of:"
+                        clause: "query[0]"
+                        clauseType: text
+                        field: name
+                        usage: matching
               schema:
                 $ref: "#/components/schemas/ExplainResponse"
         "400":

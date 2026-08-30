@@ -2,6 +2,7 @@
 import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'astro/config';
+import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
 import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi';
 
@@ -37,11 +38,21 @@ export default defineConfig({
 		}
 	},
 
+	/*
+	 * The processor is named rather than left to Astro because an integration
+	 * extends the one that is named: Expressive Code adds itself to whichever
+	 * processor the configuration holds, and the loader in
+	 * `./src/content/loader.mjs` renders every document through that same
+	 * object. Naming `unified` is also what keeps the plugins below running,
+	 * as the default processor does not take remark plugins.
+	 */
 	markdown: {
-		remarkPlugins: [
-			remarkStripTitle,
-			[remarkRewriteLinks, { docsRoot: fileURLToPath(docsRoot) }]
-		]
+		processor: unified({
+			remarkPlugins: [
+				remarkStripTitle,
+				[remarkRewriteLinks, { docsRoot: fileURLToPath(docsRoot) }]
+			]
+		})
 	},
 
 	integrations: [
@@ -81,17 +92,29 @@ export default defineConfig({
 						sidebar: {
 							label: 'REST API',
 							collapsed: false,
-							operations: { badges: true },
-							snippets: {
-								operations: {
-									clients: {
-										javascript: [ 'fetch' ],
-										shell: [ 'curl' ],
-										java: [ 'nethttp' ],
-										go: [ 'nethttp' ]
-									}
-								}
-							}
+							operations: { badges: true }
+						},
+						/*
+						 * A call in four languages on every endpoint page, so
+						 * that a reader sees the request they are about to
+						 * make rather than the shape of it. The request body
+						 * and the response carry a generated example as well,
+						 * which is what the two `true` settings are, and both
+						 * give way to an example the OpenAPI document states
+						 * itself where there is one.
+						 */
+						snippets: {
+							operation: {
+								clients: {
+									shell: [ 'curl' ],
+									javascript: [ 'fetch' ],
+									java: [ 'nethttp' ],
+									go: [ 'nethttp' ]
+								},
+								default: { target: 'shell', client: 'curl' }
+							},
+							requestBody: true,
+							response: true
 						}
 					}
 				])
