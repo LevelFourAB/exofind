@@ -1,223 +1,209 @@
 ---
 name: documentation
-description: House rules for writing or revising documentation in this repo — Javadoc, protobuf comments, body comments, and the Diátaxis prose under docs/. Load before writing a doc comment on a new public type or method, editing an existing one, adding a comment inside a method or a .proto file, or adding to docs/; also when reviewing someone else's comments or prose, or when asked to "document", "add docs", "write doc comments" or "clean up comments".
+description: House rules for writing or revising documentation in this repo — the Diátaxis prose under docs/, Javadoc, OpenAPI @Schema descriptions, protobuf comments, and body comments. The baseline is the Google developer documentation style guide. Load before adding or editing a page under docs/, writing or revising a doc comment, changing a @Schema description, commenting a .proto field, or reviewing someone else's prose or comments; also when asked to "document", "add docs", "write doc comments" or "clean up comments".
 ---
 
-# Documentation and comment guidelines
+# Documentation guidelines
 
-Documentation in this codebase is written for a stranger arriving in 6–12
-months, and every location has exactly one reader. A doc comment on an exported
-identifier serves a consumer who can only see the API; a comment inside a
-function body serves a maintainer who is about to change that code; `docs/`
-serves whichever Diátaxis mode the file lives in. Writing for the wrong reader
-is the failure this document exists to prevent — most commonly by leaking
-implementation detail and decision history into a consumer's doc comment, where
-it goes stale the moment the implementation changes.
+The baseline is the [Google developer documentation style
+guide](https://developers.google.com/style). Where this file is silent, follow
+Google. Where this file differs, follow this file.
 
-Two rules carry most of the weight. **The boundary test** (§1): a consumer doc
-may only state facts observable from the caller's side. **The rewrite test**
-(§2): a sentence that stops being true when the body is rewritten was never part
-of the contract. Rationale, alternatives considered, and benchmarks are valuable
-— they belong in the commit message or in `docs/explanation/`, not on the API
-surface.
+Where a rule here and an existing page disagree, read the page before you
+change it. The page can be right and this file out of date.
 
-The sections below are ordered as a working sequence: §1–§4 decide what a
-comment may contain, §5–§10 what it must contain and how it reads per surface,
-§11–§14 the cutting pass. Sections 5 and 13 are the two to reread when a comment
-feels finished but long. Section 12 is the one to reread when a comment says the
-right things and still reads badly.
+## Before you write
 
----
+Answer three questions:
 
-## 1. Know which reader you are writing for
+1. **Which surface?** A page under `docs/`, a Javadoc comment, a `@Schema`
+   description, a protobuf comment, or a comment inside a method. Each has its
+   own reader and its own section below.
+2. **Which Diátaxis mode?** For `docs/`, the directory decides it. You do not
+   blend modes to be helpful.
+3. **What do you actually know?** State only what you verified in the code. A
+   fact you assumed is a bug that outlives you.
 
-Every comment has exactly one audience. Decide before writing; never mix.
+## Voice
 
-| Location                              | Audience                                                           | May contain                                                     |
-| ------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Doc comment on an exported identifier | **Consumer** — arrives cold, from outside the package, with a task | Contract only: behaviour, inputs, outputs, errors, cost, safety |
-| Comment inside a function body        | **Maintainer** — is changing this code                             | Why this approach and not the obvious alternative               |
-| Prose docs (`/docs`, README)          | Depends on Diátaxis mode — see §3                                  | Per mode                                                        |
-| Commit message / PR description       | Reviewer, archaeologist                                            | All rationale, alternatives considered, benchmarks, trade-offs  |
+These rules hold on every surface that carries prose:
 
-**The boundary test.** A consumer doc may only state facts observable from the
-caller's side of the API. If the reader could not detect the fact by calling the
-function, it does not belong there.
+- Address the reader as "you". Never "we", "our", or "the user".
+- Use active voice and present tense. "The server returns an error", not "will
+  return".
+- One idea per sentence. Split a sentence that carries two.
+- Use the ordinary word: "use" not "utilize", "start" not "initiate", "before"
+  not "prior to", "about" not "regarding".
+- Write "for example" and "that is". Never `e.g.` or `i.e.`.
+- Expand an abbreviation on first use in a file, then use the short form.
+- Use "they" as the singular pronoun for a person.
+- Use the serial comma: "define an index, add documents, and run queries".
+- Do not write "please" in an instruction.
+
+Do not write these:
+
+- **Filler**: "note that", "it's important to", "simply", "just", "basically",
+  "in order to" (write "to"), "under the hood".
+- **Empty superlatives**: "robust", "powerful", "seamless", "elegant", "easy",
+  "blazingly fast". The reader cannot check them.
+- **Reassurance**: the reader is not anxious. Do not comfort them.
+- **Literary register**: "pushes no more", "goes on following", "whatever the
+  hints say". Write the sentence you would say out loud to a colleague.
+- **The trailing significance clause**: a fact, a comma, then "which is what
+  keeps ...". Make it a second sentence or cut it.
+- **The cleft**: "The registry is what decides" for "The registry decides".
+- **Contrast nobody asked for**: "X rather than Y", where no reader expected Y.
+
+## Prose under `docs/`
+
+### Structure
+
+Shape every page the same way:
+
+- One H1 per file. H2 and H3 below it, and do not skip a level.
+- Sentence case in every heading: a capital on the first word and proper nouns
+  only.
+- Start a section with what it is about.
+- Keep a paragraph to three sentences where you can.
+- Introduce a list, a table, or a code block with a sentence ending in a colon.
+- Keep the items of one list parallel in grammar and length.
+- Use a numbered list where the order matters, for steps to follow or checks to
+  run in sequence. Start a step with its verb: "Run", "Open", "Copy". Use a
+  bulleted list for everything else.
+
+### The four modes
+
+The directory a page sits in decides its mode and the form of its H1:
+
+| Directory           | Mode        | H1 form                            | Example                            |
+| ------------------- | ----------- | ---------------------------------- | ---------------------------------- |
+| `docs/tutorials`    | Tutorial    | Gerund                             | `# Getting started`                |
+| `docs/how-to`       | How-to      | Gerund                             | `# Indexing documents`             |
+| `docs/reference`    | Reference   | Noun phrase naming the thing       | `# Field types`                    |
+| `docs/explanation`  | Explanation | Noun phrase naming the subject     | `# Synchronization`                |
+
+An imperative H1 ("Make a write visible to search") is drift. Write a how-to
+with a gerund.
+
+What each mode owes its reader:
+
+- **Tutorial**: one path that works, start to finish, with a stated outcome in
+  the opening paragraph and a prerequisites section before the first step.
+- **How-to**: one task for someone who already runs the engine. State the
+  prerequisites, including the permissions the API key needs. Where the task
+  has real alternatives, present them as numbered options and say how to
+  choose.
+- **Reference**: what is. Tables of fields, settings, and codes. No rationale,
+  no walkthrough.
+- **Explanation**: why it is that way. Rationale, trade-offs, and the failure
+  a design prevents. This is the only place rationale belongs.
+
+### Conventions
+
+Keep to these conventions:
+
+- **Callouts**: `**Note:**` at the start of a paragraph. It is the only
+  admonition. Do not invent "Warning" or "Tip".
+- **Defaults**: give the value in parentheses after the setting —
+  `` `EXOFIND_INDEXES_REFRESH_INTERVAL` (default: `30s`) ``.
+- **Tables**: a header row, then `| --- |` separators. Give a Description
+  column a full sentence.
+- **Code fences**: always carry a language — `shell`, `json`, `http`, `yaml`.
+- **Links inside `docs/`**: relative and ending in `.md`, such as
+  `[Configuration reference](../reference/configuration.md)`. Link text names
+  the target. Never "here".
+- **Links from Java or protobuf**: absolute, to `https://exofind.dev/...`.
+  Those comments are read outside the docs tree.
+- **Line width**: match the file you are editing. Some files wrap near 80
+  columns and others keep a paragraph on one line. Never reflow a file to
+  change its wrapping — it buries the real change in the diff.
+- **Indentation**: two spaces, per `.editorconfig`.
+
+### Publishing
+
+The website reads `docs/` directly and builds its sidebar from
+`docs/README.md`. A new page is two changes: the file, and a line in
+`docs/README.md` under the right heading, with a one-sentence summary of what
+the page gets the reader.
+
+Check a change with `mise run site`.
+
+## Javadoc
+
+The reader is a consumer who can see the signature and nothing else.
+
+**The boundary test**: state only what a caller can observe. **The rewrite
+test**: a sentence that stops being true when the body is rewritten was never
+part of the contract — delete it, or move it into the method body as a comment.
+
+Rules:
+
+- Open with one summary sentence, then a blank line. Later paragraphs open with
+  `<p>`. The first sentence stands alone in class listings.
+- Never restate the signature. Delete a `@param` that expands the parameter
+  name into a sentence, and a `@return` that names the return type. No tag
+  beats an empty tag.
+- Document every failure with `@throws`, naming the exception type and the
+  condition. Unchecked exceptions count.
+- Document concurrency on every public type that holds state. It is the fact
+  most often needed and least often written.
+- Document what the signature cannot carry: units and ranges, ordering
+  guarantees, whether the call blocks or does I/O, who closes what, what an
+  empty or absent argument means, and cost when it would surprise a caller.
+- `{@link}` a type on first use, `{@code}` for literals and parameter names.
+- `@deprecated` carries the migration, not only the notice.
+- `@implNote` is the one place an implementation fact may appear, because it is
+  marked as something a caller must not rely on.
+- Rationale goes in the commit message or `docs/explanation/`, never here.
+
+A class comment that carries its weight:
 
 ```java
-// BAD — describes the implementation, not the contract
 /**
- * Cache stores entries in a ConcurrentHashMap, which was the only thing fast
- * enough for our write-heavy load. A synchronized map was the honest option
- * but it contended badly under benchmark.
- */
-
-// GOOD — describes the contract
-/**
- * A bounded, in-memory key/value store with LRU eviction.
+ * Definition of a single field in an {@link IndexDefinition}.
  *
- * <p>Safe for concurrent use from multiple threads.
+ * <p>Fields are structured as a tagged union, where {@code type} selects the
+ * field type and the properties available on it:
+ * ...
+ * <p>Field usages are opt-in. Adding an empty configuration object enables a
+ * usage with engine defaults, allowing options to be added without changing
+ * existing request payloads.
  */
 ```
 
-**Where the deliberation goes.** Reasoning about alternatives is genuinely
-valuable — it just belongs in the commit message, not the API surface. When you
-find yourself writing "we chose X because Y", move that sentence to the commit
-body and delete it from the doc.
+## OpenAPI `@Schema` descriptions
 
----
+These are Javadoc's published twin: Markdown, read by API users on the site and
+by anyone generating a client. Follow the docs voice, not the Javadoc voice:
 
-## 2. The rewrite test
+- Write them as Java text blocks, with a trailing `\` to join lines.
+- Say what the property is and what setting it does. Give the default.
+- Link on to the reference page with an absolute `https://exofind.dev/` link.
+- Put a shared description in a constant so one wording serves every type that
+  has the property.
+- An example on a parameter or an `@ExampleObject` on a body is rendered by the
+  site. An example on a `@Schema` is not — it reaches generated clients only.
 
-> If a sentence stops being true when the implementation is replaced, it was
-> never part of the contract.
+After changing any annotation the API document is built from, run
+`mise run site:openapi`. Nothing compares `website/public/openapi.yaml` with
+the build output, so until you do, the site publishes the previous API.
 
-Apply this to every sentence in a doc comment. Anything that fails is either
-deleted or demoted to a body comment.
+## Protobuf comments
 
----
+The protos are a storage format, not an API. The reader is judging, possibly
+years later, whether a stored value can still be read. Write for that reader:
 
-## 3. Diátaxis mode is an input, not a choice
+- Use block comments, `/* */`.
+- A file-level comment states the compatibility rules the file lives under.
+- Say what presence means: that setting a message turns a capability on, or
+  that an absent scalar means the engine picks the default.
+- Give units, encodings, and value spaces: a `string` that is a BCP 47 tag, an
+  `int64` that is epoch milliseconds. The type says none of it.
+- A `reserved` number keeps a comment saying what it used to mean.
 
-The mode is determined by _where you are writing_, and you do not get to blend
-modes to be helpful.
-
-- **Doc comments are always Reference.** Austere, complete, impersonal. No
-  encouragement, no rationale, no tutorial voice, no "you'll probably want to".
-  The reader is never addressed as "you" here; §10 is where that voice belongs.
-- **Tutorial and How-to** live in `docs/`. They address the reader as "you" and
-  state goals. See §10.
-- **Explanation** is where rationale, history, and trade-offs live. Link to it
-  from a doc comment rather than inlining it.
-
-Sparing exception: a short trailing paragraph (or `@apiNote`) may carry one
-piece of rationale when it changes how a consumer uses the API — for example,
-"This is O(n) in the number of subscribers; prefer {@link #publishBatch} above
-~100."
-
----
-
-## 4. Never restate the signature
-
-A doc comment that re-expresses the identifier and types in English carries zero
-information and is worse than no comment, because it makes readers stop and read
-it.
-
-```java
-// BAD
-/**
- * Gets a user by ID.
- *
- * @param id the ID of the user
- * @return the user
- */
-```
-
-Delete any `@param` whose text is the parameter name expanded into a sentence.
-Delete any `@return` that restates the return type. Prefer no tag to an empty
-tag.
-
-Never repeat a type in prose — the signature already says it and prose drifts.
-If a constraint can be carried by the type, carry it there instead of
-documenting it: an enum instead of a string, `Optional` instead of a nullable
-return, `Duration` instead of a long of milliseconds. A doc comment reading
-"must not be null" on every parameter is a smell.
-
----
-
-## 5. Say the things that are actually missing
-
-Cutting the filler exists to make room for these. Include every item that
-applies; a doc comment that omits them is incomplete no matter how long it is:
-
-- **Errors** — which failures, as which exception types, and whether a caller
-  is expected to catch them
-- **Edge inputs** — behaviour on null, empty collections and strings, absent
-  optionals
-- **Ownership** — whether arguments are retained, mutated, or copied; who closes what
-- **Concurrency** — whether the value is safe for concurrent use
-- **Blocking** — whether the call blocks or does I/O; how it responds to
-  interruption or cancellation
-- **Units and ranges** — milliseconds vs seconds, inclusive vs exclusive, time zone, encoding
-- **Ordering** — guaranteed, or explicitly not guaranteed
-- **Defaults** — what a zero value or omitted option means
-- **Cost** — complexity or I/O, when it would surprise a caller
-
----
-
-## 6. Examples outrank prose
-
-A compiling example is worth three paragraphs of description.
-
-- Short calls: a `{@snippet}` in the Javadoc.
-- Anything longer: a test that exercises the common case, because a snippet
-  nobody compiles drifts like prose. The doc comment can name the behaviour and
-  leave the demonstration to the test.
-
-Write the example for the common case, not the exhaustive case.
-
----
-
-## 7. Javadoc specifics
-
-Follow these rules when writing Javadoc:
-
-- One-sentence summary first, then a blank line (`<p>` opens each later
-  paragraph). The first sentence appears alone in package and class listings,
-  so it must stand by itself.
-- Document error behaviour with `@throws`, naming the exception type. An
-  unchecked exception a caller is expected to handle is part of the contract
-  and gets a tag just like a checked one — this codebase signals most failures
-  that way (`SyncConflictException`, `IndexInvalidQueryTypeException`).
-- Document concurrency safety on every public type that holds state. This is
-  the most frequently omitted and most frequently needed fact.
-- `{@link}` a type the first time it appears, `{@code}` for literals and
-  parameter names.
-- `@deprecated` carries a concrete migration path, not just a notice.
-- Package comments go in `package-info.java` and describe what the package is
-  for, not how it is built.
-- `@implNote` is the one place a fact about the current implementation may
-  appear on the API surface — it is explicitly marked as something a consumer
-  must not rely on. Rationale still goes in the commit message.
-
-```java
-// GOOD
-/**
- * Parses a duration string such as {@code "1h30m"} or {@code "-250ms"}.
- *
- * <p>Valid units are ns, us, ms, s, m and h. Values may be negative.
- *
- * @throws DurationFormatException if {@code s} is not a valid duration string
- * @throws ArithmeticException if the value overflows {@link Duration}
- */
-static Duration parseDuration(String s)
-```
-
----
-
-## 8. Protobuf comments
-
-The protos under `src/main/protobuf` are a storage format, not an API. Their
-reader is someone judging, possibly years later, whether a stored value can
-still be read or a schema change is compatible — the boundary test still
-applies, but the boundary is the disk format, not what the engine currently
-does with a stored value.
-
-Follow these rules for protobuf comments:
-
-- A file-level comment states the compatibility rules the file lives under,
-  the way `definitions.proto` does.
-- Document what presence means. When setting a message turns a capability on,
-  or an absent scalar means the engine chooses the default, say so on the
-  field — that contract is invisible in the schema itself.
-- Give units, encodings and value spaces on the field: a `string` that is a
-  BCP 47 tag, an `int64` that is epoch milliseconds. The type says none of it.
-- A `reserved` number keeps a comment saying what it used to mean; the
-  reservation is unreadable without it.
-- Comments are block `/* */`, matching the existing files.
+A field comment that gives presence, encoding, and lifetime:
 
 ```proto
-// GOOD
 /*
  * BCP 47 tag of the locale the values were analyzed under. Absent means the
  * field's default locale. A document keeps the tag it was indexed with even
@@ -226,248 +212,44 @@ Follow these rules for protobuf comments:
 optional string locale = 4;
 ```
 
----
+## Comments inside a method
 
-## 9. Body comments
+The reader is a maintainer about to change this code. Comment the why, never
+the what. If the code does not say what it does, fix the code.
 
-Comment the **why**, never the **what**. The code already says what it does; if
-it does not, fix the code instead of narrating it.
-
-Write a body comment only when a maintainer would otherwise be tempted to
-"simplify" the code and break it. Good triggers: a non-obvious ordering
-dependency, a workaround for an upstream bug (link it), a deliberate deviation
-from the surrounding pattern, a performance decision with a measurement behind
-it.
+Write one only when a maintainer would otherwise simplify the code and break
+it: a non-obvious ordering dependency, a workaround for an upstream bug (link
+it), a deliberate break from the surrounding pattern, or a performance decision
+with a measurement behind it. For example:
 
 ```java
-// BAD — narrates the code
-// increment the counter
-count++;
-
-// GOOD — protects a non-obvious decision
-// Reset before close: close flushes, and a flush of stale state
-// re-enqueues the batch. See upstream issue #4412.
+// Reset before close: close flushes, and a flush of stale state re-enqueues
+// the batch. See upstream issue #4412.
 batch.reset();
 ```
 
----
+## Revision pass
 
-## 10. Prose in `docs/`
+Run this over anything you wrote or are reviewing:
 
-The Markdown under `docs/` is the one surface that addresses a reader directly.
-Match the file you are editing; these are the rules it already follows.
-
-**Voice:**
-
-- Address the reader as "you". Never "we", "our" or "the user" for the reader.
-- Use the active voice and the present tense: "the server returns an error".
-- Write short sentences. One idea per sentence. Break a long sentence in two.
-- Use "they" as the singular pronoun for a person.
-- Do not write "please" in an instruction.
-
-**Structure:**
-
-- Give the document one H1. Use H2 and H3 below it and do not skip a level.
-- Use sentence case in a heading: a capital on the first word and on proper
-  nouns only.
-- Start a section with what it is about, not with history.
-- A task heading starts with a gerund, such as "Installing the CLI". A
-  reference heading names the thing.
-- Keep a paragraph to three sentences where you can.
-- Use a numbered list for ordered steps and a bulleted list for everything
-  else. Start a step with its verb: "Run", "Open", "Copy".
-- Keep the items of one list parallel in grammar and in length.
-- Introduce a list, a table or a code block with a sentence ending in a colon.
-
-The website builds its sidebar from `docs/README.md`, so a new document is a
-file under `docs/` and a line there.
-
----
-
-## 11. Prohibited language
-
-**Filler and hedging.** `note that`, `it's important to`, `simply`, `just`,
-`basically`, `essentially`, `of course`, `arguably`, `under the hood`,
-`in order to` (use "to"), `at the end of the day`. The ban on `just` is the
-minimizing sense; the temporal one, "a document you just indexed", is a
-different word and is fine.
-
-**Inflated words.** Prefer the plain one: "use" over "utilize", "start" over
-"initiate", "about" over "regarding", "before" over "prior to".
-
-**Latin abbreviations.** Write "for example" and "that is". Never `e.g.` or
-`i.e.`.
-
-**Future tense for present behaviour.** The code does it now. "The server
-returns an error", not "will return".
-
-**Unexpanded abbreviations.** Expand on first use in a file, then use the short
-form. Use one name for a thing everywhere.
-
-**Self-narration.** Any phrasing that reports the author's decision process
-rather than the code's behaviour: `the only thing that`, `the honest option`,
-`we went with`, `it turns out that`, `I chose`, `this felt cleaner`. If the
-information matters, it goes in the commit message.
-
-**Empty superlatives.** `robust`, `powerful`, `seamless`, `elegant`, `simple`,
-`easy`, `flexible`, `blazingly fast`. These are claims a reader cannot verify
-and will resent.
-
-**Comparative asides.** Do not mention alternatives that were considered and
-rejected in a consumer doc. There is no alternative in the reader's world.
-
-**Apology and reassurance.** The reader is not anxious. Do not comfort them.
-
----
-
-## 12. Sentence shapes that give the writing away
-
-The rules above decide what a comment says. These decide how it reads. Each
-shape below is grammatical and often accurate, and each is a default a language
-model reaches for rather than a choice a writer made. They cluster: once one
-appears in a file, the rest follow, and the file stops reading as though a
-person wrote it. Every one has a plain replacement.
-
-**The trailing significance clause.** A fact, a comma, then a relative clause
-saying why the fact matters. It is the most common shape in this codebase.
-Make it its own sentence, or cut it.
-
-```java
-// BAD
-// The claim is released only then, which is what keeps the successor from
-// pulling a manifest the flush had not written yet.
-
-// GOOD
-// The claim is released only then. A successor that pulled earlier would read
-// a manifest the flush had not written.
-```
-
-**The cleft.** "The registry is what decides ..." for "The registry decides
-...". A cleft emphasizes a word that needs no emphasis. Write subject, verb,
-object.
-
-**Antithesis nobody asked for.** "X rather than Y", "not X but Y", where Y is
-not what the reader expected. Keep a contrast only when the reader would
-otherwise assume Y, and delete it when it is there to sound considered.
-
-```java
-// BAD  — nobody thought a delete was node-local
-// Taken out of the registry, so it is gone for the deployment rather than
-// only for this node.
-
-// GOOD
-// Taken out of the registry, so every node loses it.
-```
-
-**Significance padding in a tag.** `@param name` reading "name of the index,
-which is what callers use from here on". A tag states the value and stops. See
-§4, and prefer no tag to an empty one — an `@return` or `@param` with no text
-is worse than absent.
-
-**The closing restatement.** A last sentence that says the paragraph again in
-other words: "The two halves together are what make it safe." Delete it. The
-reader has read the paragraph.
-
-**The triple.** Three parallel clauses where two carry the information and the
-third carries rhythm. Keep the two that differ.
-
-**Clauses stacked on dashes.** One dash is a pause. Two make the reader hold a
-clause open while reading another. Break the sentence.
-
-Grep a file you wrote or are reviewing. A hit is a candidate, not a verdict:
-
-```bash
-grep -nE ', which (is|was|are) what|\bis what\b|\brather than\b|@(return|param [a-zA-Z]+)\s*$' Foo.java
-```
-
----
-
-## 13. Revision pass
-
-Drafting is not the problem; cutting is. After writing any doc comment, run
-this checklist and edit accordingly.
-
-1. Does the reader learn anything the signature does not already tell them? If
-   not, delete the whole comment.
-2. Is every sentence still true if the body is rewritten from scratch? Delete or
-   demote the ones that are not.
-3. Which single sentence can be deleted with the least loss? Delete it. Repeat
-   until the next deletion would cost real information.
+1. Does the reader learn something the signature, the table, or the code does
+   not already tell them? If not, delete it.
+2. Is every sentence still true after the implementation is rewritten?
+3. Which sentence can go with the least loss? Delete it. Repeat until the next
+   deletion would cost real information.
 4. Is any sentence about the author rather than the reader? Move it to the
    commit message.
-5. Check §5. Which required facts are missing? Add them.
-6. Would a consumer be surprised by anything in production — an error type, a
-   blocking call, a mutation, a cost? If so it is undocumented.
-7. Hunt the shapes in §12. Rewrite each hit as a plain sentence, or cut it.
-8. Count the clauses in the longest sentence. If it has more than two, split it
-   into two sentences.
+5. Which required facts are missing — errors, units, concurrency, defaults,
+   cost?
+6. Does the longest sentence hold more than two clauses? Split it.
+7. Would you say each sentence out loud to a colleague? Rewrite the ones you
+   would not.
 
-Target: shorter than the first draft and containing strictly more information.
+Then grep what you changed:
 
----
-
-## 14. Worked corrections
-
-```java
-// BEFORE
-/**
- * Creates a new client. It takes a config and returns a client. We use a
- * config record rather than a builder because it was the only thing that
- * stayed readable as the option count grew — a builder was the honest
- * option early on but this scales better. The client is robust and handles
- * errors gracefully.
- *
- * @param config the config
- * @return the client
- */
-public static Client create(Config config)
-
-// AFTER
-/**
- * Returns a {@link Client} configured by {@code config}.
- *
- * <p>The returned Client is safe for concurrent use and holds a connection
- * pool; callers must {@link Client#close() close} it. Creation does not
- * dial — the first request establishes the connection.
- *
- * @throws InvalidConfigException if {@code config.endpoint()} is empty
- */
-public static Client create(Config config)
+```shell
+grep -nEi ', which (is|was|are) what|\bis what\b|\brather than\b|\b(e\.g\.|i\.e\.)\b|\b(simply|just|easily|robust|seamless|powerful)\b|\bwe\b|\bwill\b' <files>
 ```
 
-```proto
-// BEFORE
-/*
- * The timeout. We went with an int64 here since Duration felt like
- * overkill under the hood.
- */
-optional int64 timeout = 3;
-
-// AFTER
-/*
- * Time budget for the operation in milliseconds. Absent means the engine's
- * default; zero stored explicitly means no limit.
- */
-optional int64 timeout = 3;
-```
-
-The next one says the right things. It fails on §12 alone: a significance
-clause, a cleft and a contrast nobody asked for, in one sentence.
-
-```java
-// BEFORE
-/**
- * <p>The store is one object read and replaced as a whole. Replacing it is
- * conditional on the version the writer last read, so two nodes changing keys
- * at the same time can not lose one another's change - which is what lets any
- * node manage keys rather than only the one holding the indexer role.
- */
-
-// AFTER
-/**
- * The store is one object, read and replaced as a whole.
- *
- * <p>A replace is conditional on the version the writer last read, so a
- * concurrent change is rejected instead of lost. Any node can manage keys.
- */
-```
+A hit is a candidate, not a verdict. Quoted bad examples and "just" in the
+temporal sense ("a document you just indexed") are fine.
