@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.settings;
 
 import java.io.IOException;
+import java.util.Objects;
 
 import se.l4.exofind.engine.index.state.ObjectStorageSync;
 import se.l4.exofind.engine.storage.ObjectStorage;
@@ -111,7 +112,44 @@ public class ObjectStorageSearchSettingsStorage implements SearchSettingsStorage
 
 			throw new IOException("Unable to write the search settings; " + e.getMessage(), e);
 		} catch(Exception e) {
+			/*
+			 * The storage may drop the connection after it has taken the
+			 * write, which arrives as a connection failure rather than as the
+			 * answer to it. Read the settings back to tell what happened:
+			 * exactly what was written means the write went through, a version
+			 * other than the one it was conditioned on means another node got
+			 * there first, and the version it was conditioned on means the
+			 * write never arrived and may be made again.
+			 */
+			var current = tryRead(index);
+			if(current != null) {
+				if(current.settings().equals(settings)) {
+					return current.version();
+				}
+
+				if(!Objects.equals(current.version(), expectedVersion)) {
+					return null;
+				}
+			}
+
 			throw new IOException("Unable to write the search settings; " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Read the settings back for telling a dropped answer apart from a write
+	 * that never landed, where failing a second time only means the first
+	 * failure stands.
+	 *
+	 * @return
+	 *   what the storage holds, or {@code null} when it holds nothing or could
+	 *   not be reached
+	 */
+	private Read.Loaded tryRead(String index) {
+		try {
+			return read(index, null) instanceof Read.Loaded loaded ? loaded : null;
+		} catch(IOException e) {
+			return null;
 		}
 	}
 

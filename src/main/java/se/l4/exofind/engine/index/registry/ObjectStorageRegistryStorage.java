@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.registry;
 
 import java.io.IOException;
+import java.util.Objects;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 
@@ -107,7 +108,49 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 
 			throw new IOException("Unable to write the index registry; " + e.getMessage(), e);
 		} catch(Exception e) {
+			/*
+			 * The storage may drop the connection after it has taken the
+			 * write, which arrives as a connection failure rather than as the
+			 * answer to it. Read the registry back to tell what happened:
+			 * exactly what was written means the write went through, a version
+			 * other than the one it was conditioned on means another node got
+			 * there first, and the version it was conditioned on means the
+			 * write never arrived and may be made again.
+			 *
+			 * Without this a change that landed is reported as a failure, and
+			 * whoever asked for it sends it again - where a create is answered
+			 * with the name already existing, and a removal with the
+			 * generation being gone.
+			 */
+			var current = tryRead();
+			if(current != null) {
+				if(current.indexes().equals(indexes)) {
+					return current.version();
+				}
+
+				if(!Objects.equals(current.version(), expectedVersion)) {
+					return null;
+				}
+			}
+
 			throw new IOException("Unable to write the index registry; " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Read the registry back for telling a dropped answer apart from a write
+	 * that never landed, where failing a second time only means the first
+	 * failure stands.
+	 *
+	 * @return
+	 *   what the storage holds, or {@code null} when it holds nothing, holds
+	 *   something that cannot be read, or could not be reached
+	 */
+	private Read.Loaded tryRead() {
+		try {
+			return read(null) instanceof Read.Loaded loaded ? loaded : null;
+		} catch(IOException e) {
+			return null;
 		}
 	}
 }
