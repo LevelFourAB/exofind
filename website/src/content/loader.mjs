@@ -29,7 +29,7 @@
 import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
 
@@ -86,8 +86,17 @@ export function docsFromRepository({ roots, repoRoot }) {
 				 * `docsPath` rides along as frontmatter because that is the
 				 * only channel the processor offers into a remark plugin. It
 				 * is not part of the entry's data and never reaches a page.
+				 *
+				 * `fileURL` is the file the Markdown was read from, and it is
+				 * what Starlight's own plugins look at: they skip a document
+				 * that has no path, and one whose path is outside the
+				 * directories the site declares in `markdown.processedDirs`.
+				 * Without it an aside stays the plain `<div>` that
+				 * `remark-directive` makes of `:::note`, and a heading gets no
+				 * anchor link.
 				 */
 				const { code, metadata } = await renderer.render(body, {
+					fileURL: pathToFileURL(filePath),
 					frontmatter: { ...data, docsPath }
 				});
 

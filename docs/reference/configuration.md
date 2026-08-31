@@ -58,6 +58,10 @@ The following table lists locale data configuration variables:
 |----------|-------------|---------|
 | `EXOFIND_LOCALE_DATA_DIRECTORY` | Directory holding language data that is not built into the engine. | `locale-data` under the working directory |
 
+:::note
+The default container image bundles the locale data, so in most cases you will not need to set this. For other deployments see the [`locale-data` folder in the repository](https://github.com/LevelFourAB/exofind/tree/main/locale-data).
+:::
+
 `EXOFIND_LOCALE_DATA_DIRECTORY` contains one subdirectory per locale, named after the locale tag. For what the data is used for, see [compound words](analysis.md#compound-words) and the [locale reference](locales.md).
 
 The engine reads only the following files from a locale directory:

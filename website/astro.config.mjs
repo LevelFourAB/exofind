@@ -69,6 +69,19 @@ export default defineConfig({
 				baseUrl: `${REPO}/edit/main/`
 			},
 
+			/*
+			 * Starlight runs its own Markdown transforms - asides, heading
+			 * anchor links - only on files inside its collection directory,
+			 * and these files are in `docs/` instead. Naming the directory
+			 * here is what lets a `:::note` in a document become an aside
+			 * rather than a bare `<div>`. The loader in
+			 * `./src/content/loader.mjs` tells the renderer which file it is
+			 * rendering, which is the other half of the same check.
+			 */
+			markdown: {
+				processedDirs: ['../docs']
+			},
+
 			customCss: ['./src/styles/site.css'],
 
 			/*
