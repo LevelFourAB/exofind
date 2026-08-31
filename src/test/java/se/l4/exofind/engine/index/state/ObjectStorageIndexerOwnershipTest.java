@@ -22,6 +22,8 @@ import org.eclipse.collections.api.set.ImmutableSet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -31,6 +33,11 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
+/*
+ * These tests wait out lease rounds instead of using the CPU, and each one
+ * gets a storage prefix of its own, so the methods run in parallel.
+ */
+@Execution(ExecutionMode.CONCURRENT)
 public class ObjectStorageIndexerOwnershipTest {
 	/**
 	 * Claim duration used by the tests. Rounds run at a third of this, which

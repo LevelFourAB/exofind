@@ -24,6 +24,7 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -47,6 +48,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  * has to be in the table by the time the create is answered, not a renewal
  * round later.
  */
+@Isolated
 @QuarkusTest
 @TestProfile(IndexerNodeTest.CandidateNode.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

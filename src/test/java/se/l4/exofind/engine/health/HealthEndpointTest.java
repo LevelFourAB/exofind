@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -27,6 +28,7 @@ import io.quarkus.test.junit.TestProfile;
  * registered under the phase they were meant for, and that the endpoints are
  * reachable by something that holds no key.
  */
+@Isolated
 @QuarkusTest
 @TestProfile(HealthEndpointTest.CheckedNode.class)
 public class HealthEndpointTest {

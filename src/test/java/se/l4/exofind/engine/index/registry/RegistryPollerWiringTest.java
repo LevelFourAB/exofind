@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.index.settings.SearchSettings;
@@ -24,6 +25,7 @@ import jakarta.inject.Inject;
  * handing over stops being refreshed while the rest of the node keeps running,
  * so the wiring is asserted here instead of being noticed later as staleness.
  */
+@Isolated
 @QuarkusTest
 @TestProfile(RegistryPollerWiringTest.Node.class)
 public class RegistryPollerWiringTest {

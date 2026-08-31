@@ -14,6 +14,7 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -30,6 +31,7 @@ import io.restassured.http.ContentType;
  * them, which lives in the annotations rather than in any code that could be
  * called.
  */
+@Isolated
 @QuarkusTest
 @TestProfile(DocumentScanNegotiationTest.LocalStorage.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

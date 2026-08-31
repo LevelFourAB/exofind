@@ -29,6 +29,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
@@ -42,6 +44,12 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
+/*
+ * These tests wait on transfers to and from the storage instead of using the
+ * CPU, and each one gets a temporary directory and a storage prefix of its
+ * own, so the methods run in parallel.
+ */
+@Execution(ExecutionMode.CONCURRENT)
 @ExtendWith(QuietLuceneVersionWarnings.class)
 public class ObjectStorageSyncTest {
 	S3Client s3Client;

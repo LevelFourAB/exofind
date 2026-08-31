@@ -27,6 +27,7 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -60,6 +61,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  * for a few seconds on the node, so the tests that change it wait for the
  * node to notice rather than expecting it at once.
  */
+@Isolated
 @QuarkusTest
 @TestProfile(ForwardedWriteTest.NonIndexingNode.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
