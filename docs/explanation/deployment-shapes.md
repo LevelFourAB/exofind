@@ -35,13 +35,15 @@ Indexing capacity does not scale with search traffic. Indexer candidates run as 
 2. The index remains without an active writer until `EXOFIND_INDEXER_LEASE_DURATION` expires.
 3. Another candidate must take over the claim, pull the latest manifest, and reopen the Lucene writer before accepting new writes.
 
-Separating pools allows you to autoscale search nodes without triggering indexer failovers.
+Separating pools allows you to autoscale search nodes without triggering indexer failovers. A search node never registers as a candidate in the leadership table, so adding or removing one leaves every claim where it is.
 
 ### Disk rules and cleanup
 
 The disk on a search node is an ephemeral read cache. If local disk space runs low, the background disk sweeper configured by `EXOFIND_INDEXES_DISK_MAX_SIZE` safely deletes local copies of inactive indexes that exist in object storage.
 
-The disk on an indexer candidate holds unpushed commits and active Lucene segment merges. The disk sweeper cannot free uncommitted files. Running disk cleanup on an active writer risks deleting files required by ongoing merge operations. Indexer nodes require dedicated persistent storage sized for write buffers rather than cache budgets.
+The disk on an indexer candidate holds the local copy of every index the node writes, the commits that have not reached object storage yet, and the working files of running segment merges. The disk sweep skips every index that is open, and an indexer keeps the indexes it writes open so the sweep never reaches their directories. The sweep also refuses to remove a directory that holds changes object storage does not have, and never removes a copy used more recently than `EXOFIND_INDEXES_DISK_MIN_IDLE` (default: `24h`), so it frees only the copies of indexes the node no longer writes.
+
+Leave `EXOFIND_INDEXES_DISK_MAX_SIZE` unset on an indexer candidate. Give the node its own persistent volume and size it for the indexes it writes, with headroom for merges and for commits waiting to be pushed. A node holds a file lock on its storage directory for the lifetime of its process, so two nodes cannot share one volume.
 
 ### Rollout order and shutdown grace periods
 
@@ -52,7 +54,9 @@ When rolling out updates, the two workloads require different shutdown behavior:
 
 ## Request routing and the cost of write forwarding
 
-Exofind allows clients to send any request to any node. A search node that receives a write request checks the leadership table for the candidate holding that index and proxies the request to the candidate's `EXOFIND_NODE_ADDRESS`. If no candidate holds the index, the first candidate to receive the forwarded write claims the index.
+A client may send any request to any node. Reads are answered by the node that receives them, and only write endpoints that declare the index writer as their server are forwarded. A node that receives such a write for an index it does not hold reads the leadership table, finds the candidate holding the index, and proxies the request to that candidate's `EXOFIND_NODE_ADDRESS`. It keeps the method, path, query, body, and the caller's own credentials, and takes only the scheme, host, and port from the address. Any node forwards this way, including an indexer candidate that holds other indexes, and reuses its last read of the leadership table for a few seconds so the answer can lag a failover by that much.
+
+When no candidate holds the index, the forwarding node picks a live candidate by hashing the index name. Every node picks the same candidate for the same index, so the first writes to a new index do not scatter across the pool. That candidate claims the index by serving the write. A node that is a candidate itself claims the index instead of forwarding. When no candidate is running, or no candidate set `EXOFIND_NODE_ADDRESS`, the write is answered with `409 Conflict` and the code `indexer:unavailable`. A holder that cannot be reached gives `502 Bad Gateway` and the code `indexer:unreachable`.
 
 The forwarding proxy streams the request body directly using HTTP/1.1 and adds an `X-Exofind-Forwarded` header. If the target candidate no longer holds the index, it rejects the forwarded request with `409 Conflict` rather than forwarding it again, preventing proxy loops while the leadership table updates.
 
