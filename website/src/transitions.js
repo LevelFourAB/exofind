@@ -23,6 +23,41 @@ const NAVIGATING = 'is-navigating';
 /** How far the sidebar was scrolled when the swap began. */
 let scrolled = 0;
 
+/** How much of the list to keep on either side of the current entry. */
+const EDGE = 32;
+
+/**
+ * Scroll the sidebar to where the reader is, when they are not already looking
+ * at it.
+ *
+ * A link followed from the text, or from the row of parts at the top, lands on
+ * a page whose entry can be anywhere in a sidebar that was left where the
+ * previous page had it - including past either end of it, which reads as a
+ * manual with no marked place in it. An entry that is not on screen is centred
+ * rather than brought just inside the frame, because what the reader wants from
+ * it is the pages around it.
+ *
+ * An entry that is on screen is where the reader put it, and every navigation
+ * from the sidebar itself is one of those, so it is moved as little as the
+ * margin allows: enough to show the entries next to it, and never enough to
+ * read as the list jumping.
+ */
+function reveal(sidebar, link) {
+	const frame = sidebar.getBoundingClientRect();
+	const entry = link.getBoundingClientRect();
+
+	/* A sidebar folded into the menu is not a scroller and has no height. */
+	if(frame.height === 0) return;
+
+	const above = entry.top - frame.top;
+	const below = frame.bottom - entry.bottom;
+	if(above >= EDGE && below >= EDGE) return;
+
+	sidebar.scrollTop += above < 0 || below < 0
+		? above - (frame.height - entry.height) / 2
+		: (above < EDGE ? above - EDGE : EDGE - below);
+}
+
 /*
  * A click on a link paints nothing until the next page has been fetched, and
  * on a slow connection that is a page that looks like it ignored the click.
@@ -110,4 +145,6 @@ document.addEventListener('astro:page-load', () => {
 	) {
 		group.open = true;
 	}
+
+	if(current) reveal(sidebar, current);
 });
