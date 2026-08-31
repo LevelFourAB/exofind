@@ -88,7 +88,7 @@ public class ReindexJobsTest {
 		);
 
 		storage = new LocalReindexJobStorage(
-			storageDirectory.resolve("jobs").resolve("reindex")
+			storageDirectory.resolve("jobs").resolve("reindex").resolve("records")
 		);
 
 		jobs = newJobs();

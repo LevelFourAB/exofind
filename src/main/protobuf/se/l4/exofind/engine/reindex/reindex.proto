@@ -6,12 +6,15 @@ package se.l4.exofind.engine.reindex;
 
 /*
  * This file is the format a reindex job is described in - one record per
- * index, kept in the bucket under `jobs/reindex/<index>` or in the jobs
- * directory of a node storing locally. A record outlives the node that wrote
- * it: a successor resumes a half-finished job from it, so it has to stay
- * readable for as long as a job can exist. The same rules as for an
- * index definition apply: scalars are `optional` so unset can be told apart
- * from the zero value, and a field number is never reused.
+ * index, kept under `jobs/reindex/records/<index>` in the bucket or in the
+ * matching directory of a node storing locally. A record outlives the node
+ * that wrote it: a successor resumes a half-finished job from it, so it has
+ * to stay readable for as long as a job can exist. In the bucket an empty
+ * marker object under `jobs/reindex/active/<index>` accompanies the record
+ * while the job is unfinished, so a node looking for jobs to resume lists the
+ * markers instead of reading every record. The same rules as for an index
+ * definition apply: scalars are `optional` so unset can be told apart from
+ * the zero value, and a field number is never reused.
  */
 
 /*

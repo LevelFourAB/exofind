@@ -305,7 +305,7 @@ public class StorageProviders {
 	) {
 		return switch(mode) {
 			case LOCAL -> new LocalReindexJobStorage(
-				storageDirectory.resolve("jobs").resolve("reindex")
+				storageDirectory.resolve("jobs").resolve("reindex").resolve("records")
 			);
 			case OBJECT -> new ObjectStorageReindexJobStorage(storage.get());
 		};

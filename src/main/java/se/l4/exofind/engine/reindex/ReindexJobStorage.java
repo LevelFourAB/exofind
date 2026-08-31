@@ -58,12 +58,30 @@ public interface ReindexJobStorage {
 	void delete(String index) throws IOException;
 
 	/**
-	 * Every record there is, in no particular order.
+	 * Every record there is, in no particular order, including the records of
+	 * finished jobs.
 	 *
 	 * @throws IOException
 	 *   if the storage could not be reached
 	 */
 	ListIterable<Stored> list() throws IOException;
+
+	/**
+	 * Every record the storage cannot rule out as unfinished, in no particular
+	 * order. Read this instead of {@link #list()} when looking for jobs to
+	 * resume. A record is kept after its job ends, so listing all of them
+	 * costs a read per job the deployment has ever run; an implementation that
+	 * pays per read tracks the unfinished jobs separately.
+	 *
+	 * <p>The narrowing is a hint in both directions. A record returned here
+	 * can have finished a moment ago, so read the phase. A running job can
+	 * also be missing, so a caller that must not miss one reads {@link #list()}
+	 * as well.
+	 *
+	 * @throws IOException
+	 *   if the storage could not be reached
+	 */
+	ListIterable<Stored> listUnfinished() throws IOException;
 
 	/**
 	 * A record together with the version it was read at, which is what a

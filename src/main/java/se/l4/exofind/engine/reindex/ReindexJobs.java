@@ -1081,10 +1081,9 @@ public class ReindexJobs {
 	}
 
 	/**
-	 * Look at every record and pick up the unfinished jobs whose index
-	 * nothing holds. Ownership is only claimed on writes, so without this an
-	 * index with a half-finished job and no traffic would sit unclaimed
-	 * forever.
+	 * Pick up the unfinished jobs whose index nothing holds. Ownership is only
+	 * claimed on writes, so without this an index with a half-finished job and
+	 * no traffic would sit unclaimed forever.
 	 */
 	private void sweep() {
 		if(stopped || !nodeState.isIndexerCandidate()) {
@@ -1092,7 +1091,12 @@ public class ReindexJobs {
 		}
 
 		try {
-			for(var stored : storage.list()) {
+			/*
+			 * Every candidate runs this a few times a minute, so it reads the
+			 * jobs the storage tracks as unfinished. Reading every record
+			 * would cost one read per index ever reindexed, on every pass.
+			 */
+			for(var stored : storage.listUnfinished()) {
 				var job = ReindexJob.fromStore(stored.record()).orElse(null);
 				if(job == null || job.phase().isFinished()) {
 					continue;
@@ -1132,6 +1136,12 @@ public class ReindexJobs {
 	 */
 	private void resumeHeld() {
 		try {
+			/*
+			 * Every record, not the narrowed listing the sweep reads: a job
+			 * the storage has lost track of is resumed by nothing else. This
+			 * runs when a node starts and when ownership settles, which is
+			 * rare enough to pay a full pass for.
+			 */
 			for(var stored : storage.list()) {
 				var job = ReindexJob.fromStore(stored.record()).orElse(null);
 				if(job != null && !job.phase().isFinished()) {

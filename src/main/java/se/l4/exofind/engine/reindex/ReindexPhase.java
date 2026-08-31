@@ -92,4 +92,23 @@ public enum ReindexPhase {
 
 		return Optional.empty();
 	}
+
+	/**
+	 * Whether a stored record describes a job that has ended. A phase this
+	 * build does not know counts as unfinished, so a record written by a newer
+	 * version is treated as a job that is still running.
+	 */
+	static boolean isFinished(ReindexJobStore record) {
+		return fromStore(record.getPhase())
+			.map(ReindexPhase::isFinished)
+			.orElse(false);
+	}
+
+	/**
+	 * Whether a stored record describes a job that has been accepted and not
+	 * yet started. A job is written in this phase once, when it is accepted.
+	 */
+	static boolean isPending(ReindexJobStore record) {
+		return record.getPhase() == ReindexPhaseStore.REINDEX_PHASE_PENDING;
+	}
 }

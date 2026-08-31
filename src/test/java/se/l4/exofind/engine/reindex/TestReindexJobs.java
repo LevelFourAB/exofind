@@ -31,7 +31,9 @@ public final class TestReindexJobs {
 			nodeState,
 			indexes,
 			registry,
-			new LocalReindexJobStorage(storageDirectory.resolve("jobs").resolve("reindex")),
+			new LocalReindexJobStorage(
+				storageDirectory.resolve("jobs").resolve("reindex").resolve("records")
+			),
 			ownership,
 			2,
 			Duration.ofMinutes(5),

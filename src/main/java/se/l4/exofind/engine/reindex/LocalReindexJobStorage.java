@@ -134,6 +134,15 @@ public class LocalReindexJobStorage implements ReindexJobStorage {
 		}
 	}
 
+	@Override
+	public ListIterable<Stored> listUnfinished() throws IOException {
+		/*
+		 * A local read is cheap, so the phases come out of the records
+		 * themselves and there is no marker beside them to keep in step.
+		 */
+		return list().reject(stored -> ReindexPhase.isFinished(stored.record()));
+	}
+
 	/**
 	 * The file one index's record lives in. The name is validated as an index
 	 * name, so a record can never land outside the directory.
