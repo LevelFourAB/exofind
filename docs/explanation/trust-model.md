@@ -26,6 +26,8 @@ In this setup, you configure an anonymous key on a specific node that allows onl
 
 Keys are stored in the same underlying storage as the indexes—in the storage bucket in object mode, or in a local key file in single-node mode. Keys are not written into static node configuration files.
 
+Because the key store shares the bucket, whoever holds the storage credential—a configured key pair or an IAM role the platform issues credentials for—can read every API key in the deployment. Scope the bucket policy or the role's policy to the nodes alone.
+
 This shared storage design provides several properties:
 
 - **Consistent access:** A key created on any node is written to the shared store and immediately works across all nodes in the deployment.

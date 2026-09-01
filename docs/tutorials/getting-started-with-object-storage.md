@@ -342,7 +342,10 @@ variables in `docker-compose.yml` and remove the `seaweedfs` service:
 
 - Set `EXOFIND_STORAGE_REMOTE_URL` to your S3 endpoint URL.
 - Set `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` and
-  `EXOFIND_STORAGE_REMOTE_SECRET_KEY` to your AWS credentials.
+  `EXOFIND_STORAGE_REMOTE_SECRET_KEY` to your AWS credentials. Alternatively,
+  set `EXOFIND_STORAGE_REMOTE_CREDENTIALS` to `default` to resolve credentials
+  from the environment or an attached IAM role instead of static keys - see
+  the [configuration reference](../reference/configuration.md#object-storage).
 - Set `EXOFIND_STORAGE_REMOTE_BUCKET` to your S3 bucket name.
 - Optionally set `EXOFIND_STORAGE_REMOTE_REGION` to your AWS region.
 - Optionally set `EXOFIND_STORAGE_REMOTE_PREFIX` if sharing the bucket with
