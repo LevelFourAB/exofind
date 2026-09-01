@@ -34,6 +34,13 @@ import se.l4.exofind.engine.query.SearchResult;
  * counts are kept here too and a walk of every document is paid once per
  * reader rather than once per search.
  *
+ * A search answering with the values of an object field counts values rather
+ * than documents, and an unnarrowed one counts every value of that path -
+ * which is as fixed for a reader as its documents are. Those counts are kept
+ * here as well, under the path they count, because the same facet over another
+ * path counts other things. A path holds several times the documents, so this
+ * is where the saving is largest.
+ *
  * A reader is only ever replaced, never changed, so an entry stays true for as
  * long as the reader it was built from is open and is dropped when it closes.
  * That is the same lifetime the reader's own caches have and is why the key is
@@ -57,7 +64,8 @@ final class FacetStates {
 
 	/**
 	 * The counts of one facet over everything the reader holds, keyed by the
-	 * facet asked for and the locale it was asked under.
+	 * facet asked for, the locale it was asked under, and the object field path
+	 * whose values were counted where they were values rather than documents.
 	 */
 	private static final Map<IndexReader.CacheKey, Map<WholeKey, SearchResult.Facet>> wholeCounts =
 		new ConcurrentHashMap<>();
@@ -67,6 +75,17 @@ final class FacetStates {
 	 * nothing narrowing it counts them.
 	 */
 	private static final Map<IndexReader.CacheKey, Long> wholeTotals =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * How many values of one object field path the reader holds, counted the
+	 * way a search answering with them and narrowed by nothing counts them.
+	 *
+	 * Uncapped where {@link #wholeCounts} is capped: a path is an object field
+	 * of the definition rather than a shape the caller chose, so a reader has
+	 * as many entries here as the index has object fields.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, Long>> wholeValueTotals =
 		new ConcurrentHashMap<>();
 
 	/**
@@ -169,22 +188,30 @@ final class FacetStates {
 	/**
 	 * Get what the given facet counted over everything the reader holds, or
 	 * {@code null} where nothing was kept - see
-	 * {@link #keepWholeCounts(IndexReader, String, Facet, SearchResult.Facet)}.
+	 * {@link #keepWholeCounts(IndexReader, String, String, Facet, SearchResult.Facet)}.
 	 *
 	 * @param reader
+	 * @param path
+	 *   the object field path whose values were counted, or {@code null} where
+	 *   the counts are of documents
 	 * @param locale
 	 *   the locale of the search, or {@code null} where it named none
 	 * @param facet
 	 * @return
 	 */
-	static SearchResult.Facet wholeCountsOf(IndexReader reader, String locale, Facet facet) {
+	static SearchResult.Facet wholeCountsOf(
+		IndexReader reader,
+		String path,
+		String locale,
+		Facet facet
+	) {
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
 			return null;
 		}
 
 		var facets = wholeCounts.get(helper.getKey());
-		return facets == null ? null : facets.get(new WholeKey(locale, facet));
+		return facets == null ? null : facets.get(new WholeKey(path, locale, facet));
 	}
 
 	/**
@@ -193,6 +220,9 @@ final class FacetStates {
 	 * closes, or one already holding counts for {@code WHOLE_LIMIT} facets.
 	 *
 	 * @param reader
+	 * @param path
+	 *   the object field path whose values were counted, or {@code null} where
+	 *   the counts are of documents
 	 * @param locale
 	 *   the locale of the search, or {@code null} where it named none
 	 * @param facet
@@ -200,6 +230,7 @@ final class FacetStates {
 	 */
 	static void keepWholeCounts(
 		IndexReader reader,
+		String path,
 		String locale,
 		Facet facet,
 		SearchResult.Facet counts
@@ -226,14 +257,20 @@ final class FacetStates {
 			return;
 		}
 
-		facets.put(new WholeKey(locale, facet), counts);
+		facets.put(new WholeKey(path, locale, facet), counts);
 	}
 
 	/**
-	 * One ask for whole-index counts: the facet and the locale it was asked
-	 * under, which is what decides the values a localized field counts.
+	 * One ask for whole-index counts: the facet, the locale it was asked under,
+	 * which is what decides the values a localized field counts, and the path
+	 * whose values were counted, which is what decides whether the counts are
+	 * of values at all and of which of them.
+	 *
+	 * @param path
+	 *   the object field path whose values were counted, or {@code null} where
+	 *   the counts are of documents
 	 */
-	private record WholeKey(String locale, Facet facet) {
+	private record WholeKey(String path, String locale, Facet facet) {
 	}
 
 	/**
@@ -265,6 +302,58 @@ final class FacetStates {
 		if(wholeTotals.putIfAbsent(helper.getKey(), total) == null) {
 			helper.addClosedListener(wholeTotals::remove);
 		}
+	}
+
+	/**
+	 * Get how many values of the given object field path the reader holds, as a
+	 * search answering with them and narrowed by nothing counts them, or
+	 * {@code null} where nothing was kept - see
+	 * {@link #keepWholeValueTotal(IndexReader, String, long)}.
+	 *
+	 * @param reader
+	 * @param path
+	 *   the object field path the values belong to
+	 * @return
+	 */
+	static Long wholeValueTotalOf(IndexReader reader, String path) {
+		var helper = reader.getReaderCacheHelper();
+		if(helper == null) {
+			return null;
+		}
+
+		var paths = wholeValueTotals.get(helper.getKey());
+		return paths == null ? null : paths.get(path);
+	}
+
+	/**
+	 * Keep how many values of one object field path the reader holds, for as
+	 * long as it is open. Not kept for a reader that cannot say when it closes.
+	 *
+	 * @param reader
+	 * @param path
+	 *   the object field path the values belong to
+	 * @param total
+	 */
+	static void keepWholeValueTotal(IndexReader reader, String path, long total) {
+		var helper = reader.getReaderCacheHelper();
+		if(helper == null) {
+			return;
+		}
+
+		var key = helper.getKey();
+		var paths = wholeValueTotals.get(key);
+		if(paths == null) {
+			paths = wholeValueTotals.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+
+			/*
+			 * Registered against the key rather than against the map, so a
+			 * reader that closed while this was being built drops what was put
+			 * under it instead of leaving it behind.
+			 */
+			helper.addClosedListener(wholeValueTotals::remove);
+		}
+
+		paths.put(path, total);
 	}
 
 	/**

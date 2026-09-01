@@ -5186,7 +5186,7 @@ public class Index {
 				var path = nested.get().path();
 
 				if(scoped.isEmpty()) {
-					var kept = FacetStates.wholeCountsOf(reader, request.locale(), facet);
+					var kept = FacetStates.wholeCountsOf(reader, null, request.locale(), facet);
 					if(kept != null) {
 						counts.put(facet.name(), kept);
 						continue;
@@ -5213,7 +5213,7 @@ public class Index {
 				}
 			} else {
 				if(scoped.isEmpty()) {
-					var kept = FacetStates.wholeCountsOf(reader, request.locale(), facet);
+					var kept = FacetStates.wholeCountsOf(reader, null, request.locale(), facet);
 					if(kept == null) {
 						if(everything == null) {
 							everything = collectEverything(searcher, compiler);
@@ -5255,7 +5255,7 @@ public class Index {
 			);
 		}
 
-		countWalks(reader, request, walks, counts);
+		countWalks(reader, null, request, walks, counts);
 
 		long total;
 		if(whole != null) {
@@ -5300,9 +5300,16 @@ public class Index {
 	 * The sideways rule holds unchanged - a facet leaves the filter entries it
 	 * {@link Facet#excludes(String) excludes} out of its scope - and a scope
 	 * is the value hits of that narrowed search, assembled the same way the
-	 * search itself is. Nothing here reads the per-reader whole-index answers
-	 * {@link FacetStates} keeps: those count documents, and even an unnarrowed
-	 * search counts values here.
+	 * search itself is.
+	 *
+	 * A scope with no clauses left in it is every value of the path the reader
+	 * holds, whose counts change only when the reader does - a search with
+	 * facets but nothing narrowing it, and a facet counting sideways of the
+	 * only filter of the search, both ask for them. Those are answered per
+	 * reader through {@link FacetStates}, under the path as well as the facet,
+	 * because the same facet counts other values over another path. A path
+	 * holds several times the documents, so a walk skipped here is worth more
+	 * than one skipped over documents.
 	 *
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
@@ -5325,6 +5332,13 @@ public class Index {
 		var filterPaths = request.filters().collect(Index::filterPathOf);
 		var path = request.hits().path();
 
+		/*
+		 * The value hits of everything the index holds, collected the first
+		 * time a whole-index scope is not already answered per reader. The
+		 * whole search is that collection when nothing narrows it.
+		 */
+		var everything = clauses.isEmpty() ? whole : null;
+
 		var collectors = Maps.mutable.<ImmutableList<Query>, FacetsCollector>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
 		var walks = Maps.mutable.<FacetMatches, MutableList<PendingFacet>>empty();
@@ -5340,13 +5354,35 @@ public class Index {
 			}
 
 			var filters = keptFilters(request.filters(), filterPaths, facet);
+			var sideways = filters.size() != request.filters().size();
+			var scoped = sideways
+				? request.query().newWithAll(filters)
+				: clauses;
 
 			FacetsCollector matches;
-			if(filters.size() != request.filters().size()) {
+			var keepWhole = false;
+			if(scoped.isEmpty()) {
+				var kept = FacetStates.wholeCountsOf(reader, path, request.locale(), facet);
+				if(kept != null) {
+					counts.put(facet.name(), kept);
+					continue;
+				}
+
+				keepWhole = true;
+
+				if(everything == null) {
+					everything = searcher.search(
+						assemble(compiler, request, Lists.immutable.<Query>empty()).hits(),
+						new FacetsCollectorManager()
+					);
+				}
+
+				matches = everything;
+			} else if(sideways) {
 				matches = collectors.get(filters);
 				if(matches == null) {
 					matches = searcher.search(
-						assemble(compiler, request, request.query().newWithAll(filters)).hits(),
+						assemble(compiler, request, scoped).hits(),
 						new FacetsCollectorManager()
 					);
 					collectors.put(filters, matches);
@@ -5364,15 +5400,34 @@ public class Index {
 				: FacetMatches.parentsByValue(matches, nestedParents);
 
 			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
-				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), false)
+				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), keepWhole)
 			);
 		}
 
-		countWalks(reader, request, walks, counts);
+		countWalks(reader, path, request, walks, counts);
 
-		var total = whole != null
-			? matchCount(whole)
-			: searcher.count(assembled.hits());
+		long total;
+		if(whole != null) {
+			total = matchCount(whole);
+		} else if(!clauses.isEmpty()) {
+			/*
+			 * Every facet found its scope without the value hits of the search,
+			 * so the exact total the caller is promised is counted on its own -
+			 * counting skips the collection a facet would have needed.
+			 */
+			total = searcher.count(assembled.hits());
+		} else if(everything != null) {
+			total = matchCount(everything);
+			FacetStates.keepWholeValueTotal(reader, path, total);
+		} else {
+			var kept = FacetStates.wholeValueTotalOf(reader, path);
+			if(kept == null) {
+				total = searcher.count(assembled.hits());
+				FacetStates.keepWholeValueTotal(reader, path, total);
+			} else {
+				total = kept;
+			}
+		}
 
 		return new Faceted(counts.toImmutable(), total);
 	}
@@ -5518,6 +5573,10 @@ public class Index {
 	/**
 	 * Walk every gathered scope once and read the facets counted over it.
 	 *
+	 * @param path
+	 *   the object field path the counts are of the values of, or {@code null}
+	 *   where they are of documents - what whole-index counts are kept under,
+	 *   see {@link FacetStates}
 	 * @param walks
 	 *   the facets waiting per scope
 	 * @param counts
@@ -5525,6 +5584,7 @@ public class Index {
 	 */
 	private void countWalks(
 		IndexReader reader,
+		String path,
 		SearchRequest request,
 		MutableMap<FacetMatches, MutableList<PendingFacet>> walks,
 		MutableMap<String, SearchResult.Facet> counts
@@ -5537,7 +5597,13 @@ public class Index {
 				counts.put(pending.facet().name(), counted);
 
 				if(pending.keepWhole()) {
-					FacetStates.keepWholeCounts(reader, request.locale(), pending.facet(), counted);
+					FacetStates.keepWholeCounts(
+						reader,
+						path,
+						request.locale(),
+						pending.facet(),
+						counted
+					);
 				}
 			}
 		}

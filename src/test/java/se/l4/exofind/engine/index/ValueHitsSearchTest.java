@@ -477,6 +477,171 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testCountsWithoutAQueryFollowACommit() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.withHits("variants")
+			.addFacet(Facet.of("variants.color"))
+			.build();
+
+		// The first search is what a later one may be answered from
+		index.search(request);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "4"),
+				new Document.Value("name", "Field Boot"),
+				new Document.Value("category", "boots"),
+				new Document.Value("popularity", 20d),
+				new Document.Value("variants", variant("green", "leather", 40d))
+			)
+		);
+		index.commit();
+
+		var result = index.search(request);
+		assertThat(result.total().count(), is(6L));
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("red", 3),
+				new SearchResult.Facet.Value("black", 1),
+				new SearchResult.Facet.Value("blue", 1),
+				new SearchResult.Facet.Value("green", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testRepeatingAnUnnarrowedSearchCountsTheSame() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.withHits("variants")
+			.addFacet(Facet.of("variants.color"))
+			.build();
+
+		var expected = contains(
+			new SearchResult.Facet.Value("red", 3),
+			new SearchResult.Facet.Value("black", 1),
+			new SearchResult.Facet.Value("blue", 1)
+		);
+
+		var first = index.search(request);
+		assertThat(first.total().count(), is(5L));
+		assertThat(first.facets().get("variants.color").values(), expected);
+
+		// The second is answered from what the first counted, and says the same
+		var second = index.search(request);
+		assertThat(second.total().count(), is(5L));
+		assertThat(second.facets().get("variants.color").values(), expected);
+	}
+
+	@Test
+	public void testCountsOfOnePathAreNotAnsweredForAnother() throws IOException {
+		var index = products();
+
+		var variants = index.search(
+			SearchRequest.create()
+				.withHits("variants")
+				.addFacet(Facet.of("category"))
+				.build()
+		);
+
+		assertThat(variants.total().count(), is(5L));
+		assertThat(
+			variants.facets().get("category").values(),
+			contains(
+				new SearchResult.Facet.Value("shoes", 3),
+				new SearchResult.Facet.Value("sneakers", 2)
+			)
+		);
+
+		/*
+		 * The same facet over the same reader, counting the badges instead.
+		 * Only the Trail Runner carries any, so nothing of the variants above
+		 * describes this - which is why what is kept per reader is kept under
+		 * the path as well as the facet.
+		 */
+		var badges = index.search(
+			SearchRequest.create()
+				.withHits("badges")
+				.addFacet(Facet.of("category"))
+				.build()
+		);
+
+		assertThat(badges.total().count(), is(2L));
+		assertThat(
+			badges.facets().get("category").values(),
+			contains(new SearchResult.Facet.Value("shoes", 2))
+		);
+	}
+
+	@Test
+	public void testCountsOfValuesAreNotAnsweredForDocuments() throws IOException {
+		var index = products();
+
+		index.search(
+			SearchRequest.create()
+				.withHits("variants")
+				.addFacet(Facet.of("category"))
+				.build()
+		);
+
+		// A search answering with documents counts documents, one per product
+		var documents = index.search(
+			SearchRequest.create()
+				.addFacet(Facet.of("category"))
+				.build()
+		);
+
+		assertThat(documents.total().count(), is(3L));
+		assertThat(
+			documents.facets().get("category").values(),
+			contains(
+				new SearchResult.Facet.Value("sandals", 1),
+				new SearchResult.Facet.Value("shoes", 1),
+				new SearchResult.Facet.Value("sneakers", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testNarrowedCountsFollowAnUnnarrowedSearch() throws IOException {
+		var index = products();
+
+		var facet = Facet.of("variants.color");
+
+		index.search(
+			SearchRequest.create()
+				.withHits("variants")
+				.addFacet(facet)
+				.build()
+		);
+
+		/*
+		 * A filter the facet does not leave out narrows the counts, whatever
+		 * the unnarrowed search before it counted.
+		 */
+		var result = index.search(
+			SearchRequest.create()
+				.withFilters(Query.field("category", Matchers.equalTo("shoes")))
+				.withHits("variants")
+				.addFacet(facet)
+				.build()
+		);
+
+		assertThat(result.total().count(), is(3L));
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("red", 2),
+				new SearchResult.Facet.Value("black", 1)
+			)
+		);
+	}
+
+	@Test
 	public void testFacetOnAnotherPathIsRefused() throws IOException {
 		var index = products();
 
