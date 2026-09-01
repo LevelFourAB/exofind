@@ -89,21 +89,28 @@ public final class TestObjectStorage {
 	}
 
 	/**
+	 * Provider holding the {@link #ACCESS_KEY} and {@link #SECRET_KEY} the
+	 * storage accepts, for handing to an
+	 * {@link se.l4.exofind.engine.storage.ObjectStorage} under test.
+	 */
+	public static StaticCredentialsProvider credentialsProvider() {
+		return StaticCredentialsProvider.create(
+			AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY)
+		);
+	}
+
+	/**
 	 * Client for the storage, starting the container if none is running in
 	 * this JVM. The returned client is shared; it is safe for concurrent use
-	 * and is never closed. Built the way {@link ObjectStorageSyncProvider}
-	 * builds its client, so the tests exercise the storage the way the engine
-	 * talks to it.
+	 * and is never closed. Built the way
+	 * {@link se.l4.exofind.engine.storage.ObjectStorage} builds its client, so
+	 * the tests exercise the storage the way the engine talks to it.
 	 */
 	public static synchronized S3Client client() {
 		if(client == null) {
 			var created = S3Client.builder()
 				.endpointOverride(URI.create(url()))
-				.credentialsProvider(
-					StaticCredentialsProvider.create(
-						AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY)
-					)
-				)
+				.credentialsProvider(credentialsProvider())
 				.region(Region.US_EAST_1)
 				.forcePathStyle(true)
 				.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)

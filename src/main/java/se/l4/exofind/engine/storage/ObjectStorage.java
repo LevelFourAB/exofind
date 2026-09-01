@@ -8,8 +8,7 @@ import java.util.StringJoiner;
 import java.util.function.Consumer;
 
 import se.l4.exofind.engine.index.IndexName;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
@@ -21,6 +20,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.utils.SdkAutoCloseable;
 
 /**
  * The bucket a deployment in {@link StorageMode#OBJECT} keeps everything in,
@@ -31,7 +31,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * bucket, so a deployment is configured once and there is a single place
  * deciding where an object lands.
  */
-public class ObjectStorage {
+public class ObjectStorage implements AutoCloseable {
 	/**
 	 * Part of the path every index is stored under, so that an index can be
 	 * told apart from anything else sharing the prefix.
@@ -46,6 +46,7 @@ public class ObjectStorage {
 	private static final String PROBE_PATH = ".conditional-write-probe";
 
 	private final S3Client client;
+	private final AwsCredentialsProvider credentialsProvider;
 	private final String bucket;
 	private final Optional<String> prefix;
 
@@ -55,8 +56,9 @@ public class ObjectStorage {
 	 *
 	 * @param url
 	 *   endpoint of the S3 compatible storage
-	 * @param accessKey
-	 * @param secretKey
+	 * @param credentialsProvider
+	 *   source of the credentials requests are signed with. The storage takes
+	 *   ownership: {@link #close()} closes it along with the client
 	 * @param region
 	 *   region to sign requests for, where the storage cares
 	 * @param bucket
@@ -72,14 +74,13 @@ public class ObjectStorage {
 	 */
 	public ObjectStorage(
 		String url,
-		String accessKey,
-		String secretKey,
+		AwsCredentialsProvider credentialsProvider,
 		Optional<String> region,
 		String bucket,
 		Optional<String> prefix,
 		boolean indexer
 	) throws IOException {
-		this(url, accessKey, secretKey, region, bucket, prefix, indexer, null);
+		this(url, credentialsProvider, region, bucket, prefix, indexer, null);
 	}
 
 	/**
@@ -91,8 +92,7 @@ public class ObjectStorage {
 	 */
 	public ObjectStorage(
 		String url,
-		String accessKey,
-		String secretKey,
+		AwsCredentialsProvider credentialsProvider,
 		Optional<String> region,
 		String bucket,
 		Optional<String> prefix,
@@ -101,13 +101,10 @@ public class ObjectStorage {
 	) throws IOException {
 		this.bucket = bucket;
 		this.prefix = prefix;
+		this.credentialsProvider = credentialsProvider;
 		this.client = S3Client.builder()
 			.endpointOverride(URI.create(url))
-			.credentialsProvider(
-				StaticCredentialsProvider.create(
-					AwsBasicCredentials.create(accessKey, secretKey)
-				)
-			)
+			.credentialsProvider(credentialsProvider)
 			/*
 			 * The SDK demands a region even when the endpoint decides where
 			 * requests actually go, which is all an S3 compatible storage
@@ -159,6 +156,24 @@ public class ObjectStorage {
 	 */
 	public S3Client client() {
 		return client;
+	}
+
+	/**
+	 * Close the client and the credentials provider this storage was opened
+	 * with. Requests made through {@link #client()} after this throw
+	 * {@link IllegalStateException}.
+	 */
+	@Override
+	public void close() {
+		client.close();
+
+		/*
+		 * The client does not close a provider handed to it, and the default
+		 * chain caches sessions and may hold a refresh thread worth releasing.
+		 */
+		if(credentialsProvider instanceof SdkAutoCloseable closeable) {
+			closeable.close();
+		}
 	}
 
 	/**

@@ -36,8 +36,14 @@ import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.reindex.LocalReindexJobStorage;
 import se.l4.exofind.engine.reindex.ObjectStorageReindexJobStorage;
 import se.l4.exofind.engine.reindex.ReindexJobStorage;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.utils.SdkAutoCloseable;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
@@ -158,6 +164,12 @@ public class StorageProviders {
 	 * declared as required, so that a node storing locally does not have to
 	 * carry settings it never uses - and so a node that named the object mode
 	 * and left one out is told which one.
+	 *
+	 * <p>Credentials are resolved once here, whichever source provides them.
+	 * A chain that resolves nothing would otherwise surface on whichever
+	 * storage call happens first - on a node that does not index, that is
+	 * after startup, spread over calls whose errors do not name the setting
+	 * that caused them.
 	 */
 	@Produces
 	@Singleton
@@ -166,6 +178,8 @@ public class StorageProviders {
 		NodeState nodeState,
 		MeterRegistry meterRegistry,
 		@ConfigProperty(name = "exofind.storage.remote.url") Optional<String> url,
+		@ConfigProperty(name = "exofind.storage.remote.credentials", defaultValue = "static")
+		String credentials,
 		@ConfigProperty(name = "exofind.storage.remote.access-key") Optional<String> accessKey,
 		@ConfigProperty(name = "exofind.storage.remote.secret-key") Optional<String> secretKey,
 		@ConfigProperty(name = "exofind.storage.remote.region") Optional<String> region,
@@ -179,16 +193,42 @@ public class StorageProviders {
 			);
 		}
 
+		var credentialsProvider = remoteCredentialsProvider(credentials, accessKey, secretKey);
+
+		try {
+			credentialsProvider.resolveCredentials();
+		} catch(RuntimeException e) {
+			if(credentialsProvider instanceof SdkAutoCloseable closeable) {
+				closeable.close();
+			}
+
+			throw new IllegalStateException(
+				"EXOFIND_STORAGE_REMOTE_CREDENTIALS is '" + credentials.trim()
+					+ "' but no credentials could be resolved; " + e.getMessage(),
+				e
+			);
+		}
+
 		return new ObjectStorage(
 			required(url, "EXOFIND_STORAGE_REMOTE_URL"),
-			required(accessKey, "EXOFIND_STORAGE_REMOTE_ACCESS_KEY"),
-			required(secretKey, "EXOFIND_STORAGE_REMOTE_SECRET_KEY"),
+			credentialsProvider,
 			region,
 			required(bucket, "EXOFIND_STORAGE_REMOTE_BUCKET"),
 			prefix,
 			nodeState.isIndexerCandidate(),
 			new StorageMetricsInterceptor(meterRegistry)
 		);
+	}
+
+	/**
+	 * Close the storage produced above when the application stops.
+	 *
+	 * <p>A {@code @PreDestroy} on {@link ObjectStorage} itself never runs: the
+	 * container calls lifecycle methods only on beans it constructs, and this
+	 * one comes out of a producer.
+	 */
+	public void closeObjectStorage(@Disposes ObjectStorage storage) {
+		storage.close();
 	}
 
 	/**
@@ -397,6 +437,56 @@ public class StorageProviders {
 
 			return new NoSearchSettingsStorage();
 		}
+	}
+
+	/**
+	 * The credentials requests to the storage are signed with, from the source
+	 * {@code EXOFIND_STORAGE_REMOTE_CREDENTIALS} names.
+	 *
+	 * <p>{@code static} signs with the configured access and secret key, and
+	 * demands both. {@code default} resolves credentials through the AWS SDK
+	 * default chain - environment variables, a web identity token, container
+	 * credentials, a profile, instance metadata - and refreshes them as they
+	 * expire. The chain reads the standard AWS sources and never these
+	 * settings, so keys configured alongside it are warned about the way a
+	 * remote URL is while storing locally.
+	 */
+	static AwsCredentialsProvider remoteCredentialsProvider(
+		String credentials,
+		Optional<String> accessKey,
+		Optional<String> secretKey
+	) {
+		return switch(credentials.trim().toLowerCase(Locale.ROOT)) {
+			case "static" -> StaticCredentialsProvider.create(
+				AwsBasicCredentials.create(
+					required(accessKey, "EXOFIND_STORAGE_REMOTE_ACCESS_KEY"),
+					required(secretKey, "EXOFIND_STORAGE_REMOTE_SECRET_KEY")
+				)
+			);
+			case "default" -> {
+				if(accessKey.isPresent() || secretKey.isPresent()) {
+					logger.atWarn()
+						.log(
+							"EXOFIND_STORAGE_REMOTE_ACCESS_KEY and"
+								+ " EXOFIND_STORAGE_REMOTE_SECRET_KEY are not read while"
+								+ " EXOFIND_STORAGE_REMOTE_CREDENTIALS is 'default' - the"
+								+ " default chain resolves credentials from the standard"
+								+ " AWS sources. Set 'static' to sign with these keys"
+						);
+				}
+
+				/*
+				 * Built, never the shared create() instance: this provider is
+				 * closed with the storage that owns it, and closing a shared
+				 * instance would break every other holder.
+				 */
+				yield DefaultCredentialsProvider.builder().build();
+			}
+			default -> throw new IllegalStateException(
+				"EXOFIND_STORAGE_REMOTE_CREDENTIALS is '" + credentials
+					+ "', which is neither 'static' nor 'default'"
+			);
+		};
 	}
 
 	/**

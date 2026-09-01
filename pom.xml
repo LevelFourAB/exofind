@@ -183,6 +183,15 @@
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>url-connection-client</artifactId>
 		</dependency>
+		<!--
+			Nothing calls STS directly. The SDK default credential chain loads
+			its web identity step (EKS IRSA) from this artifact reflectively,
+			and silently skips that step when the artifact is absent.
+		-->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>sts</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
