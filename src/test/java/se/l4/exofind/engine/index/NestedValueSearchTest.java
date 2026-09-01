@@ -459,6 +459,71 @@ public class NestedValueSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testCountingValuesAgainAnswersTheSameUntilACommit() throws IOException {
+		var index = products();
+
+		var unfiltered = SearchRequest.create()
+			.addFacet(Facet.of("variants.color"))
+			.build();
+
+		/*
+		 * Nothing narrows the first search, so its counts are kept for the
+		 * reader and the searches after it answer from what was kept - the
+		 * repeat outright, and the sideways search because leaving out the
+		 * filter on the facet's own field puts it in the same whole-index
+		 * scope.
+		 */
+		var first = index.search(unfiltered);
+		var again = index.search(unfiltered);
+
+		assertThat(
+			again.facets().get("variants.color").values(),
+			is(first.facets().get("variants.color").values())
+		);
+		assertThat(again.total().count(), is(first.total().count()));
+
+		var sideways = index.search(
+			SearchRequest.create()
+				.addFilter(
+					Query.nested(
+						"variants",
+						Query.field("variants.color", Matchers.equalTo("red"))
+					)
+				)
+				.addFacet(Facet.of("variants.color"))
+				.build()
+		);
+
+		assertThat(
+			sideways.facets().get("variants.color").values(),
+			is(first.facets().get("variants.color").values())
+		);
+
+		// A commit replaces the reader, and the counts follow the index
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "5"),
+				new Document.Value("name", "River Wader"),
+				new Document.Value("category", "boots"),
+				new Document.Value("variants", variant("green", "rubber", 55d))
+			)
+		);
+		index.commit();
+
+		var after = index.search(unfiltered);
+		assertThat(
+			after.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("red", 3),
+				new SearchResult.Facet.Value("black", 1),
+				new SearchResult.Facet.Value("blue", 1),
+				new SearchResult.Facet.Value("green", 1)
+			)
+		);
+		assertThat(after.total().count(), is(5L));
+	}
+
+	@Test
 	public void testCountingValuesReadsEveryValueOfOne() throws IOException {
 		var index = products();
 

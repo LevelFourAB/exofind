@@ -5176,17 +5176,28 @@ public class Index {
 			var sideways = filters.size() != request.filters().size();
 
 			var nested = schema.getNestedField(facet.field());
+			var scoped = sideways
+				? request.query().newWithAll(filters)
+				: clauses;
 
 			FacetMatches scope;
+			var keepWhole = false;
 			if(nested.isPresent()) {
 				var path = nested.get().path();
+
+				if(scoped.isEmpty()) {
+					var kept = FacetStates.wholeCountsOf(reader, request.locale(), facet);
+					if(kept != null) {
+						counts.put(facet.name(), kept);
+						continue;
+					}
+
+					keepWhole = true;
+				}
 
 				var key = Tuples.pair(path, filters);
 				scope = values.get(key);
 				if(scope == null) {
-					var scoped = sideways
-						? request.query().newWithAll(filters)
-						: clauses;
 					var scopedDocuments = sideways
 						? assemble(compiler, request, scoped).documents()
 						: documents;
@@ -5201,10 +5212,6 @@ public class Index {
 					values.put(key, scope);
 				}
 			} else {
-				var scoped = sideways
-					? request.query().newWithAll(filters)
-					: clauses;
-
 				if(scoped.isEmpty()) {
 					var kept = FacetStates.wholeCountsOf(reader, request.locale(), facet);
 					if(kept == null) {
@@ -5244,7 +5251,7 @@ public class Index {
 			}
 
 			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
-				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), false)
+				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), keepWhole)
 			);
 		}
 
