@@ -56,6 +56,7 @@ mise.local.toml
 # examples/*/prepare.py
 /examples/*/LivsmedelsDB.xlsx
 /examples/airports/*.csv
+/examples/discogs/.cache/
 
 # Website (Astro)
 /website/node_modules/

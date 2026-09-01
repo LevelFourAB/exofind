@@ -1,0 +1,133 @@
+{
+  "fields": {
+    "id": {
+      "type": "string",
+      "primaryKey": true,
+      "required": true
+    },
+    "title": {
+      "type": "string",
+      "matching": {
+        "weight": 3,
+        "highlight": {},
+        "typoTolerance": {},
+        "exact": {}
+      }
+    },
+    "artist": {
+      "type": "string",
+      "multiple": true,
+      "filter": {},
+      "facet": {},
+      "matching": {
+        "weight": 3,
+        "highlight": {},
+        "typoTolerance": {}
+      }
+    },
+    "artistLine": { "type": "string" },
+    "mainFormat": { "type": "string" },
+    "genre": {
+      "type": "string",
+      "multiple": true,
+      "filter": {},
+      "facet": {},
+      "matching": { "weight": 1 }
+    },
+    "style": {
+      "type": "string",
+      "multiple": true,
+      "filter": {},
+      "facet": {},
+      "matching": { "weight": 1 }
+    },
+    "year": {
+      "type": "int32",
+      "filter": {},
+      "facet": {},
+      "sort": {}
+    },
+    "pressings": {
+      "type": "int32",
+      "filter": {},
+      "sort": {}
+    },
+    "url": { "type": "string" },
+    "variants": {
+      "type": "object",
+      "multiple": true,
+      "mode": "nested",
+      "key": "sku",
+      "fields": {
+        "sku": {
+          "type": "string",
+          "filter": {},
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "matching": {
+            "weight": 2,
+            "highlight": {}
+          }
+        },
+        "format": {
+          "type": "string",
+          "filter": {},
+          "facet": {},
+          "required": true
+        },
+        "spec": {
+          "type": "string",
+          "multiple": true,
+          "filter": {},
+          "facet": {}
+        },
+        "country": {
+          "type": "string",
+          "filter": {},
+          "facet": {}
+        },
+        "year": {
+          "type": "int32",
+          "filter": {},
+          "facet": {},
+          "sort": {}
+        },
+        "label": {
+          "type": "string",
+          "filter": {},
+          "facet": {},
+          "matching": { "weight": 1 }
+        },
+        "catno": {
+          "type": "string",
+          "filter": {},
+          "matching": {
+            "weight": 1,
+            "highlight": {}
+          }
+        },
+        "price": {
+          "type": "double",
+          "filter": {},
+          "facet": {},
+          "sort": {}
+        },
+        "inStock": {
+          "type": "boolean",
+          "filter": {},
+          "facet": {}
+        }
+      }
+    }
+  },
+  "ranking": {
+    "signals": [
+      { "field": "pressings", "saturation": { "pivot": 8 }, "weight": 0.5 }
+    ],
+    "tieBreakers": [
+      { "field": "pressings", "direction": "descending" }
+    ]
+  }
+}

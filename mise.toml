@@ -94,6 +94,10 @@ run = "examples/airports/load.sh"
 description = "Load the Cleveland Museum example into a running node"
 run = "examples/cleveland/load.sh"
 
+[tasks."example:discogs"]
+description = "Load the record shop example into a running node"
+run = "examples/discogs/load.sh"
+
 [tasks.site]
 description = "Serve the documentation and the demo pages, against a node on localhost:8080"
 dir = "website"

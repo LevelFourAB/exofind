@@ -139,6 +139,7 @@ To run them against a running node:
 mise run example:livsmedel     # loads 2 606 Swedish foods and commits
 mise run example:airports      # 8 799 airports, completed as you type
 mise run example:cleveland     # 30 000 museum objects, on a wall of thumbnails
+mise run example:discogs       # 50 000 records and every pressing of them
 mise run site                  # serves the pages against that node
 ```
 

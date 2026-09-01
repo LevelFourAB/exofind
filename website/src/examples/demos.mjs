@@ -58,6 +58,20 @@ export const DEMOS = [
 			'numbered pages and cursors',
 			'highlighting'
 		]
+	},
+	{
+		name: 'discogs',
+		title: 'Record shop',
+		summary: '50 000 records and every pressing of them. Ask for a '
+			+ '<strong>UK vinyl under €25</strong> and one pressing has to be '
+			+ 'all three, not three pressings between them.',
+		shows: [
+			'sub-documents',
+			'conditions that hold within one value',
+			'matched values',
+			'a value as a hit of its own',
+			'facets and ordering inside a value'
+		]
 	}
 ];
 

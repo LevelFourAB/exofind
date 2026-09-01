@@ -20,7 +20,7 @@ Before you begin, ensure you have:
 
    {
      "description": "the demo pages",
-     "grants": [{ "permissions": ["search"], "indexes": ["livsmedel", "airports", "cleveland"] }]
+     "grants": [{ "permissions": ["search"], "indexes": ["livsmedel", "airports", "cleveland", "discogs"] }]
    }
    ```
 

@@ -1,0 +1,126 @@
+---
+import Example from '../../layouts/Example.astro';
+import Filters from '../../examples/shared/Filters.astro';
+
+/*
+ * The look every demo shares, then what this one adds to it. Both are asked
+ * for here, in that order, because that is the order they have to be applied
+ * in and the only place the two are named together - the bundler is free to
+ * inline one stylesheet and link the other, and then what wins is the order
+ * they were imported in rather than which one is more specific.
+ */
+import '../../examples/shared/exofind.css';
+import '../../examples/discogs/main.css';
+---
+
+<Example
+	title="Record shop"
+	description="A record shop over the Discogs catalogue, searched with Exofind. A record is a product and a pressing is a variant of it, so a filter can ask that one pressing answer everything at once."
+	index="discogs"
+>
+	<section class="ask">
+		<p class="eyebrow">Discogs · records and their pressings</p>
+		<div class="ask__field">
+			<input class="ask__input" type="search" id="query"
+				placeholder="blue note" autocomplete="off" spellcheck="false" autofocus
+				aria-label="Search the catalogue">
+		</div>
+		<div class="ask__row">
+			<ul class="suggestions" id="suggestions">
+				<li><button type="button">blue note</button></li>
+				<li><button type="button">kraftwerk</button></li>
+				<li><button type="button">dark side</button></li>
+				<li><button type="button">gatefold</button></li>
+				<li><button type="button">motown</button></li>
+				<li><button type="button">SHVL 804</button></li>
+			</ul>
+			<p class="status" id="status" role="status"></p>
+		</div>
+		<p class="lede">
+			A record is one product and each pressing of it is one variant. Ask for
+			a UK vinyl under €25 and the <strong>Match</strong> control decides
+			whether one pressing has to be all three, or whether three different
+			pressings between them will do.
+		</p>
+	</section>
+
+	<div class="split">
+		<Filters>
+			<div class="filters__group">
+				<h2 class="eyebrow">Genre</h2>
+				<div id="genres"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Style</h2>
+				<div id="styles"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Format</h2>
+				<div id="formats"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Pressed as</h2>
+				<div id="specs"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Pressed in</h2>
+				<div id="countries"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Pressed</h2>
+				<div id="pressed"></div>
+			</div>
+			<div class="filters__group">
+				<h2 class="eyebrow">Price</h2>
+				<div id="price"></div>
+			</div>
+			<div class="filters__group">
+				<div id="in-stock"></div>
+			</div>
+			<button class="clear" type="button" id="clear" hidden>Clear filters</button>
+		</Filters>
+
+		<section class="results">
+			<div class="controls">
+				<div class="control" role="group" aria-label="Match">
+					<h2 class="eyebrow">Match</h2>
+					<button class="pick" type="button" id="match-one" aria-pressed="true">one pressing</button>
+					<button class="pick" type="button" id="match-any" aria-pressed="false">any pressing</button>
+				</div>
+				<div class="control" role="group" aria-label="Rows">
+					<h2 class="eyebrow">Rows</h2>
+					<button class="pick" type="button" id="rows-records" aria-pressed="true">records</button>
+					<button class="pick" type="button" id="rows-pressings" aria-pressed="false">pressings</button>
+				</div>
+				<div class="control" role="group" aria-label="Order">
+					<h2 class="eyebrow">Order</h2>
+					<button class="pick" type="button" id="sort-best" aria-pressed="true">best match</button>
+					<button class="pick" type="button" id="sort-cheap" aria-pressed="false">cheapest</button>
+					<button class="pick" type="button" id="sort-dear" aria-pressed="false">dearest</button>
+					<button class="pick" type="button" id="sort-old" aria-pressed="false">oldest</button>
+				</div>
+			</div>
+
+			<ul class="shelf" id="hits"></ul>
+
+			<nav class="pager" id="pager" aria-label="Pages"></nav>
+
+			<p class="made-up">
+				The prices and the stock are invented, worked out from the release
+				id. Everything else is as Discogs publishes it.
+			</p>
+		</section>
+	</div>
+
+	<p slot="footer">
+		Sleeves are drawn from the title and the artist; no images are copied or
+		linked, and each one links to the record on Discogs. Catalogue data from the
+		<a href="https://data.discogs.com/">Discogs monthly data dump</a>, released
+		under <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>.
+		Prices and stock are invented for the demo.
+	</p>
+</Example>
+
+<script>
+	import '../../examples/discogs/main.js';
+</script>
