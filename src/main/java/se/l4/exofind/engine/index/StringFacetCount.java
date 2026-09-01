@@ -10,6 +10,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.index.SortedDocValues;
 import org.apache.lucene.index.SortedSetDocValues;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.LongValues;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.primitive.LongIntMaps;
@@ -130,7 +131,17 @@ final class StringFacetCount implements FacetCount {
 			: new ArraySegCounts(globals, (int) values.getValueCount());
 
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(values, counts);
+			case DOCUMENTS, VALUES -> {
+				/*
+				 * A field holding one value per document reads through the
+				 * sorted doc values directly - the set wrapper answers the
+				 * same thing through two more calls per document.
+				 */
+				var singleton = DocValues.unwrapSingleton(values);
+				yield singleton != null
+					? new EachMatchOfOne(singleton, counts)
+					: new EachMatch(values, counts);
+			}
 			case ROLLED_UP -> new RolledUp(values, counts);
 			case PARENTS_BY_VALUE -> new ByDocument(values, counts);
 		};
@@ -336,34 +347,75 @@ final class StringFacetCount implements FacetCount {
 
 	/**
 	 * Each match counts its own values, one count per value it holds.
+	 *
+	 * The counting leaves override {@link Leaf#countAll} with the loop the
+	 * default already runs so that the calls inside it are made from this
+	 * class alone, which is what lets the JIT inline them - the shared
+	 * default makes them from every leaf that never overrode it.
 	 */
 	private static final class EachMatch implements Leaf {
 		private final SortedSetDocValues values;
 		private final SegCounts counts;
 
-		/*
-		 * A field holding one value per document reads through the sorted
-		 * doc values directly - the set wrapper answers the same thing
-		 * through two more calls per document.
-		 */
-		private final SortedDocValues singleton;
-
 		EachMatch(SortedSetDocValues values, SegCounts counts) {
 			this.values = values;
 			this.counts = counts;
-			this.singleton = DocValues.unwrapSingleton(values);
 		}
 
 		@Override
 		public void count(int doc) throws IOException {
-			if(singleton != null) {
-				if(singleton.advanceExact(doc)) {
-					counts.add(singleton.ordValue());
-				}
-			} else if(values.advanceExact(doc)) {
-				for(var i = 0; i < values.docValueCount(); i++) {
+			if(values.advanceExact(doc)) {
+				var valueCount = values.docValueCount();
+				for(var i = 0; i < valueCount; i++) {
 					counts.add(values.nextOrd());
 				}
+			}
+		}
+
+		@Override
+		public void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
+			}
+		}
+
+		@Override
+		public void finish() {
+			counts.finish();
+		}
+	}
+
+	/**
+	 * {@link EachMatch} for a field holding at most one value per match.
+	 */
+	private static final class EachMatchOfOne implements Leaf {
+		private final SortedDocValues values;
+		private final SegCounts counts;
+
+		EachMatchOfOne(SortedDocValues values, SegCounts counts) {
+			this.values = values;
+			this.counts = counts;
+		}
+
+		@Override
+		public void count(int doc) throws IOException {
+			if(values.advanceExact(doc)) {
+				counts.add(values.ordValue());
+			}
+		}
+
+		@Override
+		public void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
 			}
 		}
 
@@ -399,7 +451,8 @@ final class StringFacetCount implements FacetCount {
 				return;
 			}
 
-			for(var i = 0; i < values.docValueCount(); i++) {
+			var valueCount = values.docValueCount();
+			for(var i = 0; i < valueCount; i++) {
 				/*
 				 * Ordinals are per segment and a document's values never
 				 * cross one, so the same term is the same ordinal for as

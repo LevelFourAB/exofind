@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index;
 import java.io.IOException;
 
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.search.DocIdSetIterator;
 
 import se.l4.exofind.engine.query.SearchResult;
 
@@ -83,6 +84,30 @@ public interface FacetCount {
 		 * @throws IOException
 		 */
 		void count(int doc) throws IOException;
+
+		/**
+		 * Count every match of the segment, the same as feeding each one
+		 * through {@link #count(int)}. The walk uses this where no document
+		 * needs resolving above the matches, handing each leaf an iterator of
+		 * its own: a loop the leaf runs itself stays a call the JIT can
+		 * predict, where one walk feeding every kind of leaf a search holds
+		 * cannot be. A leaf hot enough to matter overrides this with the same
+		 * loop, which moves the prediction from the shared default to its own
+		 * class.
+		 *
+		 * @param docs
+		 *   the matches of the segment, in document order
+		 * @throws IOException
+		 */
+		default void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
+			}
+		}
 
 		/**
 		 * The segment is done. Fold what was counted into the whole.

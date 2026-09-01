@@ -10,10 +10,12 @@ import org.eclipse.collections.api.list.ListIterable;
  * Walks the matches of one scope once and feeds every facet counting that
  * scope.
  *
- * The walk owns what every facet of a scope shares: iterating the collected
- * matches of each segment, and - where the matches are values of an object
- * field - resolving the document above each one. What differs per facet, the
- * doc values it reads and what a count means, lives in each
+ * The walk owns what every facet of a scope shares: the collected matches of
+ * each segment, and - where the matches are values of an object field -
+ * resolving the document above each one. Only that resolution forces one
+ * iteration to feed every facet; without it each leaf drains an iterator of
+ * its own, through {@link FacetCount.Leaf#countAll}. What differs per facet,
+ * the doc values it reads and what a count means, lives in each
  * {@link FacetCount.Leaf}.
  *
  * The values of one document sit together and end just before it, so the
@@ -76,14 +78,16 @@ final class FacetWalk {
 			}
 
 			if(parents == null) {
-				for(
-					var doc = iterator.nextDoc();
-					doc != DocIdSetIterator.NO_MORE_DOCS;
-					doc = iterator.nextDoc()
-				) {
-					for(var i = 0; i < count; i++) {
-						leaves[i].count(doc);
-					}
+				/*
+				 * No document to resolve above a match, so the leaves share
+				 * nothing: each drains an iterator of its own, and the bitset
+				 * hands out iterators for the asking. One walk feeding every
+				 * leaf per match would make each count a call the JIT cannot
+				 * predict once a search counts a few kinds of facet.
+				 */
+				leaves[0].countAll(iterator);
+				for(var i = 1; i < count; i++) {
+					leaves[i].countAll(docs.bits().iterator());
 				}
 			} else {
 				var document = -1;
