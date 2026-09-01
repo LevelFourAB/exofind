@@ -1,14 +1,12 @@
 package se.l4.exofind.engine.index;
 
-import java.io.IOException;
 import java.util.function.UnaryOperator;
 
 import se.l4.exofind.engine.query.Facet;
-import se.l4.exofind.engine.query.SearchResult;
 
 /**
- * Counts the documents a search matched per level of one field whose values
- * are paths through a tree, reading the levels the field wrote under
+ * Counts the matches of a search per level of one field whose values are
+ * paths through a tree, reading the levels the field wrote under
  * {@link FieldNames#HIERARCHY}.
  *
  * A counter is created by the type of the field through
@@ -16,15 +14,15 @@ import se.l4.exofind.engine.query.SearchResult;
  * which is what knows how the levels of a path are told apart and how one is
  * compared - a type only says which field to read, what separates its levels
  * and how a level is normalized before two of them are called the same. The
- * counting itself is {@link HierarchyFacets}, which is also what rolls values
- * of an object field up into the documents holding them.
+ * counting itself is {@link HierarchyFacetCount}, fed by the shared walk of
+ * the facet's scope - see {@link FacetWalk}.
  */
 public interface HierarchyFacetCounter {
 	/**
-	 * Count the given matches per level of the tree.
+	 * Prepare to count one scope, per level of the tree.
 	 *
-	 * @param matches
-	 *   what to count, collected over the scope of the facet
+	 * @param mode
+	 *   what the matches of the scope are and what the counts should be of
 	 * @param path
 	 *   the level to count the children of, or {@code null} to count from the
 	 *   top
@@ -35,16 +33,16 @@ public interface HierarchyFacetCounter {
 	 * @param order
 	 *   the order the levels of one parent come back in
 	 * @return
-	 *   the counts, nested as the tree is, never {@code null}
-	 * @throws IOException
+	 *   the count to feed through {@link FacetWalk}, never {@code null} - its
+	 *   result answers the counts nested as the tree is
 	 */
-	SearchResult.Facet count(
-		FacetMatches matches,
+	FacetCount prepare(
+		FacetMatches.Mode mode,
 		String path,
 		int depth,
 		int limit,
 		Facet.Order order
-	) throws IOException;
+	);
 
 	/**
 	 * Count a field whose levels were written as sorted set doc values.
@@ -63,7 +61,7 @@ public interface HierarchyFacetCounter {
 		String separator,
 		UnaryOperator<String> normalize
 	) {
-		return (matches, path, depth, limit, order) ->
-			HierarchyFacets.count(matches, field, separator, normalize, path, depth, limit, order);
+		return (mode, path, depth, limit, order) ->
+			new HierarchyFacetCount(field, mode, separator, normalize, path, depth, limit, order);
 	}
 }

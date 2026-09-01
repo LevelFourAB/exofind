@@ -5,11 +5,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.UnaryOperator;
 
-import org.apache.lucene.facet.StringDocValuesReaderState;
-import org.apache.lucene.index.DocValuesType;
+import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.OrdinalMap;
 import org.apache.lucene.index.SortedSetDocValues;
+import org.apache.lucene.util.packed.PackedInts;
 
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.SearchResult;
@@ -47,7 +48,11 @@ final class FacetStates {
 	 */
 	private static final int WHOLE_LIMIT = 256;
 
-	private static final Map<IndexReader.CacheKey, Map<String, StringDocValuesReaderState>> states =
+	/**
+	 * The ordinals of one field's segments lined up against one another, per
+	 * reader and field - see {@link #stringOrdsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, StringOrds>> ords =
 		new ConcurrentHashMap<>();
 
 	/**
@@ -80,69 +85,85 @@ final class FacetStates {
 	}
 
 	/**
-	 * Get whether any segment of the reader holds doc values for the given
-	 * field, which is what counting reads.
-	 *
-	 * A field no document ever held a value in has none, which is no counts
-	 * rather than a problem - that the field can be faceted at all is checked
-	 * before a counter is asked for.
-	 *
-	 * @param reader
-	 * @param field
-	 * @return
-	 */
-	static boolean hasValues(IndexReader reader, String field) {
-		for(var leaf : reader.leaves()) {
-			var info = leaf.reader().getFieldInfos().fieldInfo(field);
-			if(info != null && info.getDocValuesType() != DocValuesType.NONE) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Get the state for counting the given field of the given reader, building
-	 * it the first time it is asked for.
+	 * Get the segment ordinals of the given field lined up against one
+	 * another, building them the first time the reader is asked for.
 	 *
 	 * A reader that cannot say when it closes is not kept, as an entry for it
-	 * could never be dropped; it is built and handed back the way it was before
-	 * there was a cache here.
+	 * could never be dropped; its ordinals are lined up and handed back
+	 * without being remembered.
 	 *
 	 * @param reader
 	 * @param field
 	 * @return
 	 * @throws IOException
 	 */
-	static StringDocValuesReaderState of(IndexReader reader, String field)
+	static StringOrds stringOrdsOf(IndexReader reader, String field)
 		throws IOException
 	{
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
-			return new StringDocValuesReaderState(reader, field);
+			return StringOrds.build(reader, field);
 		}
 
 		var key = helper.getKey();
-		var fields = states.get(key);
+		var fields = ords.get(key);
 		if(fields == null) {
-			fields = states.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+			fields = ords.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
 
 			/*
 			 * Registered against the key rather than against the map, so a
 			 * reader that closed while this was being built drops what was put
 			 * under it instead of leaving it behind.
 			 */
-			helper.addClosedListener(states::remove);
+			helper.addClosedListener(ords::remove);
 		}
 
-		var state = fields.get(field);
-		if(state == null) {
-			state = new StringDocValuesReaderState(reader, field);
-			fields.put(field, state);
+		var built = fields.get(field);
+		if(built == null) {
+			built = StringOrds.build(reader, field);
+			fields.put(field, built);
 		}
 
-		return state;
+		return built;
+	}
+
+	/**
+	 * The distinct values of one field across the segments of a reader, and
+	 * how a segment's ordinal maps onto them.
+	 *
+	 * @param map
+	 *   the segment ordinals lined up against one another, or {@code null}
+	 *   where the reader has at most one segment and its ordinals already
+	 *   stand for the whole field
+	 * @param cardinality
+	 *   how many distinct values the field holds across the reader
+	 */
+	record StringOrds(OrdinalMap map, long cardinality) {
+		static StringOrds build(IndexReader reader, String field) throws IOException {
+			var leaves = reader.leaves();
+			if(leaves.isEmpty()) {
+				return new StringOrds(null, 0);
+			}
+
+			if(leaves.size() == 1) {
+				var values = leaves.get(0).reader().getSortedSetDocValues(field);
+				return new StringOrds(null, values == null ? 0 : values.getValueCount());
+			}
+
+			var values = new SortedSetDocValues[leaves.size()];
+			for(var i = 0; i < values.length; i++) {
+				values[i] = DocValues.getSortedSet(leaves.get(i).reader(), field);
+			}
+
+			var helper = reader.getReaderCacheHelper();
+			var map = OrdinalMap.build(
+				helper == null ? null : helper.getKey(),
+				values,
+				PackedInts.DEFAULT
+			);
+
+			return new StringOrds(map, map.getValueCount());
+		}
 	}
 
 	/**

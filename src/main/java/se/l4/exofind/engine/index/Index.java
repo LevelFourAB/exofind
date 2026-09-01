@@ -5098,7 +5098,9 @@ public class Index {
 	 * every other filter narrow the counts the way they narrow the hits.
 	 * Facets that exclude no filter of the search all share the scope of the
 	 * search itself, so the matches are collected once per distinct scope
-	 * rather than once per facet.
+	 * rather than once per facet. The facets of one scope are also counted in
+	 * one walk of those matches - see {@link FacetWalk} - so another facet
+	 * adds the doc values it reads, not another iteration.
 	 *
 	 * A facet over a field inside an object counts the values of that object
 	 * instead - the ones the search matched, which is what its {@code nested}
@@ -5167,6 +5169,7 @@ public class Index {
 		var collectors = Maps.mutable.<ImmutableList<Query>, FacetMatches>empty();
 		var values = Maps.mutable.<Pair<String, ImmutableList<Query>>, FacetMatches>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
+		var walks = Maps.mutable.<FacetMatches, MutableList<PendingFacet>>empty();
 
 		for(var facet : request.facets()) {
 			var filters = keptFilters(request.filters(), filterPaths, facet);
@@ -5209,11 +5212,14 @@ public class Index {
 							everything = collectEverything(searcher, compiler);
 						}
 
-						kept = countFacet(reader, compiler, facet, FacetMatches.of(everything));
-						FacetStates.keepWholeCounts(reader, request.locale(), facet, kept);
+						var wholeScope = FacetMatches.of(everything);
+						walks.getIfAbsentPut(wholeScope, Lists.mutable::empty).add(
+							new PendingFacet(facet, prepareFacet(compiler, facet, wholeScope.mode()), true)
+						);
+					} else {
+						counts.put(facet.name(), kept);
 					}
 
-					counts.put(facet.name(), kept);
 					continue;
 				}
 
@@ -5237,8 +5243,12 @@ public class Index {
 				}
 			}
 
-			counts.put(facet.name(), countFacet(reader, compiler, facet, scope));
+			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
+				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), false)
+			);
 		}
+
+		countWalks(reader, request, walks, counts);
 
 		long total;
 		if(whole != null) {
@@ -5310,6 +5320,7 @@ public class Index {
 
 		var collectors = Maps.mutable.<ImmutableList<Query>, FacetsCollector>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
+		var walks = Maps.mutable.<FacetMatches, MutableList<PendingFacet>>empty();
 
 		for(var facet : request.facets()) {
 			var nested = schema.getNestedField(facet.field());
@@ -5345,8 +5356,12 @@ public class Index {
 				? FacetMatches.values(matches)
 				: FacetMatches.parentsByValue(matches, nestedParents);
 
-			counts.put(facet.name(), countFacet(reader, compiler, facet, scope));
+			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
+				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), false)
+			);
 		}
+
+		countWalks(reader, request, walks, counts);
 
 		var total = whole != null
 			? matchCount(whole)
@@ -5459,21 +5474,20 @@ public class Index {
 	}
 
 	/**
-	 * Count one facet of a search over the given scope.
+	 * Prepare one facet of a search for the walk of its scope.
 	 *
 	 * @throws IndexFieldUsageException
 	 *   if the facet asks for a level of a tree from a field whose values are
 	 *   not paths
 	 */
-	private SearchResult.Facet countFacet(
-		IndexReader reader,
+	private FacetCount prepareFacet(
 		QueryCompiler compiler,
 		Facet facet,
-		FacetMatches scope
-	) throws IOException {
+		FacetMatches.Mode mode
+	) {
 		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
 			return compiler.hierarchyFacetCounter(facet.field())
-				.count(scope, facet.path(), facet.depth(), facet.limit(), facet.order());
+				.prepare(mode, facet.path(), facet.depth(), facet.limit(), facet.order());
 		}
 
 		if(facet.ranges().isEmpty()) {
@@ -5487,11 +5501,51 @@ public class Index {
 			}
 
 			return compiler.facetCounter(facet.field())
-				.count(reader, scope, facet.limit(), facet.order());
+				.prepare(mode, facet.limit(), facet.order());
 		}
 
 		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
-			.count(reader, scope);
+			.prepare(mode);
+	}
+
+	/**
+	 * Walk every gathered scope once and read the facets counted over it.
+	 *
+	 * @param walks
+	 *   the facets waiting per scope
+	 * @param counts
+	 *   where each facet's result goes, by facet name
+	 */
+	private void countWalks(
+		IndexReader reader,
+		SearchRequest request,
+		MutableMap<FacetMatches, MutableList<PendingFacet>> walks,
+		MutableMap<String, SearchResult.Facet> counts
+	) throws IOException {
+		for(var walk : walks.keyValuesView()) {
+			FacetWalk.walk(walk.getOne(), walk.getTwo().collect(PendingFacet::count));
+
+			for(var pending : walk.getTwo()) {
+				var counted = pending.count().result();
+				counts.put(pending.facet().name(), counted);
+
+				if(pending.keepWhole()) {
+					FacetStates.keepWholeCounts(reader, request.locale(), pending.facet(), counted);
+				}
+			}
+		}
+	}
+
+	/**
+	 * One facet waiting for the walk of its scope.
+	 *
+	 * @param count
+	 *   the counting, ready to be fed by the walk
+	 * @param keepWhole
+	 *   whether the result is kept per reader as whole-index counts - see
+	 *   {@link FacetStates}
+	 */
+	private record PendingFacet(Facet facet, FacetCount count, boolean keepWhole) {
 	}
 
 	/**

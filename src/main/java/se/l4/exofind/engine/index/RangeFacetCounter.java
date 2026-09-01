@@ -1,22 +1,17 @@
 package se.l4.exofind.engine.index;
 
-import java.io.IOException;
 import java.util.function.ToLongFunction;
 
 import org.apache.lucene.facet.range.LongRange;
-import org.apache.lucene.facet.range.LongRangeFacetCounts;
-import org.apache.lucene.index.IndexReader;
-import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.query.Facet;
-import se.l4.exofind.engine.query.SearchResult;
 
 /**
- * Counts the documents a search matched into the buckets of one facet,
- * reading the doc values the field was written under {@link FieldNames#VALUES}
- * - the same values {@link FacetCounter} counts per value.
+ * Counts the matches of a search into the buckets of one facet, reading the
+ * doc values the field was written under {@link FieldNames#VALUES} - the same
+ * values {@link FacetCounter} counts per value.
  *
  * A counter is created by the type of the field through
  * {@link se.l4.exofind.engine.index.types.FieldType#createRangeFacetCounter},
@@ -24,6 +19,9 @@ import se.l4.exofind.engine.query.SearchResult;
  * instant, a number bound a number of the field's width. The factory here
  * holds the counting itself, so a type only says which field to read and how a
  * bound maps onto the values as they were written.
+ *
+ * A counter answers a {@link FacetCount}, fed by the shared walk of the
+ * facet's scope - see {@link FacetWalk}.
  */
 public interface RangeFacetCounter {
 	ErrorType EMPTY_RANGE = ErrorType
@@ -31,18 +29,14 @@ public interface RangeFacetCounter {
 		.withMessage("A bucket holds the values from `from` up to but not including `to`, so `to` has to be above `from`");
 
 	/**
-	 * Count the given matches into the buckets.
+	 * Prepare to count one scope.
 	 *
-	 * @param reader
-	 *   the reader of the index being searched
-	 * @param matches
-	 *   what to count, collected over the scope of the facet
+	 * @param mode
+	 *   what the matches of the scope are and what the counts should be of
 	 * @return
-	 *   one count per bucket, in the order the buckets were asked for, never
-	 *   {@code null}
-	 * @throws IOException
+	 *   the count to feed through {@link FacetWalk}, never {@code null}
 	 */
-	SearchResult.Facet count(IndexReader reader, FacetMatches matches) throws IOException;
+	FacetCount prepare(FacetMatches.Mode mode);
 
 	/**
 	 * Count a field written as sorted numeric doc values, mapping each bound
@@ -87,32 +81,6 @@ public interface RangeFacetCounter {
 			i++;
 		}
 
-		return (reader, matches) -> {
-			switch(matches.mode()) {
-				case ROLLED_UP -> {
-					return NestedFacets.countRanges(matches, field, ranges, longRanges);
-				}
-				case PARENTS_BY_VALUE -> {
-					return NestedFacets.countParentRanges(matches, field, ranges, longRanges);
-				}
-				default -> {
-				}
-			}
-
-			var counts = new LongRangeFacetCounts(field, matches.hits(), longRanges);
-			var result = counts.getAllChildren(field);
-
-			var buckets = Lists.mutable.<SearchResult.Facet.Bucket>empty();
-			var position = 0;
-			for(var range : ranges) {
-				buckets.add(new SearchResult.Facet.Bucket(
-					range.from(),
-					range.to(),
-					result.labelValues[position++].value.longValue()
-				));
-			}
-
-			return SearchResult.Facet.ofBuckets(buckets.toImmutable());
-		};
+		return mode -> new RangeFacetCount(field, mode, ranges, longRanges);
 	}
 }

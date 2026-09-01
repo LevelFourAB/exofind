@@ -70,16 +70,6 @@ public record FacetMatches(
 	}
 
 	/**
-	 * Get if the matches are values that have to be rolled up into the
-	 * documents holding them.
-	 *
-	 * @return
-	 */
-	public boolean isNested() {
-		return mode == Mode.ROLLED_UP;
-	}
-
-	/**
 	 * Matches that are documents of the index, counted as they come.
 	 *
 	 * @param hits
