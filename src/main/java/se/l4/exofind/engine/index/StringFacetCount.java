@@ -4,12 +4,9 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.function.Function;
 
-import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
-import org.apache.lucene.index.SortedDocValues;
-import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.LongValues;
 import org.eclipse.collections.api.factory.Lists;
@@ -34,11 +31,12 @@ import se.l4.exofind.engine.query.SearchResult;
  * Matches counted into the document above each one answer values - a brand
  * facet over value hits answers how many matching variants each brand has -
  * and the document's values are read once and reused for the rest of its
- * matches, which also keeps the forward-only doc values moving forward.
+ * matches.
  *
  * Counted by ordinal from start to finish: a segment counts into its own
- * ordinal space, folds into the whole through the reader's ordinal map - a
- * packed lookup {@link FacetStates} keeps for as long as the reader is open -
+ * ordinal space, read off the flat column {@link FacetStates} keeps of it -
+ * see {@link FacetColumns} - folds into the whole through the reader's
+ * ordinal map - a packed lookup kept for as long as the reader is open -
  * and only the values the facet answers with are ever read back as terms.
  * Reading a term walks the dictionary and makes a string, so paying it per
  * answered value rather than per counted one is most of what counting a
@@ -130,20 +128,13 @@ final class StringFacetCount implements FacetCount {
 			? new DirectSegCounts(globals)
 			: new ArraySegCounts(globals, (int) values.getValueCount());
 
+		var column = FacetStates.ordsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> {
-				/*
-				 * A field holding one value per document reads through the
-				 * sorted doc values directly - the set wrapper answers the
-				 * same thing through two more calls per document.
-				 */
-				var singleton = DocValues.unwrapSingleton(values);
-				yield singleton != null
-					? new EachMatchOfOne(singleton, counts)
-					: new EachMatch(values, counts);
-			}
-			case ROLLED_UP -> new RolledUp(values, counts);
-			case PARENTS_BY_VALUE -> new ByDocument(values, counts);
+			case DOCUMENTS, VALUES -> column instanceof FacetColumns.Ords.Single single
+				? new EachMatchOfOne(single.ord(), counts)
+				: new EachMatch((FacetColumns.Ords.Multi) column, counts);
+			case ROLLED_UP -> new RolledUp(column, counts);
+			case PARENTS_BY_VALUE -> new ByDocument(column, counts);
 		};
 	}
 
@@ -354,21 +345,20 @@ final class StringFacetCount implements FacetCount {
 	 * default makes them from every leaf that never overrode it.
 	 */
 	private static final class EachMatch implements Leaf {
-		private final SortedSetDocValues values;
+		private final int[] starts;
+		private final int[] ords;
 		private final SegCounts counts;
 
-		EachMatch(SortedSetDocValues values, SegCounts counts) {
-			this.values = values;
+		EachMatch(FacetColumns.Ords.Multi column, SegCounts counts) {
+			this.starts = column.starts();
+			this.ords = column.ords();
 			this.counts = counts;
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(values.advanceExact(doc)) {
-				var valueCount = values.docValueCount();
-				for(var i = 0; i < valueCount; i++) {
-					counts.add(values.nextOrd());
-				}
+		public void count(int doc) {
+			for(int i = starts[doc], end = starts[doc + 1]; i < end; i++) {
+				counts.add(ords[i]);
 			}
 		}
 
@@ -390,21 +380,22 @@ final class StringFacetCount implements FacetCount {
 	}
 
 	/**
-	 * {@link EachMatch} for a field holding at most one value per match.
+	 * {@link EachMatch} for a segment holding at most one value per match.
 	 */
 	private static final class EachMatchOfOne implements Leaf {
-		private final SortedDocValues values;
+		private final int[] ord;
 		private final SegCounts counts;
 
-		EachMatchOfOne(SortedDocValues values, SegCounts counts) {
-			this.values = values;
+		EachMatchOfOne(int[] ord, SegCounts counts) {
+			this.ord = ord;
 			this.counts = counts;
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(values.advanceExact(doc)) {
-				counts.add(values.ordValue());
+		public void count(int doc) {
+			var value = ord[doc];
+			if(value != FacetColumns.Ords.Single.NONE) {
+				counts.add(value);
 			}
 		}
 
@@ -431,12 +422,12 @@ final class StringFacetCount implements FacetCount {
 	 * its values hold it.
 	 */
 	private static final class RolledUp implements Leaf {
-		private final SortedSetDocValues values;
+		private final FacetColumns.OrdSpans spans;
 		private final SegCounts counts;
 		private int document = -1;
 
-		RolledUp(SortedSetDocValues values, SegCounts counts) {
-			this.values = values;
+		RolledUp(FacetColumns.Ords column, SegCounts counts) {
+			this.spans = new FacetColumns.OrdSpans(column);
 			this.counts = counts;
 		}
 
@@ -446,19 +437,14 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(!values.advanceExact(doc)) {
-				return;
-			}
-
-			var valueCount = values.docValueCount();
-			for(var i = 0; i < valueCount; i++) {
-				/*
-				 * Ordinals are per segment and a document's values never
-				 * cross one, so the same term is the same ordinal for as
-				 * long as the counts are held.
-				 */
-				counts.addOncePer(values.nextOrd(), document);
+		public void count(int doc) {
+			/*
+			 * Ordinals are per segment and a document's values never cross
+			 * one, so the same term is the same ordinal for as long as the
+			 * counts are held.
+			 */
+			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+				counts.addOncePer(spans.values[i], document);
 			}
 		}
 
@@ -473,52 +459,31 @@ final class StringFacetCount implements FacetCount {
 	 * of the index: each match counts what its document says there.
 	 */
 	private static final class ByDocument implements Leaf {
-		private final SortedSetDocValues values;
+		private final FacetColumns.OrdSpans spans;
 		private final SegCounts counts;
 
 		/*
-		 * A field holding one value per document reads through the sorted
-		 * doc values directly - the set wrapper answers the same thing
-		 * through two more calls per document.
+		 * Where the document's ordinals sit in the column, so a match reads
+		 * them off it rather than copying them out.
 		 */
-		private final SortedDocValues singleton;
+		private int documentFrom;
+		private int documentTo;
 
-		private long[] documentOrds = new long[4];
-		private int documentOrdCount;
-
-		ByDocument(SortedSetDocValues values, SegCounts counts) {
-			this.values = values;
+		ByDocument(FacetColumns.Ords column, SegCounts counts) {
+			this.spans = new FacetColumns.OrdSpans(column);
 			this.counts = counts;
-			this.singleton = DocValues.unwrapSingleton(values);
 		}
 
 		@Override
-		public void beginDocument(int document) throws IOException {
-			documentOrdCount = 0;
-
-			if(singleton != null) {
-				if(singleton.advanceExact(document)) {
-					documentOrds[0] = singleton.ordValue();
-					documentOrdCount = 1;
-				}
-			} else if(values.advanceExact(document)) {
-				var count = values.docValueCount();
-				if(documentOrds.length < count) {
-					documentOrds = new long[count];
-				}
-
-				for(var i = 0; i < count; i++) {
-					documentOrds[i] = values.nextOrd();
-				}
-
-				documentOrdCount = count;
-			}
+		public void beginDocument(int document) {
+			documentFrom = spans.from(document);
+			documentTo = spans.to(document);
 		}
 
 		@Override
 		public void count(int doc) {
-			for(var i = 0; i < documentOrdCount; i++) {
-				counts.add(documentOrds[i]);
+			for(var i = documentFrom; i < documentTo; i++) {
+				counts.add(spans.values[i]);
 			}
 		}
 

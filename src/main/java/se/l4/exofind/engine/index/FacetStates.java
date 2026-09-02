@@ -41,6 +41,12 @@ import se.l4.exofind.engine.query.SearchResult;
  * path counts other things. A path holds several times the documents, so this
  * is where the saving is largest.
  *
+ * What a segment holds is fixed for even longer than a reader: a segment is
+ * never changed, only merged away, so what is read out of one alone - the
+ * values of a facet field laid out flat, see {@link FacetColumns}, and the
+ * decoded levels of a tree - is kept per segment core and survives the reader
+ * being reopened around it.
+ *
  * A reader is only ever replaced, never changed, so an entry stays true for as
  * long as the reader it was built from is open and is dropped when it closes.
  * That is the same lifetime the reader's own caches have and is why the key is
@@ -100,7 +106,105 @@ final class FacetStates {
 	private static final Map<IndexReader.CacheKey, Map<String, Hierarchy>> values =
 		new ConcurrentHashMap<>();
 
+	/**
+	 * The ordinals of one segment of a field laid out flat, per segment core
+	 * and field - see {@link #ordsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.Ords>> ordColumns =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * The numbers of one segment of a field laid out flat, per segment core
+	 * and field - see {@link #longsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.Longs>> longColumns =
+		new ConcurrentHashMap<>();
+
 	private FacetStates() {
+	}
+
+	/**
+	 * Get the ordinals of the given field in the given segment laid out flat,
+	 * building them the first time the segment is asked for. The field has to
+	 * hold values in the segment.
+	 *
+	 * Building reads every document of the segment once, which is paid by the
+	 * first search that counts the field after the segment appears and by
+	 * nobody after that. A segment that cannot say when its core goes away is
+	 * not kept, as an entry for it could never be dropped; its ordinals are
+	 * laid out and handed back without being remembered.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @return
+	 * @throws IOException
+	 */
+	static FacetColumns.Ords ordsOf(LeafReaderContext context, String field)
+		throws IOException
+	{
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return FacetColumns.ords(context.reader(), field);
+		}
+
+		var key = helper.getKey();
+		var fields = ordColumns.get(key);
+		if(fields == null) {
+			fields = ordColumns.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+
+			/*
+			 * Registered against the key rather than against the map, so a
+			 * segment that went away while this was being built drops what was
+			 * put under it instead of leaving it behind.
+			 */
+			helper.addClosedListener(ordColumns::remove);
+		}
+
+		var column = fields.get(field);
+		if(column == null) {
+			column = FacetColumns.ords(context.reader(), field);
+			fields.put(field, column);
+		}
+
+		return column;
+	}
+
+	/**
+	 * Get the numbers of the given field in the given segment laid out flat,
+	 * building them the first time the segment is asked for. The field has to
+	 * hold values in the segment. Kept the way {@link #ordsOf} keeps ordinals.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @return
+	 * @throws IOException
+	 */
+	static FacetColumns.Longs longsOf(LeafReaderContext context, String field)
+		throws IOException
+	{
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return FacetColumns.longs(context.reader(), field);
+		}
+
+		var key = helper.getKey();
+		var fields = longColumns.get(key);
+		if(fields == null) {
+			fields = longColumns.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+			helper.addClosedListener(longColumns::remove);
+		}
+
+		var column = fields.get(field);
+		if(column == null) {
+			column = FacetColumns.longs(context.reader(), field);
+			fields.put(field, column);
+		}
+
+		return column;
 	}
 
 	/**

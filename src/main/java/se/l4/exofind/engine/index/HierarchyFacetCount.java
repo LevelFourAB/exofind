@@ -5,7 +5,6 @@ import java.util.Comparator;
 import java.util.function.UnaryOperator;
 
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.index.SortedSetDocValues;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.primitive.IntLists;
@@ -100,10 +99,11 @@ final class HierarchyFacetCount implements FacetCount {
 			return null;
 		}
 
+		var column = FacetStates.ordsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(values, hierarchy, slotOfOrd, slots);
-			case ROLLED_UP -> new RolledUp(values, hierarchy, slotOfOrd, slots);
-			case PARENTS_BY_VALUE -> new ByDocument(values, hierarchy, slotOfOrd, slots);
+			case DOCUMENTS, VALUES -> new EachMatch(column, hierarchy, slotOfOrd, slots);
+			case ROLLED_UP -> new RolledUp(column, hierarchy, slotOfOrd, slots);
+			case PARENTS_BY_VALUE -> new ByDocument(column, hierarchy, slotOfOrd, slots);
 		};
 	}
 
@@ -150,18 +150,18 @@ final class HierarchyFacetCount implements FacetCount {
 	 * the path.
 	 */
 	private abstract class PerSlot implements Leaf {
-		final SortedSetDocValues values;
+		final FacetColumns.OrdSpans spans;
 		final FacetStates.Hierarchy hierarchy;
 		final int[] slotOfOrd;
 		final long[] perSlot;
 
 		PerSlot(
-			SortedSetDocValues values,
+			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
 			int slots
 		) {
-			this.values = values;
+			this.spans = new FacetColumns.OrdSpans(column);
 			this.hierarchy = hierarchy;
 			this.slotOfOrd = slotOfOrd;
 			this.perSlot = new long[slots];
@@ -184,22 +184,18 @@ final class HierarchyFacetCount implements FacetCount {
 	 */
 	private final class EachMatch extends PerSlot {
 		EachMatch(
-			SortedSetDocValues values,
+			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
 			int slots
 		) {
-			super(values, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots);
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(!values.advanceExact(doc)) {
-				return;
-			}
-
-			for(var i = 0; i < values.docValueCount(); i++) {
-				var slot = slotOfOrd[(int) values.nextOrd()];
+		public void count(int doc) {
+			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+				var slot = slotOfOrd[spans.values[i]];
 				if(slot >= 0) {
 					perSlot[slot]++;
 				}
@@ -216,12 +212,12 @@ final class HierarchyFacetCount implements FacetCount {
 		private final MutableLongSet seen = LongSets.mutable.empty();
 
 		RolledUp(
-			SortedSetDocValues values,
+			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
 			int slots
 		) {
-			super(values, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots);
 		}
 
 		@Override
@@ -230,14 +226,10 @@ final class HierarchyFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(!values.advanceExact(doc)) {
-				return;
-			}
-
-			for(var i = 0; i < values.docValueCount(); i++) {
-				var ord = values.nextOrd();
-				var slot = slotOfOrd[(int) ord];
+		public void count(int doc) {
+			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+				var ord = spans.values[i];
+				var slot = slotOfOrd[ord];
 				if(slot >= 0 && seen.add(ord)) {
 					perSlot[slot]++;
 				}
@@ -254,24 +246,22 @@ final class HierarchyFacetCount implements FacetCount {
 		private final MutableIntList documentSlots = IntLists.mutable.empty();
 
 		ByDocument(
-			SortedSetDocValues values,
+			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
 			int slots
 		) {
-			super(values, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots);
 		}
 
 		@Override
-		public void beginDocument(int document) throws IOException {
+		public void beginDocument(int document) {
 			documentSlots.clear();
 
-			if(values.advanceExact(document)) {
-				for(var i = 0; i < values.docValueCount(); i++) {
-					var slot = slotOfOrd[(int) values.nextOrd()];
-					if(slot >= 0) {
-						documentSlots.add(slot);
-					}
+			for(int i = spans.from(document), end = spans.to(document); i < end; i++) {
+				var slot = slotOfOrd[spans.values[i]];
+				if(slot >= 0) {
+					documentSlots.add(slot);
 				}
 			}
 		}

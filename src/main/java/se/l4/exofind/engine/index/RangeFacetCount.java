@@ -5,7 +5,6 @@ import java.util.Arrays;
 
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.index.SortedNumericDocValues;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 
@@ -45,15 +44,15 @@ final class RangeFacetCount implements FacetCount {
 
 	@Override
 	public Leaf leaf(LeafReaderContext context, int matches) throws IOException {
-		var values = context.reader().getSortedNumericDocValues(field);
-		if(values == null) {
+		if(context.reader().getSortedNumericDocValues(field) == null) {
 			return null;
 		}
 
+		var column = FacetStates.longsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(values);
-			case ROLLED_UP -> new RolledUp(values);
-			case PARENTS_BY_VALUE -> new ByDocument(values);
+			case DOCUMENTS, VALUES -> new EachMatch(column);
+			case ROLLED_UP -> new RolledUp(column);
+			case PARENTS_BY_VALUE -> new ByDocument(column);
 		};
 	}
 
@@ -75,7 +74,7 @@ final class RangeFacetCount implements FacetCount {
 	 * falls in.
 	 */
 	private final class EachMatch implements Leaf {
-		private final SortedNumericDocValues values;
+		private final FacetColumns.LongSpans spans;
 
 		/*
 		 * The last match counted into each bucket. Matches arrive in order,
@@ -84,20 +83,16 @@ final class RangeFacetCount implements FacetCount {
 		 */
 		private final int[] countedFor;
 
-		EachMatch(SortedNumericDocValues values) {
-			this.values = values;
+		EachMatch(FacetColumns.Longs column) {
+			this.spans = new FacetColumns.LongSpans(column);
 			this.countedFor = new int[bounds.length];
 			Arrays.fill(countedFor, -1);
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(!values.advanceExact(doc)) {
-				return;
-			}
-
-			for(var i = 0; i < values.docValueCount(); i++) {
-				var value = values.nextValue();
+		public void count(int doc) {
+			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+				var value = spans.values[i];
 
 				for(var bucket = 0; bucket < bounds.length; bucket++) {
 					if(countedFor[bucket] != doc && bounds[bucket].accept(value)) {
@@ -115,7 +110,7 @@ final class RangeFacetCount implements FacetCount {
 	 * many values of however many of its matches fall in it.
 	 */
 	private final class RolledUp implements Leaf {
-		private final SortedNumericDocValues values;
+		private final FacetColumns.LongSpans spans;
 
 		/*
 		 * The last document counted into each bucket. Documents arrive in
@@ -126,8 +121,8 @@ final class RangeFacetCount implements FacetCount {
 
 		private int document = -1;
 
-		RolledUp(SortedNumericDocValues values) {
-			this.values = values;
+		RolledUp(FacetColumns.Longs column) {
+			this.spans = new FacetColumns.LongSpans(column);
 			this.countedFor = new int[bounds.length];
 			Arrays.fill(countedFor, -1);
 		}
@@ -138,13 +133,9 @@ final class RangeFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(!values.advanceExact(doc)) {
-				return;
-			}
-
-			for(var i = 0; i < values.docValueCount(); i++) {
-				var value = values.nextValue();
+		public void count(int doc) {
+			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+				var value = spans.values[i];
 
 				for(var bucket = 0; bucket < bounds.length; bucket++) {
 					if(countedFor[bucket] != document && bounds[bucket].accept(value)) {
@@ -162,26 +153,24 @@ final class RangeFacetCount implements FacetCount {
 	 * values falls in.
 	 */
 	private final class ByDocument implements Leaf {
-		private final SortedNumericDocValues values;
+		private final FacetColumns.LongSpans spans;
 		private final boolean[] inBucket;
 
-		ByDocument(SortedNumericDocValues values) {
-			this.values = values;
+		ByDocument(FacetColumns.Longs column) {
+			this.spans = new FacetColumns.LongSpans(column);
 			this.inBucket = new boolean[bounds.length];
 		}
 
 		@Override
-		public void beginDocument(int document) throws IOException {
+		public void beginDocument(int document) {
 			Arrays.fill(inBucket, false);
 
-			if(values.advanceExact(document)) {
-				for(var i = 0; i < values.docValueCount(); i++) {
-					var value = values.nextValue();
+			for(int i = spans.from(document), end = spans.to(document); i < end; i++) {
+				var value = spans.values[i];
 
-					for(var bucket = 0; bucket < bounds.length; bucket++) {
-						if(!inBucket[bucket] && bounds[bucket].accept(value)) {
-							inBucket[bucket] = true;
-						}
+				for(var bucket = 0; bucket < bounds.length; bucket++) {
+					if(!inBucket[bucket] && bounds[bucket].accept(value)) {
+						inBucket[bucket] = true;
 					}
 				}
 			}

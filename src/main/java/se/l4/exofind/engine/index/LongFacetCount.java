@@ -4,10 +4,7 @@ import java.io.IOException;
 import java.util.Comparator;
 import java.util.function.LongFunction;
 
-import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.index.NumericDocValues;
-import org.apache.lucene.index.SortedNumericDocValues;
 import org.eclipse.collections.api.factory.primitive.LongLists;
 import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.factory.primitive.LongSets;
@@ -55,15 +52,15 @@ final class LongFacetCount implements FacetCount {
 
 	@Override
 	public Leaf leaf(LeafReaderContext context, int matches) throws IOException {
-		var values = context.reader().getSortedNumericDocValues(field);
-		if(values == null) {
+		if(context.reader().getSortedNumericDocValues(field) == null) {
 			return null;
 		}
 
+		var column = FacetStates.longsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(values);
-			case ROLLED_UP -> new RolledUp(values);
-			case PARENTS_BY_VALUE -> new ByDocument(values);
+			case DOCUMENTS, VALUES -> new EachMatch(column);
+			case ROLLED_UP -> new RolledUp(column);
+			case PARENTS_BY_VALUE -> new ByDocument(column);
 		};
 	}
 
@@ -93,36 +90,23 @@ final class LongFacetCount implements FacetCount {
 	 * Each match counts its own values, each distinct value once.
 	 */
 	private final class EachMatch implements Leaf {
-		private final SortedNumericDocValues values;
+		private final FacetColumns.LongSpans spans;
 
-		/*
-		 * A field holding one value per document reads through the numeric
-		 * doc values directly - the sorted wrapper answers the same thing
-		 * through two more calls per document.
-		 */
-		private final NumericDocValues singleton;
-
-		EachMatch(SortedNumericDocValues values) {
-			this.values = values;
-			this.singleton = DocValues.unwrapSingleton(values);
+		EachMatch(FacetColumns.Longs column) {
+			this.spans = new FacetColumns.LongSpans(column);
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(singleton != null) {
-				if(singleton.advanceExact(doc)) {
-					counts.addToValue(singleton.longValue(), 1);
+		public void count(int doc) {
+			var from = spans.from(doc);
+			var previous = Long.MIN_VALUE;
+			for(int i = from, end = spans.to(doc); i < end; i++) {
+				var value = spans.values[i];
+				if(i == from || value != previous) {
+					counts.addToValue(value, 1);
 				}
-			} else if(values.advanceExact(doc)) {
-				var previous = Long.MIN_VALUE;
-				for(var i = 0; i < values.docValueCount(); i++) {
-					var value = values.nextValue();
-					if(i == 0 || value != previous) {
-						counts.addToValue(value, 1);
-					}
 
-					previous = value;
-				}
+				previous = value;
 			}
 		}
 	}
@@ -133,11 +117,11 @@ final class LongFacetCount implements FacetCount {
 	 * its values hold it.
 	 */
 	private final class RolledUp implements Leaf {
-		private final SortedNumericDocValues values;
+		private final FacetColumns.LongSpans spans;
 		private final MutableLongSet counted = LongSets.mutable.empty();
 
-		RolledUp(SortedNumericDocValues values) {
-			this.values = values;
+		RolledUp(FacetColumns.Longs column) {
+			this.spans = new FacetColumns.LongSpans(column);
 		}
 
 		@Override
@@ -146,13 +130,9 @@ final class LongFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void count(int doc) throws IOException {
-			if(!values.advanceExact(doc)) {
-				return;
-			}
-
-			for(var i = 0; i < values.docValueCount(); i++) {
-				var value = values.nextValue();
+		public void count(int doc) {
+			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+				var value = spans.values[i];
 				if(counted.add(value)) {
 					counts.addToValue(value, 1);
 				}
@@ -165,27 +145,26 @@ final class LongFacetCount implements FacetCount {
 	 * of the index: each match counts what its document says there.
 	 */
 	private final class ByDocument implements Leaf {
-		private final SortedNumericDocValues values;
+		private final FacetColumns.LongSpans spans;
 		private final MutableLongList documentValues = LongLists.mutable.empty();
 
-		ByDocument(SortedNumericDocValues values) {
-			this.values = values;
+		ByDocument(FacetColumns.Longs column) {
+			this.spans = new FacetColumns.LongSpans(column);
 		}
 
 		@Override
-		public void beginDocument(int document) throws IOException {
+		public void beginDocument(int document) {
 			documentValues.clear();
 
-			if(values.advanceExact(document)) {
-				var previous = Long.MIN_VALUE;
-				for(var i = 0; i < values.docValueCount(); i++) {
-					var value = values.nextValue();
-					if(i == 0 || value != previous) {
-						documentValues.add(value);
-					}
-
-					previous = value;
+			var from = spans.from(document);
+			var previous = Long.MIN_VALUE;
+			for(int i = from, end = spans.to(document); i < end; i++) {
+				var value = spans.values[i];
+				if(i == from || value != previous) {
+					documentValues.add(value);
 				}
+
+				previous = value;
 			}
 		}
 

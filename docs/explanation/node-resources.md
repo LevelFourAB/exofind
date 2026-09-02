@@ -28,7 +28,7 @@ The optimal balance between heap and page cache depends on node workload and tot
 
 Searching and indexing place different demands on memory:
 
-- **Search nodes** require minimal heap. Heap memory on a search node holds only in-flight query states, facet calculations, and decompressed document fields. The actual index structures reside in the page cache. Search nodes perform best with a smaller heap allocation (for example, 25% of memory), leaving 75% of available memory to cache index files.
+- **Search nodes** require minimal heap. Heap memory on a search node holds in-flight query states, decompressed document fields, and the facet columns: the values of each faceted field that a search has counted, laid out flat per segment so that counting reads an array instead of decoding doc values. A column costs about 4 bytes per string value and 8 bytes per numeric value, for every open segment. The actual index structures reside in the page cache. Search nodes perform best with a smaller heap allocation (for example, 25% of memory), leaving 75% of available memory to cache index files.
 - **Indexer nodes** require substantial heap. An indexer holds uncommitted document batches in memory and runs segment merge operations that allocate temporary working buffers. Reducing the heap too far on an indexer causes frequent garbage collection or out-of-memory errors during heavy write loads.
 
 ### The 32 GB compressed object pointer boundary
