@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.function.LongFunction;
 
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.eclipse.collections.api.factory.primitive.LongLists;
 import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.factory.primitive.LongSets;
@@ -107,6 +108,22 @@ final class LongFacetCount implements FacetCount {
 				}
 
 				previous = value;
+			}
+		}
+
+		/*
+		 * The loop the default runs, overridden so the calls inside it are
+		 * made from this class alone and the JIT can inline them - see
+		 * Leaf#countAll.
+		 */
+		@Override
+		public void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
 			}
 		}
 	}

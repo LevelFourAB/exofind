@@ -5,6 +5,7 @@ import java.util.Arrays;
 
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 
@@ -100,6 +101,22 @@ final class RangeFacetCount implements FacetCount {
 						counts[bucket]++;
 					}
 				}
+			}
+		}
+
+		/*
+		 * The loop the default runs, overridden so the calls inside it are
+		 * made from this class alone and the JIT can inline them - see
+		 * Leaf#countAll.
+		 */
+		@Override
+		public void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
 			}
 		}
 	}
