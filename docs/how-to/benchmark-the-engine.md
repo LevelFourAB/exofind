@@ -111,11 +111,17 @@ Search benchmarks open a committed index and execute queries without HTTP or Qua
 | --- | --- |
 | `FilterBenchmark` | Measures narrowing without ranking: equality, ranges, prefixes, negation, subtrees, distance, and exact match count costs. |
 | `TextSearchBenchmark` | Measures text queries: single-word, multi-word, prefix, misspelled, quoted, highlighted, and second-pass searches when no hits match. |
-| `FacetBenchmark` | Measures match counting per value, per bucket, and down category trees: single facet, full page, facet filtering, category drill-down, and count refreshes without document fetches. `everyFacetNarrowed` counts the full page over a share of the index set with `-p ratio=`, in percent, and `nestedFacetNarrowed` counts a facet over a field inside an object over the same share. |
+| `FacetBenchmark` | Measures match counting per value, per bucket, and down category trees: single facet, full page, facet filtering, category drill-down, and count refreshes without document fetches. `everyFacetNarrowed` counts the full page over a share of the index set with `-p ratio=`, in percent, and `nestedFacetNarrowed` counts a facet over a field inside an object over the same share. Runs with the facet scope cache off, so the numbers are the cost of counting. |
 | `SortAndPageBenchmark` | Measures sorting by field versus relevance, ranking signals, and deep pagination with offsets versus cursors. |
 | `NestedBenchmark` | Measures conditions on object field values and value counting. |
 | `MatchedBenchmark` | Measures retrieving matching object field values per hit with and without conditions. Set returned hit count with `-p page=`. |
 | `ValueHitsBenchmark` | Measures returning object field values as hits, sorting by value fields, faceting by value with document rollup, and calculating exact value totals. |
+
+`FacetBenchmark`, `NestedBenchmark`, and `ValueHitsBenchmark` fork their JVM with the facet scope cache turned off. A node keeps what each facet answered per reader and per scope, and every benchmark here repeats one request, so the second invocation and each one after it would read the counts of the first out of a map instead of counting. The `exofind.facets.scope-cache` system property (default: `true`) controls the cache. To turn it off for another benchmark, pass it to the forked JVM:
+
+```shell
+mise run bench SortAndPageBenchmark -jvmArgsAppend -Dexofind.facets.scope-cache=false
+```
 
 Indexes are built on the first run and cached in `target/benchmark-indexes`. Subsequent runs copy the cached index. Delete this directory if you modify indexing logic.
 

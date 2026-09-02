@@ -26,6 +26,16 @@ public final class JvmArgs {
 	 */
 	public static final String NATIVE_ACCESS = "--enable-native-access=ALL-UNNAMED";
 
+	/**
+	 * Turning off what the engine keeps per facet scope, for a benchmark that
+	 * repeats one request against one reader. The second invocation of such a
+	 * benchmark and every one after it would otherwise read the counts of the
+	 * first out of a map, and the benchmark would report the cost of that
+	 * lookup as the cost of counting. The per-segment caches stay on, as a node
+	 * has those warm too.
+	 */
+	public static final String NO_FACET_SCOPE_CACHE = "-Dexofind.facets.scope-cache=false";
+
 	private JvmArgs() {
 	}
 }

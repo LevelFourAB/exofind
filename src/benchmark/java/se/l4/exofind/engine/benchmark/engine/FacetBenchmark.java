@@ -37,10 +37,18 @@ import se.l4.exofind.engine.query.matchers.Matchers;
  * not walk them starts to pay. {@link #nestedFacetNarrowed} asks the same
  * question of a facet over a field inside an object, whose matches are the
  * values of that object rolled up into the documents holding them.
+ *
+ * <p>Each benchmark here sends the same request every invocation, so the fork
+ * runs with {@link JvmArgs#NO_FACET_SCOPE_CACHE} and the numbers are the cost
+ * of counting. A node keeps what a facet answered per scope and answers a
+ * repeated request from it; these numbers are what it costs when it cannot.
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
-@Fork(value = 1, jvmArgsAppend = { JvmArgs.VECTOR, JvmArgs.NATIVE_ACCESS })
+@Fork(
+	value = 1,
+	jvmArgsAppend = { JvmArgs.VECTOR, JvmArgs.NATIVE_ACCESS, JvmArgs.NO_FACET_SCOPE_CACHE }
+)
 @Warmup(iterations = 3, time = 3)
 @Measurement(iterations = 5, time = 3)
 @State(Scope.Thread)

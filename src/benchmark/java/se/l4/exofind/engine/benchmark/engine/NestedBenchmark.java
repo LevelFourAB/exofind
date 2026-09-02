@@ -32,10 +32,17 @@ import se.l4.exofind.engine.query.matchers.Matchers;
  * {@code twoConditions} is what the second join costs.
  *
  * <p>Needs a corpus with an object field, which only {@code catalogue} has.
+ *
+ * <p>{@code facetOnNestedField} sends the same request every invocation, so the
+ * fork runs with {@link JvmArgs#NO_FACET_SCOPE_CACHE} and measures counting
+ * instead of the answer a node would keep.
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
-@Fork(value = 1, jvmArgsAppend = { JvmArgs.VECTOR, JvmArgs.NATIVE_ACCESS })
+@Fork(
+	value = 1,
+	jvmArgsAppend = { JvmArgs.VECTOR, JvmArgs.NATIVE_ACCESS, JvmArgs.NO_FACET_SCOPE_CACHE }
+)
 @Warmup(iterations = 3, time = 3)
 @Measurement(iterations = 5, time = 3)
 @State(Scope.Thread)
