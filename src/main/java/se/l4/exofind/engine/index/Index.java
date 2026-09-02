@@ -2032,6 +2032,18 @@ public class Index {
 			}
 
 			/*
+			 * Every Lucene document of a segment has to hold every analyzed
+			 * field for Lucene to store the norms densely, so the document and
+			 * the values of its object fields are filled out here, once the
+			 * fields they do hold are known. See AnalyzedFields.
+			 */
+			var analyzedFields = schema.getAnalyzedFields();
+			analyzedFields.padTo(luceneDoc);
+			for(var child : childDocs) {
+				analyzedFields.padTo(child);
+			}
+
+			/*
 			 * Held from here until the document has been written and remembered,
 			 * so that a partial update of the same document can not read what
 			 * was there before this and write its merge over the top.

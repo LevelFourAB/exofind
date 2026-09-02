@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.miscellaneous.EmptyTokenStream;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.index.IndexOptions;
@@ -61,16 +62,45 @@ public class AnalyzingTextField extends Field {
 		Shape shape,
 		Analyzer analyzer
 	) {
-		super(
-			name,
-			value,
-			switch(shape) {
-				case PLAIN -> TYPE_NORMAL;
-				case HIGHLIGHTABLE_TERM_VECTORS -> TYPE_HIGHLIGHTABLE;
-				case HIGHLIGHTABLE_POSTINGS -> TYPE_HIGHLIGHTABLE_POSTINGS;
-			}
-		);
+		super(name, value, typeOf(shape));
 		this.analyzer = analyzer;
+	}
+
+	/**
+	 * Get how Lucene stores a field written in the given shape.
+	 *
+	 * <p>Lucene allows one set of these settings per field name in a segment,
+	 * so anything else writing under the name of an analyzed field has to use
+	 * the instance this returns.
+	 *
+	 * @param shape
+	 * @return
+	 */
+	public static FieldType typeOf(Shape shape) {
+		return switch(shape) {
+			case PLAIN -> TYPE_NORMAL;
+			case HIGHLIGHTABLE_TERM_VECTORS -> TYPE_HIGHLIGHTABLE;
+			case HIGHLIGHTABLE_POSTINGS -> TYPE_HIGHLIGHTABLE_POSTINGS;
+		};
+	}
+
+	/**
+	 * Create a field that holds no text, for a document that has no value for
+	 * an analyzed field.
+	 *
+	 * <p>The field produces no tokens, so it adds no terms, no term vector and
+	 * nothing to the collection statistics of the field. Lucene writes a norm
+	 * of zero for the document, keeping the norms of the field dense. See
+	 * {@link AnalyzedFields}.
+	 *
+	 * @param name
+	 *   the Lucene field name to write under
+	 * @param type
+	 *   the settings the field is written with, from {@link #typeOf(Shape)}
+	 * @return
+	 */
+	public static Field empty(String name, FieldType type) {
+		return new Field(name, new EmptyTokenStream(), type);
 	}
 
 	@Override

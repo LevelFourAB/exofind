@@ -13,6 +13,7 @@ import org.eclipse.collections.api.list.ListIterable;
 
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.index.AnalyzedFields;
 import se.l4.exofind.engine.index.FacetCounter;
 import se.l4.exofind.engine.index.HierarchyFacetCounter;
 import se.l4.exofind.engine.index.IndexEncounter;
@@ -128,6 +129,25 @@ public interface FieldType {
 	}
 
 	Iterable<? extends IndexableField> createFields(IndexEncounter encounter, Object value);
+
+	/**
+	 * Report the analyzed Lucene fields {@link #createFields} writes for a
+	 * field of this type, whether or not a document has a value for it.
+	 *
+	 * <p>An analyzed field is one Lucene stores a norm for. Every Lucene
+	 * document of an index carries an entry for each of them, so a type that
+	 * reports one name and writes another leaves the norms of that field
+	 * sparse. See {@link se.l4.exofind.engine.index.AnalyzedFields}.
+	 *
+	 * @param encounter
+	 * @param collector
+	 *   where the fields are reported
+	 */
+	default void collectAnalyzedFields(
+		IndexEncounter encounter,
+		AnalyzedFields.Collector collector
+	) {
+	}
 
 	/**
 	 * Read a value back out of a stored field, in the shape it was given in.

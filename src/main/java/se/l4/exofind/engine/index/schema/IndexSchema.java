@@ -17,6 +17,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.AnalyzedFields;
 import se.l4.exofind.engine.index.analysis.AnalyzerChains;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.types.FieldTypes;
@@ -126,6 +127,12 @@ public class IndexSchema {
 
 		final ResourcesDef resources;
 
+		/**
+		 * The analyzed Lucene fields every document written to the index
+		 * carries an entry for.
+		 */
+		final AnalyzedFields analyzedFields;
+
 		State(
 			ImmutableMap<String, Field> fields,
 			ImmutableList<Field> wildcardFields,
@@ -144,7 +151,8 @@ public class IndexSchema {
 			ImmutableList<RankingConfig.TieBreaker> tieBreakers,
 			ImmutableList<RankingSignal> signals,
 			ImmutableList<String> localeFallback,
-			ResourcesDef resources
+			ResourcesDef resources,
+			AnalyzedFields analyzedFields
 		) {
 			this.fields = fields;
 			this.wildcardFields = wildcardFields;
@@ -164,6 +172,7 @@ public class IndexSchema {
 			this.signals = signals;
 			this.localeFallback = localeFallback;
 			this.resources = resources;
+			this.analyzedFields = analyzedFields;
 		}
 	}
 
@@ -476,7 +485,8 @@ public class IndexSchema {
 			Lists.immutable.empty(),
 			Lists.immutable.empty(),
 			null,
-			ResourcesDef.getDefaultInstance()
+			ResourcesDef.getDefaultInstance(),
+			AnalyzedFields.none()
 		);
 	}
 
@@ -1151,6 +1161,22 @@ public class IndexSchema {
 			inside -> inside.sort((a, b) -> compareFieldNames(a.getName(), b.getName()))
 		);
 
+		var highlightsInPostings = definition.getHighlightLayout()
+			== IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS;
+
+		/*
+		 * Both maps together hold every field with a settled name, at the root
+		 * and inside objects. A document of the index and a value of one of its
+		 * object fields end up in the same segment, so one list covers both.
+		 */
+		var analyzedFields = AnalyzedFields.of(
+			definition.getResources(),
+			highlightsInPostings,
+			Lists.mutable.<Field>empty()
+				.withAll(fields.valuesView())
+				.withAll(nestedFields.valuesView().collect(NestedField::field))
+		);
+
 		this.state = new State(
 			fields.toImmutable(),
 			wildcardFields.toImmutable(),
@@ -1169,8 +1195,7 @@ public class IndexSchema {
 				.toSortedList((a, b) -> compareFieldNames(a.getName(), b.getName()))
 				.toImmutable(),
 			storesSource(definition),
-			definition.getHighlightLayout()
-				== IndexDef.HighlightLayout.HIGHLIGHT_LAYOUT_POSTINGS,
+			highlightsInPostings,
 			Lists.immutable.ofAll(definition.getRanking().getTieBreakersList()),
 			Lists.immutable.ofAll(
 				definition.getRanking().getSignalsList()
@@ -1178,8 +1203,19 @@ public class IndexSchema {
 			definition.hasLocaleFallback()
 				? Lists.immutable.ofAll(definition.getLocaleFallback().getChainList())
 				: null,
-			definition.getResources()
+			definition.getResources(),
+			analyzedFields
 		);
+	}
+
+	/**
+	 * Get the analyzed Lucene fields every document written to this index
+	 * carries an entry for, empty where the document has no text.
+	 *
+	 * @return
+	 */
+	public AnalyzedFields getAnalyzedFields() {
+		return state.analyzedFields;
 	}
 
 	/**

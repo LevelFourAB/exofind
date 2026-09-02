@@ -15,6 +15,16 @@ These sub-documents are written in a contiguous block alongside the parent docum
 
 Because the parent and its sub-documents form a single block, the entire group shares a physical lifecycle in the index.
 
+## Empty text fields in every document
+
+Sub-documents carry the fields of their object type, while parent documents carry top-level fields. As a result, no single Lucene document in a block contains every field in the index. However, the engine writes every analyzed field into every Lucene document it indexes, leaving the entry empty when a document has no text for that field. The engine handles omitted optional fields the same way.
+
+The engine does this because of how Lucene stores norms. A norm is a single byte per document that records the length of a field value for scoring. When every document in a segment contains a field, Lucene stores its norms as an array indexed by document number. When documents omit the field, Lucene uses a sparse structure. Reading a sparse norm requires seeking to the document rather than reading an array index directly. Because most Lucene documents in a nested block contain only a few fields, text fields would otherwise default to sparse norm storage and reduce scoring performance.
+
+An empty entry produces no terms and never matches a search query. It does not affect the document count for the field or the average field length used in scoring. Search results and scores remain identical to omitting the field. Writing empty entries costs one byte per analyzed field for each Lucene document in a segment, including sub-documents.
+
+Fields with names that contain wildcards are exempt. Because dynamic field names exist only when a document provides them, their norms remain sparse.
+
 ## Updates and deletions
 
 Lucene writes and deletes document blocks as indivisible units:

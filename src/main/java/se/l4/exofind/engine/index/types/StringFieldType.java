@@ -54,6 +54,7 @@ import org.eclipse.collections.impl.factory.Lists;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.index.AnalyzedFields;
 import se.l4.exofind.engine.index.AnalyzingTextField;
 import se.l4.exofind.engine.index.FacetCounter;
 import se.l4.exofind.engine.index.FieldNames;
@@ -520,6 +521,33 @@ public class StringFieldType implements FieldType {
 		}
 
 		return 1f;
+	}
+
+	/**
+	 * Report the fields {@link #createFields} writes through
+	 * {@link AnalyzingTextField}. The names and shapes are built the same way
+	 * there, so a usage added to one belongs in the other.
+	 */
+	@Override
+	public void collectAnalyzedFields(
+		IndexEncounter encounter,
+		AnalyzedFields.Collector collector
+	) {
+		var stringType = encounter.getFieldType().getString();
+
+		if(stringType.hasMatching()) {
+			collector.add(
+				encounter.name(FieldNames.MATCHING),
+				textShape(encounter, stringType.getMatching().hasHighlight())
+			);
+		}
+
+		if(stringType.hasAutocomplete()) {
+			collector.add(
+				encounter.name(FieldNames.AUTOCOMPLETE),
+				textShape(encounter, stringType.getAutocomplete().hasHighlight())
+			);
+		}
 	}
 
 	@Override
