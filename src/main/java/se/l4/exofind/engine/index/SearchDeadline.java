@@ -66,6 +66,23 @@ public final class SearchDeadline implements QueryTimeout {
 		return new Scope(opened, previous);
 	}
 
+	/**
+	 * Whether a search on this thread has already run past the budget of the
+	 * scope now open. Answers {@code false} on a thread with no scope open
+	 * or one opened without a budget.
+	 *
+	 * <p>What decides whether the results of a search are worth keeping for
+	 * the searches after it: collection over a spent budget stops where it
+	 * is, so counts made from it describe part of the index and must not be
+	 * answered again as if they were whole - see {@link FacetStates}.
+	 *
+	 * @return
+	 */
+	public static boolean exceeded() {
+		var budget = CURRENT.get();
+		return budget != null && budget.exceeded;
+	}
+
 	@Override
 	public boolean shouldExit() {
 		var budget = CURRENT.get();

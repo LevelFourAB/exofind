@@ -8,7 +8,11 @@ import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 
+import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
@@ -19,8 +23,12 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
+import se.l4.exofind.engine.index.schema.ResourcesDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.schema.TimestampFieldTypeDef;
+import se.l4.exofind.engine.index.settings.QuerySynonyms;
+import se.l4.exofind.engine.index.settings.SearchSettings;
+import se.l4.exofind.engine.index.settings.SearchSettingsStore;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.Query;
@@ -85,6 +93,206 @@ public class FacetSearchTest extends AbstractIndexTest {
 				new SearchResult.Facet.Value("shoes", 3),
 				new SearchResult.Facet.Value("clothes", 2)
 			)
+		);
+	}
+
+	@Test
+	public void testCountsOverTheSameScopeAreAnsweredFromWhatWasKept() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.addFilter(new FieldQuery("category", Matchers.equalTo("shoes")))
+			.addFacet(Facet.of("published"))
+			.addFacet(Facet.of("brand"))
+			.build();
+
+		var first = index.search(request);
+
+		/*
+		 * Other tests run beside this one and move the same numbers, so only
+		 * that the hits grew by at least what this search asked for is
+		 * checked.
+		 */
+		var before = FacetCacheStats.current();
+		var second = index.search(request);
+		var after = FacetCacheStats.current();
+
+		assertThat(after.hits() - before.hits() >= 2, is(true));
+		assertThat(second.facets(), is(first.facets()));
+		assertThat(second.total(), is(first.total()));
+	}
+
+	@Test
+	public void testCountsCutShortByTheDeadlineAreNotKept() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.addFilter(new FieldQuery("category", Matchers.equalTo("shoes")))
+			.addFacet(Facet.of("published"))
+			.build();
+
+		// A budget already spent stops collecting before anything is found
+		try(var scope = SearchDeadline.start(Duration.ofNanos(1))) {
+			index.search(request);
+			assertThat(scope.exceeded(), is(true));
+		}
+
+		var result = index.search(request);
+		assertThat(result.total().count(), is(2L));
+		assertThat(
+			result.facets().get("published").values(),
+			contains(new SearchResult.Facet.Value(true, 2))
+		);
+	}
+
+	@Test
+	public void testCountsFollowADeletion() throws IOException {
+		var index = products();
+
+		var whole = SearchRequest.create()
+			.addFacet(Facet.of("category"))
+			.build();
+		var narrowed = SearchRequest.create()
+			.addFilter(new FieldQuery("published", Matchers.equalTo(true)))
+			.addFacet(Facet.of("category"))
+			.build();
+
+		// What is kept for the reader before the deletion
+		index.search(whole);
+		index.search(narrowed);
+
+		index.deleteDocument("1");
+		index.commit();
+
+		var result = index.search(whole);
+		assertThat(result.total().count(), is(3L));
+		assertThat(
+			result.facets().get("category").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value("shoes", 1),
+				new SearchResult.Facet.Value("clothes", 2)
+			)
+		);
+
+		result = index.search(narrowed);
+		assertThat(result.total().count(), is(2L));
+		assertThat(
+			result.facets().get("category").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value("shoes", 1),
+				new SearchResult.Facet.Value("clothes", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testSegmentsCountedBeforeACommitAreReusedAfterIt() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.addFacet(Facet.of("category"))
+			.addFacet(Facet.of("stock"))
+			.build();
+
+		index.search(request);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "5"),
+				new Document.Value("name", "Sandal"),
+				new Document.Value("category", "shoes"),
+				new Document.Value("stock", 3)
+			)
+		);
+		index.commit();
+
+		/*
+		 * The segment the first search counted is still open after the
+		 * commit, so both facets fold what it kept rather than count it
+		 * again. Other tests run beside this one, so only that the reuse
+		 * happened at least as often as it should have is checked.
+		 */
+		var before = FacetCacheStats.current();
+		var result = index.search(request);
+		var after = FacetCacheStats.current();
+
+		assertThat(after.segmentHits() - before.segmentHits() >= 2, is(true));
+		assertThat(
+			result.facets().get("category").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value("shoes", 3),
+				new SearchResult.Facet.Value("clothes", 2)
+			)
+		);
+		assertThat(
+			result.facets().get("stock").values(),
+			containsInAnyOrder(
+				new SearchResult.Facet.Value(3, 3),
+				new SearchResult.Facet.Value(5, 1),
+				new SearchResult.Facet.Value(7, 1)
+			)
+		);
+	}
+
+	@Test
+	public void testCountsFollowTheSearchSettings() throws IOException {
+		var index = products();
+
+		var request = SearchRequest.create()
+			.withQuery(Query.text("runner"))
+			.addFacet(Facet.of("category"))
+			.build();
+
+		var plain = index.search(request, settings("1"));
+		assertThat(
+			plain.facets().get("category").values(),
+			contains(new SearchResult.Facet.Value("shoes", 1))
+		);
+
+		// The same clauses match more once the settings say sneakers are runners
+		var widened = index.search(request, settings("2", "runner", "sneaker"));
+		assertThat(widened.total().count(), is(2L));
+		assertThat(
+			widened.facets().get("category").values(),
+			contains(new SearchResult.Facet.Value("shoes", 2))
+		);
+
+		// And what the first settings answered still answers for them
+		assertThat(index.search(request, settings("1")).facets(), is(plain.facets()));
+	}
+
+	/**
+	 * Settings of the given version, holding one set of equivalent words
+	 * applied to every field - or nothing at all when no words are given.
+	 */
+	private static SearchSettings.Snapshot settings(String version, String... equivalent) {
+		var stored = SearchSettingsStore.newBuilder();
+		if(equivalent.length > 0) {
+			stored.putSynonyms(
+				"words",
+				QuerySynonyms.newBuilder()
+					.setSet(
+						ResourcesDef.SynonymsResource.newBuilder()
+							.addRules(
+								ResourcesDef.SynonymsResource.Rule.newBuilder()
+									.setEquivalent(
+										ResourcesDef.SynonymsResource.Rule.Equivalent.newBuilder()
+											.addAllTerms(List.of(equivalent))
+									)
+							)
+					)
+					.build()
+			);
+		}
+
+		var built = stored.build();
+		return new SearchSettings.Snapshot(
+			built,
+			null,
+			built.getSynonymsMap(),
+			Map.of(),
+			Lists.immutable.empty(),
+			version
 		);
 	}
 

@@ -1,8 +1,10 @@
 package se.l4.exofind.engine.index;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.UnaryOperator;
 
 import org.apache.lucene.index.DocValues;
@@ -12,8 +14,11 @@ import org.apache.lucene.index.OrdinalMap;
 import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.packed.PackedInts;
+import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.list.ImmutableList;
 
 import se.l4.exofind.engine.query.Facet;
+import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchResult;
 
 /**
@@ -29,24 +34,38 @@ import se.l4.exofind.engine.query.SearchResult;
  * over a handful of documents would otherwise spend most of its time preparing
  * to count them.
  *
- * The counts of a facet whose scope is everything say just as little about any
- * one search: a search nothing narrows counts the same matches every time, and
- * so does a facet counting sideways of the only filter of the search, so those
- * counts are kept here too and a walk of every document is paid once per
- * reader rather than once per search.
+ * What a facet counted says just as little about any one search: the same
+ * facet counted over the same clauses against the same reader answers the
+ * same counts every time, and real traffic asks the same few scopes over and
+ * over - the category pages and the common filters of a shop. So what a facet
+ * answered is kept per reader under the scope it was counted over, see
+ * {@link Scope}, and the next search asking for it is answered without a
+ * walk. The shape of a scope is the caller's to choose, so the entries under
+ * one reader are bounded, the least recently asked for going first. The
+ * total of a scope is kept the same way, so a search every facet of which is
+ * answered from here collects nothing at all.
  *
- * A search answering with the values of an object field counts values rather
- * than documents, and an unnarrowed one counts every value of that path -
- * which is as fixed for a reader as its documents are. Those counts are kept
- * here as well, under the path they count, because the same facet over another
- * path counts other things. A path holds several times the documents, so this
- * is where the saving is largest.
+ * A search cut short by its {@link SearchDeadline} counted part of the index,
+ * and nothing of it is kept: an entry answers as the whole of the reader, and
+ * what was collected over a spent budget is not that.
  *
  * What a segment holds is fixed for even longer than a reader: a segment is
  * never changed, only merged away, so what is read out of one alone - the
  * values of a facet field laid out flat, see {@link FacetColumns}, and the
  * decoded levels of a tree - is kept per segment core and survives the reader
  * being reopened around it.
+ *
+ * What a segment counts for the scope nothing narrows - everything the reader
+ * holds, see {@link FacetMatches#whole()} - is fixed for as long as the
+ * segment's live documents are, which is longer than a reader too: a reopen
+ * that only added documents keeps the segment readers it already had. Those
+ * counts are kept per segment reader, in the segment's own ordinal space, so
+ * a search after a refresh counts the new segments and folds the rest through
+ * the reader's ordinal map. The cost of a refresh is then the size of what
+ * changed rather than the size of the index. A segment that took a deletion
+ * comes back as a new segment reader over the same core, which is what drops
+ * its counts: the key is the reader's rather than the core's for exactly
+ * this.
  *
  * A reader is only ever replaced, never changed, so an entry stays true for as
  * long as the reader it was built from is open and is dropped when it closes.
@@ -55,12 +74,12 @@ import se.l4.exofind.engine.query.SearchResult;
  */
 final class FacetStates {
 	/**
-	 * How many facets one reader keeps whole-index counts for. The shape of a
-	 * facet is the caller's to choose, so the entries under one reader are
-	 * capped rather than trusted to be few; a facet arriving after the cap is
-	 * counted as if there were no cache.
+	 * How many scopes one reader keeps answers for, counts and totals each.
+	 * The shape of a scope is the caller's to choose, so the entries under
+	 * one reader are bounded rather than trusted to be few; past the bound
+	 * the scope asked for least recently goes.
 	 */
-	private static final int WHOLE_LIMIT = 256;
+	private static final int SCOPE_LIMIT = 1024;
 
 	/**
 	 * The ordinals of one field's segments lined up against one another, per
@@ -70,30 +89,31 @@ final class FacetStates {
 		new ConcurrentHashMap<>();
 
 	/**
-	 * The counts of one facet over everything the reader holds, keyed by the
-	 * facet asked for, the locale it was asked under, and the object field path
-	 * whose values were counted where they were values rather than documents.
+	 * What one facet answered over one scope, per reader - see
+	 * {@link #scopeCountsOf}.
 	 */
-	private static final Map<IndexReader.CacheKey, Map<WholeKey, SearchResult.Facet>> wholeCounts =
+	private static final Map<IndexReader.CacheKey, Recent<ScopeKey, SearchResult.Facet>> scopeCounts =
 		new ConcurrentHashMap<>();
 
 	/**
-	 * How many documents the reader holds, counted the way a search with
-	 * nothing narrowing it counts them.
+	 * How many matches one scope holds, per reader - see
+	 * {@link #scopeTotalOf}.
 	 */
-	private static final Map<IndexReader.CacheKey, Long> wholeTotals =
+	private static final Map<IndexReader.CacheKey, Recent<Scope, Long>> scopeTotals =
 		new ConcurrentHashMap<>();
 
 	/**
-	 * How many values of one object field path the reader holds, counted the
-	 * way a search answering with them and narrowed by nothing counts them.
-	 *
-	 * Uncapped where {@link #wholeCounts} is capped: a path is an object field
-	 * of the definition rather than a shape the caller chose, so a reader has
-	 * as many entries here as the index has object fields.
+	 * What one segment counted for everything the reader holds, per segment
+	 * reader and by what was counted - see {@link #segmentCountsOf}.
 	 */
-	private static final Map<IndexReader.CacheKey, Map<String, Long>> wholeValueTotals =
+	private static final Map<IndexReader.CacheKey, Map<SegmentKey, Object>> segmentCounts =
 		new ConcurrentHashMap<>();
+
+	private static final LongAdder scopeHits = new LongAdder();
+	private static final LongAdder scopeMisses = new LongAdder();
+	private static final LongAdder scopeEvictions = new LongAdder();
+	private static final LongAdder segmentHits = new LongAdder();
+	private static final LongAdder segmentMisses = new LongAdder();
 
 	/**
 	 * The distinct values of one segment of a field counted a level at a time,
@@ -584,174 +604,325 @@ final class FacetStates {
 	}
 
 	/**
-	 * Get what the given facet counted over everything the reader holds, or
-	 * {@code null} where nothing was kept - see
-	 * {@link #keepWholeCounts(IndexReader, String, String, Facet, SearchResult.Facet)}.
+	 * Get what the given facet answered over the given scope, or {@code null}
+	 * where nothing was kept - see {@link #keepScopeCounts}.
 	 *
 	 * @param reader
-	 * @param path
-	 *   the object field path whose values were counted, or {@code null} where
-	 *   the counts are of documents
-	 * @param locale
-	 *   the locale of the search, or {@code null} where it named none
+	 * @param scope
+	 *   the scope the facet is counted over
 	 * @param facet
 	 * @return
 	 */
-	static SearchResult.Facet wholeCountsOf(
-		IndexReader reader,
-		String path,
-		String locale,
-		Facet facet
-	) {
+	static SearchResult.Facet scopeCountsOf(IndexReader reader, Scope scope, Facet facet) {
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
+			scopeMisses.increment();
 			return null;
 		}
 
-		var facets = wholeCounts.get(helper.getKey());
-		return facets == null ? null : facets.get(new WholeKey(path, locale, facet));
+		var kept = scopeCounts.get(helper.getKey());
+		var counts = kept == null ? null : kept.get(new ScopeKey(scope, shapeOf(facet)));
+		if(counts == null) {
+			scopeMisses.increment();
+		} else {
+			scopeHits.increment();
+		}
+
+		return counts;
 	}
 
 	/**
-	 * Keep what a facet counted over everything the reader holds, for as long
-	 * as the reader is open. Not kept for a reader that cannot say when it
-	 * closes, or one already holding counts for {@code WHOLE_LIMIT} facets.
+	 * Keep what a facet answered over a scope, for as long as the reader is
+	 * open and the scope stays among the {@code SCOPE_LIMIT} most recently
+	 * asked for. Not kept for a reader that cannot say when it closes, and
+	 * not kept when the search has run past its {@link SearchDeadline}, as
+	 * the counts then describe part of the index.
 	 *
 	 * @param reader
-	 * @param path
-	 *   the object field path whose values were counted, or {@code null} where
-	 *   the counts are of documents
-	 * @param locale
-	 *   the locale of the search, or {@code null} where it named none
+	 * @param scope
+	 *   the scope the facet was counted over
 	 * @param facet
 	 * @param counts
 	 */
-	static void keepWholeCounts(
+	static void keepScopeCounts(
 		IndexReader reader,
-		String path,
-		String locale,
+		Scope scope,
 		Facet facet,
 		SearchResult.Facet counts
 	) {
 		var helper = reader.getReaderCacheHelper();
-		if(helper == null) {
+		if(helper == null || SearchDeadline.exceeded()) {
 			return;
 		}
 
 		var key = helper.getKey();
-		var facets = wholeCounts.get(key);
-		if(facets == null) {
-			facets = wholeCounts.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+		var kept = scopeCounts.get(key);
+		if(kept == null) {
+			kept = scopeCounts.computeIfAbsent(key, ignored -> new Recent<>());
 
 			/*
 			 * Registered against the key rather than against the map, so a
 			 * reader that closed while this was being built drops what was put
 			 * under it instead of leaving it behind.
 			 */
-			helper.addClosedListener(wholeCounts::remove);
+			helper.addClosedListener(scopeCounts::remove);
 		}
 
-		if(facets.size() >= WHOLE_LIMIT) {
-			return;
-		}
-
-		facets.put(new WholeKey(path, locale, facet), counts);
+		kept.put(new ScopeKey(scope, shapeOf(facet)), counts);
 	}
 
 	/**
-	 * One ask for whole-index counts: the facet, the locale it was asked under,
-	 * which is what decides the values a localized field counts, and the path
-	 * whose values were counted, which is what decides whether the counts are
-	 * of values at all and of which of them.
-	 *
-	 * @param path
-	 *   the object field path whose values were counted, or {@code null} where
-	 *   the counts are of documents
+	 * The part of a facet that decides what it counts: everything but the
+	 * name the answer is keyed by and the filters it leaves out, which have
+	 * done their work by the time the scope is known. Two facets alike in
+	 * this answer alike over one scope, whatever they are called.
 	 */
-	private record WholeKey(String path, String locale, Facet facet) {
+	private static Facet shapeOf(Facet facet) {
+		return new Facet(
+			facet.field(),
+			facet.field(),
+			facet.limit(),
+			facet.order(),
+			facet.ranges(),
+			facet.path(),
+			facet.depth(),
+			Lists.immutable.empty()
+		);
 	}
 
 	/**
-	 * Get how many documents the reader holds, as a search with nothing
-	 * narrowing it counts them, or {@code null} where nothing was kept - see
-	 * {@link #keepWholeTotal(IndexReader, long)}.
+	 * Get how many matches the given scope holds, or {@code null} where
+	 * nothing was kept - see {@link #keepScopeTotal}.
 	 *
 	 * @param reader
+	 * @param scope
 	 * @return
 	 */
-	static Long wholeTotalOf(IndexReader reader) {
-		var helper = reader.getReaderCacheHelper();
-		return helper == null ? null : wholeTotals.get(helper.getKey());
-	}
-
-	/**
-	 * Keep how many documents the reader holds, for as long as it is open. Not
-	 * kept for a reader that cannot say when it closes.
-	 *
-	 * @param reader
-	 * @param total
-	 */
-	static void keepWholeTotal(IndexReader reader, long total) {
-		var helper = reader.getReaderCacheHelper();
-		if(helper == null) {
-			return;
-		}
-
-		if(wholeTotals.putIfAbsent(helper.getKey(), total) == null) {
-			helper.addClosedListener(wholeTotals::remove);
-		}
-	}
-
-	/**
-	 * Get how many values of the given object field path the reader holds, as a
-	 * search answering with them and narrowed by nothing counts them, or
-	 * {@code null} where nothing was kept - see
-	 * {@link #keepWholeValueTotal(IndexReader, String, long)}.
-	 *
-	 * @param reader
-	 * @param path
-	 *   the object field path the values belong to
-	 * @return
-	 */
-	static Long wholeValueTotalOf(IndexReader reader, String path) {
+	static Long scopeTotalOf(IndexReader reader, Scope scope) {
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
 			return null;
 		}
 
-		var paths = wholeValueTotals.get(helper.getKey());
-		return paths == null ? null : paths.get(path);
+		var kept = scopeTotals.get(helper.getKey());
+		return kept == null ? null : kept.get(scope);
 	}
 
 	/**
-	 * Keep how many values of one object field path the reader holds, for as
-	 * long as it is open. Not kept for a reader that cannot say when it closes.
+	 * Keep how many matches a scope holds, for as long as the reader is open
+	 * and the scope stays among the {@code SCOPE_LIMIT} most recently asked
+	 * for. Not kept for a reader that cannot say when it closes, and not kept
+	 * when the search has run past its {@link SearchDeadline}, as the total is
+	 * then of part of the index.
 	 *
 	 * @param reader
-	 * @param path
-	 *   the object field path the values belong to
+	 * @param scope
 	 * @param total
 	 */
-	static void keepWholeValueTotal(IndexReader reader, String path, long total) {
+	static void keepScopeTotal(IndexReader reader, Scope scope, long total) {
 		var helper = reader.getReaderCacheHelper();
-		if(helper == null) {
+		if(helper == null || SearchDeadline.exceeded()) {
 			return;
 		}
 
 		var key = helper.getKey();
-		var paths = wholeValueTotals.get(key);
-		if(paths == null) {
-			paths = wholeValueTotals.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+		var kept = scopeTotals.get(key);
+		if(kept == null) {
+			kept = scopeTotals.computeIfAbsent(key, ignored -> new Recent<>());
+			helper.addClosedListener(scopeTotals::remove);
+		}
+
+		kept.put(scope, total);
+	}
+
+	/**
+	 * What a facet is counted over, as far as the reader is concerned:
+	 * everything that decides which matches a scope holds beyond the reader
+	 * itself.
+	 *
+	 * The clauses are the query records the scope was compiled from, which
+	 * compare by value - a scope asked for again is the same key. The one
+	 * clause that does not is {@code knn}, whose vector is an array: two
+	 * searches by vector never share an entry, which costs a walk and never
+	 * an answer from the wrong one. What the clauses compile to also depends
+	 * on the search settings and the definition, both of which can change
+	 * under an open reader, so their versions are part of the key: an entry
+	 * counted under a synonym set no longer in force is a miss rather than a
+	 * stale answer.
+	 *
+	 * @param path
+	 *   the object field whose values the matches are, or {@code null} where
+	 *   they are documents of the index
+	 * @param locale
+	 *   the locale of the search, or {@code null} where it named none - what
+	 *   decides the variant a localized field is matched and counted in
+	 * @param settingsVersion
+	 *   the version of the search settings the search ran under, or
+	 *   {@code null} where it ran under none
+	 * @param definitionVersion
+	 *   the version of the definition the search ran under
+	 * @param clauses
+	 *   the clauses narrowing the scope, empty for everything the reader holds
+	 */
+	record Scope(
+		String path,
+		String locale,
+		String settingsVersion,
+		String definitionVersion,
+		ImmutableList<Query> clauses
+	) {
+	}
+
+	/**
+	 * One ask for counts: a facet over a scope.
+	 */
+	private record ScopeKey(Scope scope, Facet facet) {
+	}
+
+	/**
+	 * At most {@code SCOPE_LIMIT} entries, the one asked for least recently
+	 * going first. Locked around every read and write: a read is what moves
+	 * an entry to the front, and the map cannot be shared without it.
+	 */
+	private static final class Recent<K, V> {
+		private final LinkedHashMap<K, V> entries = new LinkedHashMap<>(16, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+				if(size() > SCOPE_LIMIT) {
+					scopeEvictions.increment();
+					return true;
+				}
+
+				return false;
+			}
+		};
+
+		synchronized V get(K key) {
+			return entries.get(key);
+		}
+
+		synchronized void put(K key, V value) {
+			entries.put(key, value);
+		}
+	}
+
+	/**
+	 * Get what the given segment counted for everything the reader holds, or
+	 * {@code null} where nothing was kept - see {@link #keepSegmentCounts}.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param mode
+	 *   what the matches were and what the counts are of
+	 * @param path
+	 *   the object field whose every value was counted, or {@code null} where
+	 *   every document was
+	 * @param type
+	 *   the shape the counts were kept in, decided by whoever counts the field
+	 * @return
+	 */
+	static <T> T segmentCountsOf(
+		LeafReaderContext context,
+		String field,
+		FacetMatches.Mode mode,
+		String path,
+		Class<T> type
+	) {
+		var helper = context.reader().getReaderCacheHelper();
+		if(helper == null) {
+			segmentMisses.increment();
+			return null;
+		}
+
+		var kept = segmentCounts.get(helper.getKey());
+		var counts = kept == null ? null : kept.get(new SegmentKey(field, mode, path));
+		if(counts == null) {
+			segmentMisses.increment();
+			return null;
+		}
+
+		segmentHits.increment();
+		return type.cast(counts);
+	}
+
+	/**
+	 * Keep what a segment counted for everything the reader holds, in the
+	 * segment's own ordinal space, for as long as the segment reader is open -
+	 * across reopens of the reader around it, until the segment takes a
+	 * deletion or is merged away. Not kept for a segment that cannot say when
+	 * its reader closes, and not kept when the search has run past its
+	 * {@link SearchDeadline}, as the matches it counted may then be part of
+	 * the segment.
+	 *
+	 * Uncapped: what is counted is a field of the definition in one of a few
+	 * modes rather than a shape the caller chose, so a segment holds at most
+	 * a few entries per faceted field. An entry costs about as much as the
+	 * distinct values of the field in the segment.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param mode
+	 *   what the matches were and what the counts are of
+	 * @param path
+	 *   the object field whose every value was counted, or {@code null} where
+	 *   every document was
+	 * @param counts
+	 *   the counts, never written to again by the caller
+	 */
+	static void keepSegmentCounts(
+		LeafReaderContext context,
+		String field,
+		FacetMatches.Mode mode,
+		String path,
+		Object counts
+	) {
+		var helper = context.reader().getReaderCacheHelper();
+		if(helper == null || SearchDeadline.exceeded()) {
+			return;
+		}
+
+		var key = helper.getKey();
+		var kept = segmentCounts.get(key);
+		if(kept == null) {
+			kept = segmentCounts.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
 
 			/*
 			 * Registered against the key rather than against the map, so a
-			 * reader that closed while this was being built drops what was put
-			 * under it instead of leaving it behind.
+			 * segment reader that closed while this was being counted drops
+			 * what was put under it instead of leaving it behind.
 			 */
-			helper.addClosedListener(wholeValueTotals::remove);
+			helper.addClosedListener(segmentCounts::remove);
 		}
 
-		paths.put(path, total);
+		kept.put(new SegmentKey(field, mode, path), counts);
+	}
+
+	/**
+	 * What one segment counted for everything the reader holds is keyed by:
+	 * the field, what the matches were - every document or every value of
+	 * one path - and what a count of them means.
+	 */
+	private record SegmentKey(String field, FacetMatches.Mode mode, String path) {
+	}
+
+	/**
+	 * Get how the caches here have answered so far, for the meters a node
+	 * reports and for tests of what is kept.
+	 *
+	 * @return
+	 */
+	static FacetCacheStats stats() {
+		return new FacetCacheStats(
+			scopeHits.sum(),
+			scopeMisses.sum(),
+			scopeEvictions.sum(),
+			segmentHits.sum(),
+			segmentMisses.sum()
+		);
 	}
 
 	/**

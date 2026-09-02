@@ -68,6 +68,11 @@ The `operation` tag names the request rather than the endpoint, so the JSON and 
 | `exofind.document.cache.hits` | Counter | Reads | None | Number of document reads served directly from the in-memory cache. |
 | `exofind.document.cache.misses` | Counter | Reads | None | Number of document reads that missed the cache and required a disk lookup. |
 | `exofind.document.cache.evictions` | Counter | Entries | None | Number of entries evicted from the document cache. |
+| `exofind.facet.cache.hits` | Counter | Facets | None | Number of facets answered from the counts an earlier search made over the same scope: the same clauses, locale, settings and definition against the same reader. |
+| `exofind.facet.cache.misses` | Counter | Facets | None | Number of facets that had to be counted. The hit rate over a period is `hits / (hits + misses)`. |
+| `exofind.facet.cache.evictions` | Counter | Entries | None | Number of facet scope entries dropped to make room for ones asked for more recently. Each reader keeps a bounded number of scopes. |
+| `exofind.facet.segment.hits` | Counter | Segments | None | Number of segments whose counts over everything the index holds were reused. A refresh keeps the counts of the segments it left untouched, so a search after it only counts the new segments. |
+| `exofind.facet.segment.misses` | Counter | Segments | None | Number of segments a facet had to count over everything the index holds. |
 
 ### API and security metrics
 

@@ -191,6 +191,34 @@ public final class Meters {
 	public static final String DOCUMENT_CACHE_EVICTIONS = "exofind.document.cache.evictions";
 
 	/**
+	 * Facets answered from what an earlier search counted over the same
+	 * scope.
+	 */
+	public static final String FACET_CACHE_HITS = "exofind.facet.cache.hits";
+
+	/**
+	 * Facets that had to be counted.
+	 */
+	public static final String FACET_CACHE_MISSES = "exofind.facet.cache.misses";
+
+	/**
+	 * Facet scope entries dropped to make room for ones asked for more
+	 * recently.
+	 */
+	public static final String FACET_CACHE_EVICTIONS = "exofind.facet.cache.evictions";
+
+	/**
+	 * Segments whose counts over everything the index holds were reused by a
+	 * facet.
+	 */
+	public static final String FACET_SEGMENT_HITS = "exofind.facet.segment.hits";
+
+	/**
+	 * Segments a facet had to count over everything the index holds.
+	 */
+	public static final String FACET_SEGMENT_MISSES = "exofind.facet.segment.misses";
+
+	/**
 	 * Reindex jobs this node knows of. Tagged with {@link #TAG_PHASE},
 	 * carrying one series per phase and none per index.
 	 */

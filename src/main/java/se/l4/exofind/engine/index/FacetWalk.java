@@ -45,7 +45,7 @@ final class FacetWalk {
 		throws IOException
 	{
 		var totalMatches = 0;
-		for(var docs : matches.hits().getMatchingDocs()) {
+		for(var docs : matches.hits()) {
 			totalMatches += docs.totalHits();
 		}
 
@@ -53,7 +53,7 @@ final class FacetWalk {
 			facet.begin(totalMatches);
 		}
 
-		for(var docs : matches.hits().getMatchingDocs()) {
+		for(var docs : matches.hits()) {
 			var context = docs.context();
 			var iterator = docs.bits() == null ? null : docs.bits().iterator();
 			if(iterator == null) {

@@ -52,6 +52,54 @@ public class HierarchyFacetSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testCountsFollowACommitAndReuseTheSegmentsBeforeIt() throws IOException {
+		var index = catalogue();
+
+		var request = SearchRequest.create()
+			.addFacet(Facet.of("category"))
+			.build();
+
+		index.search(request);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "hat"),
+				new Document.Value("category", "Men/Hats")
+			)
+		);
+		index.commit();
+
+		/*
+		 * The segment the first search counted stays open after the commit
+		 * and folds what it kept. Other tests run beside this one, so only
+		 * that the reuse happened at least once is checked.
+		 */
+		var before = FacetCacheStats.current();
+		var result = index.search(request);
+		var after = FacetCacheStats.current();
+
+		assertThat(after.segmentHits() - before.segmentHits() >= 1, is(true));
+		assertThat(
+			result.facets().get("category").values(),
+			contains(
+				value("Men", "Men", 5),
+				value("Women", "Women", 2)
+			)
+		);
+
+		// Drilling in picks its levels out of the same kept counts
+		var drilled = index.search(
+			SearchRequest.create()
+				.addFacet(Facet.of("category").withPath("Men"))
+				.build()
+		);
+		assertThat(
+			drilled.facets().get("category").values().collect(SearchResult.Facet.Value::path),
+			containsInAnyOrder("Men/Shoes", "Men/Outerwear", "Men/Hats")
+		);
+	}
+
+	@Test
 	public void testALevelCountsEverythingFiledBelowIt() throws IOException {
 		var index = catalogue();
 

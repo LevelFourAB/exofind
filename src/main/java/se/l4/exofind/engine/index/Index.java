@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -70,8 +71,11 @@ import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.search.join.QueryBitSetProducer;
 import org.apache.lucene.search.join.ToChildBlockJoinQuery;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.util.BitDocIdSet;
+import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.FixedBitSet;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.factory.primitive.IntLists;
@@ -3738,6 +3742,7 @@ public class Index {
 					compileSynonymOverlay(settings),
 					compileTypoExclusions(settings)
 				);
+				var settingsVersion = settings == null ? null : settings.version();
 				var searched = request.query().newWithAll(request.filters());
 
 				/*
@@ -3855,7 +3860,7 @@ public class Index {
 						 * the matches here would pay for what those answers
 						 * exist to avoid.
 						 */
-						counted = countFacets(searcher, compiler, request, searched, assembled, null);
+						counted = countFacets(searcher, compiler, request, settingsVersion, searched, assembled,null);
 						count = counted.total();
 					} else if(withFacets && !mixed) {
 						matches = searcher.search(query, new FacetsCollectorManager());
@@ -3888,7 +3893,7 @@ public class Index {
 					}
 
 					if(withFacets && counted == null) {
-						counted = countFacets(searcher, compiler, request, searched, assembled, matches);
+						counted = countFacets(searcher, compiler, request, settingsVersion, searched, assembled,matches);
 					}
 
 					return new SearchResult(
@@ -3980,7 +3985,7 @@ public class Index {
 				 */
 				var faceted = request.facets().isEmpty()
 					? null
-					: countFacets(searcher, compiler, request, searched, assembled, null);
+					: countFacets(searcher, compiler, request, settingsVersion, searched, assembled,null);
 
 				var reader = DocumentReader.inLocale(
 					schema,
@@ -5121,29 +5126,39 @@ public class Index {
 	 * that drilled into a level is a filter on the facet's own field, so it is
 	 * left out and the levels beside the chosen one stay countable.
 	 *
-	 * A scope with no clauses left in it is everything the index holds, whose
-	 * counts change only when the reader does - a search with facets but
-	 * nothing narrowing it, and the facet counting sideways of the only filter
-	 * of the search, both ask for them. Those are answered per reader through
-	 * {@link FacetStates}, and the matches of the search are only collected
-	 * when something still needs them - a search every facet of which is
-	 * answered that way pays a count for its total instead of a collection.
+	 * What a facet answered over a scope is kept per reader and answered
+	 * again to the next search asking for the same facet over the same scope
+	 * - see {@link FacetStates.Scope} for what makes two scopes the same -
+	 * and the matches of the search are only collected when something still
+	 * needs them. A search every facet of which is answered that way pays a
+	 * count for its total, or nothing where that was kept too.
+	 *
+	 * A scope with no clauses left in it is everything the index holds - a
+	 * search with facets but nothing narrowing it, and the facet counting
+	 * sideways of the only filter of the search, both ask for it. Its matches
+	 * are built from what the segments already know rather than searched
+	 * for, see {@link #everythingHeld}, and what each segment counts for it
+	 * is kept across reopens, so a search after a refresh counts the new
+	 * segments alone.
 	 *
 	 * A search whose hits are the values of an object field, whatever the
-	 * document, counts differently enough - the counts are of values, and
-	 * nothing per reader answers those - that it is counted apart, in
-	 * {@link #countValueFacets}. A search that expands only some of its
-	 * documents is counted here: its page holds hits of both kinds, and the
-	 * only count that describes all of them is of the documents they came
-	 * from. A colour holding twelve products holds twelve however many of them
-	 * chose to answer as their variants.
+	 * document, counts differently enough - the counts are of values - that
+	 * it is counted apart, in {@link #countValueFacets}. A search that
+	 * expands only some of its documents is counted here: its page holds hits
+	 * of both kinds, and the only count that describes all of them is of the
+	 * documents they came from. A colour holding twelve products holds twelve
+	 * however many of them chose to answer as their variants.
 	 *
+	 * @param settingsVersion
+	 *   the version of the search settings the search ran under, or
+	 *   {@code null} where it ran under none - part of what a kept answer is
+	 *   keyed by
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
 	 * @param assembled
 	 *   those clauses assembled, for the documents of the search and the query
 	 *   its hits come from
-	 * @param whole
+	 * @param collected
 	 *   the matches of the search where the caller already collected them, or
 	 *   {@code null} to collect them here if a facet or the total needs them -
 	 *   either way the scope of every facet no filter names
@@ -5152,26 +5167,31 @@ public class Index {
 		IndexSearcher searcher,
 		QueryCompiler compiler,
 		SearchRequest request,
+		String settingsVersion,
 		ListIterable<Query> clauses,
 		Assembled assembled,
-		FacetsCollector whole
+		FacetsCollector collected
 	) throws IOException {
 		if(request.hits() != null && request.hits().isEveryDocument()) {
-			return countValueFacets(searcher, compiler, request, clauses, assembled, whole);
+			return countValueFacets(
+				searcher, compiler, request, settingsVersion, clauses, assembled, collected
+			);
 		}
 
 		var documents = assembled.documents();
 		var reader = searcher.getIndexReader();
 		var filterPaths = request.filters().collect(Index::filterPathOf);
 
+		var whole = collected == null ? null : collected.getMatchingDocs();
+
 		/*
-		 * The matches of everything the index holds, collected the first time
-		 * a whole-index scope is not already answered per reader. The whole
-		 * search is that collection when nothing narrows it.
+		 * The matches of everything the index holds, built the first time a
+		 * facet's scope is nothing narrower and not already answered. The
+		 * whole search is that scope when nothing narrows it.
 		 */
 		var everything = clauses.isEmpty() ? whole : null;
 
-		var collectors = Maps.mutable.<ImmutableList<Query>, FacetMatches>empty();
+		var collectors = Maps.mutable.<ImmutableList<Query>, List<FacetsCollector.MatchingDocs>>empty();
 		var values = Maps.mutable.<Pair<String, ImmutableList<Query>>, FacetMatches>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
 		var walks = Maps.mutable.<FacetMatches, MutableList<PendingFacet>>empty();
@@ -5185,146 +5205,88 @@ public class Index {
 				? request.query().newWithAll(filters)
 				: clauses;
 
-			FacetMatches scope;
-			var keepWhole = false;
-			if(nested.isPresent()) {
+			var scope = scopeOf(request, settingsVersion, null, scoped);
+			var kept = FacetStates.scopeCountsOf(reader, scope, facet);
+			if(kept != null) {
+				counts.put(facet.name(), kept);
+				continue;
+			}
+
+			FacetMatches matches;
+			if(nested.isPresent() && compiler.narrowsValues(nested.get().path(), scoped)) {
+				/*
+				 * Something asked of the values, so only a walk of them tells
+				 * which of a document's values matched: the scope is the
+				 * values, one collection per object field and set of kept
+				 * filters.
+				 */
 				var path = nested.get().path();
+				var key = Tuples.pair(path, filters);
+				matches = values.get(key);
+				if(matches == null) {
+					var scopedDocuments = sideways
+						? assemble(compiler, request, scoped).documents()
+						: documents;
 
-				if(scoped.isEmpty()) {
-					var kept = FacetStates.wholeCountsOf(reader, null, request.locale(), facet);
-					if(kept != null) {
-						counts.put(facet.name(), kept);
-						continue;
-					}
-
-					keepWhole = true;
-				}
-
-				if(!compiler.narrowsValues(path, scoped)) {
-					/*
-					 * Nothing asked of the values, so the documents alone say
-					 * which values matched - every value of each of them -
-					 * and the scope is the documents, collected the way the
-					 * facets over fields of the index collect theirs and
-					 * shared with them.
-					 */
-					FacetsCollector hits;
-					if(scoped.isEmpty()) {
-						if(everything == null) {
-							everything = collectEverything(searcher, compiler);
-						}
-
-						hits = everything;
-					} else if(sideways) {
-						var collected = collectors.get(filters);
-						if(collected == null) {
-							collected = FacetMatches.of(
-								searcher.search(
-									assemble(compiler, request, scoped).documents(),
-									new FacetsCollectorManager()
-								)
-							);
-							collectors.put(filters, collected);
-						}
-
-						hits = collected.hits();
-					} else {
-						if(whole == null) {
-							whole = searcher.search(documents, new FacetsCollectorManager());
-						}
-
-						hits = whole;
-					}
-
-					scope = FacetMatches.everyValue(hits, nestedParents);
-				} else {
-					var key = Tuples.pair(path, filters);
-					scope = values.get(key);
-					if(scope == null) {
-						var scopedDocuments = sideways
-							? assemble(compiler, request, scoped).documents()
-							: documents;
-
-						scope = FacetMatches.rolledUp(
-							searcher.search(
-								compiler.compileNestedValues(path, scopedDocuments, scoped),
-								new FacetsCollectorManager()
-							),
-							nestedParents
-						);
-						values.put(key, scope);
-					}
+					matches = FacetMatches.rolledUp(
+						collect(searcher, compiler.compileNestedValues(path, scopedDocuments, scoped)),
+						nestedParents
+					);
+					values.put(key, matches);
 				}
 			} else {
+				/*
+				 * The documents alone say what matched - for a facet inside
+				 * an object, every value of each of them - and the scope is
+				 * the documents, shared by every facet over the same clauses.
+				 */
+				List<FacetsCollector.MatchingDocs> hits;
 				if(scoped.isEmpty()) {
-					var kept = FacetStates.wholeCountsOf(reader, null, request.locale(), facet);
-					if(kept == null) {
-						if(everything == null) {
-							everything = collectEverything(searcher, compiler);
-						}
-
-						var wholeScope = FacetMatches.of(everything);
-						walks.getIfAbsentPut(wholeScope, Lists.mutable::empty).add(
-							new PendingFacet(facet, prepareFacet(compiler, facet, wholeScope), true)
-						);
-					} else {
-						counts.put(facet.name(), kept);
+					if(everything == null) {
+						everything = everythingHeld(reader);
 					}
 
-					continue;
-				}
-
-				if(sideways) {
-					scope = collectors.get(filters);
-					if(scope == null) {
-						scope = FacetMatches.of(
-							searcher.search(
-								assemble(compiler, request, scoped).documents(),
-								new FacetsCollectorManager()
-							)
-						);
-						collectors.put(filters, scope);
+					hits = everything;
+				} else if(sideways) {
+					hits = collectors.get(filters);
+					if(hits == null) {
+						hits = collect(searcher, assemble(compiler, request, scoped).documents());
+						collectors.put(filters, hits);
 					}
 				} else {
 					if(whole == null) {
-						whole = searcher.search(documents, new FacetsCollectorManager());
+						whole = collect(searcher, documents);
 					}
 
-					scope = FacetMatches.of(whole);
+					hits = whole;
+				}
+
+				matches = nested.isPresent()
+					? FacetMatches.everyValue(hits, nestedParents)
+					: FacetMatches.of(hits);
+
+				if(scoped.isEmpty()) {
+					matches = matches.wholeDocuments();
 				}
 			}
 
-			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
-				new PendingFacet(facet, prepareFacet(compiler, facet, scope), keepWhole)
+			walks.getIfAbsentPut(matches, Lists.mutable::empty).add(
+				new PendingFacet(facet, scope, prepareFacet(compiler, facet, matches))
 			);
 		}
 
-		countWalks(reader, null, request, walks, counts);
+		countWalks(reader, walks, counts);
 
-		long total;
-		if(whole != null) {
-			total = matchCount(whole);
-		} else if(!clauses.isEmpty()) {
-			/*
-			 * Every facet found its scope without the matches of the search,
-			 * so the exact total the caller is promised is counted on its own
-			 * - counting skips the collection a facet would have needed.
-			 */
-			total = searcher.count(documents);
-		} else if(everything != null) {
-			total = matchCount(everything);
-			FacetStates.keepWholeTotal(reader, total);
-		} else {
-			var kept = FacetStates.wholeTotalOf(reader);
-			if(kept == null) {
-				total = searcher.count(documents);
-				FacetStates.keepWholeTotal(reader, total);
-			} else {
-				total = kept;
-			}
-		}
-
-		return new Faceted(counts.toImmutable(), total);
+		return new Faceted(
+			counts.toImmutable(),
+			totalOf(
+				searcher,
+				scopeOf(request, settingsVersion, null, clauses),
+				documents,
+				whole,
+				everything
+			)
+		);
 	}
 
 	/**
@@ -5346,20 +5308,22 @@ public class Index {
 	 * is the value hits of that narrowed search, assembled the same way the
 	 * search itself is.
 	 *
-	 * A scope with no clauses left in it is every value of the path the reader
-	 * holds, whose counts change only when the reader does - a search with
-	 * facets but nothing narrowing it, and a facet counting sideways of the
-	 * only filter of the search, both ask for them. Those are answered per
-	 * reader through {@link FacetStates}, under the path as well as the facet,
-	 * because the same facet counts other values over another path. A path
+	 * What a facet answered over a scope is kept per reader the way
+	 * {@link #countFacets} keeps it, under the path as well as the scope,
+	 * because the same facet counts other values over another path. A scope
+	 * with no clauses left in it is every value of the path the reader holds,
+	 * and what each segment counts for it is kept across reopens. A path
 	 * holds several times the documents, so a walk skipped here is worth more
 	 * than one skipped over documents.
 	 *
+	 * @param settingsVersion
+	 *   the version of the search settings the search ran under, or
+	 *   {@code null} where it ran under none
 	 * @param clauses
 	 *   the clauses the search ran with, query and filters together
 	 * @param assembled
 	 *   those clauses assembled
-	 * @param whole
+	 * @param collected
 	 *   the matches of the search - its value hits - where the caller already
 	 *   collected them, or {@code null} to collect them here when a facet or
 	 *   the total needs them
@@ -5368,22 +5332,25 @@ public class Index {
 		IndexSearcher searcher,
 		QueryCompiler compiler,
 		SearchRequest request,
+		String settingsVersion,
 		ListIterable<Query> clauses,
 		Assembled assembled,
-		FacetsCollector whole
+		FacetsCollector collected
 	) throws IOException {
 		var reader = searcher.getIndexReader();
 		var filterPaths = request.filters().collect(Index::filterPathOf);
 		var path = request.hits().path();
 
+		var whole = collected == null ? null : collected.getMatchingDocs();
+
 		/*
 		 * The value hits of everything the index holds, collected the first
-		 * time a whole-index scope is not already answered per reader. The
-		 * whole search is that collection when nothing narrows it.
+		 * time a facet's scope is nothing narrower and not already answered.
+		 * The whole search is that collection when nothing narrows it.
 		 */
 		var everything = clauses.isEmpty() ? whole : null;
 
-		var collectors = Maps.mutable.<ImmutableList<Query>, FacetsCollector>empty();
+		var collectors = Maps.mutable.<ImmutableList<Query>, List<FacetsCollector.MatchingDocs>>empty();
 		var counts = Maps.mutable.<String, SearchResult.Facet>empty();
 		var walks = Maps.mutable.<FacetMatches, MutableList<PendingFacet>>empty();
 
@@ -5403,77 +5370,131 @@ public class Index {
 				? request.query().newWithAll(filters)
 				: clauses;
 
-			FacetsCollector matches;
-			var keepWhole = false;
+			var scope = scopeOf(request, settingsVersion, path, scoped);
+			var kept = FacetStates.scopeCountsOf(reader, scope, facet);
+			if(kept != null) {
+				counts.put(facet.name(), kept);
+				continue;
+			}
+
+			List<FacetsCollector.MatchingDocs> hits;
 			if(scoped.isEmpty()) {
-				var kept = FacetStates.wholeCountsOf(reader, path, request.locale(), facet);
-				if(kept != null) {
-					counts.put(facet.name(), kept);
-					continue;
-				}
-
-				keepWhole = true;
-
 				if(everything == null) {
-					everything = searcher.search(
-						assemble(compiler, request, Lists.immutable.<Query>empty()).hits(),
-						new FacetsCollectorManager()
+					everything = collect(
+						searcher,
+						assemble(compiler, request, Lists.immutable.<Query>empty()).hits()
 					);
 				}
 
-				matches = everything;
+				hits = everything;
 			} else if(sideways) {
-				matches = collectors.get(filters);
-				if(matches == null) {
-					matches = searcher.search(
-						assemble(compiler, request, scoped).hits(),
-						new FacetsCollectorManager()
-					);
-					collectors.put(filters, matches);
+				hits = collectors.get(filters);
+				if(hits == null) {
+					hits = collect(searcher, assemble(compiler, request, scoped).hits());
+					collectors.put(filters, hits);
 				}
 			} else {
 				if(whole == null) {
-					whole = searcher.search(assembled.hits(), new FacetsCollectorManager());
+					whole = collect(searcher, assembled.hits());
 				}
 
-				matches = whole;
+				hits = whole;
 			}
 
-			var scope = nested.isPresent()
-				? FacetMatches.values(matches)
-				: FacetMatches.parentsByValue(matches, nestedParents);
+			var matches = nested.isPresent()
+				? FacetMatches.values(hits)
+				: FacetMatches.parentsByValue(hits, nestedParents);
 
-			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
-				new PendingFacet(facet, prepareFacet(compiler, facet, scope), keepWhole)
+			if(scoped.isEmpty()) {
+				matches = matches.wholeValues(path);
+			}
+
+			walks.getIfAbsentPut(matches, Lists.mutable::empty).add(
+				new PendingFacet(facet, scope, prepareFacet(compiler, facet, matches))
 			);
 		}
 
-		countWalks(reader, path, request, walks, counts);
+		countWalks(reader, walks, counts);
+
+		return new Faceted(
+			counts.toImmutable(),
+			totalOf(
+				searcher,
+				scopeOf(request, settingsVersion, path, clauses),
+				assembled.hits(),
+				whole,
+				everything
+			)
+		);
+	}
+
+	/**
+	 * What a facet of the search is counted over, as far as the reader is
+	 * concerned - see {@link FacetStates.Scope}.
+	 *
+	 * @param path
+	 *   the object field whose values the matches are, or {@code null} where
+	 *   they are documents
+	 * @param clauses
+	 *   the clauses narrowing the scope
+	 */
+	private FacetStates.Scope scopeOf(
+		SearchRequest request,
+		String settingsVersion,
+		String path,
+		ListIterable<Query> clauses
+	) {
+		return new FacetStates.Scope(
+			path,
+			request.locale(),
+			settingsVersion,
+			definitionVersion,
+			clauses.toImmutable()
+		);
+	}
+
+	/**
+	 * The exact total of a search, which is what the caller is promised: read
+	 * off its matches where they were collected, kept per scope so that a
+	 * search every facet of which was answered from what was kept collects
+	 * nothing, and counted on its own otherwise - a count skips the
+	 * collection a facet would have needed.
+	 *
+	 * @param scope
+	 *   the scope of the search itself
+	 * @param query
+	 *   what the search matches, for counting
+	 * @param whole
+	 *   the matches of the search, where they were collected
+	 * @param everything
+	 *   the matches of everything the index holds, where they were built -
+	 *   the matches of the search when nothing narrows it
+	 */
+	private long totalOf(
+		IndexSearcher searcher,
+		FacetStates.Scope scope,
+		org.apache.lucene.search.Query query,
+		List<FacetsCollector.MatchingDocs> whole,
+		List<FacetsCollector.MatchingDocs> everything
+	) throws IOException {
+		var reader = searcher.getIndexReader();
 
 		long total;
 		if(whole != null) {
 			total = matchCount(whole);
-		} else if(!clauses.isEmpty()) {
-			/*
-			 * Every facet found its scope without the value hits of the search,
-			 * so the exact total the caller is promised is counted on its own -
-			 * counting skips the collection a facet would have needed.
-			 */
-			total = searcher.count(assembled.hits());
-		} else if(everything != null) {
+		} else if(everything != null && scope.clauses().isEmpty()) {
 			total = matchCount(everything);
-			FacetStates.keepWholeValueTotal(reader, path, total);
 		} else {
-			var kept = FacetStates.wholeValueTotalOf(reader, path);
-			if(kept == null) {
-				total = searcher.count(assembled.hits());
-				FacetStates.keepWholeValueTotal(reader, path, total);
-			} else {
-				total = kept;
+			var kept = FacetStates.scopeTotalOf(reader, scope);
+			if(kept != null) {
+				return kept;
 			}
+
+			total = searcher.count(query);
 		}
 
-		return new Faceted(counts.toImmutable(), total);
+		FacetStates.keepScopeTotal(reader, scope, total);
+		return total;
 	}
 
 	/**
@@ -5615,12 +5636,10 @@ public class Index {
 	}
 
 	/**
-	 * Walk every gathered scope once and read the facets counted over it.
+	 * Walk every gathered scope once, read the facets counted over it and
+	 * keep what each answered for the next search asking for it - see
+	 * {@link FacetStates}.
 	 *
-	 * @param path
-	 *   the object field path the counts are of the values of, or {@code null}
-	 *   where they are of documents - what whole-index counts are kept under,
-	 *   see {@link FacetStates}
 	 * @param walks
 	 *   the facets waiting per scope
 	 * @param counts
@@ -5628,8 +5647,6 @@ public class Index {
 	 */
 	private void countWalks(
 		IndexReader reader,
-		String path,
-		SearchRequest request,
 		MutableMap<FacetMatches, MutableList<PendingFacet>> walks,
 		MutableMap<String, SearchResult.Facet> counts
 	) throws IOException {
@@ -5639,16 +5656,7 @@ public class Index {
 			for(var pending : walk.getTwo()) {
 				var counted = pending.count().result();
 				counts.put(pending.facet().name(), counted);
-
-				if(pending.keepWhole()) {
-					FacetStates.keepWholeCounts(
-						reader,
-						path,
-						request.locale(),
-						pending.facet(),
-						counted
-					);
-				}
+				FacetStates.keepScopeCounts(reader, pending.scope(), pending.facet(), counted);
 			}
 		}
 	}
@@ -5656,28 +5664,94 @@ public class Index {
 	/**
 	 * One facet waiting for the walk of its scope.
 	 *
+	 * @param scope
+	 *   what the facet is counted over, which is what its result is kept
+	 *   under
 	 * @param count
 	 *   the counting, ready to be fed by the walk
-	 * @param keepWhole
-	 *   whether the result is kept per reader as whole-index counts - see
-	 *   {@link FacetStates}
 	 */
-	private record PendingFacet(Facet facet, FacetCount count, boolean keepWhole) {
+	private record PendingFacet(Facet facet, FacetStates.Scope scope, FacetCount count) {
 	}
 
 	/**
-	 * Collect the matches of everything the index holds, which is the scope of
-	 * a facet the clauses of the search leave alone.
+	 * Collect the matches of a query, one entry per segment holding any.
 	 */
-	private FacetsCollector collectEverything(
+	private static List<FacetsCollector.MatchingDocs> collect(
 		IndexSearcher searcher,
-		QueryCompiler compiler
+		org.apache.lucene.search.Query query
 	) throws IOException {
-		var none = Lists.immutable.<Query>empty();
-		return searcher.search(
-			parentsOnly(compiler.compile(none), compiler, none),
-			new FacetsCollectorManager()
-		);
+		return searcher.search(query, new FacetsCollectorManager()).getMatchingDocs();
+	}
+
+	/**
+	 * The matches of everything the index holds - every live document of the
+	 * index in every segment - which is the scope of a facet the clauses of
+	 * the search leave alone.
+	 *
+	 * Built from what is already known rather than searched for: which Lucene
+	 * documents of a segment are documents of the index is the parents bitset
+	 * kept per segment core, and which of them are live is the segment's own
+	 * to say. Nothing here runs against the {@link SearchDeadline}, so the
+	 * scope is always whole and what a segment counts for it can be kept, and
+	 * a segment without deletions hands over the bitset it already holds
+	 * rather than a copy.
+	 */
+	private List<FacetsCollector.MatchingDocs> everythingHeld(IndexReader reader)
+		throws IOException
+	{
+		var matches = new ArrayList<FacetsCollector.MatchingDocs>();
+		for(var context : reader.leaves()) {
+			var leaf = context.reader();
+			var maxDoc = leaf.maxDoc();
+			var liveDocs = leaf.getLiveDocs();
+
+			FixedBitSet documents;
+			if(schema.hasNestedFields()) {
+				var parents = nestedParents.getBitSet(context);
+				if(parents == null) {
+					continue;
+				}
+
+				if(liveDocs == null && parents instanceof FixedBitSet fixed) {
+					documents = fixed;
+				} else {
+					documents = new FixedBitSet(maxDoc);
+					var iterator = new BitSetIterator(parents, maxDoc);
+					for(
+						var doc = iterator.nextDoc();
+						doc != DocIdSetIterator.NO_MORE_DOCS;
+						doc = iterator.nextDoc()
+					) {
+						if(liveDocs == null || liveDocs.get(doc)) {
+							documents.set(doc);
+						}
+					}
+				}
+			} else {
+				documents = new FixedBitSet(maxDoc);
+				if(liveDocs == null) {
+					documents.set(0, maxDoc);
+				} else {
+					for(var doc = 0; doc < maxDoc; doc++) {
+						if(liveDocs.get(doc)) {
+							documents.set(doc);
+						}
+					}
+				}
+			}
+
+			var count = documents.cardinality();
+			if(count > 0) {
+				matches.add(new FacetsCollector.MatchingDocs(
+					context,
+					new BitDocIdSet(documents, count),
+					count,
+					null
+				));
+			}
+		}
+
+		return matches;
 	}
 
 	/**
@@ -5685,8 +5759,16 @@ public class Index {
 	 * collected over a whole search is its exact total.
 	 */
 	private static long matchCount(FacetsCollector matches) {
+		return matchCount(matches.getMatchingDocs());
+	}
+
+	/**
+	 * Get how many documents a collection of matches holds, which for matches
+	 * collected over a whole search is its exact total.
+	 */
+	private static long matchCount(List<FacetsCollector.MatchingDocs> matches) {
 		var total = 0L;
-		for(var docs : matches.getMatchingDocs()) {
+		for(var docs : matches) {
 			total += docs.totalHits();
 		}
 

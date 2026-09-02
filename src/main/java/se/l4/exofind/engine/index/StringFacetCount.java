@@ -48,6 +48,12 @@ import se.l4.exofind.engine.query.SearchResult;
  * way Lucene's own counters choose: arrays while a scan of the cardinality is
  * cheaper than hashing the matches, maps when the matches are few and the
  * values are many.
+ *
+ * A scope that is everything the reader holds is counted per segment into an
+ * array the segment's ordinals index and that array is kept, see
+ * {@link FacetStates#keepSegmentCounts}: the next walk of the segment folds
+ * it into the whole without counting a match, which after a refresh leaves
+ * only the new segments to count.
  */
 final class StringFacetCount implements FacetCount {
 	/**
@@ -59,6 +65,7 @@ final class StringFacetCount implements FacetCount {
 	private final String field;
 	private final FacetMatches.Mode mode;
 	private final BitSetProducer parents;
+	private final FacetMatches.Whole whole;
 	private final int limit;
 	private final Facet.Order order;
 	private final Function<String, Object> decode;
@@ -90,6 +97,7 @@ final class StringFacetCount implements FacetCount {
 		this.field = field;
 		this.mode = scope.mode();
 		this.parents = scope.parents();
+		this.whole = scope.whole();
 		this.limit = limit;
 		this.order = order;
 		this.decode = decode;
@@ -124,15 +132,35 @@ final class StringFacetCount implements FacetCount {
 		var globals = ords.map() == null ? null : ords.map().getGlobalOrds(context.ord);
 
 		/*
+		 * Everything the reader holds, counted for this segment before:
+		 * fold what was kept and leave the segment unwalked.
+		 */
+		if(whole != null && values.getValueCount() <= Integer.MAX_VALUE) {
+			var kept = FacetStates.segmentCountsOf(context, field, mode, whole.path(), int[].class);
+			if(kept != null) {
+				foldGlobal(kept, globals);
+				return null;
+			}
+		}
+
+		/*
 		 * Few matches next to the segment's values: fold each one into the
 		 * whole as it is counted. Many: count into an array the segment's own
 		 * ordinals index and fold once at the end, so the packed ordinal map
-		 * is read per distinct value rather than per match.
+		 * is read per distinct value rather than per match. Everything the
+		 * reader holds is always counted into the array, which is what is
+		 * kept for the next walk of the segment.
 		 */
-		var counts = matches < values.getValueCount() / 10
-			|| values.getValueCount() > Integer.MAX_VALUE
-			? new DirectSegCounts(globals)
-			: new ArraySegCounts(globals, (int) values.getValueCount());
+		SegCounts counts;
+		if(values.getValueCount() > Integer.MAX_VALUE) {
+			counts = new DirectSegCounts(globals);
+		} else if(whole != null) {
+			counts = new KeptSegCounts(globals, (int) values.getValueCount(), context);
+		} else if(matches < values.getValueCount() / 10) {
+			counts = new DirectSegCounts(globals);
+		} else {
+			counts = new ArraySegCounts(globals, (int) values.getValueCount());
+		}
 
 		var column = FacetStates.ordsOf(context, field);
 		return switch(mode) {
@@ -218,6 +246,24 @@ final class StringFacetCount implements FacetCount {
 			dense[(int) ord] += count;
 		} else {
 			sparse.addToValue(ord, count);
+		}
+	}
+
+	/**
+	 * Fold counts held per segment ordinal into the whole, reading the
+	 * ordinal map once per distinct value counted.
+	 *
+	 * @param counts
+	 *   the counts, by segment ordinal
+	 * @param globals
+	 *   the segment's ordinals mapped onto the reader's, or {@code null}
+	 *   where they already are the reader's
+	 */
+	private void foldGlobal(int[] counts, LongValues globals) {
+		for(var ord = 0; ord < counts.length; ord++) {
+			if(counts[ord] != 0) {
+				addGlobal(globals == null ? ord : globals.get(ord), counts[ord]);
+			}
 		}
 	}
 
@@ -371,9 +417,9 @@ final class StringFacetCount implements FacetCount {
 	 * segment where the matches would read the ordinal map more often than a
 	 * scan of its values does.
 	 */
-	private final class ArraySegCounts implements SegCounts {
+	private non-sealed class ArraySegCounts implements SegCounts {
 		private final LongValues globals;
-		private final int[] counts;
+		final int[] counts;
 		private int[] countedFor;
 
 		ArraySegCounts(LongValues globals, int valueCount) {
@@ -406,11 +452,26 @@ final class StringFacetCount implements FacetCount {
 
 		@Override
 		public void finish() {
-			for(var ord = 0; ord < counts.length; ord++) {
-				if(counts[ord] != 0) {
-					addGlobal(globals == null ? ord : globals.get(ord), counts[ord]);
-				}
-			}
+			foldGlobal(counts, globals);
+		}
+	}
+
+	/**
+	 * {@link ArraySegCounts} over everything the reader holds, kept for the
+	 * next walk of the segment once counted - see {@link FacetStates}.
+	 */
+	private final class KeptSegCounts extends ArraySegCounts {
+		private final LeafReaderContext context;
+
+		KeptSegCounts(LongValues globals, int valueCount, LeafReaderContext context) {
+			super(globals, valueCount);
+			this.context = context;
+		}
+
+		@Override
+		public void finish() {
+			FacetStates.keepSegmentCounts(context, field, mode, whole.path(), counts);
+			super.finish();
 		}
 	}
 

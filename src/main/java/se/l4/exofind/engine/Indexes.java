@@ -41,6 +41,7 @@ import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.CommitPolicy;
 import se.l4.exofind.engine.index.DocumentCache;
+import se.l4.exofind.engine.index.FacetCacheStats;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
@@ -1421,6 +1422,16 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	public CacheStats getDocumentCacheStats() {
 		return documentCache.stats();
+	}
+
+	/**
+	 * Get how the facet caches have answered so far. The caches are shared
+	 * by every index of the node, so this is one answer for all of them.
+	 *
+	 * @return
+	 */
+	public FacetCacheStats getFacetCacheStats() {
+		return FacetCacheStats.current();
 	}
 
 	/**

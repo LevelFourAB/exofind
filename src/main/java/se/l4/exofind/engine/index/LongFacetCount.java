@@ -12,6 +12,7 @@ import org.eclipse.collections.api.factory.primitive.LongLists;
 import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.factory.primitive.LongSets;
 import org.eclipse.collections.api.list.primitive.MutableLongList;
+import org.eclipse.collections.api.map.primitive.LongLongMap;
 import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
 import org.eclipse.collections.api.set.primitive.MutableLongSet;
 import org.eclipse.collections.api.tuple.primitive.LongLongPair;
@@ -29,11 +30,18 @@ import se.l4.exofind.engine.query.SearchResult;
  * with. Rolling up compares across all of a document's matches instead, where
  * the values of different matches do not arrive sorted against each other, so
  * a set carries what the document counted.
+ *
+ * A scope that is everything the reader holds is counted per segment into a
+ * map of its own and that map is kept, see
+ * {@link FacetStates#keepSegmentCounts}: the next walk of the segment folds
+ * it into the whole without counting a match. Numbers are the same in every
+ * segment, so nothing has to be mapped on the way in.
  */
 final class LongFacetCount implements FacetCount {
 	private final String field;
 	private final FacetMatches.Mode mode;
 	private final BitSetProducer parents;
+	private final FacetMatches.Whole whole;
 	private final int limit;
 	private final Facet.Order order;
 	private final LongFunction<Object> decode;
@@ -50,6 +58,7 @@ final class LongFacetCount implements FacetCount {
 		this.field = field;
 		this.mode = scope.mode();
 		this.parents = scope.parents();
+		this.whole = scope.whole();
 		this.limit = limit;
 		this.order = order;
 		this.decode = decode;
@@ -61,15 +70,33 @@ final class LongFacetCount implements FacetCount {
 			return null;
 		}
 
+		/*
+		 * Everything the reader holds is counted into a map of the segment's
+		 * own and kept; a segment counted before folds what was kept and is
+		 * left unwalked. A narrower scope counts straight into the whole.
+		 */
+		var into = counts;
+		LeafReaderContext keepUnder = null;
+		if(whole != null) {
+			var kept = FacetStates.segmentCountsOf(context, field, mode, whole.path(), LongLongMap.class);
+			if(kept != null) {
+				kept.forEachKeyValue(counts::addToValue);
+				return null;
+			}
+
+			into = LongLongMaps.mutable.empty();
+			keepUnder = context;
+		}
+
 		var column = FacetStates.longsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(column);
+			case DOCUMENTS, VALUES -> new EachMatch(column, into, keepUnder);
 			case EVERY_VALUE -> {
 				var documents = parents.getBitSet(context);
-				yield documents == null ? null : new EveryValue(column, documents);
+				yield documents == null ? null : new EveryValue(column, documents, into, keepUnder);
 			}
-			case ROLLED_UP -> new RolledUp(column);
-			case PARENTS_BY_VALUE -> new ByDocument(column);
+			case ROLLED_UP -> new RolledUp(column, into, keepUnder);
+			case PARENTS_BY_VALUE -> new ByDocument(column, into, keepUnder);
 		};
 	}
 
@@ -96,13 +123,36 @@ final class LongFacetCount implements FacetCount {
 	}
 
 	/**
+	 * Counts of one segment going into a map: the whole, or - over everything
+	 * the reader holds - one of the segment's own, kept and folded into the
+	 * whole when the segment is done.
+	 */
+	private abstract class Into implements Leaf {
+		final FacetColumns.LongSpans spans;
+		final MutableLongLongMap into;
+		private final LeafReaderContext keepUnder;
+
+		Into(FacetColumns.Longs column, MutableLongLongMap into, LeafReaderContext keepUnder) {
+			this.spans = new FacetColumns.LongSpans(column);
+			this.into = into;
+			this.keepUnder = keepUnder;
+		}
+
+		@Override
+		public void finish() {
+			if(keepUnder != null) {
+				FacetStates.keepSegmentCounts(keepUnder, field, mode, whole.path(), into);
+				into.forEachKeyValue(counts::addToValue);
+			}
+		}
+	}
+
+	/**
 	 * Each match counts its own values, each distinct value once.
 	 */
-	private final class EachMatch implements Leaf {
-		private final FacetColumns.LongSpans spans;
-
-		EachMatch(FacetColumns.Longs column) {
-			this.spans = new FacetColumns.LongSpans(column);
+	private final class EachMatch extends Into {
+		EachMatch(FacetColumns.Longs column, MutableLongLongMap into, LeafReaderContext keepUnder) {
+			super(column, into, keepUnder);
 		}
 
 		@Override
@@ -112,7 +162,7 @@ final class LongFacetCount implements FacetCount {
 			for(int i = from, end = spans.to(doc); i < end; i++) {
 				var value = spans.values[i];
 				if(i == from || value != previous) {
-					counts.addToValue(value, 1);
+					into.addToValue(value, 1);
 				}
 
 				previous = value;
@@ -141,12 +191,11 @@ final class LongFacetCount implements FacetCount {
 	 * documents holding them: a value counts once per document however many of
 	 * its values hold it.
 	 */
-	private final class RolledUp implements Leaf {
-		private final FacetColumns.LongSpans spans;
+	private final class RolledUp extends Into {
 		private final MutableLongSet counted = LongSets.mutable.empty();
 
-		RolledUp(FacetColumns.Longs column) {
-			this.spans = new FacetColumns.LongSpans(column);
+		RolledUp(FacetColumns.Longs column, MutableLongLongMap into, LeafReaderContext keepUnder) {
+			super(column, into, keepUnder);
 		}
 
 		@Override
@@ -159,7 +208,7 @@ final class LongFacetCount implements FacetCount {
 			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
 				var value = spans.values[i];
 				if(counted.add(value)) {
-					counts.addToValue(value, 1);
+					into.addToValue(value, 1);
 				}
 			}
 		}
@@ -170,13 +219,17 @@ final class LongFacetCount implements FacetCount {
 	 * values below each one: a value counts once per document however many
 	 * of its values hold it, read off the block of values below the document.
 	 */
-	private final class EveryValue implements Leaf {
-		private final FacetColumns.LongSpans spans;
+	private final class EveryValue extends Into {
 		private final BitSet documents;
 		private final MutableLongSet counted = LongSets.mutable.empty();
 
-		EveryValue(FacetColumns.Longs column, BitSet documents) {
-			this.spans = new FacetColumns.LongSpans(column);
+		EveryValue(
+			FacetColumns.Longs column,
+			BitSet documents,
+			MutableLongLongMap into,
+			LeafReaderContext keepUnder
+		) {
+			super(column, into, keepUnder);
 			this.documents = documents;
 		}
 
@@ -188,7 +241,7 @@ final class LongFacetCount implements FacetCount {
 				for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
 					var value = spans.values[i];
 					if(counted.add(value)) {
-						counts.addToValue(value, 1);
+						into.addToValue(value, 1);
 					}
 				}
 			}
@@ -210,12 +263,11 @@ final class LongFacetCount implements FacetCount {
 	 * The matches are values of an object field but the field counted is one
 	 * of the index: each match counts what its document says there.
 	 */
-	private final class ByDocument implements Leaf {
-		private final FacetColumns.LongSpans spans;
+	private final class ByDocument extends Into {
 		private final MutableLongList documentValues = LongLists.mutable.empty();
 
-		ByDocument(FacetColumns.Longs column) {
-			this.spans = new FacetColumns.LongSpans(column);
+		ByDocument(FacetColumns.Longs column, MutableLongLongMap into, LeafReaderContext keepUnder) {
+			super(column, into, keepUnder);
 		}
 
 		@Override
@@ -237,7 +289,7 @@ final class LongFacetCount implements FacetCount {
 		@Override
 		public void count(int doc) {
 			for(var i = 0; i < documentValues.size(); i++) {
-				counts.addToValue(documentValues.get(i), 1);
+				into.addToValue(documentValues.get(i), 1);
 			}
 		}
 	}

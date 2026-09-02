@@ -182,6 +182,46 @@ public class NodeMetrics {
 			.description("Entries the document cache dropped")
 			.register(registry);
 
+		Gauge.builder(
+				Meters.FACET_CACHE_HITS,
+				indexes,
+				self -> self.getFacetCacheStats().hits()
+			)
+			.description("Facets answered from what an earlier search counted over the same scope")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.FACET_CACHE_MISSES,
+				indexes,
+				self -> self.getFacetCacheStats().misses()
+			)
+			.description("Facets that had to be counted")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.FACET_CACHE_EVICTIONS,
+				indexes,
+				self -> self.getFacetCacheStats().evictions()
+			)
+			.description("Facet scope entries dropped for ones asked for more recently")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.FACET_SEGMENT_HITS,
+				indexes,
+				self -> self.getFacetCacheStats().segmentHits()
+			)
+			.description("Segments whose counts over everything the index holds were reused")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.FACET_SEGMENT_MISSES,
+				indexes,
+				self -> self.getFacetCacheStats().segmentMisses()
+			)
+			.description("Segments a facet had to count over everything the index holds")
+			.register(registry);
+
 		/*
 		 * One series per phase rather than one per job, so a deployment
 		 * reindexing many indexes at once pays the same as one reindexing a

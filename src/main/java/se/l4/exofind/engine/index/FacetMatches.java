@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.index;
 
+import java.util.List;
+
 import org.apache.lucene.facet.FacetsCollector;
 import org.apache.lucene.search.join.BitSetProducer;
 
@@ -38,19 +40,30 @@ import org.apache.lucene.search.join.BitSetProducer;
  * the document holding it says, {@link Mode#PARENTS_BY_VALUE}, so a brand
  * facet answers how many matching variants each brand has.
  *
+ * A scope that nothing narrows is everything the reader holds, and says so
+ * through {@link #whole()}: what each segment counts for it is as fixed as
+ * the segment, so a count over it is kept per segment and answered from
+ * there the next time the segment is walked - see {@link FacetStates}. Any
+ * narrower scope is counted whole every time it is walked.
+ *
  * @param hits
- *   what matched, collected over the scope of the facet
+ *   what matched, collected over the scope of the facet, one entry per
+ *   segment that holds a match
  * @param parents
  *   finds the documents of the index among the values of object fields, for
  *   the modes that walk between a value and its document - {@code null} for
  *   the modes that read each match on its own
  * @param mode
  *   what the matches are and what the counts should be of
+ * @param whole
+ *   what everything the reader holds the matches are, where the scope is
+ *   nothing narrower than that - {@code null} for any scope that is
  */
 public record FacetMatches(
-	FacetsCollector hits,
+	List<FacetsCollector.MatchingDocs> hits,
 	BitSetProducer parents,
-	Mode mode
+	Mode mode,
+	Whole whole
 ) {
 	/**
 	 * What the collected matches are, and what a count of them answers.
@@ -93,6 +106,17 @@ public record FacetMatches(
 	}
 
 	/**
+	 * A scope that is everything the reader holds, and of what: every
+	 * document of the index, or every value of one object field.
+	 *
+	 * @param path
+	 *   the object field whose every value the matches are, or {@code null}
+	 *   where they are every document of the index
+	 */
+	public record Whole(String path) {
+	}
+
+	/**
 	 * Get whether the matches are values of an object field whose documents
 	 * have to be found above them - what forces one walk of the matches to
 	 * feed every facet of the scope, see {@link FacetWalk}.
@@ -104,13 +128,35 @@ public record FacetMatches(
 	}
 
 	/**
+	 * Mark the matches as every document the reader holds, so that what each
+	 * segment counts for them is kept per segment.
+	 *
+	 * @return
+	 */
+	public FacetMatches wholeDocuments() {
+		return new FacetMatches(hits, parents, mode, new Whole(null));
+	}
+
+	/**
+	 * Mark the matches as every value of the given object field the reader
+	 * holds, so that what each segment counts for them is kept per segment.
+	 *
+	 * @param path
+	 *   the object field
+	 * @return
+	 */
+	public FacetMatches wholeValues(String path) {
+		return new FacetMatches(hits, parents, mode, new Whole(path));
+	}
+
+	/**
 	 * Matches that are documents of the index, counted as they come.
 	 *
 	 * @param hits
 	 * @return
 	 */
-	public static FacetMatches of(FacetsCollector hits) {
-		return new FacetMatches(hits, null, Mode.DOCUMENTS);
+	public static FacetMatches of(List<FacetsCollector.MatchingDocs> hits) {
+		return new FacetMatches(hits, null, Mode.DOCUMENTS, null);
 	}
 
 	/**
@@ -121,8 +167,11 @@ public record FacetMatches(
 	 * @param parents
 	 * @return
 	 */
-	public static FacetMatches everyValue(FacetsCollector hits, BitSetProducer parents) {
-		return new FacetMatches(hits, parents, Mode.EVERY_VALUE);
+	public static FacetMatches everyValue(
+		List<FacetsCollector.MatchingDocs> hits,
+		BitSetProducer parents
+	) {
+		return new FacetMatches(hits, parents, Mode.EVERY_VALUE, null);
 	}
 
 	/**
@@ -133,8 +182,11 @@ public record FacetMatches(
 	 * @param parents
 	 * @return
 	 */
-	public static FacetMatches rolledUp(FacetsCollector hits, BitSetProducer parents) {
-		return new FacetMatches(hits, parents, Mode.ROLLED_UP);
+	public static FacetMatches rolledUp(
+		List<FacetsCollector.MatchingDocs> hits,
+		BitSetProducer parents
+	) {
+		return new FacetMatches(hits, parents, Mode.ROLLED_UP, null);
 	}
 
 	/**
@@ -143,8 +195,8 @@ public record FacetMatches(
 	 * @param hits
 	 * @return
 	 */
-	public static FacetMatches values(FacetsCollector hits) {
-		return new FacetMatches(hits, null, Mode.VALUES);
+	public static FacetMatches values(List<FacetsCollector.MatchingDocs> hits) {
+		return new FacetMatches(hits, null, Mode.VALUES, null);
 	}
 
 	/**
@@ -155,7 +207,10 @@ public record FacetMatches(
 	 * @param parents
 	 * @return
 	 */
-	public static FacetMatches parentsByValue(FacetsCollector hits, BitSetProducer parents) {
-		return new FacetMatches(hits, parents, Mode.PARENTS_BY_VALUE);
+	public static FacetMatches parentsByValue(
+		List<FacetsCollector.MatchingDocs> hits,
+		BitSetProducer parents
+	) {
+		return new FacetMatches(hits, parents, Mode.PARENTS_BY_VALUE, null);
 	}
 }

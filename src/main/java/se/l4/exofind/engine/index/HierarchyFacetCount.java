@@ -46,11 +46,18 @@ import se.l4.exofind.engine.query.SearchResult;
  * The levels of one Lucene document are a set already, so only rolling up has
  * anything to deduplicate: a level counts the first time one of a document's
  * values passes through it and never again.
+ *
+ * A scope that is everything the reader holds counts every level of the
+ * segment rather than the ones asked about, and keeps the counts per segment
+ * ordinal - see {@link FacetStates#keepSegmentCounts}. The next walk of the
+ * segment, whichever level it drills into, picks its levels out of what was
+ * kept without counting a match.
  */
 final class HierarchyFacetCount implements FacetCount {
 	private final String field;
 	private final FacetMatches.Mode mode;
 	private final BitSetProducer parents;
+	private final FacetMatches.Whole whole;
 	private final String separator;
 	private final UnaryOperator<String> normalize;
 	private final Scope scope;
@@ -72,6 +79,7 @@ final class HierarchyFacetCount implements FacetCount {
 		this.field = field;
 		this.mode = matches.mode();
 		this.parents = matches.parents();
+		this.whole = matches.whole();
 		this.separator = separator;
 		this.normalize = normalize;
 		this.scope = new Scope(separator, normalize, path, depth);
@@ -97,8 +105,30 @@ final class HierarchyFacetCount implements FacetCount {
 		var hierarchy = FacetStates.hierarchyOf(context, field, values, separator, normalize);
 		var slotOfOrd = new int[hierarchy.paths().length];
 		var slots = 0;
-		for(var ord = 0; ord < slotOfOrd.length; ord++) {
-			slotOfOrd[ord] = scope.holds(hierarchy, ord) ? slots++ : -1;
+
+		LeafReaderContext keepUnder = null;
+		if(whole != null) {
+			/*
+			 * Everything the reader holds: answered from what the segment
+			 * counted before, or counted for every level so that the next
+			 * walk can be, whichever level it asks about.
+			 */
+			var kept = FacetStates.segmentCountsOf(context, field, mode, whole.path(), long[].class);
+			if(kept != null) {
+				fold(hierarchy, kept);
+				return null;
+			}
+
+			for(var ord = 0; ord < slotOfOrd.length; ord++) {
+				slotOfOrd[ord] = ord;
+			}
+
+			slots = slotOfOrd.length;
+			keepUnder = context;
+		} else {
+			for(var ord = 0; ord < slotOfOrd.length; ord++) {
+				slotOfOrd[ord] = scope.holds(hierarchy, ord) ? slots++ : -1;
+			}
 		}
 
 		// A segment holding none of the levels asked about is nothing to walk
@@ -123,7 +153,7 @@ final class HierarchyFacetCount implements FacetCount {
 					}
 				}
 
-				yield new EachMatch(column, hierarchy, slotOfOrd, slots, postings);
+				yield new EachMatch(column, hierarchy, slotOfOrd, slots, keepUnder, postings);
 			}
 			case EVERY_VALUE -> {
 				var documents = parents.getBitSet(context);
@@ -147,11 +177,25 @@ final class HierarchyFacetCount implements FacetCount {
 					}
 				}
 
-				yield new EveryValue(column, hierarchy, slotOfOrd, slots, documents, postings);
+				yield new EveryValue(
+					column, hierarchy, slotOfOrd, slots, keepUnder, documents, postings
+				);
 			}
-			case ROLLED_UP -> new RolledUp(column, hierarchy, slotOfOrd, slots);
-			case PARENTS_BY_VALUE -> new ByDocument(column, hierarchy, slotOfOrd, slots);
+			case ROLLED_UP -> new RolledUp(column, hierarchy, slotOfOrd, slots, keepUnder);
+			case PARENTS_BY_VALUE -> new ByDocument(column, hierarchy, slotOfOrd, slots, keepUnder);
 		};
+	}
+
+	/**
+	 * Fold counts held per segment ordinal into the whole, taking only the
+	 * levels the facet asked about.
+	 */
+	private void fold(FacetStates.Hierarchy hierarchy, long[] perOrd) {
+		for(var ord = 0; ord < perOrd.length; ord++) {
+			if(perOrd[ord] > 0 && scope.holds(hierarchy, ord)) {
+				counts.addToValue(hierarchy.paths()[ord], perOrd[ord]);
+			}
+		}
 	}
 
 	@Override
@@ -195,27 +239,40 @@ final class HierarchyFacetCount implements FacetCount {
 	 * Counts per slot of one segment, folded into the whole by path when the
 	 * segment is done - ordinals are per segment, so what carries across is
 	 * the path.
+	 *
+	 * Over everything the reader holds the slots are the ordinals themselves,
+	 * and the counts are kept for the next walk of the segment before the
+	 * levels asked about are folded out of them.
 	 */
 	private abstract class PerSlot implements Leaf {
 		final FacetColumns.OrdSpans spans;
 		final FacetStates.Hierarchy hierarchy;
 		final int[] slotOfOrd;
 		final long[] perSlot;
+		private final LeafReaderContext keepUnder;
 
 		PerSlot(
 			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
-			int slots
+			int slots,
+			LeafReaderContext keepUnder
 		) {
 			this.spans = new FacetColumns.OrdSpans(column);
 			this.hierarchy = hierarchy;
 			this.slotOfOrd = slotOfOrd;
 			this.perSlot = new long[slots];
+			this.keepUnder = keepUnder;
 		}
 
 		@Override
 		public void finish() {
+			if(keepUnder != null) {
+				FacetStates.keepSegmentCounts(keepUnder, field, mode, whole.path(), perSlot);
+				fold(hierarchy, perSlot);
+				return;
+			}
+
 			for(var ord = 0; ord < slotOfOrd.length; ord++) {
 				var slot = slotOfOrd[ord];
 				if(slot >= 0 && perSlot[slot] > 0) {
@@ -237,9 +294,10 @@ final class HierarchyFacetCount implements FacetCount {
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
 			int slots,
+			LeafReaderContext keepUnder,
 			FacetColumns.OrdPostings postings
 		) {
-			super(column, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots, keepUnder);
 			this.postings = postings;
 		}
 
@@ -297,9 +355,10 @@ final class HierarchyFacetCount implements FacetCount {
 			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
-			int slots
+			int slots,
+			LeafReaderContext keepUnder
 		) {
-			super(column, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots, keepUnder);
 		}
 
 		@Override
@@ -336,10 +395,11 @@ final class HierarchyFacetCount implements FacetCount {
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
 			int slots,
+			LeafReaderContext keepUnder,
 			BitSet documents,
 			FacetColumns.OrdPostings postings
 		) {
-			super(column, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots, keepUnder);
 			this.documents = documents;
 			this.postings = postings;
 		}
@@ -398,9 +458,10 @@ final class HierarchyFacetCount implements FacetCount {
 			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
-			int slots
+			int slots,
+			LeafReaderContext keepUnder
 		) {
-			super(column, hierarchy, slotOfOrd, slots);
+			super(column, hierarchy, slotOfOrd, slots, keepUnder);
 		}
 
 		@Override
