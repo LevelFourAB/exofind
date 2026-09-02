@@ -7,12 +7,19 @@
  * list that has to be kept in step with the first: a document added to the
  * index appears in the sidebar, and one that is not in the index is not
  * hidden away on the site while looking present in the repository.
+ *
+ * The same index also carries a sentence per document saying what the page
+ * gets the reader. The sidebar has no room for it, so it is read here for
+ * `/llms.txt` - see `./pages/llms.txt.ts`.
  */
 
 import { readFileSync } from 'node:fs';
 
-/** A `- [Label](path/to/doc.md)` list entry. */
-const ENTRY = /^-\s+\[([^\]]+)\]\(([^)]+\.md)\)/;
+/** A `- [Label](path/to/doc.md): what the page gets the reader` list entry. */
+const ENTRY = /^-\s+\[([^\]]+)\]\(([^)]+\.md)\)\s*:?\s*(.*)$/;
+
+/** An indented line, which carries on the description of the entry above it. */
+const CONTINUATION = /^\s+(\S.*?)\s*$/;
 
 /** A `## Section` heading. */
 const SECTION = /^##\s+(.+?)\s*$/;
@@ -122,6 +129,41 @@ export function partsFrom(index) {
 }
 
 /**
+ * @typedef {object} Listing
+ * @property {string} label what to head the list with
+ * @property {{ label: string, slug: string, description: string }[]} items
+ *   every document under it, in the order the index lists them
+ */
+
+/**
+ * The documentation index as a flat run of headed lists, each document keeping
+ * the sentence the index describes it with.
+ *
+ * A `###` sub-section becomes a list of its own, headed with the section it is
+ * under - `How-to guides: Searching`. Nothing is nested, because the file this
+ * builds is read by a machine choosing which page to fetch, and a heading that
+ * names both the kind of documentation and the subject says more to that
+ * reader than a heading it has to remember the parent of.
+ *
+ * @param {URL} index the `README.md` that lists the documentation
+ * @returns {Listing[]} in index order
+ */
+export function catalogueFrom(index) {
+	return sectionsIn(index).flatMap(section => {
+		const documents = section.items.filter(item => !item.items);
+		const subgroups = section.items.filter(item => item.items);
+
+		return [
+			...documents.length > 0 ? [{ label: section.label, items: documents }] : [],
+			...subgroups.map(group => ({
+				label: `${section.label}: ${group.label}`,
+				items: group.items
+			}))
+		];
+	});
+}
+
+/**
  * The `##` sections of a documentation index, each holding links and the
  * sub-groups its `###` headings make, and none of them empty.
  */
@@ -129,13 +171,23 @@ function sectionsIn(index) {
 	const sections = [];
 	let section = null;
 	let subgroup = null;
+	let entry = null;
 
-	/*
-	 * A list entry can wrap over several lines, so the pattern is anchored to
-	 * the start of one - the description that follows the link is indented
-	 * and cannot be mistaken for the next entry.
-	 */
 	for(const line of readFileSync(index, 'utf-8').split('\n')) {
+		/*
+		 * A description wraps over several lines, and the index indents the
+		 * lines it carries on to. Gathering them first is what lets every
+		 * other pattern be anchored to the start of a line: an indented line
+		 * cannot then be mistaken for the entry or the heading below it.
+		 */
+		const carried = line.match(CONTINUATION);
+		if(carried && entry) {
+			entry.description = `${entry.description} ${carried[1]}`.trim();
+			continue;
+		}
+
+		entry = null;
+
 		/*
 		 * Sub-sections are matched first: `SECTION` wants whitespace after the
 		 * two hashes and so does not match a `###` line, but the order says
@@ -156,12 +208,15 @@ function sectionsIn(index) {
 			continue;
 		}
 
-		const entry = line.match(ENTRY);
-		if(entry && section) {
-			(subgroup ?? section).items.push({
-				label: entry[1],
-				slug: entry[2].replace(/\.md$/, '')
-			});
+		const listed = line.match(ENTRY);
+		if(listed && section) {
+			entry = {
+				label: listed[1],
+				slug: listed[2].replace(/\.md$/, ''),
+				description: listed[3].trim()
+			};
+
+			(subgroup ?? section).items.push(entry);
 		}
 	}
 
@@ -183,10 +238,20 @@ function pruned(group) {
 
 /**
  * A group as Starlight takes it, closed if `CLOSED` names it and open
- * otherwise. A link is what it already was.
+ * otherwise, and a link as the label and slug alone.
+ *
+ * The description read from the index is dropped here. Starlight validates a
+ * sidebar entry against a strict schema and refuses a property it does not
+ * know, so an entry keeps only what a sidebar is built from.
  */
 function grouped(item, closed) {
-	return item.items ? { ...item, collapsed: closed.delete(item.label) } : item;
+	if(!item.items) return { label: item.label, slug: item.slug };
+
+	return {
+		...item,
+		collapsed: closed.delete(item.label),
+		items: item.items.map(child => grouped(child, closed))
+	};
 }
 
 /** Every document under a group, however deeply it is grouped. */

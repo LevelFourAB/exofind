@@ -71,6 +71,42 @@ Three things about the section are worth knowing before changing it:
 - The version of `starlight-openapi` is held below `0.23.0`, which requires
   Astro 6 and Starlight 0.38. Raise it with them.
 
+## What the site publishes for a machine reader
+
+An agent asked to write something against a node arrives with no sidebar and no
+search, and a rendered page gives it a layout to read around. Three files
+answer that, and all three are generated:
+
+- `/llms.txt` lists the manual, section by section, with the sentence
+  `docs/README.md` describes each document with. It is built by
+  [`src/pages/llms.txt.ts`](src/pages/llms.txt.ts) from the same index the
+  sidebar and the header come from, so a document added to `docs/README.md`
+  is listed there too. The order is not the sidebar's: the OpenAPI document
+  and the full text come first, and the sections on running and operating
+  nodes and the explanations close the file under `Optional`, the heading the
+  llms.txt convention names for what a reader short of room can skip. A
+  section moves in or out of that group by its label in that file.
+- `/<doc>.md` serves a page as the Markdown it was written as, from
+  [`src/pages/[...doc].md.ts`](src/pages/%5B...doc%5D.md.ts). These URLs mirror
+  the layout of `docs/`, so a relative link between two documents resolves to
+  the file it names. A link out of `docs/` does not: the rewriting in
+  `src/plugins/remark-docs.mjs` runs when a page is rendered, and this route
+  serves the source.
+- `/llms-full.txt` holds the pages a client author needs, concatenated: the
+  guides for the task first, then the reference, so that a reader that caps
+  what it fetches keeps the guides. The list is in
+  [`src/pages/llms-full.txt.ts`](src/pages/llms-full.txt.ts), and it is a
+  subset because the manual is around 83,000 words and most of it answers
+  questions a client author does not have. A slug in that list that is no
+  longer a document fails the build.
+
+What every generated file opens with - what Exofind is, the handful of facts a
+caller needs before the first request, and the three requests from the
+getting-started tutorial - is in [`src/llms.mjs`](src/llms.mjs). Those facts
+are stated on the pages as well, and this is the one copy written for a reader
+that fetches no page. The requests are a copy of the tutorial's, so a change
+to what the tutorial sends is made in both.
+
 ## The header
 
 Starlight does not include top navigation. The front page and demo pages omit

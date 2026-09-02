@@ -14,10 +14,19 @@
  * bundle instead, and `./nav.mjs` is what reads it there.
  */
 
-import { partsFrom } from './sidebar.mjs';
+import { catalogueFrom, partsFrom } from './sidebar.mjs';
 
 /** The documentation index, which the navigation is built from. */
 export const DOCS_INDEX = new URL('../../docs/README.md', import.meta.url);
 
 /** @type {import('./sidebar.mjs').Part[]} */
 export const PARTS = partsFrom(DOCS_INDEX);
+
+/**
+ * The same index as headed lists of documents, each with the sentence that
+ * says what it gets the reader. This is what `./pages/llms.txt.ts` publishes,
+ * and it arrives in the bundle for the reason the parts do.
+ *
+ * @type {import('./sidebar.mjs').Listing[]}
+ */
+export const CATALOGUE = catalogueFrom(DOCS_INDEX);
