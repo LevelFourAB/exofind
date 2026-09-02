@@ -10,6 +10,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -29,6 +30,11 @@ import se.l4.exofind.engine.query.matchers.Matchers;
  * same search without facets in {@link FilterBenchmark}. The counted set is
  * everything unless a benchmark says otherwise, which is the widest a facet
  * gets asked to count.
+ *
+ * <p>{@link #everyFacetNarrowed} is the same page counted over a chosen share
+ * of the index, set with {@code -p ratio=}, which is what tells how the cost
+ * of counting grows with the matches - and where a way of counting that does
+ * not walk them starts to pay.
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -207,6 +213,61 @@ public class FacetBenchmark {
 	@Benchmark
 	public SearchResult sidewaysFacet(LoadedIndex state) throws IOException {
 		return state.index.search(sidewaysFacet);
+	}
+
+	@Benchmark
+	public SearchResult everyFacetNarrowed(LoadedIndex state, Narrowed narrowed)
+		throws IOException
+	{
+		return state.index.search(narrowed.request);
+	}
+
+	/**
+	 * The filtering page narrowed to a share of the index.
+	 *
+	 * <p>The number field of the corpus is drawn evenly between 0 and 1000, so a
+	 * filter keeping everything below {@code ratio × 10} matches that share of
+	 * the documents, and the ratio is what the match count follows. The range
+	 * facet on that field is told to exclude no filter, so it counts inside the
+	 * narrowed scope with the others rather than sideways of the only filter -
+	 * which would answer it from the whole-index counts and leave three facets
+	 * to measure instead of four.
+	 */
+	@State(Scope.Thread)
+	public static class Narrowed {
+		/**
+		 * The share of the index the page is narrowed to, in percent.
+		 */
+		@Param({ "1", "10", "50", "90" })
+		public int ratio;
+
+		private SearchRequest request;
+
+		@Setup(Level.Trial)
+		public void request(LoadedIndex state) {
+			var roles = state.roles;
+			var keyword = state.spec.require(roles.keyword(), "keyword");
+			var number = state.spec.require(roles.number(), "number");
+
+			var page = SearchRequest.create()
+				.addFacet(Facet.of(keyword))
+				.addFacet(
+					Facet.of(number)
+						.withRanges(new Facet.Range(null, 250d), new Facet.Range(250d, null))
+						.withExcludeFilters()
+				)
+				.addFilter(Query.field(number, Matchers.lessThan(ratio * 10d)));
+
+			if(roles.tags() != null) {
+				page = page.addFacet(Facet.of(roles.tags()));
+			}
+
+			if(roles.hierarchy() != null) {
+				page = page.addFacet(Facet.of(roles.hierarchy()));
+			}
+
+			request = page.build();
+		}
 	}
 
 	private static SearchRequest required(LoadedIndex state, SearchRequest request, String part) {
