@@ -32,7 +32,6 @@ import java.util.function.Predicate;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.facet.FacetsCollector;
-import org.apache.lucene.facet.FacetsCollectorManager;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexNotFoundException;
@@ -3849,7 +3848,7 @@ public class Index {
 					 * says whether anything was found at all.
 					 */
 					var withFacets = !request.facets().isEmpty();
-					FacetsCollector matches = null;
+					List<FacetsCollector.MatchingDocs> matches = null;
 					Faceted counted = null;
 
 					long count;
@@ -3863,7 +3862,7 @@ public class Index {
 						counted = countFacets(searcher, compiler, request, settingsVersion, searched, assembled,null);
 						count = counted.total();
 					} else if(withFacets && !mixed) {
-						matches = searcher.search(query, new FacetsCollectorManager());
+						matches = collect(searcher, query);
 						count = matchCount(matches);
 					} else {
 						/*
@@ -3884,7 +3883,7 @@ public class Index {
 							query = assembled.hits();
 
 							if(withFacets && !mixed) {
-								matches = searcher.search(query, new FacetsCollectorManager());
+								matches = collect(searcher, query);
 								count = matchCount(matches);
 							} else {
 								count = searcher.count(query);
@@ -5170,7 +5169,7 @@ public class Index {
 		String settingsVersion,
 		ListIterable<Query> clauses,
 		Assembled assembled,
-		FacetsCollector collected
+		List<FacetsCollector.MatchingDocs> collected
 	) throws IOException {
 		if(request.hits() != null && request.hits().isEveryDocument()) {
 			return countValueFacets(
@@ -5182,7 +5181,7 @@ public class Index {
 		var reader = searcher.getIndexReader();
 		var filterPaths = request.filters().collect(Index::filterPathOf);
 
-		var whole = collected == null ? null : collected.getMatchingDocs();
+		var whole = collected;
 
 		/*
 		 * The matches of everything the index holds, built the first time a
@@ -5335,13 +5334,13 @@ public class Index {
 		String settingsVersion,
 		ListIterable<Query> clauses,
 		Assembled assembled,
-		FacetsCollector collected
+		List<FacetsCollector.MatchingDocs> collected
 	) throws IOException {
 		var reader = searcher.getIndexReader();
 		var filterPaths = request.filters().collect(Index::filterPathOf);
 		var path = request.hits().path();
 
-		var whole = collected == null ? null : collected.getMatchingDocs();
+		var whole = collected;
 
 		/*
 		 * The value hits of everything the index holds, collected the first
@@ -5674,13 +5673,109 @@ public class Index {
 	}
 
 	/**
+	 * How many documents of a segment one call into
+	 * {@link DocIdSetIterator#intoBitSet(int, FixedBitSet, int)} covers.
+	 *
+	 * <p>Large enough that asking the {@link SearchDeadline} between windows
+	 * costs nothing next to filling them, and small enough that a search over
+	 * a spent budget stops within a fraction of a millisecond.
+	 */
+	private static final int COLLECT_WINDOW = 8192;
+
+	/**
 	 * Collect the matches of a query, one entry per segment holding any.
+	 *
+	 * <p>The matches of a segment are poured from the query's iterator into a
+	 * {@link FixedBitSet} through
+	 * {@link DocIdSetIterator#intoBitSet(int, FixedBitSet, int)}. The
+	 * iterators of conjunctions, bitsets and point ranges fill a bitset a
+	 * machine word at a time, while a {@link Collector} is handed one document
+	 * at a time and pays a call per match. The walk of the scope reads the
+	 * words too, and a facet over a wide scope counts a value at a time
+	 * against them - see {@link FacetWalk}.
+	 *
+	 * <p>The weight is created through the searcher, so the query cache still
+	 * holds the filters a search repeats. A query does not exclude deleted
+	 * documents, so the live documents of the segment are applied to the
+	 * bitset once it is filled.
+	 *
+	 * <p>Iterating a scorer runs the two-phase check of the queries that have
+	 * one, so the bitset holds what matched and never an approximation.
+	 *
+	 * <p>A segment is poured in windows, and the {@link SearchDeadline} of the
+	 * calling thread is asked between them instead of per document.
+	 * Collection over a spent budget stops where it is and leaves the segments
+	 * after it untouched, so counts made from it describe part of the index
+	 * and are not kept - see {@link FacetStates}.
 	 */
 	private static List<FacetsCollector.MatchingDocs> collect(
 		IndexSearcher searcher,
 		org.apache.lucene.search.Query query
 	) throws IOException {
-		return searcher.search(query, new FacetsCollectorManager()).getMatchingDocs();
+		var weight = searcher.createWeight(
+			searcher.rewrite(query),
+			ScoreMode.COMPLETE_NO_SCORES,
+			1f
+		);
+
+		var matches = new ArrayList<FacetsCollector.MatchingDocs>();
+		for(var context : searcher.getIndexReader().leaves()) {
+			var supplier = weight.scorerSupplier(context);
+			if(supplier == null) {
+				continue;
+			}
+
+			var leaf = context.reader();
+			var maxDoc = leaf.maxDoc();
+			var documents = new FixedBitSet(maxDoc);
+
+			var iterator = supplier.get(Long.MAX_VALUE).iterator();
+			var stopped = false;
+			for(var doc = iterator.nextDoc(); doc < maxDoc; doc = iterator.docID()) {
+				if(SearchDeadline.INSTANCE.shouldExit()) {
+					stopped = true;
+					break;
+				}
+
+				iterator.intoBitSet(
+					(int) Math.min((long) doc + COLLECT_WINDOW, maxDoc),
+					documents,
+					0
+				);
+			}
+
+			var liveDocs = leaf.getLiveDocs();
+			if(liveDocs instanceof FixedBitSet live) {
+				documents.and(live);
+			} else if(liveDocs != null) {
+				var doc = documents.nextSetBit(0);
+				while(doc != DocIdSetIterator.NO_MORE_DOCS) {
+					if(!liveDocs.get(doc)) {
+						documents.clear(doc);
+					}
+
+					doc = doc + 1 < maxDoc
+						? documents.nextSetBit(doc + 1)
+						: DocIdSetIterator.NO_MORE_DOCS;
+				}
+			}
+
+			var count = documents.cardinality();
+			if(count > 0) {
+				matches.add(new FacetsCollector.MatchingDocs(
+					context,
+					new BitDocIdSet(documents, count),
+					count,
+					null
+				));
+			}
+
+			if(stopped) {
+				break;
+			}
+		}
+
+		return matches;
 	}
 
 	/**
@@ -5752,14 +5847,6 @@ public class Index {
 		}
 
 		return matches;
-	}
-
-	/**
-	 * Get how many documents a collection of matches holds, which for matches
-	 * collected over a whole search is its exact total.
-	 */
-	private static long matchCount(FacetsCollector matches) {
-		return matchCount(matches.getMatchingDocs());
 	}
 
 	/**

@@ -3,8 +3,6 @@ package se.l4.exofind.engine.index;
 import java.io.IOException;
 
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.DocIdSetIterator;
-import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.FixedBitSet;
 
 import se.l4.exofind.engine.query.SearchResult;
@@ -61,8 +59,9 @@ public interface FacetCount {
 	SearchResult.Facet result() throws IOException;
 
 	/**
-	 * The per-segment part of a count, fed one match at a time in document
-	 * order.
+	 * The per-segment part of a count, fed the matches in document order:
+	 * one at a time where a document has to be resolved above each match,
+	 * and in batches otherwise.
 	 */
 	interface Leaf {
 		/**
@@ -88,44 +87,47 @@ public interface FacetCount {
 		void count(int doc) throws IOException;
 
 		/**
-		 * Count every match of the segment, the same as feeding each one
-		 * through {@link #count(int)}. The walk uses this where no document
-		 * needs resolving above the matches, handing each leaf an iterator of
-		 * its own: a loop the leaf runs itself stays a call the JIT can
-		 * predict, where one walk feeding every kind of leaf a search holds
-		 * cannot be. A leaf hot enough to matter overrides this with the same
-		 * loop, which moves the prediction from the shared default to its own
-		 * class.
+		 * Count a batch of matches, the same as feeding each one through
+		 * {@link #count(int)}. The walk uses this where no document needs
+		 * resolving above the matches: it reads the matches of the segment
+		 * once and offers each batch to every leaf, so the call into a leaf
+		 * is paid per batch instead of per match.
+		 *
+		 * <p>The default loop is shared by every leaf that does not override
+		 * it, so the calls it makes cannot be inlined. A leaf hot enough to
+		 * matter overrides it with the same loop, which moves those calls into
+		 * its own class.
 		 *
 		 * @param docs
-		 *   the matches of the segment, in document order
+		 *   the matches, in document order, in the first {@code length}
+		 *   entries - the walk reuses the array for the next batch
+		 * @param length
+		 *   how many matches the batch holds
 		 * @throws IOException
 		 */
-		default void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		default void countAll(int[] docs, int length) throws IOException {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 
 		/**
-		 * Count every match of the segment, handed as a bitset over the
-		 * segment - the same as {@link #countAll(DocIdSetIterator)}, which
-		 * is what the default drains it through. The walk uses this where the
-		 * matches were collected as a bitset, which is what a scope wide
-		 * enough to be worth counting another way is held as; a leaf that can
-		 * count such a scope without visiting every match overrides this and
-		 * decides for itself.
+		 * Count every match of the segment at once, given the matches as a
+		 * bitset over it. The walk offers the matches this way before it
+		 * batches them, where they were collected as a bitset - a scope wide
+		 * enough to be worth counting another way is held as one. A leaf that
+		 * can count such a scope without visiting every match takes it here;
+		 * one that answers {@code false} is fed the same matches through
+		 * {@link #countAll(int[], int)} instead, and is never fed them twice.
 		 *
 		 * @param matches
 		 *   the matches of the segment, as long as the segment
+		 * @return
+		 *   whether the leaf counted the segment
 		 * @throws IOException
 		 */
-		default void countAll(FixedBitSet matches) throws IOException {
-			countAll(new BitSetIterator(matches, matches.length()));
+		default boolean countWhole(FixedBitSet matches) throws IOException {
+			return false;
 		}
 
 		/**

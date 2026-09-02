@@ -71,8 +71,23 @@ import se.l4.exofind.engine.query.SearchResult;
  * long as the reader it was built from is open and is dropped when it closes.
  * That is the same lifetime the reader's own caches have and is why the key is
  * the one Lucene hands out for exactly this.
+ *
+ * The {@code exofind.facets.scope-cache} system property (default {@code true})
+ * turns off what is kept per scope, both the counts and the totals. It is not a
+ * configuration setting and a node has no reason to set it: it exists for
+ * benchmarks, which repeat one request against one reader and would otherwise
+ * measure a map lookup instead of counting. The per-segment caches stay on
+ * either way, as a node has those warm too.
  */
 final class FacetStates {
+	/**
+	 * Whether what a facet answered over a scope is kept, read once when the
+	 * class is loaded - see the class comment.
+	 */
+	private static final boolean SCOPE_CACHE = Boolean.parseBoolean(
+		System.getProperty("exofind.facets.scope-cache", "true")
+	);
+
 	/**
 	 * How many scopes one reader keeps answers for, counts and totals each.
 	 * The shape of a scope is the caller's to choose, so the entries under
@@ -614,6 +629,11 @@ final class FacetStates {
 	 * @return
 	 */
 	static SearchResult.Facet scopeCountsOf(IndexReader reader, Scope scope, Facet facet) {
+		if(!SCOPE_CACHE) {
+			scopeMisses.increment();
+			return null;
+		}
+
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
 			scopeMisses.increment();
@@ -650,6 +670,10 @@ final class FacetStates {
 		Facet facet,
 		SearchResult.Facet counts
 	) {
+		if(!SCOPE_CACHE) {
+			return;
+		}
+
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null || SearchDeadline.exceeded()) {
 			return;
@@ -699,6 +723,10 @@ final class FacetStates {
 	 * @return
 	 */
 	static Long scopeTotalOf(IndexReader reader, Scope scope) {
+		if(!SCOPE_CACHE) {
+			return null;
+		}
+
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
 			return null;
@@ -720,6 +748,10 @@ final class FacetStates {
 	 * @param total
 	 */
 	static void keepScopeTotal(IndexReader reader, Scope scope, long total) {
+		if(!SCOPE_CACHE) {
+			return;
+		}
+
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null || SearchDeadline.exceeded()) {
 			return;

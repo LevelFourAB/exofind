@@ -5,10 +5,8 @@ import java.util.Arrays;
 
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.BitSet;
-import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.FixedBitSet;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
@@ -190,12 +188,13 @@ final class RangeFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void countAll(FixedBitSet matches) throws IOException {
+		public boolean countWhole(FixedBitSet matches) {
 			if(postings == null) {
-				countAll(new BitSetIterator(matches, matches.length()));
-			} else {
-				countBuckets(postings, matches, maxDoc);
+				return false;
 			}
+
+			countBuckets(postings, matches, maxDoc);
+			return true;
 		}
 
 		@Override
@@ -218,13 +217,9 @@ final class RangeFacetCount implements FacetCount {
 		 * Leaf#countAll.
 		 */
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 	}
@@ -321,23 +316,20 @@ final class RangeFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 
 		@Override
-		public void countAll(FixedBitSet matches) throws IOException {
+		public boolean countWhole(FixedBitSet matches) {
 			if(postings == null) {
-				countAll(new BitSetIterator(matches, matches.length()));
-			} else {
-				countBuckets(postings, matches, maxDoc);
+				return false;
 			}
+
+			countBuckets(postings, matches, maxDoc);
+			return true;
 		}
 	}
 

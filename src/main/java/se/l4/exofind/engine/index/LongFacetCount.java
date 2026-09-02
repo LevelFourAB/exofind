@@ -5,7 +5,6 @@ import java.util.Comparator;
 import java.util.function.LongFunction;
 
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.BitSet;
 import org.eclipse.collections.api.factory.primitive.LongLists;
@@ -175,13 +174,9 @@ final class LongFacetCount implements FacetCount {
 		 * Leaf#countAll.
 		 */
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 	}
@@ -248,13 +243,9 @@ final class LongFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 	}

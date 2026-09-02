@@ -7,10 +7,8 @@ import java.util.function.Function;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
-import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.BitSet;
-import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.LongValues;
 import org.eclipse.collections.api.factory.Lists;
@@ -478,10 +476,10 @@ final class StringFacetCount implements FacetCount {
 	/**
 	 * Each match counts its own values, one count per value it holds.
 	 *
-	 * The counting leaves override {@link Leaf#countAll} with the loop the
-	 * default already runs so that the calls inside it are made from this
-	 * class alone, which is what lets the JIT inline them - the shared
-	 * default makes them from every leaf that never overrode it.
+	 * The counting leaves override {@link Leaf#countAll(int[], int)} with the
+	 * loop the default already runs, so that the calls inside it are made from
+	 * this class alone and the JIT can inline them. The shared default makes
+	 * them from every leaf that never overrode it.
 	 */
 	private static final class EachMatch implements Leaf {
 		private final int[] starts;
@@ -508,23 +506,20 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 
 		@Override
-		public void countAll(FixedBitSet matches) throws IOException {
+		public boolean countWhole(FixedBitSet matches) {
 			if(postings == null) {
-				countAll(new BitSetIterator(matches, matches.length()));
-			} else {
-				countByValue(postings, matches, counts);
+				return false;
 			}
+
+			countByValue(postings, matches, counts);
+			return true;
 		}
 
 		@Override
@@ -556,23 +551,20 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 
 		@Override
-		public void countAll(FixedBitSet matches) throws IOException {
+		public boolean countWhole(FixedBitSet matches) {
 			if(postings == null) {
-				countAll(new BitSetIterator(matches, matches.length()));
-			} else {
-				countByValue(postings, matches, counts);
+				return false;
 			}
+
+			countByValue(postings, matches, counts);
+			return true;
 		}
 
 		@Override
@@ -655,23 +647,20 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		@Override
-		public void countAll(DocIdSetIterator docs) throws IOException {
-			for(
-				var doc = docs.nextDoc();
-				doc != DocIdSetIterator.NO_MORE_DOCS;
-				doc = docs.nextDoc()
-			) {
-				count(doc);
+		public void countAll(int[] docs, int length) {
+			for(var i = 0; i < length; i++) {
+				count(docs[i]);
 			}
 		}
 
 		@Override
-		public void countAll(FixedBitSet matches) throws IOException {
+		public boolean countWhole(FixedBitSet matches) {
 			if(postings == null) {
-				countAll(new BitSetIterator(matches, matches.length()));
-			} else {
-				countByValue(postings, matches, counts);
+				return false;
 			}
+
+			countByValue(postings, matches, counts);
+			return true;
 		}
 
 		@Override

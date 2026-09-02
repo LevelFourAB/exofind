@@ -13,11 +13,19 @@ import org.eclipse.collections.api.list.ListIterable;
  *
  * The walk owns what every facet of a scope shares: the collected matches of
  * each segment, and - where the matches are values of an object field -
- * resolving the document above each one. Only that resolution forces one
- * iteration to feed every facet; without it each leaf drains an iterator of
- * its own, through {@link FacetCount.Leaf#countAll}. What differs per facet,
- * the doc values it reads and what a count means, lives in each
+ * resolving the document above each one. What differs per facet, the doc
+ * values it reads and what a count means, lives in each
  * {@link FacetCount.Leaf}.
+ *
+ * The matches of a segment are read once and handed to the leaves in batches,
+ * through {@link FacetCount.Leaf#countAll(int[], int)}. A batch keeps both
+ * halves of that cheap. The call into a leaf cannot be predicted once a search
+ * counts several kinds of facet, and a batch pays it once for a thousand
+ * matches; the loop inside the leaf reads an array and the JIT can inline what
+ * it calls. Matches collected as a bitset are offered whole first, through
+ * {@link FacetCount.Leaf#countWhole(FixedBitSet)}, so a leaf can count a wide
+ * scope a value at a time; a leaf that takes them that way is left out of the
+ * batches.
  *
  * The values of one document sit together and end just before it, so the
  * document a value belongs to is the next one at or after it, and walking the
@@ -29,6 +37,13 @@ import org.eclipse.collections.api.list.ListIterable;
  * finds every value they hold.
  */
 final class FacetWalk {
+	/**
+	 * How many matches one batch holds. Large enough that the call into each
+	 * leaf is paid once per thousand matches or so, and small enough that the
+	 * batch stays in the innermost cache beside the columns the leaves read.
+	 */
+	private static final int BATCH = 1024;
+
 	private FacetWalk() {
 	}
 
@@ -52,6 +67,9 @@ final class FacetWalk {
 		for(var facet : facets) {
 			facet.begin(totalMatches);
 		}
+
+		// One buffer for the whole walk, filled again per batch
+		int[] batch = null;
 
 		for(var docs : matches.hits()) {
 			var context = docs.context();
@@ -83,25 +101,38 @@ final class FacetWalk {
 
 			if(parents == null) {
 				/*
-				 * No document to resolve above a match, so the leaves share
-				 * nothing: each drains an iterator of its own, and the bitset
-				 * hands out iterators for the asking. One walk feeding every
-				 * leaf per match would make each count a call the JIT cannot
-				 * predict once a search counts a few kinds of facet.
-				 *
-				 * Matches collected as a bitset are handed over as one, which
-				 * is what lets a leaf count a wide scope a value at a time
-				 * instead of a match at a time.
+				 * No document to resolve above a match, so the matches go to
+				 * the leaves as they are read, a batch at a time. Matches
+				 * collected as a bitset are offered whole first: a leaf that
+				 * counts a wide scope a value at a time takes them there and
+				 * is left out of the batches.
 				 */
+				var batched = leaves;
+				var batchedCount = count;
+
 				if(docs.bits().bits() instanceof FixedBitSet fixed) {
+					batched = new FacetCount.Leaf[count];
+					batchedCount = 0;
+
 					for(var i = 0; i < count; i++) {
-						leaves[i].countAll(fixed);
+						if(!leaves[i].countWhole(fixed)) {
+							batched[batchedCount++] = leaves[i];
+						}
+					}
+
+					if(batchedCount > 0) {
+						if(batch == null) {
+							batch = new int[BATCH];
+						}
+
+						countInBatches(fixed, batch, batched, batchedCount);
 					}
 				} else {
-					leaves[0].countAll(iterator);
-					for(var i = 1; i < count; i++) {
-						leaves[i].countAll(docs.bits().iterator());
+					if(batch == null) {
+						batch = new int[BATCH];
 					}
+
+					countInBatches(iterator, batch, batched, batchedCount);
 				}
 			} else {
 				var document = -1;
@@ -135,6 +166,104 @@ final class FacetWalk {
 			for(var i = 0; i < count; i++) {
 				leaves[i].finish();
 			}
+		}
+	}
+
+	/**
+	 * Read the set bits of a bitset into batches and count each batch with
+	 * every leaf.
+	 *
+	 * The words are scanned directly rather than through an iterator, so that
+	 * reading a match costs one instruction over the word it sits in.
+	 *
+	 * @param matches
+	 *   the matches of the segment
+	 * @param batch
+	 *   the buffer to fill, at least {@link Long#SIZE} long
+	 * @param leaves
+	 *   the leaves to count with, in the first {@code count} entries
+	 * @param count
+	 *   how many leaves there are
+	 * @throws IOException
+	 */
+	private static void countInBatches(
+		FixedBitSet matches,
+		int[] batch,
+		FacetCount.Leaf[] leaves,
+		int count
+	) throws IOException {
+		var words = matches.getBits();
+		var length = 0;
+
+		for(int word = 0, end = FixedBitSet.bits2words(matches.length()); word < end; word++) {
+			// A word holds at most Long.SIZE matches, so the batch is emptied ahead of it
+			if(batch.length - length < Long.SIZE) {
+				countBatch(batch, length, leaves, count);
+				length = 0;
+			}
+
+			var base = word << 6;
+			for(var bits = words[word]; bits != 0; bits &= bits - 1) {
+				batch[length++] = base + Long.numberOfTrailingZeros(bits);
+			}
+		}
+
+		if(length > 0) {
+			countBatch(batch, length, leaves, count);
+		}
+	}
+
+	/**
+	 * Read the matches of an iterator into batches and count each batch with
+	 * every leaf.
+	 *
+	 * @param matches
+	 *   the matches of the segment, in document order
+	 * @param batch
+	 *   the buffer to fill
+	 * @param leaves
+	 *   the leaves to count with, in the first {@code count} entries
+	 * @param count
+	 *   how many leaves there are
+	 * @throws IOException
+	 */
+	private static void countInBatches(
+		DocIdSetIterator matches,
+		int[] batch,
+		FacetCount.Leaf[] leaves,
+		int count
+	) throws IOException {
+		var length = 0;
+
+		for(
+			var doc = matches.nextDoc();
+			doc != DocIdSetIterator.NO_MORE_DOCS;
+			doc = matches.nextDoc()
+		) {
+			batch[length++] = doc;
+
+			if(length == batch.length) {
+				countBatch(batch, length, leaves, count);
+				length = 0;
+			}
+		}
+
+		if(length > 0) {
+			countBatch(batch, length, leaves, count);
+		}
+	}
+
+	/**
+	 * Count one batch of matches with every leaf.
+	 */
+	private static void countBatch(
+		int[] batch,
+		int length,
+		FacetCount.Leaf[] leaves,
+		int count
+	) throws IOException {
+		for(var i = 0; i < count; i++) {
+			leaves[i].countAll(batch, length);
 		}
 	}
 
