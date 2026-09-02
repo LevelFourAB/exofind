@@ -6,6 +6,8 @@ import java.util.Arrays;
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.util.BitSetIterator;
+import org.apache.lucene.util.FixedBitSet;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 
@@ -51,7 +53,27 @@ final class RangeFacetCount implements FacetCount {
 
 		var column = FacetStates.longsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(column);
+			case DOCUMENTS, VALUES -> {
+				/*
+				 * A scope covering much of the segment is counted a bucket at
+				 * a time off the sorted column where that is cheaper than
+				 * walking it - see FacetColumns. Each bucket is a run of the
+				 * sorted numbers, and its cost is the run's length, so the
+				 * whole page costs about the segment's numbers once.
+				 */
+				FacetColumns.LongPostings postings = null;
+				var maxDoc = context.reader().maxDoc();
+				if(FacetColumns.isWide(matches, column.docCount())) {
+					var sorted = FacetStates.longPostingsOf(context, field);
+					var cost = (long) sorted.values().length
+						* FacetColumns.OrdPostings.LOOKUP_COST;
+					if(FacetColumns.cheaperThanWalking(cost, matches)) {
+						postings = sorted;
+					}
+				}
+
+				yield new EachMatch(column, postings, maxDoc);
+			}
 			case ROLLED_UP -> new RolledUp(column);
 			case PARENTS_BY_VALUE -> new ByDocument(column);
 		};
@@ -76,6 +98,8 @@ final class RangeFacetCount implements FacetCount {
 	 */
 	private final class EachMatch implements Leaf {
 		private final FacetColumns.LongSpans spans;
+		private final FacetColumns.LongPostings postings;
+		private final int maxDoc;
 
 		/*
 		 * The last match counted into each bucket. Matches arrive in order,
@@ -84,10 +108,45 @@ final class RangeFacetCount implements FacetCount {
 		 */
 		private final int[] countedFor;
 
-		EachMatch(FacetColumns.Longs column) {
+		EachMatch(FacetColumns.Longs column, FacetColumns.LongPostings postings, int maxDoc) {
 			this.spans = new FacetColumns.LongSpans(column);
+			this.postings = postings;
+			this.maxDoc = maxDoc;
 			this.countedFor = new int[bounds.length];
 			Arrays.fill(countedFor, -1);
+		}
+
+		@Override
+		public void countAll(FixedBitSet matches) throws IOException {
+			if(postings == null) {
+				countAll(new BitSetIterator(matches, matches.length()));
+				return;
+			}
+
+			/*
+			 * A document holding two numbers in one bucket stands twice in
+			 * its run, and counts once: the ones counted so far are marked
+			 * per bucket, unless no document holds two numbers at all.
+			 */
+			var counted = postings.single() ? null : new FixedBitSet(maxDoc);
+			var docs = postings.docs();
+			for(var bucket = 0; bucket < bounds.length; bucket++) {
+				if(counted != null && bucket > 0) {
+					counted.clear();
+				}
+
+				var from = postings.from(bounds[bucket].min);
+				var to = postings.to(bounds[bucket].max);
+				var count = 0L;
+				for(var i = from; i < to; i++) {
+					var doc = docs[i];
+					if(matches.get(doc) && (counted == null || !counted.getAndSet(doc))) {
+						count++;
+					}
+				}
+
+				counts[bucket] += count;
+			}
 		}
 
 		@Override

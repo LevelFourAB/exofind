@@ -4,6 +4,8 @@ import java.io.IOException;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.util.BitSetIterator;
+import org.apache.lucene.util.FixedBitSet;
 
 import se.l4.exofind.engine.query.SearchResult;
 
@@ -107,6 +109,23 @@ public interface FacetCount {
 			) {
 				count(doc);
 			}
+		}
+
+		/**
+		 * Count every match of the segment, handed as a bitset over the
+		 * segment - the same as {@link #countAll(DocIdSetIterator)}, which
+		 * is what the default drains it through. The walk uses this where the
+		 * matches were collected as a bitset, which is what a scope wide
+		 * enough to be worth counting another way is held as; a leaf that can
+		 * count such a scope without visiting every match overrides this and
+		 * decides for itself.
+		 *
+		 * @param matches
+		 *   the matches of the segment, as long as the segment
+		 * @throws IOException
+		 */
+		default void countAll(FixedBitSet matches) throws IOException {
+			countAll(new BitSetIterator(matches, matches.length()));
 		}
 
 		/**

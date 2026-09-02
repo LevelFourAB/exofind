@@ -19,6 +19,7 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.FixedBitSet;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,6 +47,7 @@ public class FacetColumnsTest {
 				// Ordinals follow term order: a=0, b=1, c=2
 				assertArrayEquals(new int[] { 0, 2, 2, 3, 5 }, column.starts());
 				assertArrayEquals(new int[] { 0, 1, 2, 0, 2 }, column.ords());
+				assertEquals(3, column.docCount());
 			}
 		);
 	}
@@ -65,6 +67,7 @@ public class FacetColumnsTest {
 				);
 
 				assertArrayEquals(new int[] { 1, FacetColumns.Ords.Single.NONE, 0 }, column.ord());
+				assertEquals(2, column.docCount());
 			}
 		);
 	}
@@ -105,6 +108,7 @@ public class FacetColumnsTest {
 
 				assertEquals(3, column.value()[0]);
 				assertEquals(9, column.value()[2]);
+				assertEquals(2, column.docCount());
 				assertTrue(column.has(0));
 				assertFalse(column.has(1));
 				assertTrue(column.has(2));
@@ -158,6 +162,97 @@ public class FacetColumnsTest {
 				assertEquals(0, spans.from(0));
 				assertEquals(2, spans.to(0));
 				assertEquals(0, spans.to(1) - spans.from(1));
+			}
+		);
+	}
+
+	@Test
+	public void testPostingsCountAValueAmongTheMatches() throws IOException {
+		withSegment(
+			writer -> {
+				add(writer, strings("b", "a"));
+				add(writer, strings());
+				add(writer, strings("c"));
+				add(writer, strings("a", "c"));
+			},
+			reader -> {
+				var postings = FacetColumns.ordPostings(
+					FacetColumns.ords(reader, FIELD),
+					3,
+					reader.maxDoc()
+				);
+
+				// Four documents fit one word, and no value is held by more than two
+				assertNull(postings.dense()[0]);
+				assertArrayEquals(new int[] { 0, 2, 3, 5 }, postings.starts());
+				assertArrayEquals(new int[] { 0, 3, 0, 2, 3 }, postings.docs());
+
+				var matches = new FixedBitSet(reader.maxDoc());
+				matches.set(0);
+				matches.set(2);
+				assertEquals(1, postings.count(0, matches));
+				assertEquals(1, postings.count(1, matches));
+				assertEquals(1, postings.count(2, matches));
+
+				matches.set(3);
+				assertEquals(2, postings.count(0, matches));
+				assertEquals(2, postings.count(2, matches));
+			}
+		);
+	}
+
+	@Test
+	public void testAValueHeldByManyDocumentsGetsABitmap() throws IOException {
+		withSegment(
+			writer -> {
+				for(var i = 0; i < 200; i++) {
+					add(writer, strings(i % 100 == 0 ? "rare" : "common"));
+				}
+			},
+			reader -> {
+				var postings = FacetColumns.ordPostings(
+					FacetColumns.ords(reader, FIELD),
+					2,
+					reader.maxDoc()
+				);
+
+				// common=0, rare=1: 200 documents are four words, 198 is above twice that
+				assertEquals(198, postings.dense()[0].cardinality());
+				assertNull(postings.dense()[1]);
+				assertArrayEquals(new int[] { 0, 100 }, postings.docs());
+
+				var matches = new FixedBitSet(reader.maxDoc());
+				matches.set(0, 150);
+				assertEquals(148, postings.count(0, matches));
+				assertEquals(2, postings.count(1, matches));
+			}
+		);
+	}
+
+	@Test
+	public void testSortedNumbersMakeARangeARun() throws IOException {
+		withSegment(
+			writer -> {
+				add(writer, longs(7, 5, 5));
+				add(writer, longs());
+				add(writer, longs(1));
+				add(writer, longs(5));
+			},
+			reader -> {
+				var postings = FacetColumns.longPostings(
+					FacetColumns.longs(reader, FIELD),
+					reader.maxDoc()
+				);
+
+				assertFalse(postings.single());
+				assertArrayEquals(new long[] { 1, 5, 5, 5, 7 }, postings.values());
+				assertArrayEquals(new int[] { 2, 0, 0, 3, 0 }, postings.docs());
+
+				assertEquals(1, postings.from(5));
+				assertEquals(4, postings.to(5));
+				assertEquals(0, postings.from(0));
+				assertEquals(5, postings.to(100));
+				assertEquals(4, postings.from(6));
 			}
 		);
 	}

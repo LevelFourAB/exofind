@@ -6,6 +6,8 @@ import java.util.function.UnaryOperator;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.util.BitSetIterator;
+import org.apache.lucene.util.FixedBitSet;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.primitive.IntLists;
@@ -102,7 +104,23 @@ final class HierarchyFacetCount implements FacetCount {
 
 		var column = FacetStates.ordsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> new EachMatch(column, hierarchy, slotOfOrd, slots);
+			case DOCUMENTS, VALUES -> {
+				/*
+				 * A scope covering much of the segment is counted a level at
+				 * a time off the inverted column where that is cheaper than
+				 * walking it - see FacetColumns. Only the levels asked about
+				 * are counted, so a drilled page pays for its subtree alone.
+				 */
+				FacetColumns.OrdPostings postings = null;
+				if(FacetColumns.isWide(matches, column.docCount())) {
+					var inverted = FacetStates.ordPostingsOf(context, field);
+					if(FacetColumns.cheaperThanWalking(inverted.cost(), matches)) {
+						postings = inverted;
+					}
+				}
+
+				yield new EachMatch(column, hierarchy, slotOfOrd, slots, postings);
+			}
 			case ROLLED_UP -> new RolledUp(column, hierarchy, slotOfOrd, slots);
 			case PARENTS_BY_VALUE -> new ByDocument(column, hierarchy, slotOfOrd, slots);
 		};
@@ -184,13 +202,17 @@ final class HierarchyFacetCount implements FacetCount {
 	 * through.
 	 */
 	private final class EachMatch extends PerSlot {
+		private final FacetColumns.OrdPostings postings;
+
 		EachMatch(
 			FacetColumns.Ords column,
 			FacetStates.Hierarchy hierarchy,
 			int[] slotOfOrd,
-			int slots
+			int slots,
+			FacetColumns.OrdPostings postings
 		) {
 			super(column, hierarchy, slotOfOrd, slots);
+			this.postings = postings;
 		}
 
 		@Override
@@ -199,6 +221,21 @@ final class HierarchyFacetCount implements FacetCount {
 				var slot = slotOfOrd[spans.values[i]];
 				if(slot >= 0) {
 					perSlot[slot]++;
+				}
+			}
+		}
+
+		@Override
+		public void countAll(FixedBitSet matches) throws IOException {
+			if(postings == null) {
+				countAll(new BitSetIterator(matches, matches.length()));
+				return;
+			}
+
+			for(var ord = 0; ord < slotOfOrd.length; ord++) {
+				var slot = slotOfOrd[ord];
+				if(slot >= 0) {
+					perSlot[slot] += postings.count(ord, matches);
 				}
 			}
 		}

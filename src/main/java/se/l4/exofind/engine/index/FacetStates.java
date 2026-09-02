@@ -120,7 +120,107 @@ final class FacetStates {
 	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.Longs>> longColumns =
 		new ConcurrentHashMap<>();
 
+	/**
+	 * The ordinals of one segment of a field inverted, per segment core and
+	 * field - see {@link #ordPostingsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.OrdPostings>> ordPostings =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * The numbers of one segment of a field sorted, per segment core and
+	 * field - see {@link #longPostingsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.LongPostings>> longPostings =
+		new ConcurrentHashMap<>();
+
 	private FacetStates() {
+	}
+
+	/**
+	 * Get the ordinals of the given field in the given segment inverted,
+	 * building them the first time the segment is asked for. The field has to
+	 * hold values in the segment. Kept the way {@link #ordsOf} keeps the
+	 * column, and built from it.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @return
+	 * @throws IOException
+	 */
+	static FacetColumns.OrdPostings ordPostingsOf(LeafReaderContext context, String field)
+		throws IOException
+	{
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return buildOrdPostings(context, field);
+		}
+
+		var key = helper.getKey();
+		var fields = ordPostings.get(key);
+		if(fields == null) {
+			fields = ordPostings.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+			helper.addClosedListener(ordPostings::remove);
+		}
+
+		var postings = fields.get(field);
+		if(postings == null) {
+			postings = buildOrdPostings(context, field);
+			fields.put(field, postings);
+		}
+
+		return postings;
+	}
+
+	private static FacetColumns.OrdPostings buildOrdPostings(
+		LeafReaderContext context,
+		String field
+	) throws IOException {
+		var reader = context.reader();
+		return FacetColumns.ordPostings(
+			ordsOf(context, field),
+			(int) reader.getSortedSetDocValues(field).getValueCount(),
+			reader.maxDoc()
+		);
+	}
+
+	/**
+	 * Get the numbers of the given field in the given segment sorted,
+	 * building them the first time the segment is asked for. The field has to
+	 * hold values in the segment. Kept the way {@link #longsOf} keeps the
+	 * column, and built from it.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @return
+	 * @throws IOException
+	 */
+	static FacetColumns.LongPostings longPostingsOf(LeafReaderContext context, String field)
+		throws IOException
+	{
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return FacetColumns.longPostings(longsOf(context, field), context.reader().maxDoc());
+		}
+
+		var key = helper.getKey();
+		var fields = longPostings.get(key);
+		if(fields == null) {
+			fields = longPostings.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+			helper.addClosedListener(longPostings::remove);
+		}
+
+		var postings = fields.get(field);
+		if(postings == null) {
+			postings = FacetColumns.longPostings(longsOf(context, field), context.reader().maxDoc());
+			fields.put(field, postings);
+		}
+
+		return postings;
 	}
 
 	/**

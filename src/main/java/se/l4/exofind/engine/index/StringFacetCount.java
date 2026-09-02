@@ -8,6 +8,8 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.util.BitSetIterator;
+import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.LongValues;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.primitive.LongIntMaps;
@@ -130,12 +132,44 @@ final class StringFacetCount implements FacetCount {
 
 		var column = FacetStates.ordsOf(context, field);
 		return switch(mode) {
-			case DOCUMENTS, VALUES -> column instanceof FacetColumns.Ords.Single single
-				? new EachMatchOfOne(single.ord(), counts)
-				: new EachMatch((FacetColumns.Ords.Multi) column, counts);
+			case DOCUMENTS, VALUES -> {
+				/*
+				 * A scope covering much of the segment is counted a value at
+				 * a time off the inverted column where that is cheaper than
+				 * walking it - see FacetColumns.
+				 */
+				FacetColumns.OrdPostings postings = null;
+				if(FacetColumns.isWide(matches, column.docCount())) {
+					var inverted = FacetStates.ordPostingsOf(context, field);
+					if(FacetColumns.cheaperThanWalking(inverted.cost(), matches)) {
+						postings = inverted;
+					}
+				}
+
+				yield column instanceof FacetColumns.Ords.Single single
+					? new EachMatchOfOne(single.ord(), counts, postings)
+					: new EachMatch((FacetColumns.Ords.Multi) column, counts, postings);
+			}
 			case ROLLED_UP -> new RolledUp(column, counts);
 			case PARENTS_BY_VALUE -> new ByDocument(column, counts);
 		};
+	}
+
+	/**
+	 * Count every value of the segment against the matches through the
+	 * postings, one value at a time.
+	 */
+	private static void countByValue(
+		FacetColumns.OrdPostings postings,
+		FixedBitSet matches,
+		SegCounts counts
+	) {
+		for(var ord = 0; ord < postings.valueCount(); ord++) {
+			var count = postings.count(ord, matches);
+			if(count > 0) {
+				counts.add(ord, count);
+			}
+		}
 	}
 
 	@Override
@@ -247,6 +281,11 @@ final class StringFacetCount implements FacetCount {
 		void add(long ord);
 
 		/**
+		 * Count the ordinal the given number of times.
+		 */
+		void add(long ord, int count);
+
+		/**
 		 * Count the ordinal, at most once per document - what rolling up
 		 * means. Documents arrive in order, so the one counted last is the
 		 * only one a repeat can belong to.
@@ -274,6 +313,11 @@ final class StringFacetCount implements FacetCount {
 		@Override
 		public void add(long ord) {
 			addGlobal(globals == null ? ord : globals.get(ord), 1);
+		}
+
+		@Override
+		public void add(long ord, int count) {
+			addGlobal(globals == null ? ord : globals.get(ord), count);
 		}
 
 		@Override
@@ -314,6 +358,11 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		@Override
+		public void add(long ord, int count) {
+			counts[(int) ord] += count;
+		}
+
+		@Override
 		public void addOncePer(long ord, int document) {
 			if(countedFor == null) {
 				countedFor = new int[counts.length];
@@ -348,11 +397,17 @@ final class StringFacetCount implements FacetCount {
 		private final int[] starts;
 		private final int[] ords;
 		private final SegCounts counts;
+		private final FacetColumns.OrdPostings postings;
 
-		EachMatch(FacetColumns.Ords.Multi column, SegCounts counts) {
+		EachMatch(
+			FacetColumns.Ords.Multi column,
+			SegCounts counts,
+			FacetColumns.OrdPostings postings
+		) {
 			this.starts = column.starts();
 			this.ords = column.ords();
 			this.counts = counts;
+			this.postings = postings;
 		}
 
 		@Override
@@ -374,6 +429,15 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		@Override
+		public void countAll(FixedBitSet matches) throws IOException {
+			if(postings == null) {
+				countAll(new BitSetIterator(matches, matches.length()));
+			} else {
+				countByValue(postings, matches, counts);
+			}
+		}
+
+		@Override
 		public void finish() {
 			counts.finish();
 		}
@@ -385,10 +449,12 @@ final class StringFacetCount implements FacetCount {
 	private static final class EachMatchOfOne implements Leaf {
 		private final int[] ord;
 		private final SegCounts counts;
+		private final FacetColumns.OrdPostings postings;
 
-		EachMatchOfOne(int[] ord, SegCounts counts) {
+		EachMatchOfOne(int[] ord, SegCounts counts, FacetColumns.OrdPostings postings) {
 			this.ord = ord;
 			this.counts = counts;
+			this.postings = postings;
 		}
 
 		@Override
@@ -407,6 +473,15 @@ final class StringFacetCount implements FacetCount {
 				doc = docs.nextDoc()
 			) {
 				count(doc);
+			}
+		}
+
+		@Override
+		public void countAll(FixedBitSet matches) throws IOException {
+			if(postings == null) {
+				countAll(new BitSetIterator(matches, matches.length()));
+			} else {
+				countByValue(postings, matches, counts);
 			}
 		}
 

@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.util.BitSet;
+import org.apache.lucene.util.FixedBitSet;
 import org.eclipse.collections.api.list.ListIterable;
 
 /**
@@ -84,10 +85,20 @@ final class FacetWalk {
 				 * hands out iterators for the asking. One walk feeding every
 				 * leaf per match would make each count a call the JIT cannot
 				 * predict once a search counts a few kinds of facet.
+				 *
+				 * Matches collected as a bitset are handed over as one, which
+				 * is what lets a leaf count a wide scope a value at a time
+				 * instead of a match at a time.
 				 */
-				leaves[0].countAll(iterator);
-				for(var i = 1; i < count; i++) {
-					leaves[i].countAll(docs.bits().iterator());
+				if(docs.bits().bits() instanceof FixedBitSet fixed) {
+					for(var i = 0; i < count; i++) {
+						leaves[i].countAll(fixed);
+					}
+				} else {
+					leaves[0].countAll(iterator);
+					for(var i = 1; i < count; i++) {
+						leaves[i].countAll(docs.bits().iterator());
+					}
 				}
 			} else {
 				var document = -1;
