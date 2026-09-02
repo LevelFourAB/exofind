@@ -10,7 +10,7 @@ Before you begin, ensure you have the following:
 
 - A Kubernetes cluster.
 - An S3-compatible object storage bucket.
-- A Kubernetes Secret named `exofind-storage` containing the keys `access-key` and `secret-key`.
+- Credentials for the bucket: a Kubernetes Secret named `exofind-storage` containing the keys `access-key` and `secret-key`, or on Amazon EKS an IAM role the pods can assume - see [Authenticate with an IAM role](#authenticate-with-an-iam-role).
 
 ## Why two pools
 
@@ -162,6 +162,52 @@ spec:
 Setting `EXOFIND_NODE_ID` to the pod name associates claims with specific pods and prefixes write log lines with the pod name. This makes failovers easier to track in logs.
 
 Do not configure `EXOFIND_INDEXES_DISK_MAX_SIZE` on indexers. The disk sweeper does not remove local copies that are not yet committed to object storage, so it cannot free disk space when disk usage is highest. Size the persistent volume claim for your expected write volume instead.
+
+## Authenticate with an IAM role
+
+On Amazon EKS with an S3 bucket, the pods can assume an IAM role instead of carrying keys in a Secret. The platform issues short-lived credentials for the role, and the node resolves and refreshes them through the AWS SDK default chain.
+
+Change both manifests:
+
+1. Set `EXOFIND_STORAGE_REMOTE_CREDENTIALS` to `default`.
+2. Remove the `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` and `EXOFIND_STORAGE_REMOTE_SECRET_KEY` entries, and skip creating the `exofind-storage` Secret.
+3. Set `EXOFIND_STORAGE_REMOTE_URL` to the bucket's regional endpoint, such as `https://s3.eu-central-1.amazonaws.com`, and `EXOFIND_STORAGE_REMOTE_REGION` to the bucket's region.
+4. Set `serviceAccountName: exofind` in both pod specs.
+
+The role's policy needs `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on the bucket's objects and `s3:ListBucket` on the bucket. When the bucket is shared, scope the object actions to `EXOFIND_STORAGE_REMOTE_PREFIX`.
+
+EKS binds the role to the `exofind` ServiceAccount in one of two ways. Use EKS Pod Identity where the cluster runs the Pod Identity Agent add-on; use IRSA where it does not, or where the cluster's tooling already manages OIDC trust policies.
+
+### IRSA
+
+Create the ServiceAccount with an annotation naming the role:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: exofind
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role-name>
+```
+
+EKS injects a web identity token into pods that use the ServiceAccount. The role's trust policy must allow `sts:AssumeRoleWithWebIdentity` from the cluster's OIDC provider, with the subject scoped to this namespace and ServiceAccount.
+
+### EKS Pod Identity
+
+Create the ServiceAccount without annotations and associate it with the role:
+
+```shell
+aws eks create-pod-identity-association \
+  --cluster-name <cluster> \
+  --namespace <namespace> \
+  --service-account exofind \
+  --role-arn arn:aws:iam::<account>:role/<role-name>
+```
+
+The role's trust policy must allow `sts:AssumeRole` and `sts:TagSession` from the `pods.eks.amazonaws.com` service principal.
+
+A node that cannot resolve credentials from any source refuses to start and names `EXOFIND_STORAGE_REMOTE_CREDENTIALS` in the error, with the chain's reason for skipping each source. When that happens, check the annotation or the association, and that the Pod Identity Agent add-on runs.
 
 ## Size the pools
 

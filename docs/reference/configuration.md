@@ -44,11 +44,23 @@ The following table lists object storage configuration variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXOFIND_STORAGE_REMOTE_URL` | URL of the S3-compatible storage. | Required |
-| `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` | Access key for authentication. | Required |
-| `EXOFIND_STORAGE_REMOTE_SECRET_KEY` | Secret key for authentication. | Required |
+| `EXOFIND_STORAGE_REMOTE_CREDENTIALS` | Source of the credentials requests are signed with: `static` to sign with the configured access and secret key, or `default` to resolve credentials through the AWS SDK default chain. | `static` |
+| `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` | Access key for authentication. | Required when `EXOFIND_STORAGE_REMOTE_CREDENTIALS` is `static` |
+| `EXOFIND_STORAGE_REMOTE_SECRET_KEY` | Secret key for authentication. | Required when `EXOFIND_STORAGE_REMOTE_CREDENTIALS` is `static` |
 | `EXOFIND_STORAGE_REMOTE_REGION` | Region of the object storage. | None |
 | `EXOFIND_STORAGE_REMOTE_BUCKET` | Bucket where indexes are stored. | Required |
 | `EXOFIND_STORAGE_REMOTE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
+
+`default` credentials are for deployments where the platform issues short-lived
+credentials for an IAM role, such as IRSA or EKS Pod Identity on Kubernetes.
+The AWS SDK default chain reads the standard AWS sources - environment
+variables, a web identity token, container credentials, a profile, instance
+metadata - and refreshes credentials as they expire. The access and secret key
+settings are not read in this mode; setting them logs a warning. A node that
+cannot resolve credentials from any source in the chain refuses to start. On
+Amazon S3, set `EXOFIND_STORAGE_REMOTE_URL` to the bucket's regional endpoint
+and `EXOFIND_STORAGE_REMOTE_REGION` to its region. For the Kubernetes setup,
+see [Deploying on Kubernetes](../how-to/deploy-on-kubernetes.md#authenticate-with-an-iam-role).
 
 ## Locale data
 
