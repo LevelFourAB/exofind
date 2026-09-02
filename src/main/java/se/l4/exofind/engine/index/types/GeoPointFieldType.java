@@ -16,6 +16,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.DistanceSortField;
 import se.l4.exofind.engine.index.FieldNames;
 import se.l4.exofind.engine.index.GeoPoint;
 import se.l4.exofind.engine.index.IndexEncounter;
@@ -38,6 +39,10 @@ import se.l4.exofind.engine.query.matchers.Matcher;
  * through {@link #createDistanceSortField} rather than the plain sort, which
  * has no place to carry one; declaring {@code sort} on the field is still what
  * writes the doc values distance is ordered by.
+ *
+ * A field that declares {@code filter} as well orders through
+ * {@link DistanceSortField}, which rules documents out through the points
+ * instead of measuring every match.
  */
 public class GeoPointFieldType implements FieldType {
 	private static final ErrorType COLLATION_NOT_SUPPORTED = ErrorType
@@ -206,6 +211,19 @@ public class GeoPointFieldType implements FieldType {
 			throw new IndexInvalidQueryValueException(
 				encounter.getFieldName(),
 				"origin on the earth"
+			);
+		}
+
+		if(encounter.isFiltered()) {
+			/*
+			 * The points hold the same coordinates as the doc values, so the
+			 * order can be answered without reading every match.
+			 */
+			return new DistanceSortField(
+				encounter.name(FieldNames.SORT),
+				encounter.name(FieldNames.FILTER),
+				latitude,
+				longitude
 			);
 		}
 
