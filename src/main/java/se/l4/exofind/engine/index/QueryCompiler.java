@@ -681,10 +681,36 @@ public class QueryCompiler {
 		 * Anything but an explicit ascending reads as descending, the way
 		 * recency and popularity do.
 		 */
-		return field.getType().createSortField(
-			encounter,
-			breaker.getDirection() == RankingConfig.TieBreaker.Direction.DIRECTION_ASCENDING
+		return overDocuments(
+			field.getType().createSortField(
+				encounter,
+				breaker.getDirection() == RankingConfig.TieBreaker.Direction.DIRECTION_ASCENDING
+			)
 		);
+	}
+
+	/**
+	 * Tell an ordering that its hits are documents of the index, so that the
+	 * values of object fields are not counted as documents holding no value.
+	 *
+	 * Only orderings over the documents of the index go through here. The
+	 * hits of a search that answers with the values of an object field are the
+	 * values themselves, and are counted as the Lucene documents they are.
+	 *
+	 * An index without object fields holds no values to tell apart, and is
+	 * left to count Lucene documents. That is the same answer without the
+	 * bitset it takes to reach it, and it scopes a search the same way
+	 * {@link Index} scopes the query.
+	 *
+	 * @param ordering
+	 * @return
+	 */
+	private SortField overDocuments(SortField ordering) {
+		if(!schema.hasNestedFields() || !(ordering instanceof NumberSortField number)) {
+			return ordering;
+		}
+
+		return number.withDocuments(nestedParents);
 	}
 
 	/**
@@ -2086,7 +2112,7 @@ public class QueryCompiler {
 
 				yield nested.isPresent()
 					? valueSort(ordering, s.field(), nested.get().path(), ascending, clauses)
-					: ordering;
+					: overDocuments(ordering);
 			}
 
 			case GeoDistanceSort s -> {

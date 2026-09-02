@@ -28,6 +28,7 @@ import se.l4.exofind.engine.index.IndexEncounter;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.IndexInvalidQueryTypeException;
 import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
+import se.l4.exofind.engine.index.NumberSortField;
 import se.l4.exofind.engine.index.RangeFacetCounter;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
@@ -225,11 +226,18 @@ public class TimestampFieldType implements FieldType {
 	@Override
 	public SortField createSortField(IndexEncounter encounter, boolean ascending) {
 		// Lucene takes whether to reverse, which is the opposite of ascending
-		var field = new SortField(
-			encounter.name(FieldNames.SORT),
-			SortField.Type.LONG,
-			!ascending
-		);
+		var field = encounter.isFiltered()
+			? new NumberSortField(
+				encounter.name(FieldNames.SORT),
+				encounter.name(FieldNames.FILTER),
+				SortField.Type.LONG,
+				!ascending
+			)
+			: new SortField(
+				encounter.name(FieldNames.SORT),
+				SortField.Type.LONG,
+				!ascending
+			);
 
 		/*
 		 * A numeric sort reads a document without a value as zero, which is

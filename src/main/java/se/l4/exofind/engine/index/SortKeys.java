@@ -58,6 +58,14 @@ final class SortKeys {
 			return nested.mirrored();
 		}
 
+		/*
+		 * Mirrored as its own kind, so a page read backwards skips through the
+		 * points the same way the forward page does.
+		 */
+		if(field instanceof NumberSortField number) {
+			return number.mirrored();
+		}
+
 		if(field.getClass() != SortField.class) {
 			throw new UnsupportedOperationException(
 				"Sort field " + field + " can not be mirrored for walking backwards"
