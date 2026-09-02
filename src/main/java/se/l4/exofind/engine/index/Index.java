@@ -5107,8 +5107,13 @@ public class Index {
 	 * clauses say - and rolls them up, so it answers how many documents hold
 	 * each value the way every other facet does. Its scope is worked out the
 	 * same way, a {@code nested} filter being excludable by its field path
-	 * like any other entry, and facets that keep the same filters share one
-	 * scope per object field.
+	 * like any other entry. A scope with no {@code nested} clause left on the
+	 * path matches every value of each document it matches, so the documents
+	 * alone say which values matched: such a facet shares the document
+	 * collection of the facets over fields of the index, and counts every
+	 * value below each matched document - see {@link FacetMatches}. Only a
+	 * scope that still narrows the values collects them, one collection per
+	 * object field and set of kept filters.
 	 *
 	 * A facet over a field whose values are paths counts a level of the tree at
 	 * a time and answers the counts nested. The scope is worked out the same
@@ -5195,21 +5200,60 @@ public class Index {
 					keepWhole = true;
 				}
 
-				var key = Tuples.pair(path, filters);
-				scope = values.get(key);
-				if(scope == null) {
-					var scopedDocuments = sideways
-						? assemble(compiler, request, scoped).documents()
-						: documents;
+				if(!compiler.narrowsValues(path, scoped)) {
+					/*
+					 * Nothing asked of the values, so the documents alone say
+					 * which values matched - every value of each of them -
+					 * and the scope is the documents, collected the way the
+					 * facets over fields of the index collect theirs and
+					 * shared with them.
+					 */
+					FacetsCollector hits;
+					if(scoped.isEmpty()) {
+						if(everything == null) {
+							everything = collectEverything(searcher, compiler);
+						}
 
-					scope = FacetMatches.rolledUp(
-						searcher.search(
-							compiler.compileNestedValues(path, scopedDocuments, scoped),
-							new FacetsCollectorManager()
-						),
-						nestedParents
-					);
-					values.put(key, scope);
+						hits = everything;
+					} else if(sideways) {
+						var collected = collectors.get(filters);
+						if(collected == null) {
+							collected = FacetMatches.of(
+								searcher.search(
+									assemble(compiler, request, scoped).documents(),
+									new FacetsCollectorManager()
+								)
+							);
+							collectors.put(filters, collected);
+						}
+
+						hits = collected.hits();
+					} else {
+						if(whole == null) {
+							whole = searcher.search(documents, new FacetsCollectorManager());
+						}
+
+						hits = whole;
+					}
+
+					scope = FacetMatches.everyValue(hits, nestedParents);
+				} else {
+					var key = Tuples.pair(path, filters);
+					scope = values.get(key);
+					if(scope == null) {
+						var scopedDocuments = sideways
+							? assemble(compiler, request, scoped).documents()
+							: documents;
+
+						scope = FacetMatches.rolledUp(
+							searcher.search(
+								compiler.compileNestedValues(path, scopedDocuments, scoped),
+								new FacetsCollectorManager()
+							),
+							nestedParents
+						);
+						values.put(key, scope);
+					}
 				}
 			} else {
 				if(scoped.isEmpty()) {
@@ -5221,7 +5265,7 @@ public class Index {
 
 						var wholeScope = FacetMatches.of(everything);
 						walks.getIfAbsentPut(wholeScope, Lists.mutable::empty).add(
-							new PendingFacet(facet, prepareFacet(compiler, facet, wholeScope.mode()), true)
+							new PendingFacet(facet, prepareFacet(compiler, facet, wholeScope), true)
 						);
 					} else {
 						counts.put(facet.name(), kept);
@@ -5251,7 +5295,7 @@ public class Index {
 			}
 
 			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
-				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), keepWhole)
+				new PendingFacet(facet, prepareFacet(compiler, facet, scope), keepWhole)
 			);
 		}
 
@@ -5400,7 +5444,7 @@ public class Index {
 				: FacetMatches.parentsByValue(matches, nestedParents);
 
 			walks.getIfAbsentPut(scope, Lists.mutable::empty).add(
-				new PendingFacet(facet, prepareFacet(compiler, facet, scope.mode()), keepWhole)
+				new PendingFacet(facet, prepareFacet(compiler, facet, scope), keepWhole)
 			);
 		}
 
@@ -5545,11 +5589,11 @@ public class Index {
 	private FacetCount prepareFacet(
 		QueryCompiler compiler,
 		Facet facet,
-		FacetMatches.Mode mode
+		FacetMatches scope
 	) {
 		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
 			return compiler.hierarchyFacetCounter(facet.field())
-				.prepare(mode, facet.path(), facet.depth(), facet.limit(), facet.order());
+				.prepare(scope, facet.path(), facet.depth(), facet.limit(), facet.order());
 		}
 
 		if(facet.ranges().isEmpty()) {
@@ -5563,11 +5607,11 @@ public class Index {
 			}
 
 			return compiler.facetCounter(facet.field())
-				.prepare(mode, facet.limit(), facet.order());
+				.prepare(scope, facet.limit(), facet.order());
 		}
 
 		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
-			.prepare(mode);
+			.prepare(scope);
 	}
 
 	/**

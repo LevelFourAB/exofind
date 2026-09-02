@@ -111,7 +111,7 @@ Search benchmarks open a committed index and execute queries without HTTP or Qua
 | --- | --- |
 | `FilterBenchmark` | Measures narrowing without ranking: equality, ranges, prefixes, negation, subtrees, distance, and exact match count costs. |
 | `TextSearchBenchmark` | Measures text queries: single-word, multi-word, prefix, misspelled, quoted, highlighted, and second-pass searches when no hits match. |
-| `FacetBenchmark` | Measures match counting per value, per bucket, and down category trees: single facet, full page, facet filtering, category drill-down, and count refreshes without document fetches. `everyFacetNarrowed` counts the full page over a share of the index set with `-p ratio=`, in percent. |
+| `FacetBenchmark` | Measures match counting per value, per bucket, and down category trees: single facet, full page, facet filtering, category drill-down, and count refreshes without document fetches. `everyFacetNarrowed` counts the full page over a share of the index set with `-p ratio=`, in percent, and `nestedFacetNarrowed` counts a facet over a field inside an object over the same share. |
 | `SortAndPageBenchmark` | Measures sorting by field versus relevance, ranking signals, and deep pagination with offsets versus cursors. |
 | `NestedBenchmark` | Measures conditions on object field values and value counting. |
 | `MatchedBenchmark` | Measures retrieving matching object field values per hit with and without conditions. Set returned hit count with `-p page=`. |

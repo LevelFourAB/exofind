@@ -1210,6 +1210,30 @@ public class QueryCompiler {
 	}
 
 	/**
+	 * Get whether a search asks something of the values of an object field,
+	 * so that {@link #compileNestedValues} matches only some of the values of
+	 * the documents it matches rather than every one of them.
+	 *
+	 * Read off the search the same way {@link #compileNestedValues} reads its
+	 * narrowing: the {@code nested} clauses on the path every result had to
+	 * satisfy, see {@link #requiredValues}. A search with none matches the
+	 * values of a document whole or not at all, which is what lets a facet
+	 * rolling those values up count documents without visiting them.
+	 *
+	 * @param path
+	 *   name of the object field
+	 * @param clauses
+	 *   the clauses of the search
+	 * @return
+	 */
+	public boolean narrowsValues(String path, ListIterable<Query> clauses) {
+		var required = Lists.mutable.<Query>empty();
+		requiredValues(clauses, path, required);
+
+		return required.notEmpty();
+	}
+
+	/**
 	 * Compile the query matching the values of an object field that a search
 	 * asked something of, whichever document they belong to.
 	 */

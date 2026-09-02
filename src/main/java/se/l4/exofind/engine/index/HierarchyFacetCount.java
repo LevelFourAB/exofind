@@ -6,6 +6,8 @@ import java.util.function.UnaryOperator;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.join.BitSetProducer;
+import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.FixedBitSet;
 import org.eclipse.collections.api.factory.Lists;
@@ -48,6 +50,7 @@ import se.l4.exofind.engine.query.SearchResult;
 final class HierarchyFacetCount implements FacetCount {
 	private final String field;
 	private final FacetMatches.Mode mode;
+	private final BitSetProducer parents;
 	private final String separator;
 	private final UnaryOperator<String> normalize;
 	private final Scope scope;
@@ -58,7 +61,7 @@ final class HierarchyFacetCount implements FacetCount {
 
 	HierarchyFacetCount(
 		String field,
-		FacetMatches.Mode mode,
+		FacetMatches matches,
 		String separator,
 		UnaryOperator<String> normalize,
 		String path,
@@ -67,7 +70,8 @@ final class HierarchyFacetCount implements FacetCount {
 		Facet.Order order
 	) {
 		this.field = field;
-		this.mode = mode;
+		this.mode = matches.mode();
+		this.parents = matches.parents();
 		this.separator = separator;
 		this.normalize = normalize;
 		this.scope = new Scope(separator, normalize, path, depth);
@@ -120,6 +124,30 @@ final class HierarchyFacetCount implements FacetCount {
 				}
 
 				yield new EachMatch(column, hierarchy, slotOfOrd, slots, postings);
+			}
+			case EVERY_VALUE -> {
+				var documents = parents.getBitSet(context);
+				if(documents == null) {
+					yield null;
+				}
+
+				/*
+				 * A wide scope of documents is counted a level at a time off
+				 * postings built in terms of the documents, where that is
+				 * cheaper than reading the values below each document - see
+				 * FacetColumns and StringFacetCount, which judges width the
+				 * same way.
+				 */
+				FacetColumns.OrdPostings postings = null;
+				if(FacetColumns.isWide(matches, FacetStates.documentCountOf(context, parents))) {
+					var inverted = FacetStates.rolledUpOrdPostingsOf(context, field, parents);
+					if(inverted != null
+						&& FacetColumns.cheaperThanWalking(inverted.cost(), matches)) {
+						postings = inverted;
+					}
+				}
+
+				yield new EveryValue(column, hierarchy, slotOfOrd, slots, documents, postings);
 			}
 			case ROLLED_UP -> new RolledUp(column, hierarchy, slotOfOrd, slots);
 			case PARENTS_BY_VALUE -> new ByDocument(column, hierarchy, slotOfOrd, slots);
@@ -286,6 +314,73 @@ final class HierarchyFacetCount implements FacetCount {
 				var slot = slotOfOrd[ord];
 				if(slot >= 0 && seen.add(ord)) {
 					perSlot[slot]++;
+				}
+			}
+		}
+	}
+
+	/**
+	 * The matches are documents of the index and the levels live on the
+	 * values below each one: a level counts once per document however many of
+	 * its values pass through it, read off the block of values below the
+	 * document - or, over a wide scope, off postings that hold each document
+	 * once per level.
+	 */
+	private final class EveryValue extends PerSlot {
+		private final BitSet documents;
+		private final FacetColumns.OrdPostings postings;
+		private final MutableLongSet seen = LongSets.mutable.empty();
+
+		EveryValue(
+			FacetColumns.Ords column,
+			FacetStates.Hierarchy hierarchy,
+			int[] slotOfOrd,
+			int slots,
+			BitSet documents,
+			FacetColumns.OrdPostings postings
+		) {
+			super(column, hierarchy, slotOfOrd, slots);
+			this.documents = documents;
+			this.postings = postings;
+		}
+
+		@Override
+		public void count(int document) {
+			seen.clear();
+
+			for(var doc = FacetWalk.valuesFrom(documents, document); doc < document; doc++) {
+				for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+					var ord = spans.values[i];
+					var slot = slotOfOrd[ord];
+					if(slot >= 0 && seen.add(ord)) {
+						perSlot[slot]++;
+					}
+				}
+			}
+		}
+
+		@Override
+		public void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
+			}
+		}
+
+		@Override
+		public void countAll(FixedBitSet matches) throws IOException {
+			if(postings == null) {
+				countAll(new BitSetIterator(matches, matches.length()));
+				return;
+			}
+
+			for(var ord = 0; ord < slotOfOrd.length; ord++) {
+				var slot = slotOfOrd[ord];
+				if(slot >= 0) {
+					perSlot[slot] += postings.count(ord, matches);
 				}
 			}
 		}

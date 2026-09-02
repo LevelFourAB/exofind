@@ -25,7 +25,7 @@ public interface FacetCounter {
 	/**
 	 * Prepare to count one scope.
 	 *
-	 * @param mode
+	 * @param scope
 	 *   what the matches of the scope are and what the counts should be of
 	 * @param limit
 	 *   how many values to bring back at most
@@ -34,7 +34,7 @@ public interface FacetCounter {
 	 * @return
 	 *   the count to feed through {@link FacetWalk}, never {@code null}
 	 */
-	FacetCount prepare(FacetMatches.Mode mode, int limit, Facet.Order order);
+	FacetCount prepare(FacetMatches scope, int limit, Facet.Order order);
 
 	/**
 	 * Count a field written as sorted set doc values, decoding each counted
@@ -47,8 +47,8 @@ public interface FacetCounter {
 	 * @return
 	 */
 	static FacetCounter overStrings(String field, Function<String, Object> decode) {
-		return (mode, limit, order) ->
-			new StringFacetCount(field, mode, limit, order, decode);
+		return (scope, limit, order) ->
+			new StringFacetCount(field, scope, limit, order, decode);
 	}
 
 	/**
@@ -62,7 +62,7 @@ public interface FacetCounter {
 	 * @return
 	 */
 	static FacetCounter overLongs(String field, LongFunction<Object> decode) {
-		return (mode, limit, order) ->
-			new LongFacetCount(field, mode, limit, order, decode);
+		return (scope, limit, order) ->
+			new LongFacetCount(field, scope, limit, order, decode);
 	}
 }

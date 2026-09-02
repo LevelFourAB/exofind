@@ -6,6 +6,8 @@ import java.util.function.LongFunction;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.join.BitSetProducer;
+import org.apache.lucene.util.BitSet;
 import org.eclipse.collections.api.factory.primitive.LongLists;
 import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.factory.primitive.LongSets;
@@ -31,6 +33,7 @@ import se.l4.exofind.engine.query.SearchResult;
 final class LongFacetCount implements FacetCount {
 	private final String field;
 	private final FacetMatches.Mode mode;
+	private final BitSetProducer parents;
 	private final int limit;
 	private final Facet.Order order;
 	private final LongFunction<Object> decode;
@@ -39,13 +42,14 @@ final class LongFacetCount implements FacetCount {
 
 	LongFacetCount(
 		String field,
-		FacetMatches.Mode mode,
+		FacetMatches scope,
 		int limit,
 		Facet.Order order,
 		LongFunction<Object> decode
 	) {
 		this.field = field;
-		this.mode = mode;
+		this.mode = scope.mode();
+		this.parents = scope.parents();
 		this.limit = limit;
 		this.order = order;
 		this.decode = decode;
@@ -60,6 +64,10 @@ final class LongFacetCount implements FacetCount {
 		var column = FacetStates.longsOf(context, field);
 		return switch(mode) {
 			case DOCUMENTS, VALUES -> new EachMatch(column);
+			case EVERY_VALUE -> {
+				var documents = parents.getBitSet(context);
+				yield documents == null ? null : new EveryValue(column, documents);
+			}
 			case ROLLED_UP -> new RolledUp(column);
 			case PARENTS_BY_VALUE -> new ByDocument(column);
 		};
@@ -153,6 +161,47 @@ final class LongFacetCount implements FacetCount {
 				if(counted.add(value)) {
 					counts.addToValue(value, 1);
 				}
+			}
+		}
+	}
+
+	/**
+	 * The matches are documents of the index and the numbers live on the
+	 * values below each one: a value counts once per document however many
+	 * of its values hold it, read off the block of values below the document.
+	 */
+	private final class EveryValue implements Leaf {
+		private final FacetColumns.LongSpans spans;
+		private final BitSet documents;
+		private final MutableLongSet counted = LongSets.mutable.empty();
+
+		EveryValue(FacetColumns.Longs column, BitSet documents) {
+			this.spans = new FacetColumns.LongSpans(column);
+			this.documents = documents;
+		}
+
+		@Override
+		public void count(int document) {
+			counted.clear();
+
+			for(var doc = FacetWalk.valuesFrom(documents, document); doc < document; doc++) {
+				for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+					var value = spans.values[i];
+					if(counted.add(value)) {
+						counts.addToValue(value, 1);
+					}
+				}
+			}
+		}
+
+		@Override
+		public void countAll(DocIdSetIterator docs) throws IOException {
+			for(
+				var doc = docs.nextDoc();
+				doc != DocIdSetIterator.NO_MORE_DOCS;
+				doc = docs.nextDoc()
+			) {
+				count(doc);
 			}
 		}
 	}

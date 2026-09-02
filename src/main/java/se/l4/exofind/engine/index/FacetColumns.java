@@ -8,6 +8,7 @@ import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.IntroSorter;
 
@@ -46,6 +47,18 @@ import org.apache.lucene.util.IntroSorter;
  * {@link OrdPostings} and {@link LongPostings} are that inversion, built from
  * the column on the first wide search and kept beside it; they cost about as
  * much again as the column does.
+ *
+ * A field inside an object holds its values on documents of their own, and a
+ * facet over it counts the documents above them: a product with three red
+ * variants is one red product. Where a search matches those values whole -
+ * every value of a document or none, which is what a search asking nothing of
+ * the values themselves does - the inversion can be built in terms of the
+ * documents above the values, holding each document once per value however
+ * many of its values hold it, and a rolled-up count is then the same
+ * intersection or lookups against the documents that matched.
+ * {@link #rolledUpOrdPostings} and {@link #rolledUpLongPostings} are that
+ * inversion; a search that matched only some of a document's values cannot
+ * use them, since which documents count then depends on which values matched.
  */
 final class FacetColumns {
 	/**
@@ -404,12 +417,90 @@ final class FacetColumns {
 	 * @return
 	 */
 	static OrdPostings ordPostings(Ords column, int valueCount, int maxDoc) {
-		var spans = new OrdSpans(column);
+		return invert(new OrdSpans(column), valueCount, maxDoc, null);
+	}
 
+	/**
+	 * Invert the given column of a field inside an object in terms of the
+	 * documents above its values: per ordinal, the documents of the index
+	 * with at least one value holding it, each once. The ordinals run from
+	 * zero to one below the value count. A value with no document after it
+	 * belongs to nobody and is left out.
+	 *
+	 * @param column
+	 *   the ordinals of the segment, held by the values
+	 * @param valueCount
+	 *   how many distinct values the segment holds
+	 * @param maxDoc
+	 *   how many documents the segment holds
+	 * @param documents
+	 *   the documents of the index in the segment; the document a value
+	 *   belongs to is the next one at or after it
+	 * @return
+	 */
+	static OrdPostings rolledUpOrdPostings(
+		Ords column,
+		int valueCount,
+		int maxDoc,
+		BitSet documents
+	) {
+		return invert(new OrdSpans(column), valueCount, maxDoc, documents);
+	}
+
+	/**
+	 * Invert ordinals into the postings of what holds them: the Lucene
+	 * documents themselves, or - given the documents of the index - the
+	 * document above each one, held once per ordinal however many of its
+	 * values hold it.
+	 */
+	private static OrdPostings invert(
+		OrdSpans spans,
+		int valueCount,
+		int maxDoc,
+		BitSet documents
+	) {
+		/*
+		 * The document last counted for each ordinal, for holding a document
+		 * once per ordinal: documents arrive in order, so the one counted
+		 * last is the only one a repeat can belong to. A Lucene document
+		 * holds each ordinal once already, so counting it as its own document
+		 * needs none of this.
+		 */
+		var countedFor = documents == null ? null : new int[valueCount];
 		var frequency = new int[valueCount];
+		var document = -1;
+
+		if(countedFor != null) {
+			Arrays.fill(countedFor, -1);
+		}
+
 		for(var doc = 0; doc < maxDoc; doc++) {
-			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
-				frequency[spans.values[i]]++;
+			var from = spans.from(doc);
+			var end = spans.to(doc);
+			if(from == end) {
+				continue;
+			}
+
+			var posting = doc;
+			if(documents != null) {
+				if(doc > document) {
+					document = documentAbove(doc, documents);
+					if(document == DocIdSetIterator.NO_MORE_DOCS) {
+						break;
+					}
+				}
+
+				posting = document;
+			}
+
+			for(var i = from; i < end; i++) {
+				var ord = spans.values[i];
+				if(countedFor == null) {
+					frequency[ord]++;
+				} else if(countedFor[ord] != posting) {
+					countedFor[ord] = posting;
+					frequency[ord]++;
+				}
 			}
 		}
 
@@ -429,20 +520,62 @@ final class FacetColumns {
 			}
 		}
 
+		if(countedFor != null) {
+			Arrays.fill(countedFor, -1);
+		}
+
 		var docs = new int[starts[valueCount]];
 		var cursor = Arrays.copyOf(starts, valueCount);
+		document = -1;
 		for(var doc = 0; doc < maxDoc; doc++) {
-			for(int i = spans.from(doc), end = spans.to(doc); i < end; i++) {
+			var from = spans.from(doc);
+			var end = spans.to(doc);
+			if(from == end) {
+				continue;
+			}
+
+			var posting = doc;
+			if(documents != null) {
+				if(doc > document) {
+					document = documentAbove(doc, documents);
+					if(document == DocIdSetIterator.NO_MORE_DOCS) {
+						break;
+					}
+				}
+
+				posting = document;
+			}
+
+			for(var i = from; i < end; i++) {
 				var ord = spans.values[i];
+				if(countedFor != null) {
+					if(countedFor[ord] == posting) {
+						continue;
+					}
+
+					countedFor[ord] = posting;
+				}
+
 				if(dense[ord] != null) {
-					dense[ord].set(doc);
+					dense[ord].set(posting);
 				} else {
-					docs[cursor[ord]++] = doc;
+					docs[cursor[ord]++] = posting;
 				}
 			}
 		}
 
 		return new OrdPostings(dense, starts, docs, cost);
+	}
+
+	/**
+	 * Get the document of the index a value belongs to: the next document at
+	 * or after it, or {@link DocIdSetIterator#NO_MORE_DOCS} where there is
+	 * none.
+	 */
+	private static int documentAbove(int doc, BitSet documents) {
+		return doc < documents.length()
+			? documents.nextSetBit(doc)
+			: DocIdSetIterator.NO_MORE_DOCS;
 	}
 
 	/**
@@ -473,6 +606,96 @@ final class FacetColumns {
 			}
 		}
 
+		sort(values, docs, total);
+		return new LongPostings(values, docs, column instanceof Longs.Single);
+	}
+
+	/**
+	 * Sort the given column of a field inside an object by number, each
+	 * number standing beside the document of the index above the value
+	 * holding it - once per document, however many of its values hold the
+	 * number. A value with no document after it belongs to nobody and is left
+	 * out.
+	 *
+	 * @param column
+	 *   the numbers of the segment, held by the values
+	 * @param maxDoc
+	 *   how many documents the segment holds
+	 * @param documents
+	 *   the documents of the index in the segment; the document a value
+	 *   belongs to is the next one at or after it
+	 * @return
+	 */
+	static LongPostings rolledUpLongPostings(Longs column, int maxDoc, BitSet documents) {
+		var spans = new LongSpans(column);
+
+		var total = 0;
+		for(var doc = 0; doc < maxDoc; doc++) {
+			total += spans.to(doc) - spans.from(doc);
+		}
+
+		var values = new long[total];
+		var docs = new int[total];
+		var at = 0;
+		var document = -1;
+		for(var doc = 0; doc < maxDoc; doc++) {
+			var from = spans.from(doc);
+			var end = spans.to(doc);
+			if(from == end) {
+				continue;
+			}
+
+			if(doc > document) {
+				document = documentAbove(doc, documents);
+				if(document == DocIdSetIterator.NO_MORE_DOCS) {
+					break;
+				}
+			}
+
+			for(var i = from; i < end; i++) {
+				values[at] = spans.values[i];
+				docs[at] = document;
+				at++;
+			}
+		}
+
+		sort(values, docs, at);
+
+		/*
+		 * A document holding a number in two of its values stands twice, side
+		 * by side once sorted, and is kept once. Whether any document is then
+		 * still left standing under two numbers is what a caller counting
+		 * documents into buckets has to know.
+		 */
+		var kept = 0;
+		var seen = new FixedBitSet(maxDoc);
+		var single = true;
+		for(var i = 0; i < at; i++) {
+			if(i > 0 && values[i] == values[kept - 1] && docs[i] == docs[kept - 1]) {
+				continue;
+			}
+
+			if(seen.getAndSet(docs[i])) {
+				single = false;
+			}
+
+			values[kept] = values[i];
+			docs[kept] = docs[i];
+			kept++;
+		}
+
+		return new LongPostings(
+			Arrays.copyOf(values, kept),
+			Arrays.copyOf(docs, kept),
+			single
+		);
+	}
+
+	/**
+	 * Sort the first {@code total} numbers ascending, the documents beside
+	 * them following and ascending within equal numbers.
+	 */
+	private static void sort(long[] values, int[] docs, int total) {
 		new IntroSorter() {
 			private long pivotValue;
 			private int pivotDoc;
@@ -506,8 +729,6 @@ final class FacetColumns {
 				return byValue != 0 ? byValue : Integer.compare(pivotDoc, docs[j]);
 			}
 		}.sort(0, total);
-
-		return new LongPostings(values, docs, column instanceof Longs.Single);
 	}
 
 	/**

@@ -21,7 +21,7 @@ public interface HierarchyFacetCounter {
 	/**
 	 * Prepare to count one scope, per level of the tree.
 	 *
-	 * @param mode
+	 * @param scope
 	 *   what the matches of the scope are and what the counts should be of
 	 * @param path
 	 *   the level to count the children of, or {@code null} to count from the
@@ -37,7 +37,7 @@ public interface HierarchyFacetCounter {
 	 *   result answers the counts nested as the tree is
 	 */
 	FacetCount prepare(
-		FacetMatches.Mode mode,
+		FacetMatches scope,
 		String path,
 		int depth,
 		int limit,
@@ -61,7 +61,7 @@ public interface HierarchyFacetCounter {
 		String separator,
 		UnaryOperator<String> normalize
 	) {
-		return (mode, path, depth, limit, order) ->
-			new HierarchyFacetCount(field, mode, separator, normalize, path, depth, limit, order);
+		return (scope, path, depth, limit, order) ->
+			new HierarchyFacetCount(field, scope, separator, normalize, path, depth, limit, order);
 	}
 }

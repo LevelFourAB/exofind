@@ -391,6 +391,70 @@ public class NestedValueSearchTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testCountingValuesUnderADocumentFilterCountsEachDocumentOnce()
+		throws IOException
+	{
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFilter(Query.field("category", Matchers.equalTo("boots")))
+				.addFacet(Facet.of("variants.color"))
+				.addFacet(
+					Facet.of("variants.price").withRanges(
+						new Facet.Range(null, 50d),
+						new Facet.Range(50d, null),
+						new Facet.Range(30d, 100d)
+					)
+				)
+				.build()
+		);
+
+		/*
+		 * The filter asks nothing of the variants, so every variant of the
+		 * Ridge Boot is matched and the counts are answered off the documents
+		 * alone: two red variants are one red product, a product with a
+		 * variant on either side of 50 is in both buckets once, and one with
+		 * two variants in a bucket is in it once.
+		 */
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(new SearchResult.Facet.Value("red", 1))
+		);
+		assertThat(
+			result.facets().get("variants.price").buckets(),
+			contains(
+				new SearchResult.Facet.Bucket(null, 50d, 1),
+				new SearchResult.Facet.Bucket(50d, null, 1),
+				new SearchResult.Facet.Bucket(30d, 100d, 1)
+			)
+		);
+	}
+
+	@Test
+	public void testCountingValuesUnderAQueryCountsEveryValueOfTheDocument()
+		throws IOException
+	{
+		var index = products();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.field("category", Matchers.equalTo("shoes")))
+				.addFacet(Facet.of("variants.color").withOrder(Facet.Order.VALUE))
+				.build()
+		);
+
+		// The Trail Runner holds a red and a black variant, and both count
+		assertThat(
+			result.facets().get("variants.color").values(),
+			contains(
+				new SearchResult.Facet.Value("black", 1),
+				new SearchResult.Facet.Value("red", 1)
+			)
+		);
+	}
+
+	@Test
 	public void testFusedNestedFilterIsLeftOutByTheObjectPath() throws IOException {
 		var index = products();
 

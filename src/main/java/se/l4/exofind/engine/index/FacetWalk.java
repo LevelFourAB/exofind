@@ -23,7 +23,10 @@ import org.eclipse.collections.api.list.ListIterable;
  * document a value belongs to is the next one at or after it, and walking the
  * matches in order visits a document's values one block at a time. That is
  * what lets a leaf hold per-document state and be told once, through
- * {@link FacetCount.Leaf#beginDocument}, when the document changes.
+ * {@link FacetCount.Leaf#beginDocument}, when the document changes. Read the
+ * other way, the values of a document are the block right after the document
+ * before it - see {@link #valuesFrom} - which is how a leaf fed documents
+ * finds every value they hold.
  */
 final class FacetWalk {
 	private FacetWalk() {
@@ -58,7 +61,7 @@ final class FacetWalk {
 			}
 
 			BitSet parents = null;
-			if(matches.parents() != null) {
+			if(matches.resolvesDocuments()) {
 				parents = matches.parents().getBitSet(context);
 				if(parents == null) {
 					continue;
@@ -133,5 +136,20 @@ final class FacetWalk {
 				leaves[i].finish();
 			}
 		}
+	}
+
+	/**
+	 * Get where the values of a document start: right after the document
+	 * before it, or at the start of the segment for the first document. The
+	 * values run from there up to but not including the document itself.
+	 *
+	 * @param documents
+	 *   the documents of the index in the segment
+	 * @param document
+	 *   one of them
+	 * @return
+	 */
+	static int valuesFrom(BitSet documents, int document) {
+		return document == 0 ? 0 : documents.prevSetBit(document - 1) + 1;
 	}
 }

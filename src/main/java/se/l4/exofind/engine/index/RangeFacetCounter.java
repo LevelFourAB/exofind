@@ -31,12 +31,12 @@ public interface RangeFacetCounter {
 	/**
 	 * Prepare to count one scope.
 	 *
-	 * @param mode
+	 * @param scope
 	 *   what the matches of the scope are and what the counts should be of
 	 * @return
 	 *   the count to feed through {@link FacetWalk}, never {@code null}
 	 */
-	FacetCount prepare(FacetMatches.Mode mode);
+	FacetCount prepare(FacetMatches scope);
 
 	/**
 	 * Count a field written as sorted numeric doc values, mapping each bound
@@ -81,6 +81,6 @@ public interface RangeFacetCounter {
 			i++;
 		}
 
-		return mode -> new RangeFacetCount(field, mode, ranges, longRanges);
+		return scope -> new RangeFacetCount(field, scope, ranges, longRanges);
 	}
 }

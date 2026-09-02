@@ -34,7 +34,9 @@ import se.l4.exofind.engine.query.matchers.Matchers;
  * <p>{@link #everyFacetNarrowed} is the same page counted over a chosen share
  * of the index, set with {@code -p ratio=}, which is what tells how the cost
  * of counting grows with the matches - and where a way of counting that does
- * not walk them starts to pay.
+ * not walk them starts to pay. {@link #nestedFacetNarrowed} asks the same
+ * question of a facet over a field inside an object, whose matches are the
+ * values of that object rolled up into the documents holding them.
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -222,6 +224,13 @@ public class FacetBenchmark {
 		return state.index.search(narrowed.request);
 	}
 
+	@Benchmark
+	public SearchResult nestedFacetNarrowed(LoadedIndex state, Narrowed narrowed)
+		throws IOException
+	{
+		return state.index.search(required(state, narrowed.nested, "object"));
+	}
+
 	/**
 	 * The filtering page narrowed to a share of the index.
 	 *
@@ -232,6 +241,11 @@ public class FacetBenchmark {
 	 * narrowed scope with the others rather than sideways of the only filter -
 	 * which would answer it from the whole-index counts and leave three facets
 	 * to measure instead of four.
+	 *
+	 * <p>{@code nested} is the same narrowing with one facet over a field inside
+	 * the object field: the filter is on a field of the document, so every
+	 * value of a matched document is among the matches and the facet counts
+	 * documents, however many of their values hold each colour.
 	 */
 	@State(Scope.Thread)
 	public static class Narrowed {
@@ -242,6 +256,7 @@ public class FacetBenchmark {
 		public int ratio;
 
 		private SearchRequest request;
+		private SearchRequest nested;
 
 		@Setup(Level.Trial)
 		public void request(LoadedIndex state) {
@@ -267,6 +282,13 @@ public class FacetBenchmark {
 			}
 
 			request = page.build();
+
+			nested = roles.nested() == null
+				? null
+				: SearchRequest.create()
+					.addFacet(Facet.of(roles.nested() + ".color"))
+					.addFilter(Query.field(number, Matchers.lessThan(ratio * 10d)))
+					.build();
 		}
 	}
 

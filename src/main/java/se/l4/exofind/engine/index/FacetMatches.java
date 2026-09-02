@@ -17,6 +17,20 @@ import org.apache.lucene.search.join.BitSetProducer;
  * products have one; {@link Mode#ROLLED_UP} is what folds them back into
  * documents.
  *
+ * Rolling up has a shorter road where the scope asks nothing of the values
+ * themselves: it then matches every value of each document it matches, so
+ * which documents hold a value is a question about the documents alone.
+ * Such a scope is collected as the documents rather than their values -
+ * {@link Mode#EVERY_VALUE} - and a facet over a field inside the object
+ * counts each document once per value any of its values holds, either by
+ * reading the block of values below the document or, over a wide scope,
+ * off postings built in terms of the documents - see
+ * {@link FacetColumns#rolledUpOrdPostings}. A scope with a {@code nested}
+ * clause on the path matches only the values that satisfied it, and a
+ * document then counts for a value only when one of those values holds it,
+ * which nothing but a walk of the values can tell; that is what keeps
+ * {@link Mode#ROLLED_UP} walking.
+ *
  * A search whose hits are the matched values of an object field turns this
  * around: the counts should be of values, because that is what the hits are.
  * The collected values are then counted as they come - {@link Mode#VALUES} -
@@ -28,8 +42,8 @@ import org.apache.lucene.search.join.BitSetProducer;
  *   what matched, collected over the scope of the facet
  * @param parents
  *   finds the documents of the index among the values of object fields, for
- *   the modes that walk from a value to its document - {@code null} for the
- *   modes that read each match on its own
+ *   the modes that walk between a value and its document - {@code null} for
+ *   the modes that read each match on its own
  * @param mode
  *   what the matches are and what the counts should be of
  */
@@ -47,6 +61,15 @@ public record FacetMatches(
 		 * off the match itself.
 		 */
 		DOCUMENTS,
+
+		/**
+		 * The matches are documents of the index and each is one count, but
+		 * the field counted is inside an object, so a document counts once for
+		 * each value any of its values holds. What rolling up every value a
+		 * document holds comes to, collected as the documents rather than the
+		 * values.
+		 */
+		EVERY_VALUE,
 
 		/**
 		 * The matches are values of an object field and the counts are of the
@@ -70,6 +93,17 @@ public record FacetMatches(
 	}
 
 	/**
+	 * Get whether the matches are values of an object field whose documents
+	 * have to be found above them - what forces one walk of the matches to
+	 * feed every facet of the scope, see {@link FacetWalk}.
+	 *
+	 * @return
+	 */
+	public boolean resolvesDocuments() {
+		return mode == Mode.ROLLED_UP || mode == Mode.PARENTS_BY_VALUE;
+	}
+
+	/**
 	 * Matches that are documents of the index, counted as they come.
 	 *
 	 * @param hits
@@ -77,6 +111,18 @@ public record FacetMatches(
 	 */
 	public static FacetMatches of(FacetsCollector hits) {
 		return new FacetMatches(hits, null, Mode.DOCUMENTS);
+	}
+
+	/**
+	 * Matches that are documents of the index, counted once per value any of
+	 * their values of an object field holds.
+	 *
+	 * @param hits
+	 * @param parents
+	 * @return
+	 */
+	public static FacetMatches everyValue(FacetsCollector hits, BitSetProducer parents) {
+		return new FacetMatches(hits, parents, Mode.EVERY_VALUE);
 	}
 
 	/**

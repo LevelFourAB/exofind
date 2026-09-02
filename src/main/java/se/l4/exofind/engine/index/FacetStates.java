@@ -10,6 +10,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.OrdinalMap;
 import org.apache.lucene.index.SortedSetDocValues;
+import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.packed.PackedInts;
 
 import se.l4.exofind.engine.query.Facet;
@@ -134,7 +135,200 @@ final class FacetStates {
 	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.LongPostings>> longPostings =
 		new ConcurrentHashMap<>();
 
+	/**
+	 * The ordinals of one segment of a field inside an object inverted in
+	 * terms of the documents above its values, per segment core and field -
+	 * see {@link #rolledUpOrdPostingsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.OrdPostings>> rolledUpOrdPostings =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * The numbers of one segment of a field inside an object sorted, each
+	 * beside the document above the value holding it, per segment core and
+	 * field - see {@link #rolledUpLongPostingsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<String, FacetColumns.LongPostings>> rolledUpLongPostings =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * How many documents of the index one segment holds, per segment core -
+	 * see {@link #documentCountOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Integer> documentCounts =
+		new ConcurrentHashMap<>();
+
 	private FacetStates() {
+	}
+
+	/**
+	 * Get how many documents of the index the given segment holds, leaving
+	 * out the values of object fields, counting them the first time the
+	 * segment is asked for. What a scope of documents is measured against to
+	 * tell how much of a field inside an object it covers.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param parents
+	 *   finds the documents of the index in the segment
+	 * @return
+	 * @throws IOException
+	 */
+	static int documentCountOf(LeafReaderContext context, BitSetProducer parents)
+		throws IOException
+	{
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return countDocuments(context, parents);
+		}
+
+		var key = helper.getKey();
+		var count = documentCounts.get(key);
+		if(count == null) {
+			count = countDocuments(context, parents);
+			if(documentCounts.putIfAbsent(key, count) == null) {
+				helper.addClosedListener(documentCounts::remove);
+			}
+		}
+
+		return count;
+	}
+
+	private static int countDocuments(LeafReaderContext context, BitSetProducer parents)
+		throws IOException
+	{
+		var documents = parents.getBitSet(context);
+		return documents == null ? 0 : documents.cardinality();
+	}
+
+	/**
+	 * Get the ordinals of the given field inside an object in the given
+	 * segment inverted in terms of the documents above its values, building
+	 * them the first time the segment is asked for. The field has to hold
+	 * values in the segment. Kept the way {@link #ordPostingsOf} keeps the
+	 * postings of the values themselves: which documents of the index a
+	 * segment holds is as fixed as the segment, so what is built from them
+	 * is kept per core like everything else read out of one.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param parents
+	 *   finds the documents of the index in the segment
+	 * @return
+	 *   the postings, or {@code null} where the segment holds no document of
+	 *   the index and so nothing to roll up into
+	 * @throws IOException
+	 */
+	static FacetColumns.OrdPostings rolledUpOrdPostingsOf(
+		LeafReaderContext context,
+		String field,
+		BitSetProducer parents
+	) throws IOException {
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return buildRolledUpOrdPostings(context, field, parents);
+		}
+
+		var key = helper.getKey();
+		var fields = rolledUpOrdPostings.get(key);
+		if(fields == null) {
+			fields = rolledUpOrdPostings.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+			helper.addClosedListener(rolledUpOrdPostings::remove);
+		}
+
+		var postings = fields.get(field);
+		if(postings == null) {
+			postings = buildRolledUpOrdPostings(context, field, parents);
+			if(postings != null) {
+				fields.put(field, postings);
+			}
+		}
+
+		return postings;
+	}
+
+	private static FacetColumns.OrdPostings buildRolledUpOrdPostings(
+		LeafReaderContext context,
+		String field,
+		BitSetProducer parents
+	) throws IOException {
+		var documents = parents.getBitSet(context);
+		if(documents == null) {
+			return null;
+		}
+
+		var reader = context.reader();
+		return FacetColumns.rolledUpOrdPostings(
+			ordsOf(context, field),
+			(int) reader.getSortedSetDocValues(field).getValueCount(),
+			reader.maxDoc(),
+			documents
+		);
+	}
+
+	/**
+	 * Get the numbers of the given field inside an object in the given
+	 * segment sorted, each beside the document above the value holding it,
+	 * building them the first time the segment is asked for. The field has
+	 * to hold values in the segment. Kept the way
+	 * {@link #rolledUpOrdPostingsOf} keeps ordinals.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param parents
+	 *   finds the documents of the index in the segment
+	 * @return
+	 *   the postings, or {@code null} where the segment holds no document of
+	 *   the index and so nothing to roll up into
+	 * @throws IOException
+	 */
+	static FacetColumns.LongPostings rolledUpLongPostingsOf(
+		LeafReaderContext context,
+		String field,
+		BitSetProducer parents
+	) throws IOException {
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return buildRolledUpLongPostings(context, field, parents);
+		}
+
+		var key = helper.getKey();
+		var fields = rolledUpLongPostings.get(key);
+		if(fields == null) {
+			fields = rolledUpLongPostings.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+			helper.addClosedListener(rolledUpLongPostings::remove);
+		}
+
+		var postings = fields.get(field);
+		if(postings == null) {
+			postings = buildRolledUpLongPostings(context, field, parents);
+			if(postings != null) {
+				fields.put(field, postings);
+			}
+		}
+
+		return postings;
+	}
+
+	private static FacetColumns.LongPostings buildRolledUpLongPostings(
+		LeafReaderContext context,
+		String field,
+		BitSetProducer parents
+	) throws IOException {
+		var documents = parents.getBitSet(context);
+		if(documents == null) {
+			return null;
+		}
+
+		return FacetColumns.rolledUpLongPostings(
+			longsOf(context, field),
+			context.reader().maxDoc(),
+			documents
+		);
 	}
 
 	/**

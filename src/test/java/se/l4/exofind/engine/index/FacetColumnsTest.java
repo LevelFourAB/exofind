@@ -230,6 +230,82 @@ public class FacetColumnsTest {
 	}
 
 	@Test
+	public void testRolledUpPostingsHoldTheDocumentAboveTheValuesOnce() throws IOException {
+		withSegment(
+			writer -> {
+				// Two values of one document, then the document itself
+				add(writer, strings("a", "b"));
+				add(writer, strings("a"));
+				add(writer, strings());
+				// One value of another document
+				add(writer, strings("c"));
+				add(writer, strings());
+				// A value with no document after it
+				add(writer, strings("a"));
+			},
+			reader -> {
+				var documents = new FixedBitSet(reader.maxDoc());
+				documents.set(2);
+				documents.set(4);
+
+				var postings = FacetColumns.rolledUpOrdPostings(
+					FacetColumns.ords(reader, FIELD),
+					3,
+					reader.maxDoc(),
+					documents
+				);
+
+				// a=0 is held by two values of document 2 and stands for it once
+				assertArrayEquals(new int[] { 0, 1, 2, 3 }, postings.starts());
+				assertArrayEquals(new int[] { 2, 2, 4 }, postings.docs());
+
+				var matched = new FixedBitSet(reader.maxDoc());
+				matched.set(2);
+				assertEquals(1, postings.count(0, matched));
+				assertEquals(1, postings.count(1, matched));
+				assertEquals(0, postings.count(2, matched));
+
+				matched.set(4);
+				assertEquals(1, postings.count(0, matched));
+				assertEquals(1, postings.count(2, matched));
+			}
+		);
+	}
+
+	@Test
+	public void testRolledUpNumbersStandBesideTheDocumentOnce() throws IOException {
+		withSegment(
+			writer -> {
+				add(writer, longs(5));
+				add(writer, longs(5, 7));
+				add(writer, longs());
+				add(writer, longs(7));
+				add(writer, longs());
+			},
+			reader -> {
+				var documents = new FixedBitSet(reader.maxDoc());
+				documents.set(2);
+				documents.set(4);
+
+				var postings = FacetColumns.rolledUpLongPostings(
+					FacetColumns.longs(reader, FIELD),
+					reader.maxDoc(),
+					documents
+				);
+
+				// 5 is held by two values of document 2 and stands beside it once
+				assertArrayEquals(new long[] { 5, 7, 7 }, postings.values());
+				assertArrayEquals(new int[] { 2, 2, 4 }, postings.docs());
+				// Document 2 still stands under two numbers
+				assertFalse(postings.single());
+
+				assertEquals(1, postings.from(7));
+				assertEquals(3, postings.to(7));
+			}
+		);
+	}
+
+	@Test
 	public void testSortedNumbersMakeARangeARun() throws IOException {
 		withSegment(
 			writer -> {
