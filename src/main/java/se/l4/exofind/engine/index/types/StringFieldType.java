@@ -12,6 +12,7 @@ import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
+import org.apache.lucene.index.FilteredTermsEnum;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
@@ -42,6 +43,7 @@ import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.automaton.Automata;
 import org.apache.lucene.util.automaton.Automaton;
+import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.apache.lucene.util.automaton.CompiledAutomaton;
 import org.apache.lucene.util.automaton.LevenshteinAutomata;
 import org.apache.lucene.util.automaton.Operations;
@@ -161,34 +163,38 @@ public class StringFieldType implements FieldType {
 
 	/**
 	 * The typo tolerant automata already compiled, by the word they forgive
-	 * mistakes in, how many are forgiven and whether fewer are kept out, how
-	 * much of the word has to be right and whether the rest of it is still
-	 * being typed.
+	 * mistakes in, how many are forgiven, how much of the word has to be right
+	 * and whether the rest of it is still being typed.
 	 *
 	 * Compiling one turns every reading of the word within those mistakes into
-	 * a table the term dictionary is walked against, which is worth more than
-	 * the walk itself: a search that found nothing compiles the same word again
+	 * a table the term dictionary is walked against, which costs more than the
+	 * walk itself: a search that found nothing compiles the same word again
 	 * for every word it weighs before letting one go, and the next person to
 	 * type it compiles it again after that. What is compiled depends on the
 	 * word and on nothing of the index, so it is as good later as it was when
 	 * it was compiled.
 	 *
-	 * The field a word is asked of is not part of what decides one, because an
-	 * automaton accepts terms and every field's terms are read the same way -
-	 * so a search covering several fields compiles the word once and asks each
-	 * field with it. {@link EditBandQuery} is what holds the two apart.
+	 * The field a word is asked of does not decide one, because an automaton
+	 * accepts terms and every field's terms are read the same way - so a search
+	 * covering several fields compiles the word once and asks each field with
+	 * it. Neither does the band of {@link #typoLadder} it serves: a band that
+	 * keeps narrower readings out walks the same terms as the band of its own
+	 * number of mistakes and drops what the band below already holds. A ladder
+	 * therefore compiles one automaton per number of mistakes, and its first
+	 * two bands share the automaton of one mistake. {@link EditBandQuery} holds
+	 * the field and the band apart from what is compiled.
 	 *
 	 * The least recently asked for goes when the cache is full. Held through
-	 * {@link Collections#synchronizedMap} rather than a concurrent map because
-	 * that order is what has to be kept, and the lock is held only for the
-	 * lookup - see {@link #editBand}.
+	 * {@link Collections#synchronizedMap} rather than a concurrent map to keep
+	 * that order, and the lock is held only for the lookup - see
+	 * {@link #editAutomaton}.
 	 */
-	private static final Map<FuzzyKey, CompiledAutomaton> FUZZY_AUTOMATA =
+	private static final Map<AutomatonKey, CompiledAutomaton> FUZZY_AUTOMATA =
 		Collections.synchronizedMap(
-			new LinkedHashMap<FuzzyKey, CompiledAutomaton>(FUZZY_CACHE_SIZE, 0.75f, true) {
+			new LinkedHashMap<AutomatonKey, CompiledAutomaton>(FUZZY_CACHE_SIZE, 0.75f, true) {
 				@Override
 				protected boolean removeEldestEntry(
-					Map.Entry<FuzzyKey, CompiledAutomaton> eldest
+					Map.Entry<AutomatonKey, CompiledAutomaton> eldest
 				) {
 					return size() > FUZZY_CACHE_SIZE;
 				}
@@ -199,6 +205,19 @@ public class StringFieldType implements FieldType {
 	 * What a compiled typo tolerant automaton is decided by, and so what one is
 	 * kept under.
 	 */
+	private record AutomatonKey(
+		String text,
+		int edits,
+		int prefixLength,
+		boolean prefix
+	) {
+	}
+
+	/**
+	 * Which band of {@link #typoLadder} an {@link EditBandQuery} stands for.
+	 * Two queries for the same band and field are the same query, whatever
+	 * automata they were handed.
+	 */
 	private record FuzzyKey(
 		String text,
 		int edits,
@@ -206,6 +225,21 @@ public class StringFieldType implements FieldType {
 		int prefixLength,
 		boolean prefix
 	) {
+		/**
+		 * Get the automaton reaching every term within this band's mistakes,
+		 * including the terms fewer mistakes reach.
+		 */
+		AutomatonKey reached() {
+			return new AutomatonKey(text, edits, prefixLength, prefix);
+		}
+
+		/**
+		 * Get the automaton reaching the terms this band keeps out, which is
+		 * the band of one mistake fewer.
+		 */
+		AutomatonKey narrower() {
+			return new AutomatonKey(text, edits - 1, prefixLength, prefix);
+		}
 	}
 
 	/**
@@ -219,31 +253,64 @@ public class StringFieldType implements FieldType {
 	 * alone, so the compiled table is kept in {@link #FUZZY_AUTOMATA} and the
 	 * field lives here.
 	 *
+	 * A band that keeps narrower readings out walks the terms every reading
+	 * within its own mistakes reaches, and drops each term the automaton of one
+	 * mistake fewer accepts. A dropped term is left before its postings are
+	 * opened, so the band reads the documents of a term only when the term is
+	 * its own.
+	 *
 	 * Two of these are the same query when they ask the same field for the same
-	 * band, which is what lets the searcher's own cache answer one from the
-	 * documents another matched.
+	 * band, which lets the searcher's own cache answer one from the documents
+	 * another matched.
 	 */
 	private static final class EditBandQuery extends MultiTermQuery {
 		private final FuzzyKey band;
-		private final CompiledAutomaton compiled;
+		private final CompiledAutomaton reached;
+		private final CompiledAutomaton narrower;
 
-		EditBandQuery(String field, FuzzyKey band, CompiledAutomaton compiled) {
+		EditBandQuery(
+			String field,
+			FuzzyKey band,
+			CompiledAutomaton reached,
+			CompiledAutomaton narrower
+		) {
 			super(field, EXPANSION_REWRITE);
 
 			this.band = band;
-			this.compiled = compiled;
+			this.reached = reached;
+			this.narrower = narrower;
 		}
 
 		@Override
 		protected TermsEnum getTermsEnum(Terms terms, AttributeSource atts)
 			throws IOException
 		{
-			return compiled.getTermsEnum(terms);
+			var matched = reached.getTermsEnum(terms);
+
+			/*
+			 * Lucene leaves a compiled automaton without a table to run when it
+			 * recognizes the language as every term or no term. A narrower band
+			 * reaching every term takes a word still being typed, no leading
+			 * characters held fixed and fewer characters typed than mistakes
+			 * forgiven; both bands then reach the same terms and the ladder
+			 * scores each term by the narrower band, which it ranks higher.
+			 */
+			if(narrower == null || narrower.runAutomaton == null) {
+				return matched;
+			}
+
+			return new ExactBandTermsEnum(matched, narrower.runAutomaton);
 		}
 
+		/**
+		 * Offer a highlighter the terms every reading within this band's
+		 * mistakes reaches. That includes the terms the band keeps out of its
+		 * matches, and the band below it in the same ladder offers those, so
+		 * the ladder as a whole marks the same text.
+		 */
 		@Override
 		public void visit(QueryVisitor visitor) {
-			compiled.visit(visitor, this, getField());
+			reached.visit(visitor, this, getField());
 		}
 
 		@Override
@@ -274,6 +341,40 @@ public class StringFieldType implements FieldType {
 			}
 
 			return builder.toString();
+		}
+	}
+
+	/**
+	 * The terms a band of {@link #typoLadder} matches when it keeps narrower
+	 * readings out: the terms its own mistakes reach, less the ones the band of
+	 * one mistake fewer already holds.
+	 *
+	 * The wrapped enumeration is the walk of the wider band, so a rejected term
+	 * is one the narrower band of the same ladder answers. The test runs the
+	 * narrower band's compiled automaton over the bytes the term dictionary
+	 * hands over, which are the UTF-8 that automaton was compiled to read.
+	 *
+	 * Rejecting a term costs the automaton alone. Everything a matched term is
+	 * asked for - its bytes, its document frequency, its state and its postings
+	 * - comes from the wrapped enumeration.
+	 */
+	private static final class ExactBandTermsEnum extends FilteredTermsEnum {
+		private final ByteRunAutomaton narrower;
+
+		ExactBandTermsEnum(TermsEnum reached, ByteRunAutomaton narrower) {
+			// Read the wrapped enumeration forward from where it starts: it is
+			// already limited to the terms of the wider band, so there is
+			// nothing to seek past
+			super(reached, false);
+
+			this.narrower = narrower;
+		}
+
+		@Override
+		protected AcceptStatus accept(BytesRef term) {
+			return narrower.run(term.bytes, term.offset, term.length)
+				? AcceptStatus.NO
+				: AcceptStatus.YES;
 		}
 	}
 
@@ -1833,11 +1934,13 @@ public class StringFieldType implements FieldType {
 	 * how many the reading needs.
 	 *
 	 * Each number of mistakes past the first is a band holding only the
-	 * terms that many mistakes reach and fewer do not, so no term - and no
-	 * postings of the documents holding it - is walked by more than one
-	 * band. The correctly spelled term is the common one, so it is the walk
-	 * this shape saves most: bands holding every narrower one would read its
-	 * postings again per band, for a score the first band already decides.
+	 * terms that many mistakes reach and fewer do not, so no term's postings
+	 * are read by more than one band. A band walks the term dictionary for
+	 * every term its own mistakes reach and leaves the ones a narrower band
+	 * holds before opening them. The correctly spelled term is the common one,
+	 * so it is the reading this shape saves most: bands holding every narrower
+	 * one would read its postings again per band, for a score the first band
+	 * already decides.
 	 * The first band alone keeps the word itself, because sitting in both
 	 * clauses of {@link #tokenQuery} is what puts a document spelling the
 	 * word right above every band.
@@ -1972,9 +2075,11 @@ public class StringFieldType implements FieldType {
 	 * within that number and no fewer. A word still being typed matches every
 	 * term such a reading of it starts.
 	 *
-	 * The automaton comes from {@link #FUZZY_AUTOMATA} where the same word has
-	 * been asked for before, whatever field it was asked of, because compiling
-	 * one costs more than running it.
+	 * Both shapes walk the terms the given number of mistakes reaches. A band
+	 * that keeps fewer mistakes out carries the automaton of one mistake fewer
+	 * as well, and drops the terms it accepts as the walk reaches them, so a
+	 * ladder needs one automaton per number of mistakes and none for the
+	 * difference between two.
 	 *
 	 * @param term
 	 *   the word as it came out of analysis
@@ -1999,9 +2104,24 @@ public class StringFieldType implements FieldType {
 			? typos.getPrefixLength()
 			: DEFAULT_PREFIX_LENGTH;
 
-		var key = new FuzzyKey(term.text(), edits, exactly, prefixLength, prefix);
+		var band = new FuzzyKey(term.text(), edits, exactly, prefixLength, prefix);
 
-		var compiled = FUZZY_AUTOMATA.get(key);
+		return cacheable(new EditBandQuery(
+			term.field(),
+			band,
+			editAutomaton(band.reached()),
+			exactly ? editAutomaton(band.narrower()) : null
+		));
+	}
+
+	/**
+	 * Get the table a field's terms are walked against for one reading of a
+	 * word, from {@link #FUZZY_AUTOMATA} where the same reading has been asked
+	 * for before - whatever field or band asked for it - because compiling one
+	 * costs more than running it.
+	 */
+	private static CompiledAutomaton editAutomaton(AutomatonKey reading) {
+		var compiled = FUZZY_AUTOMATA.get(reading);
 		if(compiled == null) {
 			/*
 			 * Compiled outside the cache rather than through computeIfAbsent,
@@ -2010,56 +2130,42 @@ public class StringFieldType implements FieldType {
 			 * it twice and keep the second, which is two automata rather than a
 			 * queue behind one.
 			 */
-			compiled = compileEditBand(key);
-			FUZZY_AUTOMATA.put(key, compiled);
+			compiled = compileEditAutomaton(reading);
+			FUZZY_AUTOMATA.put(reading, compiled);
 		}
 
-		return cacheable(new EditBandQuery(term.field(), key, compiled));
+		return compiled;
 	}
 
 	/**
-	 * Compile the table {@link #editBand} walks a field's terms against, for a
-	 * band not compiled before.
+	 * Compile the table {@link #editAutomaton} hands out, for a reading not
+	 * compiled before.
 	 *
-	 * The Levenshtein automaton of the word is what accepts a term close
-	 * enough to it; a half typed word has "anything after" concatenated onto
-	 * that, so a term is accepted as soon as some prefix of it is close
-	 * enough. A band that keeps narrower readings out subtracts the automaton
-	 * of one mistake fewer, leaving only the terms the last mistake buys -
-	 * with the states that can no longer reach an accept removed, so the walk
-	 * of the term dictionary does not descend into what the subtraction
-	 * emptied. The leading characters the definition wants matched exactly
-	 * are kept out of the fuzzy part and counted in code points, so a word of
-	 * characters outside the basic plane keeps as much of itself fixed as one
-	 * of ASCII.
+	 * The Levenshtein automaton of the word accepts a term close enough to it;
+	 * a half typed word has "anything after" concatenated onto that, so a term
+	 * is accepted as soon as some prefix of it is close enough. The leading
+	 * characters the definition wants matched exactly are kept out of the fuzzy
+	 * part and counted in code points, so a word of characters outside the
+	 * basic plane keeps as much of itself fixed as one of ASCII.
 	 *
 	 * Whether the automaton accepts finitely many terms is told rather than
 	 * left to be found out. A word with an end is near finitely many others
 	 * however many mistakes are forgiven, and a word still being typed stands
-	 * for every term some reading of it starts, which is endless - both follow
+	 * for every term some reading of it starts, which is endless. Both follow
 	 * from the shape asked for, while Lucene would walk the automaton again to
 	 * learn what this already knows.
 	 */
-	private static CompiledAutomaton compileEditBand(FuzzyKey band) {
-		var text = band.text();
+	private static CompiledAutomaton compileEditAutomaton(AutomatonKey reading) {
+		var text = reading.text();
 
 		var codePoints = text.codePointCount(0, text.length());
-		var prefixEnd = text.offsetByCodePoints(0, Math.min(band.prefixLength(), codePoints));
+		var prefixEnd = text.offsetByCodePoints(0, Math.min(reading.prefixLength(), codePoints));
 
-		var automaton = levenshtein(text, prefixEnd, band.edits(), band.prefix());
-		if(band.exactly()) {
-			automaton = Operations.removeDeadStates(
-				Operations.minus(
-					automaton,
-					levenshtein(text, prefixEnd, band.edits() - 1, band.prefix()),
-					Operations.DEFAULT_DETERMINIZE_WORK_LIMIT
-				)
-			);
-		}
+		var automaton = levenshtein(text, prefixEnd, reading.edits(), reading.prefix());
 
 		return new CompiledAutomaton(
 			Operations.determinize(automaton, Operations.DEFAULT_DETERMINIZE_WORK_LIMIT),
-			!band.prefix(),
+			!reading.prefix(),
 			true,
 			false
 		);
