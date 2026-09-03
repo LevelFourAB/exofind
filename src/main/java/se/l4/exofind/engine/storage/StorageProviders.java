@@ -24,9 +24,12 @@ import se.l4.exofind.engine.index.settings.LocalSearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.NoSearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.ObjectStorageSearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettingsStorage;
+import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
+import se.l4.exofind.engine.index.state.NoopIndexRemovals;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.index.state.ObjectStorageIndexRemovals;
 import se.l4.exofind.engine.index.state.ObjectStorageIndexerOwnership;
 import se.l4.exofind.engine.index.state.ObjectStorageSyncProvider;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
@@ -213,6 +216,24 @@ public class StorageProviders {
 	}
 
 	/**
+	 * How a deleted index leaves the storage the deployment shares: marked
+	 * on delete, removed by a sweep after a grace period. A node storing
+	 * locally removes the directory with the delete and has nothing left to
+	 * mark.
+	 */
+	@Produces
+	@Singleton
+	public IndexRemovals indexRemovals(
+		StorageMode mode,
+		Instance<ObjectStorage> storage
+	) {
+		return switch(mode) {
+			case LOCAL -> new NoopIndexRemovals();
+			case OBJECT -> new ObjectStorageIndexRemovals(storage.get());
+		};
+	}
+
+	/**
 	 * Which node writes which index. Candidates divide the indexes up through
 	 * a leadership table in the object storage; a node storing locally is the
 	 * only node there is, so a candidate simply holds them all.
@@ -279,7 +300,8 @@ public class StorageProviders {
 	public RegistryAudit registryAudit(
 		StorageMode mode,
 		Instance<ObjectStorage> storage,
-		RegistryStorage registryStorage
+		RegistryStorage registryStorage,
+		IndexRemovals removals
 	) {
 		if(mode != StorageMode.OBJECT) {
 			throw new IllegalStateException(
@@ -288,7 +310,7 @@ public class StorageProviders {
 			);
 		}
 
-		return new ObjectStorageRegistryAudit(storage.get(), registryStorage);
+		return new ObjectStorageRegistryAudit(storage.get(), registryStorage, removals);
 	}
 
 	/**

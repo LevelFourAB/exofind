@@ -46,12 +46,15 @@ import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
+import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.registry.RegistryPoller;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.IndexUsageFile;
+import se.l4.exofind.engine.index.state.NoopIndexRemovals;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.logging.Log;
@@ -99,6 +102,12 @@ public class Indexes implements RegistryPoller.Listener {
 	private final StateSyncProvider syncProvider;
 	private final IndexRegistry registry;
 	private final RegistryHints registryHints;
+
+	/**
+	 * What a delete leaves in the shared storage and what a creation clears
+	 * out of it, see {@link IndexRemovals}.
+	 */
+	private final IndexRemovals removals;
 
 	/**
 	 * Handed to every index opened here, so that commits, pushes and pulls are
@@ -291,6 +300,53 @@ public class Indexes implements RegistryPoller.Listener {
 			syncProvider,
 			registry,
 			registryHints,
+			new NoopIndexRemovals(),
+			storageDirectory,
+			maxOpen,
+			refreshInterval,
+			verifyInterval,
+			refreshConcurrency,
+			closeGracePeriod,
+			commitMaxChanges,
+			commitMaxInterval,
+			diskMaxSize,
+			documentCacheMaxSize,
+			diskMinIdle,
+			diskHalfLife,
+			diskSweepInterval
+		);
+	}
+
+	/**
+	 * Open indexes that report nothing, over a storage a delete leaves marks
+	 * in, for a test of what a delete and a creation do to the storage.
+	 */
+	public Indexes(
+		NodeState nodeState,
+		StateSyncProvider syncProvider,
+		IndexRegistry registry,
+		RegistryHints registryHints,
+		IndexRemovals removals,
+		Path storageDirectory,
+		OptionalInt maxOpen,
+		Duration refreshInterval,
+		Duration verifyInterval,
+		int refreshConcurrency,
+		Duration closeGracePeriod,
+		int commitMaxChanges,
+		Duration commitMaxInterval,
+		Optional<String> diskMaxSize,
+		Optional<String> documentCacheMaxSize,
+		Duration diskMinIdle,
+		Duration diskHalfLife,
+		Duration diskSweepInterval
+	) throws IOException {
+		this(
+			nodeState,
+			syncProvider,
+			registry,
+			registryHints,
+			removals,
 			RequestMetrics.none(),
 			storageDirectory,
 			maxOpen,
@@ -315,6 +371,7 @@ public class Indexes implements RegistryPoller.Listener {
 		StateSyncProvider syncProvider,
 		IndexRegistry registry,
 		RegistryHints registryHints,
+		IndexRemovals removals,
 		RequestMetrics metrics,
 		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory,
 		@ConfigProperty(name = "exofind.indexes.max-open") OptionalInt maxOpen,
@@ -335,6 +392,7 @@ public class Indexes implements RegistryPoller.Listener {
 		this.syncProvider = syncProvider;
 		this.registry = registry;
 		this.registryHints = registryHints;
+		this.removals = removals;
 		this.metrics = metrics;
 		this.verifyInterval = verifyInterval;
 		this.lastManifestChecks = new ConcurrentHashMap<>();
@@ -1494,6 +1552,16 @@ public class Indexes implements RegistryPoller.Listener {
 			registry.create(index.index(), generation);
 
 			try {
+				/*
+				 * Cleared after winning the registration, so that only the
+				 * winner touches the storage. A name deleted earlier lands on
+				 * the prefix the delete marked, and the first generation is
+				 * opened by pulling - so what the delete left has to go
+				 * before the open, or the new index starts out holding the
+				 * old documents.
+				 */
+				prepareStorage(index.withGeneration(generation), true);
+
 				return openWithDefinition(index.withGeneration(generation), def);
 			} catch(RuntimeException e) {
 				registry.remove(index.index());
@@ -1501,6 +1569,31 @@ public class Indexes implements RegistryPoller.Listener {
 			}
 		} finally {
 			lifecycleLock.unlock();
+		}
+	}
+
+	/**
+	 * Clear what a delete left under the prefix a generation is about to be
+	 * created on, see {@link IndexRemovals}.
+	 *
+	 * @param generation
+	 * @param wholeIndex
+	 *   whether the index itself is being created, in which case a mark over
+	 *   the index clears everything under it, settings and all
+	 * @throws IndexStorageHeldException
+	 *   if the prefix holds a manifest nothing said was deleted
+	 * @throws UncheckedIOException
+	 *   if the storage could not be asked or cleared
+	 */
+	private void prepareStorage(IndexName generation, boolean wholeIndex) {
+		try {
+			if(wholeIndex) {
+				removals.prepareForIndex(generation.index());
+			}
+
+			removals.prepareForGeneration(generation);
+		} catch(IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 
@@ -1536,6 +1629,9 @@ public class Indexes implements RegistryPoller.Listener {
 			registry.addGeneration(generation.index(), generation.generation());
 
 			try {
+				// Only the generation's own prefix; the index around it is in use
+				prepareStorage(generation, false);
+
 				return openWithDefinition(generation, def);
 			} catch(RuntimeException e) {
 				registry.removeGeneration(generation.index(), generation.generation());
@@ -1600,10 +1696,17 @@ public class Indexes implements RegistryPoller.Listener {
 	 *
 	 * <p>The index is taken out of the registry, which is what makes it gone for
 	 * the deployment rather than only for this node; every node removes its own
-	 * copy when it next reads the registry. What the remote holds under it is
-	 * left as it is - the generations and the search settings object alike - so
-	 * an index created again under the same name picks its old settings back
-	 * up, the way its generations can be found again.
+	 * copy when it next reads the registry. What the remote holds under it -
+	 * the generations and the search settings object alike - is marked as
+	 * deleted and removed by a sweep after a grace period, see
+	 * {@link IndexRemovals}. An index created again under the same name
+	 * before then starts empty all the same: the creation clears the marked
+	 * prefix first.
+	 *
+	 * <p>The mark is written after the registry, so that every mark stands
+	 * for a delete that went through. A mark that could not be written is
+	 * logged and leaves the objects where they are; the registry audit
+	 * reports them as held but not registered.
 	 *
 	 * @param name
 	 *   the index, or one generation of it as {@code index@generation}
@@ -1621,6 +1724,7 @@ public class Indexes implements RegistryPoller.Listener {
 			if(parsed.isPinned()) {
 				registry.removeGeneration(parsed.index(), parsed.generation());
 				removeLocalCopy(parsed.toString());
+				markRemoved(parsed);
 				return;
 			}
 
@@ -1632,8 +1736,30 @@ public class Indexes implements RegistryPoller.Listener {
 			for(var generation : index.generations()) {
 				removeLocalCopy(parsed.withGeneration(generation.name()).toString());
 			}
+
+			markRemoved(parsed);
 		} finally {
 			lifecycleLock.unlock();
+		}
+	}
+
+	/**
+	 * Leave the mark a sweep removes the objects of a deleted index or
+	 * generation by. Failing to leave it is not failing the delete - the
+	 * registry no longer names what was deleted, which is what the caller
+	 * asked for.
+	 */
+	private void markRemoved(IndexName target) {
+		try {
+			removals.mark(target);
+		} catch(IOException e) {
+			logger.atWarn()
+				.addKeyValue("index", target.toString())
+				.setCause(e)
+				.log(
+					"Could not mark the index as removed in the storage, its objects stay"
+						+ " until it is deleted again; " + e.getMessage()
+				);
 		}
 	}
 

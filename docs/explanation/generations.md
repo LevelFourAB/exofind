@@ -60,6 +60,8 @@ A generation is a complete index with its own Lucene files, manifest, and epochs
 - Listing items under `indexes/` with a delimiter returns one entry per index, regardless of how many generations exist under that index.
 - Deleting an index requires removing only a single prefix.
 
+A delete removes the name from the registry and leaves a removal mark (`removed.ef.bin`) under the index prefix, or under the generation prefix for a single generation. A background sweep on nodes that can index removes the marked prefix once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`, which gives an operator a window to take the delete back through a [registry repair](../how-to/repair-the-index-registry.md). Only marked storage is ever removed, because a registry that was lost looks the same as one that never held the index, and the registry repair rebuilds it from exactly that storage. Creating the name again clears the marked prefix first, so a recreated index never opens on the old files.
+
 All mechanisms described in [Synchronization](synchronization.md) apply to generations without modification. Two generations of the same index are as independent as two separate indexes. Nodes push and pull them independently, and epoch-scoped keys prevent concurrent writer sessions from overwriting each other within each generation.
 
 ## Writes while filling a new generation

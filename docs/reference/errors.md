@@ -60,7 +60,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:locale_fallback:*` | Locale fallback chain configuration error | `index:locale_fallback:locale_not_held`, `index:locale_fallback:unsupported_locale` |
 | `index:resources:*` | Shared resource validation failure | `index:resources:synonyms:one_sided` |
 | `index:definition:*` | Stored index definition incompatible with this API version | `index:definition:unrepresentable` |
-| `index:generation:*` | Generation usage or deletion error | `index:generation:already_exists`, `index:generation:is_live`, `index:generation:name_required`, `index:generation:not_creatable` |
+| `index:generation:*` | Generation usage or deletion error | `index:generation:already_exists`, `index:generation:is_live`, `index:generation:name_required`, `index:generation:not_creatable`, `index:generation:storage_held` |
 | `index:registry:*` | Index or generation registry storage failure | `index:registry:conflict`, `index:registry:io_error` |
 | `index:settings:*` | Search settings lookup or storage failure | `index:settings:not_found`, `index:settings:version_mismatch`, `index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`, `index:settings:synonyms:unknown_field`, `index:settings:synonyms:field_not_text`, `index:settings:synonyms:invalid_boost`, `index:settings:synonyms:invalid_rule`, `index:settings:typo_exclusions:unknown_field`, `index:settings:typo_exclusions:field_not_text` |
 | `index:update:*` | Document indexing failure | `index:update:required_field_missing`, `index:update:number:out_of_bounds`, `index:update:locale_not_declared`, `index:update:primary_key_required` |
@@ -103,6 +103,7 @@ The following error codes require specific handling in client applications:
 - `index:document:not_found`: Returned with HTTP `404` by `PATCH /v1alpha1/indexes/{name}/documents/{key}` when nothing is indexed under the key. A change says what to change about a document, so the document is indexed whole first.
 - `request:update:key_conflicting`: Returned when the body of a `PATCH` of one document gives the primary key field a value other than the key in the URL. The URL names the document to change.
 - `index:generation:is_live`: Returned when attempting to delete the live generation for an index. Promote another generation before deleting the live generation.
+- `index:generation:storage_held`: Returned with HTTP `409` when creating an index or generation on storage that holds a generation the registry does not name and no delete marked. The `generation` argument names it. Run a registry repair to register the storage, or remove its objects from the bucket.
 - `index:unsupported`: Returned with HTTP `409` when the index requires engine features that the node does not support. Send the request to a node running a version that supports the required features.
 - `index:settings:version_mismatch`: Returned with HTTP `412` when a `PUT` or `PATCH` of search settings carries an `If-Match` version the stored settings are no longer at. Read the settings again and rebuild the change on the version that comes back.
 - `index:settings:conflict`: Returned with HTTP `409` when the search settings kept being changed by other writers while the change was being stored. The stored settings are unchanged; retry the request.

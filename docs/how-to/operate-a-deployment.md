@@ -237,9 +237,16 @@ To back up a deployment:
 2. If you use `local` storage mode, stop the node and back up the directory
    specified in `EXOFIND_STORAGE_LOCAL_DIRECTORY`.
 
-When deleting indexes in object storage mode, note that deleting an index
-removes it from the registry and local node disks, but objects remain in the
-bucket until deleted directly from remote storage.
+When you delete an index in object storage mode, the delete removes the index
+from the registry and from node disks at once and marks its storage in the
+bucket. A background sweep on nodes that can index looks every
+`EXOFIND_INDEXES_REMOVAL_SWEEP_INTERVAL` and removes the objects once the mark
+is older than `EXOFIND_INDEXES_REMOVAL_GRACE` (one hour by default).
+
+Within that grace window, you can take back the delete through a
+[registry repair](repair-the-index-registry.md#restore-a-deleted-index-or-generation).
+An index created again under the same name starts empty without waiting for the
+sweep.
 
 ## Read the log
 

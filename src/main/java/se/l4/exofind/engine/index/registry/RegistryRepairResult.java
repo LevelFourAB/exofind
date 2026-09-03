@@ -3,9 +3,9 @@ package se.l4.exofind.engine.index.registry;
 import org.eclipse.collections.api.list.ListIterable;
 
 /**
- * What a {@link RegistryAudit#repair(boolean) repair} changed in the registry.
- * All three lists empty means the registry already named everything the
- * storage holds and nothing was written.
+ * What a {@link RegistryAudit#repair(boolean, ListIterable) repair} changed.
+ * Every list empty means the registry already named everything the storage
+ * holds, nothing was restored, and nothing was written.
  *
  * @param createdIndexes
  *   indexes the repair added an entry for, ordered by name
@@ -15,11 +15,17 @@ import org.eclipse.collections.api.list.ListIterable;
  * @param promoted
  *   generations the repair made their index answer for, as
  *   {@code index@generation}, ordered by name
+ * @param restored
+ *   indexes and generations whose removal mark the repair took away, as
+ *   {@code index} or {@code index@generation}, in the order they were asked
+ *   for. What they hold is registered through the other lists, the way any
+ *   unregistered storage is
  */
 public record RegistryRepairResult(
 	ListIterable<String> createdIndexes,
 	ListIterable<String> addedGenerations,
-	ListIterable<String> promoted
+	ListIterable<String> promoted,
+	ListIterable<String> restored
 ) {
 	/**
 	 * Whether the repair changed nothing.
@@ -27,6 +33,7 @@ public record RegistryRepairResult(
 	public boolean isEmpty() {
 		return createdIndexes.isEmpty()
 			&& addedGenerations.isEmpty()
-			&& promoted.isEmpty();
+			&& promoted.isEmpty()
+			&& restored.isEmpty();
 	}
 }

@@ -190,6 +190,20 @@ public class ObjectStorage {
 	}
 
 	/**
+	 * Where everything of one index lives, without a trailing separator: its
+	 * generations as paths under it, and beside them the objects that belong
+	 * to the index as a whole, such as its search settings and the mark a
+	 * delete leaves. Removing an index is removing this one prefix.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @return
+	 */
+	public String indexPath(String index) {
+		return resolvePath(prefix.orElse(""), INDEXES_PATH, index);
+	}
+
+	/**
 	 * Where one generation of an index lives, which is a path of its own under
 	 * the path of the index it belongs to.
 	 *

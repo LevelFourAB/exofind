@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyIterable;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 import java.io.IOException;
@@ -11,10 +12,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import org.apache.commons.lang3.RandomStringUtils;
+import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.state.LocalCopy;
+import se.l4.exofind.engine.index.state.ObjectStorageIndexRemovals;
 import se.l4.exofind.engine.index.state.TestObjectStorage;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -27,6 +31,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 public class ObjectStorageRegistryAuditTest {
 	ObjectStorage storage;
 	ObjectStorageRegistryStorage registryStorage;
+	ObjectStorageIndexRemovals removals;
 	ObjectStorageRegistryAudit audit;
 
 	@BeforeEach
@@ -42,7 +47,8 @@ public class ObjectStorageRegistryAuditTest {
 		);
 
 		registryStorage = new ObjectStorageRegistryStorage(storage);
-		audit = new ObjectStorageRegistryAudit(storage, registryStorage);
+		removals = new ObjectStorageIndexRemovals(storage);
+		audit = new ObjectStorageRegistryAudit(storage, registryStorage, removals);
 	}
 
 	/**
@@ -118,10 +124,10 @@ public class ObjectStorageRegistryAuditTest {
 		assertThat(books.live(), is("1"));
 		assertThat(books.proposedLive(), is(nullValue()));
 		assertThat(books.generations(), contains(
-			new RegistryAuditReport.AuditedGeneration("1", true, RegistryAuditReport.Stored.SYNCED)
+			new RegistryAuditReport.AuditedGeneration("1", true, RegistryAuditReport.Stored.SYNCED, null)
 		));
 
-		assertThat(audit.repair(true).isEmpty(), is(true));
+		assertThat(audit.repair(true, Lists.immutable.empty()).isEmpty(), is(true));
 	}
 
 	/**
@@ -141,7 +147,7 @@ public class ObjectStorageRegistryAuditTest {
 			contains("2", "1")
 		);
 
-		var result = audit.repair(true);
+		var result = audit.repair(true, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books", "movies"));
 		assertThat(result.addedGenerations(), contains("books@1", "books@2", "movies@1"));
 		assertThat(result.promoted(), contains("books@2", "movies@1"));
@@ -163,7 +169,7 @@ public class ObjectStorageRegistryAuditTest {
 	public void testRepairWithoutPromotingLeavesIndexesUnanswering() throws IOException {
 		putManifest("books", "1");
 
-		var result = audit.repair(false);
+		var result = audit.repair(false, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books"));
 		assertThat(result.promoted(), emptyIterable());
 
@@ -182,7 +188,7 @@ public class ObjectStorageRegistryAuditTest {
 		var report = audit.audit();
 		assertThat(report.registry(), is(RegistryAuditReport.Registry.CORRUPT));
 
-		var result = audit.repair(true);
+		var result = audit.repair(true, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books"));
 
 		var read = registryStorage.read(null);
@@ -212,7 +218,7 @@ public class ObjectStorageRegistryAuditTest {
 				.build()
 		);
 
-		var result = audit.repair(true);
+		var result = audit.repair(true, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), emptyIterable());
 		assertThat(result.addedGenerations(), contains("books@2"));
 		assertThat(result.promoted(), emptyIterable());
@@ -239,14 +245,14 @@ public class ObjectStorageRegistryAuditTest {
 
 		var books = report.indexes().getFirst();
 		assertThat(books.generations(), contains(
-			new RegistryAuditReport.AuditedGeneration("1", false, RegistryAuditReport.Stored.SYNCED),
-			new RegistryAuditReport.AuditedGeneration("2", false, RegistryAuditReport.Stored.INCOMPLETE)
+			new RegistryAuditReport.AuditedGeneration("1", false, RegistryAuditReport.Stored.SYNCED, null),
+			new RegistryAuditReport.AuditedGeneration("2", false, RegistryAuditReport.Stored.INCOMPLETE, null)
 		));
 
 		var movies = report.indexes().getLast();
 		assertThat(movies.proposedLive(), is(nullValue()));
 
-		var result = audit.repair(true);
+		var result = audit.repair(true, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books"));
 		assertThat(result.addedGenerations(), contains("books@1"));
 	}
@@ -266,11 +272,11 @@ public class ObjectStorageRegistryAuditTest {
 
 		var report = audit.audit();
 		assertThat(report.indexes().getFirst().generations(), contains(
-			new RegistryAuditReport.AuditedGeneration("1", true, RegistryAuditReport.Stored.SYNCED),
-			new RegistryAuditReport.AuditedGeneration("2", true, RegistryAuditReport.Stored.MISSING)
+			new RegistryAuditReport.AuditedGeneration("1", true, RegistryAuditReport.Stored.SYNCED, null),
+			new RegistryAuditReport.AuditedGeneration("2", true, RegistryAuditReport.Stored.MISSING, null)
 		));
 
-		assertThat(audit.repair(true).isEmpty(), is(true));
+		assertThat(audit.repair(true, Lists.immutable.empty()).isEmpty(), is(true));
 	}
 
 	/**
@@ -308,7 +314,7 @@ public class ObjectStorageRegistryAuditTest {
 			contains("books", "books2")
 		);
 
-		var result = audit.repair(true);
+		var result = audit.repair(true, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books"));
 	}
 
@@ -348,8 +354,8 @@ public class ObjectStorageRegistryAuditTest {
 			}
 		};
 
-		var racing = new ObjectStorageRegistryAudit(storage, refusingStorage);
-		var result = racing.repair(false);
+		var racing = new ObjectStorageRegistryAudit(storage, refusingStorage, removals);
+		var result = racing.repair(false, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books"));
 
 		var indexes = RegistryCodec.fromStored(
@@ -380,7 +386,7 @@ public class ObjectStorageRegistryAuditTest {
 		assertThat(report.indexes(), emptyIterable());
 		assertThat(report.unusable(), emptyIterable());
 
-		assertThat(audit.repair(true).isEmpty(), is(true));
+		assertThat(audit.repair(true, Lists.immutable.empty()).isEmpty(), is(true));
 	}
 
 	/**
@@ -398,11 +404,101 @@ public class ObjectStorageRegistryAuditTest {
 			contains("books")
 		);
 		assertThat(report.indexes().getFirst().generations(), contains(
-			new RegistryAuditReport.AuditedGeneration("1", false, RegistryAuditReport.Stored.SYNCED)
+			new RegistryAuditReport.AuditedGeneration("1", false, RegistryAuditReport.Stored.SYNCED, null)
 		));
 
-		var result = audit.repair(true);
+		var result = audit.repair(true, Lists.immutable.empty());
 		assertThat(result.createdIndexes(), contains("books"));
 		assertThat(result.addedGenerations(), contains("books@1"));
+	}
+
+	/**
+	 * A deleted index waits in the storage for the sweep. The audit says so
+	 * and when, and a repair leaves it be - registering it again would undo
+	 * the delete behind the operator's back.
+	 */
+	@Test
+	public void testDeletedIndexIsReportedAndNotRegistered() throws IOException {
+		putManifest("books", "1");
+		removals.mark(IndexName.of("books"));
+
+		var report = audit.audit();
+		var books = report.indexes().getFirst();
+		assertThat(books.registered(), is(false));
+		assertThat(books.removedAt(), is(notNullValue()));
+		assertThat(books.proposedLive(), is(nullValue()));
+		assertThat(books.generations(), contains(
+			new RegistryAuditReport.AuditedGeneration("1", false, RegistryAuditReport.Stored.SYNCED, null)
+		));
+
+		assertThat(audit.repair(true, Lists.immutable.empty()).isEmpty(), is(true));
+		assertThat(registryStorage.read(null) instanceof RegistryStorage.Read.Absent, is(true));
+	}
+
+	/**
+	 * Asking the repair to restore a deleted index takes its mark away and
+	 * registers it like any other storage the registry does not name.
+	 */
+	@Test
+	public void testRestoringADeletedIndexRegistersIt() throws IOException {
+		putManifest("books", "1");
+		putManifest("books", "2");
+		removals.mark(IndexName.of("books"));
+
+		var result = audit.repair(true, Lists.immutable.of(IndexName.of("books")));
+
+		assertThat(result.restored(), contains("books"));
+		assertThat(result.createdIndexes(), contains("books"));
+		assertThat(result.addedGenerations(), contains("books@1", "books@2"));
+		assertThat(result.promoted(), contains("books@2"));
+		assertThat(removals.markedAt(IndexName.of("books")), is(Optional.empty()));
+
+		var books = audit.audit().indexes().getFirst();
+		assertThat(books.registered(), is(true));
+		assertThat(books.removedAt(), is(nullValue()));
+	}
+
+	/**
+	 * A generation deleted on its own is reported with its own time and is
+	 * neither registered nor proposed for promotion, while the rest of its
+	 * index is repaired as usual.
+	 */
+	@Test
+	public void testDeletedGenerationIsSkipped() throws IOException {
+		putManifest("books", "1");
+		putManifest("books", "2");
+		removals.mark(IndexName.of("books", "2"));
+
+		var report = audit.audit();
+		var books = report.indexes().getFirst();
+		assertThat(books.removedAt(), is(nullValue()));
+		assertThat(books.proposedLive(), is("1"));
+		assertThat(books.generations().getFirst().removedAt(), is(nullValue()));
+		assertThat(books.generations().getLast().removedAt(), is(notNullValue()));
+
+		var result = audit.repair(true, Lists.immutable.empty());
+		assertThat(result.createdIndexes(), contains("books"));
+		assertThat(result.addedGenerations(), contains("books@1"));
+		assertThat(result.promoted(), contains("books@1"));
+
+		var restored = audit.repair(true, Lists.immutable.of(IndexName.of("books", "2")));
+		assertThat(restored.restored(), contains("books@2"));
+		assertThat(restored.addedGenerations(), contains("books@2"));
+		// The index is already registered, so what it answers for is left alone
+		assertThat(restored.promoted(), emptyIterable());
+	}
+
+	/**
+	 * Restoring a name that carries no mark changes nothing, and is not
+	 * reported as restored.
+	 */
+	@Test
+	public void testRestoringAnUnmarkedNameChangesNothing() throws IOException {
+		putManifest("books", "1");
+
+		var result = audit.repair(true, Lists.immutable.of(IndexName.of("movies")));
+
+		assertThat(result.restored(), emptyIterable());
+		assertThat(result.createdIndexes(), contains("books"));
 	}
 }

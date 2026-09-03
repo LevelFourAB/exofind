@@ -54,7 +54,7 @@ The `@` character is reserved and cannot appear in an index name. A generation i
 
 Updating an index definition in place does not reindex existing documents. If a definition change affects indexing—such as adding `matching`, changing an analysis chain, or editing a synonym set—create and populate a new generation, then promote it. For step-by-step instructions, see [Roll out a definition change](../how-to/roll-out-a-definition-change.md).
 
-A `DELETE` request on an index deletes the index and all of its generations. A `DELETE` request on a generation deletes only that generation. Deleting the live generation fails with `index:generation:is_live` until you promote another generation. Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. Deletion does not remove data held in remote storage—the generations and the [search settings](#search-settings) object alike—so an index created again under the same name picks its old settings back up. Both operations return `204 No Content`.
+A `DELETE` request on an index deletes the index and all of its generations. A `DELETE` request on a generation deletes only that generation. Deleting the live generation fails with `index:generation:is_live` until you promote another generation. Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. What remote storage holds, the generations and for an index its search settings, is marked as deleted and removed by a background sweep once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`. An index or generation created again under the same name starts empty and does not pick old settings up. Within the grace period, a registry [repair](#repair) with `restore` brings it back. The request is served by the node writing the index and forwarded there when another node receives it. Both operations return `204 No Content`.
 
 The `promote` action configures the index to serve from the specified generation. The change takes effect immediately on the receiving node and within `EXOFIND_INDEXES_REFRESH_INTERVAL` on all other nodes. To roll back a deployment, promote the previous generation.
 
@@ -562,37 +562,55 @@ The response contains the following fields:
   - `registered`: A boolean indicating whether the registry has an entry for the index.
   - `live`: The generation the index answers for. Omitted when unregistered or when no generation is live.
   - `proposedLive`: The generation that a repair with `promoteNewest` would make live. Omitted when none would be promoted.
-  - `generations`: A list of generations found for the index. Each entry contains `name`, `registered` (boolean), and `stored`:
-    - `SYNCED`: Storage holds a manifest; nodes can pull and serve this generation.
-    - `INCOMPLETE`: Storage holds a prefix without a manifest (such as an unfinished push or leftovers from a deleted generation).
-    - `MISSING`: The generation is registered, but nothing exists in storage.
+  - `removedAt`: When the index was deleted, as an ISO 8601 timestamp. Present while the storage of the deleted index waits for the sweep that removes it; omitted otherwise.
+  - `generations`: A list of generations found for the index. Each entry contains `name`, `registered` (boolean), `stored`, and `removedAt`.
+    - `stored`: What storage holds under the generation:
+      - `SYNCED`: Storage holds a manifest; nodes can pull and serve this generation.
+      - `INCOMPLETE`: Storage holds a prefix without a manifest (such as an unfinished push or what an interrupted removal left of a deleted generation).
+      - `MISSING`: The generation is registered, but nothing exists in storage.
+    - `removedAt`: When the generation was deleted on its own, as an ISO 8601 timestamp. Present while its storage waits for the sweep that removes it. A generation of a deleted index carries the index's `removedAt` instead. Omitted otherwise.
 - `unusable`: A list of storage prefixes whose names no index or generation may carry (as `index` or `index/generation`). A repair never registers these prefixes.
 
 ### Repair
 
 `POST /v1alpha1/admin/registry/actions/repair` registers what storage holds. This endpoint requires the `registry.repair` permission (deployment-scoped).
 
-The repair operation only adds entries. It registers every `SYNCED` generation that the registry does not name, and keeps existing entries as stored. It never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
+The repair operation only adds entries. It registers every `SYNCED` generation that the registry does not name, and keeps existing entries as stored. Marked storage is skipped unless restored. It never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
 
 The write is conditional and rebuilds on top of concurrent registry changes. The node that served the repair applies the repaired registry immediately. Other nodes pick up the changes within their registry refresh interval (`EXOFIND_INDEXES_REFRESH_INTERVAL`).
 
 The request body accepts an optional JSON object:
 
+```json
+{
+  "promoteNewest": true,
+  "restore": [
+    "books"
+  ]
+}
+```
+
+The request body contains the following fields:
+
 - `promoteNewest`: A boolean. When `true`, each index created by the repair answers for its highest-numbered generation. Hand-named generations are not selected. Indexes that are already registered keep what they answer for.
+- `restore`: A list of names of deleted indexes (`books`) or generations (`books@2`) whose storage the sweep has not removed yet. The repair removes the removal mark from each named entry and registers what it holds like any other unregistered storage. A name without a mark changes nothing.
 
 A successful repair returns a summary of the changes:
 
 ```json
 {
   "createdIndexes": [
-    "analytics"
+    "books"
   ],
   "addedGenerations": [
-    "analytics@1",
-    "products@3"
+    "books@1",
+    "books@2"
   ],
   "promoted": [
-    "analytics@1"
+    "books@2"
+  ],
+  "restored": [
+    "books"
   ]
 }
 ```
@@ -602,6 +620,7 @@ The response contains the following fields:
 - `createdIndexes`: Index entries added to the registry.
 - `addedGenerations`: Generations added to the registry, formatted as `index@generation`.
 - `promoted`: Generations made live by the repair, formatted as `index@generation`.
+- `restored`: Deleted indexes and generations whose removal mark the repair removed, in the order the request named them.
 
 ## Status codes
 
@@ -613,7 +632,7 @@ The Admin API returns the following status codes:
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
 | `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, a `PATCH` targeted search settings the node cannot describe (`index:settings:unrepresentable`), the index requires unsupported engine features, writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, a `PATCH` targeted search settings the node cannot describe (`index:settings:unrepresentable`), the index requires unsupported engine features, storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition or search settings version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

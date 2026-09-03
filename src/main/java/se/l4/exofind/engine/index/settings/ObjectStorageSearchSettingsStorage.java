@@ -32,7 +32,12 @@ public class ObjectStorageSearchSettingsStorage implements SearchSettingsStorage
 	 * Name the settings of an index are stored under, inside its prefix. Never
 	 * mistakable for a generation, whose names cannot contain a dot.
 	 */
-	private static final String SETTINGS_NAME = "settings.ef.bin";
+	/**
+	 * Name of the settings object, stored beside the generations of its
+	 * index. Public so that what removes an index knows to take the settings
+	 * out ahead of the rest.
+	 */
+	public static final String SETTINGS_NAME = "settings.ef.bin";
 
 	private final S3Client client;
 	private final String bucket;

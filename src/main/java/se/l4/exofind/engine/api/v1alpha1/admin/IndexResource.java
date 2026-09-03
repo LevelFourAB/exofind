@@ -391,9 +391,10 @@ public class IndexResource {
 			settings this API version cannot represent \
 			(`index:definition:unrepresentable`), the index requires engine \
 			features this node does not have (`index:unsupported`), a reindex \
-			job is already running (`reindex:in_progress`), no node is \
-			available to write the index (`indexer:unavailable`), or the \
-			registry write failed.""",
+			job is already running (`reindex:in_progress`), storage holds a \
+			generation under the new name that nothing deleted \
+			(`index:generation:storage_held`), no node is available to write \
+			the index (`indexer:unavailable`), or the registry write failed.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -545,9 +546,13 @@ public class IndexResource {
 	 *
 	 * <p><p>Removing an index or generation removes it from the shared registry
 	 * across the deployment; other nodes remove their local copies during their
-	 * next registry read. Deletion does not remove data held in remote storage.
-	 * Deleting the live generation is refused until another generation is
+	 * next registry read. What remote storage holds is marked and removed by a
+	 * sweep after a grace period, during which a registry repair can restore
+	 * it. Deleting the live generation is refused until another generation is
 	 * promoted.
+	 *
+	 * <p><p>Served by the node writing the index, so the writer closes its
+	 * copy before the registry changes and pushes nothing after.
 	 *
 	 * @param name
 	 *   the index, or one generation of it
@@ -568,11 +573,17 @@ public class IndexResource {
 
 			Deleting an index or generation removes it from the shared \
 			registry across the deployment; other nodes remove their local \
-			copies during their next registry read. Deletion does not remove \
-			data held in remote storage, so an index created again under the \
-			same name picks its old search settings back up.
+			copies during their next registry read. What remote storage \
+			holds - the generations and, for an index, its search settings - \
+			is marked as deleted and removed by a background sweep once the \
+			mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`. Until then a \
+			registry repair with `restore` brings the index or generation \
+			back. An index or generation created again under the same name \
+			starts empty, whether or not the sweep has run.
 
-			Requires the `indexes.delete` permission."""
+			Served by the node writing the index and forwarded there when \
+			another node receives it. Requires the `indexes.delete` \
+			permission."""
 	)
 	@APIResponse(
 		responseCode = "204",

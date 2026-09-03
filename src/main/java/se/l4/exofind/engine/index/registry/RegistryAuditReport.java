@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.index.registry;
 
+import java.time.Instant;
+
 import org.eclipse.collections.api.list.ListIterable;
 
 /**
@@ -7,11 +9,13 @@ import org.eclipse.collections.api.list.ListIterable;
  * of each: every index either of them names, and where the two disagree.
  *
  * <p>A generation the storage holds that the registry does not name is what a
- * {@link RegistryAudit#repair(boolean) repair} registers. The other findings
- * are reported without a repair for them: a generation prefix without a
- * manifest is an interrupted first push or storage a delete left behind, and
- * which of those it is cannot be read off the storage; a registered generation
- * with nothing behind it has nothing left to serve from.
+ * {@link RegistryAudit#repair(boolean, ListIterable) repair} registers, unless
+ * a delete marked it: marked storage is on its way out and is registered only
+ * when the repair is asked to restore it. The other findings are reported
+ * without a repair for them: a generation prefix without a manifest is an
+ * interrupted first push or what a removal left behind, and which of those it
+ * is cannot be read off the storage; a registered generation with nothing
+ * behind it has nothing left to serve from.
  *
  * @param registry
  *   whether the registry object itself could be read
@@ -60,7 +64,11 @@ public record RegistryAuditReport(
 	 * @param proposedLive
 	 *   the generation a repair asked to promote would make live, or
 	 *   {@code null} when it would promote none - an index that is already
-	 *   registered keeps whatever it answers for
+	 *   registered keeps whatever it answers for, and a marked one is not
+	 *   registered
+	 * @param removedAt
+	 *   when the index was deleted, for an index a delete marked and the
+	 *   sweep has not removed yet; {@code null} when no mark stands over it
 	 * @param generations
 	 *   every generation either side names, ordered by name
 	 */
@@ -69,6 +77,7 @@ public record RegistryAuditReport(
 		boolean registered,
 		String live,
 		String proposedLive,
+		Instant removedAt,
 		ListIterable<AuditedGeneration> generations
 	) {
 	}
@@ -81,11 +90,17 @@ public record RegistryAuditReport(
 	 *   whether the registry names the generation
 	 * @param stored
 	 *   what the storage holds under it
+	 * @param removedAt
+	 *   when the generation was deleted on its own, for one a delete marked
+	 *   and the sweep has not removed yet; {@code null} when no mark stands
+	 *   over it. A generation of a deleted index carries the index's mark
+	 *   rather than one of its own
 	 */
 	public record AuditedGeneration(
 		String name,
 		boolean registered,
-		Stored stored
+		Stored stored,
+		Instant removedAt
 	) {
 	}
 
@@ -100,8 +115,8 @@ public record RegistryAuditReport(
 
 		/**
 		 * The generation has a prefix but no manifest - a first push that never
-		 * finished, or what a sweep left of a removed generation. Not
-		 * registrable, as there is nothing to serve from.
+		 * finished, or what an interrupted removal left of a deleted
+		 * generation. Not registrable, as there is nothing to serve from.
 		 */
 		INCOMPLETE,
 

@@ -60,6 +60,14 @@ public record RegistryAuditResponse(
 		        { "name": "1", "registered": true, "stored": "SYNCED" },
 		        { "name": "2", "registered": true, "stored": "SYNCED" }
 		      ]
+		    },
+		    {
+		      "name": "staging",
+		      "registered": false,
+		      "removedAt": "2026-09-03T10:15:00Z",
+		      "generations": [
+		        { "name": "1", "registered": false, "stored": "SYNCED" }
+		      ]
 		    }
 		  ],
 		  "unusable": []
@@ -76,6 +84,9 @@ public record RegistryAuditResponse(
 	 * @param proposedLive
 	 *   the generation that a repair with promoteNewest would make live,
 	 *   omitted when none would be promoted
+	 * @param removedAt
+	 *   when the index was deleted, present while its storage waits for the
+	 *   sweep; omitted otherwise
 	 * @param generations
 	 *   a list of generations found for the index, ordered by name
 	 */
@@ -101,10 +112,21 @@ public record RegistryAuditResponse(
 		@Schema(
 			description = """
 				The generation that a repair with `promoteNewest` would make \
-				live. Omitted when none would be promoted.""",
+				live. Omitted when none would be promoted, which includes a \
+				deleted index.""",
 			examples = "1"
 		)
 		String proposedLive,
+
+		@Schema(
+			description = """
+				When the index was deleted, as an ISO 8601 timestamp. Present \
+				while the storage of the deleted index waits for the sweep \
+				that removes it; a repair registers such an index only when \
+				asked to restore it. Omitted otherwise.""",
+			examples = "2026-09-03T10:15:00Z"
+		)
+		String removedAt,
 
 		@Schema(description = "A list of generations found for the index, ordered by name.")
 		List<AuditedGeneration> generations
@@ -118,7 +140,11 @@ public record RegistryAuditResponse(
 	 *   whether the registry names the generation
 	 * @param stored
 	 *   what storage holds under it
+	 * @param removedAt
+	 *   when the generation was deleted on its own, present while its storage
+	 *   waits for the sweep; omitted otherwise
 	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = "One generation as the registry and storage each describe it.")
 	public record AuditedGeneration(
 		@Schema(description = "The name of the generation.", examples = "1")
@@ -131,9 +157,20 @@ public record RegistryAuditResponse(
 			What storage holds under it. `SYNCED`: storage holds a manifest; \
 			nodes can pull and serve this generation. `INCOMPLETE`: storage \
 			holds a prefix without a manifest (such as an unfinished push or \
-			leftovers from a deleted generation). `MISSING`: the generation is \
-			registered, but nothing exists in storage.""")
-		RegistryAuditReport.Stored stored
+			what an interrupted removal left of a deleted generation). \
+			`MISSING`: the generation is registered, but nothing exists in \
+			storage.""")
+		RegistryAuditReport.Stored stored,
+
+		@Schema(
+			description = """
+				When the generation was deleted on its own, as an ISO 8601 \
+				timestamp. Present while its storage waits for the sweep that \
+				removes it. A generation of a deleted index carries the \
+				index's `removedAt` instead. Omitted otherwise.""",
+			examples = "2026-09-03T10:15:00Z"
+		)
+		String removedAt
 	) {
 	}
 }

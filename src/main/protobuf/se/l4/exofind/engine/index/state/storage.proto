@@ -109,6 +109,26 @@ message Manifest {
 }
 
 /*
+ * RemovalMark says that what lies under the prefix it is stored in was
+ * deleted: an index when it sits beside the generations, one generation when
+ * it sits beside that generation's manifest. The registry entry is already
+ * gone when the mark is written; the mark is what lets the objects go later,
+ * after a grace period, and what tells a registry repair not to register them
+ * again in the meantime.
+ *
+ * Only a mark says that data was deleted. An index missing from the registry
+ * is not one - the registry may have been lost - so nothing removes objects
+ * that carry no mark.
+ */
+message RemovalMark {
+	/*
+	 * When the deletion happened, as milliseconds since the Unix epoch. The
+	 * grace period before the objects are removed counts from here.
+	 */
+	optional int64 removed_at = 1;
+}
+
+/*
  * IndexerLease was the claim a node held on being the one that indexes,
  * before leadership became per index. No longer written or read; the object
  * it was stored in may still exist in deployments that ran those versions,

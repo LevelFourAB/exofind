@@ -903,6 +903,8 @@ public class ObjectStorageSync implements StateSync {
 	private void sweepRemoteOrphans(Manifest manifest) {
 		var referenced = new HashSet<String>();
 		referenced.add(MANIFEST_NAME);
+		// A delete's mark over this generation is not this writer's to remove
+		referenced.add(IndexRemovals.MARK_FILE);
 		for(var file : manifest.getFilesList()) {
 			referenced.add(keyOf(file));
 		}

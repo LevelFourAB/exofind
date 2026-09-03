@@ -1,14 +1,17 @@
 package se.l4.exofind.engine.index.registry;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
 import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.ObjectStorage;
@@ -27,7 +30,8 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * with delimited listings. A generation counts as held when its manifest
  * exists: the manifest is written last when a generation is pushed, so a
  * prefix without one has never finished a push and holds nothing a node could
- * serve from.
+ * serve from. A removal mark beside an index or a generation, see
+ * {@link IndexRemovals}, is read along with it.
  *
  * <p>The repair replaces the registry conditionally on the version the audit
  * read - including the version of contents that could not be parsed - so it
@@ -47,12 +51,18 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private final String bucket;
 	private final ObjectStorage storage;
 	private final RegistryStorage registry;
+	private final IndexRemovals removals;
 
-	public ObjectStorageRegistryAudit(ObjectStorage storage, RegistryStorage registry) {
+	public ObjectStorageRegistryAudit(
+		ObjectStorage storage,
+		RegistryStorage registry,
+		IndexRemovals removals
+	) {
 		this.client = storage.client();
 		this.bucket = storage.bucket();
 		this.storage = storage;
 		this.registry = registry;
+		this.removals = removals;
 	}
 
 	@Override
@@ -64,7 +74,14 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	}
 
 	@Override
-	public RegistryRepairResult repair(boolean promoteNewest) {
+	public RegistryRepairResult repair(boolean promoteNewest, ListIterable<IndexName> restore) {
+		/*
+		 * The marks go before the storage is listed, so that what was
+		 * restored is listed the way unmarked storage is and registered
+		 * along with it.
+		 */
+		var restored = unmark(restore);
+
 		/*
 		 * Listed once rather than per attempt: an attempt is repeated because
 		 * the registry moved, and the registry moving says nothing about the
@@ -74,9 +91,14 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 
 		for(int attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
 			var read = readRegistry();
-			var merged = merge(read, held, promoteNewest);
+			var merged = merge(read, held, promoteNewest, restored);
 
-			if(merged.result().isEmpty()) {
+			if(
+				merged.result().createdIndexes().isEmpty()
+					&& merged.result().addedGenerations().isEmpty()
+					&& merged.result().promoted().isEmpty()
+			) {
+				// Nothing to write, whether or not a mark was taken away
 				return merged.result();
 			}
 
@@ -92,6 +114,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 					.addKeyValue("createdIndexes", merged.result().createdIndexes().makeString(", "))
 					.addKeyValue("addedGenerations", merged.result().addedGenerations().makeString(", "))
 					.addKeyValue("promoted", merged.result().promoted().makeString(", "))
+					.addKeyValue("restored", merged.result().restored().makeString(", "))
 					.log("Repaired the registry from what the storage holds");
 
 				return merged.result();
@@ -99,6 +122,32 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		}
 
 		throw RegistryException.conflict();
+	}
+
+	/**
+	 * Take the removal marks off what the caller asked to restore.
+	 *
+	 * @return
+	 *   the names that had a mark to take off, as asked for
+	 */
+	private ListIterable<String> unmark(ListIterable<IndexName> restore) {
+		var restored = Lists.mutable.<String>empty();
+
+		for(var target : restore) {
+			try {
+				if(removals.unmark(target)) {
+					restored.add(target.toString());
+
+					logger.atInfo()
+						.addKeyValue("index", target.toString())
+						.log("Took the removal mark off a deleted index, so a repair can register it");
+				}
+			} catch(IOException e) {
+				throw RegistryException.ioError(e);
+			}
+		}
+
+		return restored.toImmutable();
 	}
 
 	/**
@@ -142,11 +191,32 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	}
 
 	/**
+	 * One generation as the storage holds it.
+	 *
+	 * @param stored
+	 * @param removedAt
+	 *   when a delete marked the generation on its own, or {@code null}
+	 */
+	private record HeldGeneration(RegistryAuditReport.Stored stored, Instant removedAt) {
+	}
+
+	/**
+	 * One index as the storage holds it.
+	 *
+	 * @param removedAt
+	 *   when a delete marked the whole index, or {@code null}
+	 * @param generations
+	 *   every generation prefix under it, by name
+	 */
+	private record HeldIndex(Instant removedAt, TreeMap<String, HeldGeneration> generations) {
+	}
+
+	/**
 	 * What the storage holds: every generation under every index prefix, and
 	 * the prefixes whose names nothing may carry.
 	 */
 	private record HeldIndexes(
-		TreeMap<String, TreeMap<String, RegistryAuditReport.Stored>> indexes,
+		TreeMap<String, HeldIndex> indexes,
 		MutableList<String> unusable
 	) {
 	}
@@ -162,7 +232,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 					continue;
 				}
 
-				var generations = new TreeMap<String, RegistryAuditReport.Stored>();
+				var generations = new TreeMap<String, HeldGeneration>();
 				var unusableBefore = held.unusable().size();
 
 				for(var generation : listPrefixes(indexesPrefix + index + "/")) {
@@ -171,23 +241,31 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 						continue;
 					}
 
+					var name = IndexName.of(index, generation);
 					generations.put(
 						generation,
-						hasManifest(IndexName.of(index, generation))
-							? RegistryAuditReport.Stored.SYNCED
-							: RegistryAuditReport.Stored.INCOMPLETE
+						new HeldGeneration(
+							hasManifest(name)
+								? RegistryAuditReport.Stored.SYNCED
+								: RegistryAuditReport.Stored.INCOMPLETE,
+							markedAt(name)
+						)
 					);
 				}
 
 				/*
 				 * A prefix with no generation under it holds nothing a node
-				 * could serve or a repair could restore. Deleting an index
-				 * leaves its settings object behind, and that object alone
-				 * keeping the prefix listable is not the index still being
-				 * held - so it is left out rather than reported forever.
+				 * could serve or a repair could restore. The settings object
+				 * and the mark of a deleted index can outlast its generations
+				 * for a moment, and those alone keeping the prefix listable is
+				 * not the index still being held - so it is left out rather
+				 * than reported forever.
 				 */
 				if(!generations.isEmpty() || held.unusable().size() > unusableBefore) {
-					held.indexes().put(index, generations);
+					held.indexes().put(
+						index,
+						new HeldIndex(markedAt(IndexName.of(index)), generations)
+					);
 				}
 			}
 		} catch(SdkException e) {
@@ -241,6 +319,14 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		}
 	}
 
+	private Instant markedAt(IndexName target) {
+		try {
+			return removals.markedAt(target).orElse(null);
+		} catch(IOException e) {
+			throw RegistryException.ioError(e);
+		}
+	}
+
 	private static RegistryAuditReport buildReport(RegistryRead read, HeldIndexes held) {
 		/*
 		 * Joined at the stored level rather than through RegistryCodec, so an
@@ -262,8 +348,10 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		var indexes = Lists.mutable.<RegistryAuditReport.AuditedIndex>empty();
 		for(var name : names) {
 			var entry = registered.get(name);
-			var heldGenerations = held.indexes()
-				.getOrDefault(name, new TreeMap<>());
+			var heldIndex = held.indexes().get(name);
+			var heldGenerations = heldIndex != null
+				? heldIndex.generations()
+				: new TreeMap<String, HeldGeneration>();
 
 			var generationNames = new TreeSet<>(heldGenerations.keySet());
 
@@ -277,18 +365,25 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 
 			var generations = Lists.mutable.<RegistryAuditReport.AuditedGeneration>empty();
 			for(var generation : generationNames) {
+				var heldGeneration = heldGenerations.get(generation);
 				generations.add(new RegistryAuditReport.AuditedGeneration(
 					generation,
 					registeredGenerations.contains(generation),
-					heldGenerations.getOrDefault(generation, RegistryAuditReport.Stored.MISSING)
+					heldGeneration != null
+						? heldGeneration.stored()
+						: RegistryAuditReport.Stored.MISSING,
+					heldGeneration != null ? heldGeneration.removedAt() : null
 				));
 			}
+
+			var removedAt = heldIndex != null ? heldIndex.removedAt() : null;
 
 			indexes.add(new RegistryAuditReport.AuditedIndex(
 				name,
 				entry != null,
 				entry != null && entry.hasLive() ? entry.getLive() : null,
-				entry == null ? newestSynced(heldGenerations) : null,
+				entry == null && removedAt == null ? newestSynced(heldGenerations) : null,
+				removedAt,
 				generations.toImmutable()
 			));
 		}
@@ -306,7 +401,12 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private record Merge(IndexRegistryStore store, RegistryRepairResult result) {
 	}
 
-	private static Merge merge(RegistryRead read, HeldIndexes held, boolean promoteNewest) {
+	private static Merge merge(
+		RegistryRead read,
+		HeldIndexes held,
+		boolean promoteNewest,
+		ListIterable<String> restored
+	) {
 		/*
 		 * Built from the stored bytes rather than through RegistryCodec, so
 		 * entries this build cannot read - unknown fields, features it does
@@ -326,9 +426,17 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		var promoted = Lists.mutable.<String>empty();
 
 		for(var index : held.indexes().entrySet()) {
+			if(index.getValue().removedAt() != null) {
+				// Deleted and on its way out, which a repair does not undo on its own
+				continue;
+			}
+
 			var synced = new TreeSet<String>();
-			for(var generation : index.getValue().entrySet()) {
-				if(generation.getValue() == RegistryAuditReport.Stored.SYNCED) {
+			for(var generation : index.getValue().generations().entrySet()) {
+				if(
+					generation.getValue().stored() == RegistryAuditReport.Stored.SYNCED
+						&& generation.getValue().removedAt() == null
+				) {
 					synced.add(generation.getKey());
 				}
 			}
@@ -369,7 +477,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 				}
 
 				if(promoteNewest) {
-					var live = newestSynced(index.getValue());
+					var live = newestSynced(index.getValue().generations());
 					if(live != null) {
 						entry.setLive(live);
 						promoted.add(index.getKey() + "@" + live);
@@ -386,7 +494,8 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 			new RegistryRepairResult(
 				createdIndexes.toImmutable(),
 				addedGenerations.toImmutable(),
-				promoted.toImmutable()
+				promoted.toImmutable(),
+				restored
 			)
 		);
 	}
@@ -394,15 +503,19 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	/**
 	 * The synced generation with the highest number, or {@code null} when no
 	 * synced generation carries one. Generations count up from one when the
-	 * engine names them, so the highest number is the one created last;
-	 * a name given by hand says nothing about age and is never picked.
+	 * engine names them, so the highest number is the one created last; a
+	 * name given by hand says nothing about age and is never picked. A
+	 * generation a delete marked on its own is not up for promotion either.
 	 */
-	private static String newestSynced(Map<String, RegistryAuditReport.Stored> generations) {
+	private static String newestSynced(Map<String, HeldGeneration> generations) {
 		String newest = null;
 		int newestNumber = 0;
 
 		for(var generation : generations.entrySet()) {
-			if(generation.getValue() != RegistryAuditReport.Stored.SYNCED) {
+			if(
+				generation.getValue().stored() != RegistryAuditReport.Stored.SYNCED
+					|| generation.getValue().removedAt() != null
+			) {
 				continue;
 			}
 

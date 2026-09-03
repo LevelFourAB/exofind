@@ -65,6 +65,9 @@ by the receiving node without forwarding to an indexer.
      field is omitted if unregistered or if no live generation is set.
    - `proposedLive`: The highest-numbered generation that a repair with
      `promoteNewest` would set as live.
+   - `removedAt`: Present when a delete marked the storage and the sweep has not
+     removed it yet. Marked entries are unregistered, not proposed for
+     promotion, and a repair skips them unless restored.
    - `generations`: The generations found for the index.
 4. Review the `stored` state for each generation:
    - `SYNCED`: The bucket contains a completed `manifest.ef.bin` file. Nodes
@@ -74,6 +77,9 @@ by the receiving node without forwarding to an indexer.
      generation.
    - `MISSING`: The generation is registered in the registry, but no data
      exists in the bucket.
+   Each generation also includes `removedAt` when a delete marked the storage
+   and the sweep has not removed it yet. Marked generations are unregistered,
+   not proposed for promotion, and a repair skips them unless restored.
 5. Check the `unusable` list for prefixes in the bucket that do not match valid
    index or generation name formats.
 
@@ -82,9 +88,11 @@ by the receiving node without forwarding to an indexer.
 You can run the audit endpoint on a healthy deployment (`registry: PRESENT`) to
 detect orphaned or unreferenced data:
 
-- **Unregistered `SYNCED` generations:** Occur when an index was deleted
-  through the API (which removes it from the registry but leaves bucket data
-  intact) or when a rollout was interrupted before registration.
+- **Unregistered `SYNCED` generations:** A deleted index now shows `removedAt`
+  and waits for the sweep. An unregistered generation without `removedAt` is an
+  interrupted rollout, or storage deleted before removal marks existed. To
+  remove such leftover storage, register it with a repair and then delete it
+  through the API, which marks it for the sweep.
 - **`INCOMPLETE` generations:** Leftover prefixes from aborted pushes or disk
   sweeps.
 - **`MISSING` generations:** Registered generations whose storage data was
@@ -124,14 +132,28 @@ features, and live generation assignments.
    **Note:** `promoteNewest` only promotes generations with numeric names.
    Generations with non-numeric names are not promoted automatically.
 
+   To restore marked storage during the repair, provide the `restore` field with
+   a list of index or generation names:
+   ```http
+   POST /v1alpha1/admin/registry/actions/repair
+   Content-Type: application/json
+
+   {
+     "promoteNewest": true,
+     "restore": ["books"]
+   }
+   ```
+
 3. Inspect the repair response:
    ```json
    {
-     "createdIndexes": ["products"],
-     "addedGenerations": ["products@1", "products@2"],
-     "promoted": ["products@2"]
+     "createdIndexes": ["books"],
+     "addedGenerations": ["books@1", "books@2"],
+     "promoted": ["books@2"],
+     "restored": ["books"]
    }
    ```
+   The `restored` field lists the names whose removal mark the repair removed.
    If all lists in the response are empty, the registry was already complete.
 4. If you did not use `promoteNewest`, or if an index uses non-numeric
    generation names, manually promote the desired generation for each restored
@@ -139,6 +161,37 @@ features, and live generation assignments.
    ```http
    POST /v1alpha1/admin/indexes/products@1/actions/promote
    ```
+
+## Restore a deleted index or generation
+
+When an index or generation was deleted, you can restore it before the
+background sweep removes its storage from the bucket.
+
+1. Run the audit endpoint and find the entry with `removedAt`:
+   ```http
+   GET /v1alpha1/admin/registry/audit
+   ```
+2. Send a repair request with `restore` naming the index or generation, and set
+   `promoteNewest` to `true` if the index should answer for its highest-numbered
+   generation:
+   ```http
+   POST /v1alpha1/admin/registry/actions/repair
+   Content-Type: application/json
+
+   {
+     "promoteNewest": true,
+     "restore": ["books"]
+   }
+   ```
+3. Promote another generation if needed:
+   ```http
+   POST /v1alpha1/admin/indexes/books@1/actions/promote
+   ```
+
+**Note:** Restoring works only while the mark stands, that is within
+`EXOFIND_INDEXES_REMOVAL_GRACE` after the delete. The registry does not remember
+which generation was live before the delete. The search settings apply again
+once the index is registered.
 
 ## Handle errors and unsupported findings
 
@@ -157,8 +210,9 @@ follows:
   Remove the generation from the registry or restore the missing objects from a
   storage backup.
 - **`INCOMPLETE` and `unusable` findings:** The repair ignores these prefixes.
-  Delete the corresponding objects directly from your bucket if they are
-  unneeded leftovers.
+  An `INCOMPLETE` generation carrying `removedAt` is an interrupted removal that
+  the next sweep pass finishes. Delete other unneeded leftover objects directly
+  from your bucket.
 
 ## Confirm the registry status
 

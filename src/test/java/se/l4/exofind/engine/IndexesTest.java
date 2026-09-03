@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
 
@@ -23,13 +24,17 @@ import org.junit.jupiter.api.io.TempDir;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexClosedException;
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
+import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.index.state.RecordingIndexRemovals;
 import se.l4.exofind.engine.storage.StorageMode;
 
 public class IndexesTest {
@@ -72,11 +77,22 @@ public class IndexesTest {
 
 	private static Indexes newNode(Path directory, IndexRegistry registry, OptionalInt maxOpen)
 		throws IOException {
+		return newNode(directory, registry, maxOpen, new RecordingIndexRemovals());
+	}
+
+	private static Indexes newNode(
+		Path directory,
+		IndexRegistry registry,
+		OptionalInt maxOpen,
+		IndexRemovals removals
+	)
+		throws IOException {
 		return new Indexes(
 			nodeState(true),
 			new NoopSyncProvider(),
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
+			removals,
 			directory,
 			maxOpen,
 			Duration.ofMinutes(5),
@@ -276,6 +292,110 @@ public class IndexesTest {
 			Files.exists(storageDirectory.resolve("indexes").resolve("books@2")),
 			is(false)
 		);
+	}
+
+	/**
+	 * A delete takes the name out of the registry and marks what the shared
+	 * storage holds under it, so a sweep can remove it later - the whole
+	 * index for an index, one generation for a generation.
+	 */
+	@Test
+	public void testDeletingMarksTheStorage() throws IOException {
+		var removals = new RecordingIndexRemovals();
+		var node = newNode(storageDirectory.resolve("marking"), registry(), OptionalInt.empty(), removals);
+		try {
+			node.create("books", IndexDef.getDefaultInstance());
+			node.createGeneration("books@2", IndexDef.getDefaultInstance());
+
+			node.delete("books@2");
+			assertThat(removals.marks.keySet(), contains(IndexName.of("books", "2")));
+
+			node.delete("books");
+			assertThat(
+				removals.marks.keySet(),
+				contains(IndexName.of("books", "2"), IndexName.of("books"))
+			);
+		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * The registry write is what deletes; a mark that could not be written
+	 * is logged and costs the caller nothing.
+	 */
+	@Test
+	public void testDeleteSucceedsWhenTheMarkCanNotBeWritten() throws IOException {
+		var removals = new RecordingIndexRemovals();
+		removals.failMark = true;
+
+		var node = newNode(storageDirectory.resolve("failing"), registry(), OptionalInt.empty(), removals);
+		try {
+			node.create("books", IndexDef.getDefaultInstance());
+			node.delete("books");
+
+			assertThat(node.getIndexNames(), emptyIterable());
+		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * A name created again lands on the prefix its delete marked, so
+	 * creating clears the index's prefix and then the first generation's
+	 * before the generation is opened - opening pulls, and a pull of what
+	 * the delete left would fill the new index with the old documents.
+	 */
+	@Test
+	public void testCreatingClearsWhatADeleteLeft() throws IOException {
+		var removals = new RecordingIndexRemovals();
+		removals.marks.put(IndexName.of("books"), Instant.now());
+
+		var node = newNode(storageDirectory.resolve("clearing"), registry(), OptionalInt.empty(), removals);
+		try {
+			node.create("books", IndexDef.getDefaultInstance());
+
+			assertThat(removals.preparedIndexes, contains("books"));
+			assertThat(removals.preparedGenerations, contains(IndexName.of("books", "1")));
+			assertThat(removals.marks.isEmpty(), is(true));
+
+			// Adding a generation touches only its own prefix
+			node.createGeneration("books@2", IndexDef.getDefaultInstance());
+
+			assertThat(removals.preparedIndexes, contains("books"));
+			assertThat(
+				removals.preparedGenerations,
+				contains(IndexName.of("books", "1"), IndexName.of("books", "2"))
+			);
+		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * Storage that holds a generation nothing deleted refuses the creation,
+	 * which then leaves no registration behind - the same request succeeds
+	 * once the storage has been repaired or cleared.
+	 */
+	@Test
+	public void testHeldStorageRefusesTheCreationAndRollsBack() throws IOException {
+		var removals = new RecordingIndexRemovals();
+		removals.held.add(IndexName.of("books", "1"));
+
+		var node = newNode(storageDirectory.resolve("held"), registry(), OptionalInt.empty(), removals);
+		try {
+			assertThrows(
+				IndexStorageHeldException.class,
+				() -> node.create("books", IndexDef.getDefaultInstance())
+			);
+
+			assertThat(node.getIndexNames(), emptyIterable());
+
+			removals.held.clear();
+			assertThat(node.create("books", IndexDef.getDefaultInstance()).getId(), is("books@1"));
+		} finally {
+			node.close();
+		}
 	}
 
 	/**

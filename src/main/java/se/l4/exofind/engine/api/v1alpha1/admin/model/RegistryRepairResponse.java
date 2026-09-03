@@ -5,8 +5,9 @@ import java.util.List;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 /**
- * What a registry repair changed. All three lists empty means the registry
- * already named everything storage holds and nothing was written.
+ * What a registry repair changed. Every list empty means the registry
+ * already named everything storage holds, nothing was restored, and nothing
+ * was written.
  *
  * @param createdIndexes
  *   index entries added to the registry, ordered by name
@@ -16,11 +17,15 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param promoted
  *   generations made live by the repair, formatted as {@code index@generation}
  *   and ordered by name
+ * @param restored
+ *   deleted indexes and generations whose removal mark the repair took off,
+ *   in the order they were asked for
  */
 @Schema(
 	description = """
-		Summary of the changes made by a repair. All three lists empty means the \
-		registry already named everything storage holds and nothing was written.""",
+		Summary of the changes made by a repair. Every list empty means the \
+		registry already named everything storage holds, nothing was \
+		restored, and nothing was written.""",
 	examples = RegistryRepairResponse.EXAMPLE
 )
 public record RegistryRepairResponse(
@@ -35,7 +40,13 @@ public record RegistryRepairResponse(
 	@Schema(description = """
 		Generations made live by the repair, formatted as `index@generation` \
 		and ordered by name.""")
-	List<String> promoted
+	List<String> promoted,
+
+	@Schema(description = """
+		Deleted indexes and generations whose removal mark the repair took \
+		off, as `index` or `index@generation`, in the order the request \
+		named them. What they hold appears in the other lists.""")
+	List<String> restored
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
@@ -45,6 +56,7 @@ public record RegistryRepairResponse(
 		{
 		  "createdIndexes": ["products"],
 		  "addedGenerations": ["products@2"],
-		  "promoted": ["products@2"]
+		  "promoted": ["products@2"],
+		  "restored": ["products"]
 		}""";
 }

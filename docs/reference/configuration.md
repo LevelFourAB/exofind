@@ -225,6 +225,17 @@ The following table lists disk usage configuration variables:
 | `EXOFIND_INDEXES_DISK_HALF_LIFE` | Half-life duration after which unopened index access counts are halved. | `168h` |
 | `EXOFIND_INDEXES_DISK_SWEEP_INTERVAL` | Interval between disk space cleanup checks. | `1h` |
 
+## Index removal
+
+Deleting an index or generation in object storage mode marks its storage in the bucket. A background sweep on nodes that can index removes the marked storage once the mark is older than the grace period, during which a [registry repair](../how-to/repair-the-index-registry.md#restore-a-deleted-index-or-generation) can restore it. Both settings do nothing in `local` storage mode.
+
+The following table lists index removal configuration variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXOFIND_INDEXES_REMOVAL_GRACE` | Duration marked storage of a deleted index or generation stays in the bucket before the sweep removes it. | `1h` |
+| `EXOFIND_INDEXES_REMOVAL_SWEEP_INTERVAL` | Interval at which nodes that can index check for marked storage whose grace period has expired. | `10m` |
+
 ## Document cache
 
 Stored fields are compressed. Reading search results decompresses document hits

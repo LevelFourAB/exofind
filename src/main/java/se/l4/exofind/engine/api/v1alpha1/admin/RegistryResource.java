@@ -8,6 +8,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
+import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import se.l4.exofind.engine.api.ExofindApi;
@@ -18,6 +19,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.RegistryAuditResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.RegistryRepairRequest;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.RegistryRepairResponse;
 import se.l4.exofind.engine.auth.Permission;
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegistryAudit;
 import se.l4.exofind.engine.index.registry.RegistryAuditReport;
@@ -88,8 +90,9 @@ public class RegistryResource {
 			Reads the registry and remote storage, comparing the two without \
 			changing either.
 
-			Unregistered generations in storage indicate interrupted rollouts \
-			or leftover storage from deleted generations. Registered \
+			Unregistered generations in storage indicate interrupted rollouts, \
+			or deleted indexes and generations whose storage waits for the \
+			sweep that removes it; those carry `removedAt`. Registered \
 			generations missing from storage have no data available to pull.
 
 			Served by whichever node receives the request and never forwarded. \
@@ -127,7 +130,7 @@ public class RegistryResource {
 
 	/**
 	 * Registers every synced generation held in storage that the registry does
-	 * not name.
+	 * not name and no delete marked.
 	 *
 	 * <p><p>The repair only adds entries, keeping existing entries as stored.
 	 * If the registry is absent, it is written fresh; if corrupt, it is
@@ -137,8 +140,13 @@ public class RegistryResource {
 	 * repair answers for its highest-numbered generation. Otherwise, a created
 	 * index answers for nothing until a generation is promoted.
 	 *
+	 * <p><p>Storage of a deleted index or generation waits for a sweep and is
+	 * registered only when {@code "restore"} names it, which takes the removal
+	 * mark off first.
+	 *
 	 * @param body
-	 *   configuration for created indexes, or omitted for defaults
+	 *   configuration for created indexes and what to restore, or omitted for
+	 *   defaults
 	 * @return
 	 */
 	@POST
@@ -162,6 +170,12 @@ public class RegistryResource {
 			generations are not selected. Indexes that are already registered \
 			keep what they answer for. When omitted or false, created indexes \
 			answer for nothing until a generation is promoted.
+
+			Storage of a deleted index or generation, which the audit reports \
+			with `removedAt`, is skipped until the sweep removes it. Naming \
+			it in `"restore"` takes the removal mark off and registers it \
+			like any other unregistered storage, which is how a delete is \
+			taken back within the grace period.
 
 			The write is conditional and rebuilds on top of concurrent \
 			registry changes. The answering node applies the repaired registry \
@@ -206,8 +220,16 @@ public class RegistryResource {
 		))
 		RegistryRepairRequest body
 	) {
+		var restore = Lists.mutable.<IndexName>empty();
+		if(body != null && body.restore() != null) {
+			for(var name : body.restore()) {
+				restore.add(IndexName.parse(name));
+			}
+		}
+
 		var result = auditOrThrow().repair(
-			body != null && Boolean.TRUE.equals(body.promoteNewest())
+			body != null && Boolean.TRUE.equals(body.promoteNewest()),
+			restore
 		);
 
 		if(!result.isEmpty()) {
@@ -218,7 +240,8 @@ public class RegistryResource {
 		return new RegistryRepairResponse(
 			result.createdIndexes().toList(),
 			result.addedGenerations().toList(),
-			result.promoted().toList()
+			result.promoted().toList(),
+			result.restored().toList()
 		);
 	}
 
@@ -239,11 +262,13 @@ public class RegistryResource {
 					index.registered(),
 					index.live(),
 					index.proposedLive(),
+					index.removedAt() != null ? index.removedAt().toString() : null,
 					index.generations()
 						.collect(generation -> new RegistryAuditResponse.AuditedGeneration(
 							generation.name(),
 							generation.registered(),
-							generation.stored()
+							generation.stored(),
+							generation.removedAt() != null ? generation.removedAt().toString() : null
 						))
 						.toList()
 				))

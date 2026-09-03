@@ -22,6 +22,7 @@ import se.l4.exofind.engine.index.IndexInvalidCursorException;
 import se.l4.exofind.engine.index.IndexInvalidQueryTypeException;
 import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
 import se.l4.exofind.engine.index.IndexNoLiveGenerationException;
+import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexOutOfDateException;
@@ -220,6 +221,13 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			/*
 			 * The index exists but answers for none of its generations, which
 			 * is fixed by promoting one rather than by changing the request.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof IndexStorageHeldException) {
+			/*
+			 * The storage holds data under the name being created that nothing
+			 * said was deleted. The request is fine; the storage has to be
+			 * repaired or cleared first.
 			 */
 			return Response.Status.CONFLICT;
 		} else if(e instanceof RegistryException) {

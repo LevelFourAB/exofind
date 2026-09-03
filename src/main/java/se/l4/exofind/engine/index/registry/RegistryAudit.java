@@ -1,5 +1,9 @@
 package se.l4.exofind.engine.index.registry;
 
+import org.eclipse.collections.api.list.ListIterable;
+
+import se.l4.exofind.engine.index.IndexName;
+
 /**
  * Comparing the registry with what the storage the indexes live in actually
  * holds, and rebuilding the registry from it.
@@ -16,13 +20,18 @@ package se.l4.exofind.engine.index.registry;
  * removed. Whether to make a rebuilt index answer for anything is the caller's
  * to say: nothing in the storage records which generation was live.
  *
+ * <p>Storage a delete marked is the exception to registering what is found:
+ * it is on its way out, and a repair leaves it be unless asked to restore it,
+ * which takes the mark away and registers it like anything else. That is how
+ * a delete is taken back before the sweep removes the objects.
+ *
  * <p>Implementations are safe for concurrent use.
  */
 public interface RegistryAudit {
 	/**
 	 * Compare the registry with the storage. Reads both without changing
-	 * either, so this is also the check that catches an interrupted rollout
-	 * or storage a delete left behind on a deployment whose registry is fine.
+	 * either, so this is also the check that catches an interrupted rollout,
+	 * or shows what a delete left that the sweep has not removed yet.
 	 *
 	 * @return
 	 * @throws RegistryException
@@ -31,10 +40,10 @@ public interface RegistryAudit {
 	RegistryAuditReport audit();
 
 	/**
-	 * Register everything the storage holds that the registry does not name.
-	 * A corrupt registry is replaced with one rebuilt from the storage; a
-	 * readable one is added to, with every entry it already has kept as it
-	 * was stored.
+	 * Register everything the storage holds that the registry does not name
+	 * and no delete marked. A corrupt registry is replaced with one rebuilt
+	 * from the storage; a readable one is added to, with every entry it
+	 * already has kept as it was stored.
 	 *
 	 * <p>The write is conditional on what the audit read, and is rebuilt on
 	 * top of a concurrent change rather than overwriting it. A generation
@@ -48,11 +57,17 @@ public interface RegistryAudit {
 	 *   highest-numbered generation. Indexes that are already registered keep
 	 *   what they answer for either way. {@code false} leaves a created index
 	 *   answering for nothing until a generation is promoted
+	 * @param restore
+	 *   indexes and generations to take the removal mark off before
+	 *   registering, so that what a delete marked comes back. A name without
+	 *   a mark changes nothing. The marks go first, so a restored index that
+	 *   holds no synced generation is unmarked and still not registered
 	 * @return
 	 *   what was changed, empty when the registry already named everything
+	 *   and nothing was restored
 	 * @throws RegistryException
 	 *   if the storage could not be reached, or the registry kept being
 	 *   changed by someone else
 	 */
-	RegistryRepairResult repair(boolean promoteNewest);
+	RegistryRepairResult repair(boolean promoteNewest, ListIterable<IndexName> restore);
 }
