@@ -99,6 +99,24 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	private static final Duration RETIRING_WAIT = Duration.ofSeconds(30);
 
+	/**
+	 * Write load below which an index counts as idle.
+	 *
+	 * <p>The leadership table stores write load in coarse buckets. Each
+	 * bucket covers a doubling of the load, and the lowest one covers
+	 * everything below a single changed document. Using the same value here
+	 * means an index is idle to this node when it is idle to the nodes that
+	 * divide the indexes between them.
+	 */
+	private static final double IDLE_WRITE_LOAD = 1;
+
+	/**
+	 * The {@link #preloadIdleLimit} used by the constructors that do not take
+	 * one. Kept the same as the default of
+	 * {@code exofind.indexes.preload.idle-limit}.
+	 */
+	private static final int DEFAULT_PRELOAD_IDLE_LIMIT = 16;
+
 	private final NodeState nodeState;
 	private final StateSyncProvider syncProvider;
 	private final IndexRegistry registry;
@@ -238,6 +256,29 @@ public class Indexes implements RegistryPoller.Listener {
 	private final NodeState.Listener nodeStateListener;
 
 	/**
+	 * How many generations may be open at the same time. The open cache
+	 * evicts against this number. Empty means there is no limit.
+	 *
+	 * <p>Read again before this node opens an index it was given to write. A
+	 * node that is already at the limit opens nothing, so opening an index
+	 * early never closes one that is answering requests.
+	 */
+	private final OptionalInt maxOpen;
+
+	/**
+	 * How many indexes this node may hold before it stops opening idle ones
+	 * early.
+	 *
+	 * <p>A node below the limit opens every index it is given to write,
+	 * because it has room for all of them. A node above the limit opens only
+	 * the indexes that were being written when they changed hands. Holding
+	 * hundreds of indexes that nobody writes then costs no writers and no
+	 * merge threads. Zero means that only an index that was being written is
+	 * opened.
+	 */
+	private final int preloadIdleLimit;
+
+	/**
 	 * How many bytes the local copies may take together before the disk sweep
 	 * starts removing the coldest ones. Empty means the disk is not bounded
 	 * and no sweep runs.
@@ -369,6 +410,7 @@ public class Indexes implements RegistryPoller.Listener {
 			diskHalfLife,
 			diskSweepInterval,
 			Optional.empty(),
+			DEFAULT_PRELOAD_IDLE_LIMIT,
 			SearchThreads.inline()
 		);
 	}
@@ -395,6 +437,7 @@ public class Indexes implements RegistryPoller.Listener {
 		@ConfigProperty(name = "exofind.indexes.disk.half-life", defaultValue = "168h") Duration diskHalfLife,
 		@ConfigProperty(name = "exofind.indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval,
 		@ConfigProperty(name = "exofind.indexes.merge.floor-segment") Optional<String> mergeFloorSegment,
+		@ConfigProperty(name = "exofind.indexes.preload.idle-limit", defaultValue = "16") int preloadIdleLimit,
 		SearchThreads searchThreads
 	) throws IOException {
 		this.nodeState = nodeState;
@@ -410,6 +453,8 @@ public class Indexes implements RegistryPoller.Listener {
 		this.nameLocks = new ConcurrentHashMap<>();
 		this.closeGracePeriod = closeGracePeriod;
 		this.retiring = new ConcurrentHashMap<>();
+		this.maxOpen = maxOpen;
+		this.preloadIdleLimit = preloadIdleLimit;
 		this.diskMaxSize = diskMaxSize.isPresent()
 			? OptionalLong.of(parseSize(diskMaxSize.get()))
 			: OptionalLong.empty();
@@ -480,15 +525,18 @@ public class Indexes implements RegistryPoller.Listener {
 		}
 
 		/*
-		 * Gaining or losing an index changes which mode its open generations
-		 * have to be open in. The actual reopening happens on the refresh
-		 * thread - the notification arrives on whatever thread coordinates
-		 * ownership, which should not be busy doing Lucene work.
+		 * Gaining or losing an index changes the mode its open generations
+		 * need. Gaining one also opens the index. Both run on the refresh
+		 * thread, because the notification arrives on the thread that
+		 * coordinates ownership, and that thread must not do Lucene work.
 		 */
 		this.nodeStateListener = new NodeState.Listener() {
 			@Override
 			public void onOwnershipChanged(NodeState state, String index) {
-				refreshExecutor.execute(() -> reopenOwned(index, true));
+				refreshExecutor.execute(() -> {
+					reopenOwned(index, true);
+					openGainedIndex(index);
+				});
 			}
 
 			@Override
@@ -524,6 +572,94 @@ public class Indexes implements RegistryPoller.Listener {
 					.setCause(e)
 					.log("Could not reopen index; " + e.getMessage());
 			}
+		}
+	}
+
+	/**
+	 * Open the generation an index answers from, after this node was given
+	 * the index to write.
+	 *
+	 * <p>The copy and the {@code IndexWriter} are made ready here instead of
+	 * on the request thread of the first write. Without this, that write
+	 * waits for a full copy after a restart, a failover or a rebalance, and
+	 * every other write for the index waits behind it.
+	 *
+	 * <p>A node writes every index it is given, so no index is opened here
+	 * without a use for it. An open index costs a writer and its merge
+	 * threads, so two limits apply: {@link #maxOpen}, so this never closes a
+	 * generation that is answering requests, and {@link #preloadIdleLimit},
+	 * above which only the indexes that were being written are opened.
+	 *
+	 * <p>The generations a reindex job uses are not opened here. The same
+	 * change of ownership starts the job again, and the job opens its own
+	 * source and target on its own thread pool.
+	 *
+	 * @param index
+	 *   name of the index, without a generation, or {@code null} when this
+	 *   node was given every index at once. A node that holds every index is
+	 *   the only node in the deployment, and its copies are the deployment,
+	 *   so there is nothing to fetch before a write.
+	 */
+	private void openGainedIndex(String index) {
+		if(index == null || !nodeState.isIndexer(index)) {
+			return;
+		}
+
+		if(maxOpen.isPresent() && indexes.asMap().size() >= maxOpen.getAsInt()) {
+			return;
+		}
+
+		if(
+			nodeState.ownedCount() > preloadIdleLimit
+				&& nodeState.writeLoad(index) < IDLE_WRITE_LOAD
+		) {
+			return;
+		}
+
+		String name;
+		try {
+			name = registry.resolve(IndexName.parse(index)).toString();
+		} catch(RuntimeException e) {
+			/*
+			 * A create takes the index before it writes the registry, so the
+			 * registry does not name it yet. The create opens the generation
+			 * itself. A name that stays unknown is answered when a request
+			 * asks for it.
+			 */
+			logger.atDebug()
+				.addKeyValue("index", index)
+				.setCause(e)
+				.log("Nothing to open for the index this node was given; " + e.getMessage());
+
+			return;
+		}
+
+		if(indexes.getIfPresent(name) != null) {
+			return;
+		}
+
+		try {
+			/*
+			 * On the pull executor, not the refresh thread: a full copy can
+			 * take minutes, and the refresh thread also runs the flush that a
+			 * handover waits for.
+			 */
+			pullExecutor.execute(() -> {
+				try {
+					indexes.get(name);
+				} catch(RuntimeException e) {
+					logger.atWarn()
+						.addKeyValue("index", name)
+						.setCause(e)
+						.log(
+							"Could not open the index this node was given to write,"
+								+ " the first write for it opens it instead; "
+								+ e.getMessage()
+						);
+				}
+			});
+		} catch(RejectedExecutionException e) {
+			// Shutting down, and nothing is written from here anymore
 		}
 	}
 

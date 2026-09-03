@@ -112,6 +112,19 @@ public class NodeState {
 	}
 
 	/**
+	 * Get how many indexes this node holds by name.
+	 *
+	 * <p>A node that holds every index at once answers zero, see
+	 * {@link #holdsEveryIndex()}. It was granted the indexes without any of
+	 * them being named, so there is no count to give.
+	 *
+	 * @return
+	 */
+	public int ownedCount() {
+		return owned.size();
+	}
+
+	/**
 	 * Record that {@code changes} documents of an index changed here, toward
 	 * what {@link #writeLoad(String)} answers.
 	 *

@@ -41,7 +41,7 @@ Separating pools allows you to autoscale search nodes without triggering indexer
 
 The disk on a search node is an ephemeral read cache. If local disk space runs low, the background disk sweeper configured by `EXOFIND_INDEXES_DISK_MAX_SIZE` safely deletes local copies of inactive indexes that exist in object storage.
 
-The disk on an indexer candidate holds the local copy of every index the node writes, the commits that have not reached object storage yet, and the working files of running segment merges. The disk sweep skips every index that is open, and an indexer keeps the indexes it writes open so the sweep never reaches their directories. The sweep also refuses to remove a directory that holds changes object storage does not have, and never removes a copy used more recently than `EXOFIND_INDEXES_DISK_MIN_IDLE` (default: `24h`), so it frees only the copies of indexes the node no longer writes.
+The disk on an indexer candidate holds the local copy of every index the node writes, the commits that have not reached object storage yet, and the working files of running segment merges. The disk sweep skips every index that is open. An indexer opens each index it writes as soon as it takes the index over, and keeps it open, so the sweep never reaches those directories. The sweep also refuses to remove a directory that holds changes object storage does not have, and never removes a copy used more recently than `EXOFIND_INDEXES_DISK_MIN_IDLE` (default: `24h`), so it frees only the copies of indexes the node no longer writes.
 
 Leave `EXOFIND_INDEXES_DISK_MAX_SIZE` unset on an indexer candidate. Give the node its own persistent volume and size it for the indexes it writes, with headroom for merges and for commits waiting to be pushed. A node holds a file lock on its storage directory for the lifetime of its process, so two nodes cannot share one volume.
 
@@ -71,6 +71,10 @@ As a deployment grows to hundreds of indexes, resource contention appears on ind
 Every open index on an indexer candidate maintains an active Lucene writer with dedicated document buffers and merge threads.
 
 The `EXOFIND_INDEXES_MAX_OPEN` variable caps how many indexes a node keeps open simultaneously. Setting this value too high exhausts JVM heap space and causes out-of-memory crashes. Setting it too low causes thrashing, where the node repeatedly closes and reopens writers as writes arrive for different indexes.
+
+When a candidate is given an index to write, it pulls the index copy and opens the Lucene writer at once, off the request path. The node writes that index until it hands it back, so no index is prepared that the node has no use for. Without this, the first write after a restart, a failover, or a rebalance pays for the whole copy on its own request thread, and other writes for that index wait behind it.
+
+Preparing an index costs a Lucene writer and its merge threads, so two limits apply. A node already at `EXOFIND_INDEXES_MAX_OPEN` prepares nothing, so preparing never closes an index that is answering requests. A node holding more than `EXOFIND_INDEXES_PRELOAD_IDLE_LIMIT` (default: `16`) indexes prepares only the indexes that were being written when they moved to it, which the leadership table records. An index taken over after another node's claim expired carries no write load and counts as idle. Neither limit applies to the source and target of a reindex job, because the job itself opens them on its own thread pool.
 
 ### Commit request volume against refresh polls
 
