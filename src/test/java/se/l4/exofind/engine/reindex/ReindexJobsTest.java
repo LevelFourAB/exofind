@@ -42,8 +42,9 @@ import se.l4.exofind.engine.storage.StorageMode;
 
 /**
  * Tests for filling a generation by reindexing from another one - the copy,
- * the drain at the promote, who promotes, what is refused up front, and what
- * a record left by a dead node resumes into.
+ * the drain at the promote, who promotes, what is refused up front, what a
+ * record left by a dead node resumes into, and what a node that stops while a
+ * job copies leaves behind.
  */
 public class ReindexJobsTest {
 	private static final Duration WAIT = Duration.ofSeconds(10);
@@ -350,6 +351,41 @@ public class ReindexJobsTest {
 
 		awaitPhase("catalogue", ReindexPhase.DONE);
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("2"));
+	}
+
+	@Test
+	public void stoppingWhileCopyingLeavesTheIndexesCommittable() throws Exception {
+		/*
+		 * Enough documents that the copy is still reading when the stop lands
+		 * in it - a job cut short mid-batch would take the writer of the
+		 * generation it fills with it, and everything else the node holds
+		 * would then be left open and uncommitted behind it.
+		 */
+		var source = indexes.create("catalogue", definition().build());
+		for(var i = 0; i < 50_000; i++) {
+			var key = String.format("%08d", i);
+			source.addDocument(doc(key, "Jar " + key, "preserves"));
+		}
+		source.commit();
+
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		jobs.start("catalogue@2", null, null);
+		await(() -> jobs.get("catalogue")
+			.map(job -> job.phase() == ReindexPhase.COPYING && job.documentsCopied() > 0)
+			.orElse(false));
+
+		jobs.stop();
+
+		// Both writers came through the stop, so the node can close on them
+		indexes.getOrThrow("catalogue").commit();
+		indexes.getOrThrow("catalogue@2").commit();
+		indexes.close();
+
+		// The record is left as it stood, for whoever picks the index up next
+		var job = jobs.get("catalogue").orElseThrow();
+		assertThat(job.phase(), is(ReindexPhase.COPYING));
+		assertThat(job.cursor(), is(notNullValue()));
 	}
 
 	@Test

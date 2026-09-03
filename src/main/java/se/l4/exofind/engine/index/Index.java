@@ -6772,7 +6772,11 @@ public class Index {
 	 * for it anew.
 	 *
 	 * @param commit
+	 *   whether to commit and push what this instance holds before it goes
 	 * @throws IOException
+	 *   if the commit or the push failed. The index is closed either way, so
+	 *   that the directory and the lock on it are released; what the commit
+	 *   would have carried is lost with the instance
 	 */
 	public void close(boolean commit) throws IOException {
 		if(getState() == IndexState.CLOSED) {
@@ -6785,45 +6789,57 @@ public class Index {
 		 */
 		this.commitManager.close();
 
+		IOException failed = null;
 		if(commit) {
-			this.commitChanges(PushReason.HANDOVER);
+			try {
+				this.commitChanges(PushReason.HANDOVER);
+			} catch(IOException | RuntimeException e) {
+				/*
+				 * The commit is not what the close is for. Lucene closes a
+				 * writer of its own accord when one of its writes fails, and
+				 * that writer still holds the directory and the lock on it,
+				 * which this node would keep for as long as it runs. Everything
+				 * is torn down first and the failure reported after.
+				 */
+				failed = e instanceof IOException io
+					? io
+					: new IOException("Could not commit before closing; " + e.getMessage(), e);
+			}
 		}
 
 		this.syncLock.writeLock().lock();
 		try {
-			if(state == IndexState.CLOSED) {
-				return;
-			}
+			if(state != IndexState.CLOSED) {
+				/*
+				 * Marked before anything is torn down, so a pull that is holding
+				 * the remote right now knows not to reopen what is closed here
+				 * when it comes back for the lock.
+				 */
+				state = IndexState.CLOSED;
 
-			/*
-			 * Marked before anything is torn down, so a pull that is holding
-			 * the remote right now knows not to reopen what is closed here
-			 * when it comes back for the lock.
-			 */
-			state = IndexState.CLOSED;
+				/*
+				 * Readers are closed before the writer they may have been opened
+				 * from, and the searcher manager owns every reader that has been
+				 * handed out, so it goes first.
+				 */
+				this.searcherManager.close();
+				closeMergeReader();
 
-			/*
-			 * Readers are closed before the writer they may have been opened
-			 * from, and the searcher manager owns every reader that has been
-			 * handed out, so it goes first.
-			 */
-			this.searcherManager.close();
-			closeMergeReader();
+				if(this.reader != null) {
+					this.reader.close();
+					this.reader = null;
+				}
 
-			if(this.reader != null) {
-				this.reader.close();
-				this.reader = null;
-			}
+				if(this.writer != null) {
+					this.writer.close();
+					this.writer = null;
+					this.snapshots = null;
+				}
 
-			if(this.writer != null) {
-				this.writer.close();
-				this.writer = null;
-				this.snapshots = null;
-			}
-
-			if(this.directory != null) {
-				this.directory.close();
-				this.directory = null;
+				if(this.directory != null) {
+					this.directory.close();
+					this.directory = null;
+				}
 			}
 		} finally {
 			this.syncLock.writeLock().unlock();
@@ -6834,6 +6850,10 @@ public class Index {
 		 * it would otherwise keep this index alive.
 		 */
 		this.maintenanceExecutor.shutdownNow();
+
+		if(failed != null) {
+			throw failed;
+		}
 	}
 
 }

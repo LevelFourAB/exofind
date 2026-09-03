@@ -96,6 +96,13 @@ public class ReindexJobs {
 	 */
 	private static final Duration CANCEL_WAIT = Duration.ofSeconds(15);
 
+	/**
+	 * How long a stop waits for the running jobs to end themselves. Jobs are
+	 * never interrupted, so this is a wait for the batch in flight to finish
+	 * rather than for the job.
+	 */
+	private static final Duration STOP_WAIT = Duration.ofSeconds(30);
+
 	private static final ErrorType TARGET_GENERATION_REQUIRED =
 		ErrorType.withCode("reindex:target_generation_required")
 			.withArguments("name")
@@ -230,7 +237,16 @@ public class ReindexJobs {
 		this.catchUpInterval = catchUpInterval;
 		this.promoteGrace = promoteGrace;
 
-		this.pool = Executors.newFixedThreadPool(Math.max(1, maxConcurrent));
+		/*
+		 * Daemon threads, as a stop leaves a job that has not reached its next
+		 * batch running rather than interrupting it out of Lucene - the JVM
+		 * must not wait for one that is stuck.
+		 */
+		this.pool = Executors.newFixedThreadPool(Math.max(1, maxConcurrent), runnable -> {
+			var thread = new Thread(runnable, "reindex-job");
+			thread.setDaemon(true);
+			return thread;
+		});
 		this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
 			var thread = new Thread(runnable, "reindex-jobs");
 			thread.setDaemon(true);
@@ -282,11 +298,24 @@ public class ReindexJobs {
 	void stop() {
 		stopped = true;
 		nodeState.removeListener(nodeStateListener);
-		scheduler.shutdownNow();
-		pool.shutdownNow();
+
+		/*
+		 * Shut down without interrupting what is running. A job reads the flag
+		 * above between batches and ends itself, while an interrupt that lands
+		 * in Lucene invalidates the lock the writer holds on the directory,
+		 * which closes that writer and drops everything it had not committed -
+		 * both what the job had copied and, for the source, whatever else was
+		 * waiting to be written.
+		 */
+		scheduler.shutdown();
+		pool.shutdown();
 
 		try {
-			pool.awaitTermination(5, TimeUnit.SECONDS);
+			if(!pool.awaitTermination(STOP_WAIT.toMillis(), TimeUnit.MILLISECONDS)) {
+				logger.atWarn()
+					.addKeyValue("waited", STOP_WAIT)
+					.log("Reindex jobs are still running; leaving them to the records");
+			}
 		} catch(InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}

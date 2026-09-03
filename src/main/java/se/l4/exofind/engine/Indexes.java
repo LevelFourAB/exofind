@@ -728,12 +728,14 @@ public class Indexes implements RegistryPoller.Listener {
 
 		/*
 		 * Indexes are closed here rather than left to the cache, which only
-		 * reports the entries it evicts of its own accord.
+		 * reports the entries it evicts of its own accord. One that will not
+		 * close is reported and stepped over, as the rest still have changes
+		 * of their own to commit and push before this node goes.
 		 */
 		for(var index : indexes.asMap().values()) {
 			try {
 				index.close();
-			} catch(IOException e) {
+			} catch(IOException | RuntimeException e) {
 				logger.atWarn()
 					.addKeyValue("index", index.getId())
 					.setCause(e)
