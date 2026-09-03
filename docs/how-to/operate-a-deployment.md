@@ -61,6 +61,7 @@ Example response:
   "status": "UP",
   "checks": [
     { "name": "index-registry", "status": "UP" },
+    { "name": "index-preload", "status": "UP" },
     {
       "name": "index-refresh",
       "status": "UP",
@@ -76,6 +77,13 @@ Evaluate the checks in the response body:
   remains unready, check connectivity to remote storage. If subsequent
   registry reads fail after startup, the node remains ready and continues
   serving its local copy.
+- `index-preload` (readiness): A node that kept its directory across a restart
+  opens the indexes it used most before it reports itself ready, so the
+  requests a rolling upgrade sends it do not wait for an index to open. The
+  check turns UP once those indexes are open, or once
+  `EXOFIND_INDEXES_PRELOAD_READINESS_WAIT` passes, whichever comes first. A
+  node that starts with an empty directory has nothing to open and reports UP
+  as soon as it reads the registry.
 - `index-refresh` (liveness): Reports whether the background refresh loop is
   running. If the loop stops, the node stops receiving updates and requires a
   restart. If a refresh pass fails because the remote bucket is unreachable,

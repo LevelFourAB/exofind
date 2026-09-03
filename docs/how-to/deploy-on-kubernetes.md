@@ -257,6 +257,8 @@ livenessProbe:
 
 The readiness probe prevents traffic from reaching pods that have not yet loaded the index registry. A pod that receives queries before reading the registry returns empty search results instead of an error.
 
+The probe also holds traffic back while a restarted pod reopens the indexes it served before. This applies only to pods with a persistent volume, and takes at most `EXOFIND_INDEXES_PRELOAD_READINESS_WAIT` (default: `30s`). A pod with an `emptyDir` volume starts with no index copies and becomes ready as soon as it reads the registry.
+
 Set relaxed thresholds on the liveness probe. Large index downloads and merges consume significant resources; restarting a busy node cancels in-progress operations and triggers unnecessary index failovers.
 
 ## Roll out and shut down

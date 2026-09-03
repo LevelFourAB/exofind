@@ -111,6 +111,9 @@ public class IndexesPreloadTest {
 			Duration.ofHours(1),
 			Optional.empty(),
 			preloadIdleLimit,
+			0,
+			Duration.ZERO,
+			Duration.ZERO,
 			SearchThreads.inline()
 		);
 

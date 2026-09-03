@@ -106,3 +106,32 @@ Two states indicate errors rather than lifecycle steps:
 
 For more details on index version differences, see
 [Lucene compatibility](lucene-compatibility.md).
+
+## What a restart costs
+
+Opening an index requires a manifest request to storage and a Lucene reader over
+the local directory. A newly started node holds no open indexes, so the first
+request for each index waits for this work to finish. When a node serves hundreds
+of indexes, an upgrade can result in hundreds of slow initial requests.
+
+To avoid these delays, a node reopens indexes as soon as it reads the registry.
+It ranks local copies using the same access records used by the disk sweep, then
+opens the most frequently used indexes on background threads.
+
+The node reports itself as unready while opening indexes. During a rolling
+upgrade, this status holds traffic back until the node can serve requests from
+an open index. The wait has a time limit: once the limit passes, the node
+reports itself ready and opens any remaining indexes in the background.
+
+The ranking counts search requests only. Opening an index at startup does not
+increase its score. If a node preloads an index that receives no searches, it
+stops preloading that index once other indexes outrank it.
+
+Preloading works only if the local directory persists across the restart, such
+as with a persistent volume or an in-place process restart. A node that restarts
+with an empty directory has nothing to rank or open. Like a new node, it pulls
+each index from storage when a request requires it.
+
+For settings that limit how many indexes a node opens and how long it waits
+before reporting ready, see
+[Index management](../reference/configuration.md#index-management).

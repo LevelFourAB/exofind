@@ -26,6 +26,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.collections.api.list.ListIterable;
@@ -116,6 +117,14 @@ public class Indexes implements RegistryPoller.Listener {
 	 * {@code exofind.indexes.preload.idle-limit}.
 	 */
 	private static final int DEFAULT_PRELOAD_IDLE_LIMIT = 16;
+
+	/**
+	 * The {@link #preloadMaxIndexes} used by the constructors that do not take
+	 * one: none. A test works over a directory it has just filled, where every
+	 * copy would be opened again, so a test turns the startup preload on when
+	 * it means to test it.
+	 */
+	private static final int DEFAULT_PRELOAD_MAX_INDEXES = 0;
 
 	private final NodeState nodeState;
 	private final StateSyncProvider syncProvider;
@@ -279,6 +288,52 @@ public class Indexes implements RegistryPoller.Listener {
 	private final int preloadIdleLimit;
 
 	/**
+	 * How many of the local copies this node opens again when it starts.
+	 * Zero means it opens none of them.
+	 *
+	 * <p>The copies are the indexes this node served before it restarted, so
+	 * opening them takes the work out of the first request for each of them.
+	 * Held down as well by {@link #maxOpen}, which no preload ever pushes
+	 * past.
+	 */
+	private final int preloadMaxIndexes;
+
+	/**
+	 * How long the startup preload may go on opening copies. Opens that have
+	 * started finish, and what is left is opened by the requests that ask for
+	 * it. This bounds how long a node with slow storage spends opening copies
+	 * nothing has asked for.
+	 */
+	private final Duration preloadMaxDuration;
+
+	/**
+	 * How long this node waits for the startup preload before it reports
+	 * itself ready. Measured from when the node started, so it bounds the
+	 * delay a restart adds however far the preload has come. Zero reports the
+	 * node ready without waiting.
+	 */
+	private final Duration preloadReadinessWait;
+
+	/**
+	 * When this node started, as {@link System#nanoTime()}. The
+	 * {@link #preloadReadinessWait} is measured from here.
+	 */
+	private final long startedNanos;
+
+	/**
+	 * Whether the startup preload has been started. Read and written on the
+	 * refresh thread alone, like {@link #sweptUnregistered}.
+	 */
+	private boolean preloadStarted;
+
+	/**
+	 * Whether the startup preload has stopped opening copies, however many it
+	 * opened. Stays {@code false} on a node that never read its registry, and
+	 * {@link #preloadReadinessWait} then ends the wait.
+	 */
+	private volatile boolean preloadFinished;
+
+	/**
 	 * How many bytes the local copies may take together before the disk sweep
 	 * starts removing the coldest ones. Empty means the disk is not bounded
 	 * and no sweep runs.
@@ -411,6 +466,9 @@ public class Indexes implements RegistryPoller.Listener {
 			diskSweepInterval,
 			Optional.empty(),
 			DEFAULT_PRELOAD_IDLE_LIMIT,
+			DEFAULT_PRELOAD_MAX_INDEXES,
+			Duration.ZERO,
+			Duration.ZERO,
 			SearchThreads.inline()
 		);
 	}
@@ -438,6 +496,9 @@ public class Indexes implements RegistryPoller.Listener {
 		@ConfigProperty(name = "exofind.indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval,
 		@ConfigProperty(name = "exofind.indexes.merge.floor-segment") Optional<String> mergeFloorSegment,
 		@ConfigProperty(name = "exofind.indexes.preload.idle-limit", defaultValue = "16") int preloadIdleLimit,
+		@ConfigProperty(name = "exofind.indexes.preload.max-indexes", defaultValue = "32") int preloadMaxIndexes,
+		@ConfigProperty(name = "exofind.indexes.preload.max-duration", defaultValue = "5m") Duration preloadMaxDuration,
+		@ConfigProperty(name = "exofind.indexes.preload.readiness-wait", defaultValue = "30s") Duration preloadReadinessWait,
 		SearchThreads searchThreads
 	) throws IOException {
 		this.nodeState = nodeState;
@@ -455,6 +516,10 @@ public class Indexes implements RegistryPoller.Listener {
 		this.retiring = new ConcurrentHashMap<>();
 		this.maxOpen = maxOpen;
 		this.preloadIdleLimit = preloadIdleLimit;
+		this.preloadMaxIndexes = preloadMaxIndexes;
+		this.preloadMaxDuration = preloadMaxDuration;
+		this.preloadReadinessWait = preloadReadinessWait;
+		this.startedNanos = System.nanoTime();
 		this.diskMaxSize = diskMaxSize.isPresent()
 			? OptionalLong.of(parseSize(diskMaxSize.get()))
 			: OptionalLong.empty();
@@ -942,6 +1007,16 @@ public class Indexes implements RegistryPoller.Listener {
 			}
 
 			/*
+			 * After the first read, so the registry can say which copies are
+			 * still named, and after the sweep, so nothing opens a copy the
+			 * registry no longer holds.
+			 */
+			if(!preloadStarted && registry.hasBeenRead()) {
+				preloadStarted = true;
+				preload();
+			}
+
+			/*
 			 * Pulls run next to each other so that one slow index can not
 			 * stretch the staleness of every other. The refresh still waits
 			 * for all of them, keeping the interval one between full passes.
@@ -1040,6 +1115,184 @@ public class Indexes implements RegistryPoller.Listener {
 
 		return lastCheck == null
 			|| System.nanoTime() - lastCheck >= verifyInterval.toNanos();
+	}
+
+	/**
+	 * Open the local copies this node held before it started, the ones it
+	 * used most first.
+	 *
+	 * <p>A node that keeps its directory across a restart - a persistent
+	 * volume, or a process restarted in place - comes back holding copies of
+	 * the indexes it was serving. Opening one costs a manifest request and a
+	 * Lucene reader, and without this every one of those is paid by the first
+	 * request that asks for the index. A node holding hundreds of them meets
+	 * every upgrade with hundreds of stalled requests.
+	 *
+	 * <p>What is opened is bounded three ways: {@link #preloadMaxIndexes},
+	 * {@link #maxOpen}, so this never closes what it opens, and
+	 * {@link #preloadMaxDuration}, after which the copies that are left are
+	 * opened by the requests that ask for them. The opens run on the pull
+	 * executor, so the refresh thread is free while they do, and readiness
+	 * waits for them through {@link #hasSettledPreload()}.
+	 *
+	 * <p>Ranking uses the usage records the disk sweep keeps, so a node opens
+	 * the indexes it was asked for most often. An index this node holds no
+	 * copy of is left alone: fetching one is the work a request does, and
+	 * doing it here would pull the whole deployment onto every node.
+	 */
+	private void preload() {
+		var wanted = preloadMaxIndexes;
+		if(maxOpen.isPresent()) {
+			wanted = Math.min(wanted, maxOpen.getAsInt() - indexes.asMap().size());
+		}
+
+		if(wanted <= 0) {
+			preloadFinished = true;
+			return;
+		}
+
+		var names = preloadCandidates(wanted);
+		if(names.isEmpty()) {
+			preloadFinished = true;
+			return;
+		}
+
+		logger.atInfo()
+			.addKeyValue("indexes", names.size())
+			.log("Opening the indexes this node held before it started");
+
+		var opened = new AtomicInteger();
+		var deadline = System.nanoTime() + preloadMaxDuration.toNanos();
+		var opens = new ArrayList<CompletableFuture<Void>>();
+
+		try {
+			for(var name : names) {
+				opens.add(CompletableFuture.runAsync(
+					() -> openPreloaded(name, deadline, opened),
+					pullExecutor
+				));
+			}
+		} catch(RejectedExecutionException e) {
+			// Shutting down, so there is nothing left to open early for
+		}
+
+		CompletableFuture.allOf(opens.toArray(CompletableFuture[]::new))
+			.whenComplete((result, e) -> {
+				logger.atInfo()
+					.addKeyValue("opened", opened.get())
+					.addKeyValue("indexes", names.size())
+					.log("Opened the indexes this node held before it started");
+
+				preloadFinished = true;
+			});
+	}
+
+	/**
+	 * The copies the startup preload opens, the ones this node used most
+	 * first and the ones it used last first among equals. Only the generation
+	 * an index answers for is named: an older generation answers a request
+	 * that asks for it by name, and a reindex opens what it needs itself.
+	 *
+	 * @param limit
+	 *   how many names to return at most
+	 */
+	private List<String> preloadCandidates(int limit) {
+		record Candidate(String name, double score, long lastUsedMs) {
+		}
+
+		List<Path> copies;
+		try(var paths = Files.list(indexRoot)) {
+			copies = paths.filter(Files::isDirectory).toList();
+		} catch(IOException e) {
+			logger.atWarn()
+				.setCause(e)
+				.log("Could not look at the local copies to open them; " + e.getMessage());
+
+			return List.of();
+		}
+
+		var now = Instant.now();
+		var candidates = new ArrayList<Candidate>();
+
+		for(var path : copies) {
+			var directory = path.getFileName().toString();
+			var name = IndexName.tryParse(directory).orElse(null);
+			if(name == null || !name.isPinned() || indexes.getIfPresent(directory) != null) {
+				continue;
+			}
+
+			var registered = registry.get(name.index()).orElse(null);
+			if(registered == null
+				|| !registered.isSupported()
+				|| !registered.liveGeneration().orElse("").equals(name.generation())) {
+				continue;
+			}
+
+			var usage = IndexUsageFile.read(path);
+			candidates.add(new Candidate(
+				directory,
+				IndexUsageFile.decayedOpens(usage, now, diskHalfLife),
+				usage.getLastUsedMs()
+			));
+		}
+
+		candidates.sort(
+			Comparator.comparingDouble(Candidate::score)
+				.thenComparingLong(Candidate::lastUsedMs)
+				.reversed()
+		);
+
+		var names = new ArrayList<String>();
+		for(var candidate : candidates) {
+			if(names.size() >= limit) {
+				break;
+			}
+
+			names.add(candidate.name());
+		}
+
+		return names;
+	}
+
+	/**
+	 * Open one copy for the startup preload, unless the preload has run out
+	 * of time or the node has filled up while this one waited its turn.
+	 *
+	 * @param name
+	 *   full name of the generation
+	 * @param deadline
+	 *   {@link System#nanoTime()} after which nothing more is opened
+	 * @param opened
+	 *   counts what was opened, for the line saying how far the preload got
+	 */
+	private void openPreloaded(String name, long deadline, AtomicInteger opened) {
+		if(System.nanoTime() - deadline >= 0) {
+			return;
+		}
+
+		if(maxOpen.isPresent() && indexes.asMap().size() >= maxOpen.getAsInt()) {
+			return;
+		}
+
+		try {
+			/*
+			 * Loaded without recording an open. A preload that counted itself
+			 * would rank what it opened above what was asked for, and go on
+			 * preloading the same copies whether or not anyone searched them.
+			 */
+			indexes.get(name, key -> loadIndex(key, false));
+			opened.incrementAndGet();
+		} catch(RuntimeException e) {
+			/*
+			 * The request that asks for the index opens it again and answers
+			 * with what went wrong. This only says why the preload did not
+			 * get there first.
+			 */
+			logger.atDebug()
+				.addKeyValue("index", name)
+				.setCause(e)
+				.log("Could not open a held index before it was asked for; " + e.getMessage());
+		}
 	}
 
 	/**
@@ -1384,7 +1637,26 @@ public class Indexes implements RegistryPoller.Listener {
 		}
 	}
 
+	/**
+	 * Open a generation for the cache, counting an open against the index.
+	 * Every request for an index that is not open goes through here, so the
+	 * count says how often the index was asked for.
+	 */
 	private Index loadIndex(String index) {
+		return loadIndex(index, true);
+	}
+
+	/**
+	 * Open a generation for the cache.
+	 *
+	 * @param index
+	 *   full name of the generation
+	 * @param recordOpen
+	 *   whether to count this as the index having been wanted. False for the
+	 *   startup preload, which decides what to open from the counts and would
+	 *   otherwise decide from what it opened last time
+	 */
+	private Index loadIndex(String index, boolean recordOpen) {
 		// Held until the pull is done, keeping the disk sweep off the directory
 		var lock = nameLock(index);
 		lock.lock();
@@ -1403,7 +1675,9 @@ public class Indexes implements RegistryPoller.Listener {
 				throw new UncheckedIOException(e);
 			}
 
-			recordOpened(index, dataPath);
+			if(recordOpen) {
+				recordOpened(index, dataPath);
+			}
 
 			var parsed = IndexName.parse(index);
 			var loaded = new Index(
@@ -1542,6 +1816,29 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	public boolean hasReadRegistry() {
 		return registry.hasBeenRead();
+	}
+
+	/**
+	 * Get whether this node has waited long enough for the copies it held
+	 * before it started to be opened again.
+	 *
+	 * <p>A node that has just started holds copies of the indexes it served,
+	 * and opens the most used of them before anything asks for one. A search
+	 * arriving before that is done waits for its index to be opened, so a
+	 * node keeps traffic away until this answers {@code true}.
+	 *
+	 * <p>The wait is capped, so this turns true whether or not the preload
+	 * finished. What is left then opens in the background while the node
+	 * serves. A cap of zero waits for nothing.
+	 *
+	 * @return
+	 */
+	public boolean hasSettledPreload() {
+		if(preloadFinished || preloadReadinessWait.isZero() || preloadReadinessWait.isNegative()) {
+			return true;
+		}
+
+		return System.nanoTime() - startedNanos >= preloadReadinessWait.toNanos();
 	}
 
 	/**

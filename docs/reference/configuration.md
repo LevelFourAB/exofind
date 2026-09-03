@@ -145,6 +145,14 @@ The following table lists index management configuration variables:
 | `EXOFIND_SETTINGS_REFRESH_INTERVAL` | Longest a node waits before it considers re-reading the search settings of an index it serves, and the shortest it leaves between two reads of the same index's settings. Changing or removing settings can take up to this interval to reach other nodes; the node that served the change applies it immediately. | `10s` |
 | `EXOFIND_INDEXES_CLOSE_GRACE_PERIOD` | Grace period that an evicted index waits for in-flight requests before closing. | `10s` |
 | `EXOFIND_INDEXES_PRELOAD_IDLE_LIMIT` | Number of indexes a node may hold before it stops preparing indexes that nobody has written recently. When a candidate node is given an index to write, it pulls the index copy and opens the Lucene writer straight away so the first write does not have to wait for that work. Below the limit, a node prepares every index it is given. Above the limit, a node prepares only indexes that were being written when they moved to it. Set to `0` to prepare only indexes that were being written. A node already at `EXOFIND_INDEXES_MAX_OPEN` prepares nothing, regardless of this setting. | `16` |
+| `EXOFIND_INDEXES_PRELOAD_MAX_INDEXES` | Number of local index copies a node opens when it starts, before any request asks for one. The node ranks the copies it holds by how often it opened them, most used first, and opens the live generation of each. It never opens more than `EXOFIND_INDEXES_MAX_OPEN` in total. Set to `0` to open nothing until a request arrives. | `32` |
+| `EXOFIND_INDEXES_PRELOAD_MAX_DURATION` | Time after which a node stops opening the copies it held. Opens that have started finish. A request opens whatever is left when it asks for it. | `5m` |
+| `EXOFIND_INDEXES_PRELOAD_READINESS_WAIT` | Time a node waits for those indexes to open before it reports itself ready, measured from node startup. Until the node is ready, or this time passes, `/q/health/ready` reports the `index-preload` check as `DOWN`. Set to `0` to report readiness without waiting. | `30s` |
+
+Opening an index at startup does not count toward the ranking that decides what
+a node opens at its next startup. Only a request that opens an index raises its
+score. This ranking also decides which copies the disk sweep removes first, as
+described in [Disk use](#disk-use).
 
 A node reads the index registry once for everything that works from it, at the
 shorter of `EXOFIND_INDEXES_REFRESH_INTERVAL` and

@@ -73,7 +73,8 @@ public class HealthEndpointTest {
 	}
 
 	@Test
-	void testTheNodeBecomesReadyOnceItHasReadTheRegistry() throws InterruptedException {
+	void testTheNodeBecomesReadyOnceItHasReadTheRegistryAndOpenedWhatItHolds()
+		throws InterruptedException {
 		var deadline = System.nanoTime() + READY_WITHIN.toNanos();
 
 		while(true) {
@@ -87,6 +88,10 @@ public class HealthEndpointTest {
 				assertThat(
 					response.jsonPath().getList("checks.name"),
 					hasItem("index-registry")
+				);
+				assertThat(
+					response.jsonPath().getList("checks.name"),
+					hasItem("index-preload")
 				);
 				return;
 			}
