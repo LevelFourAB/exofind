@@ -552,16 +552,24 @@ el('suggestions').addEventListener('click', event => {
 
 	elements.query.value = button.textContent;
 	state.text = button.textContent;
+
+	// A sample query stands on its own; filters left from the last search
+	// would hide most of what it is there to show
+	clearFilters();
 	elements.query.focus();
 	run();
 });
 
 elements.clear.addEventListener('click', () => {
+	clearFilters();
+	run();
+});
+
+function clearFilters() {
 	for(const facet of FACETS) state.chosen.get(facet.name).clear();
 	state.made = null;
 	state.onView = false;
-	run();
-});
+}
 
 async function showSize() {
 	try {
