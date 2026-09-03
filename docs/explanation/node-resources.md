@@ -98,6 +98,36 @@ The results collected before the budget ran out are dropped. A partial page carr
 
 The two kinds are not interchangeable. Request caps are predictable, so a client can be written against them, but they bound a description of the work instead of the work itself. A two-clause query over a large index costs more than a twenty-clause query over a small one. The time budget bounds the work itself, and a caller cannot tell in advance which searches it stops.
 
+## Threads of a single search
+
+A search arrives on a single request thread, but the node can split its execution into independent pieces:
+
+- Lucene ranks the index across slices of segments.
+- The node collects each index segment separately.
+- The node counts each facet separately.
+
+The `EXOFIND_SEARCH_THREADS` setting controls how many worker threads the node lends to these pieces across all active searches.
+
+Distributing a search across multiple threads trades throughput for latency. When your node serves many concurrent small requests, allocating cores across distinct requests yields higher overall throughput. When your node serves fewer large requests, allocating cores across the pieces of each request reduces query latency.
+
+The search thread pool adapts to both workloads:
+
+- **Fallback to the request thread:** The request thread submits every piece to the pool and immediately executes any piece that the pool has not yet claimed. If worker threads are idle, the pieces run concurrently and the query finishes sooner. If all pool threads are busy, the request thread runs every remaining piece in sequence. On a saturated node, the only overhead of the pool is the task handover.
+- **Small searches stay on the request thread:** Waking a pool thread costs about as much as counting a few thousand matches. A search with less work than that to split, such as a query matching a few hundred documents, runs on its request thread and answers as fast as it does with no pool. Small segments are handed over together for the same reason.
+- **Unified time budgets:** Worker threads run each piece under the time budget of the originating request. When `EXOFIND_SEARCH_TIMEOUT` expires, all threads working on that request stop together.
+- **Isolated maintenance threads:** Reindexing and index writing run on dedicated threads. They never borrow threads from the search pool, preventing background writes and reindexes from slowing down search queries.
+
+Because a busy pool introduces minimal overhead, `EXOFIND_SEARCH_THREADS` defaults to `auto`. In `auto` mode, the node allocates one thread per CPU core available to the process, honoring container CPU limits.
+
+Configure this setting based on your node's workload:
+
+- Set `EXOFIND_SEARCH_THREADS=0` on a node where query throughput under heavy load takes priority over single-request latency. Setting `0` disables the pool and runs every search entirely on its request thread.
+- Set `EXOFIND_SEARCH_THREADS` to a lower number to reserve CPU cores for request handling and other process tasks.
+
+The `exofind.search.pieces` meter records whether pieces run on pool threads or on request threads. If most pieces run on the request thread, the pool is busy when requests arrive, indicating that the node is running near its CPU capacity.
+
+Worker threads do not alter search results or facet counts. Worker threads collect each segment into a bitset of its own, and the node reads the bitsets in index order. Each facet is counted from start to finish on a single thread. The node keeps facet counts for later searches only after all pieces complete within the time budget. If a search exceeds its time budget on any thread, the node keeps nothing and drops the partial results, as explained in [Cost of a single search](#cost-of-a-single-search).
+
 ## Kernel memory mapping limits
 
 Lucene maps multiple files for each index segment. A node serving numerous indexes or handling frequent segment merges can open tens of thousands of memory mappings.

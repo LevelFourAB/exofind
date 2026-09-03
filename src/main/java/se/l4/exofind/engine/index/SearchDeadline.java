@@ -28,9 +28,12 @@ import org.apache.lucene.index.QueryTimeout;
  * rewriting a query, reading stored fields, or highlighting a page falls
  * outside it.
  *
- * <p>The budget belongs to the thread that opened the scope, and a search runs
- * on the thread that asked for it. A scope opened on one thread bounds no work
- * on another.
+ * <p>The budget belongs to the thread that opened the scope. A search runs on
+ * the thread that asked for it, and on the threads {@link SearchThreads} lends
+ * it, which carry the budget of the requesting thread while they run its
+ * work: the threads read one budget, so they stop together and the requesting
+ * thread sees that they did. Work handed to any other thread runs without a
+ * budget, and nothing reports that it did.
  */
 public final class SearchDeadline implements QueryTimeout {
 	/**
@@ -54,16 +57,43 @@ public final class SearchDeadline implements QueryTimeout {
 	 *   the scope, to close on the thread that opened it
 	 */
 	public static Scope start(Duration budget) {
-		var previous = CURRENT.get();
-
 		if(budget == null || budget.isZero() || budget.isNegative()) {
-			CURRENT.remove();
-			return new Scope(null, previous);
+			return attach(null);
 		}
 
-		var opened = new Budget(System.nanoTime() + budget.toNanos());
-		CURRENT.set(opened);
-		return new Scope(opened, previous);
+		return attach(new Budget(System.nanoTime() + budget.toNanos()));
+	}
+
+	/**
+	 * The budget in force on this thread, to carry to another thread through
+	 * {@link #attach(Budget)}. {@code null} on a thread with no scope open or
+	 * one opened without a budget.
+	 */
+	static Budget current() {
+		return CURRENT.get();
+	}
+
+	/**
+	 * Bound the searches this thread runs by a budget another thread opened,
+	 * until the returned scope is closed. The two threads read the same
+	 * budget: either of them running past it stops both.
+	 *
+	 * @param budget
+	 *   the budget to share, or {@code null} to run unbounded until the scope
+	 *   is closed
+	 * @return
+	 *   the scope, to close on the thread that attached it
+	 */
+	static Scope attach(Budget budget) {
+		var previous = CURRENT.get();
+
+		if(budget == null) {
+			CURRENT.remove();
+		} else {
+			CURRENT.set(budget);
+		}
+
+		return new Scope(budget, previous);
 	}
 
 	/**
@@ -104,10 +134,14 @@ public final class SearchDeadline implements QueryTimeout {
 
 	/**
 	 * A budget in force, and whether searching has already run past it.
+	 *
+	 * <p>Read by every thread the search runs on, so running past it is
+	 * written through a volatile field: the other threads see the stop on
+	 * their next window rather than when they run past it on their own.
 	 */
-	private static final class Budget {
+	static final class Budget {
 		private final long deadline;
-		private boolean exceeded;
+		private volatile boolean exceeded;
 
 		Budget(long deadline) {
 			this.deadline = deadline;

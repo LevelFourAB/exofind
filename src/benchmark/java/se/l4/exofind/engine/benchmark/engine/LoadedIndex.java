@@ -14,6 +14,8 @@ import se.l4.exofind.engine.benchmark.corpus.Corpora;
 import se.l4.exofind.engine.benchmark.corpus.Corpus;
 import se.l4.exofind.engine.benchmark.corpus.Words;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.SearchThreads;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 
 /**
  * A committed index of a corpus, opened for the length of a trial.
@@ -36,12 +38,22 @@ public class LoadedIndex {
 	@Param({ "100000" })
 	public int size;
 
+	/**
+	 * How many threads a search spreads over besides the benchmark thread, as
+	 * {@code EXOFIND_SEARCH_THREADS} takes it. Zero by default, so a
+	 * benchmark measures the cost of the work rather than the cores of the
+	 * machine; {@code auto} measures what a node answers in by default.
+	 */
+	@Param({ "0" })
+	public String threads;
+
 	public Corpus spec;
 	public Index index;
 	public Words words;
 	public Corpus.Roles roles;
 
 	private Path directory;
+	private SearchThreads searchThreads;
 
 	@Setup(Level.Trial)
 	public void open() throws IOException {
@@ -49,12 +61,14 @@ public class LoadedIndex {
 		words = spec.words();
 		roles = spec.roles();
 		directory = BenchmarkIndexes.copyOf(BenchmarkIndexes.template(spec, size));
-		index = BenchmarkIndexes.open(spec.name(), directory);
+		searchThreads = new SearchThreads(RequestMetrics.none(), SearchThreads.parse(threads));
+		index = BenchmarkIndexes.open(spec.name(), directory, searchThreads);
 	}
 
 	@TearDown(Level.Trial)
 	public void close() throws IOException {
 		index.close(false);
+		searchThreads.close();
 		BenchmarkIndexes.delete(directory);
 	}
 

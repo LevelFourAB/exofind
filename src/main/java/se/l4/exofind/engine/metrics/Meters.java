@@ -32,6 +32,17 @@ public final class Meters {
 	public static final String SEARCH_RELAXATION = "exofind.search.relaxation";
 
 	/**
+	 * Pieces of search work handed to the search threads of the node - the
+	 * segments a search collects and the facets it counts - by which thread
+	 * ran each. Tagged with {@link #TAG_THREAD}.
+	 *
+	 * <p>The slices Lucene ranks on the same threads are not counted here.
+	 * Pieces run on the request thread while the pool holds threads are the
+	 * pool being busy when the search reached it.
+	 */
+	public static final String SEARCH_PIECES = "exofind.search.pieces";
+
+	/**
 	 * Time a write request took on the node that served it. Tagged with
 	 * {@link #TAG_OPERATION} and {@link #TAG_OUTCOME}.
 	 */
@@ -262,6 +273,18 @@ public final class Meters {
 
 	/** Error code from the API, as {@code docs/reference/errors.md} lists it. */
 	public static final String TAG_CODE = "code";
+
+	/**
+	 * Which kind of thread ran a piece of search work: {@link #THREAD_POOL}
+	 * or {@link #THREAD_REQUEST}.
+	 */
+	public static final String TAG_THREAD = "thread";
+
+	/** A piece ran on one of the search threads of the node. */
+	public static final String THREAD_POOL = "pool";
+
+	/** A piece ran on the thread of the request that handed it over. */
+	public static final String THREAD_REQUEST = "request";
 
 	/**
 	 * Why something was refused or given up: the reason a credential was

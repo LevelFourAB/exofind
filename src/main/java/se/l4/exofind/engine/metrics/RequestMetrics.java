@@ -74,6 +74,24 @@ public class RequestMetrics {
 	}
 
 	/**
+	 * Record pieces of search work handed to the search threads of the node.
+	 *
+	 * @param thread
+	 *   which kind of thread ran the pieces, {@link Meters#THREAD_POOL} or
+	 *   {@link Meters#THREAD_REQUEST}
+	 * @param count
+	 *   how many pieces ran there; nothing is recorded for zero
+	 */
+	public void recordSearchPieces(String thread, long count) {
+		if(count <= 0) {
+			return;
+		}
+
+		registry.counter(Meters.SEARCH_PIECES, Meters.TAG_THREAD, thread)
+			.increment(count);
+	}
+
+	/**
 	 * Record a write served by this node.
 	 *
 	 * @param operation

@@ -6,12 +6,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicLong;
 
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.benchmark.corpus.Corpus;
+import se.l4.exofind.engine.index.CommitPolicy;
+import se.l4.exofind.engine.index.DocumentCache;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.SearchThreads;
 import se.l4.exofind.engine.index.state.NoopSync;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 
 /**
  * Opens indexes for the benchmarks, and keeps the ones they search on disk so
@@ -56,10 +61,34 @@ public final class BenchmarkIndexes {
 	 * <p>The caller owns the returned index and has to close it.
 	 */
 	public static Index open(String name, Path directory) throws IOException {
+		return open(name, directory, SearchThreads.inline());
+	}
+
+	/**
+	 * Open the index in a directory, whether or not it holds one already, as
+	 * the node that writes it, with its searches spread over the given
+	 * threads.
+	 *
+	 * <p>The caller owns the returned index and has to close it, and owns the
+	 * threads too.
+	 */
+	public static Index open(String name, Path directory, SearchThreads searchThreads)
+		throws IOException
+	{
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
 
-		var index = new Index(nodeState, name, directory, new NoopSync());
+		var index = new Index(
+			nodeState,
+			name,
+			directory,
+			new NoopSync(),
+			CommitPolicy.disabled(),
+			DocumentCache.disabled(),
+			RequestMetrics.none(),
+			OptionalLong.empty(),
+			searchThreads
+		);
 		index.pull();
 		return index;
 	}

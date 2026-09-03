@@ -171,6 +171,8 @@ Common options:
 | `-rff <file>` | Results output file path (for example, `-rff before.json`). |
 | `-p <param>=<value>` | Benchmark parameter (for example, `-p corpus=catalogue -p size=100000`). |
 
+Search benchmarks default to `threads=0` so a result measures the work rather than the machine's cores. Pass `-p threads=auto` to measure a search spread over the threads a node holds by default, or `-p threads=0,auto` to compare both in one run. The parameter takes the values of `EXOFIND_SEARCH_THREADS`.
+
 ## Related
 
 - [Searching an index](search-an-index.md) - The requests the search benchmarks send.

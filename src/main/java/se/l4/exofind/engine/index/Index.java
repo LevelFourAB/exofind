@@ -21,6 +21,7 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -62,6 +63,7 @@ import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.QueryRescorer;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.ScorerSupplier;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
@@ -405,6 +407,14 @@ public class Index {
 	private final IndexSearcherManager searcherManager;
 
 	/**
+	 * The threads a search spreads over besides the one that asked for it,
+	 * see {@link SearchThreads}. Handed to every searcher opened over the
+	 * reader of this index, and to the collecting and counting done here
+	 * outside Lucene's own search.
+	 */
+	private final SearchThreads searchThreads;
+
+	/**
 	 * Finds the documents of the index among the values of object fields,
 	 * caching the answer per segment. Held here so the cache lives as long as
 	 * the index rather than a single search.
@@ -547,6 +557,8 @@ public class Index {
 	}
 
 	/**
+	 * Open an index whose searches run on the thread that asks for them.
+	 *
 	 * @param mergeFloorSegment
 	 *   segment size in bytes under which Lucene merges segments toward that
 	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
@@ -561,8 +573,41 @@ public class Index {
 		RequestMetrics metrics,
 		OptionalLong mergeFloorSegment
 	) {
+		this(
+			nodeState,
+			name,
+			localPath,
+			sync,
+			commitPolicy,
+			documentCache,
+			metrics,
+			mergeFloorSegment,
+			SearchThreads.inline()
+		);
+	}
+
+	/**
+	 * @param mergeFloorSegment
+	 *   segment size in bytes under which Lucene merges segments toward that
+	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
+	 * @param searchThreads
+	 *   the threads a search may spread over besides its own, see
+	 *   {@link SearchThreads}
+	 */
+	public Index(
+		NodeState nodeState,
+		String name,
+		Path localPath,
+		StateSync sync,
+		CommitPolicy commitPolicy,
+		DocumentCache documentCache,
+		RequestMetrics metrics,
+		OptionalLong mergeFloorSegment,
+		SearchThreads searchThreads
+	) {
 		this.metrics = metrics;
 		this.mergeFloorSegment = mergeFloorSegment;
+		this.searchThreads = searchThreads;
 		this.nodeState = nodeState;
 		this.id = name;
 		this.indexName = IndexName.parse(name).index();
@@ -918,13 +963,14 @@ public class Index {
 
 	/**
 	 * Open a searcher over a reader: it scores with the similarity of this
-	 * index, and it stops collecting when the thread searching has run out of
-	 * time.
+	 * index, it ranks its slices on the search threads of the node, and it
+	 * stops collecting when the thread searching has run out of time.
 	 *
 	 * @see SearchDeadline
+	 * @see SearchThreads
 	 */
 	private IndexSearcher newSearcher(IndexReader reader) {
-		var searcher = new IndexSearcher(reader);
+		var searcher = new IndexSearcher(reader, searchThreads.executor());
 		searcher.setSimilarity(similarity);
 
 		/*
@@ -5647,9 +5693,24 @@ public class Index {
 	}
 
 	/**
-	 * Walk every gathered scope once, read the facets counted over it and
-	 * keep what each answered for the next search asking for it - see
+	 * Walk every gathered scope, read the facets counted over it and keep
+	 * what each answered for the next search asking for it - see
 	 * {@link FacetStates}.
+	 *
+	 * <p>The walks run on the search threads of the node beside the thread of
+	 * the request. A walk with several facets is split between threads by its
+	 * facets: each part walks the same matches and feeds its own facets, and a
+	 * facet is fed by one thread from start to end, so no count is shared
+	 * between threads. The matches are read once per part rather than once
+	 * per walk, which is cheap next to the counting - see {@link FacetWalk}.
+	 * A node with no search threads walks each scope once, as one part.
+	 *
+	 * <p>The work of a walk is its matches times its facets, which is what
+	 * says how many parts it is worth - see {@link SearchThreads#pieceWork()}
+	 * - and whether the walks are worth handing over at all. A walk over
+	 * everything the reader holds counts as no work: what each segment
+	 * counted for it is kept across searches, so the walk reads counts rather
+	 * than making them, and splitting it wakes threads for nothing.
 	 *
 	 * @param walks
 	 *   the facets waiting per scope
@@ -5661,9 +5722,54 @@ public class Index {
 		MutableMap<FacetMatches, MutableList<PendingFacet>> walks,
 		MutableMap<String, SearchResult.Facet> counts
 	) throws IOException {
-		for(var walk : walks.keyValuesView()) {
-			FacetWalk.walk(walk.getOne(), walk.getTwo().collect(PendingFacet::count));
+		var facets = 0;
+		for(var pending : walks.valuesView()) {
+			facets += pending.size();
+		}
 
+		/*
+		 * Every thread gets a part of the counting to do, shared out across
+		 * the walks by how many facets each holds - and no finer than the
+		 * work justifies, since a part with nobody to run it or with too
+		 * little in it only pays for being handed over.
+		 */
+		var threads = searchThreads.pieces();
+		var pieceWork = searchThreads.pieceWork();
+		var parts = new ArrayList<Callable<Void>>();
+		var work = 0L;
+		for(var walk : walks.keyValuesView()) {
+			var matches = walk.getOne();
+			var counting = walk.getTwo().collect(PendingFacet::count);
+
+			var walkWork = matches.whole() != null
+				? 0L
+				: matchCount(matches.hits()) * counting.size();
+			work += walkWork;
+
+			var share = 1;
+			if(threads > 1 && walkWork > 0) {
+				share = (int) Math.ceil(counting.size() * (double) threads / facets);
+				share = Math.min(share, counting.size());
+				share = (int) Math.min(share, Math.max(1, walkWork / Math.max(1, pieceWork)));
+				share = Math.max(1, share);
+			}
+
+			for(var i = 0; i < share; i++) {
+				var part = counting.subList(
+					i * counting.size() / share,
+					(i + 1) * counting.size() / share
+				);
+
+				parts.add(() -> {
+					FacetWalk.walk(matches, part);
+					return null;
+				});
+			}
+		}
+
+		searchThreads.invokeAll(parts, work);
+
+		for(var walk : walks.keyValuesView()) {
 			for(var pending : walk.getTwo()) {
 				var counted = pending.count().result();
 				counts.put(pending.facet().name(), counted);
@@ -5714,13 +5820,21 @@ public class Index {
 	 * <p>Iterating a scorer runs the two-phase check of the queries that have
 	 * one, so the bitset holds what matched and never an approximation.
 	 *
-	 * <p>A segment is poured in windows, and the {@link SearchDeadline} of the
-	 * calling thread is asked between them instead of per document.
-	 * Collection over a spent budget stops where it is and leaves the segments
-	 * after it untouched, so counts made from it describe part of the index
-	 * and are not kept - see {@link FacetStates}.
+	 * <p>The segments are poured on the search threads of the node beside the
+	 * thread of the request, each into a bitset of its own, and the matches
+	 * are answered in the order of the segments however the pouring was
+	 * shared out. What the query expects to match in a segment, as its scorer
+	 * estimates it, is the work of pouring it: segments in a row are handed
+	 * over together until they hold a piece of work between them, so a small
+	 * segment does not cost a handover of its own, and a query expecting too
+	 * little in all to be worth handing over is poured on the request thread
+	 * - see {@link SearchThreads#pieceWork()}. A segment is poured in windows, and the
+	 * {@link SearchDeadline} of the search is asked between them instead of
+	 * per document. Collection over a spent budget stops where it is and
+	 * leaves the segments not yet started untouched, so counts made from it
+	 * describe part of the index and are not kept - see {@link FacetStates}.
 	 */
-	private static List<FacetsCollector.MatchingDocs> collect(
+	private List<FacetsCollector.MatchingDocs> collect(
 		IndexSearcher searcher,
 		org.apache.lucene.search.Query query
 	) throws IOException {
@@ -5730,64 +5844,130 @@ public class Index {
 			1f
 		);
 
-		var matches = new ArrayList<FacetsCollector.MatchingDocs>();
+		var pieceWork = searchThreads.pieceWork();
+		var pieces = new ArrayList<Callable<List<FacetsCollector.MatchingDocs>>>();
+		var work = 0L;
+
+		var group = new ArrayList<Segment>();
+		var groupWork = 0L;
 		for(var context : searcher.getIndexReader().leaves()) {
 			var supplier = weight.scorerSupplier(context);
 			if(supplier == null) {
 				continue;
 			}
 
-			var leaf = context.reader();
-			var maxDoc = leaf.maxDoc();
-			var documents = new FixedBitSet(maxDoc);
+			// An estimate, and one a scorer may answer with the whole range of a long
+			var cost = supplier.cost();
+			work = Math.min(Long.MAX_VALUE - work, cost) + work;
+			groupWork = Math.min(Long.MAX_VALUE - groupWork, cost) + groupWork;
 
-			var iterator = supplier.get(Long.MAX_VALUE).iterator();
-			var stopped = false;
-			for(var doc = iterator.nextDoc(); doc < maxDoc; doc = iterator.docID()) {
-				if(SearchDeadline.INSTANCE.shouldExit()) {
-					stopped = true;
-					break;
-				}
-
-				iterator.intoBitSet(
-					(int) Math.min((long) doc + COLLECT_WINDOW, maxDoc),
-					documents,
-					0
-				);
-			}
-
-			var liveDocs = leaf.getLiveDocs();
-			if(liveDocs instanceof FixedBitSet live) {
-				documents.and(live);
-			} else if(liveDocs != null) {
-				var doc = documents.nextSetBit(0);
-				while(doc != DocIdSetIterator.NO_MORE_DOCS) {
-					if(!liveDocs.get(doc)) {
-						documents.clear(doc);
-					}
-
-					doc = doc + 1 < maxDoc
-						? documents.nextSetBit(doc + 1)
-						: DocIdSetIterator.NO_MORE_DOCS;
-				}
-			}
-
-			var count = documents.cardinality();
-			if(count > 0) {
-				matches.add(new FacetsCollector.MatchingDocs(
-					context,
-					new BitDocIdSet(documents, count),
-					count,
-					null
-				));
-			}
-
-			if(stopped) {
-				break;
+			group.add(new Segment(supplier, context));
+			if(groupWork >= pieceWork) {
+				pieces.add(collecting(group));
+				group = new ArrayList<>();
+				groupWork = 0;
 			}
 		}
 
+		if(!group.isEmpty()) {
+			pieces.add(collecting(group));
+		}
+
+		var matches = new ArrayList<FacetsCollector.MatchingDocs>();
+		for(var collected : searchThreads.invokeAll(pieces, work)) {
+			matches.addAll(collected);
+		}
+
 		return matches;
+	}
+
+	/**
+	 * A segment waiting to be poured, with the scorer of the query over it.
+	 */
+	private record Segment(ScorerSupplier supplier, LeafReaderContext context) {
+	}
+
+	/**
+	 * One piece of collecting: the segments of the group poured in order,
+	 * answering the matches of the ones holding any.
+	 */
+	private static Callable<List<FacetsCollector.MatchingDocs>> collecting(List<Segment> group) {
+		return () -> {
+			var matches = new ArrayList<FacetsCollector.MatchingDocs>(group.size());
+			for(var segment : group) {
+				var collected = collect(segment.supplier(), segment.context());
+				if(collected != null) {
+					matches.add(collected);
+				}
+			}
+
+			return matches;
+		};
+	}
+
+	/**
+	 * Collect the matches of one segment, see {@link #collect(IndexSearcher,
+	 * org.apache.lucene.search.Query)}.
+	 *
+	 * @param supplier
+	 *   the scorer of the query over the segment, made on the thread of the
+	 *   request so that the query cache sees every segment from one place
+	 * @return
+	 *   the matches, or {@code null} where the segment holds none or the
+	 *   budget had already run out when its turn came
+	 */
+	private static FacetsCollector.MatchingDocs collect(
+		ScorerSupplier supplier,
+		LeafReaderContext context
+	) throws IOException {
+		if(SearchDeadline.INSTANCE.shouldExit()) {
+			return null;
+		}
+
+		var leaf = context.reader();
+		var maxDoc = leaf.maxDoc();
+		var documents = new FixedBitSet(maxDoc);
+
+		var iterator = supplier.get(Long.MAX_VALUE).iterator();
+		for(var doc = iterator.nextDoc(); doc < maxDoc; doc = iterator.docID()) {
+			if(SearchDeadline.INSTANCE.shouldExit()) {
+				break;
+			}
+
+			iterator.intoBitSet(
+				(int) Math.min((long) doc + COLLECT_WINDOW, maxDoc),
+				documents,
+				0
+			);
+		}
+
+		var liveDocs = leaf.getLiveDocs();
+		if(liveDocs instanceof FixedBitSet live) {
+			documents.and(live);
+		} else if(liveDocs != null) {
+			var doc = documents.nextSetBit(0);
+			while(doc != DocIdSetIterator.NO_MORE_DOCS) {
+				if(!liveDocs.get(doc)) {
+					documents.clear(doc);
+				}
+
+				doc = doc + 1 < maxDoc
+					? documents.nextSetBit(doc + 1)
+					: DocIdSetIterator.NO_MORE_DOCS;
+			}
+		}
+
+		var count = documents.cardinality();
+		if(count == 0) {
+			return null;
+		}
+
+		return new FacetsCollector.MatchingDocs(
+			context,
+			new BitDocIdSet(documents, count),
+			count,
+			null
+		);
 	}
 
 	/**

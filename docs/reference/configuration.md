@@ -271,6 +271,7 @@ The following table lists search configuration variables:
 | `EXOFIND_SEARCH_MAX_CLAUSES` | Maximum number of clauses one request may hold, counted across `query`, `filters`, `hits.when`, and `rescore.boost`, including the clauses nested inside other clauses. Requests holding more are rejected with `search:query:too_many_clauses`. | `1024` |
 | `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Maximum nesting depth of clauses. A clause the request carries directly counts as depth one, and the clauses inside it as depth two. Requests nesting deeper are rejected with `search:query:too_deep`. | `20` |
 | `EXOFIND_SEARCH_TIMEOUT` | How long one search may collect results for. A search that runs longer is abandoned and answered with `search:timeout`, and the results it collected are dropped. The budget covers collecting matches, not the time spent reading stored fields or building fragments. Set to `0` to let every search run to completion. | `30s` |
+| `EXOFIND_SEARCH_THREADS` | Number of threads the node lends to searches, shared across all searches on the node. Accepts `auto` to use the number of processor cores available to the process, or an explicit thread count. Set to `0` to disable the pool and run each search on its request thread alone. When the pool is busy, the request thread runs unstarted search pieces directly. For more information, see [Threads of a single search](../explanation/node-resources.md#threads-of-a-single-search). | `auto` |
 
 ## Metrics
 

@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalLong;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.NoopSync;
+import se.l4.exofind.engine.metrics.RequestMetrics;
 
 public abstract class AbstractIndexTest {
 	@TempDir
@@ -27,12 +29,30 @@ public abstract class AbstractIndexTest {
 	}
 
 	protected Index create(String name) throws IOException {
+		return create(name, SearchThreads.inline());
+	}
+
+	/**
+	 * Open an index whose searches spread over the given threads, for a test
+	 * of what a search answers when it runs on more than one thread.
+	 */
+	protected Index create(String name, SearchThreads searchThreads) throws IOException {
 		var path = indexRoot.resolve(name);
 		Files.createDirectories(path);
 
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
-		var index = new Index(nodeState, name, path, new NoopSync());
+		var index = new Index(
+			nodeState,
+			name,
+			path,
+			new NoopSync(),
+			CommitPolicy.disabled(),
+			DocumentCache.disabled(),
+			RequestMetrics.none(),
+			OptionalLong.empty(),
+			searchThreads
+		);
 		index.pull();
 		indexes.add(index);
 		return index;

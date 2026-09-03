@@ -44,6 +44,7 @@ import se.l4.exofind.engine.index.DocumentCache;
 import se.l4.exofind.engine.index.FacetCacheStats;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.SearchThreads;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexStorageHeldException;
@@ -151,6 +152,12 @@ public class Indexes implements RegistryPoller.Listener {
 	 * is slow to pull does not hold up the others.
 	 */
 	private final ExecutorService pullExecutor;
+
+	/**
+	 * The threads a search on this node spreads over, handed to every index
+	 * opened here.
+	 */
+	private final SearchThreads searchThreads;
 
 	/**
 	 * Closes retired instances, so that flushing and closing an evicted index
@@ -361,7 +368,8 @@ public class Indexes implements RegistryPoller.Listener {
 			diskMinIdle,
 			diskHalfLife,
 			diskSweepInterval,
-			Optional.empty()
+			Optional.empty(),
+			SearchThreads.inline()
 		);
 	}
 
@@ -386,10 +394,12 @@ public class Indexes implements RegistryPoller.Listener {
 		@ConfigProperty(name = "exofind.indexes.disk.min-idle", defaultValue = "24h") Duration diskMinIdle,
 		@ConfigProperty(name = "exofind.indexes.disk.half-life", defaultValue = "168h") Duration diskHalfLife,
 		@ConfigProperty(name = "exofind.indexes.disk.sweep-interval", defaultValue = "1h") Duration diskSweepInterval,
-		@ConfigProperty(name = "exofind.indexes.merge.floor-segment") Optional<String> mergeFloorSegment
+		@ConfigProperty(name = "exofind.indexes.merge.floor-segment") Optional<String> mergeFloorSegment,
+		SearchThreads searchThreads
 	) throws IOException {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;
+		this.searchThreads = searchThreads;
 		this.registry = registry;
 		this.registryHints = registryHints;
 		this.removals = removals;
@@ -1268,7 +1278,8 @@ public class Indexes implements RegistryPoller.Listener {
 				commitPolicy,
 				documentCache,
 				metrics,
-				mergeFloorSegment
+				mergeFloorSegment,
+				searchThreads
 			);
 
 			/*

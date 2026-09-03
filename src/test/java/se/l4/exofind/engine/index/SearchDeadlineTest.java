@@ -65,4 +65,41 @@ public class SearchDeadlineTest {
 			assertThat(elsewhere[0], is(false));
 		}
 	}
+
+	@Test
+	public void testAnAttachedBudgetIsSharedWithTheThreadThatOpenedIt() throws Exception {
+		try(var scope = SearchDeadline.start(Duration.ofNanos(1))) {
+			var budget = SearchDeadline.current();
+			var elsewhere = new boolean[1];
+
+			var thread = new Thread(() -> {
+				try(var attached = SearchDeadline.attach(budget)) {
+					elsewhere[0] = SearchDeadline.INSTANCE.shouldExit();
+				}
+			});
+			thread.start();
+			thread.join();
+
+			assertThat(elsewhere[0], is(true));
+
+			// The other thread ran past the budget, and this one sees that it did
+			assertThat(scope.exceeded(), is(true));
+			assertThat(SearchDeadline.exceeded(), is(true));
+		}
+	}
+
+	@Test
+	public void testAClosedAttachmentRestoresWhatTheThreadHad() throws Exception {
+		try(var scope = SearchDeadline.start(Duration.ofHours(1))) {
+			var spent = SearchDeadline.start(Duration.ofNanos(1));
+			spent.close();
+
+			try(var attached = SearchDeadline.attach(null)) {
+				assertThat(SearchDeadline.INSTANCE.shouldExit(), is(false));
+			}
+
+			assertThat(SearchDeadline.exceeded(), is(false));
+			assertThat(scope.exceeded(), is(false));
+		}
+	}
 }
