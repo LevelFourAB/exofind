@@ -109,6 +109,12 @@ Before you begin, ensure that you have:
    `"limit": 0`. For counting category trees or bucketing dates, see
    [facets](../reference/search-api.md#facets).
 
+   A facet returns at most 1000 values. To let a user type into a filter and
+   reach the values past that cut, send the same `query` and `filters` with
+   the typed text as `prefix` to
+   `POST /v1alpha1/indexes/{name}/facets/{field}/values`. See [Searching the
+   values of a facet](../reference/search-api.md#searching-the-values-of-a-facet).
+
 5. Specify the sort order:
 
    ```json

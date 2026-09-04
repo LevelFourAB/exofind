@@ -962,8 +962,28 @@ public class StringFieldType implements FieldType {
 
 	@Override
 	public FacetCounter createFacetCounter(IndexEncounter encounter) {
+		var stringType = encounter.getFieldType().getString();
+
+		/*
+		 * A prefix is compared with the values folded the way the autocomplete
+		 * usage folds them - the engine-built chain where the field declares
+		 * none - as the field's own filter terms fold case alone.
+		 */
+		var normalizer = Analyzers.autocomplete(
+			stringType.hasAutocomplete()
+				? stringType.getAutocomplete()
+				: StringFieldTypeDef.TextUsageConfig.getDefaultInstance(),
+			encounter.getResources(),
+			encounter.getLocaleSupport(),
+			AnalyzerMode.QUERYING
+		);
+
 		// The doc values hold the value as it was given, so it is the count key
-		return FacetCounter.overStrings(encounter.name(FieldNames.VALUES), value -> value);
+		return FacetCounter.overStrings(
+			encounter.name(FieldNames.VALUES),
+			value -> value,
+			normalizer
+		);
 	}
 
 	@Override

@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.function.Function;
 
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.FixedBitSet;
+import org.apache.lucene.util.LongBitSet;
 import org.apache.lucene.util.LongValues;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.primitive.LongIntMaps;
@@ -52,6 +54,13 @@ import se.l4.exofind.engine.query.SearchResult;
  * {@link FacetStates#keepSegmentCounts}: the next walk of the segment folds
  * it into the whole without counting a match, which after a refresh leaves
  * only the new segments to count.
+ *
+ * A facet with a prefix counts every value the same way and picks the
+ * answered values afterwards, so the counts it reads and keeps are the ones
+ * every other facet over the scope reads. Which values start with the prefix
+ * is read off the folded dictionary of each segment, see {@link FoldedTerms},
+ * so picking them costs a binary search per segment and never a walk of the
+ * values.
  */
 final class StringFacetCount implements FacetCount {
 	/**
@@ -67,6 +76,8 @@ final class StringFacetCount implements FacetCount {
 	private final int limit;
 	private final Facet.Order order;
 	private final Function<String, Object> decode;
+	private final Analyzer normalizer;
+	private final String prefix;
 
 	private int totalMatches;
 
@@ -90,7 +101,9 @@ final class StringFacetCount implements FacetCount {
 		FacetMatches scope,
 		int limit,
 		Facet.Order order,
-		Function<String, Object> decode
+		Function<String, Object> decode,
+		Analyzer normalizer,
+		String prefix
 	) {
 		this.field = field;
 		this.mode = scope.mode();
@@ -99,6 +112,8 @@ final class StringFacetCount implements FacetCount {
 		this.limit = limit;
 		this.order = order;
 		this.decode = decode;
+		this.normalizer = normalizer;
+		this.prefix = prefix;
 	}
 
 	@Override
@@ -233,7 +248,49 @@ final class StringFacetCount implements FacetCount {
 			return new SearchResult.Facet(Lists.immutable.empty(), 0);
 		}
 
-		return order == Facet.Order.VALUE ? byValue() : byCount();
+		var selected = prefix == null ? null : selectByPrefix();
+		return order == Facet.Order.VALUE ? byValue(selected) : byCount(selected);
+	}
+
+	/**
+	 * Find the values of the reader that start with the prefix, as a set over
+	 * its ordinals.
+	 *
+	 * A folded comparison reads each segment's folded dictionary, kept per
+	 * segment - see {@link FacetStates#foldedTermsOf} - and maps the segment
+	 * ordinals it finds onto the reader's. Without an analyzer to fold with,
+	 * every value is decoded and compared with the prefix ignoring case, which
+	 * only a field of a few values - a boolean - asks for.
+	 */
+	private LongBitSet selectByPrefix() throws IOException {
+		var selected = new LongBitSet(ords.cardinality());
+
+		if(normalizer == null) {
+			for(var ord = 0L; ord < ords.cardinality(); ord++) {
+				var value = String.valueOf(decode.apply(termOf(ord)));
+				if(value.regionMatches(true, 0, prefix, 0, prefix.length())) {
+					selected.set(ord);
+				}
+			}
+
+			return selected;
+		}
+
+		var folded = normalizer.normalize(field, prefix);
+		for(var context : reader.leaves()) {
+			var values = context.reader().getSortedSetDocValues(field);
+			if(values == null) {
+				continue;
+			}
+
+			var terms = FacetStates.foldedTermsOf(context, field, normalizer, values);
+			var globals = ords.map() == null ? null : ords.map().getGlobalOrds(context.ord);
+			terms.forEachStartingWith(folded, segmentOrd ->
+				selected.set(globals == null ? segmentOrd : globals.get(segmentOrd))
+			);
+		}
+
+		return selected;
 	}
 
 	/**
@@ -269,13 +326,13 @@ final class StringFacetCount implements FacetCount {
 	 * Answer the first values in value order, which for these ordinals is
 	 * ascending by term.
 	 */
-	private SearchResult.Facet byValue() throws IOException {
+	private SearchResult.Facet byValue(LongBitSet selected) throws IOException {
 		var values = Lists.mutable.<SearchResult.Facet.Value>empty();
 		var distinct = 0;
 
 		if(dense != null) {
 			for(var ord = 0; ord < dense.length; ord++) {
-				if(dense[ord] != 0) {
+				if(dense[ord] != 0 && (selected == null || selected.get(ord))) {
 					distinct++;
 					if(values.size() < limit) {
 						values.add(valueOf(ord, dense[ord]));
@@ -284,9 +341,13 @@ final class StringFacetCount implements FacetCount {
 			}
 		} else {
 			var sorted = sparse.keySet().toSortedArray();
-			distinct = sorted.length;
-			for(var i = 0; i < sorted.length && i < limit; i++) {
-				values.add(valueOf(sorted[i], sparse.get(sorted[i])));
+			for(var ord : sorted) {
+				if(selected == null || selected.get(ord)) {
+					distinct++;
+					if(values.size() < limit) {
+						values.add(valueOf(ord, sparse.get(ord)));
+					}
+				}
 			}
 		}
 
@@ -297,20 +358,29 @@ final class StringFacetCount implements FacetCount {
 	 * Answer the most counted values, ties broken by term order - only they
 	 * are ever read back as terms.
 	 */
-	private SearchResult.Facet byCount() throws IOException {
+	private SearchResult.Facet byCount(LongBitSet selected) throws IOException {
 		var top = new TopValues(Math.max(limit, 0));
 		var distinct = 0;
 
 		if(dense != null) {
 			for(var ord = 0; ord < dense.length; ord++) {
-				if(dense[ord] != 0) {
+				if(dense[ord] != 0 && (selected == null || selected.get(ord))) {
 					distinct++;
 					top.offer(ord, dense[ord]);
 				}
 			}
-		} else {
+		} else if(selected == null) {
 			distinct = sparse.size();
 			sparse.forEachKeyValue(top::offer);
+		} else {
+			var kept = new int[1];
+			sparse.forEachKeyValue((ord, count) -> {
+				if(selected.get(ord)) {
+					kept[0]++;
+					top.offer(ord, count);
+				}
+			});
+			distinct = kept[0];
 		}
 
 		var values = new SearchResult.Facet.Value[top.size()];
@@ -327,6 +397,13 @@ final class StringFacetCount implements FacetCount {
 	 * Read one answered value back as a term and decode it.
 	 */
 	private SearchResult.Facet.Value valueOf(long ord, long count) throws IOException {
+		return new SearchResult.Facet.Value(decode.apply(termOf(ord)), count);
+	}
+
+	/**
+	 * Read one value of the reader back as a term.
+	 */
+	private String termOf(long ord) throws IOException {
 		int segment;
 		long segmentOrd;
 		if(ords.map() == null) {
@@ -338,10 +415,7 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		var values = reader.leaves().get(segment).reader().getSortedSetDocValues(field);
-		return new SearchResult.Facet.Value(
-			decode.apply(values.lookupOrd(segmentOrd).utf8ToString()),
-			count
-		);
+		return values.lookupOrd(segmentOrd).utf8ToString();
 	}
 
 	/**

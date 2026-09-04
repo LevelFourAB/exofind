@@ -3,6 +3,8 @@ package se.l4.exofind.engine.index;
 import java.util.function.Function;
 import java.util.function.LongFunction;
 
+import org.apache.lucene.analysis.Analyzer;
+
 import se.l4.exofind.engine.query.Facet;
 
 /**
@@ -31,10 +33,13 @@ public interface FacetCounter {
 	 *   how many values to bring back at most
 	 * @param order
 	 *   the order values come back in
+	 * @param prefix
+	 *   what the answered values have to start with, or {@code null} to
+	 *   answer every value - see {@link Facet#prefix()}
 	 * @return
 	 *   the count to feed through {@link FacetWalk}, never {@code null}
 	 */
-	FacetCount prepare(FacetMatches scope, int limit, Facet.Order order);
+	FacetCount prepare(FacetMatches scope, int limit, Facet.Order order, String prefix);
 
 	/**
 	 * Count a field written as sorted set doc values, decoding each counted
@@ -44,11 +49,19 @@ public interface FacetCounter {
 	 *   the Lucene field the values were written under
 	 * @param decode
 	 *   how a counted term reads back as a value
+	 * @param normalizer
+	 *   the analyzer whose {@link Analyzer#normalize(String, String)} folds a
+	 *   term and a prefix before they are compared, or {@code null} to compare
+	 *   a prefix with the decoded value ignoring case
 	 * @return
 	 */
-	static FacetCounter overStrings(String field, Function<String, Object> decode) {
-		return (scope, limit, order) ->
-			new StringFacetCount(field, scope, limit, order, decode);
+	static FacetCounter overStrings(
+		String field,
+		Function<String, Object> decode,
+		Analyzer normalizer
+	) {
+		return (scope, limit, order, prefix) ->
+			new StringFacetCount(field, scope, limit, order, decode, normalizer, prefix);
 	}
 
 	/**
@@ -62,7 +75,7 @@ public interface FacetCounter {
 	 * @return
 	 */
 	static FacetCounter overLongs(String field, LongFunction<Object> decode) {
-		return (scope, limit, order) ->
-			new LongFacetCount(field, scope, limit, order, decode);
+		return (scope, limit, order, prefix) ->
+			new LongFacetCount(field, scope, limit, order, decode, prefix);
 	}
 }

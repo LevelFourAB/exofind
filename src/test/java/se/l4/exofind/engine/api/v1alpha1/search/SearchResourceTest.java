@@ -31,6 +31,7 @@ import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
@@ -1748,5 +1749,134 @@ public class SearchResourceTest {
 		var response = patient.search("many", null);
 
 		assertThat(response.hits().size(), is(10));
+	}
+
+	@Test
+	public void testFacetValuesAnswerTheValuesStartingWithThePrefix() throws IOException {
+		books();
+
+		var response = resource.facetValues(
+			"books",
+			"category",
+			new FacetValuesRequest(null, null, "F", null, null, null)
+		);
+
+		assertThat(response.totalValues(), is(1));
+		assertThat(response.values(), contains(new SearchResponse.FacetValue("fiction", 1)));
+	}
+
+	@Test
+	public void testFacetValuesWithoutABodyAnswerEveryValue() throws IOException {
+		books();
+
+		var response = resource.facetValues("books", "category", null);
+
+		assertThat(response.totalValues(), is(3));
+	}
+
+	@Test
+	public void testFacetValuesAreCountedSidewaysOfTheirOwnFilter() throws IOException {
+		books();
+
+		var response = resource.facetValues(
+			"books",
+			"category",
+			new FacetValuesRequest(
+				List.of(new Clause.Field("published", new Matcher.Equals(true))),
+				List.of(new Clause.Field("category", new Matcher.In(List.of("poetry")))),
+				null,
+				null,
+				null,
+				SearchRequest.Facet.Order.VALUE
+			)
+		);
+
+		assertThat(
+			response.values(),
+			contains(
+				new SearchResponse.FacetValue("non-fiction", 1),
+				new SearchResponse.FacetValue("poetry", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testFacetValuesRefuseAFieldNotDefinedForIt() throws IOException {
+		books();
+
+		assertThrows(
+			se.l4.exofind.engine.index.IndexFieldUsageException.class,
+			() -> resource.facetValues(
+				"books",
+				"tags",
+				new FacetValuesRequest(null, null, "n", null, null, null)
+			)
+		);
+	}
+
+	@Test
+	public void testFacetValuesRefuseAFieldThatDoesNotExist() throws IOException {
+		books();
+
+		assertThrows(
+			IndexFieldNotFoundException.class,
+			() -> resource.facetValues("books", "missing", null)
+		);
+	}
+
+	@Test
+	public void testFacetValuesRefuseALimitOutsideTheRange() throws IOException {
+		books();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.facetValues(
+				"books",
+				"category",
+				new FacetValuesRequest(null, null, null, null, 0, null)
+			)
+		);
+
+		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_invalid"));
+		assertThat(e.getErrors().getFirst().getLocation().describe(), is("/limit"));
+	}
+
+	@Test
+	public void testFacetValuesRefuseAScoringFilter() throws IOException {
+		books();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.facetValues(
+				"books",
+				"category",
+				new FacetValuesRequest(
+					null,
+					List.of(new Clause.Text("spring", null, null, null, null, null, null, null, null)),
+					null,
+					null,
+					null,
+					null
+				)
+			)
+		);
+
+		assertThat(e.getErrors().getFirst().getCode(), is("search:filter:clause_invalid"));
+	}
+
+	@Test
+	public void testFacetValuesRefuseATree() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			se.l4.exofind.engine.index.IndexException.class,
+			() -> resource.facetValues(
+				"catalogue",
+				"category",
+				new FacetValuesRequest(null, null, "M", null, null, null)
+			)
+		);
+
+		assertThat(e.getCode(), is("index:query:facet_prefix_on_a_tree"));
 	}
 }

@@ -167,7 +167,8 @@ public class BooleanFieldType implements FieldType {
 	public FacetCounter createFacetCounter(IndexEncounter encounter) {
 		return FacetCounter.overStrings(
 			encounter.name(FieldNames.VALUES),
-			value -> TRUE.utf8ToString().equals(value)
+			value -> TRUE.utf8ToString().equals(value),
+			null
 		);
 	}
 

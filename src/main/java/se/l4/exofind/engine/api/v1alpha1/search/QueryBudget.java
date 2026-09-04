@@ -108,6 +108,36 @@ final class QueryBudget {
 	}
 
 	/**
+	 * Measure the query and filters of a request that carries nothing else
+	 * holding clauses against what the node allows.
+	 *
+	 * @param query
+	 *   the clauses under {@code /query}, or {@code null} for none
+	 * @param filters
+	 *   the clauses under {@code /filters}, or {@code null} for none
+	 * @param limits
+	 *   what the node allows
+	 * @param errors
+	 *   where whatever is over budget is collected
+	 * @return
+	 *   {@code false} when the request holds more clauses than it may, or
+	 *   nests them deeper
+	 */
+	static boolean check(
+		List<Clause> query,
+		List<Clause> filters,
+		SearchLimits limits,
+		MutableList<ErrorMessage> errors
+	) {
+		var budget = new QueryBudget(limits, errors);
+
+		budget.walk(query, "/query", 1);
+		budget.walk(filters, "/filters", 1);
+
+		return !budget.oversized;
+	}
+
+	/**
 	 * Walk a list of clauses, counting each and descending into whatever it
 	 * holds.
 	 *

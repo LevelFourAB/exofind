@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.UnaryOperator;
 
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
@@ -84,6 +85,12 @@ import se.l4.exofind.engine.query.SearchResult;
  * arrives while an ordinal map is being built waits for that build instead of
  * making a second one - see {@link #stringOrdsOf}. That is the one place a
  * search waits for anything here.
+ *
+ * A facet that answers only the values starting with a prefix compares the
+ * prefix with each value folded, and what a value folds to is read off a
+ * sorted dictionary of the segment's values kept per segment core the same
+ * way - see {@link #foldedTermsOf}. It is built the first time a prefix is
+ * asked of a field under a reader that holds the segment, not by warming.
  *
  * {@link #heldBytes()} estimates what all of it takes on the heap, for the
  * gauge a node reports. A deployment holding hundreds of indexes reads that
@@ -810,7 +817,8 @@ final class FacetStates {
 			facet.ranges(),
 			facet.path(),
 			facet.depth(),
-			Lists.immutable.empty()
+			Lists.immutable.empty(),
+			facet.prefix()
 		);
 	}
 
@@ -1140,6 +1148,12 @@ final class FacetStates {
 			}
 		}
 
+		for(var fields : foldedTerms.values()) {
+			for(var folded : fields.values()) {
+				bytes += folded.bytesHeld();
+			}
+		}
+
 		for(var fields : values.values()) {
 			for(var tree : fields.values()) {
 				bytes += 3 * ARRAY_HEADER + 4L * tree.levels().length;
@@ -1153,6 +1167,77 @@ final class FacetStates {
 		}
 
 		return bytes;
+	}
+
+	/**
+	 * The values of one segment of a field folded by an analyzer and sorted,
+	 * per segment core, field and analyzer - see {@link #foldedTermsOf}.
+	 */
+	private static final Map<IndexReader.CacheKey, Map<FoldedKey, FoldedTerms>> foldedTerms =
+		new ConcurrentHashMap<>();
+
+	/**
+	 * What one folded dictionary is keyed by under a segment: the field, and
+	 * the analyzer that folded it. Analyzers are shared per chain and locale,
+	 * so the same folding is the same instance.
+	 */
+	private record FoldedKey(String field, Analyzer normalizer) {
+	}
+
+	/**
+	 * Get the values of the given field in the given segment folded by the
+	 * given analyzer and sorted, building them the first time the segment is
+	 * asked for under that analyzer. Kept per segment core, the way
+	 * {@link #ordsOf} keeps ordinals: a segment is never changed, and what an
+	 * analyzer folds a value to is as fixed as the analyzer.
+	 *
+	 * A segment that cannot say when its core goes away is not kept, as an
+	 * entry for it could never be dropped; its values are folded and handed
+	 * back without being remembered.
+	 *
+	 * @param context
+	 *   the segment being read
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param normalizer
+	 *   what folds a value
+	 * @param docValues
+	 *   the doc values of that field in that segment, read by ordinal
+	 * @return
+	 * @throws IOException
+	 */
+	static FoldedTerms foldedTermsOf(
+		LeafReaderContext context,
+		String field,
+		Analyzer normalizer,
+		SortedSetDocValues docValues
+	) throws IOException {
+		var helper = context.reader().getCoreCacheHelper();
+		if(helper == null) {
+			return FoldedTerms.build(field, normalizer, docValues);
+		}
+
+		var key = helper.getKey();
+		var fields = foldedTerms.get(key);
+		if(fields == null) {
+			fields = foldedTerms.computeIfAbsent(key, ignored -> new ConcurrentHashMap<>());
+
+			/*
+			 * Registered against the key rather than against the map, so a
+			 * segment that went away while this was being built drops what was
+			 * put under it instead of leaving it behind.
+			 */
+			helper.addClosedListener(foldedTerms::remove);
+		}
+
+		var foldedKey = new FoldedKey(field, normalizer);
+		var folded = fields.get(foldedKey);
+		if(folded == null) {
+			folded = FoldedTerms.build(field, normalizer, docValues);
+			fields.put(foldedKey, folded);
+		}
+
+		return folded;
 	}
 
 	/**

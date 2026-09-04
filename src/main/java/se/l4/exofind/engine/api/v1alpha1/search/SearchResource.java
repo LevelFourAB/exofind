@@ -26,6 +26,8 @@ import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.auth.Permission;
@@ -64,6 +66,10 @@ import jakarta.ws.rs.core.MediaType;
  * <p>Searches with rescoring are an exception. Inside the rescore window, a
  * second pass reorders results and cursors count results instead. The cursor
  * moving past the window carries a hit position again.
+ *
+ * <p>The values of one facet field that start with a prefix are answered
+ * beside the search, under {@code /facets/{field}/values}, counted under the
+ * same query and filters a search would count them under.
  */
 @Tag(
 	name = "Search",
@@ -74,7 +80,7 @@ import jakarta.ws.rs.core.MediaType;
 	)
 )
 @SecurityRequirement(name = ExofindApi.API_KEY)
-@Path("/v1alpha1/indexes/{name}/search")
+@Path("/v1alpha1/indexes/{name}")
 @Produces(MediaType.APPLICATION_JSON)
 public class SearchResource {
 	private static final ErrorType IO_ERROR = ErrorType.withCode("index:io_error")
@@ -179,6 +185,7 @@ public class SearchResource {
 	 *   matches all documents
 	 */
 	@POST
+	@Path("/search")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.SEARCH)
 	@ServedBy(ServedBy.Node.ANY_NODE)
@@ -341,6 +348,170 @@ public class SearchResource {
 	}
 
 	/**
+	 * Count the values of one facet field that start with a prefix, under a
+	 * search.
+	 *
+	 * @param body
+	 *   what to count under and what the values start with; all properties
+	 *   are optional, and omitting the body counts every value of the field
+	 *   under everything the index holds
+	 */
+	@POST
+	@Path("/facets/{field}/values")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.SEARCH)
+	@ServedBy(ServedBy.Node.ANY_NODE)
+	@Operation(
+		operationId = "searchFacetValues",
+		summary = "Search the values of a facet",
+		description = """
+			Answers the values of one facet field that start with a prefix, \
+			each with how many documents hold it under the given query and \
+			filters. A filter panel asks for this while a value is typed into \
+			it, to reach the values a facet of a search cut off at its limit. \
+			The counts are the ones a facet of the same search answers: filter \
+			entries on the facet's own field are left out, and the query and \
+			every other filter narrow them.
+
+			The prefix and the values of a string field are compared folded, \
+			in case and Unicode form, so `rö` finds `Röd`. A number, boolean \
+			or timestamp field compares the prefix with the value as a search \
+			response shows it, ignoring case. A field whose values are paths \
+			through a tree refuses a prefix. See [Searching the values of a \
+			facet](https://exofind.dev/reference/search-api/#searching-the-values-of-a-facet).
+
+			Requires the `search` permission."""
+	)
+	@APIResponse(
+		responseCode = "200",
+		description = "The values that start with the prefix, in the order that `order` asks for.",
+		content = @Content(
+			schema = @Schema(implementation = FacetValuesResponse.class),
+			examples = @ExampleObject(
+				name = "values",
+				summary = "The answer to the example request",
+				value = FacetValuesResponse.EXAMPLE
+			)
+		)
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The request is not one that can be counted. The `code` property \
+			names the reason, such as `index:query:field_not_found` when the \
+			field does not exist, `index:query:usage_not_enabled` when it is \
+			not defined for `facet`, `index:query:facet_prefix_on_a_tree` \
+			when its values are paths through a tree, \
+			`search:facet:limit_invalid` when `limit` is outside 1 to 1000, \
+			or `search:filter:scores` when a filter clause affects the score.
+
+			A request that asks for more than the node allows is refused with \
+			the same status: `search:query:too_many_clauses`, \
+			`search:query:too_deep`, `search:clause:k_too_large`, or \
+			`search:clause:depth_too_large`. See \
+			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "401",
+		description = """
+			The request carries no credential this node accepts. Absent, \
+			malformed, unknown, and lapsed keys all return this status, so a \
+			refusal cannot be used to find out which keys exist. The response \
+			carries `WWW-Authenticate: Bearer`.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "403",
+		description = "The API key does not have the `search` permission.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			The index does not exist, or the key has no permissions on it. An \
+			index on which a key has no permissions returns this status as \
+			though it did not exist.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			The index currently has no live generation \
+			(`index:no_live_generation`). Promote a generation and send the \
+			request again.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = """
+			The request raced the index being closed to free local resources \
+			(`index:closed`). Sending the same request again reopens it.
+
+			Also returned when counting collected for longer than \
+			`EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The counts collected \
+			before the node stopped are dropped, so narrow the search instead \
+			of repeating it.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public FacetValuesResponse facetValues(
+		@Parameter(
+			description = """
+				Name of the index. To count one generation, add `@` and the \
+				name of the generation, such as `books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		@Parameter(
+			description = """
+				The field whose values to answer, as declared in the index \
+				definition. The field must have `facet` enabled.""",
+			example = "brand"
+		)
+		@PathParam("field") String field,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = FacetValuesRequest.class),
+			examples = @ExampleObject(
+				name = "values",
+				summary = "Brands starting with `adi` among running shoes",
+				value = FacetValuesRequest.EXAMPLE
+			)
+		))
+		FacetValuesRequest body
+	) {
+		var started = System.nanoTime();
+
+		var index = indexes.getOrThrow(name);
+		var request = FacetValuesRequestMapper.toEngine(field, body, limits);
+
+		// Settings belong to the index name, see search
+		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
+
+		SearchResult result;
+		boolean timedOut;
+		try(var budget = SearchDeadline.start(timeout)) {
+			result = index.search(request, settings);
+			timedOut = budget.exceeded();
+		} catch(IOException e) {
+			throw new IndexException(IO_ERROR, e, "index", name);
+		}
+
+		// Counts collected over a spent budget describe part of the index, see search
+		if(timedOut) {
+			throw new SearchTimeoutException(name, timeout);
+		}
+
+		var took = System.nanoTime() - started;
+		var counts = result.facets().get(field);
+
+		return new FacetValuesResponse(
+			toFacetValuesJson(counts.values()),
+			counts.totalValues(),
+			Math.round(took / 1_000d) / 1_000d
+		);
+	}
+
+	/**
 	 * Explain how one hit scores under a search.
 	 *
 	 * @param name
@@ -352,7 +523,7 @@ public class SearchResource {
 	 *   the search to explain the hit under, the same body a search takes
 	 */
 	@POST
-	@Path("/actions/explain")
+	@Path("/search/actions/explain")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@RequiresPermission(Permission.SEARCH)
 	@ServedBy(ServedBy.Node.ANY_NODE)

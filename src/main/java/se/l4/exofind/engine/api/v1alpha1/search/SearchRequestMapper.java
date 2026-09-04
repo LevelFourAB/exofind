@@ -284,7 +284,7 @@ public class SearchRequestMapper {
 				"Two facets are keyed by the same name - name one of them to tell their counts apart"
 			);
 
-	private static final ErrorType FACET_LIMIT_INVALID =
+	static final ErrorType FACET_LIMIT_INVALID =
 		ErrorType.withCode("search:facet:limit_invalid")
 			.withArguments("max")
 			.withMessage("A facet brings back between 1 and {{max}} values");
@@ -345,7 +345,7 @@ public class SearchRequestMapper {
 		ErrorType.withCode("search:matcher:radius_required")
 			.withMessage("How far from the origin values may be is required, in meters");
 
-	private static final ErrorType LOCALE_UNSUPPORTED =
+	static final ErrorType LOCALE_UNSUPPORTED =
 		ErrorType.withCode("search:locale:unsupported")
 			.withArguments("locale")
 			.withMessage("This engine has no rules for locale `{{locale}}`");
@@ -641,9 +641,17 @@ public class SearchRequestMapper {
 	}
 
 	/**
-	 * Map the ticked refinements, or collect what is wrong with them.
+	 * Map the ticked refinements, or collect what is wrong with them. A
+	 * problem points below {@code /filters}.
+	 *
+	 * @param filters
+	 *   the filters as received, or {@code null} for none
+	 * @param errors
+	 *   where the problems are collected
+	 * @return
+	 *   the filters that mapped
 	 */
-	private static ImmutableList<Query> toFilters(
+	static ImmutableList<Query> toFilters(
 		List<Clause> filters,
 		MutableList<ErrorMessage> errors
 	) {
@@ -1577,7 +1585,20 @@ public class SearchRequestMapper {
 		};
 	}
 
-	private static ImmutableList<Query> toClauses(
+	/**
+	 * Map a list of clauses, or collect what is wrong with them.
+	 *
+	 * @param clauses
+	 *   the clauses as received, or {@code null} for none
+	 * @param path
+	 *   JSON Pointer of the list, which a problem found in an entry points
+	 *   below
+	 * @param errors
+	 *   where the problems are collected
+	 * @return
+	 *   the clauses that mapped
+	 */
+	static ImmutableList<Query> toClauses(
 		List<Clause> clauses,
 		String path,
 		MutableList<ErrorMessage> errors

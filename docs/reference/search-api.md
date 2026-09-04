@@ -695,6 +695,61 @@ A filter on a nested field is specified as a `nested` clause in `filters`:
 
 Filter exclusions identify entries by the most specific path covering all clauses within the entry. A filter entry covering both `variants.color` and `variants.price` is treated as a filter on `variants`.
 
+### Searching the values of a facet
+
+A facet returns at most 1000 values, so a field with more values than that cannot be reached from the values a search answers with. A separate endpoint answers the values of one facet field that start with a typed prefix, counted under the query and filters of a search:
+
+```
+POST /v1alpha1/indexes/{name}/facets/{field}/values
+```
+
+The endpoint also has a generated page stating every field it accepts and returns. See [Search the values of a facet](https://exofind.dev/api/operations/searchfacetvalues/).
+
+The field must have `facet` enabled in its field definition; otherwise, the request returns `index:query:usage_not_enabled`. The request carries the `query` and `filters` of the search, and what the values start with:
+
+```json
+{
+  "query": [ { "type": "text", "text": "running shoes" } ],
+  "filters": [ { "field": "brand", "match": { "type": "in", "values": ["Nike"] } } ],
+  "prefix": "adi",
+  "limit": 5
+}
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `query` | Array | None | Clauses that a counted document must satisfy, in the same shape as the `query` of a search. |
+| `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. Filter entries on the facet's own field are left out of the counts. |
+| `prefix` | String | None | What the answered values start with. Omitted or blank answers every value. |
+| `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields, as for a search. |
+| `limit` | Integer | `10` | Maximum number of values to return (1 to 1000). Other values return `search:facet:limit_invalid`. |
+| `order` | String | `"count"` | Sort order of the values: `"count"` (descending by count) or `"value"` (ascending by value). |
+
+The response returns the values in the same shape as the `values` of a facet:
+
+```json
+{
+  "values": [
+    { "value": "adidas", "count": 87 },
+    { "value": "Adidas Originals", "count": 12 }
+  ],
+  "totalValues": 2,
+  "tookMs": 1.208
+}
+```
+
+- `values`: Array of facet value objects containing `value` and `count`, in the requested order and limited to `limit`.
+- `totalValues`: Total count of distinct values that start with the prefix.
+- `tookMs`: Execution time in milliseconds.
+
+Matching rules:
+
+- **String fields**: The prefix and the values are compared folded in case and Unicode form by the `normalize` filter of the field's [`autocomplete`](field-types.md#string) chain, or of the chain the engine builds for `autocomplete` when the field declares none. `rö` finds `Röd`. Accents are folded only when the chain holds an `asciiFolding` filter. See [Analysis](analysis.md).
+- **Number, boolean, and timestamp fields**: The prefix is compared with the value as a search response shows it, ignoring case. `19` finds every year of the nineties, and `2024-06` finds a month of timestamps.
+- **Hierarchical fields**: A field configured with `hierarchy` returns `index:query:facet_prefix_on_a_tree`.
+- **Counts**: The counts are the ones a facet of the same search answers. The query and the filters on other fields narrow them, and the filter entries on the facet's own field are left out. A search that relaxes its query counts under the relaxed query.
+- **Limits**: The `query` and `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, and counting stops at `EXOFIND_SEARCH_TIMEOUT`, as for a search.
+
 ## Highlighting
 
 Highlighting returns matched text fragments for specified fields:

@@ -30,6 +30,15 @@ import org.eclipse.collections.api.list.ImmutableList;
  * {@link #depth()} how far below it to go. Such a field always counts as a
  * tree, so a facet that gives neither answers the top level.
  *
+ * A facet given a {@link #prefix() prefix} answers only the values that start
+ * with it, counted the same way. A filter panel asks for this while a value is
+ * typed into it. The prefix and the values of a string field are compared
+ * folded, in case and Unicode form, by the normalize step of the autocomplete
+ * chain of the field, so {@code rö} finds {@code Röd}. A number, boolean or
+ * timestamp field compares the prefix with the value as the result shows it,
+ * ignoring case. A field whose values are paths through a tree refuses a
+ * prefix.
+ *
  * @param name
  *   what the counts are keyed by in the result. Defaults to the field, and
  *   only has to be given when one search counts the same field twice
@@ -58,6 +67,10 @@ import org.eclipse.collections.api.list.ImmutableList;
  *   filtering UI wants. Empty leaves nothing out, so the counts are exactly
  *   the results; more paths widen the scope, which is what one control
  *   backed by several fields asks for
+ * @param prefix
+ *   what the answered values have to start with, or {@code null} to answer
+ *   every value. Blank counts as {@code null}. Refused together with
+ *   {@code ranges}
  */
 public record Facet(
 	String name,
@@ -67,7 +80,8 @@ public record Facet(
 	ImmutableList<Range> ranges,
 	String path,
 	int depth,
-	ImmutableList<String> excludeFilters
+	ImmutableList<String> excludeFilters,
+	String prefix
 ) {
 	/**
 	 * How many values a facet brings back when nothing else is asked for.
@@ -196,13 +210,39 @@ public record Facet(
 				);
 			}
 		}
+
+		if(prefix != null && prefix.isBlank()) {
+			prefix = null;
+		}
+
+		if(prefix != null && !ranges.isEmpty()) {
+			throw new IllegalArgumentException(
+				"Counting into buckets answers one count per bucket, so it can not also pick values by prefix"
+			);
+		}
+	}
+
+	/**
+	 * Count per value, every value.
+	 */
+	public Facet(
+		String name,
+		String field,
+		int limit,
+		Order order,
+		ImmutableList<Range> ranges,
+		String path,
+		int depth,
+		ImmutableList<String> excludeFilters
+	) {
+		this(name, field, limit, order, ranges, path, depth, excludeFilters, null);
 	}
 
 	/**
 	 * Count per value.
 	 */
 	public Facet(String name, String field, int limit, Order order) {
-		this(name, field, limit, order, null, null, DEFAULT_DEPTH, null);
+		this(name, field, limit, order, null, null, DEFAULT_DEPTH, null, null);
 	}
 
 	/**
@@ -259,7 +299,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withName(String name) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
 	}
 
 	/**
@@ -269,7 +309,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withLimit(int limit) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
 	}
 
 	/**
@@ -279,7 +319,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withOrder(Order order) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
 	}
 
 	/**
@@ -291,7 +331,8 @@ public record Facet(
 	 */
 	public Facet withRanges(Range... ranges) {
 		return new Facet(
-			name, field, limit, order, Lists.immutable.of(ranges), path, depth, excludeFilters
+			name, field, limit, order, Lists.immutable.of(ranges), path, depth, excludeFilters,
+			prefix
 		);
 	}
 
@@ -304,7 +345,8 @@ public record Facet(
 	 */
 	public Facet withRanges(Iterable<? extends Range> ranges) {
 		return new Facet(
-			name, field, limit, order, Lists.immutable.ofAll(ranges), path, depth, excludeFilters
+			name, field, limit, order, Lists.immutable.ofAll(ranges), path, depth, excludeFilters,
+			prefix
 		);
 	}
 
@@ -316,7 +358,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPath(String path) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
 	}
 
 	/**
@@ -326,7 +368,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withDepth(int depth) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
 	}
 
 	/**
@@ -340,7 +382,7 @@ public record Facet(
 	public Facet withExcludeFilters(String... excludeFilters) {
 		return new Facet(
 			name, field, limit, order, ranges, path, depth,
-			Lists.immutable.of(excludeFilters)
+			Lists.immutable.of(excludeFilters), prefix
 		);
 	}
 
@@ -355,7 +397,19 @@ public record Facet(
 	public Facet withExcludeFilters(Iterable<String> excludeFilters) {
 		return new Facet(
 			name, field, limit, order, ranges, path, depth,
-			Lists.immutable.ofAll(excludeFilters)
+			Lists.immutable.ofAll(excludeFilters), prefix
 		);
+	}
+
+	/**
+	 * Answer only the values that start with the given prefix, see the class
+	 * comment for how the two are compared.
+	 *
+	 * @param prefix
+	 *   the prefix, or {@code null} to answer every value
+	 * @return
+	 */
+	public Facet withPrefix(String prefix) {
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
 	}
 }

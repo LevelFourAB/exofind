@@ -35,6 +35,11 @@ import se.l4.exofind.engine.query.SearchResult;
  * {@link FacetStates#keepSegmentCounts}: the next walk of the segment folds
  * it into the whole without counting a match. Numbers are the same in every
  * segment, so nothing has to be mapped on the way in.
+ *
+ * A facet with a prefix counts every value the same way and keeps the values
+ * whose decoded form starts with the prefix, compared ignoring case: a year
+ * facet answers the nineties for {@code 19}, a timestamp facet a month for
+ * {@code 2024-06}.
  */
 final class LongFacetCount implements FacetCount {
 	private final String field;
@@ -44,6 +49,7 @@ final class LongFacetCount implements FacetCount {
 	private final int limit;
 	private final Facet.Order order;
 	private final LongFunction<Object> decode;
+	private final String prefix;
 
 	private final MutableLongLongMap counts = LongLongMaps.mutable.empty();
 
@@ -52,7 +58,8 @@ final class LongFacetCount implements FacetCount {
 		FacetMatches scope,
 		int limit,
 		Facet.Order order,
-		LongFunction<Object> decode
+		LongFunction<Object> decode,
+		String prefix
 	) {
 		this.field = field;
 		this.mode = scope.mode();
@@ -61,6 +68,7 @@ final class LongFacetCount implements FacetCount {
 		this.limit = limit;
 		this.order = order;
 		this.decode = decode;
+		this.prefix = prefix;
 	}
 
 	@Override
@@ -107,8 +115,15 @@ final class LongFacetCount implements FacetCount {
 				.reversed()
 				.thenComparing(byValue);
 
-		var sorted = counts.keyValuesView()
-			.toSortedList(order == Facet.Order.VALUE ? byValue : byCount);
+		var counted = counts.keyValuesView();
+		if(prefix != null) {
+			counted = counted.select(pair -> {
+				var value = String.valueOf(decode.apply(pair.getOne()));
+				return value.regionMatches(true, 0, prefix, 0, prefix.length());
+			});
+		}
+
+		var sorted = counted.toSortedList(order == Facet.Order.VALUE ? byValue : byCount);
 
 		var values = sorted.collect(pair -> new SearchResult.Facet.Value(
 			decode.apply(pair.getOne()),
@@ -117,7 +132,7 @@ final class LongFacetCount implements FacetCount {
 
 		return new SearchResult.Facet(
 			(values.size() > limit ? values.take(limit) : values).toList().toImmutable(),
-			counts.size()
+			sorted.size()
 		);
 	}
 

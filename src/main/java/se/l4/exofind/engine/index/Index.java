@@ -245,6 +245,13 @@ public class Index {
 					+ "is inside another object"
 			);
 
+	private static final ErrorType ERROR_FACET_PREFIX_ON_A_TREE =
+		ErrorType.withCode("index:query:facet_prefix_on_a_tree")
+			.withArguments("field")
+			.withMessage(
+				"The values of `{{field}}` are paths through a tree, which a prefix can not pick from"
+			);
+
 	private static final ErrorType ERROR_EXPLAIN_DOCUMENT_NOT_FOUND =
 		ErrorType.withCode("index:explain:document_not_found")
 			.withArguments("key")
@@ -5770,6 +5777,9 @@ public class Index {
 	 * @throws IndexFieldUsageException
 	 *   if the facet asks for a level of a tree from a field whose values are
 	 *   not paths
+	 * @throws IndexException
+	 *   if the facet asks for the values starting with a prefix from a field
+	 *   whose values are paths through a tree
 	 */
 	private FacetCount prepareFacet(
 		QueryCompiler compiler,
@@ -5777,6 +5787,10 @@ public class Index {
 		FacetMatches scope
 	) {
 		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
+			if(facet.prefix() != null) {
+				throw new IndexException(ERROR_FACET_PREFIX_ON_A_TREE, "field", facet.field());
+			}
+
 			return compiler.hierarchyFacetCounter(facet.field())
 				.prepare(scope, facet.path(), facet.depth(), facet.limit(), facet.order());
 		}
@@ -5792,7 +5806,7 @@ public class Index {
 			}
 
 			return compiler.facetCounter(facet.field())
-				.prepare(scope, facet.limit(), facet.order());
+				.prepare(scope, facet.limit(), facet.order(), facet.prefix());
 		}
 
 		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
