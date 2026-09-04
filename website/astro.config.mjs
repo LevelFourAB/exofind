@@ -4,13 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
+import openGraphImages from 'astro-opengraph-images';
 import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi';
 
 import { DEMOS } from './src/examples/demos.mjs';
+import { FONTS, isPage, render } from './src/opengraph.mjs';
 import { CATALOGUE, DOCS_INDEX, PARTS } from './src/parts.mjs';
 import { remarkRewriteLinks, remarkStripTitle } from './src/plugins/remark-docs.mjs';
 import { sidebarFrom } from './src/sidebar.mjs';
-import { BASE, REPO, SITE } from './src/site.mjs';
+import { BASE, PREVIEW_HEIGHT, PREVIEW_WIDTH, REPO, SITE } from './src/site.mjs';
 
 const docsRoot = new URL('../docs/', import.meta.url);
 
@@ -60,7 +62,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Exofind',
-			description: 'A search engine that keeps its indexes in S3-compatible object storage.',
+			description: 'Delightful search built on object storage',
 			favicon: '/favicon.svg',
 
 			social: [
@@ -182,6 +184,22 @@ export default defineConfig({
 					]
 				}
 			]
+		}),
+
+		/*
+		 * A link preview image per page, drawn after the pages are built and
+		 * written next to each one. What it shows and how is on
+		 * `./src/opengraph.mjs`, and the tag that points at it is added in
+		 * `./src/route-data.mjs`.
+		 *
+		 * The integration reads every route Astro built, so `pathFilter`
+		 * keeps it to the ones that produced a page - `llms.txt` and the
+		 * Markdown copy of each document are routes as well.
+		 */
+		openGraphImages({
+			options: { width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT, fonts: FONTS },
+			pathFilter: isPage,
+			render
 		})
 	]
 });

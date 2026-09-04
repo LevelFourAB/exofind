@@ -21,6 +21,18 @@ export const BASE = '';
 /** The repository, for edit links and for links to files the site does not hold. */
 export const REPO = 'https://github.com/LevelFourAB/exofind';
 
+/**
+ * Size of the link preview image, in pixels. Every client that unfurls a link
+ * scales the image from this two-to-one shape.
+ *
+ * `./opengraph.mjs` draws at this size and `./route-data.mjs` publishes it in
+ * a tag. The two constants sit here because neither module can import the
+ * other: the drawing reads the repository, and a page is rendered from a
+ * bundle that no longer holds it.
+ */
+export const PREVIEW_WIDTH = 1200;
+export const PREVIEW_HEIGHT = 630;
+
 /** Join a site-absolute path onto the base, with exactly one slash between. */
 export function withBase(path) {
 	return `${BASE}/${path.replace(/^\/+/, '')}`;

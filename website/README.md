@@ -281,6 +281,34 @@ remark plugin imports `BASE` directly, because it rewrites Markdown links before
 Astro sees them. Serving the site under a path again is a change to `BASE`
 alone.
 
+## Link preview images
+
+Every page gets a PNG image that a link to it unfurls into, written next to the
+page as `index.png`. `astro-opengraph-images` draws it after the pages are
+built: it reads the Open Graph tags out of each built page, hands them to
+`render` in `src/opengraph.mjs`, and writes the result.
+
+Starlight fills in the other Open Graph tags. It names no image, so
+`src/route-data.mjs` adds `og:image` and the tags that go with it. The path
+comes from the `getImagePath` the integration exports, and the integration
+compares that path against the file it wrote. A build fails where the two
+disagree.
+
+The image is drawn by Satori, which reads TrueType, OpenType, and WOFF fonts.
+It cannot read WOFF2, so `src/opengraph.mjs` loads the static WOFF files of
+Archivo and IBM Plex Mono. The site itself loads the variable Archivo, which
+ships as WOFF2 alone. The colours are the dark half of the palette in
+`src/styles/site.css`, copied rather than imported, because a preview card is
+shown against a conversation and follows no theme.
+
+The images are written at the end of a build, so `mise run site` serves pages
+whose `og:image` points at a file the dev server does not have. Use
+`mise run site:build` to see one.
+
+To change what a card says, edit `render`. To change the size, edit
+`PREVIEW_WIDTH` and `PREVIEW_HEIGHT` in `src/site.mjs`, which both the drawing
+and the tags read.
+
 ## Commands
 
 Use these `mise` tasks to run, build, and preview the site:
