@@ -293,8 +293,27 @@ public record SearchResult(
 		String text
 	) {
 		/**
+		 * What kind of thing a filter was read from.
+		 */
+		public enum Kind {
+			/**
+			 * A number next to a unit or a comparative word, read as a bound
+			 * on a number field.
+			 */
+			NUMBER,
+
+			/**
+			 * Words that are a value some field holds, read as that value of
+			 * the field.
+			 */
+			VALUE
+		}
+
+		/**
 		 * One filter a search read out of the text.
 		 *
+		 * @param kind
+		 *   what the filter was read from
 		 * @param field
 		 *   the field the filter is on, named as the definition names it
 		 * @param matcher
@@ -302,7 +321,8 @@ public record SearchResult(
 		 *   {@link se.l4.exofind.engine.query.matchers.RangeMatcher range} for
 		 *   a bound, an
 		 *   {@link se.l4.exofind.engine.query.matchers.EqualsMatcher equals}
-		 *   for a number written with its unit and nothing else
+		 *   for a number written with its unit and nothing else, or for a
+		 *   value of the field
 		 * @param words
 		 *   the words the filter was read from, as they were typed and in the
 		 *   order they were typed
@@ -315,6 +335,7 @@ public record SearchResult(
 		 *   field, in the order they are tried. Empty when there are none
 		 */
 		public record Filter(
+			Kind kind,
 			String field,
 			se.l4.exofind.engine.query.matchers.Matcher matcher,
 			ImmutableList<String> words,
@@ -322,6 +343,10 @@ public record SearchResult(
 			ImmutableList<TextQuery.Target> fallback
 		) {
 			public Filter {
+				if(kind == null) {
+					throw new IllegalArgumentException("A filter needs a kind");
+				}
+
 				if(when == null) {
 					when = Lists.immutable.empty();
 				}
@@ -332,11 +357,12 @@ public record SearchResult(
 			}
 
 			public Filter(
+				Kind kind,
 				String field,
 				se.l4.exofind.engine.query.matchers.Matcher matcher,
 				ImmutableList<String> words
 			) {
-				this(field, matcher, words, null, null);
+				this(kind, field, matcher, words, null, null);
 			}
 		}
 	}

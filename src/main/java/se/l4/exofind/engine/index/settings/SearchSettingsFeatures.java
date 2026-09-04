@@ -47,10 +47,22 @@ public final class SearchSettingsFeatures {
 	 */
 	public static final String TYPO_EXCLUSIONS = "typo_exclusions";
 
+	/**
+	 * The object names fields whose values a search reads out of the typed
+	 * text, as filters on the field.
+	 *
+	 * <p>A node without this name would search for a colour or a brand as
+	 * words in the text while its peers also find the documents holding it as
+	 * a value, which is a different set of documents rather than a different
+	 * order of them.
+	 */
+	public static final String INTERPRET_VALUES = "interpret_values";
+
 	private static final ImmutableSet<String> SUPPORTED = Sets.immutable.of(
 		RANKING,
 		QUERY_SYNONYMS,
-		TYPO_EXCLUSIONS
+		TYPO_EXCLUSIONS,
+		INTERPRET_VALUES
 	);
 
 	private SearchSettingsFeatures() {
@@ -77,6 +89,12 @@ public final class SearchSettingsFeatures {
 
 		if(!settings.getTypoExclusionsMap().isEmpty()) {
 			features.add(TYPO_EXCLUSIONS);
+		}
+
+		for(var field : settings.getFieldsMap().values()) {
+			if(field.hasInterpret()) {
+				features.add(INTERPRET_VALUES);
+			}
 		}
 
 		return features.toSortedList();

@@ -117,6 +117,7 @@ import se.l4.exofind.engine.index.schema.IndexFeatures;
 import se.l4.exofind.engine.index.schema.IndexSchema;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 import se.l4.exofind.engine.index.schema.RankingOverride;
+import se.l4.exofind.engine.index.settings.FieldSettings;
 import se.l4.exofind.engine.index.settings.QuerySynonyms;
 import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
@@ -3816,6 +3817,75 @@ public class Index {
 	}
 
 	/**
+	 * Validate the field settings of search settings against this generation.
+	 * What passes here can still be skipped by a later generation - see
+	 * {@link ValueDictionaries#compile} - so this is the check for storing
+	 * settings, not for searching with them.
+	 *
+	 * @param fields
+	 *   the settings as they would be stored, by field name
+	 * @param location
+	 *   where the settings sit in what the caller is validating
+	 * @return
+	 *   what stops the settings, empty when this generation answers for all of
+	 *   them
+	 */
+	public ListIterable<ErrorMessage> validateFieldSettings(
+		Map<String, FieldSettings> fields,
+		ObjectLocation location
+	) {
+		return ValueDictionaries.validate(fields, schema, location);
+	}
+
+	/**
+	 * The dictionaries last compiled, and what they were compiled from.
+	 */
+	private record CompiledValueDictionaries(
+		String settingsVersion,
+		String definitionVersion,
+		ValueDictionaries dictionaries
+	) {
+	}
+
+	private volatile CompiledValueDictionaries compiledValueDictionaries;
+
+	/**
+	 * Compile the field settings of the search settings against this
+	 * generation, into the fields whose values a search reads out of its text.
+	 */
+	private ValueDictionaries compileValueDictionaries(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.fields().isEmpty()) {
+			return ValueDictionaries.none();
+		}
+
+		var compiled = compiledValueDictionaries;
+		if(compiled != null
+			&& compiled.settingsVersion().equals(settings.version())
+			&& compiled.definitionVersion().equals(definitionVersion)) {
+			return compiled.dictionaries();
+		}
+
+		var dictionaries = ValueDictionaries.compile(settings.fields(), schema);
+		compiledValueDictionaries = new CompiledValueDictionaries(
+			settings.version(),
+			definitionVersion,
+			dictionaries
+		);
+
+		if(dictionaries.skippedFields().notEmpty()) {
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.addKeyValue("fields", dictionaries.skippedFields().makeString(", "))
+				.log(
+					"The search settings read the values of fields this generation"
+						+ " cannot answer for; searching for the words as text"
+				);
+		}
+
+		return dictionaries;
+	}
+
+	/**
 	 * Search this index with its search settings in force.
 	 *
 	 * <p>The settings belong to the index name while this instance is one
@@ -3879,7 +3949,7 @@ public class Index {
 				 * facets, the total, and relaxing count the filter the same
 				 * way they would one the caller wrote.
 				 */
-				var interpreted = interpret(request);
+				var interpreted = interpret(request, settings, compiler, searcher);
 				if(interpreted != null) {
 					request = request.withQuery(interpreted.query());
 				}
@@ -4638,7 +4708,7 @@ public class Index {
 				 * search that would have run, filters read out of the text
 				 * and all.
 				 */
-				var interpreted = interpret(request);
+				var interpreted = interpret(request, settings, compiler, searcher);
 				if(interpreted != null) {
 					request = request.withQuery(interpreted.query());
 				}
@@ -4891,15 +4961,36 @@ public class Index {
 	 *
 	 * Runs on every search whose text a person typed, before it is compiled,
 	 * and costs a walk over the words of the text against the units the
-	 * schema declares - nothing on an index that declares none.
+	 * schema declares and a lookup of each span of words in the dictionary of
+	 * every field the settings read values of - nothing on an index that
+	 * declares neither.
 	 *
 	 * @param request
+	 * @param settings
+	 *   the search settings, or {@code null} for the definition alone
+	 * @param compiler
+	 *   the compiler of the search, which resolves the fields read in the
+	 *   locale of the search
+	 * @param searcher
+	 *   the searcher the values are looked up in
 	 * @return
 	 *   what to search with instead and what was read, or {@code null} when
 	 *   there was nothing to read
+	 * @throws IOException
+	 *   if the values of a field cannot be read
 	 */
-	private Interpretation.Outcome interpret(SearchRequest request) {
-		return Interpretation.read(schema, request.locale(), request.query());
+	private Interpretation.Outcome interpret(
+		SearchRequest request,
+		SearchSettings.Snapshot settings,
+		QueryCompiler compiler,
+		IndexSearcher searcher
+	) throws IOException {
+		var dictionaries = compileValueDictionaries(settings);
+		var values = dictionaries.isEmpty()
+			? null
+			: new ValueReader(dictionaries, compiler, searcher.getIndexReader());
+
+		return Interpretation.read(schema, request.locale(), request.query(), values);
 	}
 
 	private Relaxation.Outcome relax(

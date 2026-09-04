@@ -205,5 +205,6 @@ Inspect the JSON response from the search endpoint to verify the results:
 - [Using sub-documents](use-sub-documents.md) - Asking several things of one value of an `object` field, and ordering and counting by it.
 - [Paginating search results](paginate-search-results.md) - Offsets, cursors, and numbered pages.
 - [Reading numbers in the search box](read-numbers-in-the-search-box.md) - Reading numbers and units out of search text as filters.
+- [Reading colours and brands in the search box](read-field-values-in-the-search-box.md) - Reading the values of a facet field out of search text as filters.
 - [Localizing fields](localize-fields.md) - Holding and searching values in several languages.
 - [Defining an index](define-an-index.md) - Opting fields into the ways a search may use them.

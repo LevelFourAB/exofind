@@ -160,6 +160,42 @@ final class FoldedTerms {
 	}
 
 	/**
+	 * Hand every ordinal whose folded value is exactly the given bytes to the
+	 * consumer. Several ordinals fold to the same bytes when the field holds
+	 * the same value in different spellings.
+	 *
+	 * @param folded
+	 *   the folded value to find
+	 * @param consumer
+	 *   given each ordinal once
+	 */
+	void forEachEqualTo(BytesRef folded, LongConsumer consumer) {
+		/*
+		 * A value sorts before every longer value it is a prefix of, so the
+		 * values equal to the bytes are the first of the run that starts with
+		 * them.
+		 */
+		var from = firstAtOrPast(folded, false);
+		for(var i = from; i < sorted.length; i++) {
+			var start = starts[sorted[i]];
+			var end = starts[sorted[i] + 1];
+			if(end - start != folded.length) {
+				break;
+			}
+
+			var compared = Arrays.compareUnsigned(
+				bytes, start, end,
+				folded.bytes, folded.offset, folded.offset + folded.length
+			);
+			if(compared != 0) {
+				break;
+			}
+
+			consumer.accept(sorted[i]);
+		}
+	}
+
+	/**
 	 * Find the first position in the sorted order whose value does not sort
 	 * before the prefix - or, past it, whose value neither sorts before it nor
 	 * starts with it.

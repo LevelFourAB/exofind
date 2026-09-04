@@ -187,6 +187,7 @@ public class TypoExclusionSearchTest extends AbstractIndexTest {
 			null,
 			Map.of(),
 			stored.getTypoExclusionsMap(),
+			Map.of(),
 			Lists.immutable.empty(),
 			version
 		);
@@ -327,6 +328,7 @@ public class TypoExclusionSearchTest extends AbstractIndexTest {
 		var setAside = new SearchSettings.Snapshot(
 			stored,
 			null,
+			Map.of(),
 			Map.of(),
 			Map.of(),
 			Lists.immutable.of("something_this_build_lacks"),

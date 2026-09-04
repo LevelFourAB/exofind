@@ -83,7 +83,7 @@ The `text` clause accepts the following options:
 - `typos`: Typo tolerance handling: `"auto"` (default) follows each field's `typoTolerance` configuration and the [typo exclusions](admin-api.md#typo-exclusions) in the search settings of the index; `"off"` disables typo tolerance for the clause.
 - `slop`: Number of intervening words permitted between terms in a phrase. Defaults to `0` (words must be adjacent).
 - `relax`: Query relaxation strategy when no documents match: `"unmatched"` (default), `"words"`, or `"off"`. See [Finding something rather than nothing](#finding-something-rather-than-nothing).
-- `interpret`: Reading of numbers and units in query text: `"auto"` (default) or `"off"`. See [Reading numbers and units](#reading-numbers-and-units).
+- `interpret`: Reading of numbers, units, and field values in query text: `"auto"` (default) or `"off"`. See [Reading numbers and units](#reading-numbers-and-units) and [Reading the values of a field](#reading-the-values-of-a-field).
 - `combine`: Scope for multi-field term matching: `"term"` (default) or `"field"`.
 
 Phrase queries operate within a single field. In phrase queries, `combine` is ignored and terms are matched exactly as typed, regardless of field `typoTolerance`. Stopwords removed during text analysis leave empty positions: searching for `spring of 1962` matches that sequence, but searching for `spring 1962` does not. Fields defined only for `autocomplete` do not support phrase matching; queries omitting `fields` skip autocomplete-only fields, and explicitly targeting one returns `index:query:usage_not_enabled`.
@@ -260,7 +260,50 @@ The `interpreted` object contains:
 - `filters`: Array of read filters in the order their words appeared. Each entry contains `field` (target field name), `match` (matcher object in `field` clause format), and `words` (typed words converted into the filter, in order). Each entry may carry `when` and `fallback` in request shape, absent when the target had none.
 - `text`: Query text remaining after removing filter words. Returns an empty string if all typed text was read.
 
-To disable reading, set `"interpret": "off"` on the `text` clause, enclose terms in quotation marks, or remove quantity words from the text.
+To disable reading, set `"interpret": "off"` on the `text` clause, enclose terms in quotation marks, or remove quantity words from the text. The setting turns off the reading of field values as well.
+
+#### Reading the values of a field
+
+A search in `user` mode reads a word or a span of words that matches a stored field value as a filter on that field. For example, `red nike shoes` reads `red` as the value `Red` on a `colour` field and `nike` as the value `Nike` on a `brand` field, and searches `shoes` as text. The read filter is part of the query that runs, so hits, totals, and facet counts reflect it.
+
+Fields are opted in through the search settings of the index with `interpret`. See [Field settings](admin-api.md#field-settings). To be eligible, a field must be a `string` field configured with `filter` and `facet` and without `hierarchy`. A field inside an `object` field is specified by its dotted path. Without configured settings, no field values are read.
+
+The same clause rules apply as for [Reading numbers and units](#reading-numbers-and-units): only a `text` clause with `"match": "user"` is read, in any position within `query`. Quoted phrases and exclusions (`-word`) are never read. Inside a `nested` clause, a value is read as a filter on the same list value that matched the text, and only fields within that nested path can hold the filter.
+
+Values are looked up in the index generation that answers the search request. A value can be read as soon as a document containing it is indexed, and is no longer read when the last document containing it is removed.
+
+Matching behavior:
+
+- **Word spans**: Spans of one to three words typed adjacent to each other are looked up as a single value (for example, `dark red` or `the north face`).
+- **Folding**: The typed span and stored values are folded by the `normalize` step of the field's `autocomplete` analyzer configuration, or by the default normalizer if none is configured. Case and diacritics are folded, but words are not stemmed (`shoes` does not match `Shoe`).
+- **Greedy longest match**: Reading uses a greedy longest match from the left. At each word position, the longest span that matches a value in an opted-in field is selected, and reading continues after that span. Words within a longer matched span are not read separately.
+- **Multiple matches**: A span that matches values in several fields, or matches several stored spellings of a value, is read as every one of them. A document matches if it satisfies any of the read filters.
+- **Evaluation order**: Numbers are read first. A word that forms part of a quantity (such as `100` in `under 100`) is never read as a field value.
+
+The words of a filter are still searched as text, with the filter side boosted so documents satisfying the filter rank first. Each entry in `interpreted.filters` contains `field`, a `match` object of `{ "value": ... }` containing the stored spelling, and the typed `words`:
+
+```json
+{
+  "hits": [ ... ],
+  "interpreted": {
+    "filters": [
+      {
+        "field": "colour",
+        "match": { "value": "Red" },
+        "words": ["red"]
+      },
+      {
+        "field": "brand",
+        "match": { "value": "Nike" },
+        "words": ["nike"]
+      }
+    ],
+    "text": "shoes"
+  }
+}
+```
+
+Specifying `interpret` targets on a search request (see [Choosing the fields a reading may target](#choosing-the-fields-a-reading-may-target)) selects the fields a number is read on and does not affect values. The values of all opted-in fields are still read.
 
 #### Finding something rather than nothing
 

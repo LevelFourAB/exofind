@@ -55,13 +55,37 @@ public interface FacetCounter {
 	 *   a prefix with the decoded value ignoring case
 	 * @return
 	 */
-	static FacetCounter overStrings(
+	static Strings overStrings(
 		String field,
 		Function<String, Object> decode,
 		Analyzer normalizer
 	) {
-		return (scope, limit, order, prefix) ->
-			new StringFacetCount(field, scope, limit, order, decode, normalizer, prefix);
+		return new Strings(field, decode, normalizer);
+	}
+
+	/**
+	 * A counter over a field written as sorted set doc values. Says which
+	 * Lucene field it reads and how it folds a value, so the values of the
+	 * field can be looked up outside of counting them - see
+	 * {@link ValueReader}.
+	 *
+	 * @param field
+	 *   the Lucene field the values were written under
+	 * @param decode
+	 *   how a counted term reads back as a value
+	 * @param normalizer
+	 *   the analyzer that folds a term and a prefix before they are compared,
+	 *   or {@code null} to compare ignoring case
+	 */
+	record Strings(
+		String field,
+		Function<String, Object> decode,
+		Analyzer normalizer
+	) implements FacetCounter {
+		@Override
+		public FacetCount prepare(FacetMatches scope, int limit, Facet.Order order, String prefix) {
+			return new StringFacetCount(field, scope, limit, order, decode, normalizer, prefix);
+		}
 	}
 
 	/**

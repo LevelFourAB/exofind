@@ -110,6 +110,9 @@ public class SearchSettings implements RegistryPoller.Listener {
 	 * @param typoExclusions
 	 *   the word lists to match as they are spelled, by name; empty when the
 	 *   object carries none or could not be honoured
+	 * @param fields
+	 *   how a search reads single fields, by field name; empty when the
+	 *   object carries none or could not be honoured
 	 * @param unsupportedFeatures
 	 *   what the object needs that this build does not have, sorted; empty
 	 *   when it is in force
@@ -120,6 +123,7 @@ public class SearchSettings implements RegistryPoller.Listener {
 		RankingConfig ranking,
 		Map<String, QuerySynonyms> synonyms,
 		Map<String, QueryTypoExclusions> typoExclusions,
+		Map<String, FieldSettings> fields,
 		ListIterable<String> unsupportedFeatures,
 		String version
 	) {
@@ -528,6 +532,7 @@ public class SearchSettings implements RegistryPoller.Listener {
 			unsupported.isEmpty() && stored.hasRanking() ? stored.getRanking() : null,
 			unsupported.isEmpty() ? stored.getSynonymsMap() : Map.of(),
 			unsupported.isEmpty() ? stored.getTypoExclusionsMap() : Map.of(),
+			unsupported.isEmpty() ? stored.getFieldsMap() : Map.of(),
 			unsupported,
 			version
 		);

@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.index;
 
+import java.io.IOException;
 import java.util.Objects;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -36,27 +37,36 @@ import se.l4.exofind.engine.query.matchers.UserText;
 /**
  * Reading the text of a search box as the filters a person meant by it.
  *
- * {@code shoes under 100 kr} is four words, and a search that looks for all
- * four in the text of every document finds the ones that happen to mention a
- * price and misses the ones that are cheap. The shopper meant a price below a
- * hundred and the word {@code shoes}. This turns the number and the words
- * around it into a filter on the field whose unit they name, and leaves the
- * rest as text.
+ * {@code red shoes under 100 kr} is five words, and a search that looks for
+ * all five in the text of every document finds the ones that happen to mention
+ * a price and misses the ones that are cheap. The shopper meant a price below
+ * a hundred, the colour red and the word {@code shoes}. This turns the number
+ * and the words around it into a filter on the field whose unit they name,
+ * turns a word that is a value of a field into a filter on that field, and
+ * leaves the rest as text.
  *
  * <p>Three rules keep this from answering a question nobody asked:
  *
  * <ul>
  * <li>Only what the index declares can be read is read: a number next to a
  * unit some number field declares, or next to a comparative word of the
- * search locale when exactly one field holds a currency. A number on its own
- * stays a word, so {@code size 44} still asks for text.
+ * search locale when exactly one field holds a currency; and a value of a
+ * field the search settings opted in, see {@link ValueDictionaries}. A number
+ * on its own stays a word, so {@code size 44} still asks for text, and so
+ * does a word no opted-in field holds as a value.
  * <li>A reading never commits. The words are still searched as text, so the
  * filter and the words are two ways of matching and either is enough - a
- * product named {@code Air Max 100} is still found by its name. The filter
+ * product named {@code Air Max 100} is still found by its name, and so is a
+ * book about {@code black friday} when {@code black} is a colour. The filter
  * side is boosted, so what the reading found ranks first.
  * <li>What was read is reported, so a search box can show it and let a
  * person take it away. A wrong reading is never silent.
  * </ul>
+ *
+ * <p>Numbers are read first, and the values of fields among the words that
+ * are left; a word that is part of a number is never part of a value. Both
+ * are read greedily from the left, the longest reading at each word winning,
+ * see {@link QuantityReader} and {@link ValueReader}.
  *
  * <p>A search may name the fields a reading is allowed to be a filter on,
  * see {@link TextQuery.Target}. That is for an index where the unit alone
@@ -246,8 +256,9 @@ final class Interpretation {
 
 	/**
 	 * Read the text of a search, or answer {@code null} when there is nothing
-	 * to read - no text a person typed, no field with a unit, or a text
-	 * holding no number next to anything that says it is one.
+	 * to read - no text a person typed, no field with a unit and no field
+	 * whose values are read, or a text holding no number next to anything
+	 * that says it is one and no value of a field.
 	 *
 	 * @param schema
 	 *   the schema of the index searched
@@ -255,14 +266,24 @@ final class Interpretation {
 	 *   the locale of the search, or {@code null} for the default
 	 * @param clauses
 	 *   the clauses of the search, without its filters
+	 * @param values
+	 *   what reads the words as values of fields, or {@code null} when no
+	 *   field is read that way
 	 * @return
 	 * @throws IndexException
 	 *   if the search names a target that can not be read on - a field that
 	 *   does not exist, one without a unit, a fallback in another unit than
 	 *   the field it stands in for, or a field outside the path of the
 	 *   {@code nested} clause the text sits inside
+	 * @throws IOException
+	 *   if the values of a field cannot be read
 	 */
-	static Outcome read(IndexSchema schema, String locale, ImmutableList<Query> clauses) {
+	static Outcome read(
+		IndexSchema schema,
+		String locale,
+		ImmutableList<Query> clauses,
+		ValueReader values
+	) throws IOException {
 		var places = Lists.mutable.<Place>empty();
 		collect(clauses, null, places);
 		if(places.isEmpty()) {
@@ -300,7 +321,8 @@ final class Interpretation {
 		 * bare number is read as a price.
 		 */
 		var chains = known.select(chain -> heldSomewhere(chain, places));
-		if(chains.isEmpty()) {
+		var readsValues = values != null && !values.isEmpty();
+		if(chains.isEmpty() && !readsValues) {
 			return null;
 		}
 
@@ -346,12 +368,14 @@ final class Interpretation {
 				words.add(parts.get(i).text());
 			}
 
-			for(var quantity : reader.read(words)) {
-				var reading = reading(chains, bareNumberIsCurrency, quantity, words, run);
-				if(reading != null) {
-					read.add(reading);
-					for(var i = reading.start(); i < reading.end(); i++) {
-						covered[i] = true;
+			if(chains.notEmpty()) {
+				for(var quantity : reader.read(words)) {
+					var reading = reading(chains, bareNumberIsCurrency, quantity, words, run);
+					if(reading != null) {
+						read.add(reading);
+						for(var i = reading.start(); i < reading.end(); i++) {
+							covered[i] = true;
+						}
 					}
 				}
 			}
@@ -359,9 +383,15 @@ final class Interpretation {
 			run = runEnd;
 		}
 
+		if(readsValues) {
+			readValues(values, parts, covered, places, read);
+		}
+
 		if(read.isEmpty()) {
 			return null;
 		}
+
+		read.sortThisByInt(Reading::start);
 
 		var remaining = Lists.mutable.<UserText.Part>empty();
 		for(var i = 0; i < parts.size(); i++) {
@@ -403,6 +433,81 @@ final class Interpretation {
 
 	private static boolean isLoose(UserText.Part part) {
 		return part.kind() == UserText.Kind.WORD && !part.exclude();
+	}
+
+	/**
+	 * Read the values of fields among the loose words no number was read
+	 * from. Words next to each other are read together; a quoted phrase, an
+	 * exclusion or a number between them ends the run.
+	 *
+	 * A value is read only on a field some position can be a filter on. A
+	 * span that is a value of no such field stays text.
+	 */
+	private static void readValues(
+		ValueReader values,
+		ListIterable<UserText.Part> parts,
+		boolean[] covered,
+		ListIterable<Place> places,
+		MutableList<Reading> into
+	) throws IOException {
+		var run = 0;
+		while(run < parts.size()) {
+			if(!isLoose(parts.get(run)) || covered[run]) {
+				run++;
+				continue;
+			}
+
+			var runEnd = run;
+			while(runEnd < parts.size() && isLoose(parts.get(runEnd)) && !covered[runEnd]) {
+				runEnd++;
+			}
+
+			var words = Lists.mutable.<String>empty();
+			for(var i = run; i < runEnd; i++) {
+				words.add(parts.get(i).text());
+			}
+
+			var offset = run;
+			for(var match : values.read(words, field -> heldSomewhere(field, places))) {
+				var filters = Lists.mutable.<SearchResult.Interpreted.Filter>empty();
+				var alternatives = Lists.mutable.<Alternative>empty();
+				var typed = words.subList(match.start(), match.end()).toImmutable();
+
+				for(var hit : match.hits()) {
+					filters.add(new SearchResult.Interpreted.Filter(
+						SearchResult.Interpreted.Kind.VALUE,
+						hit.field().name(),
+						new EqualsMatcher(hit.value()),
+						typed
+					));
+					alternatives.add(new ValueOn(hit.field(), hit.value()));
+				}
+
+				into.add(new Reading(
+					offset + match.start(),
+					offset + match.end(),
+					typed,
+					filters.toImmutable(),
+					alternatives.toImmutable()
+				));
+
+				for(var i = offset + match.start(); i < offset + match.end(); i++) {
+					covered[i] = true;
+				}
+			}
+
+			run = runEnd;
+		}
+	}
+
+	/**
+	 * Whether a filter on a field of a value dictionary can hold in at least
+	 * one of the given positions, see {@link ValueOn#heldInside}.
+	 */
+	private static boolean heldSomewhere(ValueDictionaries.Entry field, ListIterable<Place> places) {
+		return places.anySatisfy(
+			place -> place.nestedPath() == null || place.nestedPath().equals(field.nestedPath())
+		);
 	}
 
 	/**
@@ -663,7 +768,70 @@ final class Interpretation {
 	}
 
 	/**
-	 * One quantity read as filters on the chains it can be a filter on.
+	 * One way a reading is a filter: on a chain of number fields, or on a
+	 * value of a field.
+	 */
+	private interface Alternative {
+		/**
+		 * Whether this can be a filter in the given position, see
+		 * {@link Step#heldInside}.
+		 *
+		 * @param path
+		 *   the path of the {@code nested} clause the reading sits inside, or
+		 *   {@code null} for a reading on the document
+		 */
+		boolean heldInside(String path);
+
+		/**
+		 * Get the filter in the given position.
+		 *
+		 * @param insidePath
+		 *   the path of the {@code nested} clause the reading sits inside, or
+		 *   {@code null} for a reading on the document
+		 */
+		Query clause(String insidePath);
+	}
+
+	/**
+	 * A quantity as a filter on one chain.
+	 */
+	private record QuantityOn(Chain chain, QuantityReader.Quantity quantity) implements Alternative {
+		@Override
+		public boolean heldInside(String path) {
+			return chain.heldInside(path);
+		}
+
+		@Override
+		public Query clause(String insidePath) {
+			return Interpretation.clause(chain, quantity, insidePath);
+		}
+	}
+
+	/**
+	 * Words as one value of one field. For a field inside a list the filter
+	 * runs against one value of the list: wrapped in a {@code nested} clause
+	 * where the reading is a filter on the document, and as it is where the
+	 * reading already sits inside a {@code nested} clause for the path.
+	 */
+	private record ValueOn(ValueDictionaries.Entry field, String value) implements Alternative {
+		@Override
+		public boolean heldInside(String path) {
+			return path == null || path.equals(field.nestedPath());
+		}
+
+		@Override
+		public Query clause(String insidePath) {
+			Query filter = Query.field(field.name(), new EqualsMatcher(value));
+			if(field.nestedPath() != null && insidePath == null) {
+				return NestedQuery.of(field.nestedPath(), Lists.immutable.of(filter));
+			}
+
+			return filter;
+		}
+	}
+
+	/**
+	 * Words read as filters, on whatever they can be a filter on.
 	 *
 	 * @param start
 	 *   index of the first part it was read from
@@ -672,19 +840,16 @@ final class Interpretation {
 	 * @param words
 	 *   the words it was read from, as typed
 	 * @param filters
-	 *   the filters, one per chain that can hold it
-	 * @param chains
-	 *   the chains the filters are on, aligned with {@code filters}
-	 * @param quantity
-	 *   what was read
+	 *   the filters, one per alternative
+	 * @param alternatives
+	 *   the ways the words are a filter, aligned with {@code filters}
 	 */
 	private record Reading(
 		int start,
 		int end,
 		ImmutableList<String> words,
 		ImmutableList<SearchResult.Interpreted.Filter> filters,
-		ImmutableList<Chain> chains,
-		QuantityReader.Quantity quantity
+		ImmutableList<Alternative> alternatives
 	) {
 		/**
 		 * Get the clause this reading stands for in one position: any of the
@@ -695,11 +860,11 @@ final class Interpretation {
 		Query clause(Place place) {
 			var text = place.clause();
 			var alternatives = Lists.mutable.<Query>empty();
-			for(var chain : chains) {
-				if(chain.heldInside(place.nestedPath())) {
+			for(var alternative : this.alternatives) {
+				if(alternative.heldInside(place.nestedPath())) {
 					alternatives.add(BoostQuery.of(
 						READING_WEIGHT,
-						Interpretation.clause(chain, quantity, place.nestedPath())
+						alternative.clause(place.nestedPath())
 					));
 				}
 			}
@@ -741,7 +906,7 @@ final class Interpretation {
 		int offset
 	) {
 		var filters = Lists.mutable.<SearchResult.Interpreted.Filter>empty();
-		var on = Lists.mutable.<Chain>empty();
+		var on = Lists.mutable.<Alternative>empty();
 		var typed = Lists.mutable.<String>empty();
 		for(var i = quantity.start(); i < quantity.end(); i++) {
 			typed.add(words.get(i));
@@ -763,6 +928,7 @@ final class Interpretation {
 
 			var target = chain.target();
 			filters.add(new SearchResult.Interpreted.Filter(
+				SearchResult.Interpreted.Kind.NUMBER,
 				head.name(),
 				headMatcher,
 				typed.toImmutable(),
@@ -770,7 +936,7 @@ final class Interpretation {
 				target == null ? null : target.fallback()
 			));
 
-			on.add(chain);
+			on.add(new QuantityOn(chain, quantity));
 		}
 
 		if(filters.isEmpty()) {
@@ -782,8 +948,7 @@ final class Interpretation {
 			offset + quantity.end(),
 			typed.toImmutable(),
 			filters.toImmutable(),
-			on.toImmutable(),
-			quantity
+			on.toImmutable()
 		);
 	}
 

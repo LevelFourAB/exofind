@@ -333,8 +333,11 @@ public class SearchResource {
 		}
 
 		if(result.interpreted() != null) {
-			for(var i = 0; i < result.interpreted().filters().size(); i++) {
-				metrics.recordInterpretation(Meters.KIND_NUMBER);
+			for(var filter : result.interpreted().filters()) {
+				metrics.recordInterpretation(switch(filter.kind()) {
+					case NUMBER -> Meters.KIND_NUMBER;
+					case VALUE -> Meters.KIND_VALUE;
+				});
 			}
 		}
 

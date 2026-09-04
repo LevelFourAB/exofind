@@ -65,6 +65,17 @@ message SearchSettingsStore {
 	map<string, QueryTypoExclusions> typo_exclusions = 4;
 
 	/*
+	 * Settings that apply to one field of the index, keyed by the name of the
+	 * field as a search names it. A field inside an object is keyed by its
+	 * dotted path.
+	 *
+	 * The definition says what a field holds and how it is written. These say
+	 * how a search reads the field, so a change to them reaches documents
+	 * that were indexed long before it.
+	 */
+	map<string, FieldSettings> fields = 5;
+
+	/*
 	 * Names of the capabilities this object uses, written by whichever version
 	 * of the engine last stored it.
 	 *
@@ -139,4 +150,28 @@ message QueryTypoExclusions {
 	 * names written for a whole catalog.
 	 */
 	repeated string fields = 2;
+}
+
+/*
+ * How a search reads one field of the index.
+ *
+ * Every capability here is off unless its message is present, the way the
+ * usages of a field definition are. An empty message turns the capability on
+ * with the engine defaults.
+ */
+message FieldSettings {
+	/*
+	 * Present when a search in user mode reads the values the field holds out
+	 * of the typed text, as a filter on the field. The field has to be a
+	 * string field with both `filter` and `facet`; the values are looked up in
+	 * the facet doc values of the generation that answers the search.
+	 */
+	optional InterpretConfig interpret = 1;
+}
+
+/*
+ * Config for reading the values of a field out of the text of a search.
+ * Carries no options; a later version may add some.
+ */
+message InterpretConfig {
 }

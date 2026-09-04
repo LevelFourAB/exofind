@@ -26,6 +26,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param typoExclusions
  *   words matched as spelled regardless of field typo tolerance, keyed by list
  *   name
+ * @param fields
+ *   how searches read single fields, keyed by field name
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(
@@ -59,7 +61,14 @@ public record SearchSettingsDefinition(
 		list is looked up as it was typed, however much typo tolerance the \
 		field it is searched in declares. Use a list for brand names and model \
 		codes that sit inside text you want typo tolerant otherwise.""")
-	Map<String, TypoExclusions> typoExclusions
+	Map<String, TypoExclusions> typoExclusions,
+
+	@Schema(description = """
+		Settings that apply to one field, keyed by field name. A field inside \
+		an object is keyed by its dotted path. Field names are validated \
+		against the generation the index answers from at write time. See \
+		[Field settings](https://exofind.dev/reference/admin-api/#field-settings).""")
+	Map<String, FieldSettings> fields
 ) {
 	/**
 	 * The example settings, as the JSON a client sends. The OpenAPI schema of
@@ -80,6 +89,9 @@ public record SearchSettingsDefinition(
 		      "rules": [ { "equivalent": ["laptop", "notebook"] } ],
 		      "fields": ["name"]
 		    }
+		  },
+		  "fields": {
+		    "brand": { "interpret": {} }
 		  }
 		}""";
 
@@ -170,5 +182,43 @@ public record SearchSettingsDefinition(
 			definition.""")
 		List<String> fields
 	) {
+	}
+
+	/**
+	 * How searches read one field of the index.
+	 *
+	 * <p>Every capability is off unless its object is present, the way the
+	 * usages of a field definition are. An empty object turns a capability on
+	 * with the engine defaults.
+	 *
+	 * @param interpret
+	 *   present when a search in {@code user} mode reads the values the field
+	 *   holds out of the query text, or {@code null} when it does not
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		How searches read one field. Every capability is off unless its object \
+		is present; an empty object turns it on with the engine defaults.""")
+	public record FieldSettings(
+		@Schema(description = """
+			Reads the values the field holds out of the query text of a search \
+			in `user` mode, as a filter on the field. The field must be a \
+			`string` field with `filter` and `facet` and without `hierarchy`; \
+			otherwise the request returns \
+			`index:settings:fields:interpret_unsupported`. Carries no options. \
+			See [Reading the values of a \
+			field](https://exofind.dev/reference/search-api/#reading-the-values-of-a-field).""")
+		Interpret interpret
+	) {
+	}
+
+	/**
+	 * Reads the values of a field out of the query text. Carries no options.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Reads the values of the field out of the query text. Carries no \
+		configuration options.""")
+	public record Interpret() {
 	}
 }

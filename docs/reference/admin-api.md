@@ -143,7 +143,7 @@ If an index definition contains settings from a newer API version that the curre
 
 ## Search settings
 
-Search settings hold per-index configuration that affects how searches are answered, including ranking rules, synonym sets, and words that are matched as they are spelled.
+Search settings hold per-index configuration that affects how searches are answered, including ranking rules, synonym sets, words that are matched as they are spelled, and fields whose values are read out of the search text.
 
 Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Requests that modify search settings run on the node that holds the index, like other modifying requests; `GET` requests are served by whichever node receives them.
 
@@ -164,10 +164,11 @@ The response contains the following fields:
 - `ranking`: The ranking searches run with instead of the definition's ranking, in the same shape as the definition's `ranking`. While present, it replaces the definition's ranking completely; an empty object turns ranking off. Supplying `signals` in a search request still replaces both. See [Relevance](../explanation/relevance.md).
 - `synonyms`: Synonym sets applied to the text of a search, keyed by set name. See [Synonyms](#synonyms).
 - `typoExclusions`: Words matched as they are spelled, keyed by list name. See [Typo exclusions](#typo-exclusions).
+- `fields`: Settings that apply to one field, keyed by field name. See [Field settings](#field-settings).
 - `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
 
-A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms` and `typoExclusions` against the same generation.
+A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
 
 A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
 
@@ -269,6 +270,37 @@ The server validates word lists against the generation the index name answers fr
 - `index:settings:typo_exclusions:unknown_field`: The list is applied to a field that does not exist in the index.
 - `index:settings:typo_exclusions:field_not_text`: The list is applied to a field that is not searched as text.
 
+### Field settings
+
+Search settings can configure how searches read single fields under the `fields` field. Each entry specifies how a search reads one field. Every capability in an entry is disabled unless its object is present. An empty object enables the capability with the engine defaults.
+
+The `fields` field is an object keyed by field name. A field inside an `object` field is keyed by its dotted path, such as `variants.colour`:
+
+```json
+{
+  "fields": {
+    "colour": { "interpret": {} },
+    "brand": { "interpret": {} }
+  }
+}
+```
+
+A field settings entry contains the following fields:
+
+- `interpret`: Reads the values the field holds out of the query text of a search in `user` mode, as a filter on the field. Carries no configuration options. See [Reading the values of a field](search-api.md#reading-the-values-of-a-field).
+
+The engine applies `interpret` as follows:
+
+- The field must be a `string` field with `filter` and `facet` and without `hierarchy`. A search matches words against the facet values of the generation answering the search, so a value is read as soon as a document holding it is indexed.
+- A generation promoted later can lack the field, or define it without `filter` or `facet`. Searches then read the words as query text rather than fail.
+
+A node whose version does not support the `interpret_values` capability sets the whole settings object aside and searches with the definition alone. The `unsupportedFeatures` field of the settings response lists the name.
+
+The server validates field settings against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
+
+- `index:settings:fields:unknown_field`: The entry names a field that does not exist in the index.
+- `index:settings:fields:interpret_unsupported`: The `interpret` setting is applied to a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`.
+
 ### Changing part of the search settings
 
 ```text
@@ -314,6 +346,9 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `typoExclusions.<name>.fields` | The list of target fields for a word list. |
 | `typoExclusions.<name>.words` | The words of a word list. |
 | `typoExclusions.<name>.words[]` | A new word added to a word list. |
+| `fields` | The whole field settings object. |
+| `fields.<name>` | The settings of one field by name. |
+| `fields.<name>.interpret` | The interpret configuration for a field. Set to `{}` to enable reading field values from query text, or `null` to disable. |
 
 Inside bracket selectors, a backslash (`\`) escapes characters, such as `\]`. Objects along a path are created if they do not exist, but lists are not created.
 

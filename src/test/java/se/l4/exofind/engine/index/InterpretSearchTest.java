@@ -10,7 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
+import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
@@ -22,6 +24,10 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.index.settings.FieldSettings;
+import se.l4.exofind.engine.index.settings.InterpretConfig;
+import se.l4.exofind.engine.index.settings.SearchSettings;
+import se.l4.exofind.engine.index.settings.SearchSettingsStore;
 import se.l4.exofind.engine.query.AndQuery;
 import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.Facet;
@@ -706,6 +712,327 @@ public class InterpretSearchTest extends AbstractIndexTest {
 	 * A handful of products with a price in Swedish kronor and, for the
 	 * phones, a storage size in gigabytes.
 	 */
+	@Test
+	public void testValueIsReadAsAFilter() throws IOException {
+		var index = boutique();
+
+		var result = search(index, reading("colour", "brand"), user("red shoes"));
+
+		assertThat(ids(result), contains("1"));
+
+		var interpreted = result.interpreted();
+		assertThat(interpreted, is(notNullValue()));
+		assertThat(interpreted.text(), is("shoes"));
+		assertThat(interpreted.filters().size(), is(1));
+
+		var filter = interpreted.filters().get(0);
+		assertThat(filter.kind(), is(SearchResult.Interpreted.Kind.VALUE));
+		assertThat(filter.field(), is("colour"));
+		assertThat(filter.words().toList(), contains("red"));
+		assertThat(filter.matcher(), is(new EqualsMatcher("Red")));
+	}
+
+	@Test
+	public void testValueIsReadInEverySpelling() throws IOException {
+		var index = boutique();
+
+		var result = search(index, reading("colour"), user("RED shoes"));
+
+		assertThat(ids(result), contains("1"));
+		assertThat(result.interpreted().filters().get(0).matcher(), is(new EqualsMatcher("Red")));
+		assertThat(result.interpreted().filters().get(0).words().toList(), contains("RED"));
+	}
+
+	@Test
+	public void testWordsOfAValueStillFindText() throws IOException {
+		var index = boutique();
+
+		// The colour black, or the deals that are named after a Friday
+		var result = search(index, reading("colour"), user("black"));
+
+		assertThat(ids(result), containsInAnyOrder("3", "4"));
+		assertThat(result.interpreted().text(), is(""));
+	}
+
+	@Test
+	public void testLongestValueWins() throws IOException {
+		var index = boutique();
+
+		var result = search(index, reading("colour"), user("dark red jacket"));
+
+		assertThat(ids(result), contains("5"));
+		assertThat(result.interpreted().text(), is("jacket"));
+		assertThat(result.interpreted().filters().size(), is(1));
+
+		var filter = result.interpreted().filters().get(0);
+		assertThat(filter.matcher(), is(new EqualsMatcher("Dark Red")));
+		assertThat(filter.words().toList(), contains("dark", "red"));
+	}
+
+	@Test
+	public void testValueOfSeveralFieldsIsEveryOneOfThem() throws IOException {
+		var index = boutique();
+
+		// A brand and a colour share the spelling, and either finds a product
+		var result = search(index, reading("colour", "brand"), user("stone"));
+
+		assertThat(ids(result), containsInAnyOrder("4", "6"));
+		assertThat(result.interpreted().filters().size(), is(2));
+		assertThat(
+			result.interpreted().filters().collect(SearchResult.Interpreted.Filter::field).toList(),
+			containsInAnyOrder("brand", "colour")
+		);
+	}
+
+	@Test
+	public void testValueAndNumberAreReadTogether() throws IOException {
+		var index = boutique();
+
+		var result = search(index, reading("colour", "brand"), user("nike under 100"));
+
+		assertThat(ids(result), contains("1"));
+		assertThat(result.interpreted().text(), is(""));
+
+		var filters = result.interpreted().filters();
+		assertThat(filters.size(), is(2));
+		assertThat(filters.get(0).kind(), is(SearchResult.Interpreted.Kind.VALUE));
+		assertThat(filters.get(0).field(), is("brand"));
+		assertThat(filters.get(0).matcher(), is(new EqualsMatcher("Nike")));
+		assertThat(filters.get(1).kind(), is(SearchResult.Interpreted.Kind.NUMBER));
+		assertThat(filters.get(1).field(), is("price"));
+	}
+
+	@Test
+	public void testWordsOfANumberAreNeverAValue() throws IOException {
+		var index = boutique();
+
+		// The size is a value, and a bare number next to it would be a price
+		var result = search(index, reading("size"), user("shoes under 100"));
+
+		var filters = result.interpreted().filters();
+		assertThat(filters.size(), is(1));
+		assertThat(filters.get(0).field(), is("price"));
+	}
+
+	@Test
+	public void testAFieldNotOptedInIsNotRead() throws IOException {
+		var index = boutique();
+
+		var result = search(index, reading("colour"), user("nike"));
+
+		assertThat(result.interpreted(), is(nullValue()));
+		assertThat(ids(result), is(List.of()));
+	}
+
+	@Test
+	public void testWithoutSettingsNoValueIsRead() throws IOException {
+		var index = boutique();
+
+		var result = search(index, user("red shoes"));
+
+		assertThat(result.interpreted(), is(nullValue()));
+	}
+
+	@Test
+	public void testSettingsSetAsideReadNoValues() throws IOException {
+		var index = boutique();
+
+		var stored = reading("colour").stored();
+		var setAside = new SearchSettings.Snapshot(
+			stored,
+			null,
+			Map.of(),
+			Map.of(),
+			Map.of(),
+			Lists.immutable.of("something_this_build_lacks"),
+			"\"2\""
+		);
+
+		assertThat(search(index, setAside, user("red shoes")).interpreted(), is(nullValue()));
+	}
+
+	@Test
+	public void testAFieldThatCanNotBeReadIsSkipped() throws IOException {
+		var index = boutique();
+
+		// The name has no facet, so it holds no dictionary to read
+		var result = search(index, reading("name", "colour"), user("red shoes"));
+
+		assertThat(ids(result), contains("1"));
+		assertThat(result.interpreted().filters().size(), is(1));
+	}
+
+	@Test
+	public void testValueInsideAListIsReadAgainstOneValue() throws IOException {
+		var index = colouredVariants();
+
+		var result = search(
+			index,
+			reading("variants.colour"),
+			productOrVariant(user("red"))
+		);
+
+		assertThat(ids(result), contains("1"));
+
+		var filter = result.interpreted().filters().get(0);
+		assertThat(filter.field(), is("variants.colour"));
+		assertThat(filter.matcher(), is(new EqualsMatcher("Red")));
+	}
+
+	/**
+	 * A boutique whose colours and brands are values a shopper types, written
+	 * in two segments so a value is looked up across them.
+	 */
+	private Index boutique() throws IOException {
+		var index = create(
+			"boutique",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", matching().setStored(true).build())
+				.putFields("colour", value().build())
+				.putFields("brand", value().build())
+				.putFields("size", value().build())
+				.putFields("price", price("SEK").build())
+		);
+
+		index.addDocument(item("1", "Running Shoes", "Red", "Nike", 79.0));
+		index.addDocument(item("2", "Trail Shoes", "Blue", "Nike", 129.0));
+		index.addDocument(item("3", "Black Friday Deals", "White", "Adidas", 249.0));
+		index.commit();
+
+		index.addDocument(item("4", "Sneakers", "Black", "Stone", 99.0));
+		index.addDocument(item("5", "Jacket", "Dark Red", "The North Face", 1299.0));
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "6"),
+				new Document.Value("name", "Boots"),
+				new Document.Value("colour", "Stone"),
+				new Document.Value("size", "100"),
+				new Document.Value("price", 899.0)
+			)
+		);
+		index.commit();
+
+		return index;
+	}
+
+	/**
+	 * Products whose colour sits on the variant, so a colour is read against
+	 * one variant at a time.
+	 */
+	private Index colouredVariants() throws IOException {
+		var index = create(
+			"coloured-variants",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", matching().build())
+				.putFields(
+					"variants",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields("title", matching().build())
+									.putFields("number", matching().build())
+									.putFields("colour", value().build())
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							)
+						)
+						.setMultiple(true)
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Running Shoes"),
+				new Document.Value("variants", colouredVariant("Small", "RS-1", "Blue")),
+				new Document.Value("variants", colouredVariant("Large", "RS-2", "Red"))
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "Boots"),
+				new Document.Value("variants", colouredVariant("Large", "BT-1", "Black"))
+			)
+		);
+
+		index.commit();
+		return index;
+	}
+
+	private static Document colouredVariant(String title, String number, String colour) {
+		return new Document(
+			new Document.Value("title", title),
+			new Document.Value("number", number),
+			new Document.Value("colour", colour)
+		);
+	}
+
+	private static Document item(String id, String name, String colour, String brand, double price) {
+		return new Document(
+			new Document.Value("id", id),
+			new Document.Value("name", name),
+			new Document.Value("colour", colour),
+			new Document.Value("brand", brand),
+			new Document.Value("price", price)
+		);
+	}
+
+	/**
+	 * A string field a shopper filters and counts by, which is what holds a
+	 * dictionary of values.
+	 */
+	private static FieldDef.Builder value() {
+		return string()
+			.setFilter(FilterConfig.getDefaultInstance())
+			.setFacet(FacetConfig.getDefaultInstance());
+	}
+
+	/**
+	 * Settings that read the values of the given fields out of the text.
+	 */
+	private static SearchSettings.Snapshot reading(String... fields) {
+		var stored = SearchSettingsStore.newBuilder();
+		for(var field : fields) {
+			stored.putFields(
+				field,
+				FieldSettings.newBuilder()
+					.setInterpret(InterpretConfig.getDefaultInstance())
+					.build()
+			);
+		}
+
+		var built = stored.build();
+		return new SearchSettings.Snapshot(
+			built,
+			null,
+			Map.of(),
+			Map.of(),
+			built.getFieldsMap(),
+			Lists.immutable.empty(),
+			"\"1\""
+		);
+	}
+
+	private static SearchResult search(
+		Index index,
+		SearchSettings.Snapshot settings,
+		TextMatcher matcher
+	) throws IOException {
+		return search(index, settings, Query.text(matcher));
+	}
+
+	private static SearchResult search(
+		Index index,
+		SearchSettings.Snapshot settings,
+		Query... query
+	) throws IOException {
+		return index.search(SearchRequest.create().withQuery(query).build(), settings);
+	}
+
 	private Index shop() throws IOException {
 		var index = create(
 			"shop",

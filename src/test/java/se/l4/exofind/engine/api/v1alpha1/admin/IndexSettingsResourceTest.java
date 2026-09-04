@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
@@ -44,6 +45,7 @@ import se.l4.exofind.engine.api.v1alpha1.search.SearchLimits;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchResource;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchResourceTest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Signal;
@@ -192,6 +194,7 @@ public class IndexSettingsResourceTest {
 				null
 			),
 			null,
+			null,
 			null
 		);
 	}
@@ -317,6 +320,7 @@ public class IndexSettingsResourceTest {
 					))
 				),
 				null,
+				null,
 				null
 			)
 		);
@@ -441,6 +445,7 @@ public class IndexSettingsResourceTest {
 						null
 					),
 					null,
+					null,
 					null
 				)
 			)
@@ -553,6 +558,7 @@ public class IndexSettingsResourceTest {
 				)
 			),
 			null,
+			null,
 			null
 		);
 	}
@@ -605,6 +611,7 @@ public class IndexSettingsResourceTest {
 						null
 					))
 				),
+				null,
 				null,
 				null
 			)
@@ -857,6 +864,7 @@ public class IndexSettingsResourceTest {
 					null
 				)
 			),
+			null,
 			null
 		);
 	}
@@ -930,6 +938,7 @@ public class IndexSettingsResourceTest {
 							null
 						)
 					),
+					null,
 					null
 				)
 			)
@@ -965,6 +974,7 @@ public class IndexSettingsResourceTest {
 							null
 						)
 					),
+					null,
 					null
 				)
 			)
@@ -995,6 +1005,7 @@ public class IndexSettingsResourceTest {
 							0f
 						)
 					),
+					null,
 					null
 				)
 			)
@@ -1022,6 +1033,7 @@ public class IndexSettingsResourceTest {
 							null
 						)
 					),
+					null,
 					null
 				)
 			)
@@ -1087,7 +1099,7 @@ public class IndexSettingsResourceTest {
 		resource.put("shoes", null, equivalent("trainers", "sneakers"));
 		assertThat(names("trainers"), containsInAnyOrder("1", "2"));
 
-		resource.put("shoes", null, new SearchSettingsDefinition(null, null, null));
+		resource.put("shoes", null, new SearchSettingsDefinition(null, null, null, null));
 
 		assertThat(names("trainers"), contains("2"));
 
@@ -1145,7 +1157,8 @@ public class IndexSettingsResourceTest {
 			Map.of(
 				"brands",
 				new SearchSettingsDefinition.TypoExclusions(List.of(words), null)
-			)
+			),
+			null
 		);
 	}
 
@@ -1212,7 +1225,8 @@ public class IndexSettingsResourceTest {
 							List.of("canon"),
 							List.of("missing")
 						)
-					)
+					),
+					null
 				)
 			)
 		);
@@ -1246,7 +1260,8 @@ public class IndexSettingsResourceTest {
 							List.of("canon"),
 							List.of("id")
 						)
-					)
+					),
+					null
 				)
 			)
 		);
@@ -1284,12 +1299,185 @@ public class IndexSettingsResourceTest {
 		resource.put("cameras", null, excluding("canon"));
 		assertThat(names("cameras", "canon"), contains("1"));
 
-		resource.put("cameras", null, new SearchSettingsDefinition(null, null, null));
+		resource.put("cameras", null, new SearchSettingsDefinition(null, null, null, null));
 
 		assertThat(names("cameras", "canon"), containsInAnyOrder("1", "2"));
 
 		var info = (SearchSettingsInfo) resource.get("cameras").getEntity();
 		assertThat(info.typoExclusions(), is(nullValue()));
+	}
+
+	/**
+	 * A boutique whose colour is a value a shopper filters and counts by, so
+	 * the settings can have a search read it out of the text.
+	 */
+	private void boutique() {
+		var fields = new LinkedHashMap<String, FieldDefinition>();
+		fields.put(
+			"id",
+			new StringFieldDefinition(
+				null, true, null, null, null, null, null, null, null, null, null, null, null
+			)
+		);
+		fields.put(
+			"name",
+			new StringFieldDefinition(
+				null, null, null, null, null, null, null, null, null, null,
+				new StringFieldDefinition.TextUsage(null, null, null, null, null, null, null),
+				null, null
+			)
+		);
+		fields.put(
+			"colour",
+			new StringFieldDefinition(
+				null, null, null, null, null, null,
+				new FieldDefinition.Filter(), null, new FieldDefinition.Facet(),
+				null, null, null, null
+			)
+		);
+
+		admin.put("boutique", null, null, false, uriInfo, new IndexDefinition(
+			null, null, fields, null, null, null, null
+		));
+
+		documents.add("boutique", new DocumentsRequest(List.of(
+			Map.of("id", "1", "name", "Running Shoes", "colour", "Red"),
+			Map.of("id", "2", "name", "Trail Shoes", "colour", "Blue")
+		)));
+		admin.commit("boutique");
+	}
+
+	/**
+	 * Settings reading the values of the given fields out of the search text.
+	 */
+	private static SearchSettingsDefinition reading(String... fields) {
+		var settings = new LinkedHashMap<String, SearchSettingsDefinition.FieldSettings>();
+		for(var field : fields) {
+			settings.put(
+				field,
+				new SearchSettingsDefinition.FieldSettings(new SearchSettingsDefinition.Interpret())
+			);
+		}
+
+		return new SearchSettingsDefinition(null, null, null, settings);
+	}
+
+	/**
+	 * The ids a search box text finds, in the order found.
+	 */
+	private List<Object> typed(String index, String text) {
+		var response = search.search(
+			index,
+			new SearchRequest(
+				List.of(new Clause.Text(
+					text, null, Matcher.Text.Match.USER, null, null, null, null, null, null
+				)),
+				null, null, null, null, null, null, null, null, null, null, null,
+				null, null, null, null
+			)
+		);
+
+		return response.hits().stream().map(SearchResponse.Hit::id).toList();
+	}
+
+	@Test
+	public void testFieldValuesAreReadWithoutTouchingTheDefinition() {
+		boutique();
+
+		var before = (IndexInfo) admin.get("boutique").getEntity();
+
+		// No text holds the colour, so the word is dropped and every pair of shoes is found
+		assertThat(typed("boutique", "red shoes"), containsInAnyOrder("1", "2"));
+
+		resource.put("boutique", null, reading("colour"));
+
+		assertThat(typed("boutique", "red shoes"), contains("1"));
+
+		// The documents were never touched, and neither was the definition
+		var after = (IndexInfo) admin.get("boutique").getEntity();
+		assertThat(after.version(), is(before.version()));
+	}
+
+	@Test
+	public void testGetAnswersTheFieldSettingsThatWereStored() {
+		boutique();
+
+		resource.put("boutique", null, reading("colour"));
+
+		var info = (SearchSettingsInfo) resource.get("boutique").getEntity();
+		assertThat(info.fields().get("colour").interpret(), is(notNullValue()));
+	}
+
+	/**
+	 * The stored object names what it uses, so a node that has no code for
+	 * reading values sets the settings aside instead of searching without them.
+	 */
+	@Test
+	public void testStoredFieldSettingsNameTheFeatureTheyNeed() {
+		boutique();
+
+		resource.put("boutique", null, reading("colour"));
+
+		assertThat(
+			searchSettings.read("boutique").orElseThrow().stored().getRequiredFeaturesList(),
+			contains("interpret_values")
+		);
+	}
+
+	@Test
+	public void testFieldSettingsOnAnUnknownFieldAreRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, reading("missing"))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:unknown_field"));
+	}
+
+	/**
+	 * A field without a facet holds no dictionary of values, so settings
+	 * reading its values read as settings that do not work.
+	 */
+	@Test
+	public void testReadingAFieldWithoutAFacetIsRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, reading("name"))
+		);
+
+		assertThat(
+			e.getErrors().get(0).getCode(),
+			is("index:settings:fields:interpret_unsupported")
+		);
+	}
+
+	@Test
+	public void testPatchTurnsOnReadingAField() {
+		boutique();
+
+		var info = patch("boutique", null, "fields.colour.interpret", Map.of());
+
+		assertThat(info.fields().get("colour").interpret(), is(notNullValue()));
+		assertThat(typed("boutique", "red shoes"), contains("1"));
+	}
+
+	@Test
+	public void testStoringSettingsWithoutFieldSettingsClearsThem() {
+		boutique();
+
+		resource.put("boutique", null, reading("colour"));
+		assertThat(typed("boutique", "red shoes"), contains("1"));
+
+		resource.put("boutique", null, new SearchSettingsDefinition(null, null, null, null));
+
+		assertThat(typed("boutique", "red shoes"), containsInAnyOrder("1", "2"));
+
+		var info = (SearchSettingsInfo) resource.get("boutique").getEntity();
+		assertThat(info.fields(), is(nullValue()));
 	}
 
 	/**

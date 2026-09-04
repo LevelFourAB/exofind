@@ -291,6 +291,7 @@ public class FacetSearchTest extends AbstractIndexTest {
 			null,
 			built.getSynonymsMap(),
 			Map.of(),
+			Map.of(),
 			Lists.immutable.empty(),
 			version
 		);

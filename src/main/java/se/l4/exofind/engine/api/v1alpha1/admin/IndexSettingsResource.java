@@ -39,6 +39,7 @@ import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.settings.FieldSettings;
 import se.l4.exofind.engine.index.settings.QuerySynonyms;
 import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
@@ -262,7 +263,7 @@ public class IndexSettingsResource {
 			The server validates the ranking against the generation the index \
 			name answers from, using the same `index:ranking:*` error codes \
 			used to validate a definition's ranking. The server validates the \
-			fields named by `synonyms` and `typoExclusions` against the same \
+			fields named by `synonyms`, `typoExclusions`, and `fields` against the same \
 			generation.
 
 			A change takes effect for searches on the answering node \
@@ -292,7 +293,8 @@ public class IndexSettingsResource {
 		description = """
 			The request body is missing, or the settings failed validation \
 			against the generation the index answers from (`index:ranking:*`, \
-			`index:settings:synonyms:*`, `index:settings:typo_exclusions:*`).""",
+			`index:settings:synonyms:*`, `index:settings:typo_exclusions:*`, \
+			`index:settings:fields:*`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -543,7 +545,7 @@ public class IndexSettingsResource {
 			var snapshot = searchSettings.read(stored).orElse(null);
 
 			var base = snapshot == null
-				? new SearchSettingsDefinition(null, null, null)
+				? new SearchSettingsDefinition(null, null, null, null)
 				: describable(snapshot);
 
 			var changed = read(ObjectPatch.applyTo(mapper.valueToTree(base), body, mapper));
@@ -624,7 +626,59 @@ public class IndexSettingsResource {
 			}
 		}
 
+		if(definition.fields() != null) {
+			for(var entry : definition.fields().entrySet()) {
+				builder.putFields(entry.getKey(), toStored(entry.getValue()));
+			}
+
+			var errors = index.validateFieldSettings(
+				builder.getFieldsMap(),
+				ObjectLocation.root().forField("fields")
+			);
+			if(errors.notEmpty()) {
+				throw new ValidationException(errors);
+			}
+		}
+
 		return SearchSettingsFeatures.describe(builder.build());
+	}
+
+	private static FieldSettings toStored(SearchSettingsDefinition.FieldSettings settings) {
+		var builder = FieldSettings.newBuilder();
+
+		if(settings.interpret() != null) {
+			builder.setInterpret(
+				se.l4.exofind.engine.index.settings.InterpretConfig.getDefaultInstance()
+			);
+		}
+
+		return builder.build();
+	}
+
+	private static SearchSettingsDefinition.FieldSettings toApi(FieldSettings settings) {
+		return new SearchSettingsDefinition.FieldSettings(
+			settings.hasInterpret() ? new SearchSettingsDefinition.Interpret() : null
+		);
+	}
+
+	/**
+	 * Read the field settings of stored settings as the API describes them,
+	 * {@code null} when there are none - the same round trip the synonym sets
+	 * are read by.
+	 */
+	private static Map<String, SearchSettingsDefinition.FieldSettings> fieldsOf(
+		SearchSettingsStore stored
+	) {
+		if(stored.getFieldsMap().isEmpty()) {
+			return null;
+		}
+
+		var fields = new TreeMap<String, SearchSettingsDefinition.FieldSettings>();
+		for(var entry : stored.getFieldsMap().entrySet()) {
+			fields.put(entry.getKey(), toApi(entry.getValue()));
+		}
+
+		return fields;
 	}
 
 	private static QuerySynonyms toStored(
@@ -738,6 +792,7 @@ public class IndexSettingsResource {
 			: null;
 		var synonyms = synonymsOf(stored);
 		var typoExclusions = typoExclusionsOf(stored);
+		var fields = fieldsOf(stored);
 
 		SearchSettingsStore roundTripped;
 		try {
@@ -758,6 +813,11 @@ public class IndexSettingsResource {
 					builder.putTypoExclusions(entry.getKey(), toStored(entry.getValue()));
 				}
 			}
+			if(fields != null) {
+				for(var entry : fields.entrySet()) {
+					builder.putFields(entry.getKey(), toStored(entry.getValue()));
+				}
+			}
 
 			roundTripped = SearchSettingsFeatures.describe(builder.build());
 		} catch(EngineException e) {
@@ -774,7 +834,7 @@ public class IndexSettingsResource {
 			throw new UnrepresentableStateException(UNREPRESENTABLE);
 		}
 
-		return new SearchSettingsDefinition(ranking, synonyms, typoExclusions);
+		return new SearchSettingsDefinition(ranking, synonyms, typoExclusions, fields);
 	}
 
 	/**
@@ -943,6 +1003,7 @@ public class IndexSettingsResource {
 				: null,
 			synonymsOf(snapshot.stored()),
 			typoExclusionsOf(snapshot.stored()),
+			fieldsOf(snapshot.stored()),
 			unquote(snapshot.version()),
 			snapshot.unsupportedFeatures().isEmpty()
 				? null

@@ -19,6 +19,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   configured
  * @param typoExclusions
  *   words matched as spelled, or {@code null} when not configured
+ * @param fields
+ *   how searches read single fields, keyed by field name, or {@code null}
+ *   when not configured
  * @param version
  *   version identifier of the stored settings, also returned in the
  *   {@code ETag} header and accepted in {@code If-Match}
@@ -50,6 +53,11 @@ public record SearchSettingsInfo(
 		Words matched as they are spelled, keyed by list name. Omitted when \
 		the settings configure no typo exclusions.""")
 	Map<String, SearchSettingsDefinition.TypoExclusions> typoExclusions,
+
+	@Schema(description = """
+		Settings that apply to one field, keyed by field name. Omitted when \
+		the settings configure no field.""")
+	Map<String, SearchSettingsDefinition.FieldSettings> fields,
 
 	@Schema(
 		description = """

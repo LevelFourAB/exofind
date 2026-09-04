@@ -326,12 +326,16 @@ public final class Meters {
 	public static final String TAG_REASON = "reason";
 
 	/**
-	 * What kind of thing a search read out of its text: {@link #KIND_NUMBER}.
+	 * What kind of thing a search read out of its text: {@link #KIND_NUMBER}
+	 * or {@link #KIND_VALUE}.
 	 */
 	public static final String TAG_KIND = "kind";
 
 	/** A number next to a unit or a comparative word, read as a range. */
 	public static final String KIND_NUMBER = "number";
+
+	/** Words that are a value a field holds, read as that value of the field. */
+	public static final String KIND_VALUE = "value";
 
 	public static final String OUTCOME_SUCCESS = "success";
 	public static final String OUTCOME_ERROR = "error";
