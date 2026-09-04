@@ -169,18 +169,31 @@ public class Indexes implements RegistryPoller.Listener {
 	private final ConcurrentHashMap<String, ReentrantLock> nameLocks;
 
 	/**
-	 * Runs the refresh passes {@link RegistryPoller} hands over, the disk
-	 * sweep and the reopening an ownership change asks for. One thread, so
-	 * none of them ever runs next to another. Owned here so that shutting this
-	 * down also stops the node from synchronizing.
+	 * Runs the refresh passes {@link RegistryPoller} hands over and the disk
+	 * sweep. One thread, so neither ever runs next to the other. Owned here so
+	 * that shutting this down also stops the node from synchronizing.
 	 */
 	private final ScheduledExecutorService refreshExecutor;
 
 	/**
-	 * Runs the pulls of a refresh next to each other, so that one index that
-	 * is slow to pull does not hold up the others.
+	 * Runs the pulls of a refresh, the opens of a preload and the work an
+	 * ownership change asks for next to each other, so that one index that is
+	 * slow to pull or slow to push does not hold up the others.
 	 */
 	private final ExecutorService pullExecutor;
+
+	/**
+	 * The last piece of ownership work queued for an index name, so that the
+	 * next piece for the same name runs after it. Committing and pushing an
+	 * index that is being handed over takes as long as the storage does, and
+	 * two changes for one index must still reach it in the order they
+	 * happened.
+	 *
+	 * <p>An entry is removed once nothing is queued behind it. The empty name
+	 * stands for a change that names no index, which is this node gaining or
+	 * losing every index at once.
+	 */
+	private final ConcurrentHashMap<String, CompletableFuture<Void>> ownershipQueues;
 
 	/**
 	 * The threads a search on this node spreads over, handed to every index
@@ -602,14 +615,15 @@ public class Indexes implements RegistryPoller.Listener {
 
 		/*
 		 * Gaining or losing an index changes the mode its open generations
-		 * need. Gaining one also opens the index. Both run on the refresh
-		 * thread, because the notification arrives on the thread that
-		 * coordinates ownership, and that thread must not do Lucene work.
+		 * need. Gaining one also opens the index. Both are handed off, because
+		 * the notification arrives on the thread that coordinates ownership,
+		 * and that thread must not do Lucene work.
 		 */
+		this.ownershipQueues = new ConcurrentHashMap<>();
 		this.nodeStateListener = new NodeState.Listener() {
 			@Override
 			public void onOwnershipChanged(NodeState state, String index) {
-				refreshExecutor.execute(() -> {
+				queueOwnership(index, () -> {
 					reopenOwned(index, true);
 					openGainedIndex(index);
 				});
@@ -617,10 +631,68 @@ public class Indexes implements RegistryPoller.Listener {
 
 			@Override
 			public void onOwnershipRevoked(NodeState state, String index) {
-				refreshExecutor.execute(() -> reopenOwned(index, false));
+				queueOwnership(index, () -> reopenOwned(index, false));
 			}
 		};
 		nodeState.addListener(nodeStateListener);
+	}
+
+	/**
+	 * Run a piece of ownership work for one index, after everything queued
+	 * for that index before it and next to the work queued for every other
+	 * index.
+	 *
+	 * <p>Reopening an index this node is handing over commits and pushes it,
+	 * which takes as long as the storage does. Running those next to each
+	 * other keeps one index that is slow to push from delaying the failover
+	 * of every other, and keeps both away from the refresh thread that reads
+	 * the registry.
+	 *
+	 * @param index
+	 *   name of the index the work belongs to, without a generation, or
+	 *   {@code null} when the change names no index
+	 * @param task
+	 *   the work to run, which must handle its own failures
+	 * @return
+	 *   completes when the work has run, and completes exceptionally only
+	 *   when it could not be queued
+	 */
+	private CompletableFuture<Void> queueOwnership(String index, Runnable task) {
+		var key = index == null ? "" : index;
+
+		/*
+		 * The queued work never fails, so the next piece for the same index is
+		 * never skipped for a failure of the one before it.
+		 */
+		Runnable guarded = () -> {
+			try {
+				task.run();
+			} catch(RuntimeException e) {
+				logger.atWarn()
+					.addKeyValue("index", key)
+					.setCause(e)
+					.log("Could not follow the ownership of an index; " + e.getMessage());
+			}
+		};
+
+		CompletableFuture<Void> queued;
+		try {
+			queued = ownershipQueues.compute(key, (name, tail) -> tail == null
+				? CompletableFuture.runAsync(guarded, pullExecutor)
+				: tail.thenRunAsync(guarded, pullExecutor)
+			);
+		} catch(RejectedExecutionException e) {
+			// Shutting down; the close path flushes everything that is still open
+			return CompletableFuture.completedFuture(null);
+		}
+
+		/*
+		 * Removed only while it is still the last piece, so that an entry
+		 * something is queued behind is left where it is.
+		 */
+		queued.whenComplete((result, e) -> ownershipQueues.remove(key, queued));
+
+		return queued;
 	}
 
 	/**
@@ -716,9 +788,9 @@ public class Indexes implements RegistryPoller.Listener {
 
 		try {
 			/*
-			 * On the pull executor, not the refresh thread: a full copy can
-			 * take minutes, and the refresh thread also runs the flush that a
-			 * handover waits for.
+			 * Queued again rather than opened here: a full copy can take
+			 * minutes, and the next ownership change for the index waits
+			 * behind the work this runs in.
 			 */
 			pullExecutor.execute(() -> {
 				try {
@@ -741,11 +813,10 @@ public class Indexes implements RegistryPoller.Listener {
 
 	/**
 	 * Bring the open generations of an index into the mode this node holds
-	 * it in, here and now. The reopening an ownership change queues runs on
-	 * the refresh thread a moment later; a request that was admitted by
-	 * claiming the index calls this first, so the writer it needs exists by
-	 * the time it is served. A generation already open in the right mode is
-	 * left as it is.
+	 * it in, here and now. The reopening an ownership change queues runs a
+	 * moment later; a request that was admitted by claiming the index calls
+	 * this first, so the writer it needs exists by the time it is served. A
+	 * generation already open in the right mode is left as it is.
 	 *
 	 * @param index
 	 *   name of the index, without a generation
@@ -776,28 +847,31 @@ public class Indexes implements RegistryPoller.Listener {
 	public CompletableFuture<Void> flushForHandover(String index) {
 		var flushed = new CompletableFuture<Void>();
 
-		try {
-			refreshExecutor.execute(() -> {
-				try {
-					reopenOwned(index, true);
+		/*
+		 * Queued like an ownership change rather than run here, so that it
+		 * follows the reopening the change that took the index away already
+		 * asked for.
+		 */
+		queueOwnership(index, () -> {
+			try {
+				reopenOwned(index, true);
 
-					// An evicted generation that is still closing may push while it does
-					for(var name : retiring.keySet()) {
-						var parsed = IndexName.tryParse(name).orElse(null);
-						if(parsed != null && parsed.index().equals(index)) {
-							drainRetiring(name, true);
-						}
+				// An evicted generation that is still closing may push while it does
+				for(var name : retiring.keySet()) {
+					var parsed = IndexName.tryParse(name).orElse(null);
+					if(parsed != null && parsed.index().equals(index)) {
+						drainRetiring(name, true);
 					}
-
-					flushed.complete(null);
-				} catch(Throwable t) {
-					flushed.completeExceptionally(t);
 				}
-			});
-		} catch(RejectedExecutionException e) {
-			// Shutting down; the close path flushes everything that is still open
+
+				flushed.complete(null);
+			} catch(Throwable t) {
+				flushed.completeExceptionally(t);
+			}
+		}).whenComplete((result, e) -> {
+			// Never queued, so nothing will complete it; the close path flushes instead
 			flushed.complete(null);
-		}
+		});
 
 		return flushed;
 	}
