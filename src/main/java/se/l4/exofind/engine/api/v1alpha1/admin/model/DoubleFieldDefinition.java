@@ -51,7 +51,10 @@ public record DoubleFieldDefinition(
 	@Schema(description = """
 		Sets allowed numeric bounds. Documents containing values outside these \
 		bounds are rejected.""")
-	Validation validation
+	Validation validation,
+
+	@Schema(description = FieldDefinition.UNIT_DESCRIPTION, examples = "EUR")
+	String unit
 ) implements FieldDefinition {
 	/**
 	 * The allowed numeric bounds for the field. Documents containing values

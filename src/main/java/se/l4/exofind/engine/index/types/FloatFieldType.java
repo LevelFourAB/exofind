@@ -33,6 +33,11 @@ public class FloatFieldType extends NumberFieldType {
 	}
 
 	@Override
+	protected String declaredUnit(FieldTypeDef type) {
+		return type.getFloat().hasUnit() ? type.getFloat().getUnit() : null;
+	}
+
+	@Override
 	protected boolean isUsableBound(Number bound) {
 		return Float.isFinite(bound.floatValue());
 	}

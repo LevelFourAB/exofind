@@ -39,6 +39,11 @@ public class Int32FieldType extends NumberFieldType {
 	}
 
 	@Override
+	protected String declaredUnit(FieldTypeDef type) {
+		return type.getInt32().hasUnit() ? type.getInt32().getUnit() : null;
+	}
+
+	@Override
 	protected int compare(Number a, Number b) {
 		return Integer.compare(a.intValue(), b.intValue());
 	}

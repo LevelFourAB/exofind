@@ -130,6 +130,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					null,
+					null,
 					null
 				)
 			),
@@ -159,6 +160,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					null,
+					null,
 					null
 				)
 			),
@@ -180,6 +182,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					2,
+					null,
 					null,
 					null
 				)
@@ -203,6 +206,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					null,
+					null,
 					null
 				)
 			),
@@ -212,6 +216,137 @@ public class SearchRequestMapperTest {
 		var query = (TextQuery) mapped.request().query().get(0);
 		assertThat(query.matcher().match(), is(TextMatcher.Match.USER));
 		assertThat(query.matcher().slop(), is(0));
+		assertThat(query.matcher().interpret(), is(TextMatcher.Interpret.AUTO));
+	}
+
+	@Test
+	public void testTextClauseCarriesInterpret() {
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(
+				new Clause.Text(
+					"shoes under 100",
+					null,
+					Matcher.Text.Match.USER,
+					null,
+					null,
+					null,
+					null,
+					null,
+					new Clause.Text.Interpret.Mode(Matcher.Text.Interpret.OFF)
+				)
+			),
+			LIMITS
+		);
+
+		var query = (TextQuery) mapped.request().query().get(0);
+		assertThat(query.matcher().interpret(), is(TextMatcher.Interpret.OFF));
+		assertThat(query.targets().isEmpty(), is(true));
+	}
+
+	@Test
+	public void testTextClauseNamingTargetsReadsOnThem() {
+		var when = List.<Clause>of(
+			new Clause.Field("prices.list", new Matcher.Equals("cust-17"))
+		);
+		var store = new Clause.Text.Target(
+			"prices.amount",
+			List.of(new Clause.Field("prices.list", new Matcher.Equals("store"))),
+			null
+		);
+
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(
+				new Clause.Text(
+					"rain under 100",
+					null,
+					Matcher.Text.Match.USER,
+					null,
+					null,
+					null,
+					null,
+					null,
+					new Clause.Text.Interpret.Targets(List.of(
+						new Clause.Text.Target("prices.amount", when, List.of(store))
+					))
+				)
+			),
+			LIMITS
+		);
+
+		var query = (TextQuery) mapped.request().query().get(0);
+		assertThat(query.matcher().interpret(), is(TextMatcher.Interpret.AUTO));
+		assertThat(query.targets().size(), is(1));
+
+		var target = query.targets().get(0);
+		assertThat(target.field(), is("prices.amount"));
+		assertThat(
+			target.when(),
+			contains(new FieldQuery("prices.list", new EqualsMatcher("cust-17")))
+		);
+		assertThat(target.fallback().size(), is(1));
+		assertThat(target.fallback().get(0).field(), is("prices.amount"));
+		assertThat(
+			target.fallback().get(0).when(),
+			contains(new FieldQuery("prices.list", new EqualsMatcher("store")))
+		);
+	}
+
+	@Test
+	public void testTextClauseNamingNoTargetsIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Text(
+						"rain under 100",
+						null,
+						Matcher.Text.Match.USER,
+						null,
+						null,
+						null,
+						null,
+						null,
+						new Clause.Text.Interpret.Targets(List.of())
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:interpret_fields_required"));
+		assertThat(pathsOf(e), contains("/query/0/interpret/fields"));
+	}
+
+	@Test
+	public void testTargetWhenHoldingANestedClauseIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Text(
+						"rain under 100",
+						null,
+						Matcher.Text.Match.USER,
+						null,
+						null,
+						null,
+						null,
+						null,
+						new Clause.Text.Interpret.Targets(List.of(
+							new Clause.Text.Target(
+								"price",
+								List.of(new Clause.Nested("prices", List.of(), null)),
+								null
+							)
+						))
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:interpret_when_unsupported"));
+		assertThat(pathsOf(e), contains("/query/0/interpret/fields/0/when/0"));
 	}
 
 	@Test
@@ -227,6 +362,7 @@ public class SearchRequestMapperTest {
 						null,
 						null,
 						-1,
+						null,
 						null,
 						null
 					)
@@ -258,6 +394,7 @@ public class SearchRequestMapperTest {
 						null,
 						2,
 						null,
+						null,
 						null
 					)
 				),
@@ -281,6 +418,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					2,
+					null,
 					null
 				)
 				)
@@ -306,7 +444,8 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					null,
-					Clause.Text.Combine.FIELD
+					Clause.Text.Combine.FIELD,
+					null
 				)
 			),
 			LIMITS
@@ -781,7 +920,7 @@ public class SearchRequestMapperTest {
 				new Clause.Fuse(
 					List.of(
 						new Clause.Fuse.Ranking(List.of(new Clause.Text(
-							"waterproof jacket", null, null, null, null, null, null, null
+							"waterproof jacket", null, null, null, null, null, null, null, null
 						)), null),
 						new Clause.Fuse.Ranking(
 							List.of(new Clause.Knn("embedding", new float[] { 1f }, 50, null)),
@@ -812,7 +951,7 @@ public class SearchRequestMapperTest {
 				new Clause.Fuse(
 					List.of(
 						new Clause.Fuse.Ranking(
-							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null)),
+							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null)),
 							null
 						),
 						new Clause.Fuse.Ranking(
@@ -840,7 +979,7 @@ public class SearchRequestMapperTest {
 				withQuery(
 					new Clause.Fuse(
 						List.of(new Clause.Fuse.Ranking(
-							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null)),
+							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null)),
 							null
 						)),
 						null, null, null
@@ -897,7 +1036,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Fuse(
 						List.of(
 							new Clause.Fuse.Ranking(
-								List.of(new Clause.Text("jacket", null, null, null, null, null, null, null)),
+								List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null)),
 								null
 							),
 							new Clause.Fuse.Ranking(
@@ -1064,7 +1203,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Nested(
 						"variants",
 						List.of(new Clause.Text(
-							"waterproof", null, null, null, null, null, null, null
+							"waterproof", null, null, null, null, null, null, null, null
 						)),
 						null
 					)),
@@ -2010,7 +2149,7 @@ public class SearchRequestMapperTest {
 						List.of(new Clause.Nested(
 							"variants",
 							List.of(new Clause.Text(
-								"waterproof", null, null, null, null, null, null, null
+								"waterproof", null, null, null, null, null, null, null, null
 							)),
 							null
 						))

@@ -20,6 +20,8 @@ package se.l4.exofind.engine.query.matchers;
  *   next to each other
  * @param relax
  *   what may be let go of rather than find nothing
+ * @param interpret
+ *   whether parts of the text are read as filters on the fields of the index
  */
 public record TextMatcher(
 	String text,
@@ -27,7 +29,8 @@ public record TextMatcher(
 	Prefix prefix,
 	Typos typos,
 	int slop,
-	Relax relax
+	Relax relax,
+	Interpret interpret
 ) implements Matcher {
 	/**
 	 * How the words of the text are combined.
@@ -150,9 +153,40 @@ public record TextMatcher(
 		WORDS
 	}
 
+	/**
+	 * Whether parts of the text are read as filters on the fields of the
+	 * index, rather than as words to look for.
+	 *
+	 * Only text in {@link Match#USER} mode is read this way: it is the text
+	 * of a search box, where {@code shoes under 100 kr} means a price as much
+	 * as it means words. A number next to a comparative word of the search
+	 * locale, or next to the unit a number field declares, is read as a range
+	 * on that field. The words are still searched as text besides, so a
+	 * reading never hides a document that holds them as words; it only adds
+	 * the documents the filter finds. What was read is answered alongside the
+	 * results, see {@link se.l4.exofind.engine.query.SearchResult.Interpreted}.
+	 */
+	public enum Interpret {
+		/**
+		 * Read whatever the index declares can be read - the units of its
+		 * number fields.
+		 */
+		AUTO,
+
+		/**
+		 * Take every word as text. What a search box sends when a person
+		 * has turned a reading off.
+		 */
+		OFF
+	}
+
 	public TextMatcher {
 		if(match == null) {
 			match = Match.ALL;
+		}
+
+		if(interpret == null) {
+			interpret = Interpret.AUTO;
 		}
 
 		if(prefix == null) {
@@ -191,7 +225,29 @@ public record TextMatcher(
 	 * @param slop
 	 */
 	public TextMatcher(String text, Match match, Prefix prefix, Typos typos, int slop) {
-		this(text, match, prefix, typos, slop, null);
+		this(text, match, prefix, typos, slop, null, null);
+	}
+
+	/**
+	 * Match the given text with the words next to each other where that means
+	 * anything, reading whatever the index declares can be read.
+	 *
+	 * @param text
+	 * @param match
+	 * @param prefix
+	 * @param typos
+	 * @param slop
+	 * @param relax
+	 */
+	public TextMatcher(
+		String text,
+		Match match,
+		Prefix prefix,
+		Typos typos,
+		int slop,
+		Relax relax
+	) {
+		this(text, match, prefix, typos, slop, relax, null);
 	}
 
 	/**
@@ -225,7 +281,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withText(String text) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax);
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -235,7 +291,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withMatch(Match match) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax);
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -245,7 +301,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withPrefix(Prefix prefix) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax);
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -255,7 +311,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withTypos(Typos typos) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax);
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -266,7 +322,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withRelax(Relax relax) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax);
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -284,7 +340,17 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withSlop(int slop) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax);
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+	}
+
+	/**
+	 * Get this matcher reading parts of its text as filters in the given way.
+	 *
+	 * @param interpret
+	 * @return
+	 */
+	public TextMatcher withInterpret(Interpret interpret) {
+		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
 	}
 
 	@Override

@@ -88,7 +88,12 @@ public class QueryCompiler {
 			"Field `{{name}}` is inside the objects of `{{path}}` and can only be used inside a `nested` clause for that path"
 		);
 
-	private static final ErrorType FIELD_NOT_IN_PATH = ErrorType
+	/**
+	 * A field named inside a {@code nested} clause that is not on its path.
+	 * Shared with {@link Interpretation}, which refuses a target the same way
+	 * when the text sits inside such a clause.
+	 */
+	static final ErrorType FIELD_NOT_IN_PATH = ErrorType
 		.withCode("index:query:nested:not_in_path")
 		.withArguments("name", "path")
 		.withMessage(

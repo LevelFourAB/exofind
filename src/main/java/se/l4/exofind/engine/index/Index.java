@@ -3865,6 +3865,18 @@ public class Index {
 					compileTypoExclusions(settings)
 				);
 				var settingsVersion = settings == null ? null : settings.version();
+
+				/*
+				 * Read before anything is compiled, so the filters the text
+				 * holds are part of the search everything below runs: the
+				 * facets, the total, and relaxing count the filter the same
+				 * way they would one the caller wrote.
+				 */
+				var interpreted = interpret(request);
+				if(interpreted != null) {
+					request = request.withQuery(interpreted.query());
+				}
+
 				var searched = request.query().newWithAll(request.filters());
 
 				/*
@@ -4033,7 +4045,8 @@ public class Index {
 							)
 							: null,
 						counted == null ? null : counted.counts(),
-						relaxed
+						relaxed,
+						interpreted == null ? null : interpreted.interpreted()
 					);
 				}
 
@@ -4521,6 +4534,7 @@ public class Index {
 					documents,
 					faceted == null ? null : faceted.counts(),
 					relaxed,
+					interpreted == null ? null : interpreted.interpreted(),
 					window.end()
 				);
 			}
@@ -4611,6 +4625,17 @@ public class Index {
 					compileSynonymOverlay(settings),
 					compileTypoExclusions(settings)
 				);
+
+				/*
+				 * Read the same way a search reads, so what is explained is the
+				 * search that would have run, filters read out of the text
+				 * and all.
+				 */
+				var interpreted = interpret(request);
+				if(interpreted != null) {
+					request = request.withQuery(interpreted.query());
+				}
+
 				compiler.markClauses(request.query(), request.filters());
 
 				var searched = request.query().newWithAll(request.filters());
@@ -4661,7 +4686,8 @@ public class Index {
 					explanation.isMatch(),
 					explanation.isMatch() ? explanation.getValue().floatValue() : 0f,
 					Explanations.of(explanation),
-					relaxed
+					relaxed,
+					interpreted == null ? null : interpreted.interpreted()
 				);
 			}
 		} finally {
@@ -4853,6 +4879,22 @@ public class Index {
 	 *   there was nothing to give up or giving it up found nothing either
 	 * @throws IOException
 	 */
+	/**
+	 * Read the filters the text of a search holds, if it holds any.
+	 *
+	 * Runs on every search whose text a person typed, before it is compiled,
+	 * and costs a walk over the words of the text against the units the
+	 * schema declares - nothing on an index that declares none.
+	 *
+	 * @param request
+	 * @return
+	 *   what to search with instead and what was read, or {@code null} when
+	 *   there was nothing to read
+	 */
+	private Interpretation.Outcome interpret(SearchRequest request) {
+		return Interpretation.read(schema, request.locale(), request.query());
+	}
+
 	private Relaxation.Outcome relax(
 		IndexSearcher searcher,
 		QueryCompiler compiler,

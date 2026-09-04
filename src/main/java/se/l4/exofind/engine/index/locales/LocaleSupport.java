@@ -43,6 +43,17 @@ public interface LocaleSupport {
 	CharArraySet getStopWords();
 
 	/**
+	 * Get the words of this locale that put a bound on a number, such as
+	 * `under` and `at least` in English. Empty for a locale that has no such
+	 * list, which still reads a number written with a unit.
+	 *
+	 * @return
+	 */
+	default Comparatives getComparatives() {
+		return Comparatives.none();
+	}
+
+	/**
 	 * Wrap the text of a value so that a locale written in more than one way
 	 * comes out in the one its rules are written for, before anything is cut
 	 * into words.

@@ -30,6 +30,9 @@ import se.l4.exofind.engine.index.Document;
  * @param relaxed
  *   what the search let go of to find anything, or {@code null} when it found
  *   what was asked for. See {@link Relaxed}
+ * @param interpreted
+ *   what the search read out of the text as filters, or {@code null} when it
+ *   read nothing. See {@link Interpreted}
  * @param windowEnd
  *   where the window a {@link Rescore} reordered ended, in the order the
  *   ranking put the results in - or {@code null} when the search rescored
@@ -43,6 +46,7 @@ public record SearchResult(
 	Total documents,
 	ImmutableMap<String, Facet> facets,
 	Relaxed relaxed,
+	Interpreted interpreted,
 	SortKey windowEnd
 ) {
 	public SearchResult {
@@ -56,9 +60,20 @@ public record SearchResult(
 		Total total,
 		Total documents,
 		ImmutableMap<String, Facet> facets,
+		Relaxed relaxed,
+		Interpreted interpreted
+	) {
+		this(hits, total, documents, facets, relaxed, interpreted, null);
+	}
+
+	public SearchResult(
+		ImmutableList<Hit> hits,
+		Total total,
+		Total documents,
+		ImmutableMap<String, Facet> facets,
 		Relaxed relaxed
 	) {
-		this(hits, total, documents, facets, relaxed, null);
+		this(hits, total, documents, facets, relaxed, null, null);
 	}
 
 	public SearchResult(
@@ -67,7 +82,7 @@ public record SearchResult(
 		ImmutableMap<String, Facet> facets,
 		Relaxed relaxed
 	) {
-		this(hits, total, null, facets, relaxed, null);
+		this(hits, total, null, facets, relaxed, null, null);
 	}
 
 	public SearchResult(
@@ -75,11 +90,11 @@ public record SearchResult(
 		Total total,
 		ImmutableMap<String, Facet> facets
 	) {
-		this(hits, total, null, facets, null, null);
+		this(hits, total, null, facets, null, null, null);
 	}
 
 	public SearchResult(ImmutableList<Hit> hits, Total total) {
-		this(hits, total, null, null, null, null);
+		this(hits, total, null, null, null, null, null);
 	}
 
 	/**
@@ -248,6 +263,81 @@ public record SearchResult(
 			 * of.
 			 */
 			COMMON
+		}
+	}
+
+	/**
+	 * What a search read out of the typed text as filters.
+	 *
+	 * Present only on a search whose text held something the index declared
+	 * could be read - a number next to the unit of a number field, or next to
+	 * a comparative word - so the results answer a filter as well as the
+	 * words. Saying so is what lets a search box show the reading as a chip a
+	 * person can take away, so that a wrong reading is never silent.
+	 *
+	 * The words a reading came from are still searched as text besides, so
+	 * the results hold what the filter finds and what the words find as text,
+	 * ranked with the filter first.
+	 *
+	 * @param filters
+	 *   the filters that were read, in the order their words were typed. Two
+	 *   fields declaring the same unit read the same words as two filters,
+	 *   either of which a document may satisfy
+	 * @param text
+	 *   the text that was left once the words of the readings were taken out
+	 *   of it, as it reads back to the same search. Empty when everything
+	 *   typed was read
+	 */
+	public record Interpreted(
+		ImmutableList<Filter> filters,
+		String text
+	) {
+		/**
+		 * One filter a search read out of the text.
+		 *
+		 * @param field
+		 *   the field the filter is on, named as the definition names it
+		 * @param matcher
+		 *   what the values of the field have to satisfy - a
+		 *   {@link se.l4.exofind.engine.query.matchers.RangeMatcher range} for
+		 *   a bound, an
+		 *   {@link se.l4.exofind.engine.query.matchers.EqualsMatcher equals}
+		 *   for a number written with its unit and nothing else
+		 * @param words
+		 *   the words the filter was read from, as they were typed and in the
+		 *   order they were typed
+		 * @param when
+		 *   the clauses that have to hold where the filter is read, as the
+		 *   {@link TextQuery.Target target} the search named said. Empty when
+		 *   the filter is read wherever the field holds a value
+		 * @param fallback
+		 *   the targets read instead where a document holds no value on the
+		 *   field, in the order they are tried. Empty when there are none
+		 */
+		public record Filter(
+			String field,
+			se.l4.exofind.engine.query.matchers.Matcher matcher,
+			ImmutableList<String> words,
+			ImmutableList<Query> when,
+			ImmutableList<TextQuery.Target> fallback
+		) {
+			public Filter {
+				if(when == null) {
+					when = Lists.immutable.empty();
+				}
+
+				if(fallback == null) {
+					fallback = Lists.immutable.empty();
+				}
+			}
+
+			public Filter(
+				String field,
+				se.l4.exofind.engine.query.matchers.Matcher matcher,
+				ImmutableList<String> words
+			) {
+				this(field, matcher, words, null, null);
+			}
 		}
 	}
 

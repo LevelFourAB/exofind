@@ -325,6 +325,18 @@ public final class IndexFeatures {
 		"field.typo_tolerance.numbers";
 
 	/**
+	 * A number field declares what its values are measured in, so a search
+	 * reads a number typed next to the unit as a filter on the field.
+	 *
+	 * Changes nothing about how values are written. Named because a node
+	 * without it drops the unit and goes on searching: it would answer the
+	 * same typed text with the number as a word where its peers answer with a
+	 * filter, which is a different set of documents rather than a different
+	 * order of them.
+	 */
+	public static final String FIELD_UNIT = "field.unit";
+
+	/**
 	 * A field answers searches with highlighted fragments of its text.
 	 *
 	 * Unlike the two above this one changes how documents are indexed - the
@@ -427,6 +439,7 @@ public final class IndexFeatures {
 			TYPE_INT64,
 			TYPE_FLOAT,
 			TYPE_DOUBLE,
+			FIELD_UNIT,
 			TYPE_TIMESTAMP,
 			TYPE_GEO_POINT,
 			INDEX_SOURCE,
@@ -668,10 +681,30 @@ public final class IndexFeatures {
 			}
 			case BOOLEAN -> features.add(TYPE_BOOLEAN);
 			case VECTOR -> features.add(TYPE_VECTOR);
-			case INT32 -> features.add(TYPE_INT32);
-			case INT64 -> features.add(TYPE_INT64);
-			case FLOAT -> features.add(TYPE_FLOAT);
-			case DOUBLE -> features.add(TYPE_DOUBLE);
+			case INT32 -> {
+				features.add(TYPE_INT32);
+				if(field.getType().getInt32().hasUnit()) {
+					features.add(FIELD_UNIT);
+				}
+			}
+			case INT64 -> {
+				features.add(TYPE_INT64);
+				if(field.getType().getInt64().hasUnit()) {
+					features.add(FIELD_UNIT);
+				}
+			}
+			case FLOAT -> {
+				features.add(TYPE_FLOAT);
+				if(field.getType().getFloat().hasUnit()) {
+					features.add(FIELD_UNIT);
+				}
+			}
+			case DOUBLE -> {
+				features.add(TYPE_DOUBLE);
+				if(field.getType().getDouble().hasUnit()) {
+					features.add(FIELD_UNIT);
+				}
+			}
 			case TIMESTAMP -> features.add(TYPE_TIMESTAMP);
 			case GEO_POINT -> features.add(TYPE_GEO_POINT);
 			case OBJECT -> {

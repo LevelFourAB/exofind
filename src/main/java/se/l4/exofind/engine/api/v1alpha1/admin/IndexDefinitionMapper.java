@@ -408,6 +408,10 @@ public class IndexDefinitionMapper {
 			builder.setValidation(validation);
 		}
 
+		if(field.unit() != null) {
+			builder.setUnit(field.unit());
+		}
+
 		return builder.build();
 	}
 
@@ -423,6 +427,10 @@ public class IndexDefinitionMapper {
 				validation.setMax(field.validation().max());
 			}
 			builder.setValidation(validation);
+		}
+
+		if(field.unit() != null) {
+			builder.setUnit(field.unit());
 		}
 
 		return builder.build();
@@ -442,6 +450,10 @@ public class IndexDefinitionMapper {
 			builder.setValidation(validation);
 		}
 
+		if(field.unit() != null) {
+			builder.setUnit(field.unit());
+		}
+
 		return builder.build();
 	}
 
@@ -457,6 +469,10 @@ public class IndexDefinitionMapper {
 				validation.setMax(field.validation().max());
 			}
 			builder.setValidation(validation);
+		}
+
+		if(field.unit() != null) {
+			builder.setUnit(field.unit());
 		}
 
 		return builder.build();
@@ -1196,7 +1212,8 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
-					validation
+					validation,
+					int32.hasUnit() ? int32.getUnit() : null
 				);
 			}
 			case INT64 -> {
@@ -1220,7 +1237,8 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
-					validation
+					validation,
+					int64.hasUnit() ? int64.getUnit() : null
 				);
 			}
 			case FLOAT -> {
@@ -1244,7 +1262,8 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
-					validation
+					validation,
+					floatType.hasUnit() ? floatType.getUnit() : null
 				);
 			}
 			case DOUBLE -> {
@@ -1268,7 +1287,8 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
-					validation
+					validation,
+					doubleType.hasUnit() ? doubleType.getUnit() : null
 				);
 			}
 			case VECTOR -> {

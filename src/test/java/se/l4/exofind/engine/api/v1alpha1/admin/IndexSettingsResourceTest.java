@@ -168,14 +168,14 @@ public class IndexSettingsResourceTest {
 				"sales",
 				new Int64FieldDefinition(
 					null, null, null, true, null, null,
-					new FieldDefinition.Sort(null, null), null, null
+					new FieldDefinition.Sort(null, null), null, null, null
 				)
 			);
 			fields.put(
 				"views",
 				new Int64FieldDefinition(
 					null, null, null, true, null, null,
-					new FieldDefinition.Sort(null, null), null, null
+					new FieldDefinition.Sort(null, null), null, null, null
 				)
 			);
 		}
@@ -869,7 +869,7 @@ public class IndexSettingsResourceTest {
 		var response = search.search(
 			index,
 			new SearchRequest(
-				List.of(new Clause.Text(text, null, null, null, null, null, null, null)),
+				List.of(new Clause.Text(text, null, null, null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null,
 				null, null, null, null
 			)

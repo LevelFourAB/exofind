@@ -12,6 +12,7 @@ You can scrape these meters through the Prometheus endpoint or push them to an O
 | --- | --- | --- | --- | --- |
 | `exofind.search` | Timer | Seconds | `outcome` (`success`, `error`), `index` (optional) | End-to-end duration of a search request. The `index` tag is present only when `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM` is `true`. |
 | `exofind.search.relaxation` | Counter | Words | `reason` | Count of words dropped by a search before the query matched. Each dropped word increments the counter by one. |
+| `exofind.search.interpretation` | Counter | Filters | `kind` (`number`) | Count of filters a search read out of the text a user typed, such as a price bound. Each filter read increments the counter by one. |
 | `exofind.search.pieces` | Counter | Pieces | `thread` (`pool`, `request`) | Count of search work pieces, where a piece is one segment collected or one part of the facet counting. The `thread` tag indicates whether the piece ran on a search pool thread (`pool`) or on the request thread (`request`). Pieces run under `request` while `EXOFIND_SEARCH_THREADS` holds threads mean the pool was busy. Lucene's own ranking slices are not counted. |
 
 ### Write and commit metrics

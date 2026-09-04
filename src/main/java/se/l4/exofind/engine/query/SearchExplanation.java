@@ -26,12 +26,16 @@ import org.eclipse.collections.api.list.ImmutableList;
  *   what the search let go of to match anything, or {@code null} when it let go
  *   of nothing. A search that matches nothing drops words and runs again, and
  *   what is explained is the search that ran
+ * @param interpreted
+ *   what the search read out of its text as filters, or {@code null} when it
+ *   read nothing. What is explained is the search with the filters in it
  */
 public record SearchExplanation(
 	boolean matched,
 	float score,
 	Detail detail,
-	SearchResult.Relaxed relaxed
+	SearchResult.Relaxed relaxed,
+	SearchResult.Interpreted interpreted
 ) {
 	/**
 	 * One step of a score.

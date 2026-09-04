@@ -152,6 +152,109 @@ import morfologik.stemming.Dictionary;
  * is not picked up until it restarts.
  */
 public final class Locales {
+	/*
+	 * The words that put a bound on a number, per locale that has a list. A
+	 * handful each: the ones a shopper types in front of a price or a size.
+	 * They sit above the registry because the registry is built when this
+	 * class loads and reads them as it goes.
+	 */
+	private static final Comparatives DANISH_COMPARATIVES = Comparatives.create()
+		.below("under", "mindre end", "billigere end")
+		.atMost("max", "maks", "højst", "op til")
+		.above("over", "mere end", "dyrere end")
+		.atLeast("min", "mindst", "fra")
+		.between("mellem", "fra")
+		.to("til", "og")
+		.build();
+
+	private static final Comparatives GERMAN_COMPARATIVES = Comparatives.create()
+		.below("unter", "weniger als", "billiger als")
+		.atMost("max", "maximal", "höchstens", "bis", "bis zu")
+		.above("über", "mehr als", "teurer als")
+		.atLeast("min", "mindestens", "ab")
+		.between("zwischen", "von")
+		.to("bis", "und")
+		.build();
+
+	private static final Comparatives ENGLISH_COMPARATIVES = Comparatives.create()
+		.below("under", "below", "less than", "cheaper than")
+		.atMost("max", "maximum", "at most", "up to")
+		.above("over", "above", "more than")
+		.atLeast("min", "minimum", "at least", "from")
+		.between("between", "from")
+		.to("to", "and")
+		.build();
+
+	private static final Comparatives SPANISH_COMPARATIVES = Comparatives.create()
+		.below("menos de", "por debajo de")
+		.atMost("max", "máximo", "hasta", "como máximo")
+		.above("más de", "por encima de")
+		.atLeast("min", "mínimo", "al menos", "desde", "a partir de")
+		.between("entre", "de", "desde")
+		.to("a", "y")
+		.build();
+
+	private static final Comparatives FINNISH_COMPARATIVES = Comparatives.create()
+		.below("alle", "vähemmän kuin")
+		.atMost("max", "enintään", "korkeintaan")
+		.above("yli", "enemmän kuin")
+		.atLeast("min", "vähintään")
+		.build();
+
+	private static final Comparatives FRENCH_COMPARATIVES = Comparatives.create()
+		.below("moins de", "sous")
+		.atMost("max", "maximum", "au plus", "jusqu'à")
+		.above("plus de", "au-dessus de")
+		.atLeast("min", "minimum", "au moins", "à partir de")
+		.between("entre", "de")
+		.to("à", "et")
+		.build();
+
+	private static final Comparatives ITALIAN_COMPARATIVES = Comparatives.create()
+		.below("meno di", "sotto")
+		.atMost("max", "massimo", "al massimo", "fino a")
+		.above("più di", "oltre", "sopra")
+		.atLeast("min", "minimo", "almeno", "da")
+		.between("tra", "fra", "da")
+		.to("a", "e")
+		.build();
+
+	private static final Comparatives DUTCH_COMPARATIVES = Comparatives.create()
+		.below("onder", "minder dan", "goedkoper dan")
+		.atMost("max", "maximaal", "hoogstens", "tot")
+		.above("boven", "meer dan", "duurder dan")
+		.atLeast("min", "minimaal", "minstens", "vanaf")
+		.between("tussen", "van")
+		.to("tot", "en")
+		.build();
+
+	private static final Comparatives NORWEGIAN_COMPARATIVES = Comparatives.create()
+		.below("under", "mindre enn", "billigere enn")
+		.atMost("max", "maks", "høyst", "opp til")
+		.above("over", "mer enn", "dyrere enn")
+		.atLeast("min", "minst", "fra")
+		.between("mellom", "fra")
+		.to("til", "og")
+		.build();
+
+	private static final Comparatives PORTUGUESE_COMPARATIVES = Comparatives.create()
+		.below("menos de", "abaixo de")
+		.atMost("max", "máximo", "no máximo", "até")
+		.above("mais de", "acima de")
+		.atLeast("min", "mínimo", "pelo menos", "desde", "a partir de")
+		.between("entre", "de", "desde")
+		.to("a", "e")
+		.build();
+
+	private static final Comparatives SWEDISH_COMPARATIVES = Comparatives.create()
+		.below("under", "mindre än", "billigare än")
+		.atMost("max", "högst", "upp till")
+		.above("över", "mer än", "dyrare än")
+		.atLeast("min", "minst", "från")
+		.between("mellan", "från")
+		.to("till", "och")
+		.build();
+
 	private static final ImmutableMap<String, LocaleSupport> SUPPORTED = build();
 
 	/**
@@ -221,6 +324,7 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("da")
 			.withStopWords(DanishAnalyzer.getDefaultStopSet())
+			.withComparatives(DANISH_COMPARATIVES)
 			.withStemmer(stream -> new SnowballFilter(stream, new DanishStemmer()))
 			.withDecompounder(Decompounder.forData("da")));
 
@@ -230,6 +334,7 @@ public final class Locales {
 		 */
 		register(locales, StandardLocaleSupport.of("de")
 			.withStopWords(GermanAnalyzer.getDefaultStopSet())
+			.withComparatives(GERMAN_COMPARATIVES)
 			.withStemmer(stream -> new GermanLightStemFilter(
 				new GermanNormalizationFilter(stream)
 			))
@@ -250,12 +355,14 @@ public final class Locales {
 		 */
 		register(locales, StandardLocaleSupport.of("en")
 			.withStopWords(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET)
+			.withComparatives(ENGLISH_COMPARATIVES)
 			.withStemmer(stream -> new SnowballFilter(
 				new EnglishPossessiveFilter(stream), new EnglishStemmer()
 			)));
 
 		register(locales, StandardLocaleSupport.of("es")
 			.withStopWords(SpanishAnalyzer.getDefaultStopSet())
+			.withComparatives(SPANISH_COMPARATIVES)
 			.withStemmer(SpanishLightStemFilter::new));
 
 		register(locales, StandardLocaleSupport.of("et")
@@ -280,11 +387,13 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("fi")
 			.withStopWords(FinnishAnalyzer.getDefaultStopSet())
+			.withComparatives(FINNISH_COMPARATIVES)
 			.withStemmer(stream -> new SnowballFilter(stream, new FinnishStemmer()))
 			.withDecompounder(Decompounder.forData("fi")));
 
 		register(locales, StandardLocaleSupport.of("fr")
 			.withStopWords(FrenchAnalyzer.getDefaultStopSet())
+			.withComparatives(FRENCH_COMPARATIVES)
 			.withNormalizer(stream -> new ElisionFilter(stream, FrenchAnalyzer.DEFAULT_ARTICLES))
 			.withStemmer(FrenchLightStemFilter::new));
 
@@ -341,6 +450,7 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("it")
 			.withStopWords(ItalianAnalyzer.getDefaultStopSet())
+			.withComparatives(ITALIAN_COMPARATIVES)
 			.withNormalizer(stream -> new ElisionFilter(stream, ITALIAN_ARTICLES))
 			.withStemmer(ItalianLightStemFilter::new));
 
@@ -403,6 +513,7 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("nl")
 			.withStopWords(DutchAnalyzer.getDefaultStopSet())
+			.withComparatives(DUTCH_COMPARATIVES)
 			.withStemmer(stream -> new SnowballFilter(stream, new DutchStemmer()))
 			.withDecompounder(Decompounder.forData("nl")));
 
@@ -415,11 +526,13 @@ public final class Locales {
 		 */
 		register(locales, StandardLocaleSupport.of("no")
 			.withStopWords(NorwegianAnalyzer.getDefaultStopSet())
+			.withComparatives(NORWEGIAN_COMPARATIVES)
 			.withStemmer(NorwegianLightStemFilter::new)
 			.withDecompounder(Decompounder.forData("nb")));
 
 		register(locales, StandardLocaleSupport.of("nb")
 			.withStopWords(NorwegianAnalyzer.getDefaultStopSet())
+			.withComparatives(NORWEGIAN_COMPARATIVES)
 			.withStemmer(NorwegianLightStemFilter::new)
 			.withDecompounder(Decompounder.forData("nb")));
 
@@ -428,6 +541,7 @@ public final class Locales {
 		);
 		register(locales, StandardLocaleSupport.of("nn")
 			.withStopWords(NorwegianAnalyzer.getDefaultStopSet())
+			.withComparatives(NORWEGIAN_COMPARATIVES)
 			.withStemmer(nynorsk::create)
 			.withDecompounder(Decompounder.forData("nn")));
 
@@ -443,6 +557,7 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("pt")
 			.withStopWords(PortugueseAnalyzer.getDefaultStopSet())
+			.withComparatives(PORTUGUESE_COMPARATIVES)
 			.withStemmer(PortugueseLightStemFilter::new));
 
 		/*
@@ -473,6 +588,7 @@ public final class Locales {
 
 		register(locales, StandardLocaleSupport.of("sv")
 			.withStopWords(SwedishAnalyzer.getDefaultStopSet())
+			.withComparatives(SWEDISH_COMPARATIVES)
 			.withStemmer(stream -> new SnowballFilter(stream, new SwedishStemmer()))
 			.withDecompounder(Decompounder.forData("sv")));
 

@@ -51,7 +51,10 @@ public record Int64FieldDefinition(
 	@Schema(description = """
 		Sets allowed numeric bounds. Documents containing values outside these \
 		bounds are rejected.""")
-	Validation validation
+	Validation validation,
+
+	@Schema(description = FieldDefinition.UNIT_DESCRIPTION, examples = "gigabyte")
+	String unit
 ) implements FieldDefinition {
 	/**
 	 * The values the field accepts. Documents containing values outside these

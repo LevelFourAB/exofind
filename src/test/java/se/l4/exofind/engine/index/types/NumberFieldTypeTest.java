@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
@@ -243,6 +244,30 @@ public class NumberFieldTypeTest {
 		);
 
 		assertThat(codes(errors), contains("index:field:number:invalid_bounds"));
+	}
+
+	@Test
+	public void testBlankUnitIsRefused() {
+		var errors = validate(
+			FieldDef.newBuilder()
+				.setType(
+					FieldTypeDef.newBuilder()
+						.setDouble(DoubleFieldTypeDef.newBuilder().setUnit(" "))
+				)
+		);
+
+		assertThat(codes(errors), contains("index:field:number:invalid_unit"));
+	}
+
+	@Test
+	public void testUnitIsReadBackTrimmed() {
+		var type = FieldTypeDef.newBuilder()
+			.setDouble(DoubleFieldTypeDef.newBuilder().setUnit(" SEK "))
+			.build();
+
+		var doubleType = (NumberFieldType) FieldTypes.forDef(type).orElseThrow();
+		assertThat(doubleType.getUnit(type), is("SEK"));
+		assertThat(doubleType.getUnit(doubleField().getType()), is(nullValue()));
 	}
 
 	@Test

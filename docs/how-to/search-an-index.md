@@ -48,6 +48,13 @@ Before you begin, ensure that you have:
    - Set `"relax"` to drop unmatched words instead of returning no results.
      By default, the search drops words that match no documents, and the
      response reports dropped words in `relaxed`.
+   - When a number field of the index declares a unit, user mode reads a
+     number typed next to the unit or next to a comparative word as a filter
+     on that field, and the response reports it in `interpreted`. Set
+     `interpret` to an object with `fields` to choose which fields the
+     number is read on, such as the pricelist of the current customer. For
+     more information, see
+     [Read numbers in the search box](read-numbers-in-the-search-box.md).
 
    If you query a field that is not enabled in the index definition, the API
    returns the error `index:query:usage_not_enabled`.
@@ -179,6 +186,8 @@ Inspect the JSON response from the search endpoint to verify the results:
 - `facets`: Contains facet counts under `values` or `buckets`.
 - `relaxed`: Contains any search terms that were dropped when `relax` was
   active.
+- `interpreted`: Contains any filters and remaining query text read from
+  numbers typed with units or comparative words.
 - `total`: Contains the count of matching documents.
 
 ## Related
@@ -189,5 +198,6 @@ Inspect the JSON response from the search endpoint to verify the results:
 - [Searching by vector](search-by-vector.md) - Finding documents by meaning rather than by words.
 - [Using sub-documents](use-sub-documents.md) - Asking several things of one value of an `object` field, and ordering and counting by it.
 - [Paginating search results](paginate-search-results.md) - Offsets, cursors, and numbered pages.
+- [Reading numbers in the search box](read-numbers-in-the-search-box.md) - Reading numbers and units out of search text as filters.
 - [Localizing fields](localize-fields.md) - Holding and searching values in several languages.
 - [Defining an index](define-an-index.md) - Opting fields into the ways a search may use them.

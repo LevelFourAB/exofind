@@ -39,6 +39,11 @@ public class Int64FieldType extends NumberFieldType {
 	}
 
 	@Override
+	protected String declaredUnit(FieldTypeDef type) {
+		return type.getInt64().hasUnit() ? type.getInt64().getUnit() : null;
+	}
+
+	@Override
 	protected int compare(Number a, Number b) {
 		return Long.compare(a.longValue(), b.longValue());
 	}

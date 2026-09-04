@@ -32,6 +32,15 @@ public final class Meters {
 	public static final String SEARCH_RELAXATION = "exofind.search.relaxation";
 
 	/**
+	 * Filters a search read out of the text a person typed, one for each
+	 * filter read. Tagged with {@link #TAG_KIND}.
+	 *
+	 * <p>Counts filters rather than searches, so a search that read a price
+	 * and a size adds two.
+	 */
+	public static final String SEARCH_INTERPRETATION = "exofind.search.interpretation";
+
+	/**
 	 * Pieces of search work handed to the search threads of the node - the
 	 * segments a search collects and the facets it counts - by which thread
 	 * ran each. Tagged with {@link #TAG_THREAD}.
@@ -315,6 +324,14 @@ public final class Meters {
 	 * turned down, or what made a word the one a search let go of.
 	 */
 	public static final String TAG_REASON = "reason";
+
+	/**
+	 * What kind of thing a search read out of its text: {@link #KIND_NUMBER}.
+	 */
+	public static final String TAG_KIND = "kind";
+
+	/** A number next to a unit or a comparative word, read as a range. */
+	public static final String KIND_NUMBER = "number";
 
 	public static final String OUTCOME_SUCCESS = "success";
 	public static final String OUTCOME_ERROR = "error";

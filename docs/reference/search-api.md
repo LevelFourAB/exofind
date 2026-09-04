@@ -83,6 +83,7 @@ The `text` clause accepts the following options:
 - `typos`: Typo tolerance handling: `"auto"` (default) follows each field's `typoTolerance` configuration and the [typo exclusions](admin-api.md#typo-exclusions) in the search settings of the index; `"off"` disables typo tolerance for the clause.
 - `slop`: Number of intervening words permitted between terms in a phrase. Defaults to `0` (words must be adjacent).
 - `relax`: Query relaxation strategy when no documents match: `"unmatched"` (default), `"words"`, or `"off"`. See [Finding something rather than nothing](#finding-something-rather-than-nothing).
+- `interpret`: Reading of numbers and units in query text: `"auto"` (default) or `"off"`. See [Reading numbers and units](#reading-numbers-and-units).
 - `combine`: Scope for multi-field term matching: `"term"` (default) or `"field"`.
 
 Phrase queries operate within a single field. In phrase queries, `combine` is ignored and terms are matched exactly as typed, regardless of field `typoTolerance`. Stopwords removed during text analysis leave empty positions: searching for `spring of 1962` matches that sequence, but searching for `spring 1962` does not. Fields defined only for `autocomplete` do not support phrase matching; queries omitting `fields` skip autocomplete-only fields, and explicitly targeting one returns `index:query:usage_not_enabled`.
@@ -112,6 +113,154 @@ All other punctuation characters are treated as literal text. Hyphens inside wor
 User query syntax does not generate parse errors. Options configured on the clause apply to the parsed terms: `fields` and `combine` determine search targets, `slop` applies to quoted phrases, and `prefix` applies to the final loose word or the final word of an unclosed quote. Excluded terms do not apply prefix matching or `typoTolerance`.
 
 If quoted text targets a field configured only for `autocomplete`, `user` mode treats the quoted phrase as individual terms rather than returning an error. A query containing only exclusions evaluates against all documents in the index. A query containing no searchable terms matches no documents.
+
+#### Reading numbers and units
+
+A search in `user` mode reads a number typed next to a unit, or next to a comparative word, as a filter on the number field that declares the unit. The filter is part of the search that runs, so the hits, the total, and the facet counts all reflect it.
+
+Only a `text` clause with `"match": "user"` is read. Match modes `"all"`, `"any"`, and `"phrase"` are never read. A `field` clause with a `text` matcher is never read. Quoted phrases and exclusions (`-word`) are never read.
+
+A `text` clause is read in any position within `query`: at the top level, inside `and`, `or`, `not`, `boost`, or `nested` clauses, or within rankings of a `fuse` clause. The clause is replaced in place by a single clause containing the remaining query text and, for each reading, either its filter or its words as text. Request `filters` and the `filter` properties of `knn` and `fuse` clauses are not read.
+
+A search can specify multiple `text` clauses with the same query text, such as across root-level fields and inside a `nested` clause over variant fields. Each clause is read and receives the filters that its position supports. If `text` clauses contain different text or specify different `interpret` targets, none is read.
+
+Inside a `nested` clause, a reading is a filter on the same list value that matched the text. Only numeric fields within that nested path can hold the filter. Declared fields outside the path are omitted from that position, and their words remain text. If no position in the search can hold a field, a number typed with its unit remains text. Specifying an `interpret` target outside the path of the `nested` clause returns `index:query:nested:not_in_path`. A `fallback` inside a `nested` clause is read for a list value that holds nothing on the target it stands in for.
+
+A unit is declared on a numeric field (`int32`, `int64`, `float`, or `double`; see [Numeric fields](field-types.md#int32-int64-float-double)). A unit can be declared on a root field or on a numeric field inside an `object` field. Fields containing a wildcard `*` are not read.
+
+A quantity is a number accompanied by a unit or comparative words. A number alone or inside a word is treated as a text word (for example, `size 44`, `iphone 15`, `4k`, `mp3`, or `h100`). A number must be a single word; numbers containing spaces (such as `1 000`) are treated as separate words and are not read.
+
+Shapes read from query text:
+
+| Typed | Read as |
+|---|---|
+| `under 100`, `below 100`, `less than 100`, `cheaper than 100` | `lt 100` |
+| `max 100`, `maximum 100`, `at most 100`, `up to 100` | `lte 100` |
+| `over 100`, `above 100`, `more than 100` | `gt 100` |
+| `min 100`, `minimum 100`, `at least 100`, `from 100` | `gte 100` |
+| `100 kr`, `100kr`, `SEK 100`, `$100`, `16 GB`, `16gb`, `2 gigabytes` | `equals` the number, on the field with that unit |
+| `under 100 kr` | `lt 100` on the field with that unit |
+| `100-200 kr`, `100 to 200 kr`, `between 100 and 200`, `from 100 to 200` | `gte 100` and `lte 200`, both inclusive |
+
+Numbers are parsed according to the search request `locale`, falling back to the root locale. Words match case-insensitively. Comparative words are supported for specific languages; see [Comparative words](locales.md#comparative-words). A locale without a comparative word list reads numbers written with a unit, but does not read bare comparative expressions. Reading is greedy from left to right.
+
+Unit matching behavior:
+
+- **Currencies**: Matched by ISO 4217 code (`SEK`, `USD`, `EUR`), symbol (`$`, `€`, `kr`), narrow symbol, or name in the search locale and in English. `SEK` also matches `:-`. Multi-word currency names are not matched.
+- **CLDR units**: Matched by short and long forms in the search locale and in English (for example, `GB`, `gigabyte`, and `gigabytes` for `gigabyte`; `%` for `percent`).
+- **Custom text**: Matched as exact case-insensitive text strings.
+
+A unit may appear as its own word before or after the number, or attached directly to the number (`100 kr`, `kr 100`, `100kr`, `$100`).
+
+Target field selection:
+
+- A number typed with a unit is read on every field that declares that unit. Multiple fields declaring the same unit generate separate filters for each field.
+- A number typed without a unit (next to comparative words or in a range) is read on the single field whose unit is a currency. If the index has no currency field, or more than one currency field, the number remains text.
+
+##### Choosing the fields a reading may target
+
+To read only on specific targets, set `interpret` to an object `{ "fields": [ target, ... ] }` on the `text` clause. The object form always reads; targets cannot be combined with `"off"`. The `fields` array must contain at least one target (`search:clause:interpret_fields_required`).
+
+A target is an object with the following properties:
+
+- `field` (required): Target number field, as named in the index definition. A field inside a `nested` object is named by its dotted path (such as `prices.amount`). A field inside a flattened object or at the root is named the same way a `field` clause names it.
+- `when` (optional): Array of clauses that must hold where the number is read. For a field inside a `nested` list, the clauses must hold in the same value of the list as the number (such as `prices.list` equals `cust-17` alongside `prices.amount`). For a field at the root or inside a flattened object, the clauses must hold for the document. Accepts `field`, `text`, `and`, `or`, `not`, and `boost` clauses. Specifying a `nested`, `knn`, or `fuse` clause inside `when` returns `search:clause:interpret_when_unsupported`. Specifying a `when` clause naming a field outside the nested list returns `index:query:nested:not_in_path`.
+- `fallback` (optional): Array of fallback targets, each with the same target shape (including its own optional `when` and `fallback`). Fallbacks are read in order for documents that hold no value on earlier targets where `when` holds. For a nested target, this means the document has no value in the list where `when` holds and the field is set. Every target in a fallback chain must declare the same unit; specifying a fallback in another unit returns `index:query:interpret:fallback_unit`.
+
+Targets are validated on every search that names them, whether or not the query text contains a number. Naming a field that does not exist returns `index:query:field_not_found`. Naming a field that is not a number field or that declares no `unit` returns `index:query:interpret:no_unit`.
+
+Target selection rules when targets are specified:
+
+- A number typed with a unit (`100 kr`, `under 2 kg`) is read on every target whose field declares that unit. A target with fallbacks counts by the unit of its first field.
+- A number typed without a unit (`under 100`, `between 100 and 200`) is read on every target whose unit is a currency, provided all named targets share the same currency. If the named targets span multiple currencies, the number remains text. Unlike the rule without targets (which requires exactly one currency field across the index), naming multiple targets that share a single currency reads the number on all of them, matching documents that satisfy any of those targets.
+- The words of a reading are still searched as text, and documents that satisfy the filter rank first.
+
+A fallback chain evaluates each target in sequence. For example, with target `prices.amount` where `when` matches `prices.list == cust-17` and fallback `prices.amount` where `when` matches `prices.list == store`, the text `under 100` reads as:
+
+1. A value of `prices` where `list` is `cust-17` and `amount` is below 100.
+2. For a document that has no value of `prices` where `list` is `cust-17` and `amount` is set, a value of `prices` where `list` is `store` and `amount` is below 100.
+
+A document that has a customer price of 149 and a store price of 99 does not match because the customer price exists. Flat fields work the same way: a target on `price_customer` with a fallback on `price_store` reads `under 100` as `price_customer < 100`, or `price_store < 100` for a document with no `price_customer`.
+
+Example request:
+
+```json
+{
+  "query": [
+    {
+      "type": "text", "match": "user", "text": "rain under 100",
+      "interpret": {
+        "fields": [
+          {
+            "field": "prices.amount",
+            "when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+            "fallback": [
+              {
+                "field": "prices.amount",
+                "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Example response:
+
+```json
+{
+  "hits": [ ... ],
+  "interpreted": {
+    "filters": [
+      {
+        "field": "prices.amount",
+        "when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+        "match": { "type": "range", "lt": 100 },
+        "words": ["under", "100"],
+        "fallback": [
+          {
+            "field": "prices.amount",
+            "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+          }
+        ]
+      }
+    ],
+    "text": "rain"
+  }
+}
+```
+
+On whole-number fields (`int32`, `int64`), a fractional bound rounds to the nearest integer satisfying the condition: `under 99.5` becomes `lt 100`, `at least 99.5` becomes `gte 100`, and `max 99.5` becomes `lte 99`. Exact fractional equality (`99.5`) is not read on whole-number fields. Numbers outside the range of the integer type are not read.
+
+The words of a filter are still searched as text. A document matches if it satisfies the read filter or contains the words as text. Documents that satisfy the filter receive a score boost and rank first. Read words are removed from the remaining query text, which evaluates using the clause's `fields`, `prefix`, `typos`, and `relax` settings. Total counts and facet counts reflect the search with the filters included.
+
+When a query reads quantities, the response includes an `interpreted` object:
+
+```json
+{
+  "hits": [ ... ],
+  "interpreted": {
+    "filters": [
+      {
+        "field": "price",
+        "match": { "type": "range", "lt": 100 },
+        "words": ["under", "100", "kr"]
+      }
+    ],
+    "text": "shoes"
+  }
+}
+```
+
+The `interpreted` object contains:
+
+- `filters`: Array of read filters in the order their words appeared. Each entry contains `field` (target field name), `match` (matcher object in `field` clause format), and `words` (typed words converted into the filter, in order). Each entry may carry `when` and `fallback` in request shape, absent when the target had none.
+- `text`: Query text remaining after removing filter words. Returns an empty string if all typed text was read.
+
+To disable reading, set `"interpret": "off"` on the `text` clause, enclose terms in quotation marks, or remove quantity words from the text.
 
 #### Finding something rather than nothing
 
@@ -712,6 +861,7 @@ When `when` is configured:
 | `facets` | Object | Map of facet names to facet results. Omitted if `facets` was not requested. |
 | `page` | Object | Pagination state containing `limit`, `offset` (omitted when navigating via cursor), and optional `next` and `previous` cursor strings. |
 | `relaxed` | Object | Details of dropped terms when query relaxation was applied. Omitted if the query was not relaxed. |
+| `interpreted` | Object | The filters read out of the query text, and the remaining query text. Omitted when nothing was read. See [Reading numbers and units](#reading-numbers-and-units). |
 | `tookMs` | Number | Execution time for the search request in milliseconds. |
 
 ### Locale specific fields
@@ -825,6 +975,7 @@ Top-level response properties:
 | `score` | Number | The relevance score of the hit. Returns `0` if the hit does not match. |
 | `detail` | Object | Root score step explaining how the score was calculated. |
 | `relaxed` | Object | Relaxation details containing `dropped` words and the effective query `text`. Omitted if query relaxation did not run. |
+| `interpreted` | Object | The filters read out of the query text, and the remaining query text. Omitted when nothing was read. |
 
 Properties of a score step (`detail` and each entry in `children`):
 
@@ -845,6 +996,7 @@ Properties of a score step (`detail` and each entry in `children`):
 - **Non-matching hits**: Hits that do not match the query return `matched: false` and `score: 0`. Clause steps that failed return `matched: false`, while clauses that matched return `matched: true`.
 - **Field names**: Field names in the explanation tree correspond to schema names in the index definition rather than internal engine names.
 - **Query relaxation**: When zero results trigger query relaxation, `relaxed` is included and the explanation tree reflects the relaxed query that executed.
+- **Interpreted filters**: When quantities are read from the query text, the explanation tree reflects the search with the read filters in it.
 - **Ranking signals**: Signals appear under a dedicated step with one child per signal, specifying the field, function shape, weight, and value read from the document. A missing signal value contributes a factor of `1`.
 - **Value hits**: When `hits.path` targets a nested object field, each value is explained individually by specifying its zero-based position in `index`. With `hits.when` set, `index` is read only for documents that `when` matches; a document that returns as itself is explained as a document, whatever `index` says. See [What a hit stands for](#what-a-hit-stands-for).
 - **Alternatives that did not match**: Within an `or` clause that matched, only the alternatives that matched appear as steps. An `or` that matched nothing is reported as one non-matching step for the clause itself.

@@ -37,6 +37,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	private final ThreadLocal<Collator> collator;
 
 	private final Supplier<CharArraySet> stopWords;
+	private final Comparatives comparatives;
 	private final UnaryOperator<Reader> rewriter;
 	private final Supplier<Tokenizer> tokenizer;
 	private final UnaryOperator<TokenStream> normalizer;
@@ -46,6 +47,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	private StandardLocaleSupport(
 		String tag,
 		Supplier<CharArraySet> stopWords,
+		Comparatives comparatives,
 		UnaryOperator<Reader> rewriter,
 		Supplier<Tokenizer> tokenizer,
 		UnaryOperator<TokenStream> normalizer,
@@ -63,6 +65,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 * the first use of the locale rather than to loading this class.
 		 */
 		this.stopWords = once(() -> fold(stopWords.get()));
+		this.comparatives = comparatives;
 		this.rewriter = rewriter;
 		this.tokenizer = tokenizer;
 		this.normalizer = normalizer;
@@ -128,6 +131,11 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	}
 
 	@Override
+	public Comparatives getComparatives() {
+		return comparatives;
+	}
+
+	@Override
 	public Reader rewrite(Reader reader) {
 		return rewriter == null ? reader : rewriter.apply(reader);
 	}
@@ -172,12 +180,15 @@ public final class StandardLocaleSupport implements LocaleSupport {
 	 * @return
 	 */
 	public static Builder of(String tag) {
-		return new Builder(tag, () -> CharArraySet.EMPTY_SET, null, null, null, null, null);
+		return new Builder(
+			tag, () -> CharArraySet.EMPTY_SET, Comparatives.none(), null, null, null, null, null
+		);
 	}
 
 	public record Builder(
 		String tag,
 		Supplier<CharArraySet> stopWords,
+		Comparatives comparatives,
 		UnaryOperator<Reader> rewriter,
 		Supplier<Tokenizer> tokenizer,
 		UnaryOperator<TokenStream> normalizer,
@@ -204,7 +215,20 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 */
 		public Builder withStopWords(Supplier<CharArraySet> stopWords) {
 			return new Builder(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
+			);
+		}
+
+		/**
+		 * Set the words that put a bound on a number in this locale, see
+		 * {@link LocaleSupport#getComparatives()}.
+		 *
+		 * @param comparatives
+		 * @return
+		 */
+		public Builder withComparatives(Comparatives comparatives) {
+			return new Builder(
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 
@@ -217,7 +241,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 */
 		public Builder withRewriter(UnaryOperator<Reader> rewriter) {
 			return new Builder(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 
@@ -230,7 +254,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 */
 		public Builder withTokenizer(Supplier<Tokenizer> tokenizer) {
 			return new Builder(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 
@@ -243,7 +267,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 */
 		public Builder withNormalizer(UnaryOperator<TokenStream> normalizer) {
 			return new Builder(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 
@@ -255,7 +279,7 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 */
 		public Builder withStemmer(UnaryOperator<TokenStream> stemmer) {
 			return new Builder(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 
@@ -268,13 +292,13 @@ public final class StandardLocaleSupport implements LocaleSupport {
 		 */
 		public Builder withDecompounder(Decompounder decompounder) {
 			return new Builder(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 
 		public StandardLocaleSupport build() {
 			return new StandardLocaleSupport(
-				tag, stopWords, rewriter, tokenizer, normalizer, stemmer, decompounder
+				tag, stopWords, comparatives, rewriter, tokenizer, normalizer, stemmer, decompounder
 			);
 		}
 	}

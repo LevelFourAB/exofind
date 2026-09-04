@@ -66,6 +66,9 @@ The documentation includes the following how-to guides.
 
 - [Searching an index](how-to/search-an-index.md): Work with the search box, the
   scope it runs in, user-selected filters, facets, ordering, and highlighting.
+- [Reading numbers in the search box](how-to/read-numbers-in-the-search-box.md):
+  Declare a unit on a price or a size so that `under 100 kr` and `256gb` become
+  filters, and show the shopper what was read.
 - [Searching by vector](how-to/search-by-vector.md): Index the vectors that a model
   produces, find the nearest of them, and combine that with a text search.
 - [Paginating search results](how-to/paginate-search-results.md): Use offsets,

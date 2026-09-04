@@ -45,6 +45,7 @@ import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
+import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FacetConfig;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -314,6 +315,178 @@ public class SearchResourceTest {
 	}
 
 	@Test
+	public void testReadingComesBackAsAFilterARequestCanSend() throws IOException {
+		var index = indexes.create(
+			"shop",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(StringFieldTypeDef.TextUsageConfig.getDefaultInstance())
+					).build()
+				)
+				.putFields(
+					"price",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setDouble(DoubleFieldTypeDef.newBuilder().setUnit("SEK"))
+						)
+						.setFilter(FilterConfig.getDefaultInstance())
+						.build()
+				)
+				.build()
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Running Shoes"),
+				new Document.Value("price", 79.0)
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "Leather Shoes"),
+				new Document.Value("price", 149.0)
+			)
+		);
+		index.commit();
+
+		var response = resource.search(
+			"shop",
+			request(List.of(new Clause.Text(
+				"shoes under 100 kr", null, Matcher.Text.Match.USER,
+				null, null, null, null, null, null
+			)))
+		);
+
+		assertThat(response.hits().size(), is(1));
+		assertThat(response.hits().get(0).id(), is("1"));
+
+		var interpreted = response.interpreted();
+		assertThat(interpreted, is(notNullValue()));
+		assertThat(interpreted.text(), is("shoes"));
+		assertThat(
+			interpreted.filters(),
+			contains(
+				new SearchResponse.Interpreted.Filter(
+					"price",
+					new Matcher.Range(null, null, null, 100.0),
+					List.of("under", "100", "kr")
+				)
+			)
+		);
+	}
+
+	@Test
+	public void testReadingOnANamedTargetComesBackWithItsScope() throws IOException {
+		var index = indexes.create(
+			"pricelists",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(StringFieldTypeDef.TextUsageConfig.getDefaultInstance())
+					).build()
+				)
+				.putFields(
+					"prices",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder().setObject(
+								ObjectFieldTypeDef.newBuilder()
+									.putFields(
+										"list",
+										string().setFilter(FilterConfig.getDefaultInstance()).build()
+									)
+									.putFields(
+										"amount",
+										FieldDef.newBuilder()
+											.setType(
+												FieldTypeDef.newBuilder().setDouble(
+													DoubleFieldTypeDef.newBuilder().setUnit("SEK")
+												)
+											)
+											.setFilter(FilterConfig.getDefaultInstance())
+											.build()
+									)
+									.setMode(ObjectFieldTypeDef.Mode.MODE_NESTED)
+							)
+						)
+						.setMultiple(true)
+						.build()
+				)
+				.build()
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Rain jacket"),
+				new Document.Value("prices", new Document(
+					new Document.Value("list", "cust-17"),
+					new Document.Value("amount", 89.0)
+				)),
+				new Document.Value("prices", new Document(
+					new Document.Value("list", "store"),
+					new Document.Value("amount", 129.0)
+				))
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "Rain boots"),
+				new Document.Value("prices", new Document(
+					new Document.Value("list", "store"),
+					new Document.Value("amount", 79.0)
+				))
+			)
+		);
+		index.commit();
+
+		var customer = List.<Clause>of(
+			new Clause.Field("prices.list", new Matcher.Equals("cust-17"))
+		);
+		var store = new Clause.Text.Target(
+			"prices.amount",
+			List.of(new Clause.Field("prices.list", new Matcher.Equals("store"))),
+			null
+		);
+
+		var response = resource.search(
+			"pricelists",
+			request(List.of(new Clause.Text(
+				"rain under 100", null, Matcher.Text.Match.USER,
+				null, null, null, null, null,
+				new Clause.Text.Interpret.Targets(List.of(
+					new Clause.Text.Target("prices.amount", customer, List.of(store))
+				))
+			)))
+		);
+
+		assertThat(ids(response), containsInAnyOrder("1", "2"));
+		assertThat(
+			response.interpreted().filters(),
+			contains(
+				new SearchResponse.Interpreted.Filter(
+					"prices.amount",
+					customer,
+					new Matcher.Range(null, null, null, 100.0),
+					List.of("under", "100"),
+					List.of(store)
+				)
+			)
+		);
+	}
+
+	@Test
 	public void testFacetsComeBackKeyedByName() throws IOException {
 		books();
 
@@ -562,7 +735,7 @@ public class SearchResourceTest {
 
 		var response = resource.search(
 			"books",
-			request(List.of(new Clause.Text("silent", null, null, null, null, null, null, null)))
+			request(List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null)))
 		);
 
 		assertThat(ids(response), contains("1"));
@@ -583,7 +756,7 @@ public class SearchResourceTest {
 		var response = resource.search(
 			"books",
 			new SearchRequest(
-				List.of(new Clause.Text("silent", null, null, null, null, null, null, null)),
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null)),
 				null, null, null, null, null,
 				new SearchRequest.Highlight(fields),
 				null, null, null, null, null, null, null, null, null
@@ -1400,7 +1573,7 @@ public class SearchResourceTest {
 			"1",
 			0,
 			new SearchRequest(
-				List.of(new Clause.Text("silent", null, null, null, null, null, null, null)),
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null,
 				null, null
 			)

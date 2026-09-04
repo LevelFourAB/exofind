@@ -339,6 +339,17 @@ message Int32FieldTypeDef {
 	}
 
 	ValidationConfig validation = 1;
+
+	/*
+	 * What the values are measured in: an ISO 4217 currency code such as
+	 * `SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`, or any
+	 * other text matched as it is written. Absent means the field has no
+	 * unit. A search reads a number typed next to the unit, or next to a
+	 * comparative word, as a filter on this field. Changes nothing about how
+	 * values are written, so it can change without a reindex. Requires the
+	 * `field.unit` feature.
+	 */
+	optional string unit = 2;
 }
 
 /*
@@ -354,6 +365,11 @@ message Int64FieldTypeDef {
 	}
 
 	ValidationConfig validation = 1;
+
+	/*
+	 * What the values are measured in, read like Int32FieldTypeDef's.
+	 */
+	optional string unit = 2;
 }
 
 /*
@@ -370,6 +386,11 @@ message FloatFieldTypeDef {
 	}
 
 	ValidationConfig validation = 1;
+
+	/*
+	 * What the values are measured in, read like Int32FieldTypeDef's.
+	 */
+	optional string unit = 2;
 }
 
 /*
@@ -385,6 +406,11 @@ message DoubleFieldTypeDef {
 	}
 
 	ValidationConfig validation = 1;
+
+	/*
+	 * What the values are measured in, read like Int32FieldTypeDef's.
+	 */
+	optional string unit = 2;
 }
 
 /*

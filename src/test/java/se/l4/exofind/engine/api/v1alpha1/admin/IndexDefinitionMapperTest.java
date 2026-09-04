@@ -464,12 +464,14 @@ public class IndexDefinitionMapperTest {
 			null, null, null, true, null,
 			new FieldDefinition.Filter(),
 			null, null,
-			new Int32FieldDefinition.Validation(1, 10_000)
+			new Int32FieldDefinition.Validation(1, 10_000),
+			null
 		);
 		var isbn = new Int64FieldDefinition(
 			null, null, null, null, null,
 			new FieldDefinition.Filter(),
 			null, null,
+			null,
 			null
 		);
 		var weight = new FloatFieldDefinition(
@@ -477,13 +479,15 @@ public class IndexDefinitionMapperTest {
 			null,
 			new FieldDefinition.Sort(null, null),
 			null,
-			new FloatFieldDefinition.Validation(0f, null)
+			new FloatFieldDefinition.Validation(0f, null),
+			"kilogram"
 		);
 		var price = new DoubleFieldDefinition(
 			null, null, null, null, null,
 			null, null,
 			new FieldDefinition.Facet(),
-			new DoubleFieldDefinition.Validation(null, 100.0)
+			new DoubleFieldDefinition.Validation(null, 100.0),
+			"SEK"
 		);
 
 		var stored = IndexDefinitionMapper.toStored(
@@ -498,15 +502,18 @@ public class IndexDefinitionMapperTest {
 		var storedIsbn = stored.getFieldsOrThrow("isbn");
 		assertThat(storedIsbn.getType().hasInt64(), is(true));
 		assertThat(storedIsbn.getType().getInt64().hasValidation(), is(false));
+		assertThat(storedIsbn.getType().getInt64().hasUnit(), is(false));
 
 		var storedWeight = stored.getFieldsOrThrow("weight");
 		assertThat(storedWeight.getType().hasFloat(), is(true));
 		assertThat(storedWeight.getType().getFloat().getValidation().getMin(), is(0f));
 		assertThat(storedWeight.getType().getFloat().getValidation().hasMax(), is(false));
+		assertThat(storedWeight.getType().getFloat().getUnit(), is("kilogram"));
 
 		var storedPrice = stored.getFieldsOrThrow("price");
 		assertThat(storedPrice.getType().hasDouble(), is(true));
 		assertThat(storedPrice.getType().getDouble().getValidation().getMax(), is(100.0));
+		assertThat(storedPrice.getType().getDouble().getUnit(), is("SEK"));
 
 		var api = IndexDefinitionMapper.toApi(stored);
 		assertThat(api.fields().get("pages"), is(pages));
@@ -570,7 +577,7 @@ public class IndexDefinitionMapperTest {
 				"price", new DoubleFieldDefinition(
 					null, null, null, null, null,
 					new FieldDefinition.Filter(), null, null,
-					null
+					null, null
 				)
 			)
 		);
@@ -683,7 +690,7 @@ public class IndexDefinitionMapperTest {
 				"width", new DoubleFieldDefinition(
 					null, null, null, null, null,
 					new FieldDefinition.Filter(), null, null,
-					null
+					null, null
 				)
 			)
 		);
@@ -1603,7 +1610,8 @@ public class IndexDefinitionMapperTest {
 				"purchases",
 				new Int64FieldDefinition(
 					null, null, null, null, null, null, null, null,
-					new Int64FieldDefinition.Validation(0L, null)
+					new Int64FieldDefinition.Validation(0L, null),
+					null
 				),
 				"embedding",
 				new VectorFieldDefinition(

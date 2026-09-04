@@ -94,6 +94,26 @@ Case carries no meaning in a tag. `zh-hant`, `ZH-HANT` and `zh-Hant` all name th
 
 For information about fields configured with multiple locales, see [Localize fields](../how-to/localize-fields.md).
 
+## Comparative words
+
+A search in user mode reads a number typed next to a comparative word of the search locale as a filter. For more information, see [reading numbers and units](search-api.md#reading-numbers-and-units).
+
+Every locale reads a number written with a unit, but only the locales in the following table have comparative words:
+
+| Locale | Below | At most | Above | At least | Range |
+| --- | --- | --- | --- | --- | --- |
+| `da` Danish | under, mindre end, billigere end | max, maks, højst, op til | over, mere end, dyrere end | min, mindst, fra | mellem … og, fra … til |
+| `de` German | unter, weniger als, billiger als | max, maximal, höchstens, bis, bis zu | über, mehr als, teurer als | min, mindestens, ab | zwischen … und, von … bis |
+| `en` English | under, below, less than, cheaper than | max, maximum, at most, up to | over, above, more than | min, minimum, at least, from | between … and, from … to, … to … |
+| `es` Spanish | menos de, por debajo de | max, máximo, hasta, como máximo | más de, por encima de | min, mínimo, al menos, desde, a partir de | entre … y, de … a, desde … a |
+| `fi` Finnish | alle, vähemmän kuin | max, enintään, korkeintaan | yli, enemmän kuin | min, vähintään | none |
+| `fr` French | moins de, sous | max, maximum, au plus, jusqu'à | plus de, au-dessus de | min, minimum, au moins, à partir de | entre … et, de … à |
+| `it` Italian | meno di, sotto | max, massimo, al massimo, fino a | più di, oltre, sopra | min, minimo, almeno, da | tra … e, fra … e, da … a |
+| `nb`, `nn`, `no` Norwegian | under, mindre enn, billigere enn | max, maks, høyst, opp til | over, mer enn, dyrere enn | min, minst, fra | mellom … og, fra … til |
+| `nl` Dutch | onder, minder dan, goedkoper dan | max, maximaal, hoogstens, tot | boven, meer dan, duurder dan | min, minimaal, minstens, vanaf | tussen … en, van … tot |
+| `pt` Portuguese | menos de, abaixo de | max, máximo, no máximo, até | mais de, acima de | min, mínimo, pelo menos, desde, a partir de | entre … e, de … a, desde … a |
+| `sv` Swedish | under, mindre än, billigare än | max, högst, upp till | över, mer än, dyrare än | min, minst, från | mellan … och, från … till |
+
 ## Sorting in a locale not listed here
 
 Collation uses International Components for Unicode (ICU), which supports all locales. A `sort` definition with `"collation": "locale"` sorts values according to the rules of the locale assigned to the value.

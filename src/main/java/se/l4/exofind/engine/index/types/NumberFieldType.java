@@ -72,6 +72,10 @@ public abstract class NumberFieldType implements FieldType {
 		.withCode("index:field:number:invalid_bounds")
 		.withMessage("The `min` of the validation can not be above its `max`");
 
+	private static final ErrorType INVALID_UNIT = ErrorType
+		.withCode("index:field:number:invalid_unit")
+		.withMessage("A unit has to be text, such as a currency code or a unit identifier");
+
 	private static final ErrorType INVALID_VALUE = ErrorType
 		.withCode("index:update:number:invalid_value")
 		.withArguments("name", "type")
@@ -123,7 +127,50 @@ public abstract class NumberFieldType implements FieldType {
 			errors.add(INVALID_BOUNDS.toMessage(location));
 		}
 
+		var unit = declaredUnit(def.getType());
+		if(unit != null && unit.isBlank()) {
+			errors.add(INVALID_UNIT.toMessage(location));
+		}
+
 		return errors;
+	}
+
+	/**
+	 * Get what the values of a field of this type are measured in, or
+	 * {@code null} when its definition declares no unit.
+	 *
+	 * @param type
+	 * @return
+	 */
+	public String getUnit(FieldTypeDef type) {
+		var unit = declaredUnit(type);
+		return unit == null || unit.isBlank() ? null : unit.strip();
+	}
+
+	/**
+	 * Get if this type holds whole numbers only, so a bound with a fraction
+	 * has to be moved to the nearest whole number before it can be filtered
+	 * by.
+	 *
+	 * @return
+	 */
+	public boolean holdsWholeNumbers() {
+		return switch(sortType()) {
+			case INT, LONG -> true;
+			default -> false;
+		};
+	}
+
+	/**
+	 * Get a value as the number this type holds, or {@code null} when it can
+	 * not be read as one without changing it - a fraction for a type holding
+	 * whole numbers, or a number outside the width of the type.
+	 *
+	 * @param value
+	 * @return
+	 */
+	public Number read(Object value) {
+		return coerce(value);
 	}
 
 	@Override
@@ -395,6 +442,12 @@ public abstract class NumberFieldType implements FieldType {
 	 * declares none.
 	 */
 	protected abstract Number declaredMax(FieldTypeDef type);
+
+	/**
+	 * Get the unit the definition declares, as written, or {@code null} when
+	 * it declares none.
+	 */
+	protected abstract String declaredUnit(FieldTypeDef type);
 
 	/**
 	 * Get if a declared bound is one a value can be compared against. The

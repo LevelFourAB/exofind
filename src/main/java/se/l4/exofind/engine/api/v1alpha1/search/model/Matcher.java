@@ -378,8 +378,41 @@ public sealed interface Matcher
 				nothing](https://exofind.dev/reference/search-api/#finding-something-rather-than-nothing).""",
 			defaultValue = "unmatched"
 		)
-		Relax relax
+		Relax relax,
+
+		/**
+		 * Whether parts of the text are read as filters. Defaults to
+		 * {@code auto}. Only applies to {@code user} mode.
+		 */
+		@Schema(
+			description = """
+				Whether parts of `user` text are read as filters on the fields \
+				of the index: `auto` reads a number typed next to the unit of a \
+				number field, or next to a comparative word such as `under`, as \
+				a filter on that field; `off` takes every word as text. \
+				Whatever was read is reported as `interpreted` beside the \
+				results. See [Reading numbers and \
+				units](https://exofind.dev/reference/search-api/#reading-numbers-and-units).""",
+			defaultValue = "auto"
+		)
+		Interpret interpret
 	) implements Matcher {
+		/**
+		 * Whether parts of the text are read as filters on the fields of the
+		 * index. Only applies to {@code user} mode.
+		 */
+		@Schema(description = """
+			Whether parts of `user` text are read as filters: `auto` reads a \
+			number typed next to a unit or a comparative word as a filter on \
+			the field declaring that unit, `off` takes every word as text.""")
+		public enum Interpret {
+			@JsonProperty("auto")
+			AUTO,
+
+			@JsonProperty("off")
+			OFF
+		}
+
 		/**
 		 * Term matching mode: how terms in the query text are combined.
 		 */

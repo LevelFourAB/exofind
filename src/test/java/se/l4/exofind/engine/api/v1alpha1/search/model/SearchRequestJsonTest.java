@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.HashMap;
 import java.util.List;
@@ -274,6 +275,98 @@ public class SearchRequestJsonTest {
 		fields.put("name", 3f);
 		fields.put("description", null);
 		assertThat(clause.fields(), is(fields));
+	}
+
+	@Test
+	public void testTextClauseTurningReadingOff() throws Exception {
+		var json = """
+			{
+				"query": [
+					{ "type": "text", "text": "shoes under 100", "match": "user", "interpret": "off" }
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var clause = (Clause.Text) request.query().get(0);
+		assertThat(clause.match(), is(Matcher.Text.Match.USER));
+		assertThat(clause.interpret(), is(new Clause.Text.Interpret.Mode(Matcher.Text.Interpret.OFF)));
+	}
+
+	@Test
+	public void testTextClauseNamingTheFieldsToReadOn() throws Exception {
+		var json = """
+			{
+				"query": [
+					{
+						"type": "text", "text": "rain under 100", "match": "user",
+						"interpret": {
+							"fields": [
+								{
+									"field": "prices.amount",
+									"when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+									"fallback": [
+										{
+											"field": "prices.amount",
+											"when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+										}
+									]
+								}
+							]
+						}
+					}
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var clause = (Clause.Text) request.query().get(0);
+		var targets = (Clause.Text.Interpret.Targets) clause.interpret();
+		assertThat(targets.fields().size(), is(1));
+
+		var target = targets.fields().get(0);
+		assertThat(target.field(), is("prices.amount"));
+		assertThat(
+			target.when(),
+			is(List.of(new Clause.Field("prices.list", new Matcher.Equals("cust-17"))))
+		);
+		assertThat(target.fallback().size(), is(1));
+		assertThat(target.fallback().get(0).field(), is("prices.amount"));
+		assertThat(
+			target.fallback().get(0).when(),
+			is(List.of(new Clause.Field("prices.list", new Matcher.Equals("store"))))
+		);
+	}
+
+	@Test
+	public void testInterpretWritesBackTheWayItWasRead() throws Exception {
+		var mode = new Clause.Text.Interpret.Mode(Matcher.Text.Interpret.OFF);
+		assertThat(mapper.writeValueAsString(mode), is("\"off\""));
+
+		var targets = new Clause.Text.Interpret.Targets(List.of(
+			new Clause.Text.Target("price", null, null)
+		));
+		var json = mapper.writeValueAsString(targets);
+		assertThat(json, is("{\"fields\":[{\"field\":\"price\"}]}"));
+		assertThat(mapper.readValue(json, Clause.Text.Interpret.class), is(targets));
+	}
+
+	@Test
+	public void testInterpretThatIsNeitherAModeNorTargetsIsRefused() {
+		var json = """
+			{
+				"query": [
+					{ "type": "text", "text": "rain", "match": "user", "interpret": 5 }
+				]
+			}
+			""";
+
+		assertThrows(
+			com.fasterxml.jackson.databind.JsonMappingException.class,
+			() -> mapper.readValue(json, SearchRequest.class)
+		);
 	}
 
 	@Test

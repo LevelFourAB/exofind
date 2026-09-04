@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.api.v1alpha1.search.model;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -9,6 +10,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 
 /**
  * One clause of a search, as it is written on the wire.
@@ -194,7 +202,29 @@ public sealed interface Clause
 				`match` on its own. Ignored by phrase queries.""",
 			defaultValue = "term"
 		)
-		Combine combine
+		Combine combine,
+
+		/**
+		 * Whether parts of the text are read as filters, and on which fields.
+		 * Defaults to {@code auto}. Only applies to {@code user} mode.
+		 */
+		@Schema(
+			description = """
+				Whether parts of `user` text are read as filters on the fields \
+				of the index: `auto` reads a number typed next to the unit of a \
+				number field, or next to a comparative word such as `under`, as \
+				a filter on that field; `off` takes every word as text. An \
+				object with `fields` reads the same way but only on the targets \
+				it names, for an index where several fields hold the same unit \
+				and the caller knows which one is meant. Whatever was read is \
+				reported as `interpreted` beside the results. See [Reading \
+				numbers and \
+				units](https://exofind.dev/reference/search-api/#reading-numbers-and-units).""",
+			defaultValue = "auto",
+			implementation = Object.class,
+			oneOf = { Matcher.Text.Interpret.class, Interpret.Targets.class }
+		)
+		Interpret interpret
 	) implements Clause {
 		/**
 		 * Scope for multi-field term matching across multiple fields.
@@ -215,6 +245,153 @@ public sealed interface Clause
 			 */
 			@JsonProperty("field")
 			FIELD
+		}
+
+		/**
+		 * How the text is read as filters: one of the modes, or the targets
+		 * a reading may be a filter on.
+		 *
+		 * <p>On the wire this is either a string or an object:
+		 *
+		 * <pre>
+		 * "interpret": "auto"
+		 * "interpret": "off"
+		 * "interpret": { "fields": [ { "field": "prices.amount", ... } ] }
+		 * </pre>
+		 *
+		 * <p>The object form always reads, so there is no way to write
+		 * targets together with {@code off}.
+		 */
+		@JsonDeserialize(using = Interpret.Deserializer.class)
+		@Schema(hidden = true)
+		public sealed interface Interpret permits Interpret.Mode, Interpret.Targets {
+			/**
+			 * One of the modes, written as a string.
+			 *
+			 * @param value
+			 *   the mode
+			 */
+			@Schema(hidden = true)
+			record Mode(@JsonValue Matcher.Text.Interpret value) implements Interpret {
+				public Mode {
+					if(value == null) {
+						throw new IllegalArgumentException("A mode is required");
+					}
+				}
+			}
+
+			/**
+			 * The targets a reading may be a filter on, written as an object.
+			 *
+			 * @param fields
+			 *   the targets
+			 */
+			/*
+			 * The deserializer of the interface is inherited by the records
+			 * that implement it, and would call itself. Reset here so that
+			 * the object form reads as the plain record it is.
+			 */
+			@JsonDeserialize(using = JsonDeserializer.None.class)
+			@Schema(
+				name = "InterpretTargets",
+				description = """
+					Reads `user` text as filters on the named targets only. A \
+					number typed with a unit is read on every target declaring \
+					that unit; a number typed without one is read on every \
+					target holding a currency, when they all hold the same \
+					currency."""
+			)
+			record Targets(
+				/**
+				 * The targets a reading may be a filter on.
+				 */
+				@Schema(
+					description = """
+						The targets a reading may be a filter on. At least one \
+						is required.""",
+					required = true
+				)
+				List<Target> fields
+			) implements Interpret {
+			}
+
+			/**
+			 * Reads a string as a mode and an object as targets.
+			 */
+			class Deserializer extends StdDeserializer<Interpret> {
+				private static final long serialVersionUID = 1L;
+
+				public Deserializer() {
+					super(Interpret.class);
+				}
+
+				@Override
+				public Interpret deserialize(JsonParser parser, DeserializationContext context)
+					throws IOException {
+					if(parser.hasToken(JsonToken.VALUE_STRING)) {
+						return new Mode(
+							context.readValue(parser, Matcher.Text.Interpret.class)
+						);
+					}
+
+					if(parser.hasToken(JsonToken.START_OBJECT)) {
+						return context.readValue(parser, Targets.class);
+					}
+
+					return (Interpret) context.handleUnexpectedToken(Interpret.class, parser);
+				}
+			}
+		}
+
+		/**
+		 * A field a reading of the text may be a filter on.
+		 */
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(
+			name = "InterpretTarget",
+			description = """
+				A field a reading may be a filter on. The field must be a \
+				number field declaring a `unit`; naming one without returns \
+				`index:query:interpret:no_unit`. A field inside a `nested` \
+				[object field](https://exofind.dev/reference/field-types/#object) \
+				is named by its dotted path and read against one value at a \
+				time, with `when` saying which."""
+		)
+		public record Target(
+			/**
+			 * The field, as named in the index definition.
+			 */
+			@Schema(
+				description = "The field, as named in the index definition.",
+				required = true,
+				examples = "prices.amount"
+			)
+			String field,
+
+			/**
+			 * Clauses that must hold where the number is read.
+			 */
+			@Schema(description = """
+				Clauses that must hold where the number is read: in the same \
+				value as the field for a field inside a `nested` list, and for \
+				the document otherwise. Takes what a `nested` clause takes: \
+				`field`, `text`, `and`, `or`, `not` and `boost`. A clause \
+				naming a field outside the list returns \
+				`index:query:nested:not_in_path`.""")
+			List<Clause> when,
+
+			/**
+			 * Targets read instead where the document holds no value on this
+			 * one, in order.
+			 */
+			@Schema(description = """
+				Targets read instead, in order, where the document holds no \
+				value on this one - a product with no price on the customer's \
+				list is read on the store's list. Every target of the chain \
+				must declare the same unit; one in another unit returns \
+				`index:query:interpret:fallback_unit`.""")
+			List<Target> fallback
+		) {
 		}
 	}
 

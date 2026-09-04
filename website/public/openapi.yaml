@@ -585,6 +585,16 @@ components:
             these bounds are rejected.
           type: object
           $ref: "#/components/schemas/DoubleValidation"
+        unit:
+          type: string
+          description: "What the values are measured in: an ISO 4217 currency code\
+            \ such as `SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`,\
+            \ or any other text matched as written. A search in `user` mode reads\
+            \ a number typed next to the unit, or next to a comparative word such\
+            \ as `under`, as a filter on this field. Changing the unit does not require\
+            \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          examples:
+          - EUR
     DoubleValidation:
       type: object
       description: The allowed numeric bounds for a `double` field.
@@ -797,6 +807,12 @@ components:
             \ query that executed."
           type: object
           $ref: "#/components/schemas/Relaxed"
+        interpreted:
+          description: "What the search read out of the query text as filters, and\
+            \ the text that was left. Omitted when nothing was read. The explanation\
+            \ tree reflects the search with the filters in it."
+          type: object
+          $ref: "#/components/schemas/Interpreted"
     Facet:
       type: object
       description: Enables value count aggregations across search results. Carries
@@ -1015,6 +1031,42 @@ components:
       description: Enables filtering search results by exact field value. Filtering
         is exact across all types; exact-match normalization for string fields is
         configured under `keyword`.
+    Filter1:
+      type: object
+      description: One filter read out of the query text.
+      properties:
+        field:
+          type: string
+          description: The field the filter is on.
+          examples:
+          - price
+        when:
+          type: array
+          items:
+            $ref: "#/components/schemas/Clause"
+          description: "Clauses that hold where the filter is read, as the `when`\
+            \ of the target the request named. Absent when the filter is read wherever\
+            \ the field holds a value."
+        match:
+          description: "What the values of the field have to satisfy, in the shape\
+            \ the `match` of a `field` clause takes: a `range` for a bound, an `equals`\
+            \ for a number written with its unit and nothing else. Can be sent back\
+            \ as a filter as it is."
+          type: object
+          $ref: "#/components/schemas/Matcher"
+        words:
+          type: array
+          items:
+            type: string
+          description: "The words the filter was read from, as they were typed and\
+            \ in the order they were typed."
+        fallback:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterpretTarget"
+          description: "The targets read instead where a document holds no value on\
+            \ the field, in order, as the `fallback` of the target the request named.\
+            \ Absent when there are none."
     FloatFieldDefinition:
       description: "Represents a 32-bit floating point number. Numeric fields do not\
         \ support text analysis and are searched by filtering, which supports exact\
@@ -1071,6 +1123,16 @@ components:
             these bounds are rejected.
           type: object
           $ref: "#/components/schemas/FloatValidation"
+        unit:
+          type: string
+          description: "What the values are measured in: an ISO 4217 currency code\
+            \ such as `SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`,\
+            \ or any other text matched as written. A search in `user` mode reads\
+            \ a number typed next to the unit, or next to a comparative word such\
+            \ as `under`, as a filter on this field. Changing the unit does not require\
+            \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          examples:
+          - kilogram
     FloatValidation:
       type: object
       description: Sets the allowed numeric bounds for a `float` field. Documents
@@ -1857,6 +1919,16 @@ components:
             these bounds are rejected.
           type: object
           $ref: "#/components/schemas/Int32Validation"
+        unit:
+          type: string
+          description: "What the values are measured in: an ISO 4217 currency code\
+            \ such as `SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`,\
+            \ or any other text matched as written. A search in `user` mode reads\
+            \ a number typed next to the unit, or next to a comparative word such\
+            \ as `under`, as a filter on this field. Changing the unit does not require\
+            \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          examples:
+          - SEK
     Int32Validation:
       type: object
       description: Sets the allowed numeric bounds for an `int32` field. Documents
@@ -1928,6 +2000,16 @@ components:
             these bounds are rejected.
           type: object
           $ref: "#/components/schemas/Int64Validation"
+        unit:
+          type: string
+          description: "What the values are measured in: an ISO 4217 currency code\
+            \ such as `SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`,\
+            \ or any other text matched as written. A search in `user` mode reads\
+            \ a number typed next to the unit, or next to a comparative word such\
+            \ as `under`, as a filter on this field. Changing the unit does not require\
+            \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          examples:
+          - gigabyte
     Int64Validation:
       type: object
       description: Sets the allowed numeric bounds for an `int64` field. Documents
@@ -1941,6 +2023,81 @@ components:
           type: integer
           format: int64
           description: Highest value accepted.
+    Interpret:
+      description: "Whether parts of `user` text are read as filters: `auto` reads\
+        \ a number typed next to a unit or a comparative word as a filter on the field\
+        \ declaring that unit, `off` takes every word as text."
+      type: string
+      enum:
+      - auto
+      - "off"
+    InterpretTarget:
+      type: object
+      description: "A field a reading may be a filter on. The field must be a number\
+        \ field declaring a `unit`; naming one without returns `index:query:interpret:no_unit`.\
+        \ A field inside a `nested` [object field](https://exofind.dev/reference/field-types/#object)\
+        \ is named by its dotted path and read against one value at a time, with `when`\
+        \ saying which."
+      required:
+      - field
+      properties:
+        field:
+          type: string
+          description: "The field, as named in the index definition."
+          examples:
+          - prices.amount
+        when:
+          type: array
+          items:
+            $ref: "#/components/schemas/Clause"
+          description: "Clauses that must hold where the number is read: in the same\
+            \ value as the field for a field inside a `nested` list, and for the document\
+            \ otherwise. Takes what a `nested` clause takes: `field`, `text`, `and`,\
+            \ `or`, `not` and `boost`. A clause naming a field outside the list returns\
+            \ `index:query:nested:not_in_path`."
+        fallback:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterpretTarget"
+          description: "Targets read instead, in order, where the document holds no\
+            \ value on this one - a product with no price on the customer's list is\
+            \ read on the store's list. Every target of the chain must declare the\
+            \ same unit; one in another unit returns `index:query:interpret:fallback_unit`."
+    InterpretTargets:
+      description: "Reads `user` text as filters on the named targets only. A number\
+        \ typed with a unit is read on every target declaring that unit; a number\
+        \ typed without one is read on every target holding a currency, when they\
+        \ all hold the same currency."
+      type: object
+      required:
+      - fields
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterpretTarget"
+          description: The targets a reading may be a filter on. At least one is required.
+    Interpreted:
+      type: object
+      description: "The filters a search read out of the query text, and the text\
+        \ that was left once their words were taken out. Present only when something\
+        \ was read. The words of a filter are still searched as text, so the results\
+        \ hold what the filter finds as well as what the words find as text, with\
+        \ the filter ranked first."
+      properties:
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Filter1"
+          description: "The filters that were read, in the order their words were\
+            \ typed. Two fields declaring the same unit read the same words as two\
+            \ filters, either of which a document may satisfy."
+        text:
+          type: string
+          description: The text that was left once the words of the filters were taken
+            out. Empty when everything typed was read.
+          examples:
+          - shoes
     KeyDefinition:
       description: "What a key should be allowed to do. See [Permissions](https://exofind.dev/reference/auth/#permissions)."
       examples:
@@ -3370,6 +3527,12 @@ components:
             \ answer less than what was asked for."
           type: object
           $ref: "#/components/schemas/Relaxed"
+        interpreted:
+          description: "What the search read out of the query text as filters, and\
+            \ the text that was left. Omitted entirely when nothing was read. See\
+            \ [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          type: object
+          $ref: "#/components/schemas/Interpreted"
         tookMs:
           type: number
           format: double
@@ -3787,6 +3950,19 @@ components:
           type: string
           default: term
           $ref: "#/components/schemas/Combine"
+        interpret:
+          oneOf:
+          - $ref: "#/components/schemas/Interpret"
+          - $ref: "#/components/schemas/InterpretTargets"
+          description: "Whether parts of `user` text are read as filters on the fields\
+            \ of the index: `auto` reads a number typed next to the unit of a number\
+            \ field, or next to a comparative word such as `under`, as a filter on\
+            \ that field; `off` takes every word as text. An object with `fields`\
+            \ reads the same way but only on the targets it names, for an index where\
+            \ several fields hold the same unit and the caller knows which one is\
+            \ meant. Whatever was read is reported as `interpreted` beside the results.\
+            \ See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          default: auto
     TextMatcher:
       description: Matches text within a single field using field-level analysis.
       type: object
@@ -3827,6 +4003,15 @@ components:
           type: string
           default: unmatched
           $ref: "#/components/schemas/Relax"
+        interpret:
+          description: "Whether parts of `user` text are read as filters on the fields\
+            \ of the index: `auto` reads a number typed next to the unit of a number\
+            \ field, or next to a comparative word such as `under`, as a filter on\
+            \ that field; `off` takes every word as text. Whatever was read is reported\
+            \ as `interpreted` beside the results. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+          type: string
+          default: auto
+          $ref: "#/components/schemas/Interpret"
     TextUsage:
       type: object
       description: Configuration properties shared by the `matching` and `autocomplete`

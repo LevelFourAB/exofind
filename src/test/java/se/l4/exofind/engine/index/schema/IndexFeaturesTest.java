@@ -127,6 +127,26 @@ public class IndexFeaturesTest {
 	}
 
 	@Test
+	public void testUnitOnANumberFieldIsListed() {
+		var definition = IndexDef.newBuilder()
+			.putFields(
+				"price",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setDouble(DoubleFieldTypeDef.newBuilder().setUnit("SEK"))
+					)
+					.build()
+			)
+			.build();
+
+		assertThat(
+			IndexFeatures.requiredBy(definition).toList(),
+			containsInAnyOrder("type.double", "field.unit")
+		);
+	}
+
+	@Test
 	public void testTimestampAndGeoPointTypesAreListed() {
 		var definition = IndexDef.newBuilder()
 			.putFields(

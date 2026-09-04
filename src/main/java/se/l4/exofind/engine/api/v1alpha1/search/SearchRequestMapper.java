@@ -25,6 +25,7 @@ import se.l4.exofind.engine.query.AndQuery;
 import se.l4.exofind.engine.query.BoostQuery;
 import se.l4.exofind.engine.query.DecaySignal;
 import se.l4.exofind.engine.query.Facet;
+import se.l4.exofind.engine.query.FieldQuery;
 import se.l4.exofind.engine.query.FieldSort;
 import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.GeoDistanceSort;
@@ -189,6 +190,17 @@ public class SearchRequestMapper {
 	private static final ErrorType CLAUSE_TEXT_REQUIRED =
 		ErrorType.withCode("search:clause:text_required")
 			.withMessage("The text to search for is required");
+
+	private static final ErrorType INTERPRET_FIELDS_REQUIRED =
+		ErrorType.withCode("search:clause:interpret_fields_required")
+			.withMessage("At least one target to read the text on is required");
+
+	private static final ErrorType INTERPRET_WHEN_UNSUPPORTED =
+		ErrorType.withCode("search:clause:interpret_when_unsupported")
+			.withArguments("type")
+			.withMessage(
+				"The `when` of a target holds what can hold for a single value, which a `{{type}}` clause can not"
+			);
 
 	private static final ErrorType CLAUSE_SLOP_INVALID =
 		ErrorType.withCode("search:clause:slop_invalid")
@@ -1634,7 +1646,8 @@ public class SearchRequestMapper {
 						toPrefix(text.prefix()),
 						toTypos(text.typos()),
 						toSlop(text.slop(), text.match(), path, errors),
-						toRelax(text.relax())
+						toRelax(text.relax()),
+						toInterpret(text.interpret())
 					)
 				).withCombine(toCombine(text.combine()));
 
@@ -1642,6 +1655,12 @@ public class SearchRequestMapper {
 					var fields = Maps.mutable.<String, Float>empty();
 					fields.putAll(text.fields());
 					query = query.withFields(fields.toImmutable());
+				}
+
+				if(text.interpret() instanceof Clause.Text.Interpret.Targets targets) {
+					query = query.withTargets(
+						toTargets(targets.fields(), path + "/interpret/fields", errors)
+					);
 				}
 
 				return query;
@@ -1945,7 +1964,8 @@ public class SearchRequestMapper {
 					toPrefix(text.prefix()),
 					toTypos(text.typos()),
 					toSlop(text.slop(), text.match(), path, errors),
-					toRelax(text.relax())
+					toRelax(text.relax()),
+					toInterpret(text.interpret())
 				);
 			}
 
@@ -2039,6 +2059,122 @@ public class SearchRequestMapper {
 		};
 	}
 
+	private static TextMatcher.Interpret toInterpret(Matcher.Text.Interpret interpret) {
+		return switch(interpret) {
+			case null -> null;
+			case AUTO -> TextMatcher.Interpret.AUTO;
+			case OFF -> TextMatcher.Interpret.OFF;
+		};
+	}
+
+	/**
+	 * Map how a text clause reads its text to the mode of it. The targets
+	 * the object form names go on the clause, see {@link #toTargets}; as a
+	 * mode, naming targets is reading.
+	 */
+	private static TextMatcher.Interpret toInterpret(Clause.Text.Interpret interpret) {
+		return switch(interpret) {
+			case null -> null;
+			case Clause.Text.Interpret.Mode mode -> toInterpret(mode.value());
+			case Clause.Text.Interpret.Targets targets -> TextMatcher.Interpret.AUTO;
+		};
+	}
+
+	/**
+	 * Map the targets a reading may be a filter on, refusing an empty list -
+	 * a clause that named targets and can be read on none of them asked for
+	 * something the engine would quietly do nothing with.
+	 */
+	private static ImmutableList<TextQuery.Target> toTargets(
+		List<Clause.Text.Target> targets,
+		String path,
+		MutableList<ErrorMessage> errors
+	) {
+		if(targets == null || targets.isEmpty()) {
+			errors.add(INTERPRET_FIELDS_REQUIRED.toMessage(Location.create(path)));
+			return Lists.immutable.empty();
+		}
+
+		return toFallbacks(targets, path, errors);
+	}
+
+	private static ImmutableList<TextQuery.Target> toFallbacks(
+		List<Clause.Text.Target> targets,
+		String path,
+		MutableList<ErrorMessage> errors
+	) {
+		if(targets == null) {
+			return Lists.immutable.empty();
+		}
+
+		var result = Lists.mutable.<TextQuery.Target>empty();
+		for(var i = 0; i < targets.size(); i++) {
+			var target = toTarget(targets.get(i), path + "/" + i, errors);
+			if(target != null) {
+				result.add(target);
+			}
+		}
+
+		return result.toImmutable();
+	}
+
+	private static TextQuery.Target toTarget(
+		Clause.Text.Target target,
+		String path,
+		MutableList<ErrorMessage> errors
+	) {
+		if(target == null) {
+			errors.add(REQUIRED.toMessage(Location.create(path)));
+			return null;
+		}
+
+		var valid = true;
+		if(target.field() == null || target.field().isBlank()) {
+			errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
+			valid = false;
+		}
+
+		var when = toClauses(target.when(), path + "/when", errors);
+		for(var i = 0; i < when.size(); i++) {
+			if(!isValueClause(when.get(i))) {
+				errors.add(
+					INTERPRET_WHEN_UNSUPPORTED.toMessage(
+						Location.create(path + "/when/" + i),
+						"type", when.get(i).type()
+					)
+				);
+				valid = false;
+			}
+		}
+
+		var fallback = toFallbacks(target.fallback(), path + "/fallback", errors);
+
+		if(!valid) {
+			return null;
+		}
+
+		return new TextQuery.Target(target.field(), when, fallback);
+	}
+
+	/**
+	 * Check that a clause is something that can hold for a single value of
+	 * an object field - the same clauses a {@code nested} clause accepts, so
+	 * that the {@code when} of a target reads the same whichever of the two
+	 * it is written in.
+	 */
+	private static boolean isValueClause(Query clause) {
+		return switch(clause) {
+			case NestedQuery q -> false;
+			case KnnQuery q -> false;
+			case FuseQuery q -> false;
+			case AndQuery q -> q.clauses().allSatisfy(SearchRequestMapper::isValueClause);
+			case OrQuery q -> q.clauses().allSatisfy(SearchRequestMapper::isValueClause);
+			case NotQuery q -> q.clauses().allSatisfy(SearchRequestMapper::isValueClause);
+			case BoostQuery q -> q.clauses().allSatisfy(SearchRequestMapper::isValueClause);
+			default -> true;
+		};
+	}
+
 	private static TextQuery.Combine toCombine(Clause.Text.Combine combine) {
 		return switch(combine) {
 			case null -> null;
@@ -2054,6 +2190,172 @@ public class SearchRequestMapper {
 			case MIN -> NestedQuery.Score.MIN;
 			case AVG -> NestedQuery.Score.AVG;
 			case TOTAL -> NestedQuery.Score.TOTAL;
+		};
+	}
+
+	/**
+	 * Shape a clause the way a request writes one, so that what a response
+	 * says a search did can be sent back as it is.
+	 *
+	 * Covers what the {@code when} of a target may hold - the clauses that
+	 * can hold for a single value - which is all a response ever echoes.
+	 *
+	 * @param query
+	 * @return
+	 */
+	public static Clause toClauseJson(Query query) {
+		return switch(query) {
+			case FieldQuery q -> new Clause.Field(q.field(), toMatcherJson(q.matcher()));
+			case TextQuery q -> {
+				var fields = q.fields().isEmpty()
+					? null
+					: new java.util.LinkedHashMap<String, Float>(q.fields().toMap());
+				var matcher = q.matcher();
+				yield new Clause.Text(
+					matcher.text(),
+					fields,
+					toMatchJson(matcher.match()),
+					toPrefixJson(matcher.prefix()),
+					toTyposJson(matcher.typos()),
+					matcher.slop(),
+					toRelaxJson(matcher.relax()),
+					toCombineJson(q.combine()),
+					q.targets().isEmpty()
+						? new Clause.Text.Interpret.Mode(toInterpretJson(matcher.interpret()))
+						: new Clause.Text.Interpret.Targets(toTargetsJson(q.targets()))
+				);
+			}
+			case AndQuery q -> new Clause.And(toClausesJson(q.clauses()));
+			case OrQuery q -> new Clause.Or(toClausesJson(q.clauses()));
+			case NotQuery q -> new Clause.Not(toClausesJson(q.clauses()));
+			case BoostQuery q -> new Clause.Boost(q.weight(), toClausesJson(q.clauses()));
+			default -> throw new IllegalStateException(
+				"A `" + query.type() + "` clause can not hold for a single value"
+			);
+		};
+	}
+
+	private static List<Clause> toClausesJson(ImmutableList<Query> clauses) {
+		var result = new java.util.ArrayList<Clause>(clauses.size());
+		for(var clause : clauses) {
+			result.add(toClauseJson(clause));
+		}
+		return result;
+	}
+
+	/**
+	 * Shape the targets a reading may be a filter on the way a request writes
+	 * them.
+	 *
+	 * @param targets
+	 * @return
+	 */
+	public static List<Clause.Text.Target> toTargetsJson(ImmutableList<TextQuery.Target> targets) {
+		var result = new java.util.ArrayList<Clause.Text.Target>(targets.size());
+		for(var target : targets) {
+			result.add(new Clause.Text.Target(
+				target.field(),
+				target.when().isEmpty() ? null : toClausesJson(target.when()),
+				target.fallback().isEmpty() ? null : toTargetsJson(target.fallback())
+			));
+		}
+		return result;
+	}
+
+	/**
+	 * Shape a matcher the way a request writes one, so a caller can send it
+	 * back as a filter.
+	 *
+	 * @param matcher
+	 * @return
+	 */
+	public static Matcher toMatcherJson(se.l4.exofind.engine.query.matchers.Matcher matcher) {
+		return switch(matcher) {
+			case EqualsMatcher m -> new Matcher.Equals(m.value());
+			case InMatcher m -> new Matcher.In(m.values().castToList());
+			case AnyMatcher m -> new Matcher.Any();
+			case PrefixMatcher m -> new Matcher.Prefix(m.value());
+			case UnderMatcher m -> new Matcher.Under(m.path());
+			case RangeMatcher m -> toRangeJson(m);
+			case RangesMatcher m -> {
+				var ranges = new java.util.ArrayList<Matcher.Ranges.Range>(m.ranges().size());
+				for(var range : m.ranges()) {
+					ranges.add(new Matcher.Ranges.Range(
+						range.lowerInclusive() ? range.lower() : null,
+						range.lowerInclusive() ? null : range.lower(),
+						range.upperInclusive() ? range.upper() : null,
+						range.upperInclusive() ? null : range.upper()
+					));
+				}
+				yield new Matcher.Ranges(ranges);
+			}
+			case DistanceMatcher m -> new Matcher.Distance(m.latitude(), m.longitude(), m.radius());
+			case TextMatcher m -> new Matcher.Text(
+				m.text(),
+				toMatchJson(m.match()),
+				toPrefixJson(m.prefix()),
+				toTyposJson(m.typos()),
+				m.slop(),
+				toRelaxJson(m.relax()),
+				toInterpretJson(m.interpret())
+			);
+			default -> throw new IllegalStateException(
+				"No request shape for a `" + matcher.id() + "` matcher"
+			);
+		};
+	}
+
+	private static Matcher.Range toRangeJson(RangeMatcher m) {
+		return new Matcher.Range(
+			m.lowerInclusive() ? m.lower() : null,
+			m.lowerInclusive() ? null : m.lower(),
+			m.upperInclusive() ? m.upper() : null,
+			m.upperInclusive() ? null : m.upper()
+		);
+	}
+
+	private static Matcher.Text.Match toMatchJson(TextMatcher.Match match) {
+		return switch(match) {
+			case ALL -> Matcher.Text.Match.ALL;
+			case ANY -> Matcher.Text.Match.ANY;
+			case PHRASE -> Matcher.Text.Match.PHRASE;
+			case USER -> Matcher.Text.Match.USER;
+		};
+	}
+
+	private static Matcher.Text.Prefix toPrefixJson(TextMatcher.Prefix prefix) {
+		return switch(prefix) {
+			case LAST_TOKEN -> Matcher.Text.Prefix.LAST_TOKEN;
+			case OFF -> Matcher.Text.Prefix.OFF;
+		};
+	}
+
+	private static Matcher.Text.Typos toTyposJson(TextMatcher.Typos typos) {
+		return switch(typos) {
+			case AUTO -> Matcher.Text.Typos.AUTO;
+			case OFF -> Matcher.Text.Typos.OFF;
+		};
+	}
+
+	private static Matcher.Text.Relax toRelaxJson(TextMatcher.Relax relax) {
+		return switch(relax) {
+			case OFF -> Matcher.Text.Relax.OFF;
+			case UNMATCHED -> Matcher.Text.Relax.UNMATCHED;
+			case WORDS -> Matcher.Text.Relax.WORDS;
+		};
+	}
+
+	private static Matcher.Text.Interpret toInterpretJson(TextMatcher.Interpret interpret) {
+		return switch(interpret) {
+			case AUTO -> Matcher.Text.Interpret.AUTO;
+			case OFF -> Matcher.Text.Interpret.OFF;
+		};
+	}
+
+	private static Clause.Text.Combine toCombineJson(TextQuery.Combine combine) {
+		return switch(combine) {
+			case TERM -> Clause.Text.Combine.TERM;
+			case FIELD -> Clause.Text.Combine.FIELD;
 		};
 	}
 }

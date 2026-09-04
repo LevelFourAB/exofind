@@ -33,6 +33,11 @@ public class DoubleFieldType extends NumberFieldType {
 	}
 
 	@Override
+	protected String declaredUnit(FieldTypeDef type) {
+		return type.getDouble().hasUnit() ? type.getDouble().getUnit() : null;
+	}
+
+	@Override
 	protected boolean isUsableBound(Number bound) {
 		return Double.isFinite(bound.doubleValue());
 	}

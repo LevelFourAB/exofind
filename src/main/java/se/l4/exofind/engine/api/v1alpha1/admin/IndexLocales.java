@@ -323,7 +323,8 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
-				value.validation()
+				value.validation(),
+				value.unit()
 			);
 			case Int64FieldDefinition value -> new Int64FieldDefinition(
 				value.primaryKey(),
@@ -334,7 +335,8 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
-				value.validation()
+				value.validation(),
+				value.unit()
 			);
 			case FloatFieldDefinition value -> new FloatFieldDefinition(
 				value.primaryKey(),
@@ -345,7 +347,8 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
-				value.validation()
+				value.validation(),
+				value.unit()
 			);
 			case DoubleFieldDefinition value -> new DoubleFieldDefinition(
 				value.primaryKey(),
@@ -356,7 +359,8 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
-				value.validation()
+				value.validation(),
+				value.unit()
 			);
 			case TimestampFieldDefinition timestamp -> new TimestampFieldDefinition(
 				timestamp.role(),

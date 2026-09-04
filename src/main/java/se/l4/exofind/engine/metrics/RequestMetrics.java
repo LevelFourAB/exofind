@@ -74,6 +74,17 @@ public class RequestMetrics {
 	}
 
 	/**
+	 * Record a filter a search read out of the text a person typed.
+	 *
+	 * @param kind
+	 *   what kind of thing was read, such as {@link Meters#KIND_NUMBER}
+	 */
+	public void recordInterpretation(String kind) {
+		registry.counter(Meters.SEARCH_INTERPRETATION, Meters.TAG_KIND, kind)
+			.increment();
+	}
+
+	/**
 	 * Record pieces of search work handed to the search threads of the node.
 	 *
 	 * @param thread

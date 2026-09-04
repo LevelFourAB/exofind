@@ -115,6 +115,7 @@ Represents numeric values of the specified width. Enabling `filter` supports bot
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `validation` | object | None | Sets allowed numeric bounds. Sub-properties: `min` and `max`. Documents containing values outside these bounds are rejected. |
+| `unit` | string | None | Declares a unit for the field: an ISO 4217 currency code, a CLDR unit identifier, or any other text matched as written. A search in user mode reads a number typed next to the unit or next to a comparative word as a filter on the field. See [Reading numbers and units](search-api.md#reading-numbers-and-units). Changing `unit` needs no reindex. A blank unit returns `index:field:number:invalid_unit`. |
 
 ## `timestamp`
 

@@ -76,6 +76,17 @@ public record SearchResponse(
 	Relaxed relaxed,
 
 	/**
+	 * The filters the search read out of the query text, and the text that
+	 * was left. Omitted when nothing was read.
+	 */
+	@Schema(description = """
+		What the search read out of the query text as filters, and the text \
+		that was left. Omitted entirely when nothing was read. See [Reading \
+		numbers and \
+		units](https://exofind.dev/reference/search-api/#reading-numbers-and-units).""")
+	Interpreted interpreted,
+
+	/**
 	 * Total execution time for the search request in milliseconds, including
 	 * fractional milliseconds.
 	 */
@@ -463,6 +474,99 @@ public record SearchResponse(
 			bucket.""", examples = "17")
 		long count
 	) {
+	}
+
+	/**
+	 * The filters a search read out of the query text, and the text that was
+	 * left once their words were taken out.
+	 *
+	 * <p>Present only when something was read. The words of a filter are still
+	 * searched as text, so the results hold what the filter finds and what
+	 * the words find as text.
+	 */
+	@Schema(description = """
+		The filters a search read out of the query text, and the text that \
+		was left once their words were taken out. Present only when \
+		something was read. The words of a filter are still searched as \
+		text, so the results hold what the filter finds as well as what the \
+		words find as text, with the filter ranked first.""")
+	public record Interpreted(
+		/**
+		 * The filters that were read, in the order their words were typed.
+		 */
+		@Schema(description = """
+			The filters that were read, in the order their words were typed. \
+			Two fields declaring the same unit read the same words as two \
+			filters, either of which a document may satisfy.""")
+		List<Filter> filters,
+
+		/**
+		 * The text that was left once the words of the filters were taken
+		 * out, as a query text that reads back to the same search.
+		 */
+		@Schema(
+			description = """
+				The text that was left once the words of the filters were \
+				taken out. Empty when everything typed was read.""",
+			examples = "shoes"
+		)
+		String text
+	) {
+		/**
+		 * One filter read out of the query text.
+		 */
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@Schema(description = "One filter read out of the query text.")
+		public record Filter(
+			/**
+			 * The field the filter is on.
+			 */
+			@Schema(description = "The field the filter is on.", examples = "price")
+			String field,
+
+			/**
+			 * Clauses that hold where the filter is read, as the target the
+			 * request named said.
+			 */
+			@Schema(description = """
+				Clauses that hold where the filter is read, as the `when` of \
+				the target the request named. Absent when the filter is read \
+				wherever the field holds a value.""")
+			List<Clause> when,
+
+			/**
+			 * What the values of the field have to satisfy, in the shape a
+			 * `field` clause takes.
+			 */
+			@Schema(description = """
+				What the values of the field have to satisfy, in the shape the \
+				`match` of a `field` clause takes: a `range` for a bound, an \
+				`equals` for a number written with its unit and nothing else. \
+				Can be sent back as a filter as it is.""")
+			Matcher match,
+
+			/**
+			 * The words the filter was read from, as typed.
+			 */
+			@Schema(description = """
+				The words the filter was read from, as they were typed and in \
+				the order they were typed.""")
+			List<String> words,
+
+			/**
+			 * The targets read instead where a document holds no value on the
+			 * field, as the request named them.
+			 */
+			@Schema(description = """
+				The targets read instead where a document holds no value on \
+				the field, in order, as the `fallback` of the target the \
+				request named. Absent when there are none.""")
+			List<Clause.Text.Target> fallback
+		) {
+			public Filter(String field, Matcher match, List<String> words) {
+				this(field, null, match, words, null);
+			}
+		}
 	}
 
 	/**

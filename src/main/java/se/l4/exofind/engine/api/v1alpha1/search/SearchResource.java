@@ -35,6 +35,7 @@ import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.SearchDeadline;
 import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.settings.SearchSettings;
+import se.l4.exofind.engine.metrics.Meters;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchExplanation;
@@ -324,6 +325,12 @@ public class SearchResource {
 			}
 		}
 
+		if(result.interpreted() != null) {
+			for(var i = 0; i < result.interpreted().filters().size(); i++) {
+				metrics.recordInterpretation(Meters.KIND_NUMBER);
+			}
+		}
+
 		/*
 		 * Kept to microseconds rather than the nanoseconds measured, so that
 		 * the number reads as a time and not as the last digits of how a
@@ -481,7 +488,8 @@ public class SearchResource {
 			explanation.matched(),
 			explanation.score(),
 			toDetailJson(explanation.detail()),
-			toRelaxedJson(explanation.relaxed())
+			toRelaxedJson(explanation.relaxed()),
+			toInterpretedJson(explanation.interpreted())
 		);
 	}
 
@@ -551,8 +559,47 @@ public class SearchResource {
 			toFacetsJson(mapped.request(), result),
 			toPage(mapped, result),
 			toRelaxedJson(result.relaxed()),
+			toInterpretedJson(result.interpreted()),
 			tookMs
 		);
+	}
+
+	/**
+	 * Shape what the search read out of its text, or {@code null} when it
+	 * read nothing - the key is only there when the results answer a filter
+	 * nobody wrote.
+	 */
+	private static SearchResponse.Interpreted toInterpretedJson(
+		SearchResult.Interpreted interpreted
+	) {
+		if(interpreted == null) {
+			return null;
+		}
+
+		var filters = new ArrayList<SearchResponse.Interpreted.Filter>(
+			interpreted.filters().size()
+		);
+
+		for(var filter : interpreted.filters()) {
+			var when = filter.when().isEmpty()
+				? null
+				: filter.when().collect(SearchRequestMapper::toClauseJson).toList();
+			var fallback = filter.fallback().isEmpty()
+				? null
+				: SearchRequestMapper.toTargetsJson(filter.fallback());
+
+			filters.add(
+				new SearchResponse.Interpreted.Filter(
+					filter.field(),
+					when,
+					SearchRequestMapper.toMatcherJson(filter.matcher()),
+					filter.words().toList(),
+					fallback
+				)
+			);
+		}
+
+		return new SearchResponse.Interpreted(filters, interpreted.text());
 	}
 
 	/**

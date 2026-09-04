@@ -52,7 +52,17 @@ public record ExplainResponse(
 		text. Omitted if query relaxation did not run. When zero results \
 		trigger query relaxation, the explanation tree reflects the relaxed \
 		query that executed.""")
-	SearchResponse.Relaxed relaxed
+	SearchResponse.Relaxed relaxed,
+
+	/**
+	 * The filters the search read out of the query text, or null if nothing
+	 * was read.
+	 */
+	@Schema(description = """
+		What the search read out of the query text as filters, and the text \
+		that was left. Omitted when nothing was read. The explanation tree \
+		reflects the search with the filters in it.""")
+	SearchResponse.Interpreted interpreted
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. It explains

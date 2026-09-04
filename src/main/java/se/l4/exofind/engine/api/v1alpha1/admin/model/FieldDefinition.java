@@ -112,6 +112,15 @@ public sealed interface FieldDefinition
 		Enables value count aggregations. On numeric and timestamp fields, it \
 		also enables range buckets.""";
 
+	String UNIT_DESCRIPTION = """
+		What the values are measured in: an ISO 4217 currency code such as \
+		`SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`, or any \
+		other text matched as written. A search in `user` mode reads a number \
+		typed next to the unit, or next to a comparative word such as `under`, \
+		as a filter on this field. Changing the unit does not require a \
+		reindex. See [Reading numbers and \
+		units](https://exofind.dev/reference/search-api/#reading-numbers-and-units).""";
+
 	/**
 	 * If this field is the primary key of the index. An index has at most one
 	 * primary key, and documents with the same primary key replace each other.
