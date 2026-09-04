@@ -11,7 +11,8 @@ package se.l4.exofind.engine.index;
  * after a refresh only counts the segments the refresh added; a segment
  * answered from there is a hit. Both are described in {@code FacetStates}.
  *
- * <p>Every number only ever grows. A rate is the change over a period.
+ * <p>Every count only ever grows. A rate is the change over a period. The
+ * bytes held are what is kept right now, and go down when readers close.
  *
  * @param hits
  *   facets answered from what an earlier search counted over the same scope
@@ -23,13 +24,18 @@ package se.l4.exofind.engine.index;
  *   segments whose counts over everything the reader holds were reused
  * @param segmentMisses
  *   segments that had to be counted for everything the reader holds
+ * @param heldBytes
+ *   an estimate of the heap the facet state of every open reader takes: the
+ *   ordinal maps, the columns and postings per segment, and the counts over
+ *   everything each segment holds
  */
 public record FacetCacheStats(
 	long hits,
 	long misses,
 	long evictions,
 	long segmentHits,
-	long segmentMisses
+	long segmentMisses,
+	long heldBytes
 ) {
 	/**
 	 * Get how the caches have answered so far.

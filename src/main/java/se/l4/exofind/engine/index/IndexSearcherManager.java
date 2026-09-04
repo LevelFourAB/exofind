@@ -89,6 +89,19 @@ public class IndexSearcherManager {
 	}
 
 	/**
+	 * Get whether the given searcher is still the one handles are handed out
+	 * for. Background work over a searcher asks this between its steps, so
+	 * that it stops preparing a searcher that is no longer handed out.
+	 *
+	 * @param searcher
+	 * @return
+	 */
+	public boolean isLatest(IndexSearcher searcher) {
+		var ref = currentSearcher;
+		return ref != null && ref.searcher == searcher;
+	}
+
+	/**
 	 * Take a handle on the latest searcher. The searcher stays open for as long
 	 * as the handle is held, however many times it is replaced meanwhile.
 	 *

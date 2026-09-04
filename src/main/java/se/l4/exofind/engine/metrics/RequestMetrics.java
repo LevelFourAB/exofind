@@ -92,6 +92,21 @@ public class RequestMetrics {
 	}
 
 	/**
+	 * Record the facet state of a reopened reader being prepared ahead of the
+	 * first search.
+	 *
+	 * @param outcome
+	 *   {@link Meters#OUTCOME_SUCCESS}, {@link Meters#OUTCOME_SUPERSEDED} or
+	 *   {@link Meters#OUTCOME_ERROR}
+	 * @param nanos
+	 *   how long the preparing ran, whether or not it finished
+	 */
+	public void recordFacetWarm(String outcome, long nanos) {
+		registry.timer(Meters.FACET_WARM, Meters.TAG_OUTCOME, outcome)
+			.record(nanos, TimeUnit.NANOSECONDS);
+	}
+
+	/**
 	 * Record a write served by this node.
 	 *
 	 * @param operation

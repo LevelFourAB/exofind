@@ -45,6 +45,7 @@ import se.l4.exofind.engine.index.DocumentCache;
 import se.l4.exofind.engine.index.FacetCacheStats;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.FacetWarmer;
 import se.l4.exofind.engine.index.SearchThreads;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
@@ -185,6 +186,12 @@ public class Indexes implements RegistryPoller.Listener {
 	 * opened here.
 	 */
 	private final SearchThreads searchThreads;
+
+	/**
+	 * Prepares the readers of every index opened here for counting facets
+	 * before the first search asks, see {@link FacetWarmer}.
+	 */
+	private final FacetWarmer facetWarmer;
 
 	/**
 	 * Closes retired instances, so that flushing and closing an evicted index
@@ -469,7 +476,8 @@ public class Indexes implements RegistryPoller.Listener {
 			DEFAULT_PRELOAD_MAX_INDEXES,
 			Duration.ZERO,
 			Duration.ZERO,
-			SearchThreads.inline()
+			SearchThreads.inline(),
+			FacetWarmer.none()
 		);
 	}
 
@@ -499,11 +507,13 @@ public class Indexes implements RegistryPoller.Listener {
 		@ConfigProperty(name = "exofind.indexes.preload.max-indexes", defaultValue = "32") int preloadMaxIndexes,
 		@ConfigProperty(name = "exofind.indexes.preload.max-duration", defaultValue = "5m") Duration preloadMaxDuration,
 		@ConfigProperty(name = "exofind.indexes.preload.readiness-wait", defaultValue = "30s") Duration preloadReadinessWait,
-		SearchThreads searchThreads
+		SearchThreads searchThreads,
+		FacetWarmer facetWarmer
 	) throws IOException {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;
 		this.searchThreads = searchThreads;
+		this.facetWarmer = facetWarmer;
 		this.registry = registry;
 		this.registryHints = registryHints;
 		this.removals = removals;
@@ -1689,7 +1699,8 @@ public class Indexes implements RegistryPoller.Listener {
 				documentCache,
 				metrics,
 				mergeFloorSegment,
-				searchThreads
+				searchThreads,
+				facetWarmer
 			);
 
 			/*

@@ -230,6 +230,30 @@ public final class Meters {
 	public static final String FACET_SEGMENT_MISSES = "exofind.facet.segment.misses";
 
 	/**
+	 * Heap the facet state of every open reader takes: the ordinal maps, the
+	 * columns and postings per segment, and the counts over everything each
+	 * segment holds. An estimate, see {@code FacetStates#heldBytes}.
+	 */
+	public static final String FACET_STATE_BYTES = "exofind.facet.state.bytes";
+
+	/**
+	 * Time preparing the facet state of a reopened reader took, before a
+	 * search asked for it. Tagged with {@link #TAG_OUTCOME}:
+	 * {@link #OUTCOME_SUCCESS} where every field was prepared,
+	 * {@link #OUTCOME_SUPERSEDED} where a newer reader replaced the one being
+	 * prepared, and {@link #OUTCOME_ERROR} where preparing failed.
+	 */
+	public static final String FACET_WARM = "exofind.facet.warm";
+
+	/**
+	 * Indexes whose latest reader is waiting to have its facet state prepared.
+	 * A depth that stays high means the warm threads are not keeping up with
+	 * how often readers reopen, and first searches are as cold as with no
+	 * warming.
+	 */
+	public static final String FACET_WARM_QUEUED = "exofind.facet.warm.queued";
+
+	/**
 	 * Reindex jobs this node knows of. Tagged with {@link #TAG_PHASE},
 	 * carrying one series per phase and none per index.
 	 */
@@ -294,6 +318,12 @@ public final class Meters {
 
 	public static final String OUTCOME_SUCCESS = "success";
 	public static final String OUTCOME_ERROR = "error";
+
+	/**
+	 * Work given up because what it was preparing had been replaced before
+	 * it finished.
+	 */
+	public static final String OUTCOME_SUPERSEDED = "superseded";
 
 	public static final String TRIGGER_CHANGES = "changes";
 	public static final String TRIGGER_INTERVAL = "interval";

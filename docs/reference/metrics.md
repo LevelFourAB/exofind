@@ -74,6 +74,9 @@ The `operation` tag names the request rather than the endpoint, so the JSON and 
 | `exofind.facet.cache.evictions` | Counter | Entries | None | Number of facet scope entries dropped to make room for ones asked for more recently. Each reader keeps a bounded number of scopes. |
 | `exofind.facet.segment.hits` | Counter | Segments | None | Number of segments whose counts over everything the index holds were reused. A refresh keeps the counts of the segments it left untouched, so a search after it only counts the new segments. |
 | `exofind.facet.segment.misses` | Counter | Segments | None | Number of segments a facet had to count over everything the index holds. |
+| `exofind.facet.state.bytes` | Gauge | Bytes | None | Estimated heap memory used by the facet state of all open readers: ordinal maps, segment columns and postings, and counts across each segment. |
+| `exofind.facet.warm` | Timer | Seconds | `outcome` (`success`, `superseded`, `error`) | Duration of preparing the facet state of a reopened reader before a search requests it. The `superseded` outcome is recorded when a newer reader replaced the one being prepared before the work finished, and `error` when the preparation failed, after which the first search builds the state itself. |
+| `exofind.facet.warm.queued` | Gauge | Indexes | None | Number of indexes waiting for a warm thread to prepare their latest reader. A value that stays high means the warm threads do not keep up with how often readers reopen, so the first search after a reopen builds the state itself. |
 
 ### API and security metrics
 

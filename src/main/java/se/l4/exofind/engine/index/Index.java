@@ -34,6 +34,8 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.facet.FacetsCollector;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.DocValuesType;
+import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexNotFoundException;
 import org.apache.lucene.index.IndexReader;
@@ -71,6 +73,7 @@ import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.search.join.QueryBitSetProducer;
 import org.apache.lucene.search.join.ToChildBlockJoinQuery;
+import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BitDocIdSet;
 import org.apache.lucene.util.BitSetIterator;
@@ -415,6 +418,13 @@ public class Index {
 	private final SearchThreads searchThreads;
 
 	/**
+	 * Prepares every reader this index opens for counting facets before the
+	 * first search asks, see {@link FacetWarmer}. Told each time
+	 * {@link #searcherManager} is handed a new searcher.
+	 */
+	private final FacetWarmer facetWarmer;
+
+	/**
 	 * Finds the documents of the index among the values of object fields,
 	 * caching the answer per segment. Held here so the cache lives as long as
 	 * the index rather than a single search.
@@ -557,7 +567,8 @@ public class Index {
 	}
 
 	/**
-	 * Open an index whose searches run on the thread that asks for them.
+	 * Open an index whose searches run on the thread that asks for them, and
+	 * whose readers are not prepared for facets ahead of the first search.
 	 *
 	 * @param mergeFloorSegment
 	 *   segment size in bytes under which Lucene merges segments toward that
@@ -582,11 +593,15 @@ public class Index {
 			documentCache,
 			metrics,
 			mergeFloorSegment,
-			SearchThreads.inline()
+			SearchThreads.inline(),
+			FacetWarmer.none()
 		);
 	}
 
 	/**
+	 * Open an index whose readers are not prepared for facets ahead of the
+	 * first search.
+	 *
 	 * @param mergeFloorSegment
 	 *   segment size in bytes under which Lucene merges segments toward that
 	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
@@ -605,9 +620,47 @@ public class Index {
 		OptionalLong mergeFloorSegment,
 		SearchThreads searchThreads
 	) {
+		this(
+			nodeState,
+			name,
+			localPath,
+			sync,
+			commitPolicy,
+			documentCache,
+			metrics,
+			mergeFloorSegment,
+			searchThreads,
+			FacetWarmer.none()
+		);
+	}
+
+	/**
+	 * @param mergeFloorSegment
+	 *   segment size in bytes under which Lucene merges segments toward that
+	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
+	 * @param searchThreads
+	 *   the threads a search may spread over besides its own, see
+	 *   {@link SearchThreads}
+	 * @param facetWarmer
+	 *   prepares every reader this index opens for counting facets before the
+	 *   first search asks, see {@link FacetWarmer}
+	 */
+	public Index(
+		NodeState nodeState,
+		String name,
+		Path localPath,
+		StateSync sync,
+		CommitPolicy commitPolicy,
+		DocumentCache documentCache,
+		RequestMetrics metrics,
+		OptionalLong mergeFloorSegment,
+		SearchThreads searchThreads,
+		FacetWarmer facetWarmer
+	) {
 		this.metrics = metrics;
 		this.mergeFloorSegment = mergeFloorSegment;
 		this.searchThreads = searchThreads;
+		this.facetWarmer = facetWarmer;
 		this.nodeState = nodeState;
 		this.id = name;
 		this.indexName = IndexName.parse(name).index();
@@ -647,6 +700,14 @@ public class Index {
 
 	public String getId() {
 		return id;
+	}
+
+	/**
+	 * The searchers of this index, for a test that reads what the latest
+	 * reader holds.
+	 */
+	IndexSearcherManager searcherManager() {
+		return searcherManager;
 	}
 
 	/**
@@ -944,6 +1005,10 @@ public class Index {
 			searcherManager.refreshLatest(newSearcher(reader));
 
 			state = IndexState.USABLE;
+
+			if(!readerWithoutCommit) {
+				facetWarmer.warm(this);
+			}
 		} catch(IOException e) {
 			logger.atError()
 				.addKeyValue("index", id)
@@ -6055,6 +6120,138 @@ public class Index {
 	}
 
 	/**
+	 * Prepare the latest reader of this index for counting facets, ahead of
+	 * the first search that asks - what a {@link FacetWarmer} runs after the
+	 * reader is replaced.
+	 *
+	 * <p>Every faceted field the reader holds values for is counted over the
+	 * scope nothing narrows - everything the index holds, as documents - the
+	 * way a search with facets and no clauses counts it, one field at a time.
+	 * That walk fills {@link FacetStates} for the reader: the ordinal
+	 * map of the field, the columns and postings of every segment, and what
+	 * each segment counts for the scope. A field a search can facet on is
+	 * found the way the search finds it, by name through the schema, so a
+	 * field the schema names by a pattern is prepared under every name the
+	 * documents gave it. A localized field is prepared in every locale it
+	 * holds values in. The scope a search over the values of an object field
+	 * counts is not prepared: it is asked for far less often, and its matches
+	 * are collected rather than known.
+	 *
+	 * <p>The reader is held open through a handle for as long as the warm
+	 * runs, as any search holds it. Between fields the warm asks whether the
+	 * reader is still the latest, and gives up when it is not: that reader is
+	 * no longer handed out, and the index has queued itself for the newer
+	 * one. A warm runs under no {@link SearchDeadline}, so everything it
+	 * counts is kept.
+	 *
+	 * @return
+	 *   how the warm ended; {@link FacetWarmer.Outcome#SUPERSEDED} where
+	 *   the index holds no searcher yet, is closed, or replaced its reader
+	 *   before every field was prepared
+	 * @throws IOException
+	 *   if preparing a field failed
+	 */
+	FacetWarmer.Outcome warmFacets() throws IOException {
+		IndexSearcherManager.Handle handle;
+
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				return FacetWarmer.Outcome.SUPERSEDED;
+			}
+
+			try {
+				handle = searcherManager.acquire();
+			} catch(IllegalStateException e) {
+				// Nothing opened yet, or closed underneath - the next reopen queues again
+				return FacetWarmer.Outcome.SUPERSEDED;
+			}
+		} finally {
+			syncLock.readLock().unlock();
+		}
+
+		try(handle) {
+			var searcher = handle.getSearcher();
+			var reader = searcher.getIndexReader();
+
+			var targets = facetedFieldsOf(reader);
+			if(targets.isEmpty()) {
+				return FacetWarmer.Outcome.COMPLETED;
+			}
+
+			var everything = everythingHeld(reader);
+			for(var target : targets) {
+				if(!searcherManager.isLatest(searcher)) {
+					return FacetWarmer.Outcome.SUPERSEDED;
+				}
+
+				var compiler = new QueryCompiler(schema, target.locale(), nestedParents);
+				var nested = schema.getNestedField(target.field());
+				var matches = (nested.isPresent()
+					? FacetMatches.everyValue(everything, nestedParents)
+					: FacetMatches.of(everything)
+				).wholeDocuments();
+
+				var count = prepareFacet(compiler, Facet.of(target.field()), matches);
+				FacetWalk.walk(matches, Lists.immutable.of(count));
+			}
+
+			return FacetWarmer.Outcome.COMPLETED;
+		} catch(AlreadyClosedException e) {
+			// The index closed while the warm was reading it
+			return FacetWarmer.Outcome.SUPERSEDED;
+		}
+	}
+
+	/**
+	 * The faceted fields the reader holds values for, each in every locale it
+	 * holds them in, in the order the reader names them. Read off the field
+	 * names of the reader rather than the schema, since the schema names a
+	 * dynamic field by a pattern and a localized field by every locale it
+	 * declares, and only the reader knows which names and locales documents
+	 * gave values under.
+	 */
+	private List<FacetedField> facetedFieldsOf(IndexReader reader) {
+		var found = new LinkedHashSet<FacetedField>();
+		for(var info : FieldInfos.getMergedFieldInfos(reader)) {
+			if(info.getDocValuesType() == DocValuesType.NONE) {
+				continue;
+			}
+
+			var parsed = FieldNames.parse(info.name);
+			if(parsed == null
+				|| !(FieldNames.VALUES.equals(parsed.suffix())
+					|| FieldNames.HIERARCHY.equals(parsed.suffix()))) {
+				continue;
+			}
+
+			var field = schema.getField(parsed.field())
+				.or(() -> schema.getNestedField(parsed.field()).map(IndexSchema.NestedField::field));
+			if(field.isEmpty() || !field.get().isFaceted()) {
+				continue;
+			}
+
+			found.add(new FacetedField(parsed.field(), parsed.locale()));
+		}
+
+		return new ArrayList<>(found);
+	}
+
+	/**
+	 * One field a warm prepares: a name a facet can be asked for, in one of
+	 * the locales the reader holds it in.
+	 *
+	 * @param field
+	 *   the name as a search names it, a dotted path for a field inside an
+	 *   object
+	 * @param locale
+	 *   the locale the values are in, or {@code null} for a field that is the
+	 *   same in every language
+	 */
+	private record FacetedField(String field, String locale) {
+	}
+
+	/**
 	 * What one search runs against Lucene, in both of the shapes the parts of
 	 * answering need.
 	 *
@@ -6918,6 +7115,7 @@ public class Index {
 			this.reader = DirectoryReader.open(writer);
 
 			this.searcherManager.refreshLatest(newSearcher(reader));
+			facetWarmer.warm(this);
 
 			/*
 			 * Everything remembered is in the commit, so the next partial

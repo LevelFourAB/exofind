@@ -37,6 +37,17 @@ public abstract class AbstractIndexTest {
 	 * of what a search answers when it runs on more than one thread.
 	 */
 	protected Index create(String name, SearchThreads searchThreads) throws IOException {
+		return create(name, searchThreads, FacetWarmer.none());
+	}
+
+	/**
+	 * Open an index whose readers are prepared for facets by the given
+	 * warmer after every commit, for a test of what a warm leaves for a
+	 * search to do.
+	 */
+	protected Index create(String name, SearchThreads searchThreads, FacetWarmer facetWarmer)
+		throws IOException
+	{
 		var path = indexRoot.resolve(name);
 		Files.createDirectories(path);
 
@@ -51,7 +62,8 @@ public abstract class AbstractIndexTest {
 			DocumentCache.disabled(),
 			RequestMetrics.none(),
 			OptionalLong.empty(),
-			searchThreads
+			searchThreads,
+			facetWarmer
 		);
 		index.pull();
 		indexes.add(index);

@@ -281,6 +281,7 @@ The following table lists search configuration variables:
 | `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Maximum nesting depth of clauses. A clause the request carries directly counts as depth one, and the clauses inside it as depth two. Requests nesting deeper are rejected with `search:query:too_deep`. | `20` |
 | `EXOFIND_SEARCH_TIMEOUT` | How long one search may collect results for. A search that runs longer is abandoned and answered with `search:timeout`, and the results it collected are dropped. The budget covers collecting matches, not the time spent reading stored fields or building fragments. Set to `0` to let every search run to completion. | `30s` |
 | `EXOFIND_SEARCH_THREADS` | Number of threads the node lends to searches, shared across all searches on the node. Accepts `auto` to use the number of processor cores available to the process, or an explicit thread count. Set to `0` to disable the pool and run each search on its request thread alone. When the pool is busy, the request thread runs unstarted search pieces directly. For more information, see [Threads of a single search](../explanation/node-resources.md#threads-of-a-single-search). | `auto` |
+| `EXOFIND_SEARCH_WARM_THREADS` | Number of threads that prepare facet state after a pull or a commit reopens an index reader, shared across all indexes on the node. Set to `0` to turn warming off. `exofind.facet.warm.queued` shows how many indexes wait. | `2` |
 
 ## Metrics
 

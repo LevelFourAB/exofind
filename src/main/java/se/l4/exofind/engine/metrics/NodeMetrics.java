@@ -11,6 +11,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.index.FacetWarmer;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexState;
@@ -50,6 +51,7 @@ public class NodeMetrics {
 	private final Indexes indexes;
 	private final NodeState nodeState;
 	private final ReindexJobs reindexJobs;
+	private final FacetWarmer facetWarmer;
 	private final boolean perIndex;
 	private final Duration interval;
 
@@ -72,6 +74,7 @@ public class NodeMetrics {
 		Indexes indexes,
 		NodeState nodeState,
 		ReindexJobs reindexJobs,
+		FacetWarmer facetWarmer,
 		@ConfigProperty(
 			name = "exofind.metrics.index.enabled",
 			defaultValue = "true"
@@ -85,6 +88,7 @@ public class NodeMetrics {
 		this.indexes = indexes;
 		this.nodeState = nodeState;
 		this.reindexJobs = reindexJobs;
+		this.facetWarmer = facetWarmer;
 		this.perIndex = perIndex;
 		this.interval = interval;
 
@@ -220,6 +224,19 @@ public class NodeMetrics {
 				self -> self.getFacetCacheStats().segmentMisses()
 			)
 			.description("Segments a facet had to count over everything the index holds")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.FACET_STATE_BYTES,
+				indexes,
+				self -> self.getFacetCacheStats().heldBytes()
+			)
+			.description("Heap the facet state of every open reader takes, estimated")
+			.baseUnit("bytes")
+			.register(registry);
+
+		Gauge.builder(Meters.FACET_WARM_QUEUED, facetWarmer, FacetWarmer::queued)
+			.description("Indexes waiting to have the facet state of their latest reader prepared")
 			.register(registry);
 
 		/*

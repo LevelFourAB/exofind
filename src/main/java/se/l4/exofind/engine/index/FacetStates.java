@@ -2,8 +2,11 @@ package se.l4.exofind.engine.index;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.UnaryOperator;
 
@@ -16,6 +19,7 @@ import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.packed.PackedInts;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ImmutableList;
+import org.eclipse.collections.api.map.primitive.LongLongMap;
 
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.Query;
@@ -72,6 +76,19 @@ import se.l4.exofind.engine.query.SearchResult;
  * That is the same lifetime the reader's own caches have and is why the key is
  * the one Lucene hands out for exactly this.
  *
+ * Everything here is built by whoever asks first. Without warming that is the
+ * first search after a reader is reopened. {@link FacetWarmer} asks ahead of
+ * it: on a thread of its own it walks the scope nothing narrows for every
+ * faceted field of the new reader, which fills the ordinal maps, the columns
+ * and the whole-reader counts before a search needs them. A search that
+ * arrives while an ordinal map is being built waits for that build instead of
+ * making a second one - see {@link #stringOrdsOf}. That is the one place a
+ * search waits for anything here.
+ *
+ * {@link #heldBytes()} estimates what all of it takes on the heap, for the
+ * gauge a node reports. A deployment holding hundreds of indexes reads that
+ * gauge to see what warming every open reader costs it.
+ *
  * The {@code exofind.facets.scope-cache} system property (default {@code true})
  * turns off what is kept per scope, both the counts and the totals. It is not a
  * configuration setting and a node has no reason to set it: it exists for
@@ -98,9 +115,11 @@ final class FacetStates {
 
 	/**
 	 * The ordinals of one field's segments lined up against one another, per
-	 * reader and field - see {@link #stringOrdsOf}.
+	 * reader and field - see {@link #stringOrdsOf}. An entry is the build
+	 * itself, complete or still running, so that a second thread asking for
+	 * the same field waits for it instead of building a second copy.
 	 */
-	private static final Map<IndexReader.CacheKey, Map<String, StringOrds>> ords =
+	private static final Map<IndexReader.CacheKey, Map<String, CompletableFuture<StringOrds>>> ords =
 		new ConcurrentHashMap<>();
 
 	/**
@@ -129,6 +148,12 @@ final class FacetStates {
 	private static final LongAdder scopeEvictions = new LongAdder();
 	private static final LongAdder segmentHits = new LongAdder();
 	private static final LongAdder segmentMisses = new LongAdder();
+
+	/**
+	 * How many ordinal maps have been built, for a test of two threads asking
+	 * for the same one.
+	 */
+	private static final LongAdder ordinalBuilds = new LongAdder();
 
 	/**
 	 * The distinct values of one segment of a field counted a level at a time,
@@ -540,6 +565,12 @@ final class FacetStates {
 	 * Get the segment ordinals of the given field lined up against one
 	 * another, building them the first time the reader is asked for.
 	 *
+	 * Built once per reader and field however many threads ask at once: the
+	 * first to ask builds, and the others wait for that build. Building walks
+	 * the term dictionary of every segment, so a second build would take as
+	 * long as the wait and leave two copies behind. A {@link FacetWarmer} can
+	 * therefore build ahead of a search without the two racing.
+	 *
 	 * A reader that cannot say when it closes is not kept, as an entry for it
 	 * could never be dropped; its ordinals are lined up and handed back
 	 * without being remembered.
@@ -548,12 +579,15 @@ final class FacetStates {
 	 * @param field
 	 * @return
 	 * @throws IOException
+	 *   if building failed, on the thread that built and on every thread
+	 *   that waited for it; the next to ask builds again
 	 */
 	static StringOrds stringOrdsOf(IndexReader reader, String field)
 		throws IOException
 	{
 		var helper = reader.getReaderCacheHelper();
 		if(helper == null) {
+			ordinalBuilds.increment();
 			return StringOrds.build(reader, field);
 		}
 
@@ -570,13 +604,79 @@ final class FacetStates {
 			helper.addClosedListener(ords::remove);
 		}
 
-		var built = fields.get(field);
-		if(built == null) {
-			built = StringOrds.build(reader, field);
-			fields.put(field, built);
+		var building = new CompletableFuture<StringOrds>();
+		var found = fields.putIfAbsent(field, building);
+		if(found == null) {
+			try {
+				ordinalBuilds.increment();
+				var built = StringOrds.build(reader, field);
+				building.complete(built);
+				return built;
+			} catch(Throwable t) {
+				/*
+				 * Dropped before the waiters are told, so that whoever asks
+				 * next starts a build of their own rather than reading the
+				 * failure back.
+				 */
+				fields.remove(field, building);
+				building.completeExceptionally(t);
+				throw t;
+			}
 		}
 
-		return built;
+		try {
+			return found.get();
+		} catch(ExecutionException e) {
+			var cause = e.getCause();
+			if(cause instanceof IOException io) {
+				throw io;
+			}
+
+			if(cause instanceof RuntimeException re) {
+				throw re;
+			}
+
+			if(cause instanceof Error error) {
+				throw error;
+			}
+
+			throw new IOException(cause);
+		} catch(InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for the ordinals of " + field, e);
+		}
+	}
+
+	/**
+	 * Get how many ordinal maps have been built since the node started, for a
+	 * test of what a warm leaves for a search to do.
+	 */
+	static long ordinalBuilds() {
+		return ordinalBuilds.sum();
+	}
+
+	/**
+	 * Get whether the ordinals of the given field are already lined up for
+	 * the given reader, without building them - for a test of what a warm
+	 * left behind.
+	 *
+	 * @param reader
+	 * @param field
+	 * @return
+	 */
+	static boolean holdsStringOrds(IndexReader reader, String field) {
+		var helper = reader.getReaderCacheHelper();
+		if(helper == null) {
+			return false;
+		}
+
+		var fields = ords.get(helper.getKey());
+		if(fields == null) {
+			return false;
+		}
+
+		var building = fields.get(field);
+		return building != null && building.isDone() && !building.isCompletedExceptionally();
 	}
 
 	/**
@@ -953,9 +1053,124 @@ final class FacetStates {
 			scopeMisses.sum(),
 			scopeEvictions.sum(),
 			segmentHits.sum(),
-			segmentMisses.sum()
+			segmentMisses.sum(),
+			heldBytes()
 		);
 	}
+
+	/**
+	 * Estimate what everything kept here takes on the heap: the ordinal maps
+	 * per reader, the columns, postings and decoded trees per segment core,
+	 * and the whole-reader counts per segment reader. What a facet answered
+	 * per scope is left out - a bounded number of small results per reader.
+	 *
+	 * An estimate rather than a measurement: the arrays are sized by their
+	 * length and a map by its entries, which is within a small factor of what
+	 * the JVM allocates and costs a walk of the entries rather than of what
+	 * they hold. Read when a node is scraped.
+	 *
+	 * @return
+	 */
+	static long heldBytes() {
+		var bytes = 0L;
+
+		for(var fields : ords.values()) {
+			for(var building : fields.values()) {
+				if(building.isDone() && !building.isCompletedExceptionally()) {
+					var map = building.join().map();
+					bytes += map == null ? 0 : map.ramBytesUsed();
+				}
+			}
+		}
+
+		for(var kept : segmentCounts.values()) {
+			for(var counts : kept.values()) {
+				bytes += switch(counts) {
+					case int[] ints -> ARRAY_HEADER + 4L * ints.length;
+					case long[] longs -> ARRAY_HEADER + 8L * longs.length;
+					case LongLongMap map -> ARRAY_HEADER + MAP_ENTRY * (long) map.size();
+					default -> 0;
+				};
+			}
+		}
+
+		for(var fields : ordColumns.values()) {
+			for(var column : fields.values()) {
+				bytes += switch(column) {
+					case FacetColumns.Ords.Single single ->
+						ARRAY_HEADER + 4L * single.ord().length;
+					case FacetColumns.Ords.Multi multi ->
+						2 * ARRAY_HEADER + 4L * multi.starts().length + 4L * multi.ords().length;
+				};
+			}
+		}
+
+		for(var fields : longColumns.values()) {
+			for(var column : fields.values()) {
+				bytes += switch(column) {
+					case FacetColumns.Longs.Single single ->
+						ARRAY_HEADER + 8L * single.value().length
+							+ (single.present() == null ? 0 : single.present().ramBytesUsed());
+					case FacetColumns.Longs.Multi multi ->
+						2 * ARRAY_HEADER + 4L * multi.starts().length + 8L * multi.values().length;
+				};
+			}
+		}
+
+		for(var postings : List.of(ordPostings, rolledUpOrdPostings)) {
+			for(var fields : postings.values()) {
+				for(var inverted : fields.values()) {
+					bytes += 3 * ARRAY_HEADER
+						+ 4L * inverted.starts().length
+						+ 4L * inverted.docs().length;
+					for(var dense : inverted.dense()) {
+						bytes += dense == null ? 0 : dense.ramBytesUsed();
+					}
+				}
+			}
+		}
+
+		for(var postings : List.of(longPostings, rolledUpLongPostings)) {
+			for(var fields : postings.values()) {
+				for(var sorted : fields.values()) {
+					bytes += 2 * ARRAY_HEADER
+						+ 8L * sorted.values().length
+						+ 4L * sorted.docs().length;
+				}
+			}
+		}
+
+		for(var fields : values.values()) {
+			for(var tree : fields.values()) {
+				bytes += 3 * ARRAY_HEADER + 4L * tree.levels().length;
+				for(var i = 0; i < tree.paths().length; i++) {
+					bytes += STRING_HEADER + tree.paths()[i].length();
+					if(tree.normalized()[i] != tree.paths()[i]) {
+						bytes += STRING_HEADER + tree.normalized()[i].length();
+					}
+				}
+			}
+		}
+
+		return bytes;
+	}
+
+	/**
+	 * What an array costs beyond its elements.
+	 */
+	private static final long ARRAY_HEADER = 16;
+
+	/**
+	 * What a string costs beyond its characters, at one byte per character
+	 * the way the JVM stores Latin text.
+	 */
+	private static final long STRING_HEADER = 40;
+
+	/**
+	 * What one entry of a primitive map costs, counting the two slots of the
+	 * open-addressed table and its slack.
+	 */
+	private static final long MAP_ENTRY = 32;
 
 	/**
 	 * Get every value one segment holds for a field counted a level at a time,
