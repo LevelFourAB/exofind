@@ -1355,11 +1355,56 @@ public class IndexSettingsResourceTest {
 		for(var field : fields) {
 			settings.put(
 				field,
-				new SearchSettingsDefinition.FieldSettings(new SearchSettingsDefinition.Interpret())
+				new SearchSettingsDefinition.FieldSettings(
+					new SearchSettingsDefinition.Interpret(), null
+				)
 			);
 		}
 
 		return new SearchSettingsDefinition(null, null, null, settings);
+	}
+
+	/**
+	 * Settings declaring the given values of one field.
+	 */
+	private static SearchSettingsDefinition declaring(
+		String field,
+		SearchSettingsDefinition.DeclaredValue... values
+	) {
+		return new SearchSettingsDefinition(null, null, null, Map.of(
+			field,
+			new SearchSettingsDefinition.FieldSettings(null, List.of(values))
+		));
+	}
+
+	private static SearchSettingsDefinition.DeclaredValue declared(
+		String value,
+		Integer order,
+		Map<String, String> labels
+	) {
+		return new SearchSettingsDefinition.DeclaredValue(value, order, labels);
+	}
+
+	/**
+	 * The values one facet of a search answers, in the order answered.
+	 */
+	private List<SearchResponse.FacetValue> facet(
+		String index,
+		String field,
+		SearchRequest.Facet.Order order,
+		String locale
+	) {
+		var response = search.search(
+			index,
+			new SearchRequest(
+				null, null,
+				List.of(new SearchRequest.Facet(null, field, null, order, null, null, null, null)),
+				null, locale, null, null, null, null, 0, null, null, null, null, null, null,
+				null, null
+			)
+		);
+
+		return response.facets().get(field).values();
 	}
 
 	/**
@@ -1463,6 +1508,172 @@ public class IndexSettingsResourceTest {
 
 		assertThat(info.fields().get("colour").interpret(), is(notNullValue()));
 		assertThat(typed("boutique", "red shoes"), contains("1"));
+	}
+
+	@Test
+	public void testGetAnswersTheDeclaredValuesThatWereStored() {
+		boutique();
+
+		resource.put("boutique", null, declaring(
+			"colour",
+			declared("Red", 2, Map.of("sv", "Röd", "en", "Red")),
+			declared("Blue", 1, null),
+			declared("Green", null, Map.of("sv", "Grön"))
+		));
+
+		var info = (SearchSettingsInfo) resource.get("boutique").getEntity();
+		assertThat(
+			info.fields().get("colour").values(),
+			contains(
+				declared("Red", 2, Map.of("sv", "Röd", "en", "Red")),
+				declared("Blue", 1, null),
+				declared("Green", null, Map.of("sv", "Grön"))
+			)
+		);
+	}
+
+	@Test
+	public void testStoredDeclaredValuesNameTheFeatureTheyNeed() {
+		boutique();
+
+		resource.put("boutique", null, declaring("colour", declared("Red", 1, null)));
+
+		assertThat(
+			searchSettings.read("boutique").orElseThrow().stored().getRequiredFeaturesList(),
+			contains("declared_values")
+		);
+	}
+
+	@Test
+	public void testDeclaringValuesOfAFieldWithoutAFacetIsRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, declaring("name", declared("Shoes", 1, null)))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_unsupported"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("fields.name.values"));
+	}
+
+	@Test
+	public void testDeclaringAValueTwiceIsRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, declaring(
+				"colour",
+				declared("Red", 1, null),
+				declared("Red", 2, null)
+			))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_invalid"));
+		assertThat(
+			e.getErrors().get(0).getLocation().describe(),
+			is("fields.colour.values[1].value")
+		);
+	}
+
+	@Test
+	public void testDeclaringAValueWithoutTheValueIsRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, declaring("colour", declared(" ", 1, null)))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_invalid"));
+	}
+
+	/**
+	 * A tag that is not spelled the way a search locale resolves would never
+	 * be found, so it is refused rather than stored.
+	 */
+	@Test
+	public void testLabelKeyedByANonCanonicalTagIsRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, declaring(
+				"colour",
+				declared("Red", null, Map.of("SV", "Röd"))
+			))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_invalid"));
+		assertThat(
+			e.getErrors().get(0).getLocation().describe(),
+			is("fields.colour.values[0].labels")
+		);
+	}
+
+	@Test
+	public void testFacetAnswersTheDeclaredOrderAndLabels() {
+		boutique();
+
+		resource.put("boutique", null, declaring(
+			"colour",
+			declared("Red", 2, Map.of("sv", "Röd")),
+			declared("Blue", 1, Map.of("sv", "Blå"))
+		));
+
+		assertThat(
+			facet("boutique", "colour", SearchRequest.Facet.Order.DECLARED, "sv"),
+			contains(
+				new SearchResponse.FacetValue("Blue", 1, "Blå"),
+				new SearchResponse.FacetValue("Red", 1, "Röd")
+			)
+		);
+
+		// Without a locale the labels are the ones of the field's default locale, which has none
+		assertThat(
+			facet("boutique", "colour", SearchRequest.Facet.Order.COUNT, null),
+			contains(
+				new SearchResponse.FacetValue("Blue", 1),
+				new SearchResponse.FacetValue("Red", 1)
+			)
+		);
+	}
+
+	@Test
+	public void testPatchChangesTheLabelOfOneValue() {
+		boutique();
+
+		resource.put("boutique", null, declaring(
+			"colour",
+			declared("Red", 1, Map.of("sv", "Rod"))
+		));
+
+		var info = patch("boutique", null, "fields.colour.values[value=Red].labels.sv", "Röd");
+
+		assertThat(
+			info.fields().get("colour").values(),
+			contains(declared("Red", 1, Map.of("sv", "Röd")))
+		);
+	}
+
+	@Test
+	public void testPatchAddsADeclaredValue() {
+		boutique();
+
+		resource.put("boutique", null, declaring("colour", declared("Red", 1, null)));
+
+		var info = patch(
+			"boutique",
+			null,
+			"fields.colour.values[]",
+			Map.of("value", "Blue", "order", 2)
+		);
+
+		assertThat(
+			info.fields().get("colour").values(),
+			contains(declared("Red", 1, null), declared("Blue", 2, null))
+		);
 	}
 
 	@Test

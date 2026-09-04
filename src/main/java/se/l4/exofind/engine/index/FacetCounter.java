@@ -36,10 +36,20 @@ public interface FacetCounter {
 	 * @param prefix
 	 *   what the answered values have to start with, or {@code null} to
 	 *   answer every value - see {@link Facet#prefix()}
+	 * @param declared
+	 *   the order and labels the search settings declare for the values of
+	 *   the field, in the locale of the search, or {@code null} where they
+	 *   declare none - see {@link DeclaredValues}
 	 * @return
 	 *   the count to feed through {@link FacetWalk}, never {@code null}
 	 */
-	FacetCount prepare(FacetMatches scope, int limit, Facet.Order order, String prefix);
+	FacetCount prepare(
+		FacetMatches scope,
+		int limit,
+		Facet.Order order,
+		String prefix,
+		DeclaredValues.Localized declared
+	);
 
 	/**
 	 * Count a field written as sorted set doc values, decoding each counted
@@ -83,8 +93,16 @@ public interface FacetCounter {
 		Analyzer normalizer
 	) implements FacetCounter {
 		@Override
-		public FacetCount prepare(FacetMatches scope, int limit, Facet.Order order, String prefix) {
-			return new StringFacetCount(field, scope, limit, order, decode, normalizer, prefix);
+		public FacetCount prepare(
+			FacetMatches scope,
+			int limit,
+			Facet.Order order,
+			String prefix,
+			DeclaredValues.Localized declared
+		) {
+			return new StringFacetCount(
+				field, scope, limit, order, decode, normalizer, prefix, declared
+			);
 		}
 	}
 
@@ -99,7 +117,8 @@ public interface FacetCounter {
 	 * @return
 	 */
 	static FacetCounter overLongs(String field, LongFunction<Object> decode) {
-		return (scope, limit, order, prefix) ->
+		// Numbers hold no declared values, so the declaration takes no part
+		return (scope, limit, order, prefix, declared) ->
 			new LongFacetCount(field, scope, limit, order, decode, prefix);
 	}
 }

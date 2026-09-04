@@ -58,11 +58,22 @@ public final class SearchSettingsFeatures {
 	 */
 	public static final String INTERPRET_VALUES = "interpret_values";
 
+	/**
+	 * The object declares values of fields, with an order and labels per
+	 * locale.
+	 *
+	 * <p>A node without this name would answer a facet ordered by declaration
+	 * in count order and without labels, and would search a label typed into
+	 * the box as a word while its peers find the value it stands for.
+	 */
+	public static final String DECLARED_VALUES = "declared_values";
+
 	private static final ImmutableSet<String> SUPPORTED = Sets.immutable.of(
 		RANKING,
 		QUERY_SYNONYMS,
 		TYPO_EXCLUSIONS,
-		INTERPRET_VALUES
+		INTERPRET_VALUES,
+		DECLARED_VALUES
 	);
 
 	private SearchSettingsFeatures() {
@@ -94,6 +105,10 @@ public final class SearchSettingsFeatures {
 		for(var field : settings.getFieldsMap().values()) {
 			if(field.hasInterpret()) {
 				features.add(INTERPRET_VALUES);
+			}
+
+			if(field.getValuesCount() > 0) {
+				features.add(DECLARED_VALUES);
 			}
 		}
 

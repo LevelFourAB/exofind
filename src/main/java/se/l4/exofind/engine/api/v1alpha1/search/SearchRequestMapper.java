@@ -824,9 +824,7 @@ public class SearchRequestMapper {
 				name,
 				facet.field(),
 				limit,
-				facet.order() == SearchRequest.Facet.Order.VALUE
-					? Facet.Order.VALUE
-					: Facet.Order.COUNT,
+				toOrder(facet.order()),
 				ranges.toImmutable(),
 				facet.path(),
 				depth,
@@ -835,6 +833,21 @@ public class SearchRequestMapper {
 		}
 
 		return result.toImmutable();
+	}
+
+	/**
+	 * Map the order a facet asks for, {@code null} being the default.
+	 */
+	static Facet.Order toOrder(SearchRequest.Facet.Order order) {
+		if(order == null) {
+			return Facet.Order.COUNT;
+		}
+
+		return switch(order) {
+			case COUNT -> Facet.Order.COUNT;
+			case VALUE -> Facet.Order.VALUE;
+			case DECLARED -> Facet.Order.DECLARED;
+		};
 	}
 
 	/**

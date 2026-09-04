@@ -145,7 +145,16 @@ public record Facet(
 		 * Ascending by the value itself, the order a list of sizes or years
 		 * reads naturally in.
 		 */
-		VALUE
+		VALUE,
+
+		/**
+		 * The order the search settings of the index declare for the values
+		 * of the field, which is what {@code S, M, L, XL} takes. A declared
+		 * value comes first, by its declared order and then by count; every
+		 * other value follows, by count. A field whose settings declare no
+		 * order answers by count alone.
+		 */
+		DECLARED
 	}
 
 	public Facet {

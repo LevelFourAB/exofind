@@ -1349,6 +1349,25 @@ public class SearchRequestMapperTest {
 	}
 
 	@Test
+	public void testFacetAsksForTheDeclaredOrder() {
+		var mapped = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null, null,
+				List.of(
+					new SearchRequest.Facet(
+						null, "size", null, SearchRequest.Facet.Order.DECLARED, null, null, null,
+						null
+					)
+				),
+				null, null, null, null, null, null, null, null, null, null, null, null, null
+			),
+			LIMITS
+		);
+
+		assertThat(mapped.request().facets().get(0).order(), is(Facet.Order.DECLARED));
+	}
+
+	@Test
 	public void testFacetCountsOneLevelFromTheTopWhenNothingIsAsked() {
 		var mapped = SearchRequestMapper.toEngine(
 			new SearchRequest(

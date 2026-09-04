@@ -3834,7 +3834,9 @@ public class Index {
 		Map<String, FieldSettings> fields,
 		ObjectLocation location
 	) {
-		return ValueDictionaries.validate(fields, schema, location);
+		return ValueDictionaries.validate(fields, schema, location)
+			.toList()
+			.withAll(DeclaredValues.validate(fields, schema, location));
 	}
 
 	/**
@@ -3883,6 +3885,55 @@ public class Index {
 		}
 
 		return dictionaries;
+	}
+
+	/**
+	 * The declared values last compiled, and what they were compiled from.
+	 */
+	private record CompiledDeclaredValues(
+		String settingsVersion,
+		String definitionVersion,
+		DeclaredValues declared
+	) {
+	}
+
+	private volatile CompiledDeclaredValues compiledDeclaredValues;
+
+	/**
+	 * Compile the field settings of the search settings against this
+	 * generation, into the values the settings declare an order and labels
+	 * for.
+	 */
+	private DeclaredValues compileDeclaredValues(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.fields().isEmpty()) {
+			return DeclaredValues.none();
+		}
+
+		var compiled = compiledDeclaredValues;
+		if(compiled != null
+			&& compiled.settingsVersion().equals(settings.version())
+			&& compiled.definitionVersion().equals(definitionVersion)) {
+			return compiled.declared();
+		}
+
+		var declared = DeclaredValues.compile(settings.fields(), schema);
+		compiledDeclaredValues = new CompiledDeclaredValues(
+			settings.version(),
+			definitionVersion,
+			declared
+		);
+
+		if(declared.skippedFields().notEmpty()) {
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.addKeyValue("fields", declared.skippedFields().makeString(", "))
+				.log(
+					"The search settings declare values of fields this generation"
+						+ " cannot answer for; answering those facets without them"
+				);
+		}
+
+		return declared;
 	}
 
 	/**
@@ -3942,6 +3993,7 @@ public class Index {
 					compileTypoExclusions(settings)
 				);
 				var settingsVersion = settings == null ? null : settings.version();
+				var declared = compileDeclaredValues(settings);
 
 				/*
 				 * Read before anything is compiled, so the filters the text
@@ -3949,7 +4001,7 @@ public class Index {
 				 * facets, the total, and relaxing count the filter the same
 				 * way they would one the caller wrote.
 				 */
-				var interpreted = interpret(request, settings, compiler, searcher);
+				var interpreted = interpret(request, settings, declared, compiler, searcher);
 				if(interpreted != null) {
 					request = request.withQuery(interpreted.query());
 				}
@@ -4071,7 +4123,9 @@ public class Index {
 						 * the matches here would pay for what those answers
 						 * exist to avoid.
 						 */
-						counted = countFacets(searcher, compiler, request, settingsVersion, searched, assembled,null);
+						counted = countFacets(
+							searcher, compiler, request, settingsVersion, declared, searched, assembled, null
+						);
 						count = counted.total();
 					} else if(withFacets && !mixed) {
 						matches = collect(searcher, query);
@@ -4104,7 +4158,9 @@ public class Index {
 					}
 
 					if(withFacets && counted == null) {
-						counted = countFacets(searcher, compiler, request, settingsVersion, searched, assembled,matches);
+						counted = countFacets(
+							searcher, compiler, request, settingsVersion, declared, searched, assembled, matches
+						);
 					}
 
 					return new SearchResult(
@@ -4197,7 +4253,9 @@ public class Index {
 				 */
 				var faceted = request.facets().isEmpty()
 					? null
-					: countFacets(searcher, compiler, request, settingsVersion, searched, assembled,null);
+					: countFacets(
+						searcher, compiler, request, settingsVersion, declared, searched, assembled, null
+					);
 
 				var reader = DocumentReader.inLocale(
 					schema,
@@ -4708,7 +4766,9 @@ public class Index {
 				 * search that would have run, filters read out of the text
 				 * and all.
 				 */
-				var interpreted = interpret(request, settings, compiler, searcher);
+				var interpreted = interpret(
+					request, settings, compileDeclaredValues(settings), compiler, searcher
+				);
 				if(interpreted != null) {
 					request = request.withQuery(interpreted.query());
 				}
@@ -4968,6 +5028,8 @@ public class Index {
 	 * @param request
 	 * @param settings
 	 *   the search settings, or {@code null} for the definition alone
+	 * @param declared
+	 *   the values the settings declare, compiled against this generation
 	 * @param compiler
 	 *   the compiler of the search, which resolves the fields read in the
 	 *   locale of the search
@@ -4982,13 +5044,16 @@ public class Index {
 	private Interpretation.Outcome interpret(
 		SearchRequest request,
 		SearchSettings.Snapshot settings,
+		DeclaredValues declared,
 		QueryCompiler compiler,
 		IndexSearcher searcher
 	) throws IOException {
 		var dictionaries = compileValueDictionaries(settings);
 		var values = dictionaries.isEmpty()
 			? null
-			: new ValueReader(dictionaries, compiler, searcher.getIndexReader());
+			: new ValueReader(
+				dictionaries, declared, request.locale(), compiler, searcher.getIndexReader()
+			);
 
 		return Interpretation.read(schema, request.locale(), request.query(), values);
 	}
@@ -5430,13 +5495,14 @@ public class Index {
 		QueryCompiler compiler,
 		SearchRequest request,
 		String settingsVersion,
+		DeclaredValues declared,
 		ListIterable<Query> clauses,
 		Assembled assembled,
 		List<FacetsCollector.MatchingDocs> collected
 	) throws IOException {
 		if(request.hits() != null && request.hits().isEveryDocument()) {
 			return countValueFacets(
-				searcher, compiler, request, settingsVersion, clauses, assembled, collected
+				searcher, compiler, request, settingsVersion, declared, clauses, assembled, collected
 			);
 		}
 
@@ -5533,7 +5599,13 @@ public class Index {
 			}
 
 			walks.getIfAbsentPut(matches, Lists.mutable::empty).add(
-				new PendingFacet(facet, scope, prepareFacet(compiler, facet, matches))
+				new PendingFacet(
+					facet,
+					scope,
+					prepareFacet(
+						compiler, facet, matches, declared.localized(facet.field(), request.locale())
+					)
+				)
 			);
 		}
 
@@ -5595,6 +5667,7 @@ public class Index {
 		QueryCompiler compiler,
 		SearchRequest request,
 		String settingsVersion,
+		DeclaredValues declared,
 		ListIterable<Query> clauses,
 		Assembled assembled,
 		List<FacetsCollector.MatchingDocs> collected
@@ -5672,7 +5745,13 @@ public class Index {
 			}
 
 			walks.getIfAbsentPut(matches, Lists.mutable::empty).add(
-				new PendingFacet(facet, scope, prepareFacet(compiler, facet, matches))
+				new PendingFacet(
+					facet,
+					scope,
+					prepareFacet(
+						compiler, facet, matches, declared.localized(facet.field(), request.locale())
+					)
+				)
 			);
 		}
 
@@ -5868,6 +5947,10 @@ public class Index {
 	 * @throws IndexFieldUsageException
 	 *   if the facet asks for a level of a tree from a field whose values are
 	 *   not paths
+	 * @param declared
+	 *   the order and labels the search settings declare for the values of
+	 *   the field, in the locale of the search, or {@code null} where they
+	 *   declare none
 	 * @throws IndexException
 	 *   if the facet asks for the values starting with a prefix from a field
 	 *   whose values are paths through a tree
@@ -5875,7 +5958,8 @@ public class Index {
 	private FacetCount prepareFacet(
 		QueryCompiler compiler,
 		Facet facet,
-		FacetMatches scope
+		FacetMatches scope,
+		DeclaredValues.Localized declared
 	) {
 		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
 			if(facet.prefix() != null) {
@@ -5897,7 +5981,7 @@ public class Index {
 			}
 
 			return compiler.facetCounter(facet.field())
-				.prepare(scope, facet.limit(), facet.order(), facet.prefix());
+				.prepare(scope, facet.limit(), facet.order(), facet.prefix(), declared);
 		}
 
 		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
@@ -6339,7 +6423,7 @@ public class Index {
 					: FacetMatches.of(everything)
 				).wholeDocuments();
 
-				var count = prepareFacet(compiler, Facet.of(target.field()), matches);
+				var count = prepareFacet(compiler, Facet.of(target.field()), matches, null);
 				FacetWalk.walk(matches, Lists.immutable.of(count));
 			}
 

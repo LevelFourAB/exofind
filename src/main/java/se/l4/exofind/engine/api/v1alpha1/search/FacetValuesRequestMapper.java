@@ -3,7 +3,6 @@ package se.l4.exofind.engine.api.v1alpha1.search;
 import org.eclipse.collections.api.factory.Lists;
 
 import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
-import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -81,11 +80,7 @@ final class FacetValuesRequestMapper {
 
 		var facet = Facet.of(field)
 			.withLimit(limit)
-			.withOrder(
-				body.order() == SearchRequest.Facet.Order.VALUE
-					? Facet.Order.VALUE
-					: Facet.Order.COUNT
-			)
+			.withOrder(SearchRequestMapper.toOrder(body.order()))
 			.withPrefix(body.prefix());
 
 		return se.l4.exofind.engine.query.SearchRequest.create()

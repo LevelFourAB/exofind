@@ -414,8 +414,10 @@ public record SearchRequest(
 		 */
 		@Schema(
 			description = """
-				Sort order of facet values: `"count"` (descending by count) \
-				or `"value"` (ascending by value).""",
+				Sort order of facet values: `"count"` (descending by count), \
+				`"value"` (ascending by value), or `"declared"` (the order \
+				the search settings declare for the field's values, followed \
+				by every other value by count).""",
 			defaultValue = "count"
 		)
 		Order order,
@@ -470,12 +472,14 @@ public record SearchRequest(
 		List<String> excludeFilters
 	) {
 		/**
-		 * Sort order of facet values: descending by count or ascending by
-		 * value.
+		 * Sort order of facet values: descending by count, ascending by
+		 * value, or the order the search settings declare.
 		 */
 		@Schema(description = """
-			Sort order of facet values: `count` (descending by count) or \
-			`value` (ascending by value).""")
+			Sort order of facet values: `count` (descending by count), \
+			`value` (ascending by value), or `declared` (the order the \
+			search settings declare for the field's values, followed by \
+			every other value by count).""")
 		public enum Order {
 			/**
 			 * The most common values first.
@@ -487,7 +491,14 @@ public record SearchRequest(
 			 * Ascending by the value itself.
 			 */
 			@JsonProperty("value")
-			VALUE
+			VALUE,
+
+			/**
+			 * The order the search settings of the index declare, followed by
+			 * every other value by count.
+			 */
+			@JsonProperty("declared")
+			DECLARED
 		}
 
 		/**

@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -39,6 +40,7 @@ import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.settings.DeclaredValue;
 import se.l4.exofind.engine.index.settings.FieldSettings;
 import se.l4.exofind.engine.index.settings.QuerySynonyms;
 import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
@@ -652,12 +654,42 @@ public class IndexSettingsResource {
 			);
 		}
 
+		if(settings.values() != null) {
+			for(var value : settings.values()) {
+				var declared = DeclaredValue.newBuilder();
+				if(value.value() != null) {
+					declared.setValue(value.value());
+				}
+				if(value.order() != null) {
+					declared.setOrder(value.order());
+				}
+				if(value.labels() != null) {
+					declared.putAllLabels(value.labels());
+				}
+
+				builder.addValues(declared);
+			}
+		}
+
 		return builder.build();
 	}
 
 	private static SearchSettingsDefinition.FieldSettings toApi(FieldSettings settings) {
+		List<SearchSettingsDefinition.DeclaredValue> values = null;
+		if(settings.getValuesCount() > 0) {
+			values = new ArrayList<>(settings.getValuesCount());
+			for(var declared : settings.getValuesList()) {
+				values.add(new SearchSettingsDefinition.DeclaredValue(
+					declared.getValue(),
+					declared.hasOrder() ? declared.getOrder() : null,
+					declared.getLabelsMap().isEmpty() ? null : new TreeMap<>(declared.getLabelsMap())
+				));
+			}
+		}
+
 		return new SearchSettingsDefinition.FieldSettings(
-			settings.hasInterpret() ? new SearchSettingsDefinition.Interpret() : null
+			settings.hasInterpret() ? new SearchSettingsDefinition.Interpret() : null,
+			values
 		);
 	}
 

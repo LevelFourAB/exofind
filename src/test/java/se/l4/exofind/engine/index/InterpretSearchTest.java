@@ -24,6 +24,7 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.index.settings.DeclaredValue;
 import se.l4.exofind.engine.index.settings.FieldSettings;
 import se.l4.exofind.engine.index.settings.InterpretConfig;
 import se.l4.exofind.engine.index.settings.SearchSettings;
@@ -732,6 +733,68 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		assertThat(filter.matcher(), is(new EqualsMatcher("Red")));
 	}
 
+	/**
+	 * A label the settings declare for a value is read the way the value is,
+	 * in the locale of the search, so a shopper types what the list shows.
+	 */
+	@Test
+	public void testDeclaredLabelIsReadAsItsValue() throws IOException {
+		var index = boutique();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text(user("röd")))
+				.withLocale("sv")
+				.build(),
+			readingLabelled("colour", labelled("Red", Map.of("sv", "Röd")))
+		);
+
+		assertThat(ids(result), contains("1"));
+
+		var interpreted = result.interpreted();
+		assertThat(interpreted, is(notNullValue()));
+		assertThat(interpreted.filters().size(), is(1));
+
+		var filter = interpreted.filters().get(0);
+		assertThat(filter.kind(), is(SearchResult.Interpreted.Kind.VALUE));
+		assertThat(filter.field(), is("colour"));
+		assertThat(filter.words().toList(), contains("röd"));
+		assertThat(filter.matcher(), is(new EqualsMatcher("Red")));
+	}
+
+	@Test
+	public void testDeclaredLabelOfAnotherLocaleIsNotRead() throws IOException {
+		var index = boutique();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text(user("röd")))
+				.build(),
+			readingLabelled("colour", labelled("Red", Map.of("sv", "Röd")))
+		);
+
+		assertThat(result.interpreted(), is(nullValue()));
+	}
+
+	/**
+	 * A declared value no document holds would read as a filter matching
+	 * nothing, so its label stays a word.
+	 */
+	@Test
+	public void testDeclaredLabelOfAValueNoDocumentHoldsIsNotRead() throws IOException {
+		var index = boutique();
+
+		var result = index.search(
+			SearchRequest.create()
+				.withQuery(Query.text(user("lila")))
+				.withLocale("sv")
+				.build(),
+			readingLabelled("colour", labelled("Purple", Map.of("sv", "Lila")))
+		);
+
+		assertThat(result.interpreted(), is(nullValue()));
+	}
+
 	@Test
 	public void testValueIsReadInEverySpelling() throws IOException {
 		var index = boutique();
@@ -1006,12 +1069,41 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		}
 
 		var built = stored.build();
+		return snapshot(built);
+	}
+
+	/**
+	 * Settings that read the values of one field out of the text, with the
+	 * given values declared so their labels are read as well.
+	 */
+	private static SearchSettings.Snapshot readingLabelled(String field, DeclaredValue... values) {
+		var stored = SearchSettingsStore.newBuilder()
+			.putFields(
+				field,
+				FieldSettings.newBuilder()
+					.setInterpret(InterpretConfig.getDefaultInstance())
+					.addAllValues(List.of(values))
+					.build()
+			)
+			.build();
+
+		return snapshot(stored);
+	}
+
+	private static DeclaredValue labelled(String value, Map<String, String> labels) {
+		return DeclaredValue.newBuilder()
+			.setValue(value)
+			.putAllLabels(labels)
+			.build();
+	}
+
+	private static SearchSettings.Snapshot snapshot(SearchSettingsStore stored) {
 		return new SearchSettings.Snapshot(
-			built,
+			stored,
 			null,
 			Map.of(),
 			Map.of(),
-			built.getFieldsMap(),
+			stored.getFieldsMap(),
 			Lists.immutable.empty(),
 			"\"1\""
 		);

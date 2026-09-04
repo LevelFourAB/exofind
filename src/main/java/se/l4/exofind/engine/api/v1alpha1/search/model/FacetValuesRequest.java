@@ -52,10 +52,11 @@ public record FacetValuesRequest(
 	@Schema(
 		description = """
 			What the answered values start with. Compared with the values \
-			folded in case and Unicode form, so `rö` finds `Röd`. A number, \
-			boolean or timestamp field compares the prefix with the value as \
-			a search response shows it, ignoring case. If omitted or blank, \
-			every value is answered.""",
+			folded in case and Unicode form, so `rö` finds `Röd`, and with \
+			the labels the search settings declare for them in the locale of \
+			the request. A number, boolean or timestamp field compares the \
+			prefix with the value as a search response shows it, ignoring \
+			case. If omitted or blank, every value is answered.""",
 		examples = "adi"
 	)
 	String prefix,
@@ -87,8 +88,10 @@ public record FacetValuesRequest(
 	 */
 	@Schema(
 		description = """
-			Sort order of the values: `"count"` (descending by count) or \
-			`"value"` (ascending by value).""",
+			Sort order of the values: `"count"` (descending by count), \
+			`"value"` (ascending by value), or `"declared"` (the order the \
+			search settings declare for the field's values, followed by \
+			every other value by count).""",
 		defaultValue = "count"
 	)
 	SearchRequest.Facet.Order order

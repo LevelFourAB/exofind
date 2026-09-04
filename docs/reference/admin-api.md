@@ -272,15 +272,22 @@ The server validates word lists against the generation the index name answers fr
 
 ### Field settings
 
-Search settings can configure how searches read single fields under the `fields` field. Each entry specifies how a search reads one field. Every capability in an entry is disabled unless its object is present. An empty object enables the capability with the engine defaults.
+Search settings can configure how searches read individual fields under the `fields` field. Each entry configures how a search processes one field. Every capability in an entry remains disabled unless its configuration object is present. An empty object enables the capability with engine defaults.
 
-The `fields` field is an object keyed by field name. A field inside an `object` field is keyed by its dotted path, such as `variants.colour`:
+The `fields` field is an object keyed by field name. For a field inside an `object` field, specify its dotted path, such as `variants.colour`:
 
 ```json
 {
   "fields": {
     "colour": { "interpret": {} },
-    "brand": { "interpret": {} }
+    "brand": { "interpret": {} },
+    "size": {
+      "values": [
+        { "value": "S", "order": 1, "labels": { "en": "Small", "sv": "Liten" } },
+        { "value": "M", "order": 2, "labels": { "en": "Medium", "sv": "Mellan" } },
+        { "value": "L", "order": 3, "labels": { "en": "Large", "sv": "Stor" } }
+      ]
+    }
   }
 }
 ```
@@ -288,18 +295,43 @@ The `fields` field is an object keyed by field name. A field inside an `object` 
 A field settings entry contains the following fields:
 
 - `interpret`: Reads the values the field holds out of the query text of a search in `user` mode, as a filter on the field. Carries no configuration options. See [Reading the values of a field](search-api.md#reading-the-values-of-a-field).
+- `values`: Declares values of the field with an order and labels per locale. See [Declared values](#declared-values).
 
-The engine applies `interpret` as follows:
+The engine applies `interpret` according to the following rules:
 
-- The field must be a `string` field with `filter` and `facet` and without `hierarchy`. A search matches words against the facet values of the generation answering the search, so a value is read as soon as a document holding it is indexed.
-- A generation promoted later can lack the field, or define it without `filter` or `facet`. Searches then read the words as query text rather than fail.
+- The field must be a `string` field with `filter` and `facet` and without `hierarchy`. Searches match terms against the facet values of the active generation, so a value is recognized as soon as you index a document containing it.
+- If a later promoted generation lacks the field or defines it without `filter` or `facet`, searches interpret the terms as plain query text rather than fail.
 
-A node whose version does not support the `interpret_values` capability sets the whole settings object aside and searches with the definition alone. The `unsupportedFeatures` field of the settings response lists the name.
+A node whose version does not support the `interpret_values` capability sets the entire settings object aside and searches with the index definition alone. The `unsupportedFeatures` field in the settings response lists the capability name.
 
 The server validates field settings against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
 
 - `index:settings:fields:unknown_field`: The entry names a field that does not exist in the index.
 - `index:settings:fields:interpret_unsupported`: The `interpret` setting is applied to a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`.
+- `index:settings:fields:values_unsupported`: The `values` list is given for a field that is not a `string` field with `facet`, or that has `hierarchy`.
+- `index:settings:fields:values_invalid`: An entry in `values` lacks a `value`, duplicates a `value`, keys a label with a tag that is not a canonical BCP-47 tag, contains a blank label, or exceeds 10,000 entries. The error message specifies the reason.
+
+#### Declared values
+
+The `values` list of a field settings entry declares values for a field, in the order specified. Each entry contains the following fields:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `value` | String | Yes | The value as the field stores it. This is the value a facet counts and a filter matches. Each value must be unique within the list. |
+| `order` | Integer | No | The position of the value in a facet ordered by `declared`, lower first. Values sharing an order sort by count. A value without an order sorts by count after every value with an order. |
+| `labels` | Object | No | The text displayed instead of the value, keyed by BCP-47 tag in canonical form (`sv`, `en-GB`). |
+
+A declaration affects search results in three ways:
+
+- A facet with `"order": "declared"` returns declared values first, sorted by `order`, and all other values afterward, sorted by count. See [Facets](search-api.md#facets).
+- A facet returns each value with the `label` matching the search locale. The engine resolves locale tags the same way as locale-specific field variants, so `sv-SE` resolves to a label keyed by `sv`. If the search locale has no matching label, the engine uses the label from the field's default locale. For non-locale fields, this defaults to the engine default locale, `en`. Values without a label in either locale are returned without one.
+- Prefix searches on the facet match labels as well as stored values, and searches in `user` mode with `interpret` on the field read typed labels as their stored values. See [Searching the values of a facet](search-api.md#searching-the-values-of-a-facet) and [Reading the values of a field](search-api.md#reading-the-values-of-a-field).
+
+Declaring a value that no document contains has no effect. Facets return only values present in matching documents, and searches do not interpret labels for values that do not exist in the index.
+
+The target field must be a `string` field with `facet` and without `hierarchy`. If a later promoted generation lacks the field or defines it without `facet`, facets return values without the declaration rather than fail, and the node logs the skipped fields once per settings version.
+
+A node whose version does not support the `declared_values` capability sets the entire settings object aside and searches with the index definition alone.
 
 ### Changing part of the search settings
 
@@ -349,6 +381,11 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `fields` | The whole field settings object. |
 | `fields.<name>` | The settings of one field by name. |
 | `fields.<name>.interpret` | The interpret configuration for a field. Set to `{}` to enable reading field values from query text, or `null` to disable. |
+| `fields.<name>.values` | The whole list of declared values for a field. |
+| `fields.<name>.values[]` | A new declared value added to the list. |
+| `fields.<name>.values[value=S]` | List entries whose `value` equals `S`. |
+| `fields.<name>.values[value=S].order` | The `order` field inside those matching value entries. |
+| `fields.<name>.values[value=S].labels.sv` | The `sv` label inside those matching value entries. |
 
 Inside bracket selectors, a backslash (`\`) escapes characters, such as `\]`. Objects along a path are created if they do not exist, but lists are not created.
 

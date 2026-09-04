@@ -452,6 +452,10 @@ public record SearchResult(
 		 *   level of the path for a field whose values are paths
 		 * @param count
 		 *   how many matches held the value
+		 * @param label
+		 *   what a person reads instead of the value, in the locale of the
+		 *   search - or {@code null} when the search settings of the index
+		 *   declare none for it. See {@code DeclaredValues}
 		 * @param path
 		 *   the whole path down to this level, or {@code null} for a value
 		 *   that is not part of a tree
@@ -466,6 +470,7 @@ public record SearchResult(
 		public record Value(
 			Object value,
 			long count,
+			String label,
 			String path,
 			ImmutableList<Value> children,
 			int totalChildren
@@ -484,7 +489,38 @@ public record SearchResult(
 			 * @param count
 			 */
 			public Value(Object value, long count) {
-				this(value, count, null, null, 0);
+				this(value, count, null, null, null, 0);
+			}
+
+			/**
+			 * A value standing on its own, with the label the search settings
+			 * declare for it.
+			 *
+			 * @param value
+			 * @param count
+			 * @param label
+			 */
+			public Value(Object value, long count, String label) {
+				this(value, count, label, null, null, 0);
+			}
+
+			/**
+			 * One level of a tree, with the levels below it.
+			 *
+			 * @param value
+			 * @param count
+			 * @param path
+			 * @param children
+			 * @param totalChildren
+			 */
+			public Value(
+				Object value,
+				long count,
+				String path,
+				ImmutableList<Value> children,
+				int totalChildren
+			) {
+				this(value, count, null, path, children, totalChildren);
 			}
 		}
 

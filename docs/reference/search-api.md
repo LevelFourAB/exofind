@@ -276,6 +276,7 @@ Matching behavior:
 
 - **Word spans**: Spans of one to three words typed adjacent to each other are looked up as a single value (for example, `dark red` or `the north face`).
 - **Folding**: The typed span and stored values are folded by the `normalize` step of the field's `autocomplete` analyzer configuration, or by the default normalizer if none is configured. Case and diacritics are folded, but words are not stemmed (`shoes` does not match `Shoe`).
+- **Declared labels**: A span matching the label of a declared value in the search locale reads as that value. For example, `röd` in a Swedish search reads as the value `Red` when its label is `Röd`. A label is read only while at least one document contains the value. See [Declared values](admin-api.md#declared-values).
 - **Greedy longest match**: Reading uses a greedy longest match from the left. At each word position, the longest span that matches a value in an opted-in field is selected, and reading continues after that span. Words within a longer matched span are not read separately.
 - **Multiple matches**: A span that matches values in several fields, or matches several stored spellings of a value, is read as every one of them. A document matches if it satisfies any of the read filters.
 - **Evaluation order**: Numbers are read first. A word that forms part of a quantity (such as `100` in `under 100`) is never read as a field value.
@@ -608,7 +609,7 @@ Facets compute match counts for distinct values of specified fields. The target 
 | `name` | String | Field name | Key used for the facet in the response. Required when faceting on the same field multiple times. Duplicate facet names return `search:facet:duplicate_name`. |
 | `field` | String | Required | Target field to aggregate. |
 | `limit` | Integer | `10` | Maximum number of facet values to return (1 to 1000). |
-| `order` | String | `"count"` | Sort order of facet values: `"count"` (descending by count) or `"value"` (ascending by value). |
+| `order` | String | `"count"` | Sort order of facet values: `"count"` (descending by count), `"value"` (ascending by value), or `"declared"` (the order configured in search settings, followed by undeclared values sorted by count). See [Declared values](admin-api.md#declared-values). |
 | `ranges` | Array | None | Array of range bucket definitions. See [Range buckets](#range-buckets). Cannot be combined with `limit` or `order` (`search:facet:ranges_conflicting`). |
 | `path` | String | Root | Starting path level for hierarchical fields. See [Counting down a tree](#counting-down-a-tree). |
 | `depth` | Integer | `1` | Number of hierarchical levels below `path` to count (1 to 10). |
@@ -620,16 +621,18 @@ The response returns facet counts under the `facets` object:
 "facets": {
   "category": {
     "values": [
-      { "value": "fiction", "count": 87 },
-      { "value": "poetry", "count": 21 }
+      { "value": "fiction", "count": 87, "label": "Fiction" },
+      { "value": "poetry", "count": 21, "label": "Poetry" }
     ],
     "totalValues": 14
   }
 }
 ```
 
-- `values`: Array of facet value objects containing `value` and `count`.
+- `values`: Array of facet value objects containing `value` and `count`. Includes `label` if the search settings declare a label for the value in the search locale. See [Declared values](admin-api.md#declared-values).
 - `totalValues`: Total count of distinct values matching the query.
+
+A facet ordered by `declared` returns values with a declared order first, sorted by their declared order, followed by undeclared values sorted by count. If the search settings declare no order for the field, values return sorted by count. The `limit` truncates the list from the top, so a limit smaller than the number of declared values returns no undeclared values.
 
 ### Range buckets
 
@@ -763,10 +766,10 @@ The field must have `facet` enabled in its field definition; otherwise, the requ
 |---|---|---|---|
 | `query` | Array | None | Clauses that a counted document must satisfy, in the same shape as the `query` of a search. |
 | `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. Filter entries on the facet's own field are left out of the counts. |
-| `prefix` | String | None | What the answered values start with. Omitted or blank answers every value. |
-| `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields, as for a search. |
+| `prefix` | String | None | Prefix that returned values, or their labels in the request locale, must start with. If omitted or blank, returns all values. |
+| `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields and select labels for declared values, matching search request behavior. |
 | `limit` | Integer | `10` | Maximum number of values to return (1 to 1000). Other values return `search:facet:limit_invalid`. |
-| `order` | String | `"count"` | Sort order of the values: `"count"` (descending by count) or `"value"` (ascending by value). |
+| `order` | String | `"count"` | Sort order of the values: `"count"` (descending by count), `"value"` (ascending by value), or `"declared"` (the order configured in search settings, followed by undeclared values sorted by count). |
 
 The response returns the values in the same shape as the `values` of a facet:
 
@@ -781,13 +784,14 @@ The response returns the values in the same shape as the `values` of a facet:
 }
 ```
 
-- `values`: Array of facet value objects containing `value` and `count`, in the requested order and limited to `limit`.
+- `values`: Array of facet value objects containing `value` and `count`, in the requested order and capped by `limit`. Includes `label` if the search settings declare a label for the value in the request locale.
 - `totalValues`: Total count of distinct values that start with the prefix.
 - `tookMs`: Execution time in milliseconds.
 
 Matching rules:
 
 - **String fields**: The prefix and the values are compared folded in case and Unicode form by the `normalize` filter of the field's [`autocomplete`](field-types.md#string) chain, or of the chain the engine builds for `autocomplete` when the field declares none. `rö` finds `Röd`. Accents are folded only when the chain holds an `asciiFolding` filter. See [Analysis](analysis.md).
+- **Declared labels**: The prefix is also compared, using the same folding rules, against the label of each declared value in the request locale. If the prefix matches a label, the endpoint returns the underlying value. For example, `rö` matches the value `red` when its Swedish label is `Röd`. See [Declared values](admin-api.md#declared-values).
 - **Number, boolean, and timestamp fields**: The prefix is compared with the value as a search response shows it, ignoring case. `19` finds every year of the nineties, and `2024-06` finds a month of timestamps.
 - **Hierarchical fields**: A field configured with `hierarchy` returns `index:query:facet_prefix_on_a_tree`.
 - **Counts**: The counts are the ones a facet of the same search answers. The query and the filters on other fields narrow them, and the filter entries on the facet's own field are left out. A search that relaxes its query counts under the relaxed query.

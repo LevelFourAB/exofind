@@ -28,6 +28,12 @@ import org.eclipse.collections.api.list.ListIterable;
  * value of several fields, or several spellings of one, is all of them at
  * once; which was meant is left to scoring, see {@link Interpretation}.
  *
+ * <p>A span is also read as the value whose declared label it is, folded the
+ * same way, so that {@code röd} in a Swedish search finds the value
+ * {@code red} - see {@link DeclaredValues}. The labels are the ones of the
+ * search locale, and a label is read only while some document holds the
+ * value it stands for, so a declaration ahead of the catalogue reads nothing.
+ *
  * <p>An instance is bound to one reader and is not shared between searches.
  */
 final class ValueReader {
@@ -46,8 +52,16 @@ final class ValueReader {
 	 *   the Lucene field its values were written under, in the search locale
 	 * @param normalizer
 	 *   what folds a value and a span before they are compared
+	 * @param labels
+	 *   the labels the search settings declare for the values of the field,
+	 *   in the search locale, or {@code null} where they declare none
 	 */
-	private record Dictionary(ValueDictionaries.Entry entry, String field, Analyzer normalizer) {
+	private record Dictionary(
+		ValueDictionaries.Entry entry,
+		String field,
+		Analyzer normalizer,
+		DeclaredValues.Localized labels
+	) {
 	}
 
 	/**
@@ -82,13 +96,25 @@ final class ValueReader {
 	 *
 	 * @param dictionaries
 	 *   the fields whose values are read
+	 * @param declared
+	 *   the values the search settings declare, whose labels are read as
+	 *   well
+	 * @param locale
+	 *   the locale of the search, or {@code null} where it named none -
+	 *   what picks the labels
 	 * @param compiler
 	 *   the compiler of the search, which resolves each field in the locale
 	 *   the search reads it in
 	 * @param reader
 	 *   the reader the values are looked up in
 	 */
-	ValueReader(ValueDictionaries dictionaries, QueryCompiler compiler, IndexReader reader) {
+	ValueReader(
+		ValueDictionaries dictionaries,
+		DeclaredValues declared,
+		String locale,
+		QueryCompiler compiler,
+		IndexReader reader
+	) {
 		var resolved = Lists.mutable.<Dictionary>empty();
 		for(var entry : dictionaries.fields()) {
 			/*
@@ -98,7 +124,12 @@ final class ValueReader {
 			 */
 			if(compiler.facetCounter(entry.name()) instanceof FacetCounter.Strings strings
 				&& strings.normalizer() != null) {
-				resolved.add(new Dictionary(entry, strings.field(), strings.normalizer()));
+				resolved.add(new Dictionary(
+					entry,
+					strings.field(),
+					strings.normalizer(),
+					declared.localized(entry.name(), locale)
+				));
 			}
 		}
 
@@ -197,12 +228,42 @@ final class ValueReader {
 				throw e.getCause();
 			}
 
+			if(dictionary.labels() != null) {
+				var labelled = new TreeSet<String>();
+				dictionary.labels()
+					.folded(dictionary.field(), dictionary.normalizer())
+					.forEachEqualTo(folded, labelled::add);
+
+				for(var value : labelled) {
+					if(!values.contains(value) && isHeld(dictionary, value)) {
+						values.add(value);
+					}
+				}
+			}
+
 			for(var value : values) {
 				hits.add(new Hit(dictionary.entry(), value));
 			}
 		}
 
 		return hits.toImmutable();
+	}
+
+	/**
+	 * Whether some segment of the reader holds a value of the field. A
+	 * declared value no document carries would read as a filter matching
+	 * nothing, so it is not read at all.
+	 */
+	private boolean isHeld(Dictionary dictionary, String value) throws IOException {
+		var term = new BytesRef(value);
+		for(var context : reader.leaves()) {
+			var docValues = context.reader().getSortedSetDocValues(dictionary.field());
+			if(docValues != null && docValues.lookupTerm(term) >= 0) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

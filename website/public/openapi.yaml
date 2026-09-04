@@ -349,6 +349,36 @@ components:
             much. Must be above zero.
           examples:
           - 604800
+    DeclaredValue:
+      type: object
+      description: "One value of a field, as stored, with the order a facet sorts\
+        \ it by and the label a search answers it with per locale."
+      properties:
+        value:
+          type: string
+          description: "The value as the field stores it, which is what a facet counts\
+            \ and a filter matches. Required and unique within the field; otherwise\
+            \ the request returns `index:settings:fields:values_invalid`."
+          examples:
+          - S
+        order:
+          type: integer
+          format: int32
+          description: "Where the value sits in a facet ordered by `declared`, lower\
+            \ first; values sharing an order are sorted by count. If omitted, the\
+            \ value is ordered by count after every value that has an order, so labels\
+            \ can be declared without an order."
+          examples:
+          - 1
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "What a person reads instead of the value, keyed by BCP-47\
+            \ tag in canonical form (`sv`, `en-GB`). A search answers the label of\
+            \ its locale, matched as closely as the tags tell apart, and the label\
+            \ of the field's default locale where its own has none. A tag that is\
+            \ not canonical, or a blank label, returns `index:settings:fields:values_invalid`."
     Decompound:
       description: Controls compound word splitting in the engine-generated analyzer
         chain. Set to `none` to disable splitting.
@@ -841,8 +871,10 @@ components:
           description: Maximum number of facet values to return.
           default: 10
         order:
-          description: "Sort order of facet values: `\"count\"` (descending by count)\
-            \ or `\"value\"` (ascending by value)."
+          description: "Sort order of facet values: `\"count\"` (descending by count),\
+            \ `\"value\"` (ascending by value), or `\"declared\"` (the order the search\
+            \ settings declare for the field's values, followed by every other value\
+            \ by count)."
           type: string
           default: count
           $ref: "#/components/schemas/Order"
@@ -955,6 +987,14 @@ components:
           description: Number of matching documents containing this value.
           examples:
           - 87
+        label:
+          type: string
+          description: "The label the search settings of the index declare for the\
+            \ value, in the locale of the search, falling back to the field's default\
+            \ locale. Omitted when the settings declare no label for the value. See\
+            \ [Field settings](https://exofind.dev/reference/admin-api/#field-settings)."
+          examples:
+          - Fiction
         path:
           type: string
           description: "The full path to the level, used in `under` filter matchers.\
@@ -974,6 +1014,101 @@ components:
           description: Total count of distinct child values below this level. Exceeds
             the number of entries under `values` when the limit is reached. Omitted
             for non-hierarchical fields.
+    FacetValuesRequest:
+      description: "Asks for the values of one facet field that start with a prefix,\
+        \ counted under the query and filters of a search. All properties are optional;\
+        \ an empty request answers the most common values under everything the index\
+        \ holds."
+      examples:
+      - query:
+        - type: text
+          text: running shoes
+        filters:
+        - field: brand
+          match:
+            type: in
+            values:
+            - Nike
+        prefix: adi
+        limit: 5
+      type: object
+      properties:
+        query:
+          type: array
+          items:
+            $ref: "#/components/schemas/Clause"
+          description: "Clauses that a counted document must satisfy, in the same\
+            \ shape as the `query` of a search. If omitted, every document is counted."
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Clause"
+          description: "Refinement clauses, in the same shape as the `filters` of\
+            \ a search. Filter entries on the facet's own field are left out of the\
+            \ counts, so a value already ticked keeps the other values countable (see\
+            \ [Facets](https://exofind.dev/reference/search-api/#facets))."
+        prefix:
+          type: string
+          description: "What the answered values start with. Compared with the values\
+            \ folded in case and Unicode form, so `rö` finds `Röd`, and with the labels\
+            \ the search settings declare for them in the locale of the request. A\
+            \ number, boolean or timestamp field compares the prefix with the value\
+            \ as a search response shows it, ignoring case. If omitted or blank, every\
+            \ value is answered."
+          examples:
+          - adi
+        locale:
+          type: string
+          description: "BCP-47 locale tag used to read locale-specific fields, as\
+            \ for a search. If omitted, uses each field's default locale."
+          examples:
+          - sv
+        limit:
+          type: integer
+          format: int32
+          maximum: 1000
+          minimum: 1
+          description: Maximum number of values to return.
+          default: 10
+        order:
+          description: "Sort order of the values: `\"count\"` (descending by count),\
+            \ `\"value\"` (ascending by value), or `\"declared\"` (the order the search\
+            \ settings declare for the field's values, followed by every other value\
+            \ by count)."
+          type: string
+          default: count
+          $ref: "#/components/schemas/Order"
+    FacetValuesResponse:
+      description: "The values of one facet field that start with the prefix, each\
+        \ with how many matching documents hold it."
+      examples:
+      - values:
+        - value: adidas
+          count: 87
+        - value: Adidas Originals
+          count: 12
+        totalValues: 2
+        tookMs: 1.208
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/FacetValue"
+          description: "The values with their counts, in the requested order and limited\
+            \ to the configured maximum."
+        totalValues:
+          type: integer
+          format: int32
+          description: Total count of distinct values that start with the prefix.
+            Exceeds the number of entries under `values` when the limit is reached.
+        tookMs:
+          type: number
+          format: double
+          description: "Execution time for the request in milliseconds, including\
+            \ fractions of one."
+          examples:
+          - 1.208
     Fallback:
       description: "Controls whether a field participates in the index's locale fallback:\
         \ `enabled` populates missing locales from fallback values, and `disabled`\
@@ -1007,6 +1142,32 @@ components:
         \ defaults, and only explicitly configured properties are stored, preserving\
         \ default values across engine updates. See [Field types](https://exofind.dev/reference/field-types/)."
       type: object
+    FieldSettings:
+      type: object
+      description: How searches read one field. Every capability is off unless its
+        object is present; an empty object turns it on with the engine defaults.
+      properties:
+        interpret:
+          description: "Reads the values the field holds out of the query text of\
+            \ a search in `user` mode, as a filter on the field. The field must be\
+            \ a `string` field with `filter` and `facet` and without `hierarchy`;\
+            \ otherwise the request returns `index:settings:fields:interpret_unsupported`.\
+            \ Carries no options. See [Reading the values of a field](https://exofind.dev/reference/search-api/#reading-the-values-of-a-field)."
+          type: object
+          $ref: "#/components/schemas/Interpret"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeclaredValue"
+          description: "Values of the field with a declared `order` and `labels` per\
+            \ locale. A facet with `\"order\": \"declared\"` answers these values\
+            \ first, by `order`, and every other value after them by count. A facet\
+            \ answers each value's `label` in the locale of the search, a prefix search\
+            \ of the facet matches labels as well as values, and a search in `user`\
+            \ mode with `interpret` on the field reads a typed label as its value.\
+            \ The field must be a `string` field with `facet` and without `hierarchy`;\
+            \ otherwise the request returns `index:settings:fields:values_unsupported`.\
+            \ At most 10000 values per field. See [Field settings](https://exofind.dev/reference/admin-api/#field-settings)."
     FieldSort:
       description: "Sorts by field value. The target field must have sorting enabled.\
         \ A field inside a `nested` [object](https://exofind.dev/reference/field-types/#object)\
@@ -2024,6 +2185,10 @@ components:
           format: int64
           description: Highest value accepted.
     Interpret:
+      type: object
+      description: Reads the values of the field out of the query text. Carries no
+        configuration options.
+    Interpret1:
       description: "Whether parts of `user` text are read as filters: `auto` reads\
         \ a number typed next to a unit or a comparative word as a filter on the field\
         \ declaring that unit, `off` takes every word as text."
@@ -2599,12 +2764,14 @@ components:
             $ref: "#/components/schemas/Clause"
           description: "Child clauses, at least one of which must match."
     Order:
-      description: "Sort order of facet values: `count` (descending by count) or `value`\
-        \ (ascending by value)."
+      description: "Sort order of facet values: `count` (descending by count), `value`\
+        \ (ascending by value), or `declared` (the order the search settings declare\
+        \ for the field's values, followed by every other value by count)."
       type: string
       enum:
       - count
       - value
+      - declared
     Order1:
       description: "Direction values are ordered in: `asc` or `desc`."
       type: string
@@ -3563,6 +3730,26 @@ components:
               - notebook
             fields:
             - name
+        fields:
+          brand:
+            interpret: {}
+          size:
+            values:
+            - value: S
+              order: 1
+              labels:
+                en: Small
+                sv: Liten
+            - value: M
+              order: 2
+              labels:
+                en: Medium
+                sv: Mellan
+            - value: L
+              order: 3
+              labels:
+                en: Large
+                sv: Stor
       type: object
       properties:
         ranking:
@@ -3591,6 +3778,14 @@ components:
             \ on a list is looked up as it was typed, however much typo tolerance\
             \ the field it is searched in declares. Use a list for brand names and\
             \ model codes that sit inside text you want typo tolerant otherwise."
+        fields:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/FieldSettings"
+          description: "Settings that apply to one field, keyed by field name. A field\
+            \ inside an object is keyed by its dotted path. Field names are validated\
+            \ against the generation the index answers from at write time. See [Field\
+            \ settings](https://exofind.dev/reference/admin-api/#field-settings)."
     SearchSettingsInfo:
       description: "The search settings of an index as stored, together with the observed\
         \ status reported by the answering node. See [Search settings](https://exofind.dev/reference/admin-api/#search-settings)."
@@ -3624,6 +3819,12 @@ components:
             $ref: "#/components/schemas/TypoExclusions"
           description: "Words matched as they are spelled, keyed by list name. Omitted\
             \ when the settings configure no typo exclusions."
+        fields:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/FieldSettings"
+          description: "Settings that apply to one field, keyed by field name. Omitted\
+            \ when the settings configure no field."
         version:
           type: string
           description: "An identifier for the stored settings version, also returned\
@@ -3952,7 +4153,7 @@ components:
           $ref: "#/components/schemas/Combine"
         interpret:
           oneOf:
-          - $ref: "#/components/schemas/Interpret"
+          - $ref: "#/components/schemas/Interpret1"
           - $ref: "#/components/schemas/InterpretTargets"
           description: "Whether parts of `user` text are read as filters on the fields\
             \ of the index: `auto` reads a number typed next to the unit of a number\
@@ -4011,7 +4212,7 @@ components:
             \ as `interpreted` beside the results. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           type: string
           default: auto
-          $ref: "#/components/schemas/Interpret"
+          $ref: "#/components/schemas/Interpret1"
     TextUsage:
       type: object
       description: Configuration properties shared by the `matching` and `autocomplete`
@@ -5409,7 +5610,7 @@ paths:
       description: |-
         Replaces the settings completely and returns them as stored. While a `ranking` is present, it replaces the definition's ranking completely; an empty object turns ranking off.
 
-        The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms` and `typoExclusions` against the same generation.
+        The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
 
         A change takes effect for searches on the answering node immediately and on all other nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`. Until then, two nodes can rank the same query differently. Search settings outlive generations: a generation promoted later can lack a field the settings name, and searches then skip that entry rather than fail.
 
@@ -5460,6 +5661,26 @@ paths:
                         - notebook
                       fields:
                       - name
+                  fields:
+                    brand:
+                      interpret: {}
+                    size:
+                      values:
+                      - value: S
+                        order: 1
+                        labels:
+                          en: Small
+                          sv: Liten
+                      - value: M
+                        order: 2
+                        labels:
+                          en: Medium
+                          sv: Mellan
+                      - value: L
+                        order: 3
+                        labels:
+                          en: Large
+                          sv: Stor
             schema:
               $ref: "#/components/schemas/SearchSettingsDefinition"
         required: true
@@ -5487,7 +5708,7 @@ paths:
         "400":
           description: "The request body is missing, or the settings failed validation\
             \ against the generation the index answers from (`index:ranking:*`, `index:settings:synonyms:*`,\
-            \ `index:settings:typo_exclusions:*`)."
+            \ `index:settings:typo_exclusions:*`, `index:settings:fields:*`)."
           content:
             application/json:
               schema:
@@ -6759,6 +6980,125 @@ paths:
         "503":
           description: The request raced the index being closed to free local resources.
             Repeating the request reopens the index.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+      security:
+      - apiKey: []
+  /v1alpha1/indexes/{name}/facets/{field}/values:
+    post:
+      summary: Search the values of a facet
+      description: |-
+        Answers the values of one facet field that start with a prefix, each with how many documents hold it under the given query and filters. A filter panel asks for this while a value is typed into it, to reach the values a facet of a search cut off at its limit. The counts are the ones a facet of the same search answers: filter entries on the facet's own field are left out, and the query and every other filter narrow them.
+
+        The prefix and the values of a string field are compared folded, in case and Unicode form, so `rö` finds `Röd`. A number, boolean or timestamp field compares the prefix with the value as a search response shows it, ignoring case. A field whose values are paths through a tree refuses a prefix. See [Searching the values of a facet](https://exofind.dev/reference/search-api/#searching-the-values-of-a-facet).
+
+        Requires the `search` permission.
+      operationId: searchFacetValues
+      tags:
+      - Search
+      parameters:
+      - description: "The field whose values to answer, as declared in the index definition.\
+          \ The field must have `facet` enabled."
+        example: brand
+        name: field
+        in: path
+        required: true
+        schema:
+          type: string
+      - description: "Name of the index. To count one generation, add `@` and the\
+          \ name of the generation, such as `books@2`."
+        example: books
+        name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            examples:
+              values:
+                summary: Brands starting with `adi` among running shoes
+                value:
+                  query:
+                  - type: text
+                    text: running shoes
+                  filters:
+                  - field: brand
+                    match:
+                      type: in
+                      values:
+                      - Nike
+                  prefix: adi
+                  limit: 5
+            schema:
+              $ref: "#/components/schemas/FacetValuesRequest"
+        required: true
+      responses:
+        "200":
+          description: "The values that start with the prefix, in the order that `order`\
+            \ asks for."
+          content:
+            application/json:
+              examples:
+                values:
+                  summary: The answer to the example request
+                  value:
+                    values:
+                    - value: adidas
+                      count: 87
+                    - value: Adidas Originals
+                      count: 12
+                    totalValues: 2
+                    tookMs: 1.208
+              schema:
+                $ref: "#/components/schemas/FacetValuesResponse"
+        "400":
+          description: |-
+            The request is not one that can be counted. The `code` property names the reason, such as `index:query:field_not_found` when the field does not exist, `index:query:usage_not_enabled` when it is not defined for `facet`, `index:query:facet_prefix_on_a_tree` when its values are paths through a tree, `search:facet:limit_invalid` when `limit` is outside 1 to 1000, or `search:filter:scores` when a filter clause affects the score.
+
+            A request that asks for more than the node allows is refused with the same status: `search:query:too_many_clauses`, `search:query:too_deep`, `search:clause:k_too_large`, or `search:clause:depth_too_large`. See [Search configuration](https://exofind.dev/reference/configuration/#search).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown, and lapsed keys all return this status, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The API key does not have the `search` permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "The index does not exist, or the key has no permissions on\
+            \ it. An index on which a key has no permissions returns this status as\
+            \ though it did not exist."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The index currently has no live generation (`index:no_live_generation`).
+            Promote a generation and send the request again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: |-
+            The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
+
+            Also returned when counting collected for longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The counts collected before the node stopped are dropped, so narrow the search instead of repeating it.
           content:
             application/json:
               schema:

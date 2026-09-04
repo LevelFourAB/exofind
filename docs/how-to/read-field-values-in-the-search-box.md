@@ -137,6 +137,24 @@ Before you begin, ensure you have:
    }
    ```
 
+7. Declare labels for values stored in another language:
+
+   The engine matches typed words against stored values, so a term like `röd` does not match the stored value `Red`. To interpret words in the user's language, declare values with labels per locale in the field settings:
+
+   ```http
+   PATCH /v1alpha1/admin/indexes/products/settings
+   Content-Type: application/json
+
+   {
+     "fields.colour.values": [
+       { "value": "Red", "labels": { "sv": "Röd", "de": "Rot" } },
+       { "value": "Blue", "labels": { "sv": "Blå", "de": "Blau" } }
+     ]
+   }
+   ```
+
+   A search with `"locale": "sv"` then reads `röd` as the value `Red`, and the `match` object in `interpreted.filters` returns `Red`. Facets on `colour` also return these labels in the `label` property, so the filter chip and the facet list display matching text. For information about accepted fields and error responses, see [Declared values](../reference/admin-api.md#declared-values).
+
 ## Confirming the result
 
 Inspect the JSON response from the search endpoint to verify query interpretation:
@@ -149,6 +167,7 @@ If the response omits `interpreted`, no filters were extracted. Check the follow
 
 - **The field is not opted in**: Retrieve the settings with `GET /v1alpha1/admin/indexes/products/settings` and verify that `fields.<name>.interpret` is present.
 - **The word is not a value**: A term is extracted only when it matches an indexed value exactly after case and diacritic normalization. Terms are not stemmed; for example, `shoes` does not match `Shoe`. Multi-word values match contiguous terms up to three words.
+- **The word is a label of another locale**: The engine reads declared labels in the search locale, or in the field's default locale when the search locale has no label. Send the user's `locale` with the search request, and verify that the label is keyed by a tag that the locale resolves to.
 - **The clause is not in user mode**: Only `text` clauses with `"match": "user"` support interpretation.
 - **A newer generation dropped the usage**: Search settings outlive generations. If the active generation lacks the field or configures it without `filter` or `facet`, the engine treats the terms as text instead of returning an error. The node logs skipped fields once per settings version.
 - **Unsupported features on the node**: If a node does not support the `interpret_values` capability, it bypasses the settings and evaluates queries against the index definition alone. Verify whether `unsupportedFeatures` in the settings response includes `interpret_values`.

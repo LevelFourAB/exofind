@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.TreeSet;
 import java.util.function.Function;
 
 import org.apache.lucene.analysis.Analyzer;
@@ -10,9 +11,11 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.util.BitSet;
+import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.LongBitSet;
 import org.apache.lucene.util.LongValues;
+import org.eclipse.collections.api.block.procedure.primitive.LongLongProcedure;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.primitive.LongIntMaps;
 import org.eclipse.collections.api.factory.primitive.LongLongMaps;
@@ -61,6 +64,14 @@ import se.l4.exofind.engine.query.SearchResult;
  * is read off the folded dictionary of each segment, see {@link FoldedTerms},
  * so picking them costs a binary search per segment and never a walk of the
  * values.
+ *
+ * The search settings can declare values of the field, see
+ * {@link DeclaredValues}. A declared label is answered next to its value and
+ * a prefix finds a value by its label as well as by the value itself, which
+ * costs a scan of the labels - tens of them - and a term lookup per label
+ * that matched. Declared order sorts the counted values that have one by it,
+ * resolving each declared value to its ordinal once, and answers the rest by
+ * count after them.
  */
 final class StringFacetCount implements FacetCount {
 	/**
@@ -78,6 +89,7 @@ final class StringFacetCount implements FacetCount {
 	private final Function<String, Object> decode;
 	private final Analyzer normalizer;
 	private final String prefix;
+	private final DeclaredValues.Localized declared;
 
 	private int totalMatches;
 
@@ -103,7 +115,8 @@ final class StringFacetCount implements FacetCount {
 		Facet.Order order,
 		Function<String, Object> decode,
 		Analyzer normalizer,
-		String prefix
+		String prefix,
+		DeclaredValues.Localized declared
 	) {
 		this.field = field;
 		this.mode = scope.mode();
@@ -114,6 +127,7 @@ final class StringFacetCount implements FacetCount {
 		this.decode = decode;
 		this.normalizer = normalizer;
 		this.prefix = prefix;
+		this.declared = declared;
 	}
 
 	@Override
@@ -249,7 +263,13 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		var selected = prefix == null ? null : selectByPrefix();
-		return order == Facet.Order.VALUE ? byValue(selected) : byCount(selected);
+		return switch(order) {
+			case VALUE -> byValue(selected);
+			case DECLARED -> declared != null && declared.hasOrders()
+				? byDeclared(selected)
+				: byCount(selected);
+			case COUNT -> byCount(selected);
+		};
 	}
 
 	/**
@@ -290,7 +310,47 @@ final class StringFacetCount implements FacetCount {
 			);
 		}
 
+		/*
+		 * A label is what a person sees in the list, so a prefix typed against
+		 * it selects the value it stands for - one that the reader holds, as
+		 * a declared value no document carries has nothing to count.
+		 */
+		if(declared != null) {
+			var byLabel = new TreeSet<String>();
+			declared.folded(field, normalizer).forEachStartingWith(folded, byLabel::add);
+
+			for(var value : byLabel) {
+				var ord = ordOf(value);
+				if(ord >= 0) {
+					selected.set(ord);
+				}
+			}
+		}
+
 		return selected;
+	}
+
+	/**
+	 * Find the ordinal of a value across the reader, or {@code -1} when no
+	 * segment holds it. A term lookup per segment, so asked only for the few
+	 * values a declaration names.
+	 */
+	private long ordOf(String value) throws IOException {
+		var term = new BytesRef(value);
+		for(var context : reader.leaves()) {
+			var values = context.reader().getSortedSetDocValues(field);
+			if(values == null) {
+				continue;
+			}
+
+			var segmentOrd = values.lookupTerm(term);
+			if(segmentOrd >= 0) {
+				var globals = ords.map() == null ? null : ords.map().getGlobalOrds(context.ord);
+				return globals == null ? segmentOrd : globals.get(segmentOrd);
+			}
+		}
+
+		return -1;
 	}
 
 	/**
@@ -394,10 +454,102 @@ final class StringFacetCount implements FacetCount {
 	}
 
 	/**
-	 * Read one answered value back as a term and decode it.
+	 * Answer the values with a declared order first, by that order and then
+	 * by count, and the most counted of the rest after them.
+	 */
+	private SearchResult.Facet byDeclared(LongBitSet selected) throws IOException {
+		/*
+		 * The declaration names values and the counts are by ordinal, so each
+		 * ordered value is resolved to its ordinal once - a term lookup per
+		 * segment for each of a handful of values - rather than every counted
+		 * value being read back as a term to ask whether it was declared.
+		 */
+		var orderByOrd = LongIntMaps.mutable.empty();
+		var orders = declared.orders();
+		for(var value : orders.keysView()) {
+			var ord = ordOf(value);
+			if(ord >= 0) {
+				orderByOrd.put(ord, orders.get(value));
+			}
+		}
+
+		// Each entry is the ordinal, its count and its declared order
+		var ranked = Lists.mutable.<long[]>empty();
+		var rest = new TopValues(Math.max(limit, 0));
+		var distinct = new int[1];
+
+		LongLongProcedure offer = (ord, count) -> {
+			distinct[0]++;
+			if(orderByOrd.containsKey(ord)) {
+				ranked.add(new long[] { ord, count, orderByOrd.get(ord) });
+			} else {
+				rest.offer(ord, count);
+			}
+		};
+
+		if(dense != null) {
+			for(var ord = 0; ord < dense.length; ord++) {
+				if(dense[ord] != 0 && (selected == null || selected.get(ord))) {
+					offer.value(ord, dense[ord]);
+				}
+			}
+		} else {
+			sparse.forEachKeyValue((ord, count) -> {
+				if(selected == null || selected.get(ord)) {
+					offer.value(ord, count);
+				}
+			});
+		}
+
+		ranked.sortThis((a, b) -> {
+			if(a[2] != b[2]) {
+				return Long.compare(a[2], b[2]);
+			}
+			if(a[1] != b[1]) {
+				return Long.compare(b[1], a[1]);
+			}
+			return Long.compare(a[0], b[0]);
+		});
+
+		var values = Lists.mutable.<SearchResult.Facet.Value>empty();
+		for(var entry : ranked) {
+			if(values.size() == limit) {
+				break;
+			}
+
+			values.add(valueOf(entry[0], entry[1]));
+		}
+
+		var remaining = limit - values.size();
+		if(remaining > 0 && rest.size() > 0) {
+			// The heap surrenders the worst kept value first, so the ones past what is wanted go unread
+			while(rest.size() > remaining) {
+				rest.pop();
+			}
+
+			var best = new SearchResult.Facet.Value[rest.size()];
+			for(var i = best.length - 1; i >= 0; i--) {
+				best[i] = valueOf(rest.peekOrd(), rest.peekCount());
+				rest.pop();
+			}
+
+			values.addAll(Arrays.asList(best));
+		}
+
+		return new SearchResult.Facet(values.toImmutable(), distinct[0]);
+	}
+
+	/**
+	 * Read one answered value back as a term and decode it, with the label
+	 * the declaration gives it.
 	 */
 	private SearchResult.Facet.Value valueOf(long ord, long count) throws IOException {
-		return new SearchResult.Facet.Value(decode.apply(termOf(ord)), count);
+		var term = termOf(ord);
+		return new SearchResult.Facet.Value(
+			decode.apply(term),
+			count,
+			declared == null ? null : declared.labelOf(term)
+		);
 	}
 
 	/**

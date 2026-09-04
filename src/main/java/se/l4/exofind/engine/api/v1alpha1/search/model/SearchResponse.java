@@ -393,6 +393,21 @@ public record SearchResponse(
 		long count,
 
 		/**
+		 * The label the search settings declare for the value, in the locale
+		 * of the search. Omitted when the settings declare none.
+		 */
+		@Schema(
+			description = """
+				The label the search settings of the index declare for the \
+				value, in the locale of the search, falling back to the \
+				field's default locale. Omitted when the settings declare \
+				no label for the value. See [Field \
+				settings](https://exofind.dev/reference/admin-api/#field-settings).""",
+			examples = "Fiction"
+		)
+		String label,
+
+		/**
 		 * The full path to this level, used in filter matchers. Omitted for
 		 * non-hierarchical fields.
 		 */
@@ -431,7 +446,28 @@ public record SearchResponse(
 		 * holding paths counts.
 		 */
 		public FacetValue(Object value, long count) {
-			this(value, count, null, null, null);
+			this(value, count, null, null, null, null);
+		}
+
+		/**
+		 * A value standing on its own, with the label the search settings
+		 * declare for it.
+		 */
+		public FacetValue(Object value, long count, String label) {
+			this(value, count, label, null, null, null);
+		}
+
+		/**
+		 * One level of a tree, with the levels below it.
+		 */
+		public FacetValue(
+			Object value,
+			long count,
+			String path,
+			List<FacetValue> values,
+			Integer totalValues
+		) {
+			this(value, count, null, path, values, totalValues);
 		}
 	}
 

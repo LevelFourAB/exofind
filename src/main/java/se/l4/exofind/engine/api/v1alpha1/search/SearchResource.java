@@ -859,6 +859,7 @@ public class SearchResource {
 			result.add(new SearchResponse.FacetValue(
 				value.value(),
 				value.count(),
+				value.label(),
 				value.path(),
 				value.path() == null ? null : toFacetValuesJson(value.children()),
 				value.path() == null ? null : value.totalChildren()

@@ -91,7 +91,14 @@ public record SearchSettingsDefinition(
 		    }
 		  },
 		  "fields": {
-		    "brand": { "interpret": {} }
+		    "brand": { "interpret": {} },
+		    "size": {
+		      "values": [
+		        { "value": "S", "order": 1, "labels": { "en": "Small", "sv": "Liten" } },
+		        { "value": "M", "order": 2, "labels": { "en": "Medium", "sv": "Mellan" } },
+		        { "value": "L", "order": 3, "labels": { "en": "Large", "sv": "Stor" } }
+		      ]
+		    }
 		  }
 		}""";
 
@@ -194,6 +201,9 @@ public record SearchSettingsDefinition(
 	 * @param interpret
 	 *   present when a search in {@code user} mode reads the values the field
 	 *   holds out of the query text, or {@code null} when it does not
+	 * @param values
+	 *   the values of the field with a declared order and labels per locale,
+	 *   or {@code null} when none are declared
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -208,7 +218,69 @@ public record SearchSettingsDefinition(
 			`index:settings:fields:interpret_unsupported`. Carries no options. \
 			See [Reading the values of a \
 			field](https://exofind.dev/reference/search-api/#reading-the-values-of-a-field).""")
-		Interpret interpret
+		Interpret interpret,
+
+		@Schema(description = """
+			Values of the field with a declared `order` and `labels` per \
+			locale. A facet with `"order": "declared"` answers these values \
+			first, by `order`, and every other value after them by count. A \
+			facet answers each value's `label` in the locale of the search, \
+			a prefix search of the facet matches labels as well as values, \
+			and a search in `user` mode with `interpret` on the field reads a \
+			typed label as its value. The field must be a `string` field with \
+			`facet` and without `hierarchy`; otherwise the request returns \
+			`index:settings:fields:values_unsupported`. At most 10000 values \
+			per field. See [Field \
+			settings](https://exofind.dev/reference/admin-api/#field-settings).""")
+		List<DeclaredValue> values
+	) {
+	}
+
+	/**
+	 * One value of a field with what a search shows and orders it by.
+	 *
+	 * @param value
+	 *   the value as the field stores it
+	 * @param order
+	 *   where the value sits in declared order, or {@code null} for after
+	 *   every value that has one
+	 * @param labels
+	 *   what a person reads instead of the value, keyed by BCP-47 tag, or
+	 *   {@code null} for none
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		One value of a field, as stored, with the order a facet sorts it by \
+		and the label a search answers it with per locale.""")
+	public record DeclaredValue(
+		@Schema(
+			description = """
+				The value as the field stores it, which is what a facet counts \
+				and a filter matches. Required and unique within the field; \
+				otherwise the request returns \
+				`index:settings:fields:values_invalid`.""",
+			examples = "S"
+		)
+		String value,
+
+		@Schema(
+			description = """
+				Where the value sits in a facet ordered by `declared`, lower \
+				first; values sharing an order are sorted by count. If \
+				omitted, the value is ordered by count after every value that \
+				has an order, so labels can be declared without an order.""",
+			examples = "1"
+		)
+		Integer order,
+
+		@Schema(description = """
+			What a person reads instead of the value, keyed by BCP-47 tag in \
+			canonical form (`sv`, `en-GB`). A search answers the label of its \
+			locale, matched as closely as the tags tell apart, and the label \
+			of the field's default locale where its own has none. A tag that \
+			is not canonical, or a blank label, returns \
+			`index:settings:fields:values_invalid`.""")
+		Map<String, String> labels
 	) {
 	}
 
