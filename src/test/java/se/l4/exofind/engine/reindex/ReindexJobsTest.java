@@ -14,12 +14,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
@@ -102,6 +104,10 @@ public class ReindexJobsTest {
 	}
 
 	private ReindexJobs newJobs() {
+		return newJobs(indexes);
+	}
+
+	private ReindexJobs newJobs(Indexes indexes) {
 		var ownership = new LocalIndexerOwnership();
 		ownership.start((index, owner) -> {
 		});
@@ -167,6 +173,48 @@ public class ReindexJobsTest {
 		assertThat(target.getDocumentCount(), is(3L));
 		assertThat(target.getDocument("4"), is(notNullValue()));
 		assertThat(target.getDocument("1"), is(nullValue()));
+	}
+
+	/**
+	 * The promote is what makes the target answer for the index name, so only
+	 * the node that still writes the index may make it. The commit before it
+	 * pushes to the storage, which is long enough for the index to be handed
+	 * to another node in the meantime.
+	 */
+	@Test
+	public void aPromoteStopsWhenTheIndexMovesAwayAfterTheLastCommit() throws Exception {
+		catalogue();
+		var target = indexes.createGeneration("catalogue@2", definition().build());
+
+		/*
+		 * Armed only once the job waits for the promote, so the commits of the
+		 * copy are left alone.
+		 */
+		var handOver = new AtomicBoolean();
+		var handedOver = Mockito.spy(target);
+		Mockito.doAnswer(invocation -> {
+			target.commit();
+			if(handOver.get()) {
+				nodeState.updateOwnership(false);
+			}
+
+			return null;
+		}).when(handedOver).commit();
+
+		var withHandover = Mockito.spy(indexes);
+		Mockito.doReturn(handedOver).when(withHandover).getOrThrow("catalogue@2");
+
+		jobs.stop();
+		jobs = newJobs(withHandover);
+
+		jobs.start("catalogue@2", null, "manual");
+		awaitPhase("catalogue", ReindexPhase.READY);
+
+		handOver.set(true);
+		assertThat(jobs.promoteThroughJob("catalogue@2"), is(false));
+
+		// The generation the index answers for is the successor's to change
+		assertThat(registry.get("catalogue").orElseThrow().live(), is("1"));
 	}
 
 	@Test

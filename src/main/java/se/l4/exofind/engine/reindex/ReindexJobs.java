@@ -1010,6 +1010,14 @@ public class ReindexJobs {
 			target.commit();
 			log.forget(snapshot);
 
+			/*
+			 * The replay above checks per key and a final snapshot is often
+			 * empty, so this is the only check standing between the last
+			 * commit and the promote. What the index answers for is not this
+			 * node's to change once it stopped writing the index.
+			 */
+			ensureRunnable(current);
+
 			registry.promote(current.index, current.job.target());
 		}
 
