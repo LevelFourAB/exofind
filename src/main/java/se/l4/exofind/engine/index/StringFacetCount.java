@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.function.LongConsumer;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.index.IndexReader;
@@ -15,6 +16,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.LongBitSet;
 import org.apache.lucene.util.LongValues;
+import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.eclipse.collections.api.block.procedure.primitive.LongLongProcedure;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.primitive.LongIntMaps;
@@ -22,6 +24,7 @@ import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.map.primitive.MutableLongIntMap;
 import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
 
+import se.l4.exofind.engine.index.types.StringFieldType;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.SearchResult;
 
@@ -63,7 +66,11 @@ import se.l4.exofind.engine.query.SearchResult;
  * every other facet over the scope reads. Which values start with the prefix
  * is read off the folded dictionary of each segment, see {@link FoldedTerms},
  * so picking them costs a binary search per segment and never a walk of the
- * values.
+ * values. A prefix that forgives mistakes is compiled into the automaton a
+ * typo tolerant text search walks a term dictionary with, see
+ * {@link StringFieldType#typoAutomaton}, and the same folded dictionary is
+ * walked with it: that costs the dictionary of a segment once, less the runs
+ * a mistake too many rules out.
  *
  * The search settings can declare values of the field, see
  * {@link DeclaredValues}. A declared label is answered next to its value and
@@ -89,6 +96,7 @@ final class StringFacetCount implements FacetCount {
 	private final Function<String, Object> decode;
 	private final Analyzer normalizer;
 	private final String prefix;
+	private final int prefixEdits;
 	private final DeclaredValues.Localized declared;
 
 	private int totalMatches;
@@ -116,6 +124,7 @@ final class StringFacetCount implements FacetCount {
 		Function<String, Object> decode,
 		Analyzer normalizer,
 		String prefix,
+		int prefixEdits,
 		DeclaredValues.Localized declared
 	) {
 		this.field = field;
@@ -127,6 +136,7 @@ final class StringFacetCount implements FacetCount {
 		this.decode = decode;
 		this.normalizer = normalizer;
 		this.prefix = prefix;
+		this.prefixEdits = prefixEdits;
 		this.declared = declared;
 	}
 
@@ -297,6 +307,18 @@ final class StringFacetCount implements FacetCount {
 		}
 
 		var folded = normalizer.normalize(field, prefix);
+
+		/*
+		 * The automaton accepts every folded value some reading of the prefix
+		 * within the mistakes starts, which includes the values the prefix
+		 * itself starts, so a walk with it replaces the binary search rather
+		 * than adding to it.
+		 */
+		ByteRunAutomaton near = prefixEdits == 0
+			? null
+			: StringFieldType.typoAutomaton(folded.utf8ToString(), prefixEdits, 1, true)
+				.runAutomaton;
+
 		for(var context : reader.leaves()) {
 			var values = context.reader().getSortedSetDocValues(field);
 			if(values == null) {
@@ -305,9 +327,14 @@ final class StringFacetCount implements FacetCount {
 
 			var terms = FacetStates.foldedTermsOf(context, field, normalizer, values);
 			var globals = ords.map() == null ? null : ords.map().getGlobalOrds(context.ord);
-			terms.forEachStartingWith(folded, segmentOrd ->
-				selected.set(globals == null ? segmentOrd : globals.get(segmentOrd))
-			);
+			LongConsumer select = segmentOrd ->
+				selected.set(globals == null ? segmentOrd : globals.get(segmentOrd));
+
+			if(near == null) {
+				terms.forEachStartingWith(folded, select);
+			} else {
+				terms.forEachAccepted(near, select);
+			}
 		}
 
 		/*
@@ -317,7 +344,12 @@ final class StringFacetCount implements FacetCount {
 		 */
 		if(declared != null) {
 			var byLabel = new TreeSet<String>();
-			declared.folded(field, normalizer).forEachStartingWith(folded, byLabel::add);
+			var labels = declared.folded(field, normalizer);
+			if(near == null) {
+				labels.forEachStartingWith(folded, byLabel::add);
+			} else {
+				labels.forEachAccepted(near, byLabel::add);
+			}
 
 			for(var value : byLabel) {
 				var ord = ordOf(value);

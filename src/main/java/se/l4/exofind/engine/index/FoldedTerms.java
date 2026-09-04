@@ -8,6 +8,7 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IntroSorter;
+import org.apache.lucene.util.automaton.ByteRunAutomaton;
 
 /**
  * The values of one field in one segment, folded by an analyzer and sorted by
@@ -157,6 +158,92 @@ final class FoldedTerms {
 		for(var i = from; i < to; i++) {
 			consumer.accept(sorted[i]);
 		}
+	}
+
+	/**
+	 * Hand every ordinal whose folded value the given automaton accepts to
+	 * the consumer, in the order of the folded values.
+	 *
+	 * <p>The values are walked in sorted order, so the automaton is stepped
+	 * over the bytes a value shares with the one before it once, and a value
+	 * whose prefix the automaton has already refused is skipped together with
+	 * every other value under that prefix. What a walk costs is then the
+	 * number of distinct prefixes the automaton lets in, never the whole
+	 * dictionary once the automaton is at all selective.
+	 *
+	 * @param automaton
+	 *   what accepts a folded value, stepped over its UTF-8 bytes
+	 * @param consumer
+	 *   given each ordinal once
+	 */
+	void forEachAccepted(ByteRunAutomaton automaton, LongConsumer consumer) {
+		// The automaton's state after each byte of the value before, so a shared prefix is stepped once
+		var states = new int[16];
+		var sharedWithPrevious = 0;
+
+		var i = 0;
+		while(i < sorted.length) {
+			var ord = sorted[i];
+			var start = starts[ord];
+			var end = starts[ord + 1];
+			var length = end - start;
+
+			if(states.length < length + 1) {
+				states = Arrays.copyOf(states, Math.max(length + 1, states.length * 2));
+			}
+
+			states[0] = 0;
+			var state = states[sharedWithPrevious];
+			var refusedAt = -1;
+			for(var at = sharedWithPrevious; at < length; at++) {
+				state = automaton.step(state, bytes[start + at] & 0xFF);
+				if(state == -1) {
+					refusedAt = at;
+					break;
+				}
+
+				states[at + 1] = state;
+			}
+
+			if(refusedAt >= 0) {
+				/*
+				 * Every value under the refused prefix sorts next to this one,
+				 * so the walk jumps past the run instead of refusing each.
+				 */
+				var refused = new BytesRef(bytes, start, refusedAt + 1);
+				var next = firstAtOrPast(refused, true);
+				sharedWithPrevious = next < sorted.length
+					? sharedPrefix(ord, sorted[next], refusedAt)
+					: 0;
+				i = next;
+				continue;
+			}
+
+			if(automaton.isAccept(state)) {
+				consumer.accept(ord);
+			}
+
+			i++;
+			if(i < sorted.length) {
+				sharedWithPrevious = sharedPrefix(ord, sorted[i], length);
+			}
+		}
+	}
+
+	/**
+	 * How many leading bytes two values share, at most the given number.
+	 */
+	private int sharedPrefix(int ord, int other, int atMost) {
+		var start = starts[ord];
+		var otherStart = starts[other];
+		var length = Math.min(atMost, Math.min(starts[ord + 1] - start, starts[other + 1] - otherStart));
+
+		var shared = 0;
+		while(shared < length && bytes[start + shared] == bytes[otherStart + shared]) {
+			shared++;
+		}
+
+		return shared;
 	}
 
 	/**

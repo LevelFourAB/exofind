@@ -71,6 +71,13 @@ import org.eclipse.collections.api.list.ImmutableList;
  *   what the answered values have to start with, or {@code null} to answer
  *   every value. Blank counts as {@code null}. Refused together with
  *   {@code ranges}
+ * @param prefixEdits
+ *   how many mistakes a value may be away from the prefix and still be
+ *   answered, between 0 and {@link #MAX_PREFIX_EDITS}. A value is answered
+ *   when some reading of the prefix within that many edits starts it, so a
+ *   half typed word finds what it would have with the mistake fixed. The
+ *   first character of the prefix is never read as a mistake. Only string
+ *   fields compare this way; every other field answers as with zero
  */
 public record Facet(
 	String name,
@@ -81,8 +88,16 @@ public record Facet(
 	String path,
 	int depth,
 	ImmutableList<String> excludeFilters,
-	String prefix
+	String prefix,
+	int prefixEdits
 ) {
+	/**
+	 * The most mistakes a prefix may forgive. One is what a word still being
+	 * typed forgives in a text search, and two on a short prefix reaches a
+	 * large part of any dictionary.
+	 */
+	public static final int MAX_PREFIX_EDITS = 2;
+
 	/**
 	 * How many values a facet brings back when nothing else is asked for.
 	 */
@@ -229,6 +244,30 @@ public record Facet(
 				"Counting into buckets answers one count per bucket, so it can not also pick values by prefix"
 			);
 		}
+
+		if(prefixEdits < 0 || prefixEdits > MAX_PREFIX_EDITS) {
+			throw new IllegalArgumentException(
+				"A prefix forgives between 0 and " + MAX_PREFIX_EDITS + " mistakes"
+			);
+		}
+	}
+
+	/**
+	 * Count per value, answering the values that start with the prefix as it
+	 * was typed.
+	 */
+	public Facet(
+		String name,
+		String field,
+		int limit,
+		Order order,
+		ImmutableList<Range> ranges,
+		String path,
+		int depth,
+		ImmutableList<String> excludeFilters,
+		String prefix
+	) {
+		this(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, 0);
 	}
 
 	/**
@@ -308,7 +347,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withName(String name) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
 	}
 
 	/**
@@ -318,7 +357,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withLimit(int limit) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
 	}
 
 	/**
@@ -328,7 +367,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withOrder(Order order) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
 	}
 
 	/**
@@ -341,7 +380,7 @@ public record Facet(
 	public Facet withRanges(Range... ranges) {
 		return new Facet(
 			name, field, limit, order, Lists.immutable.of(ranges), path, depth, excludeFilters,
-			prefix
+			prefix, prefixEdits
 		);
 	}
 
@@ -355,7 +394,7 @@ public record Facet(
 	public Facet withRanges(Iterable<? extends Range> ranges) {
 		return new Facet(
 			name, field, limit, order, Lists.immutable.ofAll(ranges), path, depth, excludeFilters,
-			prefix
+			prefix, prefixEdits
 		);
 	}
 
@@ -367,7 +406,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPath(String path) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
 	}
 
 	/**
@@ -377,7 +416,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withDepth(int depth) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
 	}
 
 	/**
@@ -391,7 +430,7 @@ public record Facet(
 	public Facet withExcludeFilters(String... excludeFilters) {
 		return new Facet(
 			name, field, limit, order, ranges, path, depth,
-			Lists.immutable.of(excludeFilters), prefix
+			Lists.immutable.of(excludeFilters), prefix, prefixEdits
 		);
 	}
 
@@ -406,7 +445,7 @@ public record Facet(
 	public Facet withExcludeFilters(Iterable<String> excludeFilters) {
 		return new Facet(
 			name, field, limit, order, ranges, path, depth,
-			Lists.immutable.ofAll(excludeFilters), prefix
+			Lists.immutable.ofAll(excludeFilters), prefix, prefixEdits
 		);
 	}
 
@@ -419,6 +458,19 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPrefix(String prefix) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+	}
+
+	/**
+	 * Answer values the given number of mistakes away from the prefix as
+	 * well, see the class comment for how the two are compared.
+	 *
+	 * @param prefixEdits
+	 *   the mistakes to forgive, or zero to answer only the values the
+	 *   prefix starts
+	 * @return
+	 */
+	public Facet withPrefixEdits(int prefixEdits) {
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
 	}
 }

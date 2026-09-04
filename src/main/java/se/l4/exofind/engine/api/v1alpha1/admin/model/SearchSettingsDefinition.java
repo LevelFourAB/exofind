@@ -204,6 +204,9 @@ public record SearchSettingsDefinition(
 	 * @param values
 	 *   the values of the field with a declared order and labels per locale,
 	 *   or {@code null} when none are declared
+	 * @param suggest
+	 *   present when the values the field holds are suggested while a search
+	 *   is typed, or {@code null} when they are not
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(description = """
@@ -232,8 +235,29 @@ public record SearchSettingsDefinition(
 			`index:settings:fields:values_unsupported`. At most 10000 values \
 			per field. See [Field \
 			settings](https://exofind.dev/reference/admin-api/#field-settings).""")
-		List<DeclaredValue> values
+		List<DeclaredValue> values,
+
+		@Schema(description = """
+			Suggests the values the field holds while a search is typed, \
+			through `POST /v1alpha1/indexes/{name}/suggest`. The field must \
+			be a `string` field with `facet` and without `hierarchy`; \
+			otherwise the request returns \
+			`index:settings:fields:suggest_unsupported`. Carries no options. \
+			See [Suggesting what to search \
+			for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).""")
+		Suggest suggest
 	) {
+	}
+
+	/**
+	 * Suggests the values of a field while a search is typed. Carries no
+	 * options.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Suggests the values of the field while a search is typed. Carries no \
+		configuration options.""")
+	public record Suggest() {
 	}
 
 	/**

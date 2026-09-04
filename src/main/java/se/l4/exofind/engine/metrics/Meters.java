@@ -52,6 +52,14 @@ public final class Meters {
 	public static final String SEARCH_PIECES = "exofind.search.pieces";
 
 	/**
+	 * Time a suggest request took end to end, as the endpoint measures it.
+	 * Tagged with {@link #TAG_OUTCOME}, and with {@link #TAG_INDEX} when
+	 * {@code EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM} is on, the way
+	 * {@link #SEARCH} is.
+	 */
+	public static final String SUGGEST = "exofind.suggest";
+
+	/**
 	 * Time a write request took on the node that served it. Tagged with
 	 * {@link #TAG_OPERATION} and {@link #TAG_OUTCOME}.
 	 */

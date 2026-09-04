@@ -13,6 +13,7 @@ You can scrape these meters through the Prometheus endpoint or push them to an O
 | `exofind.search` | Timer | Seconds | `outcome` (`success`, `error`), `index` (optional) | End-to-end duration of a search request. The `index` tag is present only when `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM` is `true`. |
 | `exofind.search.relaxation` | Counter | Words | `reason` | Count of words dropped by a search before the query matched. Each dropped word increments the counter by one. |
 | `exofind.search.interpretation` | Counter | Filters | `kind` (`number`, `value`) | Count of filters a search read out of the text a user typed. `number` counts a price bound or another quantity, and `value` counts a word read as a value of a field, such as a colour. Each filter read increments the counter by one. |
+| `exofind.suggest` | Timer | Seconds | `outcome` (`success`, `error`), `index` (optional) | End-to-end duration of a suggest request (`POST /v1alpha1/indexes/{name}/suggest`). The `index` tag is present only when `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM` is `true`, the same switch as `exofind.search`. |
 | `exofind.search.pieces` | Counter | Pieces | `thread` (`pool`, `request`) | Count of search work pieces, where a piece is one segment collected or one part of the facet counting. The `thread` tag indicates whether the piece ran on a search pool thread (`pool`) or on the request thread (`request`). Pieces run under `request` while `EXOFIND_SEARCH_THREADS` holds threads mean the pool was busy. Lucene's own ranking slices are not counted. |
 
 ### Write and commit metrics
@@ -99,6 +100,7 @@ To limit cardinality growth in large deployments, meters differ in whether they 
 | Meter | Carries `index` tag | Registration scope |
 | --- | --- | --- |
 | `exofind.search` | Optional (off by default) | All nodes serving search requests |
+| `exofind.suggest` | Optional (off by default) | All nodes serving search requests |
 | `exofind.index.unhealthy` | Yes | Nodes with generations not in the `USABLE` state |
 | `exofind.index.documents` | Yes | Node currently writing the index |
 | `exofind.index.pending.changes` | Yes | Node currently writing the index |
@@ -136,7 +138,7 @@ The `EXOFIND_METRICS_HISTOGRAM_MODE` setting supports three modes:
 
 ### Bucket boundaries in `slo` mode
 
-Request timers (`exofind.search`, `exofind.write`):
+Request timers (`exofind.search`, `exofind.suggest`, `exofind.write`):
 
 - 1 ms
 - 5 ms
@@ -169,6 +171,6 @@ Configure metrics behavior using the following environment variables:
 | --- | --- | --- |
 | `EXOFIND_METRICS_INDEX_ENABLED` | `true` | Enables per-index gauges (`exofind.index.*`). When `false`, only node-level meters and `exofind.index.unhealthy` remain active. |
 | `EXOFIND_METRICS_INDEX_INTERVAL` | `30s` | Interval for rebuilding per-index metrics and scanning disk usage. |
-| `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM` | `false` | Adds the `index` tag to `exofind.search`, splitting the latency histogram per index. |
+| `EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM` | `false` | Adds the `index` tag to `exofind.search` and `exofind.suggest`, splitting each latency histogram per index. |
 | `EXOFIND_METRICS_HISTOGRAM_MODE` | `slo` | Histogram bucket generation mode: `slo`, `detailed`, or `none`. |
 | `EXOFIND_METRICS_HTTP_MAX_URI_TAGS` | `200` | Maximum number of distinct URI values allowed for `http.server.requests` before collapsing additional paths to `UNKNOWN`. |

@@ -179,6 +179,13 @@ message FieldSettings {
 	 * with `facet` hold values to declare.
 	 */
 	repeated DeclaredValue values = 2;
+
+	/*
+	 * Present when the values the field holds are suggested while a search
+	 * is typed. The field has to be a string field with `facet`; the values
+	 * are read from the facet doc values of the generation that answers.
+	 */
+	optional SuggestConfig suggest = 3;
 }
 
 /*
@@ -186,6 +193,13 @@ message FieldSettings {
  * Carries no options; a later version may add some.
  */
 message InterpretConfig {
+}
+
+/*
+ * Config for suggesting the values of a field while a search is typed.
+ * Carries no options; a later version may add some.
+ */
+message SuggestConfig {
 }
 
 /*

@@ -280,7 +280,7 @@ The `fields` field is an object keyed by field name. For a field inside an `obje
 {
   "fields": {
     "colour": { "interpret": {} },
-    "brand": { "interpret": {} },
+    "brand": { "interpret": {}, "suggest": {} },
     "size": {
       "values": [
         { "value": "S", "order": 1, "labels": { "en": "Small", "sv": "Liten" } },
@@ -296,6 +296,7 @@ A field settings entry contains the following fields:
 
 - `interpret`: Reads the values the field holds out of the query text of a search in `user` mode, as a filter on the field. Carries no configuration options. See [Reading the values of a field](search-api.md#reading-the-values-of-a-field).
 - `values`: Declares values of the field with an order and labels per locale. See [Declared values](#declared-values).
+- `suggest`: Suggests values of the field as query text is typed. Carries no configuration options. See [Suggesting what to search for](search-api.md#suggesting-what-to-search-for).
 
 The engine applies `interpret` according to the following rules:
 
@@ -304,10 +305,18 @@ The engine applies `interpret` according to the following rules:
 
 A node whose version does not support the `interpret_values` capability sets the entire settings object aside and searches with the index definition alone. The `unsupportedFeatures` field in the settings response lists the capability name.
 
+The engine applies `suggest` according to the following rules:
+
+- The field must be a `string` field with `facet` and without `hierarchy`. `filter` is not required. Values are read from the facet values of the answering generation, so a value is suggested as soon as a document holding it is indexed.
+- If a later promoted generation lacks the field or defines it without `facet`, suggest requests skip that field and answer from the others. The node logs the skipped fields once per settings version.
+
+A node whose version does not support the `suggest_values` capability sets the entire settings object aside and searches with the index definition alone. The `unsupportedFeatures` field in the settings response lists the capability name.
+
 The server validates field settings against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
 
 - `index:settings:fields:unknown_field`: The entry names a field that does not exist in the index.
 - `index:settings:fields:interpret_unsupported`: The `interpret` setting is applied to a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`.
+- `index:settings:fields:suggest_unsupported`: The `suggest` setting is applied to a field that is not a `string` field with `facet`, or that has `hierarchy`.
 - `index:settings:fields:values_unsupported`: The `values` list is given for a field that is not a `string` field with `facet`, or that has `hierarchy`.
 - `index:settings:fields:values_invalid`: An entry in `values` lacks a `value`, duplicates a `value`, keys a label with a tag that is not a canonical BCP-47 tag, contains a blank label, or exceeds 10,000 entries. The error message specifies the reason.
 
@@ -381,6 +390,7 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `fields` | The whole field settings object. |
 | `fields.<name>` | The settings of one field by name. |
 | `fields.<name>.interpret` | The interpret configuration for a field. Set to `{}` to enable reading field values from query text, or `null` to disable. |
+| `fields.<name>.suggest` | The suggest configuration for a field. Set to `{}` to enable suggesting field values as query text is typed, or `null` to disable. |
 | `fields.<name>.values` | The whole list of declared values for a field. |
 | `fields.<name>.values[]` | A new declared value added to the list. |
 | `fields.<name>.values[value=S]` | List entries whose `value` equals `S`. |

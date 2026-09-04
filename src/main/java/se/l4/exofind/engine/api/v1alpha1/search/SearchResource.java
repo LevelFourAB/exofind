@@ -30,6 +30,8 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
+import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest;
+import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestResponse;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.index.IndexException;
@@ -42,6 +44,7 @@ import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
+import se.l4.exofind.engine.query.SuggestResult;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -92,6 +95,7 @@ public class SearchResource {
 	private final RequestMetrics metrics;
 	private final SearchLimits limits;
 	private final Duration timeout;
+	private final Duration suggestTimeout;
 
 	@Inject
 	public SearchResource(
@@ -134,7 +138,9 @@ public class SearchResource {
 		)
 		int maxClauseDepth,
 		@ConfigProperty(name = "exofind.search.timeout", defaultValue = "30s")
-		Duration timeout
+		Duration timeout,
+		@ConfigProperty(name = "exofind.suggest.timeout", defaultValue = "2s")
+		Duration suggestTimeout
 	) {
 		this(
 			indexes,
@@ -149,13 +155,15 @@ public class SearchResource {
 				maxClauses,
 				maxClauseDepth
 			),
-			timeout
+			timeout,
+			suggestTimeout
 		);
 	}
 
 	/**
 	 * Create a resource with its limits given directly, the way a test does,
-	 * instead of reading them from the configuration.
+	 * instead of reading them from the configuration. A suggest request runs
+	 * under the same budget as a search.
 	 *
 	 * @param limits
 	 *   how much of the node one search may ask for
@@ -170,11 +178,35 @@ public class SearchResource {
 		SearchLimits limits,
 		Duration timeout
 	) {
+		this(indexes, searchSettings, metrics, limits, timeout, timeout);
+	}
+
+	/**
+	 * Create a resource with its limits given directly, the way a test does,
+	 * instead of reading them from the configuration.
+	 *
+	 * @param limits
+	 *   how much of the node one search may ask for
+	 * @param timeout
+	 *   how long a search may collect for. {@code null}, zero and negative
+	 *   durations let a search run until it finishes
+	 * @param suggestTimeout
+	 *   how long a suggest request may count for, bounded the same way
+	 */
+	public SearchResource(
+		Indexes indexes,
+		SearchSettings searchSettings,
+		RequestMetrics metrics,
+		SearchLimits limits,
+		Duration timeout,
+		Duration suggestTimeout
+	) {
 		this.indexes = indexes;
 		this.searchSettings = searchSettings;
 		this.metrics = metrics;
 		this.limits = limits;
 		this.timeout = timeout;
+		this.suggestTimeout = suggestTimeout;
 	}
 
 	/**
@@ -512,6 +544,206 @@ public class SearchResource {
 			counts.totalValues(),
 			Math.round(took / 1_000d) / 1_000d
 		);
+	}
+
+	/**
+	 * Suggest what to search for, from the text typed so far.
+	 *
+	 * @param body
+	 *   what has been typed and what to count under; all properties are
+	 *   optional, and omitting the body answers the most common values
+	 */
+	@POST
+	@Path("/suggest")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.SEARCH)
+	@ServedBy(ServedBy.Node.ANY_NODE)
+	@Operation(
+		operationId = "suggest",
+		summary = "Suggest what to search for",
+		description = """
+			Answers what to search for, from the text typed into a search box \
+			so far. A search box asks for this on every keystroke, and shows \
+			the answer as a list to pick from.
+
+			The suggestions are the values of the fields the search settings \
+			of the index opt in with `suggest` (see [Field \
+			settings](https://exofind.dev/reference/admin-api/#field-settings)), \
+			that start with the text, each with how many documents hold it \
+			under the given filters. An index whose settings suggest no field \
+			answers an empty list. Each suggestion says how many characters \
+			of it were typed, so a search box can mark the part that \
+			completes the text.
+
+			Matching rules:
+
+			- **Folding**: The text and the values of a field are compared \
+			folded in case and Unicode form, by the `normalize` step of the \
+			field's `autocomplete` analyzer chain, or of the chain the engine \
+			builds for `autocomplete` when the field declares none. `rö` \
+			finds `Röd`. Words are not stemmed, so `shoes` does not find \
+			`Shoe`.
+			- **Declared labels**: The text is also compared with the label \
+			the search settings declare for a value in the locale of the \
+			request, so `rö` suggests the value `red` labelled `Röd` in \
+			Swedish. A declared value no document holds is never suggested.
+			- **Whole-value prefix**: The comparison is against the start of \
+			the whole value, not of each word: `air` does not find \
+			`Nike Air Max`.
+			- **Ordering**: The most common values first; ties by field name, \
+			then by value.
+			- **Typo tolerance**: When fewer values than `limit` start with \
+			a text of at least five characters and `typos` is `auto`, values \
+			one mistake away from the text - a character inserted, dropped, \
+			replaced, or two adjacent ones swapped - are suggested after \
+			them, marked `corrected`, with `typed` at `0`. The first \
+			character of the text is never read as a mistake.
+			- **Counts**: The counts are the ones a facet of a search under \
+			the same filters answers. A filter on a suggested field is left \
+			out of that field's own counts, so a brand already ticked keeps \
+			the other brands suggestable.
+
+			A filter panel that completes the values of one facet uses \
+			`POST /v1alpha1/indexes/{name}/facets/{field}/values` instead. \
+			See [Suggesting what to search \
+			for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).
+
+			Requires the `search` permission."""
+	)
+	@APIResponse(
+		responseCode = "200",
+		description = "The suggestions, the most common first.",
+		content = @Content(
+			schema = @Schema(implementation = SuggestResponse.class),
+			examples = @ExampleObject(
+				name = "suggestions",
+				summary = "The answer to the example request",
+				value = SuggestResponse.EXAMPLE
+			)
+		)
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The request is not one that can be answered. The `code` property \
+			names the reason, such as `search:suggest:limit_invalid` when \
+			`limit` is outside 1 to 100, `search:locale:unsupported` when the \
+			locale is one the node has no rules for, \
+			`index:query:field_not_found` when a filter names a field the \
+			index does not have, or `search:filter:scores` when a filter \
+			clause affects the score.
+
+			A request that asks for more than the node allows is refused with \
+			the same status: `search:query:too_many_clauses`, \
+			`search:query:too_deep`, `search:clause:k_too_large`, or \
+			`search:clause:depth_too_large`. See \
+			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "401",
+		description = """
+			The request carries no credential this node accepts. Absent, \
+			malformed, unknown, and lapsed keys all return this status, so a \
+			refusal cannot be used to find out which keys exist. The response \
+			carries `WWW-Authenticate: Bearer`.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "403",
+		description = "The API key does not have the `search` permission.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			The index does not exist, or the key has no permissions on it. An \
+			index on which a key has no permissions returns this status as \
+			though it did not exist.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			The index currently has no live generation \
+			(`index:no_live_generation`). Promote a generation and send the \
+			request again.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = """
+			The request raced the index being closed to free local resources \
+			(`index:closed`). Sending the same request again reopens it.
+
+			Also returned when counting collected for longer than \
+			`EXOFIND_SUGGEST_TIMEOUT` (`search:timeout`). The counts collected \
+			before the node stopped are dropped, so narrow the filters instead \
+			of repeating the request.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public SuggestResponse suggest(
+		@Parameter(
+			description = """
+				Name of the index. To suggest from one generation, add `@` \
+				and the name of the generation, such as `books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		@RequestBody(content = @Content(
+			schema = @Schema(implementation = SuggestRequest.class),
+			examples = @ExampleObject(
+				name = "suggestions",
+				summary = "What to search for among shoes, from `adi`",
+				value = SuggestRequest.EXAMPLE
+			)
+		))
+		SuggestRequest body
+	) {
+		var started = System.nanoTime();
+
+		var index = indexes.getOrThrow(name);
+		var request = SuggestRequestMapper.toEngine(body, limits);
+
+		// Settings belong to the index name, see search
+		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);
+
+		SuggestResult result;
+		boolean timedOut;
+		try(var budget = SearchDeadline.start(suggestTimeout)) {
+			result = index.suggest(request, settings);
+			timedOut = budget.exceeded();
+		} catch(IOException e) {
+			metrics.recordSuggest(name, System.nanoTime() - started, false);
+			throw new IndexException(IO_ERROR, e, "index", name);
+		} catch(RuntimeException e) {
+			metrics.recordSuggest(name, System.nanoTime() - started, false);
+			throw e;
+		}
+
+		// Counts collected over a spent budget describe part of the index, see search
+		if(timedOut) {
+			metrics.recordSuggest(name, System.nanoTime() - started, false);
+			throw new SearchTimeoutException(name, suggestTimeout);
+		}
+
+		var took = System.nanoTime() - started;
+		metrics.recordSuggest(name, took, true);
+
+		var suggestions = new ArrayList<SuggestResponse.Suggestion>(result.suggestions().size());
+		for(var suggestion : result.suggestions()) {
+			suggestions.add(new SuggestResponse.Suggestion(
+				suggestion.text(),
+				suggestion.typed(),
+				suggestion.corrected() ? Boolean.TRUE : null,
+				suggestion.field(),
+				suggestion.value(),
+				suggestion.label(),
+				suggestion.count()
+			));
+		}
+
+		return new SuggestResponse(suggestions, Math.round(took / 1_000d) / 1_000d);
 	}
 
 	/**

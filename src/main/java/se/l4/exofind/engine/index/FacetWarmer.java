@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.Meters;
 import se.l4.exofind.engine.metrics.RequestMetrics;
@@ -43,6 +44,13 @@ import jakarta.inject.Inject;
  * itself again behind it. What the warm built per segment is kept
  * either way, as those entries outlive the reader.
  *
+ * <p>A warm also builds the folded dictionary of every field the search
+ * settings of the index suggest the values of or read out of a search box,
+ * see {@link Index#warmFacets}, since a suggestion is asked for on every
+ * keystroke and the first one after a reopen would otherwise fold the
+ * dictionary of every new segment. The settings are read the way a request
+ * reads them, and a warm without them prepares the facets alone.
+ *
  * <p>A search never waits for a warm. It builds what it needs itself where
  * the warm has not reached it, and where the warm is building the ordinal map
  * of the very field the search asks for, the search waits for that build
@@ -73,6 +81,13 @@ public class FacetWarmer implements AutoCloseable {
 	private final int threads;
 
 	/**
+	 * Where the search settings of an index are read from, for the folded
+	 * dictionaries a warm builds - or {@code null} where the warm prepares
+	 * the facets alone.
+	 */
+	private final SearchSettings settings;
+
+	/**
 	 * The pool, or {@code null} where warming is off.
 	 */
 	private final ExecutorService pool;
@@ -91,6 +106,7 @@ public class FacetWarmer implements AutoCloseable {
 	@Inject
 	public FacetWarmer(
 		RequestMetrics metrics,
+		SearchSettings settings,
 		@ConfigProperty(name = "exofind.search.warm-threads", defaultValue = "2")
 		int threads
 	) {
@@ -101,6 +117,7 @@ public class FacetWarmer implements AutoCloseable {
 		}
 
 		this.metrics = metrics;
+		this.settings = settings;
 		this.threads = threads;
 		this.queued = ConcurrentHashMap.newKeySet();
 
@@ -118,11 +135,23 @@ public class FacetWarmer implements AutoCloseable {
 	}
 
 	/**
+	 * A warmer that prepares the facets alone, without the folded
+	 * dictionaries the search settings ask for, the way a test without
+	 * settings runs one.
+	 *
+	 * @param threads
+	 *   how many threads warm; zero turns warming off
+	 */
+	public FacetWarmer(RequestMetrics metrics, int threads) {
+		this(metrics, null, threads);
+	}
+
+	/**
 	 * A warmer that warms nothing, for an index opened outside a node. Every
 	 * search then builds what it needs itself.
 	 */
 	public static FacetWarmer none() {
-		return new FacetWarmer(RequestMetrics.none(), 0);
+		return new FacetWarmer(RequestMetrics.none(), null, 0);
 	}
 
 	/**
@@ -179,7 +208,10 @@ public class FacetWarmer implements AutoCloseable {
 
 		var started = System.nanoTime();
 		try {
-			var outcome = index.warmFacets();
+			var snapshot = settings == null
+				? null
+				: settings.get(IndexName.parse(index.getId()).index()).orElse(null);
+			var outcome = index.warmFacets(snapshot);
 			metrics.recordFacetWarm(
 				switch(outcome) {
 					case COMPLETED -> Meters.OUTCOME_SUCCESS;

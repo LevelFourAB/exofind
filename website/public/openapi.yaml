@@ -1168,6 +1168,14 @@ components:
             \ The field must be a `string` field with `facet` and without `hierarchy`;\
             \ otherwise the request returns `index:settings:fields:values_unsupported`.\
             \ At most 10000 values per field. See [Field settings](https://exofind.dev/reference/admin-api/#field-settings)."
+        suggest:
+          description: "Suggests the values the field holds while a search is typed,\
+            \ through `POST /v1alpha1/indexes/{name}/suggest`. The field must be a\
+            \ `string` field with `facet` and without `hierarchy`; otherwise the request\
+            \ returns `index:settings:fields:suggest_unsupported`. Carries no options.\
+            \ See [Suggesting what to search for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for)."
+          type: object
+          $ref: "#/components/schemas/Suggest"
     FieldSort:
       description: "Sorts by field value. The target field must have sorting enabled.\
         \ A field inside a `nested` [object](https://exofind.dev/reference/field-types/#object)\
@@ -4065,6 +4073,154 @@ components:
             \ matcher filters to a level and all sub-levels."
           type: object
           $ref: "#/components/schemas/Hierarchy"
+    Suggest:
+      type: object
+      description: Suggests the values of the field while a search is typed. Carries
+        no configuration options.
+    SuggestRequest:
+      description: "Asks what to search for, from the text typed so far. The suggestions\
+        \ are the values of the fields the search settings of the index opt in with\
+        \ `suggest`, that start with the text, the most common first. All properties\
+        \ are optional; an empty request answers the most common values."
+      examples:
+      - text: adi
+        filters:
+        - field: category
+          match:
+            value: Shoes
+        limit: 5
+      type: object
+      properties:
+        text:
+          type: string
+          description: "What has been typed so far. Compared with the start of each\
+            \ whole value, folded in case and Unicode form, so `rö` finds `Röd` and\
+            \ `air` does not find `Nike Air Max`, and with the labels the search settings\
+            \ declare for the values in the locale of the request. If omitted or blank,\
+            \ the most common values are answered with `typed` at `0`."
+          examples:
+          - adi
+        locale:
+          type: string
+          description: "BCP-47 locale tag used to read locale-specific fields and\
+            \ to pick the labels of declared values, as for a search. If omitted,\
+            \ uses each field's default locale."
+          examples:
+          - sv
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Clause"
+          description: "Refinement clauses, in the same shape as the `filters` of\
+            \ a search, such as the category a search box is scoped to. The counts\
+            \ are the ones a facet of a search under the same filters answers. A filter\
+            \ on a suggested field is left out of that field's own counts, so a brand\
+            \ already ticked keeps the other brands suggestable (see [Facets](https://exofind.dev/reference/search-api/#facets)).\
+            \ The clauses count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`,\
+            \ as for a search."
+        limit:
+          type: integer
+          format: int32
+          maximum: 100
+          minimum: 1
+          description: Maximum number of suggestions to return.
+          default: 5
+        typos:
+          description: "Whether a value one mistake away from the text may be suggested\
+            \ when fewer values than `limit` start with it. `auto` suggests them after\
+            \ the values the text starts, once the text is at least five characters\
+            \ long; a mistake is a character inserted, dropped, replaced, or two adjacent\
+            \ ones swapped, never in the first character. Such a suggestion carries\
+            \ `corrected: true` and `typed: 0`. `off` never suggests them."
+          type: string
+          default: auto
+          $ref: "#/components/schemas/Typos1"
+    SuggestResponse:
+      description: "The suggestions for the typed text, the most common first, with\
+        \ every suggestion the text starts before the ones found a mistake away."
+      examples:
+      - suggestions:
+        - text: adidas
+          typed: 3
+          field: brand
+          value: adidas
+          count: 87
+        - text: Adidas Originals
+          typed: 3
+          field: brand
+          value: Adidas Originals
+          count: 12
+        tookMs: 0.412
+      type: object
+      properties:
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Suggestion"
+          description: "The suggestions, the most common first and limited to the\
+            \ requested maximum."
+        tookMs:
+          type: number
+          format: double
+          description: "Execution time for the request in milliseconds, including\
+            \ fractions of one."
+          examples:
+          - 0.412
+    Suggestion:
+      type: object
+      description: "One thing to search for: a value of a suggested field, shown by\
+        \ its label where the search settings declare one, with how much of it was\
+        \ typed and how many documents hold it."
+      properties:
+        text:
+          type: string
+          description: "What to show and to search for: the label of the value in\
+            \ the locale of the request where the search settings declare one, or\
+            \ the value itself. Where the typed text starts the value but not its\
+            \ label, the value is shown, so that `typed` says something true. Sending\
+            \ it as the `text` of a search finds the value, and a `corrected` suggestion\
+            \ finds it exactly."
+          examples:
+          - adidas
+        typed:
+          type: integer
+          format: int32
+          description: "How many characters at the start of `text` the typed text\
+            \ covers, so the part typed can be marked apart from the part that completes\
+            \ it. Counted on `text` as answered, not on what was typed, so `RÖ` typed\
+            \ against `Röd` covers 2. `0` when the suggestion was found a mistake\
+            \ away, and for a blank text."
+          examples:
+          - 3
+        corrected:
+          type: boolean
+          description: '`true` when the suggestion was found one mistake away from
+            the text instead of starting with it. Omitted otherwise.'
+        field:
+          type: string
+          description: "The field the value is held by, as declared in the index definition,\
+            \ which a `field` clause filtering on the value names."
+          examples:
+          - brand
+        value:
+          description: "The value as the field stores it, which a filter on the field\
+            \ matches."
+          examples:
+          - adidas
+        label:
+          type: string
+          description: "The label the search settings of the index declare for the\
+            \ value, in the locale of the request, falling back to the field's default\
+            \ locale. Omitted when the settings declare no label for the value."
+          examples:
+          - Adidas
+        count:
+          type: integer
+          format: int64
+          description: Number of documents holding the value under the filters of
+            the request.
+          examples:
+          - 87
     Synonyms:
       type: object
       description: Synonym rules applied during indexing. Modifying a synonym set
@@ -4478,6 +4634,14 @@ components:
     Typos:
       description: "Typo tolerance handling: `auto` follows each field's `typoTolerance`\
         \ configuration, `off` disables it."
+      type: string
+      enum:
+      - auto
+      - "off"
+    Typos1:
+      description: "Typo tolerance: `auto` suggests values one mistake away from a\
+        \ text of at least five characters when fewer values than the limit start\
+        \ with it, `off` never does."
       type: string
       enum:
       - auto
@@ -7384,6 +7548,127 @@ paths:
           description: "The request raced the index being closed to free local resources\
             \ (`index:closed`), or the search behind the explanation collected for\
             \ longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+      security:
+      - apiKey: []
+  /v1alpha1/indexes/{name}/suggest:
+    post:
+      summary: Suggest what to search for
+      description: |-
+        Answers what to search for, from the text typed into a search box so far. A search box asks for this on every keystroke, and shows the answer as a list to pick from.
+
+        The suggestions are the values of the fields the search settings of the index opt in with `suggest` (see [Field settings](https://exofind.dev/reference/admin-api/#field-settings)), that start with the text, each with how many documents hold it under the given filters. An index whose settings suggest no field answers an empty list. Each suggestion says how many characters of it were typed, so a search box can mark the part that completes the text.
+
+        Matching rules:
+
+        - **Folding**: The text and the values of a field are compared folded in case and Unicode form, by the `normalize` step of the field's `autocomplete` analyzer chain, or of the chain the engine builds for `autocomplete` when the field declares none. `rö` finds `Röd`. Words are not stemmed, so `shoes` does not find `Shoe`.
+        - **Declared labels**: The text is also compared with the label the search settings declare for a value in the locale of the request, so `rö` suggests the value `red` labelled `Röd` in Swedish. A declared value no document holds is never suggested.
+        - **Whole-value prefix**: The comparison is against the start of the whole value, not of each word: `air` does not find `Nike Air Max`.
+        - **Ordering**: The most common values first; ties by field name, then by value.
+        - **Typo tolerance**: When fewer values than `limit` start with a text of at least five characters and `typos` is `auto`, values one mistake away from the text - a character inserted, dropped, replaced, or two adjacent ones swapped - are suggested after them, marked `corrected`, with `typed` at `0`. The first character of the text is never read as a mistake.
+        - **Counts**: The counts are the ones a facet of a search under the same filters answers. A filter on a suggested field is left out of that field's own counts, so a brand already ticked keeps the other brands suggestable.
+
+        A filter panel that completes the values of one facet uses `POST /v1alpha1/indexes/{name}/facets/{field}/values` instead. See [Suggesting what to search for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).
+
+        Requires the `search` permission.
+      operationId: suggest
+      tags:
+      - Search
+      parameters:
+      - description: "Name of the index. To suggest from one generation, add `@` and\
+          \ the name of the generation, such as `books@2`."
+        example: books
+        name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            examples:
+              suggestions:
+                summary: "What to search for among shoes, from `adi`"
+                value:
+                  text: adi
+                  filters:
+                  - field: category
+                    match:
+                      value: Shoes
+                  limit: 5
+            schema:
+              $ref: "#/components/schemas/SuggestRequest"
+        required: true
+      responses:
+        "200":
+          description: "The suggestions, the most common first."
+          content:
+            application/json:
+              examples:
+                suggestions:
+                  summary: The answer to the example request
+                  value:
+                    suggestions:
+                    - text: adidas
+                      typed: 3
+                      field: brand
+                      value: adidas
+                      count: 87
+                    - text: Adidas Originals
+                      typed: 3
+                      field: brand
+                      value: Adidas Originals
+                      count: 12
+                    tookMs: 0.412
+              schema:
+                $ref: "#/components/schemas/SuggestResponse"
+        "400":
+          description: |-
+            The request is not one that can be answered. The `code` property names the reason, such as `search:suggest:limit_invalid` when `limit` is outside 1 to 100, `search:locale:unsupported` when the locale is one the node has no rules for, `index:query:field_not_found` when a filter names a field the index does not have, or `search:filter:scores` when a filter clause affects the score.
+
+            A request that asks for more than the node allows is refused with the same status: `search:query:too_many_clauses`, `search:query:too_deep`, `search:clause:k_too_large`, or `search:clause:depth_too_large`. See [Search configuration](https://exofind.dev/reference/configuration/#search).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown, and lapsed keys all return this status, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The API key does not have the `search` permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "The index does not exist, or the key has no permissions on\
+            \ it. An index on which a key has no permissions returns this status as\
+            \ though it did not exist."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The index currently has no live generation (`index:no_live_generation`).
+            Promote a generation and send the request again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: |-
+            The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
+
+            Also returned when counting collected for longer than `EXOFIND_SUGGEST_TIMEOUT` (`search:timeout`). The counts collected before the node stopped are dropped, so narrow the filters instead of repeating the request.
           content:
             application/json:
               schema:

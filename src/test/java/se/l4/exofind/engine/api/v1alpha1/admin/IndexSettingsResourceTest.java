@@ -1356,7 +1356,7 @@ public class IndexSettingsResourceTest {
 			settings.put(
 				field,
 				new SearchSettingsDefinition.FieldSettings(
-					new SearchSettingsDefinition.Interpret(), null
+					new SearchSettingsDefinition.Interpret(), null, null
 				)
 			);
 		}
@@ -1373,7 +1373,7 @@ public class IndexSettingsResourceTest {
 	) {
 		return new SearchSettingsDefinition(null, null, null, Map.of(
 			field,
-			new SearchSettingsDefinition.FieldSettings(null, List.of(values))
+			new SearchSettingsDefinition.FieldSettings(null, List.of(values), null)
 		));
 	}
 
@@ -1498,6 +1498,63 @@ public class IndexSettingsResourceTest {
 			e.getErrors().get(0).getCode(),
 			is("index:settings:fields:interpret_unsupported")
 		);
+	}
+
+	/**
+	 * A field without a facet holds no dictionary of values, so settings
+	 * suggesting its values read as settings that do not work.
+	 */
+	@Test
+	public void testSuggestingAFieldWithoutAFacetIsRefused() {
+		boutique();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("boutique", null, suggesting("name"))
+		);
+
+		assertThat(
+			e.getErrors().get(0).getCode(),
+			is("index:settings:fields:suggest_unsupported")
+		);
+	}
+
+	@Test
+	public void testPatchTurnsOnSuggestingAField() {
+		boutique();
+
+		var info = patch("boutique", null, "fields.colour.suggest", Map.of());
+
+		assertThat(info.fields().get("colour").suggest(), is(notNullValue()));
+		assertThat(info.fields().get("colour").interpret(), is(nullValue()));
+
+		var response = search.suggest(
+			"boutique",
+			new se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest(
+				"re", null, null, null, null
+			)
+		);
+
+		assertThat(response.suggestions().size(), is(1));
+		assertThat(response.suggestions().get(0).text(), is("Red"));
+		assertThat(response.suggestions().get(0).typed(), is(2));
+	}
+
+	/**
+	 * Settings suggesting the values of the given fields.
+	 */
+	private static SearchSettingsDefinition suggesting(String... fields) {
+		var settings = new LinkedHashMap<String, SearchSettingsDefinition.FieldSettings>();
+		for(var field : fields) {
+			settings.put(
+				field,
+				new SearchSettingsDefinition.FieldSettings(
+					null, null, new SearchSettingsDefinition.Suggest()
+				)
+			);
+		}
+
+		return new SearchSettingsDefinition(null, null, null, settings);
 	}
 
 	@Test

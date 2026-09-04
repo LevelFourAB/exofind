@@ -90,7 +90,9 @@ import se.l4.exofind.engine.query.SearchResult;
  * prefix with each value folded, and what a value folds to is read off a
  * sorted dictionary of the segment's values kept per segment core the same
  * way - see {@link #foldedTermsOf}. It is built the first time a prefix is
- * asked of a field under a reader that holds the segment, not by warming.
+ * asked of a field under a reader that holds the segment, or by the warm
+ * for a field the search settings suggest the values of or read out of a
+ * search box - see {@link Index#warmFacets}.
  *
  * {@link #heldBytes()} estimates what all of it takes on the heap, for the
  * gauge a node reports. A deployment holding hundreds of indexes reads that
@@ -818,7 +820,8 @@ final class FacetStates {
 			facet.path(),
 			facet.depth(),
 			Lists.immutable.empty(),
-			facet.prefix()
+			facet.prefix(),
+			facet.prefixEdits()
 		);
 	}
 

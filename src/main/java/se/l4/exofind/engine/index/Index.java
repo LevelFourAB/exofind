@@ -142,6 +142,8 @@ import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortKey;
+import se.l4.exofind.engine.query.SuggestRequest;
+import se.l4.exofind.engine.query.SuggestResult;
 
 /**
  * Index represents a single index that can be searched or updated.
@@ -3836,7 +3838,130 @@ public class Index {
 	) {
 		return ValueDictionaries.validate(fields, schema, location)
 			.toList()
-			.withAll(DeclaredValues.validate(fields, schema, location));
+			.withAll(DeclaredValues.validate(fields, schema, location))
+			.withAll(SuggestFields.validate(fields, schema, location));
+	}
+
+	/**
+	 * The suggested fields last compiled, and what they were compiled from.
+	 */
+	private record CompiledSuggestFields(
+		String settingsVersion,
+		String definitionVersion,
+		SuggestFields fields
+	) {
+	}
+
+	private volatile CompiledSuggestFields compiledSuggestFields;
+
+	/**
+	 * Compile the field settings of the search settings against this
+	 * generation, into the fields whose values are suggested while a search
+	 * is typed.
+	 */
+	private SuggestFields compileSuggestFields(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.fields().isEmpty()) {
+			return SuggestFields.none();
+		}
+
+		var compiled = compiledSuggestFields;
+		if(compiled != null
+			&& compiled.settingsVersion().equals(settings.version())
+			&& compiled.definitionVersion().equals(definitionVersion)) {
+			return compiled.fields();
+		}
+
+		var fields = SuggestFields.compile(settings.fields(), schema);
+		compiledSuggestFields = new CompiledSuggestFields(
+			settings.version(),
+			definitionVersion,
+			fields
+		);
+
+		if(fields.skippedFields().notEmpty()) {
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.addKeyValue("fields", fields.skippedFields().makeString(", "))
+				.log(
+					"The search settings suggest the values of fields this generation"
+						+ " cannot answer for; suggesting nothing from them"
+				);
+		}
+
+		return fields;
+	}
+
+	/**
+	 * Suggest what to search for from the text typed so far, out of the
+	 * values of the fields the search settings opt in - see
+	 * {@link SuggestFields}.
+	 *
+	 * <p>Runs the search that finds the values, see {@link Suggestions}, under
+	 * the {@link SearchDeadline} of the calling thread the way
+	 * {@link #search} does. An index whose settings suggest no field answers
+	 * nothing rather than failing, since the settings can change without the
+	 * caller knowing.
+	 *
+	 * @param request
+	 * @param settings
+	 *   the search settings of the index, or {@code null} to suggest nothing
+	 * @return
+	 *   what was found, never {@code null}
+	 * @throws IOException
+	 * @throws IndexClosedException
+	 *   if the index was closed
+	 * @throws IndexException
+	 *   if the locale of the request is one this build has no rules for
+	 */
+	public SuggestResult suggest(SuggestRequest request, SearchSettings.Snapshot settings)
+		throws IOException
+	{
+		var fields = compileSuggestFields(settings);
+		if(fields.isEmpty()) {
+			return SuggestResult.empty();
+		}
+
+		var exact = Suggestions.candidatesOf(
+			search(Suggestions.searchFor(request, fields, 0), settings),
+			fields,
+			false
+		);
+
+		ListIterable<Suggestions.Candidate> near = null;
+		if(exact.size() < request.limit()
+			&& request.typos()
+			&& Suggestions.longEnoughForTypos(request.text())) {
+			near = Suggestions.candidatesOf(
+				search(Suggestions.searchFor(request, fields, 1), settings),
+				fields,
+				true
+			);
+		}
+
+		var picked = Suggestions.pick(exact, near, request.limit());
+		if(picked.isEmpty()) {
+			return SuggestResult.empty();
+		}
+
+		/*
+		 * The mark of what was typed is read by folding the way the facet
+		 * folded, in the locale of the request, so it can not disagree with
+		 * what the facet matched.
+		 */
+		var compiler = new QueryCompiler(schema, request.locale(), nestedParents);
+		var suggestions = Suggestions.collector(picked.size());
+		for(var candidate : picked) {
+			var counter = compiler.facetCounter(candidate.field());
+			var strings = counter instanceof FacetCounter.Strings s ? s : null;
+			suggestions.add(Suggestions.toSuggestion(
+				candidate,
+				strings == null ? null : strings.normalizer(),
+				strings == null ? null : strings.field(),
+				request.text()
+			));
+		}
+
+		return new SuggestResult(suggestions.toImmutable());
 	}
 
 	/**
@@ -5981,7 +6106,14 @@ public class Index {
 			}
 
 			return compiler.facetCounter(facet.field())
-				.prepare(scope, facet.limit(), facet.order(), facet.prefix(), declared);
+				.prepare(
+					scope,
+					facet.limit(),
+					facet.order(),
+					facet.prefix(),
+					facet.prefixEdits(),
+					declared
+				);
 		}
 
 		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
@@ -6375,6 +6507,14 @@ public class Index {
 	 * one. A warm runs under no {@link SearchDeadline}, so everything it
 	 * counts is kept.
 	 *
+	 * <p>The fields whose values the search settings suggest or read out of
+	 * a search box, see {@link SuggestFields} and {@link ValueDictionaries},
+	 * also have their folded dictionaries built for every new segment, so the
+	 * first keystroke after a reopen does not fold them.
+	 *
+	 * @param settings
+	 *   the search settings of the index, or {@code null} to prepare the
+	 *   facets alone
 	 * @return
 	 *   how the warm ended; {@link FacetWarmer.Outcome#SUPERSEDED} where
 	 *   the index holds no searcher yet, is closed, or replaced its reader
@@ -6382,7 +6522,7 @@ public class Index {
 	 * @throws IOException
 	 *   if preparing a field failed
 	 */
-	FacetWarmer.Outcome warmFacets() throws IOException {
+	FacetWarmer.Outcome warmFacets(SearchSettings.Snapshot settings) throws IOException {
 		IndexSearcherManager.Handle handle;
 
 		syncLock.readLock().lock();
@@ -6425,6 +6565,29 @@ public class Index {
 
 				var count = prepareFacet(compiler, Facet.of(target.field()), matches, null);
 				FacetWalk.walk(matches, Lists.immutable.of(count));
+			}
+
+			var folded = foldedFieldsOf(settings);
+			for(var target : targets) {
+				if(!folded.contains(target.field())) {
+					continue;
+				}
+
+				if(!searcherManager.isLatest(searcher)) {
+					return FacetWarmer.Outcome.SUPERSEDED;
+				}
+
+				var compiler = new QueryCompiler(schema, target.locale(), nestedParents);
+				if(!(compiler.facetCounter(target.field()) instanceof FacetCounter.Strings strings)) {
+					continue;
+				}
+
+				for(var leaf : reader.leaves()) {
+					var values = leaf.reader().getSortedSetDocValues(strings.field());
+					if(values != null) {
+						FacetStates.foldedTermsOf(leaf, strings.field(), strings.normalizer(), values);
+					}
+				}
 			}
 
 			return FacetWarmer.Outcome.COMPLETED;
@@ -6480,6 +6643,25 @@ public class Index {
 	 *   same in every language
 	 */
 	private record FacetedField(String field, String locale) {
+	}
+
+	/**
+	 * The fields whose folded dictionaries a warm builds: the ones the search
+	 * settings suggest the values of, and the ones they read out of a search
+	 * box. Empty without settings.
+	 */
+	private SetIterable<String> foldedFieldsOf(SearchSettings.Snapshot settings) {
+		if(settings == null || settings.fields().isEmpty()) {
+			return Sets.immutable.empty();
+		}
+
+		var fields = Sets.mutable.<String>empty();
+		fields.addAllIterable(compileSuggestFields(settings).fields());
+		for(var entry : compileValueDictionaries(settings).fields()) {
+			fields.add(entry.name());
+		}
+
+		return fields;
 	}
 
 	/**

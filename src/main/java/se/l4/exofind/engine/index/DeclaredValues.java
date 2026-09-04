@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
@@ -548,6 +549,24 @@ public final class DeclaredValues {
 		public void forEachStartingWith(BytesRef prefix, Consumer<String> consumer) {
 			for(var entry : entries) {
 				if(startsWith(entry.folded(), prefix)) {
+					consumer.accept(entry.value());
+				}
+			}
+		}
+
+		/**
+		 * Hand the value of every label whose folded form the given automaton
+		 * accepts to the consumer.
+		 *
+		 * @param automaton
+		 *   what accepts a folded label, stepped over its UTF-8 bytes
+		 * @param consumer
+		 *   given each value once per label it has
+		 */
+		public void forEachAccepted(ByteRunAutomaton automaton, Consumer<String> consumer) {
+			for(var entry : entries) {
+				var folded = entry.folded();
+				if(automaton.run(folded.bytes, folded.offset, folded.length)) {
 					consumer.accept(entry.value());
 				}
 			}

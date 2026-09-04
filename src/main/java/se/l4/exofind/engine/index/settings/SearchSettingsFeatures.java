@@ -68,12 +68,23 @@ public final class SearchSettingsFeatures {
 	 */
 	public static final String DECLARED_VALUES = "declared_values";
 
+	/**
+	 * The object names fields whose values are suggested while a search is
+	 * typed.
+	 *
+	 * <p>A node without this name would answer no suggestions for an index
+	 * whose peers suggest the values of the named fields, so a search box
+	 * would show suggestions from some nodes and none from others.
+	 */
+	public static final String SUGGEST_VALUES = "suggest_values";
+
 	private static final ImmutableSet<String> SUPPORTED = Sets.immutable.of(
 		RANKING,
 		QUERY_SYNONYMS,
 		TYPO_EXCLUSIONS,
 		INTERPRET_VALUES,
-		DECLARED_VALUES
+		DECLARED_VALUES,
+		SUGGEST_VALUES
 	);
 
 	private SearchSettingsFeatures() {
@@ -109,6 +120,10 @@ public final class SearchSettingsFeatures {
 
 			if(field.getValuesCount() > 0) {
 				features.add(DECLARED_VALUES);
+			}
+
+			if(field.hasSuggest()) {
+				features.add(SUGGEST_VALUES);
 			}
 		}
 

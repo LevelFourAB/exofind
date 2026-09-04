@@ -37,14 +37,19 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
+import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest;
+import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestResponse;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
+import se.l4.exofind.engine.index.settings.FieldSettings;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
+import se.l4.exofind.engine.index.settings.SearchSettingsStore;
+import se.l4.exofind.engine.index.settings.SuggestConfig;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FacetConfig;
@@ -1763,6 +1768,134 @@ public class SearchResourceTest {
 
 		assertThat(response.totalValues(), is(1));
 		assertThat(response.values(), contains(new SearchResponse.FacetValue("fiction", 1)));
+	}
+
+	@Test
+	public void testSuggestAnswersTheValuesOfTheOptedInFields() throws IOException {
+		books();
+		suggesting("books", "category");
+
+		var response = resource.suggest(
+			"books",
+			new SuggestRequest("F", null, null, null, null)
+		);
+
+		assertThat(
+			response.suggestions(),
+			contains(new SuggestResponse.Suggestion("fiction", 1, null, "category", "fiction", null, 1))
+		);
+		assertThat(response.tookMs(), greaterThan(0d));
+	}
+
+	@Test
+	public void testSuggestCountsUnderTheFilters() throws IOException {
+		books();
+		suggesting("books", "category");
+
+		var response = resource.suggest(
+			"books",
+			new SuggestRequest(
+				null,
+				null,
+				List.of(new Clause.Field("published", new Matcher.Equals(true))),
+				null,
+				null
+			)
+		);
+
+		assertThat(
+			response.suggestions().stream().map(SuggestResponse.Suggestion::text).toList(),
+			contains("non-fiction", "poetry")
+		);
+	}
+
+	@Test
+	public void testSuggestMarksAValueFoundAMistakeAway() throws IOException {
+		books();
+		suggesting("books", "category");
+
+		var response = resource.suggest(
+			"books",
+			new SuggestRequest("poetyr", null, null, null, null)
+		);
+
+		assertThat(
+			response.suggestions(),
+			contains(new SuggestResponse.Suggestion("poetry", 0, true, "category", "poetry", null, 1))
+		);
+
+		var off = resource.suggest(
+			"books",
+			new SuggestRequest("poetyr", null, null, null, SuggestRequest.Typos.OFF)
+		);
+
+		assertThat(off.suggestions(), is(empty()));
+	}
+
+	@Test
+	public void testSuggestWithoutOptedInFieldsAnswersNothing() throws IOException {
+		books();
+
+		var response = resource.suggest("books", new SuggestRequest("f", null, null, null, null));
+
+		assertThat(response.suggestions(), is(empty()));
+	}
+
+	@Test
+	public void testSuggestLimitOutsideTheRangeIsRefused() throws IOException {
+		books();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.suggest("books", new SuggestRequest("f", null, null, 0, null))
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("search:suggest:limit_invalid"));
+	}
+
+	@Test
+	public void testSuggestPastItsTimeBudgetIsRefused() throws IOException {
+		books();
+		suggesting("books", "category");
+
+		// A budget of a nanosecond has run out before the first value is counted
+		var impatient = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults(),
+			Duration.ZERO,
+			Duration.ofNanos(1)
+		);
+
+		assertThrows(
+			SearchTimeoutException.class,
+			() -> impatient.suggest(
+				"books",
+				new SuggestRequest(
+					"f",
+					null,
+					List.of(new Clause.Field("published", new Matcher.Equals(true))),
+					null,
+					null
+				)
+			)
+		);
+	}
+
+	/**
+	 * Store settings suggesting the values of the given fields of an index.
+	 */
+	private void suggesting(String index, String... fields) {
+		var stored = SearchSettingsStore.newBuilder();
+		for(var field : fields) {
+			stored.putFields(
+				field,
+				FieldSettings.newBuilder().setSuggest(SuggestConfig.getDefaultInstance()).build()
+			);
+		}
+
+		searchSettings.put(index, stored.build(), null);
 	}
 
 	@Test

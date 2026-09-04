@@ -72,6 +72,10 @@ The documentation includes the following how-to guides.
 - [Reading colours and brands in the search box](how-to/read-field-values-in-the-search-box.md):
   Opt a facet field into the search settings so that `red nike shoes` filters
   by colour and brand, without a reindex.
+- [Suggesting what to search for while it is typed](how-to/suggest-while-typing.md):
+  Opt the brand and category fields into suggestions so that a search box
+  completes `adi` to `adidas` on every keystroke, forgives a typo, and marks
+  the part that was typed.
 - [Searching by vector](how-to/search-by-vector.md): Index the vectors that a model
   produces, find the nearest of them, and combine that with a text search.
 - [Paginating search results](how-to/paginate-search-results.md): Use offsets,

@@ -797,6 +797,67 @@ Matching rules:
 - **Counts**: The counts are the ones a facet of the same search answers. The query and the filters on other fields narrow them, and the filter entries on the facet's own field are left out. A search that relaxes its query counts under the relaxed query.
 - **Limits**: The `query` and `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, and counting stops at `EXOFIND_SEARCH_TIMEOUT`, as for a search.
 
+### Suggesting what to search for
+
+```
+POST /v1alpha1/indexes/{name}/suggest
+```
+
+The endpoint also has a generated page stating every field it accepts and returns. See [Suggest what to search for](https://exofind.dev/api/operations/suggest/).
+
+Suggestions come only from the fields the search settings opt in with `suggest` (see [Field settings](admin-api.md#field-settings)). An index whose settings suggest no field answers an empty list.
+
+```json
+{
+  "text": "adi",
+  "filters": [ { "field": "category", "match": { "value": "Shoes" } } ],
+  "limit": 5
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `text` | String | None | What has been typed so far. If omitted or blank, returns the most common values. |
+| `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields and to pick the labels of declared values, matching search request behavior. |
+| `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. A filter on a suggested field is left out of that field's own counts. |
+| `limit` | Integer | `5` | Maximum number of suggestions to return (1 to 100). Other values return `search:suggest:limit_invalid`. |
+| `typos` | String | `"auto"` | Whether values one mistake away from the text may be suggested: `"auto"` or `"off"`. |
+
+The response returns the suggestions:
+
+```json
+{
+  "suggestions": [
+    { "text": "adidas", "typed": 3, "field": "brand", "value": "adidas", "count": 87 },
+    { "text": "Adidas Originals", "typed": 3, "field": "brand", "value": "Adidas Originals", "count": 12 }
+  ],
+  "tookMs": 0.412
+}
+```
+
+- `text`: What to show and to search for. The label of the value in the request locale where the search settings declare one, otherwise the value itself. Where the typed text starts the value but not the label, the value is shown.
+- `typed`: How many characters at the start of `text` the typed text covers, so the part typed can be marked apart from the part that completes it. Returns `0` when the suggestion was found a mistake away, and `0` for a blank text.
+- `corrected`: `true` when the suggestion was found one mistake away from the text. Omitted otherwise.
+- `field`: The field holding the value, as the index definition names it (dotted path for a field inside an object).
+- `value`: The value as the field stores it, which a filter on the field matches.
+- `label`: The label the search settings declare for the value in the request locale (falling back to the field's default locale). Omitted when none is declared.
+- `count`: Number of documents holding the value under the filters.
+- `tookMs`: Execution time in milliseconds, including fractions of one.
+
+Matching rules:
+
+- **Folding**: The text and the values of a field are compared folded in case and Unicode form by the `normalize` filter of the field's `autocomplete` analyzer chain, or of the chain the engine builds for `autocomplete` when the field declares none. `rö` finds `Röd`. Accents are folded only when the chain holds an `asciiFolding` filter. Words are not stemmed (`shoes` does not find `Shoe`).
+- **Declared labels**: The text is also compared with the label of each declared value in the request locale, so `rö` suggests the value `red` labelled `Röd` in Swedish. A declared value no document holds is never suggested.
+- **Whole-value prefix**: The comparison is against the start of the whole value, not of each word: `air` does not find `Nike Air Max`. Infix matching is not supported.
+- **Ordering**: Suggestions are ordered by count descending; ties are broken by field name then by value, so the order is stable.
+- **Typo tolerance**: When fewer values than `limit` start with the text, `typos` is `auto`, and the text is at least 5 characters long, values within one edit (insertion, deletion, substitution, or transposition of adjacent characters) of the text are suggested after the ones the text starts. The first character of the text is never read as a mistake. Corrected suggestions come after exact suggestions and carry `corrected: true` and `typed: 0`.
+- **Counts and sideways filters**: Counts are calculated under the request `filters`. A filter on a suggested field is left out of that field's own counts, so a filter already selected keeps other values of the field suggestable.
+- **Limits**: The `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`. A suggest request that runs longer than `EXOFIND_SUGGEST_TIMEOUT` (default `2s`) returns HTTP 503 `search:timeout` and drops collected counts.
+
+A filter panel that completes the values of one facet uses the facet values endpoint (`POST /v1alpha1/indexes/{name}/facets/{field}/values`) instead. The suggest endpoint spans every opted-in field and marks the typed part of each suggestion.
+
+The duration of suggest requests is measured by the `exofind.suggest` timer. See [Metrics](metrics.md).
+
 ## Highlighting
 
 Highlighting returns matched text fragments for specified fields:

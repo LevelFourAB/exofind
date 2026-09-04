@@ -36,6 +36,10 @@ public interface FacetCounter {
 	 * @param prefix
 	 *   what the answered values have to start with, or {@code null} to
 	 *   answer every value - see {@link Facet#prefix()}
+	 * @param prefixEdits
+	 *   how many mistakes a value may be away from the prefix and still be
+	 *   answered - see {@link Facet#prefixEdits()}. A counter that cannot
+	 *   compare values that way answers as with zero
 	 * @param declared
 	 *   the order and labels the search settings declare for the values of
 	 *   the field, in the locale of the search, or {@code null} where they
@@ -48,6 +52,7 @@ public interface FacetCounter {
 		int limit,
 		Facet.Order order,
 		String prefix,
+		int prefixEdits,
 		DeclaredValues.Localized declared
 	);
 
@@ -98,10 +103,11 @@ public interface FacetCounter {
 			int limit,
 			Facet.Order order,
 			String prefix,
+			int prefixEdits,
 			DeclaredValues.Localized declared
 		) {
 			return new StringFacetCount(
-				field, scope, limit, order, decode, normalizer, prefix, declared
+				field, scope, limit, order, decode, normalizer, prefix, prefixEdits, declared
 			);
 		}
 	}
@@ -117,8 +123,8 @@ public interface FacetCounter {
 	 * @return
 	 */
 	static FacetCounter overLongs(String field, LongFunction<Object> decode) {
-		// Numbers hold no declared values, so the declaration takes no part
-		return (scope, limit, order, prefix, declared) ->
+		// Numbers hold no declared values and no near spellings, so neither takes part
+		return (scope, limit, order, prefix, prefixEdits, declared) ->
 			new LongFacetCount(field, scope, limit, order, decode, prefix);
 	}
 }

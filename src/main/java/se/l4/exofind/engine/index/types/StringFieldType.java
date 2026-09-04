@@ -2135,6 +2135,41 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
+	 * Get the automaton accepting every term within the given number of
+	 * mistakes of a word, for walking a dictionary outside a text search - a
+	 * facet picking values near a typed prefix, see
+	 * {@code StringFacetCount}. Shares the compiled automata of the text
+	 * searches, so a word a search has forgiven before is answered without
+	 * compiling.
+	 *
+	 * @param text
+	 *   the word, already folded the way the dictionary it will walk is
+	 * @param edits
+	 *   how many mistakes to forgive, at most {@link #MAX_EDITS}
+	 * @param prefixLength
+	 *   how many leading code points are matched as they stand
+	 * @param prefix
+	 *   whether the word may still be half typed, so a term is accepted as
+	 *   soon as some prefix of it is within the mistakes
+	 * @return
+	 *   the automaton, safe to share between threads
+	 */
+	public static CompiledAutomaton typoAutomaton(
+		String text,
+		int edits,
+		int prefixLength,
+		boolean prefix
+	) {
+		if(edits < 0 || edits > MAX_EDITS) {
+			throw new IllegalArgumentException(
+				"A word forgives between 0 and " + MAX_EDITS + " mistakes"
+			);
+		}
+
+		return editAutomaton(new AutomatonKey(text, edits, prefixLength, prefix));
+	}
+
+	/**
 	 * Get the table a field's terms are walked against for one reading of a
 	 * word, from {@link #FUZZY_AUTOMATA} where the same reading has been asked
 	 * for before - whatever field or band asked for it - because compiling one

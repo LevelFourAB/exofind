@@ -671,6 +671,12 @@ public class IndexSettingsResource {
 			}
 		}
 
+		if(settings.suggest() != null) {
+			builder.setSuggest(
+				se.l4.exofind.engine.index.settings.SuggestConfig.getDefaultInstance()
+			);
+		}
+
 		return builder.build();
 	}
 
@@ -689,7 +695,8 @@ public class IndexSettingsResource {
 
 		return new SearchSettingsDefinition.FieldSettings(
 			settings.hasInterpret() ? new SearchSettingsDefinition.Interpret() : null,
-			values
+			values,
+			settings.hasSuggest() ? new SearchSettingsDefinition.Suggest() : null
 		);
 	}
 
