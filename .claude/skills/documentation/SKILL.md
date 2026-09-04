@@ -53,6 +53,11 @@ Do not write these:
   keeps ...". Make it a second sentence or cut it.
 - **The cleft**: "The registry is what decides" for "The registry decides".
 - **Contrast nobody asked for**: "X rather than Y", where no reader expected Y.
+- **Compressed domain shorthand**: a domain verb standing in for a whole event
+  ("as soon as it claims them"), or a verb turned into a noun to save words
+  ("an idle claim", "opens ahead"). Name who does what to what: "when a node is
+  given an index to write". Write the event out in full before you use a short
+  form for it.
 
 ## Prose under `docs/`
 
@@ -244,6 +249,8 @@ Run this over anything you wrote or are reviewing:
 6. Does the longest sentence hold more than two clauses? Split it.
 7. Would you say each sentence out loud to a colleague? Rewrite the ones you
    would not.
+8. Read each sentence as if to someone who knows the product but has not read
+   this code. If they cannot say who does what to what, unpack it.
 
 Then grep what you changed:
 
@@ -253,3 +260,6 @@ grep -nEi ', which (is|was|are) what|\bis what\b|\brather than\b|\b(e\.g\.|i\.e\
 
 A hit is a candidate, not a verdict. Quoted bad examples and "just" in the
 temporal sense ("a document you just indexed") are fine.
+
+The grep does not catch compressed domain shorthand. Those phrases are short
+and grammatical, so step 8 is the only check that finds them.
