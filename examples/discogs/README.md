@@ -4,7 +4,8 @@
 them, so a filter can ask that one pressing answer everything at once.
 
 ```shell
-./load.sh                  # define the index, index the documents, commit
+./load.sh                  # define the index and its search settings, index
+                           # the documents, commit
 mise run site              # serve the page against a node on localhost:8080
 ```
 
@@ -41,6 +42,36 @@ them counts records: a record pressed on vinyl four times counts once under
 Vinyl. Ordering a record by `variants.price` takes its lowest matching price
 going up and its highest coming down, so `cheapest` means the cheapest
 pressing that answered.
+
+**A price typed into the search box.** `variants.price` declares the unit
+`EUR` and `pressings` declares the custom unit `pressings`, and both text
+clauses are sent with `"match": "user"`. Typing `blue note under €25` reads
+`under €25` as a filter. A price belongs to the pressing, so only the clause
+inside `variants` can hold that filter, and the pressing that matched has to be
+the cheap one. A count of pressings belongs to the record, so `over 20
+pressings` is read by the clause at the top instead. The node answers with what
+it read under `interpreted`, and the page prints it over the results; clicking a
+chip takes the words back out of the box. See [Reading numbers in the search
+box](../../docs/how-to/read-numbers-in-the-search-box.md).
+
+**A value typed into the search box.** The search settings in `settings.json`
+name six fields a search reads the values of: the genre, the style, the format,
+what a pressing is pressed as, where it was pressed and its label. The words
+left after the numbers are looked up among the values those fields hold.
+`motown reissue vinyl` is a label, a spec and a format rather than
+three words to find in the text, and it asks what the same three ticked boxes
+ask. The values sit on the pressing, so the clause inside `variants` asks that
+one pressing be all of them, exactly as the **Match** control does for the
+boxes. A word that is a value of several fields is read as every one of them,
+and this catalogue holds a label named Vinyl, so the chip says `format Vinyl or
+label Vinyl` and a record answering either is a hit. One chip stands for one
+span of words, because taking a reading off is taking its words out of the box.
+A reading never commits either:
+the words are searched as text as well, so a record with `Vinyl` in its title
+is still found. Settings belong to the index name rather than to a generation,
+so opting a field in needs no reindex. See
+[Reading colours and brands in the search
+box](../../docs/how-to/read-field-values-in-the-search-box.md).
 
 **A facet against a filter it cannot separate from.** A filter exclusion drops
 a whole filter entry, and the conditions on a pressing are one entry. A facet

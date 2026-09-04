@@ -1,0 +1,10 @@
+{
+  "fields": {
+    "genre": { "interpret": {} },
+    "style": { "interpret": {} },
+    "variants.format": { "interpret": {} },
+    "variants.spec": { "interpret": {} },
+    "variants.country": { "interpret": {} },
+    "variants.label": { "interpret": {} }
+  }
+}

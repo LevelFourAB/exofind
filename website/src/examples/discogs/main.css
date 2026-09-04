@@ -1,7 +1,50 @@
 /*
- * What this example alone needs: the shelf of records, the list of pressings
- * under each one, and the controls above them.
+ * What this example alone needs: what the search box was read as, the shelf of
+ * records, the list of pressings under each one, and the controls above them.
  */
+
+/*
+ * What the node read out of the typed text, under the field it was typed in.
+ *
+ * A chip is a filter and reads as one - the signal colour the ticked filters
+ * carry - while the cross says that the words behind it come back.
+ */
+.read {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.4rem 0.6rem;
+	margin-top: -0.4rem;
+}
+
+.read[hidden] { display: none; }
+
+.read__lead {
+	font-family: var(--data);
+	font-size: 0.72rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ink-2);
+}
+
+.read__chip {
+	font-family: var(--data);
+	font-size: 0.78rem;
+	color: var(--signal);
+	background: none;
+	border: 1px solid var(--signal);
+	border-radius: 0;
+	padding: 0.15rem 0.5rem;
+	cursor: pointer;
+	transition: opacity 120ms ease;
+}
+
+.read__chip::after {
+	content: ' ×';
+	color: var(--ink-2);
+}
+
+.read__chip:hover { opacity: 0.7; }
 
 .shelf {
 	margin: 0;

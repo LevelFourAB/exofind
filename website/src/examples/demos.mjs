@@ -70,7 +70,8 @@ export const DEMOS = [
 			'conditions that hold within one value',
 			'matched values',
 			'a value as a hit of its own',
-			'facets and ordering inside a value'
+			'facets and ordering inside a value',
+			'prices and values read out of the search box'
 		]
 	}
 ];

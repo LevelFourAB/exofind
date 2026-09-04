@@ -50,7 +50,8 @@
     "pressings": {
       "type": "int32",
       "filter": {},
-      "sort": {}
+      "sort": {},
+      "unit": "pressings"
     },
     "url": { "type": "string" },
     "variants": {
@@ -112,7 +113,8 @@
           "type": "double",
           "filter": {},
           "facet": {},
-          "sort": {}
+          "sort": {},
+          "unit": "EUR"
         },
         "inStock": {
           "type": "boolean",

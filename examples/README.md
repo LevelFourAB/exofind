@@ -1,13 +1,13 @@
 # Examples
 
-This directory contains datasets that the demo search pages use. Each directory holds everything needed to put one dataset into a node: the index definition, the documents, a script that loads them, and source attribution.
+This directory contains datasets that the demo search pages use. Each directory holds everything needed to put one dataset into a node: the index definition, the search settings where it has them, the documents, a script that loads them, and source attribution.
 
 | Example | Shows |
 |---------|-------|
 | [livsmedel](livsmedel/) | Compound splitting in Swedish, facets counted sideways of filters, range buckets, highlighting |
 | [airports](airports/) | Autocomplete, typo tolerance, prefix matchers, per-field weights, distance filters and sorts |
 | [cleveland](cleveland/) | Facets counted sideways of filters on a wall of thumbnails, range buckets on a year, ordering, numbered pages against cursors, highlighting |
-| [discogs](discogs/) | Sub-documents: conditions that hold within one value, matched values, a value as a hit of its own, facets and ordering inside a value |
+| [discogs](discogs/) | Sub-documents: conditions that hold within one value, matched values, a value as a hit of its own, facets and ordering inside a value, prices and values read out of the search box |
 
 The pages that search these datasets are part of the website, located under [`website/src/examples/`](../website/src/examples/). A dataset directory and its demo page share the same name. They are kept separate because a page is built and published with the documentation, while a dataset is loaded into a node and stored in object storage.
 

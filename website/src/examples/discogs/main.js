@@ -16,6 +16,14 @@
  * rather than the first three there are. And `hits` moves what a row stands
  * for from the record to the pressing, which is the same catalogue counted and
  * ordered a second way.
+ *
+ * The search box reads prices and the values of the catalogue as well as
+ * words. Both text clauses are sent in `user` mode, so a typed `under €25`
+ * becomes a filter on the pressing that matched, `over 20 pressings` becomes a
+ * filter on the record, and `vinyl` becomes a filter on the format of the
+ * pressing because the search settings of the index opt that field in. The
+ * node answers with what it read, and the page prints it over the results as
+ * something the reader can take back off.
  */
 import { createClient, resolveConfig, explain } from '../shared/client.js';
 import {
@@ -127,6 +135,7 @@ const el = id => document.getElementById(id);
 const elements = {
 	query: el('query'),
 	status: el('status'),
+	interpreted: el('interpreted'),
 	hits: el('hits'),
 	pager: el('pager'),
 	price: el('price'),
@@ -225,6 +234,18 @@ function filters() {
  * the record - are searched by a second clause inside the path. `or` puts a
  * record in the results for matching either, and `score: max` scores it by its
  * best pressing.
+ *
+ * Both clauses are `user` clauses holding the same text, so both are read for
+ * quantities and for the values of the catalogue, and each is read where it
+ * stands. A price is a field of the pressing, so only the clause inside
+ * `variants` can hold it, and `under €25` there asks that the pressing which
+ * matched be the cheap one. A count of pressings is a field of the record, so
+ * only the clause at the top can hold it. The same holds for a value: `vinyl`
+ * inside the path asks that the pressing which matched be the vinyl one, and
+ * at the top it asks only that some pressing be vinyl. No reading has to be
+ * written into the request: what a number can be read as follows from the
+ * units the definition declares, and what a word can be read as follows from
+ * the fields the search settings opt in.
  */
 function query() {
 	if(!state.text) return undefined;
@@ -235,6 +256,7 @@ function query() {
 			{
 				type: 'text',
 				text: state.text,
+				match: 'user',
 				fields: { title: null, artist: null, genre: null, style: null }
 			},
 			{
@@ -244,6 +266,7 @@ function query() {
 				clauses: [{
 					type: 'text',
 					text: state.text,
+					match: 'user',
 					fields: { 'variants.title': null, 'variants.label': null, 'variants.catno': null }
 				}]
 			}
@@ -346,6 +369,9 @@ async function run({ at = null } = {}) {
 
 		elements.status.textContent = explain(error, client.config);
 		elements.status.classList.add('status--error');
+
+		// The chips stand for the search that answered, and this one did not
+		renderInterpreted(null);
 	} finally {
 		if(running === controller) running = null;
 	}
@@ -366,6 +392,7 @@ function render(result) {
 	].join(' · ');
 
 	state.shown = result.hits;
+	renderInterpreted(result.interpreted);
 	renderHits();
 	renderPager(result);
 
@@ -415,6 +442,149 @@ function render(result) {
 
 		renderInStock(result.facets['variants.inStock']);
 	});
+}
+
+/* --- what the search box was read as ------------------------------------ */
+
+/**
+ * How to say a filter the node read out of the typed text.
+ *
+ * A reading answers with the field it landed on, so the field is what decides
+ * both what to call it and how to write the number: a price is money and a
+ * count of pressings is a count.
+ *
+ * A value is named the way the filter list names it, because a chip saying
+ * `format Vinyl` and a ticked box saying Vinyl under Format are the same
+ * filter reached two ways.
+ */
+const READ_AS = {
+	'variants.price': { label: 'pressing', amount: money },
+	pressings: { label: 'record', amount: count => `${count} pressings` },
+	genre: { label: 'genre', amount: String },
+	style: { label: 'style', amount: String },
+	'variants.format': { label: 'format', amount: String },
+	'variants.spec': { label: 'pressed as', amount: String },
+	'variants.country': { label: 'pressed in', amount: String },
+	'variants.label': { label: 'label', amount: String }
+};
+
+/** How a bound is spoken, by the property the matcher puts it under. */
+const BOUNDS = { gte: 'from', gt: 'over', lte: 'up to', lt: 'under' };
+
+function describeRead(filter) {
+	const read = READ_AS[filter.field] || { label: filter.field, amount: String };
+	const match = filter.match;
+
+	if(match.type !== 'range') return `${read.label} ${read.amount(match.value)}`;
+
+	const said = Object.entries(BOUNDS)
+		.filter(([bound]) => match[bound] !== undefined && match[bound] !== null)
+		.map(([bound, word]) => `${word} ${read.amount(match[bound])}`);
+
+	return `${read.label} ${said.join(' ')}`;
+}
+
+/** Whether a text has letters and no small ones. */
+function shouted(text) {
+	return text === text.toUpperCase() && text !== text.toLowerCase();
+}
+
+/**
+ * The readings as one chip per span of words that was read.
+ *
+ * A span is answered as every filter it can be: a catalogue that spells one
+ * label three ways answers three filters, and `vinyl` is both a format and,
+ * here, a label of that name. All of them are one thing to take back off,
+ * because taking a span off is taking its words out of the box, so the
+ * chip carries the span and says what it was read as. Two spellings of one
+ * value on one field are one reading to a reader, and several fields are not:
+ * `format Vinyl or label Vinyl` is why a record that is neither a vinyl
+ * pressing nor pressed for that label is not in the results.
+ */
+function readings(filters) {
+	const spans = new Map();
+
+	for(const filter of filters) {
+		const words = filter.words.join(' ');
+		if(!spans.has(words)) spans.set(words, { words: filter.words, said: new Map() });
+
+		const said = spans.get(words).said;
+		const description = describeRead(filter);
+		const same = `${filter.field} ${description.toLowerCase()}`;
+		const spelling = String(filter.match.value ?? '');
+		const kept = said.get(same);
+
+		/*
+		 * Of the spellings of one value, the one that is not shouted: a
+		 * catalogue holding MOTOWN and Motown says the same thing twice, and
+		 * only one of the two is worth printing over a search.
+		 */
+		if(kept === undefined || (shouted(kept.spelling) && !shouted(spelling))) {
+			said.set(same, { description, spelling });
+		}
+	}
+
+	return [...spans.values()].map(span => ({
+		words: span.words,
+		description: [...span.said.values()].map(one => one.description).join(' or ')
+	}));
+}
+
+/**
+ * What the node read, over the results, as chips that take it back.
+ *
+ * A reading is a filter the reader typed rather than ticked, and it changes
+ * the rows, the total and the counts the same way a tick does. It is drawn
+ * where the words were typed rather than among the filters, because taking it
+ * off is taking the words out of the search box - there is no tick to untick.
+ */
+function renderInterpreted(interpreted) {
+	const filters = (interpreted && interpreted.filters) || [];
+	elements.interpreted.hidden = filters.length === 0;
+
+	if(filters.length === 0) {
+		elements.interpreted.replaceChildren();
+		return;
+	}
+
+	const said = document.createElement('span');
+	said.className = 'read__lead';
+	said.textContent = 'read as';
+
+	elements.interpreted.replaceChildren(said, ...readings(filters).map(reading => {
+		const chip = document.createElement('button');
+		chip.type = 'button';
+		chip.className = 'read__chip';
+		chip.textContent = reading.description;
+		chip.setAttribute('aria-label', `Remove ${reading.words.join(' ')} from the search`);
+		chip.addEventListener('click', () => {
+			state.text = withoutWords(state.text, reading.words);
+			elements.query.value = state.text;
+			elements.query.focus();
+			run();
+		});
+
+		return chip;
+	}));
+}
+
+/**
+ * The typed text without the words a reading took.
+ *
+ * `words` holds what was typed, in order, so each one is taken out where it
+ * first stands. Taking the earliest is right for the text a search box holds:
+ * a reading is greedy from the left, so its own words are the first ones
+ * there are.
+ */
+function withoutWords(text, words) {
+	let rest = text;
+
+	for(const word of words) {
+		const pattern = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		rest = rest.replace(new RegExp(`(^|\\s)${pattern}(?=\\s|$)`, 'i'), '$1');
+	}
+
+	return rest.replace(/\s+/g, ' ').trim();
 }
 
 /**

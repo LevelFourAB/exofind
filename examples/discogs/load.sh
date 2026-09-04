@@ -9,10 +9,10 @@
 #
 #   NODE=https://search.example.com KEY=exok_... ./load.sh
 #
-# Loading writes, so KEY has to be granted `indexes.write`, `documents.write`
-# and `indexes.commit` over INDEX - the search-only key a demo node answers
-# readers as cannot do it. A node that checks no credentials, such as dev mode,
-# wants none at all.
+# Loading writes, so KEY has to be granted `indexes.write`, `settings.write`,
+# `documents.write` and `indexes.commit` over INDEX - the search-only key a demo
+# node answers readers as cannot do it. A node that checks no credentials, such
+# as dev mode, wants none at all.
 #
 set -euo pipefail
 
@@ -42,6 +42,17 @@ echo "Defining $INDEX on $NODE"
 request -X PUT "$NODE/v1alpha1/admin/indexes/$INDEX" \
 	-H 'Content-Type: application/json' \
 	--data-binary "@$here/definition.json" \
+	-o /dev/null
+
+# What a search reads out of the box, which the definition does not say. The
+# settings belong to the index name rather than to a generation, so they are
+# written once and go on holding when a later generation is promoted. They are
+# validated against the fields the index has, which is why they follow the
+# definition rather than lead it, and they need no documents.
+echo "Putting the search settings"
+request -X PUT "$NODE/v1alpha1/admin/indexes/$INDEX/settings" \
+	-H 'Content-Type: application/json' \
+	--data-binary "@$here/settings.json" \
 	-o /dev/null
 
 # A node refuses a request body past a limit of its own, so the documents go in

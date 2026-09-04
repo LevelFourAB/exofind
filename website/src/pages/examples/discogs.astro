@@ -22,16 +22,17 @@ import '../../examples/discogs/main.css';
 		<p class="eyebrow">Discogs · records and their pressings</p>
 		<div class="ask__field">
 			<input class="ask__input" type="search" id="query"
-				placeholder="blue note" autocomplete="off" spellcheck="false" autofocus
+				placeholder="blue note under €25" autocomplete="off" spellcheck="false" autofocus
 				aria-label="Search the catalogue">
 		</div>
+		<div class="read" id="interpreted" hidden></div>
 		<div class="ask__row">
 			<ul class="suggestions" id="suggestions">
-				<li><button type="button">blue note</button></li>
+				<li><button type="button">blue note under €25</button></li>
 				<li><button type="button">kraftwerk</button></li>
-				<li><button type="button">dark side</button></li>
-				<li><button type="button">bossa nova</button></li>
-				<li><button type="button">motown</button></li>
+				<li><button type="button">dark side over 20 pressings</button></li>
+				<li><button type="button">bossa nova between 10 and 25</button></li>
+				<li><button type="button">motown reissue vinyl</button></li>
 				<li><button type="button">SHVL 804</button></li>
 			</ul>
 			<p class="status" id="status" role="status"></p>
@@ -40,7 +41,11 @@ import '../../examples/discogs/main.css';
 			A record is one product and each pressing of it is one variant. Ask for
 			a UK vinyl under €25 and the <strong>Match</strong> control decides
 			whether one pressing has to be all three, or whether three different
-			pressings between them will do.
+			pressings between them will do. A price and a value of the catalogue
+			typed into the box are read as filters on the pressing that matched,
+			so <strong>motown reissue vinyl</strong> asks the same thing as three
+			ticked boxes; click what it was <strong>read as</strong> to have the
+			words back.
 		</p>
 	</section>
 
