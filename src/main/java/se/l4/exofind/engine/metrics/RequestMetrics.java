@@ -133,6 +133,32 @@ public class RequestMetrics {
 	}
 
 	/**
+	 * Record a request having waited for a generation to be opened. Recorded
+	 * only where the generation was not already open, whether this request
+	 * opened it or waited for another one that was opening it.
+	 *
+	 * @param nanos
+	 *   how long the request waited
+	 * @param ok
+	 *   whether the generation opened rather than failing
+	 */
+	public void recordIndexOpenWait(long nanos, boolean ok) {
+		registry.timer(Meters.INDEXES_OPEN_WAIT, Meters.TAG_OUTCOME, outcome(ok))
+			.record(nanos, TimeUnit.NANOSECONDS);
+	}
+
+	/**
+	 * Record a generation being opened on this node.
+	 *
+	 * @param source
+	 *   what opened it, one of the {@code SOURCE_} constants of
+	 *   {@link Meters}
+	 */
+	public void recordIndexOpen(String source) {
+		registry.counter(Meters.INDEXES_OPENED, Meters.TAG_SOURCE, source).increment();
+	}
+
+	/**
 	 * Record a write served by this node.
 	 *
 	 * @param operation

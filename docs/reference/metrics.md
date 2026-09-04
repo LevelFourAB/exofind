@@ -51,6 +51,8 @@ The `operation` tag names the request rather than the endpoint, so the JSON and 
 | `exofind.index.state` | Gauge | Generations | `state` (`NEEDS_PULL`, `PULLING`, `USABLE`, `MODIFIED`, `PUSHING`, `UNSUPPORTED`, `INCOMPATIBLE`, `CLOSED`) | Number of open generations in each synchronization state. Emits one series per state across all indexes. |
 | `exofind.ownership.change` | Counter | Events | `direction` (`gained`, `lost`, `revoked`) | Changes in index write ownership on this node. |
 | `exofind.registry.refresh.age` | Gauge | Seconds | None | Seconds elapsed since the registry refresh loop completed a pass. |
+| `exofind.indexes.opened` | Counter | Generations | `source` (`request`, `preload`, `background`) | Generations opened on this node, counted when the generation finished opening. `request` counts the opens a search or a write waited for, `preload` counts the opens the startup preload made before anything asked, and `background` counts the opens the node made for itself, such as gaining an index to write or creating a generation. |
+| `exofind.indexes.open.wait` | Timer | Seconds | `outcome` (`success`, `error`) | Duration a request waited for the generation it asked for to be opened, covering the pull, the first reads of a copy already on disk, and the wait where another thread was opening the same generation. Recorded only when the generation was not already open, so the count is the number of requests that waited rather than the number of requests served. |
 
 ### Per-index metrics
 
@@ -152,7 +154,7 @@ Request timers (`exofind.search`, `exofind.suggest`, `exofind.write`):
 - 5 s
 - 10 s
 
-Synchronization and storage timers (`exofind.commit`, `exofind.sync.push`, `exofind.sync.pull`, `exofind.storage.operation`):
+Synchronization and storage timers (`exofind.commit`, `exofind.sync.push`, `exofind.sync.pull`, `exofind.storage.operation`, `exofind.indexes.open.wait`):
 
 - 10 ms
 - 50 ms

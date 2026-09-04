@@ -133,6 +133,25 @@ public final class Meters {
 	public static final String INDEXES_OPEN = "exofind.indexes.open";
 
 	/**
+	 * Time a request waited for a generation it asked for to be opened: the
+	 * pull it needed, the page faults of a copy already on disk, and the wait
+	 * where another thread was opening the same generation. Tagged with
+	 * {@link #TAG_OUTCOME}.
+	 *
+	 * <p>Recorded only where the generation was not already open, so the count
+	 * is how many requests waited through a cold open rather than how many
+	 * requests were served. Compare it against {@link #INDEXES_OPENED} by source
+	 * to see how many opens a request never had to wait for.
+	 */
+	public static final String INDEXES_OPEN_WAIT = "exofind.indexes.open.wait";
+
+	/**
+	 * Generations this node opened, by what opened them. Tagged with
+	 * {@link #TAG_SOURCE}.
+	 */
+	public static final String INDEXES_OPENED = "exofind.indexes.opened";
+
+	/**
 	 * Index names this node currently writes.
 	 */
 	public static final String INDEXES_OWNED = "exofind.indexes.owned";
@@ -311,6 +330,24 @@ public final class Meters {
 
 	/** Whether an index name was gained or lost. */
 	public static final String TAG_DIRECTION = "direction";
+
+	/**
+	 * What opened a generation: {@link #SOURCE_REQUEST},
+	 * {@link #SOURCE_PRELOAD} or {@link #SOURCE_BACKGROUND}.
+	 */
+	public static final String TAG_SOURCE = "source";
+
+	/** A request asked for the generation and waited for it to open. */
+	public static final String SOURCE_REQUEST = "request";
+
+	/** The startup preload opened the generation before anything asked. */
+	public static final String SOURCE_PRELOAD = "preload";
+
+	/**
+	 * The node opened the generation for itself rather than for a request
+	 * waiting on it: gaining the index to write, or creating the generation.
+	 */
+	public static final String SOURCE_BACKGROUND = "background";
 
 	/** Error code from the API, as {@code docs/reference/errors.md} lists it. */
 	public static final String TAG_CODE = "code";

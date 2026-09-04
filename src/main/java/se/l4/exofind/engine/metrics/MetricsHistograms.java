@@ -55,8 +55,10 @@ public class MetricsHistograms {
 	};
 
 	/**
-	 * Boundaries for work measured against remote storage rather than against
-	 * a person waiting, which is slower and worth following further out.
+	 * Boundaries for work that waits on remote storage, which is slower than a
+	 * request served from a copy and worth following further out. A request
+	 * that waits for a copy to be pulled waits this long too, so the wait is
+	 * measured against these rather than against the request boundaries.
 	 */
 	private static final Duration[] SYNC_BUCKETS = {
 		Duration.ofMillis(10),
@@ -78,7 +80,8 @@ public class MetricsHistograms {
 		Meters.COMMIT,
 		Meters.SYNC_PUSH,
 		Meters.SYNC_PULL,
-		Meters.STORAGE_OPERATION
+		Meters.STORAGE_OPERATION,
+		Meters.INDEXES_OPEN_WAIT
 	);
 
 	@Produces

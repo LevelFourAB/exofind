@@ -61,6 +61,7 @@ import se.l4.exofind.engine.index.state.NoopIndexRemovals;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.metrics.Meters;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -575,7 +576,7 @@ public class Indexes implements RegistryPoller.Listener {
 			builder.maximumSize(maxOpen.getAsInt());
 		}
 
-		this.indexes = builder.build(this::loadIndex);
+		this.indexes = builder.build(key -> loadIndex(key, Meters.SOURCE_BACKGROUND));
 		this.closeExecutor = Executors.newSingleThreadScheduledExecutor();
 		this.pullExecutor = Executors.newFixedThreadPool(refreshConcurrency);
 
@@ -1290,7 +1291,7 @@ public class Indexes implements RegistryPoller.Listener {
 			 * would rank what it opened above what was asked for, and go on
 			 * preloading the same copies whether or not anyone searched them.
 			 */
-			indexes.get(name, key -> loadIndex(key, false));
+			indexes.get(name, key -> loadIndex(key, Meters.SOURCE_PRELOAD));
 			opened.incrementAndGet();
 		} catch(RuntimeException e) {
 			/*
@@ -1648,25 +1649,20 @@ public class Indexes implements RegistryPoller.Listener {
 	}
 
 	/**
-	 * Open a generation for the cache, counting an open against the index.
-	 * Every request for an index that is not open goes through here, so the
-	 * count says how often the index was asked for.
-	 */
-	private Index loadIndex(String index) {
-		return loadIndex(index, true);
-	}
-
-	/**
 	 * Open a generation for the cache.
 	 *
 	 * @param index
 	 *   full name of the generation
-	 * @param recordOpen
-	 *   whether to count this as the index having been wanted. False for the
-	 *   startup preload, which decides what to open from the counts and would
+	 * @param source
+	 *   what asked for the open, one of the {@code SOURCE_} constants of
+	 *   {@link Meters}. Everything but {@link Meters#SOURCE_PRELOAD} counts
+	 *   an open against the index, so the count says how often the index was
+	 *   wanted; the preload decides what to open from those counts and would
 	 *   otherwise decide from what it opened last time
 	 */
-	private Index loadIndex(String index, boolean recordOpen) {
+	private Index loadIndex(String index, String source) {
+		var recordOpen = !Meters.SOURCE_PRELOAD.equals(source);
+
 		// Held until the pull is done, keeping the disk sweep off the directory
 		var lock = nameLock(index);
 		lock.lock();
@@ -1721,6 +1717,13 @@ public class Indexes implements RegistryPoller.Listener {
 			 */
 			loaded.pull();
 			lastManifestChecks.put(index, System.nanoTime());
+
+			/*
+			 * Counted once the generation is open, so the split between what
+			 * the preload caught and what a request had to wait for is a
+			 * split of the opens that actually happened.
+			 */
+			metrics.recordIndexOpen(source);
 			return loaded;
 		} finally {
 			lock.unlock();
@@ -1800,7 +1803,32 @@ public class Indexes implements RegistryPoller.Listener {
 	 *   if the deployment holds no such index or generation
 	 */
 	public Index getOrThrow(String name) {
-		return indexes.get(registry.resolve(IndexName.parse(name)).toString());
+		var resolved = registry.resolve(IndexName.parse(name)).toString();
+
+		/*
+		 * Answered from what is open without loading, which is what separates
+		 * the callers that wait from the ones that do not. A generation that
+		 * is open is the common case and is not timed.
+		 */
+		var open = indexes.asMap().get(resolved);
+		if(open != null) {
+			return open;
+		}
+
+		/*
+		 * Timed across the whole wait rather than around the open alone: a
+		 * caller that arrives while another thread is opening the same
+		 * generation waits just as long without opening anything.
+		 */
+		var start = System.nanoTime();
+		var ok = false;
+		try {
+			var index = indexes.get(resolved, key -> loadIndex(key, Meters.SOURCE_REQUEST));
+			ok = true;
+			return index;
+		} finally {
+			metrics.recordIndexOpenWait(System.nanoTime() - start, ok);
+		}
 	}
 
 	/**
