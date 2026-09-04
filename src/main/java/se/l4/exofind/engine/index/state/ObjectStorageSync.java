@@ -18,6 +18,7 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
@@ -138,10 +139,10 @@ public class ObjectStorageSync implements StateSync {
 	private long sessionEpoch;
 
 	/**
-	 * When the sweep for orphaned remote objects last ran, or {@code null}
-	 * when it has not run since this instance was created.
+	 * When the sweep for orphaned remote objects last ran, seeded at a point
+	 * inside the grace period for an instance that has not swept yet.
 	 */
-	private Long lastSweepNanos;
+	private long lastSweepNanos;
 
 	public ObjectStorageSync(
 		S3Client client,
@@ -174,6 +175,28 @@ public class ObjectStorageSync implements StateSync {
 		this.lastSyncedManifest = loadFromDisk();
 		this.lastSyncedManifestETag = null;
 		this.sessionEpoch = -1;
+		this.lastSweepNanos = System.nanoTime() - startingSweepAge(orphanGrace);
+	}
+
+	/**
+	 * How long ago a new instance counts its last sweep as having run.
+	 *
+	 * <p>The point is picked at random inside the grace period, so the first
+	 * sweeps of the indexes a node holds fall at different times. Treating a
+	 * new instance as never having swept puts all of them on the first push
+	 * after the node starts, and a node holding hundreds of indexes then
+	 * lists every one of them at once. Nothing is lost by waiting: a sweep
+	 * may only remove objects older than the grace period.
+	 *
+	 * @param orphanGrace
+	 *   how long an unreferenced object is left alone
+	 * @return
+	 *   the age in nanoseconds, and zero for a grace period that is not
+	 *   positive, where every push sweeps anyway
+	 */
+	private static long startingSweepAge(Duration orphanGrace) {
+		var nanos = orphanGrace.toNanos();
+		return nanos > 0 ? ThreadLocalRandom.current().nextLong(nanos) : 0;
 	}
 
 	private Manifest loadFromDisk() {
@@ -876,10 +899,7 @@ public class ObjectStorageSync implements StateSync {
 	 * push, and nothing younger than the grace period may be removed anyway.
 	 */
 	private void maybeSweepRemote(Manifest manifest) {
-		if(
-			lastSweepNanos != null
-				&& System.nanoTime() - lastSweepNanos < orphanGrace.toNanos()
-		) {
+		if(System.nanoTime() - lastSweepNanos < orphanGrace.toNanos()) {
 			return;
 		}
 

@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.OptionalInt;
+import java.util.function.Consumer;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.lucene.document.Document;
@@ -41,6 +42,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -1210,6 +1212,26 @@ public class ObjectStorageSyncTest {
 		push(segment);
 
 		verifyRemoteFile(orphan);
+	}
+
+	/**
+	 * The sweep lists the whole index, and a node that comes back holding
+	 * hundreds of them would list every one on its first push. A new instance
+	 * counts its last sweep as having run somewhere inside the grace period,
+	 * so the first push after a restart lists nothing.
+	 */
+	@Test
+	void testFirstPushAfterAStartDoesNotListTheIndex() throws Exception {
+		var countingClient = Mockito.spy(s3Client);
+
+		var pushing = newSync(countingClient, localPath, Duration.ofHours(1));
+		var segment = createLocalFile("segments_1", 10);
+		push(pushing, segment);
+
+		Mockito.verify(countingClient, Mockito.never())
+			.listObjectsV2Paginator(ArgumentMatchers.<Consumer<ListObjectsV2Request.Builder>>any());
+		Mockito.verify(countingClient, Mockito.never())
+			.listObjectsV2Paginator(ArgumentMatchers.any(ListObjectsV2Request.class));
 	}
 
 	/**
