@@ -720,6 +720,19 @@ public final class Locales {
 			)));
 
 		/*
+		 * Urdu writes the Perso-Arabic script with the letters it shares
+		 * with Arabic and Persian typed in either tradition's form, which
+		 * the normalization folds onto Urdu's own. It inflects the way
+		 * Hindi does, so its stemmer sits with the Indic ones. The stopword
+		 * list is folded the same way as the text when it is read, so that
+		 * it can be written as Urdu is.
+		 */
+		register(locales, StandardLocaleSupport.of("ur")
+			.withStopWords(() -> urduStopWords())
+			.withNormalizer(UrduNormalizeFilter::new)
+			.withStemmer(IndicStemmers.URDU::filter));
+
+		/*
 		 * Vietnamese writes a space between syllables rather than between
 		 * words, and the syllables are what is indexed. Words do not inflect,
 		 * so there is nothing to stem; what is Vietnamese's own is the list
@@ -789,6 +802,20 @@ public final class Locales {
 			throw new UncheckedIOException("Unable to read the word list `" + name + "`", e);
 		}
 		return CharArraySet.unmodifiableSet(words);
+	}
+
+	/**
+	 * The Urdu stopword list, folded through {@link UrduNormalizeFilter} the
+	 * way the words of a text are before they are compared with it.
+	 */
+	private static CharArraySet urduStopWords() {
+		var folded = new CharArraySet(1 << 8, false);
+		for(var entry : resourceWords("stopwords-ur.txt")) {
+			var word = (char[]) entry;
+			var length = UrduNormalizeFilter.normalize(word, word.length);
+			folded.add(new String(word, 0, length));
+		}
+		return CharArraySet.unmodifiableSet(folded);
 	}
 
 	private static void register(

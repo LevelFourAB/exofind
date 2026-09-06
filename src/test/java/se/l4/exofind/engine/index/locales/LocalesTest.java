@@ -119,7 +119,9 @@ public class LocalesTest {
 		Map.entry("sr", List.of("kuće", "kuća")),
 		Map.entry("sv", List.of("bilarna", "bil")),
 		Map.entry("tr", List.of("kitaplar", "kitap")),
-		Map.entry("uk", List.of("книги", "книга"))
+		Map.entry("uk", List.of("книги", "книга")),
+		// The plural oblique ending - laṛkoṁ is the boys before a postposition
+		Map.entry("ur", List.of("لڑکوں", "لڑکا"))
 	);
 
 	/**
@@ -437,6 +439,37 @@ public class LocalesTest {
 	public void testCroatianAndSerbianSpellingsMeetAtTheSameTerm() {
 		assertThat(terms("hr", "mlijeko"), is(terms("sr", "mleko")));
 		assertThat(terms("bs", "mlijeko"), is(terms("sr", "mleko")));
+	}
+
+	/**
+	 * Urdu keyboards type the yeh, the kaf and the heh in the Arabic form as
+	 * often as in Urdu's own, and both spellings have to find the same
+	 * documents.
+	 */
+	@Test
+	public void testUrduArabicLetterFormsMeetAtTheSameTerm() {
+		assertThat(terms("ur", "پاكستاني"), is(terms("ur", "پاکستانی")));
+		assertThat(terms("ur", "علاقه"), is(terms("ur", "علاقہ")));
+	}
+
+	/**
+	 * The yeh barree is a letter of its own in Urdu, unlike in Persian, so
+	 * two words that differ only there stay apart.
+	 */
+	@Test
+	public void testUrduKeepsTheYehBarree() {
+		assertThat(terms("ur", "پے"), is(contains("پے")));
+		assertThat(terms("ur", "پے"), is(not(terms("ur", "پی"))));
+	}
+
+	/**
+	 * A stopword typed with the Arabic form of a letter is still dropped,
+	 * because the list is folded the same way as the text.
+	 */
+	@Test
+	public void testUrduDropsStopwordsInEitherLetterForm() {
+		assertThat(terms("ur", "كيا"), is(empty()));
+		assertThat(terms("ur", "آپ"), is(empty()));
 	}
 
 	/**

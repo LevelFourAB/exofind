@@ -2,7 +2,8 @@ package se.l4.exofind.engine.index.locales;
 
 /**
  * The light stemmers of the Indic languages Lucene ships none for, one
- * {@link SuffixStemmer} per language.
+ * {@link SuffixStemmer} per language. Urdu is among them: it writes the
+ * Perso-Arabic script, but inflects the way Hindi does.
  *
  * Each of these languages inflects a noun by putting a case ending, and often
  * a plural marker before it, on the end of the word. The endings are written
@@ -179,5 +180,28 @@ public final class IndicStemmers {
 		// The genitive alone
 		.step(2, "ର")
 		.step(2, "ା")
+		.build();
+
+	/**
+	 * Urdu, in the Perso-Arabic script and after {@link UrduNormalizeFilter}
+	 * has run, so the tables hold the Farsi yeh, the keheh and the heh goal.
+	 * The postpositions are words of their own, but a noun takes an oblique
+	 * or plural ending in front of one: {@code لڑکا} the boy, {@code لڑکے}
+	 * the boys or the boy before a postposition, {@code لڑکوں} the boys
+	 * before one; {@code کتاب} a book, {@code کتابیں} books, {@code کتابوں}
+	 * books before a postposition. The first step cuts a plural ending, an
+	 * Arabic plural in {@code ات}, or a verb ending; the second the vowel of
+	 * gender and number, and the final heh a noun such as {@code بچہ} loses
+	 * in its other forms.
+	 */
+	public static final SuffixStemmer URDU = SuffixStemmer.create()
+		.step(2,
+			// Plural and oblique
+			"یوں", "یاں", "ئیں", "ئے", "یں", "وں", "ات",
+			// Verb endings, and the future written onto the verb
+			"وںگا", "وںگی", "یںگے", "یںگی", "ےگا", "ےگی", "ےگے",
+			"تا", "تی", "تے", "نا", "نی", "نے"
+		)
+		.step(2, "ا", "ی", "ے", "ہ")
 		.build();
 }

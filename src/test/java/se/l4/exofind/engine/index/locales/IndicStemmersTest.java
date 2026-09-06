@@ -199,6 +199,32 @@ public class IndicStemmersTest {
 	}
 
 	/**
+	 * Urdu: the boy, the boys, the boys before a postposition; the girl and
+	 * the girls; a book, books, and books before a postposition.
+	 */
+	@Test
+	public void testUrduNounCases() {
+		assertMeet(IndicStemmers.URDU, "لڑکا", "لڑکے", "لڑکوں");
+		assertMeet(IndicStemmers.URDU, "لڑکی", "لڑکیاں", "لڑکیوں");
+		assertMeet(IndicStemmers.URDU, "کتاب", "کتابیں", "کتابوں");
+	}
+
+	/**
+	 * Urdu: a noun in final heh loses it in its other forms, and an Arabic
+	 * loan takes the Arabic plural.
+	 */
+	@Test
+	public void testUrduFinalHehAndArabicPlural() {
+		assertMeet(IndicStemmers.URDU, "بچہ", "بچے", "بچوں");
+		assertMeet(IndicStemmers.URDU, "حال", "حالات");
+	}
+
+	@Test
+	public void testUrduVerbForms() {
+		assertMeet(IndicStemmers.URDU, "کرتا", "کرتی", "کرتے", "کرنا", "کرنے");
+	}
+
+	/**
 	 * A suffix table is in the script's own characters, so that what the
 	 * chain hands the stemmer after Unicode normalization is what the table
 	 * holds - the Odia ḍa with a nukta is two characters in both.

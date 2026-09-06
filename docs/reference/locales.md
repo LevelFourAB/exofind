@@ -71,6 +71,7 @@ The following table lists the supported language tags and their analysis capabil
 | `th` | Thai | yes | | | |
 | `tr` | Turkish | yes | yes | | |
 | `uk` | Ukrainian | yes | yes | | |
+| `ur` | Urdu | yes | yes | | |
 | `vi` | Vietnamese | yes | | | |
 | `zh` | Chinese | yes | yes | yes | |
 | `zh-Hant` | Chinese (Traditional) | yes | yes | yes | |
@@ -90,7 +91,8 @@ The following table lists the supported language tags and their analysis capabil
   - Greek accents.
   - Elided articles in Catalan, French, Irish, and Italian.
   - Distinct Unicode forms of letters in Arabic, Indic, and Cyrillic scripts.
-- **Rules of the engine's own**: Gujarati, Kannada, Malayalam, Marathi, Odia, Punjabi and Vietnamese read stopword lists the engine carries itself, because Lucene ships none for them. The six Indic languages among them stem with a light stemmer of the engine's own, which cuts the case, number and tense endings that are written onto a word, in the way Lucene's Hindi stemmer does. Regular inflection is covered. A form that changes the stem itself matches only itself.
+  - The Arabic and Persian forms of the yeh, kaf and heh in Urdu, folded onto Urdu's own.
+- **Rules of the engine's own**: Gujarati, Kannada, Malayalam, Marathi, Odia, Punjabi, Urdu and Vietnamese read stopword lists the engine carries itself, because Lucene ships none for them. The seven Indic languages among them stem with a light stemmer of the engine's own, which cuts the case, number and tense endings that are written onto a word, in the way Lucene's Hindi stemmer does. Regular inflection is covered. A form that changes the stem itself matches only itself.
 - **Shared rules**: Standard forms of one language read through the same stopword list and stemmer. Malay (`ms`) uses the Indonesian rules. Bosnian (`bs`) and Croatian (`hr`) use the Serbian rules, which fold both scripts and the letters `č`, `ć`, `đ`, `š` and `ž` to plain Latin, and bring the ijekavian `mlijeko` and the ekavian `mleko` to one term. A search typed in one of the three spellings finds a value written in another.
 - **Script rewriting**: `zh-Hant` rewrites Traditional characters as their Simplified forms before the text is segmented, because the Chinese word model holds the Simplified forms only. A value indexed as `zh-Hant` produces the same terms as the same sentence written in Simplified and indexed as `zh`. Character positions are unchanged, so highlights point at the text as it was sent.
 
