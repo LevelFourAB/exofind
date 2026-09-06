@@ -36,6 +36,19 @@ const MARK_END = String.fromCharCode(2);
 /** Hits asked of the node - more than are shown, so that grouping has room. */
 const LIMIT = 20;
 
+/**
+ * Longest snippet drawn, in characters, and how much of it is drawn ahead of
+ * the first match in it.
+ *
+ * A fragment runs to the end of the sentence it was cut from, and a manual
+ * holds sentences that are tables: one reference section is a single run of
+ * several thousand characters with nothing to break on. Drawn whole, its
+ * snippet is the only result the reader can see. The dialog therefore cuts a
+ * snippet itself as well as asking the node for a length.
+ */
+const SNIPPET_LIMIT = 240;
+const SNIPPET_LEAD = 60;
+
 /** Pages shown at once, and sections shown under one page. */
 const PAGES = 6;
 const SECTIONS = 4;
@@ -464,12 +477,52 @@ function drawSection(section) {
 
 	const snippet = document.createElement('span');
 	snippet.className = 'section__snippet';
-	snippet.append(marked(section.snippet));
+	snippet.append(marked(clamped(section.snippet)));
 
 	link.append(heading, snippet);
 	item.append(link);
 
 	return item;
+}
+
+/**
+ * A snippet cut to what the dialog draws, around the first match in it.
+ *
+ * The cut is made on the marked text, so it can land inside a pair of marks.
+ * Both halves are repaired: a mark left open is closed, and one closed without
+ * being opened is opened again at the start. An unbalanced pair reaching
+ * `marked` would draw the rest of the snippet as though all of it had matched.
+ *
+ * @param {string} text marked with the two control characters above
+ */
+function clamped(text) {
+	if(text.length <= SNIPPET_LIMIT) return text;
+
+	const match = text.indexOf(MARK_START);
+
+	let from = 0;
+	if(match > SNIPPET_LEAD) {
+		const space = text.lastIndexOf(' ', match - SNIPPET_LEAD);
+		from = space > 0 ? space + 1 : match - SNIPPET_LEAD;
+	}
+
+	let to = from + SNIPPET_LIMIT;
+	if(to < text.length) {
+		const space = text.lastIndexOf(' ', to);
+		if(space > from) to = space;
+	}
+
+	let cut = text.slice(from, to).trim();
+
+	// A match the cut ends inside of is closed: the words before the cut matched
+	if(cut.lastIndexOf(MARK_START) > cut.lastIndexOf(MARK_END)) cut += MARK_END;
+
+	// A match the cut begins inside of is opened again at the start
+	const closed = cut.indexOf(MARK_END);
+	const opened = cut.indexOf(MARK_START);
+	if(closed !== -1 && (opened === -1 || closed < opened)) cut = MARK_START + cut;
+
+	return `${from > 0 ? '…' : ''}${cut}${to < text.length ? '…' : ''}`;
 }
 
 /**

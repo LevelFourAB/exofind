@@ -433,10 +433,9 @@ const starting = STARTING_POINTS.map(slug => {
 	}
 
 	/*
-	 * No line clamp: a fragment is cut to 160 characters by the search and an
-	 * excerpt to 180 by the load, so a snippet runs to two or three lines on
-	 * its own. Clamping it here would need a block box, which would take the
-	 * marked words out of the line they sit in.
+	 * No line clamp: `clamped` in `./search.js` cuts a snippet to three or four
+	 * lines before it is drawn. Clamping here would need a block box, which
+	 * would take the marked words out of the line they sit in.
 	 */
 	.search-results :global(.section__snippet) {
 		color: var(--sl-color-gray-2);

@@ -130,27 +130,15 @@ function sectionsOf(slug, part, contents) {
 	const sections = [];
 
 	let current = { anchor: null, heading: null, lines: [] };
-	let fence = null;
 	let seenTitle = false;
 
-	for(const line of body.split('\n')) {
-		/*
-		 * A fenced block is text, not structure: `# comment` inside a shell
-		 * snippet is neither a heading nor an anchor, and reading it as one
-		 * would cut a section in the middle and shift every anchor after it.
-		 */
-		const fenced = line.match(/^\s*(`{3,}|~{3,})/);
+	for(const { line, fenced } of linesOf(body)) {
 		if(fenced) {
-			const mark = fenced[1][0];
-
-			if(!fence) fence = mark;
-			else if(fence === mark) fence = null;
-
 			current.lines.push(line);
 			continue;
 		}
 
-		const heading = fence ? null : line.match(/^(#{1,6})\s+(.+?)\s*$/);
+		const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
 		if(!heading) {
 			current.lines.push(line);
 			continue;
@@ -195,7 +183,8 @@ function sectionsOf(slug, part, contents) {
  * nothing under it that a reader could be shown.
  */
 function documentFor({ slug, part, title, section, position }) {
-	const text = plain(section.lines.join('\n'));
+	const markdown = section.lines.join('\n');
+	const text = plain(markdown);
 	if(!text) return null;
 
 	const path = `${BASE}/${slug}/`;
@@ -207,7 +196,7 @@ function documentFor({ slug, part, title, section, position }) {
 		title,
 		...section.heading ? { heading: section.heading } : {},
 		text: text.slice(0, TEXT_LIMIT),
-		excerpt: cut(text),
+		excerpt: excerptOf(markdown, text),
 		lead: position === 0,
 		position
 	};
@@ -233,7 +222,8 @@ async function apiDocuments() {
 			if(!operation?.operationId) continue;
 
 			const call = `${method.toUpperCase()} ${path}`;
-			const text = plain([call, operation.description ?? ''].join('\n\n'));
+			const markdown = [call, operation.description ?? ''].join('\n\n');
+			const text = plain(markdown);
 
 			documents.push({
 				id: `api/${operation.operationId}`,
@@ -242,7 +232,7 @@ async function apiDocuments() {
 				title: operation.summary ?? operation.operationId,
 				heading: call,
 				text: text.slice(0, TEXT_LIMIT),
-				excerpt: cut(text),
+				excerpt: excerptOf(markdown, text),
 				lead: true,
 				position: 0
 			});
@@ -286,6 +276,38 @@ function demoDocuments() {
 
 /* --- turning Markdown into text ------------------------------------------ */
 
+/** The rule drawn under the header row of a table. */
+const TABLE_RULE = /^[ \t]*\|?[\s:|-]*\|[\s:|-]*$/;
+
+/**
+ * The lines of a piece of Markdown, each with whether it sits inside a fenced
+ * block.
+ *
+ * A fenced block holds text, not structure: `# comment` in a shell snippet is
+ * not a heading, and a row of `|` in a diagram is not a table. Reading either
+ * as structure cuts a section in the middle and shifts every anchor after it.
+ * A fence marker counts as inside the block it opens or closes.
+ */
+function* linesOf(markdown) {
+	let fence = null;
+
+	for(const line of markdown.split('\n')) {
+		const marker = line.match(/^\s*(`{3,}|~{3,})/);
+
+		if(marker) {
+			const mark = marker[1][0];
+
+			if(!fence) fence = mark;
+			else if(fence === mark) fence = null;
+
+			yield { line, fenced: true };
+			continue;
+		}
+
+		yield { line, fenced: fence !== null };
+	}
+}
+
 /**
  * The readable text of a piece of Markdown.
  *
@@ -295,7 +317,7 @@ function demoDocuments() {
  * nowhere but inside a fence or a pair of backticks.
  */
 function plain(markdown) {
-	return markdown
+	return withEndedRows(markdown)
 		// Comments and directive markers say nothing to a reader
 		.replace(/<!--[\s\S]*?-->/g, ' ')
 		.replace(/^\s*:::[a-z]*(\[[^\]]*\])?\s*$/gm, ' ')
@@ -309,7 +331,7 @@ function plain(markdown) {
 		// Autolinks and bare URLs are addresses rather than words
 		.replace(/<https?:\/\/[^>]*>/g, ' ')
 		.replace(/https?:\/\/\S+/g, ' ')
-		// Table rules are drawing; the pipes between cells are spacing
+		// A rule is drawing, and a pipe left inside a fence is spacing
 		.replace(/^\s*\|?[\s:|-]*\|[\s:|-]*$/gm, ' ')
 		.replace(/\|/g, ' ')
 		// What is left of the syntax: headings, quotes, list markers, emphasis
@@ -331,6 +353,63 @@ function plain(markdown) {
 		.replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, '$1')
 		.replace(/\s+/g, ' ')
 		.trim();
+}
+
+/**
+ * Every table row ended as a sentence of its own.
+ *
+ * A search cuts a fragment on a sentence, and a table joined by spaces alone is
+ * a single sentence of several thousand characters. The fragment cut from one
+ * is the whole table. Drawn whole, it fills the dialog and pushes every other
+ * result out of it. A row states one thing about one thing - a setting, an
+ * error code, a locale - and a fragment should hold a row.
+ *
+ * A stop ends a sentence only when an upper-case word follows it. This bounds
+ * the tables whose rows open with one, such as the configuration variables. A
+ * table whose rows open with a language tag or a status code is still read as
+ * one sentence, and the search bounds that; see the `length` option under
+ * Highlighting in `docs/reference/search-api.md`.
+ */
+function withEndedRows(markdown) {
+	const lines = [];
+
+	for(const { line, fenced } of linesOf(markdown)) {
+		if(fenced || TABLE_RULE.test(line) || !/^[ \t]*\|/.test(line)) {
+			lines.push(line);
+			continue;
+		}
+
+		const row = line.replace(/\|/g, ' ').trim();
+
+		lines.push(/[.:!?]$/.test(row) ? row : `${row}.`);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * What a section is about, cut to the length an excerpt is shown at.
+ *
+ * Only the prose is read. A section often opens with the request that performs
+ * it, or with a table of every setting the engine has, and the first 180
+ * characters of either name nothing a reader was looking for: `curl -i -X PUT
+ * -H Authorization: Bearer ...` says only that the section holds a request. The
+ * sentences around the block describe the section.
+ *
+ * Every word of the block stays in `text`, where a search still finds it and
+ * highlights it. This decides what the dialog shows, not what it finds.
+ *
+ * A section holding nothing but a block falls back to its own text: an awkward
+ * excerpt says more than an empty one.
+ */
+function excerptOf(markdown, text) {
+	const prose = [];
+
+	for(const { line, fenced } of linesOf(markdown)) {
+		if(!fenced && !/^[ \t]*\|/.test(line)) prose.push(line);
+	}
+
+	return cut(plain(prose.join('\n')) || text);
 }
 
 /** Text cut to the length an excerpt is shown at, on a word. */

@@ -73,6 +73,23 @@ The lead of a page is boosted, because a page is often searched for by name and
 the section that answers it is then the top of the page rather than whichever
 of its sections says the word most often.
 
+## What a hit shows
+
+A hit shows the highlighted fragment the search cut from the text, and the
+stored excerpt when the search highlighted nothing. Both are shaped for a
+manual full of tables and requests:
+
+- A table row ends as a sentence. A search cuts a fragment on a sentence, so a
+  table joined by spaces alone gives a fragment thousands of characters long.
+  A stop only ends a sentence when an upper-case word follows it, so a table
+  whose rows open with a language tag or a status code is still one sentence.
+- The excerpt is cut from the prose of a section, without its tables and fenced
+  blocks. The first 180 characters of a `curl` command say only that the
+  section holds a request. The blocks stay in the text a search reads, so a
+  setting name inside one still finds and highlights its section.
+- The dialog cuts a snippet again before drawing it. See `clamped` in
+  [`../src/components/search.js`](../src/components/search.js).
+
 ## Replacing what an earlier load wrote
 
 Every document carries the stamp of the load that wrote it. Once the new
