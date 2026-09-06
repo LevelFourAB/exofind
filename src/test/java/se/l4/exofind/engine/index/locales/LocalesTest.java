@@ -61,6 +61,8 @@ public class LocalesTest {
 		Map.entry("ja", List.of("食べました", "食べる")),
 		// The particle glued onto the noun is taken apart and dropped
 		Map.entry("ko", List.of("학교에", "학교")),
+		// The case ending is agglutinated - maneyalli is in the house
+		Map.entry("kn", List.of("ಮನೆಯಲ್ಲಿ", "ಮನೆ")),
 		Map.entry("ta", List.of("புத்தகங்கள்", "புத்தகம்")),
 		Map.entry("te", List.of("పిల్లలు", "పిల్ల")),
 		/*
@@ -83,6 +85,8 @@ public class LocalesTest {
 		// Irish stems grammar off the front - the mutated bhean is bean
 		Map.entry("ga", List.of("bhean", "bean")),
 		Map.entry("gl", List.of("casas", "casa")),
+		// The postposition is written onto the noun - gharmāṁ is in the house
+		Map.entry("gu", List.of("ઘરમાં", "ઘર")),
 		Map.entry("hr", List.of("knjige", "knjiga")),
 		Map.entry("hu", List.of("házak", "ház")),
 		Map.entry("hy", List.of("երեխաներ", "երեխա")),
@@ -94,12 +98,20 @@ public class LocalesTest {
 		Map.entry("it", List.of("ragazzi", "ragazzo")),
 		Map.entry("lt", List.of("namai", "namas")),
 		Map.entry("lv", List.of("grāmatas", "grāmata")),
+		// The plural replaces the final anusvara - maraṅṅaḷ is trees, maram a tree
+		Map.entry("ml", List.of("മരങ്ങൾ", "മരം")),
+		// The postposition is written onto the oblique noun - gharāt is in the house
+		Map.entry("mr", List.of("घरात", "घर")),
 		// Malay inflects the way Indonesian does - makanan is food, makan to eat
 		Map.entry("ms", List.of("makanan", "makan")),
 		Map.entry("nl", List.of("katten", "kat")),
 		Map.entry("no", List.of("husene", "hus")),
 		Map.entry("nb", List.of("husene", "hus")),
 		Map.entry("nn", List.of("husa", "hus")),
+		// The case ending is written onto the noun - gharare is in the house
+		Map.entry("or", List.of("ଘରରେ", "ଘର")),
+		// The plural oblique carries a nasal - muṇḍiāṁ is the boys before a postposition
+		Map.entry("pa", List.of("ਮੁੰਡਿਆਂ", "ਮੁੰਡਾ")),
 		Map.entry("pl", List.of("książki", "książka")),
 		Map.entry("pt", List.of("livros", "livro")),
 		Map.entry("ro", List.of("elevii", "elev")),

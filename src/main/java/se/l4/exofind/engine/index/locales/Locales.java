@@ -430,6 +430,17 @@ public final class Locales {
 			.withStopWords(GalicianAnalyzer.getDefaultStopSet())
 			.withStemmer(GalicianStemFilter::new));
 
+		/*
+		 * The Indic languages Lucene ships no analysis for - Gujarati here,
+		 * Kannada, Malayalam, Marathi, Odia and Punjabi below - read a
+		 * stopword list and a light stemmer of the engine's own, see
+		 * IndicStemmers, after the same Indic normalization the others get.
+		 */
+		register(locales, StandardLocaleSupport.of("gu")
+			.withStopWords(() -> resourceWords("stopwords-gu.txt"))
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(IndicStemmers.GUJARATI::filter));
+
 		register(locales, StandardLocaleSupport.of("hi")
 			.withStopWords(HindiAnalyzer.getDefaultStopSet())
 			.withNormalizer(stream -> new HindiNormalizationFilter(
@@ -507,6 +518,11 @@ public final class Locales {
 			))
 			.withStemmer(JapaneseKatakanaStemFilter::new));
 
+		register(locales, StandardLocaleSupport.of("kn")
+			.withStopWords(() -> resourceWords("stopwords-kn.txt"))
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(IndicStemmers.KANNADA::filter));
+
 		/*
 		 * Korean writes spaces between phrases rather than words, and glues
 		 * particles onto what they follow. The tokenizer takes both apart;
@@ -534,6 +550,16 @@ public final class Locales {
 		register(locales, StandardLocaleSupport.of("lv")
 			.withStopWords(LatvianAnalyzer.getDefaultStopSet())
 			.withStemmer(LatvianStemFilter::new));
+
+		register(locales, StandardLocaleSupport.of("ml")
+			.withStopWords(() -> resourceWords("stopwords-ml.txt"))
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(IndicStemmers.MALAYALAM::filter));
+
+		register(locales, StandardLocaleSupport.of("mr")
+			.withStopWords(() -> resourceWords("stopwords-mr.txt"))
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(IndicStemmers.MARATHI::filter));
 
 		/*
 		 * Malay and Indonesian are standard forms of one language: the
@@ -588,6 +614,16 @@ public final class Locales {
 			.withComparatives(NORWEGIAN_COMPARATIVES)
 			.withStemmer(nynorsk::create)
 			.withDecompounder(Decompounder.forData("nn")));
+
+		register(locales, StandardLocaleSupport.of("or")
+			.withStopWords(() -> resourceWords("stopwords-or.txt"))
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(IndicStemmers.ODIA::filter));
+
+		register(locales, StandardLocaleSupport.of("pa")
+			.withStopWords(() -> resourceWords("stopwords-pa.txt"))
+			.withNormalizer(IndicNormalizationFilter::new)
+			.withStemmer(IndicStemmers.PUNJABI::filter));
 
 		/*
 		 * Polish stems through a trained table rather than rules; the table is
