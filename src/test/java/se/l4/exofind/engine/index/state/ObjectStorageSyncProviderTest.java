@@ -50,9 +50,8 @@ public class ObjectStorageSyncProviderTest {
 
 	private ObjectStorage newStorage(boolean indexer) throws IOException {
 		return new ObjectStorage(
-			TestObjectStorage.url(),
-			TestObjectStorage.ACCESS_KEY,
-			TestObjectStorage.SECRET_KEY,
+			Optional.of(TestObjectStorage.url()),
+			TestObjectStorage.auth(),
 			Optional.empty(),
 			TestObjectStorage.BUCKET,
 			Optional.of(storagePrefix),

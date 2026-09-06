@@ -43,12 +43,19 @@ The following table lists object storage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_STORAGE_REMOTE_URL` | URL of the S3-compatible storage. | Required |
-| `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` | Access key for authentication. | Required |
-| `EXOFIND_STORAGE_REMOTE_SECRET_KEY` | Secret key for authentication. | Required |
-| `EXOFIND_STORAGE_REMOTE_REGION` | Region of the object storage. | None |
+| `EXOFIND_STORAGE_REMOTE_URL` | URL of the S3-compatible storage. Leave unset to reach Amazon S3 in the region. | None |
+| `EXOFIND_STORAGE_REMOTE_AUTH` | Where the credentials come from: `static` for a key pair, `aws` for the AWS environment the node runs in, or `file` for a credentials file that something else renews. The node refuses to start when the named source and the other credential settings disagree. See [Authenticating to object storage](../how-to/authenticate-to-object-storage.md). | `static` when a key pair is set, `file` when a credentials file is set, otherwise `aws` |
+| `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` | Access key of the `static` source. | None |
+| `EXOFIND_STORAGE_REMOTE_SECRET_KEY` | Secret key of the `static` source. | None |
+| `EXOFIND_STORAGE_REMOTE_SESSION_TOKEN` | Session token issued with the key pair of the `static` source, for temporary credentials. | None |
+| `EXOFIND_STORAGE_REMOTE_CREDENTIALS_FILE` | File in the AWS credentials file format that the `file` source reads. The node reads it again whenever its modification time changes. | None |
+| `EXOFIND_STORAGE_REMOTE_CREDENTIALS_PROFILE` | Profile the `file` source reads from the file. | `default` |
+| `EXOFIND_STORAGE_REMOTE_REGION` | Region requests are signed for. With the `aws` source, the region the AWS environment names is used when this is unset. | `us-east-1` |
 | `EXOFIND_STORAGE_REMOTE_BUCKET` | Bucket where indexes are stored. | Required |
 | `EXOFIND_STORAGE_REMOTE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
+
+For what the storage behind the URL has to support, see
+[Object storage requirements](object-storage.md).
 
 ## Locale data
 
@@ -110,7 +117,9 @@ The following table lists indexer configuration variables:
 The indexer requires storage that enforces conditional writes (`If-Match` on
 `PUT`) to prevent write collisions. Amazon S3 and SeaweedFS enforce conditional
 writes. The node verifies conditional write support at startup and refuses to
-run as an indexer against storage that does not support them.
+run as an indexer against storage that does not support them. For everything
+else the storage has to support, see
+[Object storage requirements](object-storage.md).
 
 ## Authentication
 

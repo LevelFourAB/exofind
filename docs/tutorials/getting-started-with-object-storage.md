@@ -340,11 +340,14 @@ and its indexes persist across restarts.
 To use Amazon S3 instead of SeaweedFS, update the `exofind` environment
 variables in `docker-compose.yml` and remove the `seaweedfs` service:
 
-- Set `EXOFIND_STORAGE_REMOTE_URL` to your S3 endpoint URL.
+- Remove `EXOFIND_STORAGE_REMOTE_URL`. Without a URL the node reaches Amazon
+  S3 in the configured region.
 - Set `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` and
-  `EXOFIND_STORAGE_REMOTE_SECRET_KEY` to your AWS credentials.
+  `EXOFIND_STORAGE_REMOTE_SECRET_KEY` to your AWS credentials. A node that runs
+  on AWS can use the role of its environment instead. See
+  [Authenticating to object storage](../how-to/authenticate-to-object-storage.md).
 - Set `EXOFIND_STORAGE_REMOTE_BUCKET` to your S3 bucket name.
-- Optionally set `EXOFIND_STORAGE_REMOTE_REGION` to your AWS region.
+- Set `EXOFIND_STORAGE_REMOTE_REGION` to the region of the bucket.
 - Optionally set `EXOFIND_STORAGE_REMOTE_PREFIX` if sharing the bucket with
   other services.
 

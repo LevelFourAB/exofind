@@ -110,6 +110,9 @@ The documentation includes the following how-to guides.
 - [Deploying on Kubernetes](how-to/deploy-on-kubernetes.md): Configure a pool that
   searches and a pool that writes, route writes, and handle host requirements for
   many indexes.
+- [Authenticating to object storage](how-to/authenticate-to-object-storage.md):
+  Give a node a key pair, the role of the AWS environment it runs in, or a
+  credentials file that something else renews.
 - [Securing a deployment](how-to/secure-a-deployment.md): Bootstrap the first key,
   hand out one key per client, and rotate keys.
 - [Running a public demo node](how-to/run-a-demo-node.md): Answer searches from a
@@ -139,6 +142,8 @@ from the OpenAPI document.
   shares - versioning, media types, conditional requests, forwarding, and what
   each status code means.
 - [Configuration](reference/configuration.md): Every environment variable.
+- [Object storage requirements](reference/object-storage.md): The operations,
+  conditional requests, and consistency a node expects of the bucket.
 - [Metrics](reference/metrics.md): Every meter a node registers, what it is
   tagged with, and the settings that decide what is exported.
 - [Authentication](reference/auth.md): Keys, permissions, roles, and the keys

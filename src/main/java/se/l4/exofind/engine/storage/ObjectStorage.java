@@ -8,8 +8,6 @@ import java.util.StringJoiner;
 import java.util.function.Consumer;
 
 import se.l4.exofind.engine.index.IndexName;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
@@ -54,9 +52,10 @@ public class ObjectStorage {
 	 * node may index.
 	 *
 	 * @param url
-	 *   endpoint of the S3 compatible storage
-	 * @param accessKey
-	 * @param secretKey
+	 *   endpoint of the S3 compatible storage, or empty to reach AWS S3 in
+	 *   the region
+	 * @param auth
+	 *   where the credentials requests are signed with come from
 	 * @param region
 	 *   region to sign requests for, where the storage cares
 	 * @param bucket
@@ -67,19 +66,18 @@ public class ObjectStorage {
 	 *   whether this node may act as the indexer, which is what makes the
 	 *   conditional write check worth making
 	 * @throws IOException
-	 *   if the check could not be made, or the storage does not enforce
-	 *   conditional writes
+	 *   if no credentials could be resolved, the check could not be made, or
+	 *   the storage does not enforce conditional writes
 	 */
 	public ObjectStorage(
-		String url,
-		String accessKey,
-		String secretKey,
+		Optional<String> url,
+		StorageAuth auth,
 		Optional<String> region,
 		String bucket,
 		Optional<String> prefix,
 		boolean indexer
 	) throws IOException {
-		this(url, accessKey, secretKey, region, bucket, prefix, indexer, null);
+		this(url, auth, region, bucket, prefix, indexer, null);
 	}
 
 	/**
@@ -90,9 +88,8 @@ public class ObjectStorage {
 	 *   none
 	 */
 	public ObjectStorage(
-		String url,
-		String accessKey,
-		String secretKey,
+		Optional<String> url,
+		StorageAuth auth,
 		Optional<String> region,
 		String bucket,
 		Optional<String> prefix,
@@ -101,25 +98,42 @@ public class ObjectStorage {
 	) throws IOException {
 		this.bucket = bucket;
 		this.prefix = prefix;
-		this.client = S3Client.builder()
-			.endpointOverride(URI.create(url))
-			.credentialsProvider(
-				StaticCredentialsProvider.create(
-					AwsBasicCredentials.create(accessKey, secretKey)
-				)
-			)
+
+		var credentials = auth.credentialsProvider();
+		try {
 			/*
-			 * The SDK demands a region even when the endpoint decides where
-			 * requests actually go, which is all an S3 compatible storage
-			 * needs. The signature has to name one, so default to the one
-			 * every storage accepts.
+			 * Ask for credentials once before anything else does. A source
+			 * that has none then fails at startup with the source named,
+			 * instead of as a refused request from the first part of the
+			 * node that reaches the storage.
 			 */
-			.region(Region.of(region.orElse("us-east-1")))
-			/*
-			 * Address the bucket in the path rather than the host name, which
-			 * works without wildcard DNS in front of the storage.
-			 */
-			.forcePathStyle(true)
+			credentials.resolveCredentials();
+		} catch(RuntimeException e) {
+			throw new IOException(
+				"Unable to load credentials for the object storage with"
+					+ " EXOFIND_STORAGE_REMOTE_AUTH '" + auth.name() + "'; "
+					+ e.getMessage(),
+				e
+			);
+		}
+
+		var builder = S3Client.builder()
+			.credentialsProvider(credentials)
+			.region(region.map(Region::of).orElseGet(auth::defaultRegion));
+
+		if(url.isPresent()) {
+			builder
+				.endpointOverride(URI.create(url.get()))
+				/*
+				 * Put the bucket in the path, so the storage needs no
+				 * wildcard DNS in front of it. Left to the SDK when no
+				 * endpoint is named: AWS S3 has the DNS and prefers the
+				 * bucket in the host name.
+				 */
+				.forcePathStyle(true);
+		}
+
+		this.client = builder
 			/*
 			 * Only add checksums where an operation requires them. The default
 			 * of checksumming everything sends them as a trailer, which

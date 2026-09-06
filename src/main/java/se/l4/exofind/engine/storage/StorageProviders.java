@@ -160,7 +160,10 @@ public class StorageProviders {
 	 * <p>The settings are read as optional and demanded here rather than
 	 * declared as required, so that a node storing locally does not have to
 	 * carry settings it never uses - and so a node that named the object mode
-	 * and left one out is told which one.
+	 * and left one out is told which one. Where the credentials come from is
+	 * worked out by {@link StorageAuth#fromConfig}, and said in the log so
+	 * that a node signing with credentials it was not meant to use can be
+	 * told apart from one that was.
 	 */
 	@Produces
 	@Singleton
@@ -169,8 +172,12 @@ public class StorageProviders {
 		NodeState nodeState,
 		MeterRegistry meterRegistry,
 		@ConfigProperty(name = "exofind.storage.remote.url") Optional<String> url,
+		@ConfigProperty(name = "exofind.storage.remote.auth") Optional<String> auth,
 		@ConfigProperty(name = "exofind.storage.remote.access-key") Optional<String> accessKey,
 		@ConfigProperty(name = "exofind.storage.remote.secret-key") Optional<String> secretKey,
+		@ConfigProperty(name = "exofind.storage.remote.session-token") Optional<String> sessionToken,
+		@ConfigProperty(name = "exofind.storage.remote.credentials-file") Optional<String> credentialsFile,
+		@ConfigProperty(name = "exofind.storage.remote.credentials-profile") Optional<String> credentialsProfile,
 		@ConfigProperty(name = "exofind.storage.remote.region") Optional<String> region,
 		@ConfigProperty(name = "exofind.storage.remote.bucket") Optional<String> bucket,
 		@ConfigProperty(name = "exofind.storage.remote.prefix") Optional<String> prefix
@@ -182,11 +189,25 @@ public class StorageProviders {
 			);
 		}
 
+		var storageAuth = StorageAuth.fromConfig(
+			auth,
+			accessKey,
+			secretKey,
+			sessionToken,
+			credentialsFile,
+			credentialsProfile
+		);
+
+		logger.atInfo()
+			.addKeyValue("auth", storageAuth.name())
+			.addKeyValue("url", url.orElse("AWS S3"))
+			.addKeyValue("bucket", bucket.orElse(""))
+			.log("Signing object storage requests with credentials from the named source");
+
 		return new ObjectStorage(
-			required(url, "EXOFIND_STORAGE_REMOTE_URL"),
-			required(accessKey, "EXOFIND_STORAGE_REMOTE_ACCESS_KEY"),
-			required(secretKey, "EXOFIND_STORAGE_REMOTE_SECRET_KEY"),
-			region,
+			url.filter(v -> !v.isBlank()),
+			storageAuth,
+			region.filter(v -> !v.isBlank()),
 			required(bucket, "EXOFIND_STORAGE_REMOTE_BUCKET"),
 			prefix,
 			nodeState.isIndexerCandidate(),

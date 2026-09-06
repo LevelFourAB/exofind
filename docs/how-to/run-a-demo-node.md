@@ -52,7 +52,7 @@ Before you begin, ensure you have:
 
 A public search endpoint consumes public compute resources. To limit costs and protect data, configure the following settings:
 
-- **Configure read-only storage credentials:** Set `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` to grant read-only access to the bucket. Combined with `EXOFIND_INDEXER_ENABLED=false`, this prevents modifications to an index.
+- **Configure read-only storage credentials:** Give the node credentials that can only list and read the bucket, through any of the sources in [Authenticating to object storage](authenticate-to-object-storage.md). Combined with `EXOFIND_INDEXER_ENABLED=false`, this prevents modifications to an index.
 - **Configure rate limiting:** Place a Content Delivery Network (CDN) or reverse proxy in front of the node. The search engine does not provide rate limiting.
 - **Cap queries:** Lower `EXOFIND_SEARCH_MAX_LIMIT`, `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, and `EXOFIND_SEARCH_MAX_CLAUSES` to what your demo pages ask for, and set `EXOFIND_SEARCH_TIMEOUT` to the longest answer you are willing to pay for. The node refuses a request over a cap instead of answering it slowly. See [Search configuration](../reference/configuration.md#search).
 

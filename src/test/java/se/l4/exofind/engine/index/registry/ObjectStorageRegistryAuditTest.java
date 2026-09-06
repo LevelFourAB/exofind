@@ -37,9 +37,8 @@ public class ObjectStorageRegistryAuditTest {
 	@BeforeEach
 	void setup() throws IOException {
 		storage = new ObjectStorage(
-			TestObjectStorage.url(),
-			TestObjectStorage.ACCESS_KEY,
-			TestObjectStorage.SECRET_KEY,
+			Optional.of(TestObjectStorage.url()),
+			TestObjectStorage.auth(),
 			Optional.empty(),
 			TestObjectStorage.BUCKET,
 			Optional.of("test" + RandomStringUtils.insecure().nextAlphabetic(10)),

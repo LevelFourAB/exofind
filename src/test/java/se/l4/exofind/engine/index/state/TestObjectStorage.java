@@ -1,11 +1,13 @@
 package se.l4.exofind.engine.index.state;
 
 import java.net.URI;
+import java.util.Optional;
 
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
 
+import se.l4.exofind.engine.storage.StorageAuth;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
@@ -39,6 +41,14 @@ public final class TestObjectStorage {
 	public static final String SECRET_KEY = "exofind123";
 
 	private static final int S3_PORT = 8333;
+
+	/**
+	 * The credentials the storage accepts, as the source an
+	 * {@link se.l4.exofind.engine.storage.ObjectStorage} is opened with.
+	 */
+	public static StorageAuth auth() {
+		return new StorageAuth.Static(ACCESS_KEY, SECRET_KEY, Optional.empty());
+	}
 
 	private static final String S3_CONFIG = """
 		{

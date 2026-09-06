@@ -10,7 +10,7 @@ Before you begin, ensure you have the following:
 
 - A Kubernetes cluster.
 - An S3-compatible object storage bucket.
-- A Kubernetes Secret named `exofind-storage` containing the keys `access-key` and `secret-key`.
+- A Kubernetes Secret named `exofind-storage` containing the keys `access-key` and `secret-key`. On EKS with a bucket on Amazon S3, an IAM role on the service account of the pods replaces the Secret: drop the two credential variables from the manifests and set `EXOFIND_STORAGE_REMOTE_AUTH` to `aws`. See [Authenticating to object storage](authenticate-to-object-storage.md).
 
 ## Why two pools
 
