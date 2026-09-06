@@ -5,10 +5,12 @@
  * fields defined for `autocomplete`, so a word still being typed is looked
  * up as the prefix it is, and both forgive typing mistakes.
  *
- * The code is searched a different way. A code is one value rather than a
- * sentence of them, so it is asked with a `prefix` matcher on the whole of
- * what was typed rather than through analysis - which is what lets `ES` list
- * Sweden and `ord` find O'Hare.
+ * The code is searched a different way, twice. A code that was typed in full
+ * is a word the `iata` field holds, so it is searched as text and scored: it
+ * is the rarest word in the index, the field counts for the most, and O'Hare
+ * comes first for `ord`. A code still being typed is not a word yet, so it is
+ * also asked with a `prefix` matcher on the whole of what was typed, which is
+ * what lists the codes that start with `ES`.
  */
 import { createClient, resolveConfig, explain } from '../shared/client.js';
 import { readParams, writeParams } from '../shared/params.js';
@@ -30,7 +32,7 @@ import {
  * would mark nothing anybody can see.
  */
 const FIELDS = ['nameAhead', 'municipalityAhead', 'country'];
-const HIGHLIGHT = ['nameAhead', 'municipalityAhead'];
+const HIGHLIGHT = ['nameAhead', 'municipalityAhead', 'iata'];
 
 /** Origins to measure from, for a browser that will not say where it is. */
 const ORIGINS = [
@@ -76,10 +78,11 @@ const elements = {
 /**
  * Build the search to send for the typed text.
  *
- * The text is an `or` of two ways of reading it: the words, looked for in the
- * fields that complete them, and the whole of the code, looked for as a
- * prefix. Neither is narrower than the other - `ES` completes a code while
- * finding nothing among the words, and `stockhlm` the other way around.
+ * The text is an `or` of three ways of reading it: the words, looked for in
+ * the fields that complete them; the whole of it as a code, looked for among
+ * the codes as text; and the whole of it as the start of a code. None is
+ * narrower than the others - `ES` starts a code while finding nothing among
+ * the words, and `stockhlm` the other way around.
  */
 function buildRequest() {
 	// `null` counts a hit for as much as the definition says it counts
@@ -110,15 +113,32 @@ function buildRequest() {
 		};
 
 		/*
-		 * The code clause brings documents in that the words never reach, so
-		 * it is an `or` rather than a boost - and it is the whole of what was
-		 * typed that has to be the start of a code, since a code is one value
-		 * and not a sentence of them.
+		 * A code that was typed in full is searched as text so that it is
+		 * scored the way a word is: `iata` counts for more than any other
+		 * field and a code is held by one airport alone, which together put
+		 * that airport above every airport merely named after the same
+		 * letters. Completing a word is turned off, because a code is one
+		 * value and not a sentence of them.
+		 */
+		const code = {
+			type: 'text',
+			text: state.text,
+			prefix: 'off',
+			fields: { iata: counts }
+		};
+
+		/*
+		 * A code still being typed is no word yet, so the start of one is
+		 * asked for as well. It brings documents in that neither of the other
+		 * two reaches, so it is an `or` rather than a boost, and it is left
+		 * unscored: two letters say far less about what is wanted than a whole
+		 * code does.
 		 */
 		request.query = [{
 			type: 'or',
 			clauses: [
 				words,
+				code,
 				{ field: 'iata', match: { type: 'prefix', value: state.text } }
 			]
 		}];

@@ -15,10 +15,13 @@ page searches `nameAhead` and `municipalityAhead`, defined for
 `autocomplete`, so every prefix of every word is indexed and `sto` is looked
 up as a word rather than scanned for. They declare `typoTolerance`, so
 `stockhlm` finds Stockholm and `stokho` finds it while the word is still
-being typed. The code is completed the other way - `iata` holds one value
-rather than a sentence of them, so it answers a `prefix` matcher on the whole
-of what was typed, which is what lets `ES` list Sweden and `ord` find
-O'Hare. Neither clause is narrower than the other, so the two are an `or`.
+being typed. The code is read the other way, and twice: a code typed in full
+is a word `iata` holds, so `ord` is searched there as text and scored, which
+is what puts O'Hare first; a code still being typed is no word yet, so the
+whole of what was typed is also asked for with a `prefix` matcher, which is
+what lists the codes that start with `ES`. Completing a word is turned off on
+the code, because `iata` holds one value rather than a sentence of them. No
+clause is narrower than the others, so the three are an `or`.
 
 The index also holds every name a second time in `name` and `municipality`,
 defined for `matching`, where words are matched whole and a quoted

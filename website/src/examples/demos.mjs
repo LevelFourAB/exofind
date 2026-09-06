@@ -21,9 +21,9 @@ export const DEMOS = [
 	{
 		name: 'livsmedel',
 		title: 'Swedish food search',
-		summary: '2 606 foods from the Swedish Food Agency. A search for '
-			+ '<strong>sås</strong> finds <strong>gravlaxsås</strong>, because the '
-			+ 'index splits compound words.',
+		summary: '2 606 foods from Livsmedelsverket, the Swedish Food Agency. '
+			+ 'Shows compounding splitting of words, type <strong>sås</strong> and the results include '
+			+ '<strong>gravlaxsås</strong>.',
 		shows: [
 			'compound splitting',
 			'facet counts that ignore their own filter',
@@ -34,11 +34,10 @@ export const DEMOS = [
 	{
 		name: 'airports',
 		title: 'Airport type-ahead',
-		summary: 'Every airport with an IATA code, completed as you type. '
-			+ '<strong>sto</strong> becomes Stockholm, <strong>stockhlm</strong> '
-			+ "still finds it, and <strong>ord</strong> finds O'Hare.",
+		summary: 'Every airport with an IATA code, from OurAirports. Type '
+			+ '<strong>sto</strong> and Stockholm appears at once. Type the typo '
+			+ '<strong>stockhlm</strong> and Stockholm is still there.',
 		shows: [
-			'autocomplete',
 			'typo tolerance',
 			'prefix matchers',
 			'per-field weights',
@@ -48,9 +47,7 @@ export const DEMOS = [
 	{
 		name: 'cleveland',
 		title: 'Cleveland Museum of Art',
-		summary: '30 000 objects from the open access collection. Tick a department '
-			+ 'and the objects narrow, but the department counts stay as they '
-			+ 'were.',
+		summary: '30 000 objects from the open access collection with a rich ability to filter them.',
 		shows: [
 			'facet counts that ignore their own filter',
 			'range buckets',
@@ -62,15 +59,11 @@ export const DEMOS = [
 	{
 		name: 'discogs',
 		title: 'Record shop',
-		summary: '50 000 records and every pressing of them. Ask for a '
-			+ '<strong>UK vinyl under €25</strong> and one pressing has to be '
-			+ 'all three, not three pressings between them.',
+		summary: '50 000 records from Discogs, and every pressing of them.',
 		shows: [
 			'sub-documents',
-			'conditions that hold within one value',
-			'matched values',
-			'a value as a hit of its own',
 			'facets and ordering inside a value',
+			'matched values',
 			'prices and values read out of the search box'
 		]
 	}
