@@ -1,0 +1,526 @@
+---
+/*
+ * The search dialog, which searches this site with a node rather than with the
+ * static index Starlight ships.
+ *
+ * What it does and why is on `./search.js`. What is here is the markup and the
+ * look, and both keep the shapes Starlight's own search has - the custom
+ * element, the button that opens it, the dialog and its frame - because
+ * `../styles/site.css` restyles the header control by those names and the
+ * theme should not have to know which search is behind it.
+ *
+ * The results are drawn as sections gathered under the page they are on, which
+ * is what an index of sections is worth having: a reader looking for how to
+ * paginate is shown the paragraph that says it, and told which page they will
+ * land on.
+ */
+import { Icon } from '@astrojs/starlight/components';
+
+import { withBase } from '../site.mjs';
+
+/*
+ * The documentation index as headed lists of documents, defined into the
+ * bundle by `astro.config.mjs` from what `../parts.mjs` reads. It arrives as a
+ * constant rather than as an import for the reason `../nav.mjs` takes the
+ * parts that way: this module is bundled, and a path relative to a source file
+ * no longer leads to the repository from a bundle.
+ */
+/* global __DOCS_CATALOGUE__ */
+const CATALOGUE = __DOCS_CATALOGUE__;
+
+/*
+ * What a reader is offered before they have typed anything: the page the
+ * manual starts at, and the pages looked up most often once it is running.
+ *
+ * Named by slug and resolved against the documentation index, so a page that
+ * is renamed or dropped fails the build instead of quietly leaving a gap here.
+ * The labels come from the index as well, so one of them is never a second
+ * name for a page.
+ */
+const STARTING_POINTS = [
+	'tutorials/getting-started',
+	'how-to/define-an-index',
+	'how-to/index-documents',
+	'how-to/search-an-index',
+	'reference/search-api',
+	'reference/field-types',
+	'reference/configuration'
+];
+
+const documents = new Map(
+	CATALOGUE.flatMap(listing => listing.items.map(item => [item.slug, {
+		...item,
+		part: listing.label.split(':')[0].trim()
+	}]))
+);
+
+const starting = STARTING_POINTS.map(slug => {
+	const document = documents.get(slug);
+
+	if(!document) {
+		throw new Error(`The search dialog starts a reader at ${slug}, which docs/README.md does not list`);
+	}
+
+	return { ...document, href: withBase(`/${slug}/`) };
+});
+---
+
+<site-search class={Astro.props.class}>
+	<button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K">
+		<Icon name="magnifier" />
+		<span class="sl-hidden md:sl-block" aria-hidden="true">Search</span>
+		<kbd class="sl-hidden md:sl-flex" style="display: none;">
+			<kbd>Ctrl</kbd><kbd>K</kbd>
+		</kbd>
+	</button>
+
+	<dialog style="padding: 0" aria-label="Search">
+		<div class="dialog-frame sl-flex">
+			<button data-close-modal class="sl-flex md:sl-hidden">Cancel</button>
+
+			<div class="search-container">
+				{/*
+				  * The box and the list below it are a combobox: the arrow keys
+				  * walk the list while the keyboard stays here, so what was
+				  * typed can be corrected at any point of the walk. Which
+				  * result the reader is on is `aria-activedescendant` rather
+				  * than focus, and `../components/search.js` moves it between
+				  * the two lists the dialog shows.
+				  */}
+				<form role="search">
+					<label class="sr-only" for="site-search-input">Search the manual</label>
+					<input
+						id="site-search-input"
+						type="search"
+						placeholder="Search the manual"
+						autocomplete="off"
+						spellcheck="false"
+						enterkeyhint="go"
+						role="combobox"
+						aria-autocomplete="list"
+						aria-expanded="false"
+						aria-controls="site-search-starting"
+					/>
+				</form>
+
+				<p class="search-status" data-status aria-live="polite"></p>
+
+				<ul
+					id="site-search-results"
+					class="search-results"
+					data-results
+					role="listbox"
+					aria-label="Results"
+				></ul>
+
+				{/*
+				  * What the dialog holds before anything is typed. The recent
+				  * searches are the reader's own and are filled in by the
+				  * script; the pages below them are the same for everybody and
+				  * are rendered here, so they are links whether or not the
+				  * script has run.
+				  */}
+				<div
+					id="site-search-starting"
+					class="search-empty"
+					data-empty
+					hidden
+					role="listbox"
+					aria-label="Suggestions"
+				>
+					<section data-recent hidden role="group" aria-labelledby="site-search-recent">
+						<h2 id="site-search-recent" class="search-empty__heading">Recent</h2>
+						<ul class="search-empty__list" data-recent-list role="none"></ul>
+					</section>
+
+					<section role="group" aria-labelledby="site-search-start">
+						<h2 id="site-search-start" class="search-empty__heading">Start here</h2>
+						<ul class="search-empty__list" role="none">
+							{starting.map(page => (
+								<li role="none">
+									<a href={page.href} role="option">
+										<span class="search-empty__label">{page.label}</span>
+										<span class="search-empty__part">{page.part}</span>
+									</a>
+								</li>
+							))}
+						</ul>
+					</section>
+				</div>
+			</div>
+		</div>
+	</dialog>
+</site-search>
+
+{
+	/*
+	 * Inlined so that the shortcut is never shown as the wrong one for a
+	 * moment. `navigator.platform` is deprecated and used anyway, for the
+	 * reason Starlight uses it: a browser with the developer tools open spoofs
+	 * the user agent and would be told to press the wrong key.
+	 */
+}
+<script is:inline>
+	(() => {
+		const open = document.querySelector('button[data-open-modal]');
+		const shortcut = open?.querySelector('kbd');
+		if(!open || !(shortcut instanceof HTMLElement)) return;
+
+		const platform = shortcut.querySelector('kbd');
+		if(platform && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platform.textContent = '⌘';
+			open.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+
+		shortcut.style.display = '';
+	})();
+</script>
+
+<script>
+	import '../components/search.js';
+</script>
+
+<style>
+	site-search {
+		display: contents;
+	}
+
+	/*
+	 * `hidden` is a `display: none` the browser sets at the lowest weight there
+	 * is, so any rule here that gives an element a display of its own outranks
+	 * it and the element stays on the page with the attribute set. Everything
+	 * the script hides is hidden through this.
+	 */
+	[hidden] {
+		display: none !important;
+	}
+
+	/*
+	 * The control in the header. `../styles/site.css` squares it off and sets
+	 * it in the mono face with the rest of the furniture; what is here is the
+	 * layout Starlight's own search had, so that replacing the component does
+	 * not move the header.
+	 */
+	button[data-open-modal] {
+		align-items: center;
+		background-color: transparent;
+		border: 0;
+		color: var(--sl-color-gray-1);
+		cursor: pointer;
+		display: flex;
+		font-size: var(--sl-text-xl);
+		gap: 0.5rem;
+		height: 2.5rem;
+	}
+
+	@media (min-width: 50rem) {
+		button[data-open-modal] {
+			background-color: var(--sl-color-black);
+			border: 1px solid var(--sl-color-gray-5);
+			color: var(--sl-color-gray-2);
+			font-size: var(--sl-text-sm);
+			max-width: 22rem;
+			padding-inline: 0.75rem 0.5rem;
+			width: 100%;
+		}
+
+		button[data-open-modal]:hover {
+			border-color: var(--sl-color-gray-2);
+			color: var(--sl-color-white);
+		}
+
+		button[data-open-modal] > :last-child {
+			margin-inline-start: auto;
+		}
+	}
+
+	button > kbd {
+		background-color: var(--sl-color-gray-6);
+		font-size: var(--sl-text-2xs);
+		gap: 0.25em;
+		padding-inline: 0.375rem;
+	}
+
+	/* --- the dialog ------------------------------------------------------- */
+
+	dialog {
+		background-color: var(--sl-color-gray-6);
+		border: 1px solid var(--sl-color-gray-5);
+		height: 100%;
+		margin: 0;
+		max-height: 100%;
+		max-width: 100%;
+		width: 100%;
+	}
+
+	dialog[open] {
+		display: flex;
+	}
+
+	dialog::backdrop {
+		background-color: var(--sl-color-backdrop-overlay);
+		-webkit-backdrop-filter: blur(0.25rem);
+		backdrop-filter: blur(0.25rem);
+	}
+
+	.dialog-frame {
+		flex-direction: column;
+		flex-grow: 1;
+		gap: 1rem;
+		overflow: auto;
+		padding: 1rem;
+		position: relative;
+	}
+
+	button[data-close-modal] {
+		align-items: center;
+		align-self: flex-end;
+		background: transparent;
+		border: 0;
+		color: var(--sl-color-text-accent);
+		cursor: pointer;
+		font-family: var(--sl-font-mono);
+		font-size: var(--sl-text-sm);
+		height: 2.75rem;
+		padding: 0.25rem;
+		position: absolute;
+		z-index: 1;
+	}
+
+	@media (min-width: 50rem) {
+		dialog {
+			height: max-content;
+			margin: 4rem auto auto;
+			max-height: calc(100% - 8rem);
+			max-width: 42rem;
+			min-height: 12rem;
+			width: 90%;
+		}
+
+		.dialog-frame {
+			padding: 1.5rem;
+		}
+	}
+
+	.search-container {
+		display: flex;
+		flex-direction: column;
+		gap: 0.875rem;
+		min-height: 0;
+	}
+
+	/* --- what is typed ---------------------------------------------------- */
+
+	/*
+	 * One rule under the text rather than a box around it: the dialog is the
+	 * box, and a second one inside it is a border the reader has to read past
+	 * to reach the results.
+	 */
+	input[type='search'] {
+		background: none;
+		border: 0;
+		border-bottom: 1px solid var(--sl-color-gray-5);
+		border-radius: 0;
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-lg);
+		padding: 0.375rem 0 0.625rem;
+		width: 100%;
+	}
+
+	input[type='search']::placeholder {
+		color: var(--sl-color-gray-3);
+	}
+
+	input[type='search']:focus {
+		border-bottom-color: var(--sl-color-text-accent);
+		outline: none;
+	}
+
+	input[type='search']::-webkit-search-cancel-button {
+		display: none;
+	}
+
+	/*
+	 * The label every other small label on the site is set as. It carries a
+	 * message only when there is one to carry - a search the node answered
+	 * says nothing - and takes no room on the rows when it is empty.
+	 */
+	.search-status {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.16em;
+		line-height: 1.2;
+		margin: 0;
+		text-transform: uppercase;
+	}
+
+	.search-status:empty {
+		display: none;
+	}
+
+	/* --- the results ------------------------------------------------------ */
+
+	.search-results {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		list-style: none;
+		margin: 0;
+		overflow-y: auto;
+		padding: 0;
+	}
+
+	/*
+	 * Laid out inline rather than as a flex row: a marked word is an element
+	 * inside the title, and a flex row would make it an item of its own and
+	 * put the row's gap on both sides of it.
+	 */
+	.search-results :global(.result__page) {
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-sm);
+		font-weight: 600;
+		margin: 0 0 0.375rem;
+	}
+
+	.search-results :global(.result__part) {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.625rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		margin-inline-start: 0.625rem;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	.search-results :global(.result__sections) {
+		border-inline-start: 1px solid var(--sl-color-gray-5);
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.search-results :global(.section) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1875rem;
+		padding: 0.5rem 0 0.5rem 0.8125rem;
+		text-decoration: none;
+	}
+
+	.search-results :global(.section:hover),
+	.search-results :global(.section:focus-visible),
+	.search-results :global(.section[data-active]) {
+		background-color: var(--sl-color-gray-6);
+		outline: none;
+	}
+
+	/*
+	 * Where the keyboard is is a rule in the accent, the same mark the sidebar
+	 * puts beside the page the reader is on. The arrow keys leave the keyboard
+	 * in the text box, so the result they are on is marked by `data-active`
+	 * rather than by being focused.
+	 */
+	.search-results :global(.section:focus-visible),
+	.search-results :global(.section[data-active]) {
+		box-shadow: inset 2px 0 0 var(--sl-color-text-accent);
+	}
+
+	.search-results :global(.section__heading) {
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-sm);
+	}
+
+	/*
+	 * No line clamp: a fragment is cut to 160 characters by the search and an
+	 * excerpt to 180 by the load, so a snippet runs to two or three lines on
+	 * its own. Clamping it here would need a block box, which would take the
+	 * marked words out of the line they sit in.
+	 */
+	.search-results :global(.section__snippet) {
+		color: var(--sl-color-gray-2);
+		font-size: var(--sl-text-xs);
+		line-height: 1.5;
+	}
+
+	/* --- before anything is typed ----------------------------------------- */
+
+	.search-empty {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		overflow-y: auto;
+	}
+
+	/* The label every other small label on the site is set as. */
+	.search-empty__heading {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		line-height: 1.2;
+		margin: 0 0 0.375rem;
+		text-transform: uppercase;
+	}
+
+	.search-empty__list {
+		border-inline-start: 1px solid var(--sl-color-gray-5);
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.search-empty__list :global(a),
+	.search-empty__list :global(button) {
+		align-items: baseline;
+		background: none;
+		border: 0;
+		color: var(--sl-color-white);
+		cursor: pointer;
+		display: flex;
+		font: inherit;
+		font-size: var(--sl-text-sm);
+		gap: 0.625rem;
+		padding: 0.375rem 0 0.375rem 0.8125rem;
+		text-align: start;
+		text-decoration: none;
+		width: 100%;
+	}
+
+	.search-empty__list :global(a:hover),
+	.search-empty__list :global(a:focus-visible),
+	.search-empty__list :global(a[data-active]),
+	.search-empty__list :global(button:hover),
+	.search-empty__list :global(button:focus-visible),
+	.search-empty__list :global(button[data-active]) {
+		background-color: var(--sl-color-gray-6);
+		box-shadow: inset 2px 0 0 var(--sl-color-text-accent);
+		outline: none;
+	}
+
+	.search-empty__list :global(.search-empty__part) {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.625rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		margin-inline-start: auto;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	/* What matched, marked rather than filled in - the theme fills nothing. */
+	.search-results :global(mark) {
+		background: none;
+		color: var(--sl-color-text-accent);
+		font-weight: 600;
+	}
+</style>
+
+<style is:global>
+	[data-search-modal-open] {
+		overflow: hidden;
+	}
+</style>

@@ -148,12 +148,17 @@ export default defineConfig({
 			 * The head adds the client router, so that a click within the
 			 * documentation changes the content rather than the document. The
 			 * header row carries a link into each part of the documentation,
-			 * and gathers the search with the rest of the controls. The title
-			 * of a page is labelled with the part of the manual it is in, the
-			 * front page leads with one line rather than with the site name,
-			 * and the theme is three cells rather than a dropdown. The end of
-			 * a page names who publishes the engine. Why each is replaced, and
-			 * what it costs, is on the component.
+			 * and gathers the search with the rest of the controls. The search
+			 * asks a node rather than the static index, which is what the site
+			 * is for. The title of a page is labelled with the part of the
+			 * manual it is in, the front page leads with one line rather than
+			 * with the site name, and the theme is three cells rather than a
+			 * dropdown. The end of a page names who publishes the engine. Why
+			 * each is replaced, and what it costs, is on the component.
+			 *
+			 * Pagefind is left on. It is what the search falls back to when no
+			 * node answers, and Starlight builds it whether or not it is what
+			 * the site searches with.
 			 */
 			components: {
 				Footer: './src/components/Footer.astro',
@@ -161,6 +166,7 @@ export default defineConfig({
 				Header: './src/components/Header.astro',
 				Hero: './src/components/Hero.astro',
 				PageTitle: './src/components/PageTitle.astro',
+				Search: './src/components/Search.astro',
 				ThemeSelect: './src/components/ThemeSelect.astro'
 			},
 

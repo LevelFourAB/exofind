@@ -1,0 +1,98 @@
+{
+	"source": "none",
+	"resources": {
+		"stopwords": {
+			"questions": [
+				"how", "what", "when", "where", "which", "who", "whom", "why",
+				"do", "does", "did", "can", "could", "should", "would",
+				"i", "me", "my", "we", "our", "us", "you", "your"
+			]
+		},
+		"analyzers": {
+			"prose": {
+				"custom": {
+					"filters": [
+						{ "normalize": {} },
+						{ "stopwords": {} },
+						{ "stopwords": { "named": "questions" } },
+						{ "stemming": {} }
+					]
+				}
+			}
+		}
+	},
+	"fields": {
+		"id": {
+			"type": "string",
+			"primaryKey": true,
+			"required": true,
+			"stored": true
+		},
+		"url": {
+			"type": "string",
+			"required": true,
+			"stored": true
+		},
+		"part": {
+			"type": "string",
+			"stored": true,
+			"filter": {}
+		},
+		"title": {
+			"type": "string",
+			"required": true,
+			"stored": true,
+			"matching": {
+				"analyzer": { "named": "prose" },
+				"weight": 8,
+				"exact": {},
+				"highlight": {},
+				"typoTolerance": {},
+				"lengthNormalization": "strong"
+			}
+		},
+		"heading": {
+			"type": "string",
+			"stored": true,
+			"matching": {
+				"analyzer": { "named": "prose" },
+				"weight": 5,
+				"exact": {},
+				"highlight": {},
+				"typoTolerance": {},
+				"lengthNormalization": "strong"
+			}
+		},
+		"text": {
+			"type": "string",
+			"matching": {
+				"analyzer": { "named": "prose" },
+				"weight": 1,
+				"highlight": {},
+				"typoTolerance": {}
+			}
+		},
+		"excerpt": {
+			"type": "string",
+			"stored": true
+		},
+		"lead": {
+			"type": "boolean",
+			"filter": {}
+		},
+		"position": {
+			"type": "int32",
+			"sort": {}
+		},
+		"build": {
+			"type": "string",
+			"required": true,
+			"filter": {}
+		}
+	},
+	"ranking": {
+		"tieBreakers": [
+			{ "field": "position", "direction": "ascending" }
+		]
+	}
+}

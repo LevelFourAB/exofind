@@ -280,6 +280,30 @@ repository variable. For node requirements, including preloaded datasets,
 disabling the indexer role, and setting `QUARKUS_HTTP_CORS_ORIGINS`, see
 [Running a public demo node](../docs/how-to/run-a-demo-node.md).
 
+## The search box
+
+The site searches itself with a node, on the index named `docs` and against the
+same `PUBLIC_EXOFIND_NODE` the demos search. `src/components/Search.astro`
+replaces Starlight's search component, and `src/components/search.js` builds the
+requests and draws the results.
+
+A hit is a section of a page rather than a page. What builds those documents,
+what the index definition tunes, and how to load it into a node is
+[`search/README.md`](search/README.md). Load it with `mise run site:index`.
+
+Before anything is typed, the dialog offers the reader's five most recent
+searches over a short list of starting pages. A search is recorded once the
+reader follows one of its results, and it is kept in that browser's
+`localStorage` and read by nothing else. The starting pages are named by slug
+in `STARTING_POINTS` in `src/components/Search.astro` and resolved against
+`docs/README.md`, so a page that is renamed or dropped fails the build rather
+than leaving a gap. Their labels come from the index too.
+
+Pagefind stays enabled. It is what the dialog falls back to when no node
+answers, and Starlight builds it during `astro build` whether or not it is what
+the site searches with. A dev server builds no Pagefind index, so a node that
+does not answer is reported there instead.
+
 ## Where the site is served from
 
 `src/site.mjs` defines the site origin and base path, and nothing else decides
@@ -327,6 +351,7 @@ Use these `mise` tasks to run, build, and preview the site:
 
 ```shell
 mise run site            # documentation and demos, on localhost:4321
+mise run site:index      # loads the documentation into a node, for the search box
 mise run site:build      # writes website/dist
 mise run site:preview    # serves what was built, under the same path as the deployment
 ```

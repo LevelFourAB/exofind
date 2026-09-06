@@ -33,7 +33,7 @@ description = "Build the application and run the packaged server"
 # It checks no credentials either, the way dev mode does. The packaged jar runs
 # under the prod profile, where a node would otherwise want a key on every
 # request and the examples carry none.
-env = { EXOFIND_INDEXER_ENABLED = "true", EXOFIND_AUTH_MODE = "none" }
+env = { EXOFIND_INDEXER_ENABLED = "true", EXOFIND_AUTH_MODE = "none", EXOFIND_STORAGE_LOCAL_DIRECTORY = "data" }
 run = [
 	"mvn package -DskipTests",
 	"java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -jar target/quarkus-app/quarkus-run.jar"
@@ -116,6 +116,14 @@ dir = "website"
 # preferences directory to find that out.
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
 run = ["pnpm install", "pnpm run dev"]
+
+[tasks."site:index"]
+description = "Put the documentation into a node, which is what the site's own search searches"
+dir = "website"
+# The same shape as the example loads: `NODE`, `INDEX` and `KEY` decide which
+# node is written to and as whom, and without them it writes to a node on
+# localhost that checks nothing. See `website/search/README.md`.
+run = ["pnpm install", "node search/load.mjs"]
 
 [tasks."site:openapi"]
 description = "Refresh the OpenAPI document the site publishes and generates its API pages from"

@@ -1,0 +1,55 @@
+name: Search index
+
+# Putting the documentation into the index the site's own search searches. The
+# site is a static deployment and the index is data on a node, so the two are
+# published separately: this runs beside `pages.yml` rather than inside it, and
+# a load that fails leaves the pages deployed rather than the other way round.
+#
+# What it loads and how is `website/search/README.md`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'website/public/openapi.yaml'
+      - 'website/search/**'
+      - 'website/src/examples/demos.mjs'
+      - '.github/workflows/docs-index.yml'
+  # Loading on demand, for an index that has to be written again without the
+  # documentation having changed - a new node, or one whose bucket was emptied.
+  workflow_dispatch:
+
+# A push that supersedes another abandons its run, and a load that has started
+# is left to finish: it removes what an earlier build left only once the new
+# documents are committed, and a run cut in half between the two leaves the
+# index holding both.
+concurrency:
+  group: docs-index
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    # The node and the credential are a deployment rather than anything about
+    # this repository, so both are settings on it. Without them there is
+    # nothing to write to and the job is skipped rather than failing every push
+    # on a fork or on a repository that runs no node.
+    if: vars.EXOFIND_INDEXER_NODE != ''
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: node pnpm
+
+      # The indexer node rather than the demo node: the demo node answers
+      # searches as a key that may only search. The key here needs
+      # `indexes.write`, `documents.write` and `indexes.commit` over the index.
+      - name: Load the documentation
+        working-directory: website
+        env:
+          NODE_URL: ${{ vars.EXOFIND_INDEXER_NODE }}
+          KEY: ${{ secrets.EXOFIND_INDEXER_KEY }}
+        run: |
+          pnpm install --frozen-lockfile
+          node search/load.mjs

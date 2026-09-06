@@ -1,6 +1,6 @@
 # Running a public demo node
 
-This guide shows you how to configure a public demo node that answers search requests from a browser without credentials, such as for the [example pages](../../examples/README.md). This setup is a deliberate narrowing of a standard node and is not intended for production deployments. To secure a production deployment, see [Secure a deployment](secure-a-deployment.md).
+This guide shows you how to configure a public demo node that answers search requests from a browser without credentials, such as for the [example pages](../../examples/README.md) and the search box on the documentation site. This setup is a deliberate narrowing of a standard node and is not intended for production deployments. To secure a production deployment, see [Secure a deployment](secure-a-deployment.md).
 
 ## Prerequisites
 
@@ -19,10 +19,12 @@ Before you begin, ensure you have:
    Content-Type: application/json
 
    {
-     "description": "the demo pages",
-     "grants": [{ "permissions": ["search"], "indexes": ["livsmedel", "airports", "cleveland", "discogs"] }]
+     "description": "the demo pages and the search on the site",
+     "grants": [{ "permissions": ["search"], "indexes": ["livsmedel", "airports", "cleveland", "discogs", "docs"] }]
    }
    ```
+
+   The `docs` index holds the documentation, which the search box on the site searches. Leave it out if the node serves the demo pages alone.
 
 2. Save the `id` from the response.
 
@@ -65,6 +67,14 @@ A public search endpoint consumes public compute resources. To limit costs and p
    ```
 
    The demo node serves data that an indexer has committed. The anonymous key cannot load data because it only holds the `search` permission.
+
+2. Load the documentation into the same node, so that the search box on the site can search it:
+
+   ```shell
+   NODE=https://indexer.internal.example.com KEY=<a writing key> mise run site:index
+   ```
+
+   Run this command again whenever the documentation changes. Each load replaces what the previous one wrote, and the index answers with the previous documents until the new ones are committed. For details, see [the search directory of the website](../../website/search/README.md).
 
 ## Serving the example pages
 

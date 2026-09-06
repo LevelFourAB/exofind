@@ -6,13 +6,15 @@
 		"dev": "astro dev",
 		"build": "astro build",
 		"preview": "astro preview",
-		"check": "astro check"
+		"check": "astro check",
+		"index": "node search/load.mjs"
 	},
 	"dependencies": {
 		"@astrojs/markdown-remark": "^7.2.4",
 		"@astrojs/starlight": "^0.41.10",
 		"astro": "^7.2.9",
 		"astro-opengraph-images": "^1.20.1",
+		"github-slugger": "^2.0.0",
 		"sharp": "^0.35.4",
 		"starlight-openapi": "^0.26.1",
 		"unist-util-visit": "^5.1.0",
