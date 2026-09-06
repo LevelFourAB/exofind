@@ -8,7 +8,8 @@
  *
  * The listeners are on `document`, which the router keeps, so the module is
  * evaluated once per full page load however many routed navigations follow.
- * Nothing here runs on a page without the router: the events are the router's.
+ * Only the last listener does anything on a page without the router; the rest
+ * wait on events that are the router's.
  */
 
 /** The sidebar's scroller, and the only element this needs by name. */
@@ -78,6 +79,22 @@ for(const event of ['astro:after-preparation', 'astro:page-load']) {
 		document.documentElement.classList.remove(NAVIGATING);
 	});
 }
+
+/*
+ * A demo page is not routed to, so a click on a link to one is a fetch the
+ * router gives up on and finishes as a full page load: the class goes on and
+ * neither event above takes it off again. The document is then frozen with the
+ * class still set, and the browser hands that same document back when the
+ * reader presses Back - a restored page that has arrived already, drawing a bar
+ * for a fetch that ended long ago.
+ *
+ * `pageshow` is the one event a restored document gets, and clearing the class
+ * there covers a page left by any full navigation rather than the demos alone.
+ * It fires on a first load as well, where there is nothing to clear.
+ */
+window.addEventListener('pageshow', () => {
+	document.documentElement.classList.remove(NAVIGATING);
+});
 
 document.addEventListener('astro:before-swap', event => {
 	const arriving = event.newDocument.documentElement;
