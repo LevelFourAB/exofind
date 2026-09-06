@@ -182,6 +182,23 @@ public class KeysTest {
 		assertThat(principal.allows(Permission.SEARCH, "books"), is(true));
 	}
 
+	/**
+	 * Only a request with no header at all presented nothing. One that
+	 * presented something this node does not read is refused rather than
+	 * served as though it had presented nothing.
+	 */
+	@Test
+	void aHeaderThatIsNotABearerTokenIsRefusedEvenWhereAnonymousIsAnswered() {
+		var credential = storeKey(null, grant("books", Permission.SEARCH));
+		var id = KeySecret.parse(credential).orElseThrow().id();
+
+		var instance = keys(ROOT_KEY, id);
+
+		assertThrows(UnauthenticatedException.class, () -> instance.resolve("Basic abc"));
+		assertThrows(UnauthenticatedException.class, () -> instance.resolve("Bearer "));
+		assertThrows(UnauthenticatedException.class, () -> instance.resolve(""));
+	}
+
 	@Test
 	void theAnonymousKeyIsHonouredOnlyAsFarAsAnonymousMayGo() {
 		/*

@@ -118,7 +118,7 @@ openssl rand -base64 32
 
 ## Answering requests that carry no credential
 
-The `EXOFIND_AUTH_ANONYMOUS_KEY` environment variable specifies a key ID for unauthenticated requests. When configured on a node, requests without an `Authorization` header execute with the permissions of the specified key. When unset, unauthenticated requests are rejected.
+The `EXOFIND_AUTH_ANONYMOUS_KEY` environment variable specifies a key ID for unauthenticated requests. When configured on a node, requests without an `Authorization` header execute with the permissions of the specified key. A request with an `Authorization` header that is not a bearer token, or with an empty bearer token, is rejected with `401 Unauthorized` rather than answered as the anonymous key. When unset, unauthenticated requests are rejected.
 
 Anonymous keys have the following restrictions:
 

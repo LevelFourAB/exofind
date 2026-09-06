@@ -275,8 +275,9 @@ public class Keys {
 	 *   carried none
 	 * @return
 	 * @throws UnauthenticatedException
-	 *   if the credential is not one this node accepts, or there is none and
-	 *   this node does not answer requests without one
+	 *   if the credential is not one this node accepts, the header is not a
+	 *   bearer token, or there is none and this node does not answer requests
+	 *   without one
 	 */
 	public Principal resolve(String authorization) {
 		if(mode == AuthMode.NONE) {
@@ -332,18 +333,36 @@ public class Keys {
 		return Principal.anonymous(key);
 	}
 
+	/**
+	 * Read the credential out of the {@code Authorization} header.
+	 *
+	 * <p>Only a request that carries no header at all is one without a
+	 * credential. A header of another scheme, or a bearer scheme with nothing
+	 * after it, is a credential this node does not accept - answering it as
+	 * anonymous would let a request that meant to present something be served
+	 * as though it had presented nothing.
+	 *
+	 * @return
+	 *   the bearer token, or {@code null} when the request carried no header
+	 * @throws UnauthenticatedException
+	 *   if the header is not a bearer token
+	 */
 	private static String toCredential(String authorization) {
 		if(authorization == null) {
 			return null;
 		}
 
 		var value = authorization.trim();
-		if(value.length() <= BEARER.length()
-			|| !value.regionMatches(true, 0, BEARER, 0, BEARER.length())) {
-			return null;
+		if(!value.regionMatches(true, 0, BEARER, 0, BEARER.length())) {
+			throw new UnauthenticatedException();
 		}
 
-		return value.substring(BEARER.length()).trim();
+		var credential = value.substring(BEARER.length()).trim();
+		if(credential.isEmpty()) {
+			throw new UnauthenticatedException();
+		}
+
+		return credential;
 	}
 
 	/**
