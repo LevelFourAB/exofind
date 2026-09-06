@@ -202,13 +202,16 @@ class SiteSearch extends HTMLElement {
 	/* --- walking the results ---------------------------------------------- */
 
 	/**
-	 * The results the arrow keys walk, in the order they are drawn in: whichever
-	 * of the two the dialog is showing - the results, or what it offers before a
-	 * search.
+	 * Whichever of the two lists the dialog is showing: the results, or what it
+	 * offers before a search.
 	 */
+	get showing() {
+		return this.empty.hidden ? this.results : this.empty;
+	}
+
+	/** The results the arrow keys walk, in the order they are drawn in. */
 	get walkable() {
-		const showing = this.empty.hidden ? this.results : this.empty;
-		return [...showing.querySelectorAll('a, button')];
+		return [...this.showing.querySelectorAll('a, button')];
 	}
 
 	/**
@@ -254,13 +257,20 @@ class SiteSearch extends HTMLElement {
 	}
 
 	/**
-	 * Point the text box at the list it is now showing, and put the reader on
-	 * none of it. Called after anything is drawn, because the result they were
-	 * on is not on the page any more.
+	 * Point the text box at the list it is now showing, and put the reader at
+	 * the top of it with nothing selected. Called after anything is drawn,
+	 * because what they had walked to and scrolled to answered the search
+	 * before this one.
+	 *
+	 * Both the list and the frame around it are scrolled back, because which of
+	 * the two carries the scrollbar depends on how wide the viewport is.
 	 */
 	retarget() {
 		this.select(null);
-		this.input.setAttribute('aria-controls', (this.empty.hidden ? this.results : this.empty).id);
+		this.input.setAttribute('aria-controls', this.showing.id);
+
+		this.showing.scrollTop = 0;
+		this.frame.scrollTop = 0;
 	}
 
 	async search() {
