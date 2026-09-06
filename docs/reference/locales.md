@@ -21,6 +21,7 @@ The following table lists the supported language tags and their analysis capabil
 | `ar` | Arabic | yes | yes | | |
 | `bg` | Bulgarian | yes | yes | | |
 | `bn` | Bengali | yes | yes | | |
+| `bs` | Bosnian | yes | yes | | |
 | `ca` | Catalan | yes | yes | | |
 | `ckb` | Central Kurdish (Sorani) | yes | yes | | |
 | `cs` | Czech | yes | yes | | |
@@ -37,6 +38,7 @@ The following table lists the supported language tags and their analysis capabil
 | `ga` | Irish | yes | yes | | |
 | `gl` | Galician | yes | yes | | |
 | `hi` | Hindi | yes | yes | | |
+| `hr` | Croatian | yes | yes | | |
 | `hu` | Hungarian | yes | yes | | |
 | `hy` | Armenian | yes | yes | | |
 | `id` | Indonesian | yes | yes | | |
@@ -46,6 +48,7 @@ The following table lists the supported language tags and their analysis capabil
 | `ko` | Korean | | | yes | |
 | `lt` | Lithuanian | yes | yes | | |
 | `lv` | Latvian | yes | yes | | |
+| `ms` | Malay | yes | yes | | |
 | `nb` | Norwegian Bokmål | yes | yes | | yes |
 | `ne` | Nepali | yes | yes | | |
 | `nl` | Dutch | yes | yes | | yes |
@@ -80,6 +83,7 @@ The following table lists the supported language tags and their analysis capabil
   - Greek accents.
   - Elided articles in Catalan, French, Irish, and Italian.
   - Distinct Unicode forms of letters in Arabic, Indic, and Cyrillic scripts.
+- **Shared rules**: Standard forms of one language read through the same stopword list and stemmer. Malay (`ms`) uses the Indonesian rules. Bosnian (`bs`) and Croatian (`hr`) use the Serbian rules, which fold both scripts and the letters `č`, `ć`, `đ`, `š` and `ž` to plain Latin, and bring the ijekavian `mlijeko` and the ekavian `mleko` to one term. A search typed in one of the three spellings finds a value written in another.
 - **Script rewriting**: `zh-Hant` rewrites Traditional characters as their Simplified forms before the text is segmented, because the Chinese word model holds the Simplified forms only. A value indexed as `zh-Hant` produces the same terms as the same sentence written in Simplified and indexed as `zh`. Character positions are unchanged, so highlights point at the text as it was sent.
 
 ## Varieties of a language

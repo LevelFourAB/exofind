@@ -48,6 +48,7 @@ public class LocalesTest {
 		Map.entry("ar", List.of("الكتاب", "كتاب")),
 		Map.entry("bg", List.of("книгата", "книга")),
 		Map.entry("bn", List.of("মানুষেরা", "মানুষ")),
+		Map.entry("bs", List.of("prijatelji", "prijatelj")),
 		Map.entry("fa", List.of("کتابها", "کتاب")),
 		Map.entry("hi", List.of("लड़के", "लड़का")),
 		// The plural is a suffix - keṭāharū is the plural of keṭā
@@ -82,6 +83,7 @@ public class LocalesTest {
 		// Irish stems grammar off the front - the mutated bhean is bean
 		Map.entry("ga", List.of("bhean", "bean")),
 		Map.entry("gl", List.of("casas", "casa")),
+		Map.entry("hr", List.of("knjige", "knjiga")),
 		Map.entry("hu", List.of("házak", "ház")),
 		Map.entry("hy", List.of("երեխաներ", "երեխա")),
 		/*
@@ -92,6 +94,8 @@ public class LocalesTest {
 		Map.entry("it", List.of("ragazzi", "ragazzo")),
 		Map.entry("lt", List.of("namai", "namas")),
 		Map.entry("lv", List.of("grāmatas", "grāmata")),
+		// Malay inflects the way Indonesian does - makanan is food, makan to eat
+		Map.entry("ms", List.of("makanan", "makan")),
 		Map.entry("nl", List.of("katten", "kat")),
 		Map.entry("no", List.of("husene", "hus")),
 		Map.entry("nb", List.of("husene", "hus")),
@@ -392,6 +396,35 @@ public class LocalesTest {
 	@Test
 	public void testSerbianScriptsMeetAtTheSameTerm() {
 		assertThat(terms("sr", "књига"), is(terms("sr", "knjiga")));
+	}
+
+	/**
+	 * Bosnian is written in both scripts as well, and reads through the
+	 * Serbian chain, so the two scripts meet the same way.
+	 */
+	@Test
+	public void testBosnianScriptsMeetAtTheSameTerm() {
+		assertThat(terms("bs", "књига"), is(terms("bs", "knjiga")));
+	}
+
+	/**
+	 * Croatian text is typed with its diacritics and without them alike, and
+	 * both spellings have to find the same documents.
+	 */
+	@Test
+	public void testCroatianSpellingsWithoutDiacriticsMeetAtTheSameTerm() {
+		assertThat(terms("hr", "kuća"), is(terms("hr", "kuca")));
+	}
+
+	/**
+	 * Croatian and Bosnian write the ijekavian `ije` where Serbian writes
+	 * `e`, and the shared stemmer brings both to one term - so a field
+	 * holding one of the three answers a search typed in another.
+	 */
+	@Test
+	public void testCroatianAndSerbianSpellingsMeetAtTheSameTerm() {
+		assertThat(terms("hr", "mlijeko"), is(terms("sr", "mleko")));
+		assertThat(terms("bs", "mlijeko"), is(terms("sr", "mleko")));
 	}
 
 	/**

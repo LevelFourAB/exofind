@@ -297,6 +297,20 @@ public final class Locales {
 			.withStemmer(BengaliStemFilter::new));
 
 		/*
+		 * Bosnian, Croatian and Serbian are standard forms of one language
+		 * and share their morphology, so all three read through the pieces
+		 * Lucene ships for Serbian - see `sr` below for what those do.
+		 * Bosnian is written in Cyrillic as well as Latin, so the script
+		 * regularization that makes the two meet is wanted here as much as
+		 * for Serbian.
+		 */
+		register(locales, StandardLocaleSupport.of("bs")
+			.withStopWords(SerbianAnalyzer.getDefaultStopSet())
+			.withStemmer(stream -> new SnowballFilter(
+				new SerbianNormalizationFilter(stream), new SerbianStemmer()
+			)));
+
+		/*
 		 * Catalan glues elided articles onto the front of a word - l'home -
 		 * the way French does, so they are taken off before stopwords and
 		 * stemming see the word.
@@ -419,6 +433,21 @@ public final class Locales {
 			))
 			.withStemmer(HindiStemFilter::new));
 
+		/*
+		 * Croatian shares its morphology with Serbian and reads through the
+		 * same pieces, see `bs` above and `sr` below. It writes Latin only,
+		 * but nothing in the chain is Cyrillic's alone: the diacritics it
+		 * folds are the ones Croatian text is typed with and without alike,
+		 * and the stemmer brings the ijekavian `mlijeko` to the same term as
+		 * the ekavian `mleko`, so a search typed in Serbian spelling finds a
+		 * Croatian value.
+		 */
+		register(locales, StandardLocaleSupport.of("hr")
+			.withStopWords(SerbianAnalyzer.getDefaultStopSet())
+			.withStemmer(stream -> new SnowballFilter(
+				new SerbianNormalizationFilter(stream), new SerbianStemmer()
+			)));
+
 		register(locales, StandardLocaleSupport.of("hu")
 			.withStopWords(HungarianAnalyzer.getDefaultStopSet())
 			.withStemmer(stream -> new SnowballFilter(stream, new HungarianStemmer())));
@@ -503,6 +532,17 @@ public final class Locales {
 			.withStemmer(LatvianStemFilter::new));
 
 		/*
+		 * Malay and Indonesian are standard forms of one language: the
+		 * function words are the same and both inflect with the same
+		 * prefixes and suffixes - membaca is to read in either - so Malay
+		 * reads through the stopword list and stemmer Lucene ships for
+		 * Indonesian.
+		 */
+		register(locales, StandardLocaleSupport.of("ms")
+			.withStopWords(IndonesianAnalyzer.getDefaultStopSet())
+			.withStemmer(IndonesianStemFilter::new));
+
+		/*
 		 * Nepali writes Devanagari, so the same Indic normalization Hindi
 		 * needs runs before its stopword list and stemmer see a word.
 		 */
@@ -578,7 +618,8 @@ public final class Locales {
 		 * Serbian is written in Cyrillic and Latin alike. The stopword list
 		 * matches the word as written; stemming first regularizes both
 		 * scripts to bald Latin, which is what the stemmer knows and what
-		 * makes the two scripts meet as one term.
+		 * makes the two scripts meet as one term. Bosnian and Croatian above
+		 * read through the same chain.
 		 */
 		register(locales, StandardLocaleSupport.of("sr")
 			.withStopWords(SerbianAnalyzer.getDefaultStopSet())
