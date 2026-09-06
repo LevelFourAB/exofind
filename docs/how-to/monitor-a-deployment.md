@@ -21,7 +21,7 @@ Before you begin, ensure that you have:
 ## Inspect exposed node metrics
 
 Exofind exposes Prometheus metrics by default on the standard HTTP port at
-`/q/metrics`.
+`/q/metrics`. This endpoint does not require authentication keys.
 
 1. Query the metrics endpoint on a running node:
    ```bash

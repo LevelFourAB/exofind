@@ -114,7 +114,7 @@ To limit cardinality growth in large deployments, meters differ in whether they 
 
 The engine includes two Micrometer registries on the classpath:
 
-- **Prometheus**: Exposed at `/q/metrics` on the node HTTP port. Enabled by default. Scraping this endpoint consumes resources only when requested.
+- **Prometheus**: Exposed at `/q/metrics` on the node HTTP port. Enabled by default. This endpoint does not require authentication keys. Scraping this endpoint consumes resources only when requested.
 - **OTLP push**: Compiled in but disabled at runtime by default.
 
 ### Enabling OTLP push
