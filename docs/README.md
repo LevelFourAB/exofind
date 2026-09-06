@@ -34,6 +34,9 @@ The documentation includes the following how-to guides.
 - [Generating an API client](how-to/generate-a-client.md): Fetch the OpenAPI
   document, build a client from it, give it a key, and keep it current with the
   node.
+- [Testing an application against a node](how-to/test-against-a-node.md): Run
+  an integration test suite against a node in a container, make the writes
+  visible before asserting, and reset between tests.
 
 ### Indexes and documents
 
@@ -83,6 +86,9 @@ The documentation includes the following how-to guides.
 - [Find out why a result ranked where it did](how-to/explain-a-result.md): Read
   a hit's score back as the clauses and fields you wrote, and find out why a
   document is missing rather than only why it is low.
+- [Tuning ranking](how-to/tune-ranking.md): Lift documents with a boost, rank by
+  popularity or freshness with signals, break ties, and rescore the best
+  results, all without reindexing.
 
 ### Changing an index
 
@@ -144,6 +150,8 @@ from the OpenAPI document.
 - [Configuration](reference/configuration.md): Every environment variable.
 - [Object storage requirements](reference/object-storage.md): The operations,
   conditional requests, and consistency a node expects of the bucket.
+- [Storage layout](reference/storage-layout.md): Every object a node writes
+  under the prefix, what a delete removes, and what the local directory holds.
 - [Metrics](reference/metrics.md): Every meter a node registers, what it is
   tagged with, and the settings that decide what is exported.
 - [Authentication](reference/auth.md): Keys, permissions, roles, and the keys
@@ -161,6 +169,8 @@ from the OpenAPI document.
 - [Locales](reference/locales.md): The languages with rules, and what each one
   gets.
 - [Errors](reference/errors.md): The error body and the code vocabulary.
+- [Glossary](reference/glossary.md): The terms the other pages use, each with
+  the page that explains it.
 
 ## Explanation
 
@@ -172,6 +182,9 @@ The documentation includes the following explanations:
   generations under it, and why the name is what callers hold.
 - [Synchronization](explanation/synchronization.md): Manifests, epochs, and the
   leadership table; what keeps two writers from corrupting an index.
+- [What a write guarantees](explanation/write-guarantees.md): What a client can
+  assume after a document write returns, when the change is durable and
+  visible, and what a failover does to it.
 - [Separating search and indexing nodes](explanation/deployment-shapes.md): Why
   searching and writing want different nodes, and what a deployment runs out of
   first as its index count grows.
