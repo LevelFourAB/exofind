@@ -20,6 +20,7 @@ import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.Indexes;
+import se.l4.exofind.engine.Interruptions;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -1108,7 +1109,7 @@ public class ReindexJobs {
 		} catch(IndexReadonlyException | IndexOutOfDateException e) {
 			abandon(current);
 		} catch(Exception e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.addKeyValue("index", current.index)
 				.setCause(e)
 				.log("Could not catch the ready reindex up; " + e.getMessage());
@@ -1161,7 +1162,7 @@ public class ReindexJobs {
 			}
 		} catch(IOException | RuntimeException e) {
 			// Letting this out would cancel the schedule
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not sweep the reindex records; " + e.getMessage());
 		}
@@ -1186,7 +1187,7 @@ public class ReindexJobs {
 				}
 			}
 		} catch(IOException | RuntimeException e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not look for reindexes to resume; " + e.getMessage());
 		}
@@ -1244,7 +1245,7 @@ public class ReindexJobs {
 				submit(resumed);
 			}
 		} catch(IOException e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.addKeyValue("index", index)
 				.setCause(e)
 				.log("Could not resume the reindex; " + e.getMessage());

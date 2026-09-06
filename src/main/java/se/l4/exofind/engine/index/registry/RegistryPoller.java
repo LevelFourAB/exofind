@@ -12,6 +12,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import se.l4.exofind.engine.Interruptions;
 import se.l4.exofind.engine.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
@@ -269,7 +270,7 @@ public class RegistryPoller {
 			 * Letting this out would cancel the schedule, leaving the node on
 			 * whatever it happens to hold until it is restarted.
 			 */
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not poll the registry; " + e.getMessage());
 		} finally {

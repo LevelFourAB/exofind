@@ -84,6 +84,15 @@ public final class Log {
 		return at(Level.ERROR, logger.isErrorEnabled());
 	}
 
+	/**
+	 * Log at a level that is decided while running, for a call site that says
+	 * the same thing more or less loudly - see
+	 * {@link se.l4.exofind.engine.Interruptions#levelOf}.
+	 */
+	public LoggingEventBuilder atLevel(Level level) {
+		return at(level, logger.isEnabledForLevel(level));
+	}
+
 	private LoggingEventBuilder at(Level level, boolean enabled) {
 		return enabled
 			? new LogFieldBuilder(logger, level)

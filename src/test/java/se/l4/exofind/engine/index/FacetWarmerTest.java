@@ -158,6 +158,29 @@ public class FacetWarmerTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void testAStoppedWarmerDropsWhatIsQueuedAfterIt() throws Exception {
+		var index = products(open(1));
+		assertThat(warmer.awaitIdle(Duration.ofSeconds(30)), is(true));
+
+		warmer.close();
+
+		var before = warms(Meters.OUTCOME_SUCCESS)
+			+ warms(Meters.OUTCOME_SUPERSEDED)
+			+ warms(Meters.OUTCOME_ERROR);
+
+		warmer.warm(index);
+
+		assertThat(warmer.queued(), is(0));
+		assertThat(warmer.awaitIdle(Duration.ofSeconds(30)), is(true));
+		assertThat(
+			warms(Meters.OUTCOME_SUCCESS)
+				+ warms(Meters.OUTCOME_SUPERSEDED)
+				+ warms(Meters.OUTCOME_ERROR),
+			is(before)
+		);
+	}
+
+	@Test
 	public void testSearchesAskingAtOnceShareOneBuild() throws Exception {
 		var index = products(FacetWarmer.none());
 

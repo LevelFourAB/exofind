@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.Interruptions;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.registry.RegistryPoller;
@@ -508,7 +509,7 @@ public class SearchSettings implements RegistryPoller.Listener {
 			entry.lastReadNanos = System.nanoTime();
 			return true;
 		} catch(IOException e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.addKeyValue("index", index)
 				.setCause(e)
 				.log(

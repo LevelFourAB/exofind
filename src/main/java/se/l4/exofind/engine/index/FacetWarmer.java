@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.Interruptions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.Meters;
@@ -103,6 +104,12 @@ public class FacetWarmer implements AutoCloseable {
 	 */
 	private int active;
 
+	/**
+	 * Whether the threads have been stopped, so that a warm that is queued or
+	 * running knows that the node is going rather than that something failed.
+	 */
+	private volatile boolean closed;
+
 	@Inject
 	public FacetWarmer(
 		RequestMetrics metrics,
@@ -177,7 +184,7 @@ public class FacetWarmer implements AutoCloseable {
 	 * @param index
 	 */
 	public void warm(Index index) {
-		if(pool == null) {
+		if(pool == null || closed) {
 			return;
 		}
 
@@ -207,6 +214,17 @@ public class FacetWarmer implements AutoCloseable {
 		queued.remove(index);
 
 		var started = System.nanoTime();
+
+		/*
+		 * Nothing on a node that is going will search this reader, and the
+		 * reads a warm makes would only hold the stop up.
+		 */
+		if(closed) {
+			metrics.recordFacetWarm(Meters.OUTCOME_STOPPED, System.nanoTime() - started);
+			finished();
+			return;
+		}
+
 		try {
 			var snapshot = settings == null
 				? null
@@ -220,14 +238,23 @@ public class FacetWarmer implements AutoCloseable {
 				System.nanoTime() - started
 			);
 		} catch(Throwable t) {
-			metrics.recordFacetWarm(Meters.OUTCOME_ERROR, System.nanoTime() - started);
+			/*
+			 * A warm that was interrupted was stopped by the node going, not
+			 * by anything about the reader, and is neither an error nor worth
+			 * a stack trace at a level an operator reads.
+			 */
+			var interrupted = Interruptions.isInterrupted(t);
+			metrics.recordFacetWarm(
+				interrupted ? Meters.OUTCOME_STOPPED : Meters.OUTCOME_ERROR,
+				System.nanoTime() - started
+			);
 
 			/*
 			 * Not what a search asked for, so nobody is waiting on it: the
 			 * first search builds what the warm did not, and pays what it
 			 * would have without warming.
 			 */
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(t))
 				.addKeyValue("index", index.getId())
 				.setCause(t)
 				.log("Could not prepare the facets of a reopened index; " + t.getMessage());
@@ -269,12 +296,16 @@ public class FacetWarmer implements AutoCloseable {
 	}
 
 	/**
-	 * Stop the threads. A warm queued after this is dropped, and the first
-	 * search builds what it needs.
+	 * Stop the threads. A warm queued after this is dropped, one that has not
+	 * started is not started, and one that is running is interrupted. Nothing
+	 * on a node that is stopping searches these readers, so the work is
+	 * reported as {@link Meters#OUTCOME_STOPPED} rather than as a failure.
 	 */
 	@Override
 	@PreDestroy
 	public void close() {
+		closed = true;
+
 		if(pool != null) {
 			pool.shutdownNow();
 		}

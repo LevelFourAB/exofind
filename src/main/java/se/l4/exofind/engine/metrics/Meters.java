@@ -277,7 +277,8 @@ public final class Meters {
 	 * search asked for it. Tagged with {@link #TAG_OUTCOME}:
 	 * {@link #OUTCOME_SUCCESS} where every field was prepared,
 	 * {@link #OUTCOME_SUPERSEDED} where a newer reader replaced the one being
-	 * prepared, and {@link #OUTCOME_ERROR} where preparing failed.
+	 * prepared, {@link #OUTCOME_STOPPED} where the node stopped before it
+	 * finished, and {@link #OUTCOME_ERROR} where preparing failed.
 	 */
 	public static final String FACET_WARM = "exofind.facet.warm";
 
@@ -390,6 +391,12 @@ public final class Meters {
 	 * it finished.
 	 */
 	public static final String OUTCOME_SUPERSEDED = "superseded";
+
+	/**
+	 * Work given up because the node is stopping, which is what a node does
+	 * when it is told to stop and not a failure of the work.
+	 */
+	public static final String OUTCOME_STOPPED = "stopped";
 
 	public static final String TRIGGER_CHANGES = "changes";
 	public static final String TRIGGER_INTERVAL = "interval";

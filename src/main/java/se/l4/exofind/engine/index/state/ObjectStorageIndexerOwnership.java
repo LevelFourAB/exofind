@@ -32,6 +32,7 @@ import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.collections.api.set.SetIterable;
 
+import se.l4.exofind.engine.Interruptions;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -635,7 +636,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		try {
 			coordinate();
 		} catch(Exception e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.addKeyValue("node", node)
 				.setCause(e)
 				.log("Could not update indexer leadership; " + e.getMessage());

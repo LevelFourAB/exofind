@@ -668,7 +668,7 @@ public class Indexes implements RegistryPoller.Listener {
 			try {
 				task.run();
 			} catch(RuntimeException e) {
-				logger.atWarn()
+				logger.atLevel(Interruptions.levelOf(e))
 					.addKeyValue("index", key)
 					.setCause(e)
 					.log("Could not follow the ownership of an index; " + e.getMessage());
@@ -715,7 +715,7 @@ public class Indexes implements RegistryPoller.Listener {
 			try {
 				entry.getValue().reopen(flush);
 			} catch(RuntimeException e) {
-				logger.atWarn()
+				logger.atLevel(Interruptions.levelOf(e))
 					.addKeyValue("index", entry.getValue().getId())
 					.setCause(e)
 					.log("Could not reopen index; " + e.getMessage());
@@ -1119,7 +1119,7 @@ public class Indexes implements RegistryPoller.Listener {
 					try {
 						index.pull();
 					} catch(RuntimeException e) {
-						logger.atWarn()
+						logger.atLevel(Interruptions.levelOf(e))
 							.addKeyValue("index", index.getId())
 							.setCause(e)
 							.log("Could not pull index; " + e.getMessage());
@@ -1135,7 +1135,7 @@ public class Indexes implements RegistryPoller.Listener {
 			 * Letting this out would cancel the schedule, leaving the node on
 			 * whatever it happens to hold until it is restarted.
 			 */
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not refresh indexes; " + e.getMessage());
 		} finally {
@@ -1589,7 +1589,7 @@ public class Indexes implements RegistryPoller.Listener {
 			}
 		} catch(IOException | RuntimeException e) {
 			// Letting this out would cancel the schedule, like a refresh would
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not sweep the local copies; " + e.getMessage());
 		}

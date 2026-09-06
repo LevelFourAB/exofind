@@ -112,7 +112,7 @@ public class IndexRemovalSweeper {
 		try {
 			marks = removals.listMarks(target -> !isRegistered(target));
 		} catch(IOException e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not look for deleted indexes to remove; " + e.getMessage());
 
@@ -144,7 +144,7 @@ public class IndexRemovalSweeper {
 						.log("Removed the objects of a deleted index from the storage");
 				}
 			} catch(IOException | RuntimeException e) {
-				logger.atWarn()
+				logger.atLevel(Interruptions.levelOf(e))
 					.addKeyValue("index", mark.target().toString())
 					.setCause(e)
 					.log("Could not remove the objects of a deleted index; " + e.getMessage());

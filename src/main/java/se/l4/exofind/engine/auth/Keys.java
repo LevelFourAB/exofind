@@ -15,6 +15,7 @@ import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import se.l4.exofind.engine.Interruptions;
 import se.l4.exofind.engine.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
@@ -425,7 +426,7 @@ public class Keys {
 
 			return true;
 		} catch(IOException e) {
-			logger.atWarn()
+			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
 				.log("Could not read the keys, using the copy this node holds; " + e.getMessage());
 
