@@ -147,6 +147,39 @@ public class LocalKeyStorageTest {
 	}
 
 	/**
+	 * A file an interrupted write left behind has the permissions of its time,
+	 * and the store is not to inherit them.
+	 */
+	@Test
+	void testALeftoverTemporaryFileDoesNotDecideThePermissions() throws Exception {
+		var temp = directory.resolve("keys.ef.bin.tmp");
+		Files.write(temp, new byte[] { 1, 2, 3 });
+
+		if(Files.getFileAttributeView(temp, PosixFileAttributeView.class) == null) {
+			// The file system decides who may read on its own
+			return;
+		}
+
+		Files.setPosixFilePermissions(
+			temp,
+			Set.of(
+				PosixFilePermission.OWNER_READ,
+				PosixFilePermission.OWNER_WRITE,
+				PosixFilePermission.GROUP_READ,
+				PosixFilePermission.OTHERS_READ
+			)
+		);
+
+		storage.write(storeWith("a"), null);
+
+		assertThat(
+			Files.getPosixFilePermissions(file),
+			is(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
+		);
+		assertThat(storage.read(null), instanceOf(KeyStorage.Read.Loaded.class));
+	}
+
+	/**
 	 * A write lands whole or not at all, so an interrupted one can never leave
 	 * a store that cannot be parsed.
 	 */

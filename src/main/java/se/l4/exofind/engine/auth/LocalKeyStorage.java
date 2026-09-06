@@ -1,11 +1,16 @@
 package se.l4.exofind.engine.auth;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
@@ -19,7 +24,7 @@ import java.util.zip.CRC32C;
  * contents of the file rather than kept in memory, so two stores opened over
  * the same file still see each other's writes.
  *
- * <p>The file is written so that only the user running the node can read it.
+ * <p>The file is created so that only the user running the node can read it.
  * A bucket has access rules of its own deciding who may read the keys; a file
  * has whatever the umask gave it, which on a shared host is often everyone.
  */
@@ -93,15 +98,7 @@ public class LocalKeyStorage implements KeyStorage {
 			var temp = file.resolveSibling(file.getFileName() + TEMP_SUFFIX);
 
 			Files.createDirectories(file.getParent());
-			Files.write(temp, contents);
-
-			/*
-			 * Narrowed before the move rather than after, so the keys are
-			 * never readable by anyone else, not even for the moment between
-			 * the two.
-			 */
-			restrictToOwner(temp);
-
+			writeOwnerOnly(temp, contents);
 			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
 
 			return versionOf(contents);
@@ -111,16 +108,48 @@ public class LocalKeyStorage implements KeyStorage {
 	}
 
 	/**
-	 * Let only the user running the node read the file. A file system that
-	 * does not describe permissions this way is left alone - there is nothing
-	 * to narrow, and failing the write would leave the node unable to keep
-	 * keys at all.
+	 * Write a file that only the user running the node can read.
+	 *
+	 * <p>The permissions are given when the file is created rather than set
+	 * afterwards, so there is no moment at which the file exists with whatever
+	 * the umask would have given it. A file left behind by an interrupted write
+	 * is removed first, because it was created with the permissions of its
+	 * time and creating over it would keep them. A file system that does not
+	 * describe permissions this way decides who may read on its own - there is
+	 * nothing to narrow, and failing the write would leave the node unable to
+	 * keep keys at all.
 	 */
-	private static void restrictToOwner(Path path) throws IOException {
+	private static void writeOwnerOnly(Path path, byte[] contents) throws IOException {
+		Files.deleteIfExists(path);
+
+		var options = Set.<OpenOption>of(
+			StandardOpenOption.CREATE_NEW,
+			StandardOpenOption.WRITE
+		);
+
+		try(var channel = open(path, options)) {
+			var buffer = ByteBuffer.wrap(contents);
+			while(buffer.hasRemaining()) {
+				channel.write(buffer);
+			}
+		}
+	}
+
+	/**
+	 * Open a new file for writing, readable only by its owner where the file
+	 * system can say so.
+	 */
+	private static SeekableByteChannel open(Path path, Set<OpenOption> options)
+		throws IOException
+	{
 		try {
-			Files.setPosixFilePermissions(path, OWNER_ONLY);
+			return Files.newByteChannel(
+				path,
+				options,
+				PosixFilePermissions.asFileAttribute(OWNER_ONLY)
+			);
 		} catch(UnsupportedOperationException e) {
-			// Not a POSIX file system, so it decides who may read on its own
+			return Files.newByteChannel(path, options);
 		}
 	}
 

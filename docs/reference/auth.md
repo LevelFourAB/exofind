@@ -28,7 +28,7 @@ Keys are stored alongside indexes: as an object in the storage bucket in `object
 - Revocation takes effect within the duration configured by `EXOFIND_AUTH_REFRESH_INTERVAL`. A node accepts a cached key until its next storage read. A node looks up an unseen key immediately, so newly created keys work without delay.
 - Key management does not depend on a specific node. Requests to `/v1alpha1/admin/keys` are handled directly by the node that receives them and are not forwarded to the indexer.
 
-In `local` mode, the single node writes the key file with permissions determined by the running process umask.
+In `local` mode, the single node creates the key file readable only by the user running the node, regardless of the process umask.
 
 If a node configured in `object` mode cannot access object storage for keys, it acts as though no keys exist. In this state, only the root key can authenticate requests.
 
