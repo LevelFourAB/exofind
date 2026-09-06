@@ -102,6 +102,19 @@ public class KeysTest {
 		assertThat(principal.id(), is(Principal.ROOT));
 	}
 
+	/**
+	 * A value that says it is a hash and is not one would be a root key that
+	 * never matches, found out at the first lockout rather than at startup.
+	 */
+	@Test
+	void aRootKeyHashThatIsNotOneRefusesToStart() {
+		assertThrows(IllegalStateException.class, () -> keys("sha256:abc", null));
+		assertThrows(
+			IllegalStateException.class,
+			() -> keys("sha256:" + KeySecret.hash(ROOT_KEY).replace('a', 'x'), null)
+		);
+	}
+
 	@Test
 	void aStoredKeyResolvesToWhatItWasGranted() {
 		var credential = storeKey(null, grant("books", Permission.SEARCH));

@@ -39,6 +39,11 @@ public final class KeySecret {
 	private static final int ID_BYTES = ID_LENGTH / 2;
 	private static final int SECRET_BYTES = 32;
 
+	/**
+	 * Length of a hash in characters: the 32 bytes of a SHA-256 digest as hex.
+	 */
+	private static final int HASH_LENGTH = 64;
+
 	private static final SecureRandom RANDOM = new SecureRandom();
 
 	/**
@@ -124,6 +129,28 @@ public final class KeySecret {
 		} catch(NoSuchAlgorithmException e) {
 			throw new IllegalStateException("SHA-256 is not available in this runtime", e);
 		}
+	}
+
+	/**
+	 * Whether a value is shaped like what {@link #hash(String)} produces:
+	 * lowercase hex of the 32 bytes of a SHA-256 digest.
+	 *
+	 * @param value
+	 * @return
+	 */
+	public static boolean isHash(String value) {
+		if(value == null || value.length() != HASH_LENGTH) {
+			return false;
+		}
+
+		for(int i = 0; i < value.length(); i++) {
+			var c = value.charAt(i);
+			if((c < '0' || c > '9') && (c < 'a' || c > 'f')) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

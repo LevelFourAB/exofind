@@ -123,7 +123,7 @@ The following table lists authentication configuration variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXOFIND_AUTH_MODE` | Authentication mode: `keys` to validate credentials on every request, or `none` to disable authentication and allow all requests. | `keys` (`none` in development mode) |
-| `EXOFIND_AUTH_ROOT_KEY` | Administrative credential with full access, accepted only by this node and not stored in storage. Provide either the raw key value or `sha256:` followed by its hash. Used to create the initial key or recover access if all administrative keys are deleted. | None |
+| `EXOFIND_AUTH_ROOT_KEY` | Administrative credential with full access, accepted only by this node and not stored in storage. Provide either the raw key value or `sha256:` followed by its hash as 64 hexadecimal characters; the node refuses to start when the hash is malformed. Used to create the initial key or recover access if all administrative keys are deleted. | None |
 | `EXOFIND_AUTH_ANONYMOUS_KEY` | ID of the key applied to unauthenticated requests. The referenced key must have only the `search` permission, or the node refuses to start. If not set, unauthenticated requests are rejected. | None |
 | `EXOFIND_AUTH_REFRESH_INTERVAL` | Interval at which the node refreshes keys from storage. Revoking a key can take up to this interval to propagate. Unseen keys are looked up immediately, at most once per interval. | `10s` |
 

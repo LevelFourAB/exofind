@@ -108,7 +108,7 @@ The server returns the following authentication and authorization HTTP status co
 
 The `EXOFIND_AUTH_ROOT_KEY` environment variable defines a per-node credential with full administrative permissions. The root key is not stored in key storage and cannot be listed or revoked through the API.
 
-The value can be the plain text key string or its SHA-256 hash formatted as `sha256:<hex>`.
+The value can be the plain text key string or its SHA-256 hash formatted as `sha256:<hex>`, where `<hex>` is 64 hexadecimal characters. A node refuses to start when the value after `sha256:` is not a hash, because that root key could never match.
 
 To generate a root key value, run:
 

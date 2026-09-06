@@ -146,13 +146,28 @@ public class Keys {
 	 * Read the root key as it was configured. A value that already is a hash is
 	 * taken as one, so a deployment need not put the key itself in an
 	 * environment variable.
+	 *
+	 * @throws IllegalStateException
+	 *   if the value says it is a hash and is not one, which would otherwise be
+	 *   a root key that never matches and is found out at the first lockout
 	 */
 	private static String toRootKeyHash(String configured) {
 		var value = configured.trim();
 
-		return value.startsWith(HASH_PREFIX)
-			? value.substring(HASH_PREFIX.length()).toLowerCase()
-			: KeySecret.hash(value);
+		if(!value.startsWith(HASH_PREFIX)) {
+			return KeySecret.hash(value);
+		}
+
+		var hash = value.substring(HASH_PREFIX.length()).toLowerCase();
+		if(!KeySecret.isHash(hash)) {
+			throw new IllegalStateException(
+				"EXOFIND_AUTH_ROOT_KEY starts with `" + HASH_PREFIX + "` but what follows is"
+					+ " not a SHA-256 hash, which is 64 hexadecimal characters. Give the hash"
+					+ " as `sha256:<hex>`, or give the key itself"
+			);
+		}
+
+		return hash;
 	}
 
 	void onStart(@Observes StartupEvent event) {
