@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.0](https://github.com/LevelFourAB/exofind/compare/v0.1.0...v0.2.0) (2026-09-06)
+
+
+### Features
+
+* Improve Google Cloud Storage support ([6b2a4d8](https://github.com/LevelFourAB/exofind/commit/6b2a4d884635f720aea12950aa8394fd1f73548d))
+* Support for AWS and file credentials for object storage ([8adbea1](https://github.com/LevelFourAB/exofind/commit/8adbea1d0131ee5340063919dc8560fb5dce193d))
+
+
+### Bug fixes
+
+* Report work a shutdown interrupts as stopped instead of a warning ([3f8a8b4](https://github.com/LevelFourAB/exofind/commit/3f8a8b48a7f2ff02d77248092a39a63399894c54))
+
+
+### Documentation
+
+* Add in missing space before email ([56294d0](https://github.com/LevelFourAB/exofind/commit/56294d0bf154a67f43d41fbfeb3b0585d9f880b5))
+* Add info about who's behind the project on the website ([9861540](https://github.com/LevelFourAB/exofind/commit/98615408aa938844d0d628b05a4bc1d5aaa25697))
+
 ## [0.1.0](https://github.com/LevelFourAB/exofind/compare/v0.1.0-SNAPSHOT...v0.1.0) (2026-09-06)
 
 
