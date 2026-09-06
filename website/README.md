@@ -260,6 +260,13 @@ Demo pages require two conventions that the build does not check automatically:
   ticked box, a range bucket other than `Any`, or a pressed button. A page that
   writes its own `<aside>` instead stacks the whole facet column above the first
   result on a phone.
+- Say what the page is waiting for with
+  [`shared/waiting.js`](src/examples/shared/waiting.js). Creating it draws the
+  shape of an answer where the facets and the results will be, so the page
+  opens as a search interface rather than as a column of empty headings, and
+  `searching()`, `done()` and `failed()` in the demo's own `run` turn the
+  spinner in the search field on and off. A demo that leaves them out opens
+  empty and says nothing while a slow search runs.
 
 ## Which node the demos search
 

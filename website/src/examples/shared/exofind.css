@@ -139,7 +139,39 @@
 	font-size: clamp(2rem, 6vw, 3.25rem);
 	letter-spacing: -0.02em;
 	line-height: 1.1;
-	padding: 0 0 0.35rem;
+	/*
+	 * The room on the right is the spinner's, kept whether or not one is
+	 * turning: a field that gave it up when a search ended would move the
+	 * text under the cursor every time one did.
+	 */
+	padding: 0 1.9rem 0.35rem 0;
+}
+
+/*
+ * A search that is taking long enough to be waited for.
+ *
+ * At the end of the field rather than beside the timing, because the field is
+ * where the reader is looking while they type - and it turns beside the text
+ * that is being searched for rather than beside the count of the search
+ * before it. `./waiting.js` puts it there and decides when it shows.
+ */
+.ask__spinner {
+	position: absolute;
+	right: 0.1rem;
+	top: 0;
+	bottom: 0.35rem;
+	margin: auto 0;
+	width: 1.15rem;
+	height: 1.15rem;
+	box-sizing: border-box;
+	border: 2px solid var(--rule);
+	border-top-color: var(--signal);
+	border-radius: 50%;
+	animation: ask-spin 700ms linear infinite;
+}
+
+@keyframes ask-spin {
+	to { transform: rotate(1turn); }
 }
 
 /*
@@ -473,9 +505,81 @@
 	font-size: 0.95rem;
 }
 
+/* --- waiting for the first answer -------------------------------------- */
+
+/*
+ * The shape of an answer, drawn before there is one - see `./waiting.js`.
+ *
+ * Every bar is the rule colour, which is what a demo draws the lines between
+ * its results with: a placeholder is furniture rather than content, and giving
+ * it the ink of the text it stands in for would have a page arrive looking
+ * full of something unreadable. The rows pulse a little, one after another,
+ * because a page that is waiting and a page that has nothing to show look
+ * exactly alike standing still.
+ */
+.placeholder {
+	display: grid;
+	animation: waiting 1.6s ease-in-out infinite;
+}
+
+@keyframes waiting {
+	50% { opacity: 0.4; }
+}
+
+.placeholder__box,
+.placeholder__label,
+.placeholder__count,
+.placeholder__name,
+.placeholder__meta {
+	background: var(--rule);
+}
+
+/* One row of a facet, on the metrics of `.choice` so nothing shifts. */
+.placeholder--choice {
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.26rem 0;
+}
+
+.placeholder__box { width: 0.85rem; height: 0.85rem; }
+.placeholder__label { height: 0.6rem; }
+.placeholder__count { width: 1.1rem; height: 0.55rem; }
+
+/* One result of a list, under the rule its name would sit under. */
+.placeholder--row {
+	gap: 0.55rem;
+	padding: 1rem 0;
+	border-top: 1px solid var(--rule);
+}
+
+.placeholder--row:last-child { border-bottom: 1px solid var(--rule); }
+
+.placeholder__name { height: 0.8rem; }
+.placeholder__meta { height: 0.6rem; }
+
+/*
+ * One result of a wall. The block is a frame rather than a bar, because what
+ * a wall shows is a picture and the height of the row is the picture's.
+ */
+.placeholder--tile { gap: 0.45rem; }
+
+.placeholder__block {
+	aspect-ratio: 1;
+	background: var(--paper);
+	border: 1px solid var(--rule);
+}
+
 @media (prefers-reduced-motion: reduce) {
 	*, *::before, *::after {
 		transition-duration: 0.01ms !important;
 		animation-duration: 0.01ms !important;
 	}
+
+	/*
+	 * A pulse and a turning ring both say what they say standing still, and a
+	 * loop shortened to nothing is a flicker rather than a slower loop - so
+	 * these two are stopped outright instead.
+	 */
+	.placeholder, .ask__spinner { animation-name: none; }
 }

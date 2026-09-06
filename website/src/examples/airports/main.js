@@ -21,6 +21,7 @@ import {
 	renderValues,
 	termsOf
 } from '../shared/ui.js';
+import { createWaiting } from '../shared/waiting.js';
 
 /*
  * The fields the typed words are looked for in. The weights live in the
@@ -74,6 +75,19 @@ const elements = {
 	indexName: el('index-name'),
 	weights: { declared: el('weigh-declared'), flat: el('weigh-flat') }
 };
+
+/*
+ * What the page looks like until the first search answers. Only the two facets
+ * that are counted are drawn as shapes; where to measure from is the page's
+ * own list and is drawn for real before anything is searched.
+ */
+const waiting = createWaiting({
+	facets: [
+		{ into: elements.sizes, rows: 5 },
+		{ into: elements.scheduled, rows: 1 }
+	],
+	hits: { into: elements.hits, rows: 8, shape: 'row' }
+});
 
 /**
  * Build the search to send for the typed text.
@@ -222,6 +236,7 @@ async function run() {
 
 	publish();
 	elements.clear.hidden = state.sizes.size === 0 && !state.scheduled && !state.origin;
+	waiting.searching();
 
 	try {
 		const result = await client.search(buildRequest(), controller.signal);
@@ -235,8 +250,10 @@ async function run() {
 
 		elements.status.textContent = explain(error, client.config);
 		elements.status.classList.add('status--error');
+		waiting.failed();
 	} finally {
 		if(running === controller) running = null;
+		waiting.done();
 	}
 }
 
@@ -584,10 +601,15 @@ async function showSize() {
 	}
 }
 
-/* Show what the URL asked for before the first search answers. */
+/*
+ * Show what the URL asked for before the first search answers. Where to
+ * measure from is asked of nothing but the page, so it is drawn now rather
+ * than waiting for a search to come back and say the same thing.
+ */
 elements.query.value = state.text;
 press(elements.weights, state.weighting);
 noteOrigin();
+renderNear();
 
 elements.indexName.textContent = client.config.index;
 showSize();

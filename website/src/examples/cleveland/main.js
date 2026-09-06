@@ -28,6 +28,7 @@ import {
 	renderValues,
 	termsOf
 } from '../shared/ui.js';
+import { createWaiting } from '../shared/waiting.js';
 
 /** How many objects a page of the grid holds. */
 const PER_PAGE = 24;
@@ -101,6 +102,20 @@ const elements = {
 	orders: { best: el('sort-best'), old: el('sort-old'), new: el('sort-new') },
 	paging: { pages: el('paging-pages'), cursor: el('paging-cursor') }
 };
+
+/*
+ * What the page looks like until the first search answers: a column of facets
+ * and a wall of objects. A value facet is drawn shorter than the values it may
+ * answer with, because the shape of an answer is worth a screen and no more.
+ */
+const waiting = createWaiting({
+	facets: [
+		...FACETS.map(facet => ({ into: elements.facets[facet.name], rows: 6 })),
+		{ into: elements.made, rows: MADE.length + 1 },
+		{ into: elements.onView, rows: 1 }
+	],
+	hits: { into: elements.hits, rows: 12, shape: 'tile' }
+});
 
 /**
  * Build the search to send.
@@ -232,6 +247,7 @@ async function run({ at = null, append = false } = {}) {
 
 	publish();
 	elements.clear.hidden = !narrowed();
+	waiting.searching();
 
 	try {
 		const result = await client.search(buildRequest(), controller.signal);
@@ -244,8 +260,10 @@ async function run({ at = null, append = false } = {}) {
 
 		elements.status.textContent = explain(error, client.config);
 		elements.status.classList.add('status--error');
+		waiting.failed();
 	} finally {
 		if(running === controller) running = null;
+		waiting.done();
 	}
 }
 

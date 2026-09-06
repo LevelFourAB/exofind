@@ -73,6 +73,16 @@
 
 .grid .empty { grid-column: 1 / -1; }
 
+/*
+ * The frame a placeholder stands in for keeps its height rather than its
+ * shape, so the wall is drawn at the height it will be and the objects arrive
+ * without moving the page under them.
+ */
+.grid .placeholder__block {
+	aspect-ratio: auto;
+	height: 12rem;
+}
+
 /* --- what to show and in which order ------------------------------------ */
 
 .controls {

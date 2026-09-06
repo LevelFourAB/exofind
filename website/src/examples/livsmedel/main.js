@@ -22,6 +22,7 @@ import {
 	renderValues,
 	termsOf
 } from '../shared/ui.js';
+import { createWaiting } from '../shared/waiting.js';
 
 /** Buckets to count into, which double as the filters the page offers. */
 const ENERGY_RANGES = [
@@ -89,6 +90,22 @@ const elements = {
 	size: el('size'),
 	indexName: el('index-name')
 };
+
+/*
+ * What the page looks like until the first search answers: a column of facets
+ * and a page of results. A range facet draws its buckets and the `Any` over
+ * them, which is exactly what will be there; a value facet is drawn shorter
+ * than the values it may answer with, because the shape of an answer is worth
+ * a screen and no more.
+ */
+const waiting = createWaiting({
+	facets: [
+		{ into: elements.groups, rows: 6 },
+		{ into: elements.energy, rows: ENERGY_RANGES.length + 1 },
+		{ into: elements.protein, rows: PROTEIN_RANGES.length + 1 }
+	],
+	hits: { into: elements.hits, rows: 8, shape: 'row' }
+});
 
 /**
  * Build the search to send.
@@ -166,6 +183,7 @@ async function run() {
 
 	publish();
 	elements.clear.hidden = state.groups.size === 0 && !state.energy && !state.protein;
+	waiting.searching();
 
 	try {
 		const result = await client.search(buildRequest(), controller.signal);
@@ -179,8 +197,10 @@ async function run() {
 
 		elements.status.textContent = explain(error, client.config);
 		elements.status.classList.add('status--error');
+		waiting.failed();
 	} finally {
 		if(running === controller) running = null;
+		waiting.done();
 	}
 }
 

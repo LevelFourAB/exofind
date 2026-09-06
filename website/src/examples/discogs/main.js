@@ -40,6 +40,7 @@ import {
 	renderValues,
 	termsOf
 } from '../shared/ui.js';
+import { createWaiting } from '../shared/waiting.js';
 
 /** How many rows a page holds. */
 const PER_PAGE = 24;
@@ -154,6 +155,22 @@ const elements = {
 	within: { one: el('match-one'), any: el('match-any') },
 	rows: { records: el('rows-records'), pressings: el('rows-pressings') }
 };
+
+/*
+ * What the page looks like until the first search answers: a column of facets
+ * and a shelf of records. A value facet is drawn shorter than the values it
+ * may answer with, because the shape of an answer is worth a screen and no
+ * more.
+ */
+const waiting = createWaiting({
+	facets: [
+		...FACETS.map(facet => ({ into: elements.facets[facet.name], rows: 6 })),
+		{ into: elements.price, rows: PRICES.length + 1 },
+		{ into: elements.pressed, rows: PRESSED.length + 1 },
+		{ into: elements.inStock, rows: 1 }
+	],
+	hits: { into: elements.hits, rows: 12, shape: 'tile' }
+});
 
 /* --- what to ask the node ----------------------------------------------- */
 
@@ -357,6 +374,7 @@ async function run({ at = null } = {}) {
 
 	publish();
 	elements.clear.hidden = !narrowed();
+	waiting.searching();
 
 	try {
 		const result = await client.search(buildRequest(), controller.signal);
@@ -372,8 +390,10 @@ async function run({ at = null } = {}) {
 
 		// The chips stand for the search that answered, and this one did not
 		renderInterpreted(null);
+		waiting.failed();
 	} finally {
 		if(running === controller) running = null;
+		waiting.done();
 	}
 }
 
