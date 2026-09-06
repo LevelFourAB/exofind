@@ -655,6 +655,19 @@ public final class Locales {
 			.withStemmer(stream -> new SnowballFilter(stream, new RussianStemmer())));
 
 		/*
+		 * Slovak and Slovenian inflect the way Czech does, but Lucene ships
+		 * nothing for them, so both read a stopword list and a light stemmer
+		 * of the engine's own, see SlavicStemmers.
+		 */
+		register(locales, StandardLocaleSupport.of("sk")
+			.withStopWords(() -> resourceWords("stopwords-sk.txt"))
+			.withStemmer(SlavicStemmers.SLOVAK::filter));
+
+		register(locales, StandardLocaleSupport.of("sl")
+			.withStopWords(() -> resourceWords("stopwords-sl.txt"))
+			.withStemmer(SlavicStemmers.SLOVENIAN::filter));
+
+		/*
 		 * Serbian is written in Cyrillic and Latin alike. The stopword list
 		 * matches the word as written; stemming first regularizes both
 		 * scripts to bald Latin, which is what the stemmer knows and what

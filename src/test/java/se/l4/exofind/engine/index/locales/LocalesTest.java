@@ -116,6 +116,8 @@ public class LocalesTest {
 		Map.entry("pt", List.of("livros", "livro")),
 		Map.entry("ro", List.of("elevii", "elev")),
 		Map.entry("ru", List.of("книги", "книга")),
+		Map.entry("sk", List.of("ženami", "žena")),
+		Map.entry("sl", List.of("hišah", "hiša")),
 		Map.entry("sr", List.of("kuće", "kuća")),
 		Map.entry("sv", List.of("bilarna", "bil")),
 		Map.entry("tr", List.of("kitaplar", "kitap")),
