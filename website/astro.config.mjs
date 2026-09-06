@@ -151,10 +151,12 @@ export default defineConfig({
 			 * and gathers the search with the rest of the controls. The title
 			 * of a page is labelled with the part of the manual it is in, the
 			 * front page leads with one line rather than with the site name,
-			 * and the theme is three cells rather than a dropdown. Why each is
-			 * replaced, and what it costs, is on the component.
+			 * and the theme is three cells rather than a dropdown. The end of
+			 * a page names who publishes the engine. Why each is replaced, and
+			 * what it costs, is on the component.
 			 */
 			components: {
+				Footer: './src/components/Footer.astro',
 				Head: './src/components/Head.astro',
 				Header: './src/components/Header.astro',
 				Hero: './src/components/Hero.astro',

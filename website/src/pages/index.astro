@@ -12,6 +12,7 @@ import { Code, TabItem, Tabs } from '@astrojs/starlight/components';
 
 import DemoList from '../components/DemoList.astro';
 import { demo } from '../examples/demos.mjs';
+import { COMPANY } from '../site.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -207,6 +208,19 @@ const doors = [
 			</a>
 		))}
 	</div>
+
+	<h2>Who is behind this</h2>
+
+	<p>
+		Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a>. The engine
+		is open source under the Apache License 2.0, and you can run it without us.
+	</p>
+
+	<p>
+		We also work with the teams that use it: index design, deployment on your
+		own object storage, and tuning relevance. Tell us what you are building at
+		<a href={'mailto:'+COMPANY.email}>{COMPANY.email}</a>.
+	</p>
 </StarlightPage>
 
 <style>

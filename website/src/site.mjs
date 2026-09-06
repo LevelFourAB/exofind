@@ -22,6 +22,16 @@ export const BASE = '';
 export const REPO = 'https://github.com/LevelFourAB/exofind';
 
 /**
+ * Who publishes the engine, and where a reader reaches them. The footer on
+ * every page and the front page both state it, and this is the one copy.
+ */
+export const COMPANY = {
+	name: 'Level Four AB',
+	href: 'https://levelfour.se',
+	email: 'hello@levelfour.se'
+};
+
+/**
  * Size of the link preview image, in pixels. Every client that unfurls a link
  * scales the image from this two-to-one shape.
  *

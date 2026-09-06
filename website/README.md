@@ -139,7 +139,7 @@ specific either one is. That is what lets one stylesheet do the work of three
 dozen component overrides, and it is why a rule that stops working after a
 Starlight upgrade is usually a renamed class rather than a specificity problem.
 
-Four components are replaced for markup that CSS cannot reach:
+Five components are replaced for markup that CSS cannot reach:
 
 - [`ThemeSelect.astro`](src/components/ThemeSelect.astro) shows Auto, Light and
   Dark as three cells rather than as a dropdown. It reads and writes the same
@@ -152,6 +152,11 @@ Four components are replaced for markup that CSS cannot reach:
   same line the documentation starts on, and labels it with the site name.
 - [`DemoList.astro`](src/components/DemoList.astro) is the shared list of demos
   for the front page and the catalogue.
+- [`Footer.astro`](src/components/Footer.astro) writes a line under Starlight's
+  own footer that names who publishes the engine and links to them. It is on
+  every page, a demo and an endpoint page included, and it takes the name and
+  the address from `COMPANY` in [`src/site.mjs`](src/site.mjs), which the front
+  page reads as well.
 
 Two things about it are worth knowing before changing it:
 

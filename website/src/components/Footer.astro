@@ -1,0 +1,54 @@
+---
+/*
+ * The end of every page, with a line that names who publishes the engine.
+ *
+ * A reader who wants to ask something about Exofind finds the repository from
+ * the header and nothing else, and an issue is not where a question about
+ * running it belongs. The line under the article is the one place that is on
+ * every page - a demo and an endpoint page as well - so it is where the
+ * publisher and the way to reach them are stated.
+ *
+ * It is written under Starlight's own footer rather than in place of it,
+ * because prev/next and the edit link are what a reader at the end of a page
+ * is looking for first.
+ */
+import Default from '@astrojs/starlight/components/Footer.astro';
+
+import { COMPANY } from '../site.mjs';
+---
+
+<Default><slot /></Default>
+
+<p class="colophon">
+	Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a> and is available under Apache License 2.0.
+</p>
+
+<style>
+	/*
+	 * The same hairline the blocks above it carry, spanning the numeral column
+	 * with the text pushed back onto the axis the page is written on. See the
+	 * comment over `--doc-margin` in `../styles/site.css`.
+	 */
+	.colophon {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		line-height: 1.6;
+		margin-block: 2rem 0;
+		margin-inline-start: calc(-1 * var(--doc-margin));
+		padding-block-start: 0.875rem;
+		padding-inline-start: var(--doc-margin);
+	}
+
+	.colophon a {
+		border-block-end: 1px solid var(--sl-color-gray-4);
+		color: var(--sl-color-gray-3);
+		text-decoration: none;
+	}
+
+	.colophon a:hover {
+		border-block-end-color: var(--sl-color-text-accent);
+		color: var(--sl-color-text-accent);
+	}
+</style>
