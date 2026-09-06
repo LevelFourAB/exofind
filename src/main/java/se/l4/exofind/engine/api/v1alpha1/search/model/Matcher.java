@@ -327,6 +327,21 @@ public sealed interface Matcher
 		Match match,
 
 		/**
+		 * How the parts of {@code user} text combine. Defaults to {@code all}.
+		 * Only applies to {@code user} mode.
+		 */
+		@Schema(
+			description = """
+				How the parts of `user` text combine: `all` requires every \
+				word and every quoted phrase, `any` accepts a document that \
+				holds one of them. Excluded terms (`-word`) always apply. \
+				Setting `join` with any other `match` returns \
+				`search:clause:join_not_applicable`.""",
+			defaultValue = "all"
+		)
+		Join join,
+
+		/**
 		 * Prefix matching behavior on the final query term. Defaults to
 		 * {@code last_token}.
 		 */
@@ -432,6 +447,21 @@ public sealed interface Matcher
 
 			@JsonProperty("user")
 			USER
+		}
+
+		/**
+		 * How the parts of {@code user} text combine.
+		 */
+		@Schema(description = """
+			How the parts of `user` text combine: `all` requires every word \
+			and every quoted phrase, `any` accepts a document holding one of \
+			them. Excluded terms always apply.""")
+		public enum Join {
+			@JsonProperty("all")
+			ALL,
+
+			@JsonProperty("any")
+			ANY
 		}
 
 		/**

@@ -212,6 +212,12 @@ public class SearchRequestMapper {
 				"Only a phrase has words that sit apart - set `match` to `phrase`, or to `user` to read the quotes in what was typed"
 			);
 
+	private static final ErrorType CLAUSE_JOIN_NOT_APPLICABLE =
+		ErrorType.withCode("search:clause:join_not_applicable")
+			.withMessage(
+				"Only what somebody typed has parts to combine - set `match` to `user`, or say `all` or `any` in `match` itself"
+			);
+
 	private static final ErrorType CLAUSE_PATH_REQUIRED =
 		ErrorType.withCode("search:clause:path_required")
 			.withMessage("The name of the object field to match inside is required");
@@ -1677,6 +1683,7 @@ public class SearchRequestMapper {
 					new TextMatcher(
 						text.text(),
 						toMatch(text.match()),
+						toJoin(text.join(), text.match(), path, errors),
 						toPrefix(text.prefix()),
 						toTypos(text.typos()),
 						toSlop(text.slop(), text.match(), path, errors),
@@ -1995,6 +2002,7 @@ public class SearchRequestMapper {
 				return new TextMatcher(
 					text.text(),
 					toMatch(text.match()),
+					toJoin(text.join(), text.match(), path, errors),
 					toPrefix(text.prefix()),
 					toTypos(text.typos()),
 					toSlop(text.slop(), text.match(), path, errors),
@@ -2034,6 +2042,35 @@ public class SearchRequestMapper {
 			case ANY -> TextMatcher.Match.ANY;
 			case PHRASE -> TextMatcher.Match.PHRASE;
 			case USER -> TextMatcher.Match.USER;
+		};
+	}
+
+	/**
+	 * Map how the parts of a typed text combine, refusing it where there is no
+	 * typed text with parts in it. Every other match mode says how its words go
+	 * together in {@code match} itself, so a {@code join} there would be a
+	 * second answer to a question already answered - and one the engine
+	 * quietly does nothing with looks the same to its caller as one that
+	 * worked.
+	 */
+	private static TextMatcher.Join toJoin(
+		Matcher.Text.Join join,
+		Matcher.Text.Match match,
+		String path,
+		MutableList<ErrorMessage> errors
+	) {
+		if(join == null) {
+			return null;
+		}
+
+		if(match != Matcher.Text.Match.USER) {
+			errors.add(CLAUSE_JOIN_NOT_APPLICABLE.toMessage(Location.create(path + "/join")));
+			return null;
+		}
+
+		return switch(join) {
+			case ALL -> TextMatcher.Join.ALL;
+			case ANY -> TextMatcher.Join.ANY;
 		};
 	}
 
@@ -2249,6 +2286,7 @@ public class SearchRequestMapper {
 					matcher.text(),
 					fields,
 					toMatchJson(matcher.match()),
+					toJoinJson(matcher.join()),
 					toPrefixJson(matcher.prefix()),
 					toTyposJson(matcher.typos()),
 					matcher.slop(),
@@ -2327,6 +2365,7 @@ public class SearchRequestMapper {
 			case TextMatcher m -> new Matcher.Text(
 				m.text(),
 				toMatchJson(m.match()),
+				toJoinJson(m.join()),
 				toPrefixJson(m.prefix()),
 				toTyposJson(m.typos()),
 				m.slop(),
@@ -2354,6 +2393,13 @@ public class SearchRequestMapper {
 			case ANY -> Matcher.Text.Match.ANY;
 			case PHRASE -> Matcher.Text.Match.PHRASE;
 			case USER -> Matcher.Text.Match.USER;
+		};
+	}
+
+	private static Matcher.Text.Join toJoinJson(TextMatcher.Join join) {
+		return switch(join) {
+			case ALL -> Matcher.Text.Join.ALL;
+			case ANY -> Matcher.Text.Join.ANY;
 		};
 	}
 

@@ -216,6 +216,10 @@ public record UserText(ImmutableList<Part> parts) {
 	 * as one matcher, so that they keep counting together, and every quoted
 	 * phrase as its own.
 	 *
+	 * The loose words are combined as the {@link TextMatcher.Join} of the given
+	 * matcher says. How the parts here go together is decided where they are
+	 * put back into a query, and says the same thing.
+	 *
 	 * The last word of the text is the one that may still be half typed, so
 	 * the {@link TextMatcher.Prefix} of the given matcher only reaches the
 	 * part the text ended in the middle of - a word after a closed quote is
@@ -249,7 +253,11 @@ public record UserText(ImmutableList<Part> parts) {
 		if(words.length() > 0) {
 			result.add(
 				base.withText(words.toString())
-					.withMatch(TextMatcher.Match.ALL)
+					.withMatch(
+						base.join() == TextMatcher.Join.ANY
+							? TextMatcher.Match.ANY
+							: TextMatcher.Match.ALL
+					)
 					.withPrefix(wordsEndTheText ? base.prefix() : TextMatcher.Prefix.OFF)
 					.withSlop(0)
 			);

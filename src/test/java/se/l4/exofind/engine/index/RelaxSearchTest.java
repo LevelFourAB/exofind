@@ -5,11 +5,13 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 import java.io.IOException;
 import java.util.List;
 
+import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.index.schema.FacetConfig;
@@ -68,6 +70,50 @@ public class RelaxSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(ids(result), is(empty()));
+		assertThat(result.relaxed(), is(nullValue()));
+	}
+
+	/**
+	 * A text whose parts are joined with any is already as wide as a search
+	 * goes: a document holding one word is a result, so no word kept anything
+	 * off the page. Such a search is never set up to let anything go, which is
+	 * what saves the count per word that judging one costs.
+	 */
+	@Test
+	public void testTextJoinedWithAnyIsNeverSetUpToLetGo() {
+		var matcher = TextMatcher.of("mens waterproof shoes")
+			.withMatch(TextMatcher.Match.USER)
+			.withRelax(TextMatcher.Relax.WORDS);
+
+		assertThat(
+			Relaxation.of(Lists.immutable.of(Query.text(matcher))),
+			is(notNullValue())
+		);
+
+		assertThat(
+			Relaxation.of(
+				Lists.immutable.of(Query.text(matcher.withJoin(TextMatcher.Join.ANY)))
+			),
+			is(nullValue())
+		);
+	}
+
+	@Test
+	public void testTextJoinedWithAnyIsAnsweredAsAsked() throws IOException {
+		var index = catalogue();
+
+		var result = search(
+			index,
+			Query.text(
+				TextMatcher.of("mens waterproof shoes")
+					.withMatch(TextMatcher.Match.USER)
+					.withJoin(TextMatcher.Join.ANY)
+					.withRelax(TextMatcher.Relax.WORDS)
+			)
+		);
+
+		// Nothing is waterproof, and the other two words are enough on their own
+		assertThat(ids(result), containsInAnyOrder("1", "2", "3"));
 		assertThat(result.relaxed(), is(nullValue()));
 	}
 

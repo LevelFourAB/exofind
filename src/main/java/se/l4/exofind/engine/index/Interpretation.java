@@ -80,8 +80,11 @@ import se.l4.exofind.engine.query.matchers.UserText;
  *
  * <p>A text clause in {@link TextMatcher.Match#USER} mode is read wherever
  * it sits. One clause replaces it: the text that is left, and for each
- * reading either its filter or its words as text, all of which have to hold.
- * That clause means the same thing in every position, so a text clause
+ * reading either its filter or its words as text. Those go together the way
+ * the {@link TextMatcher.Join} of the clause says its parts do, because a
+ * reading stands where the words it was read from stood - an exclusion is
+ * held out and asked for beside them, as it is never one of the ways to
+ * match. That clause means the same thing in every position, so a text clause
  * inside an {@code or}, a {@code not}, a {@code boost}, a {@code nested} or a
  * ranking of a {@code fuse} is read the same way as one at the top. A
  * catalogue of products with variants puts one typed text in two clauses,
@@ -414,21 +417,61 @@ final class Interpretation {
 
 	/**
 	 * Get what stands in for a text clause in one position: the text that is
-	 * left, and every reading, all of which have to hold. One clause, so it
-	 * means the same thing whatever list it is put back into.
+	 * left, and every reading. One clause, so it means the same thing whatever
+	 * list it is put back into.
+	 *
+	 * A reading stands where the words it was read from stood, so it takes the
+	 * {@link TextMatcher.Join} of the text with them. Under a join of all
+	 * everything here has to hold. Under a join of any the text and each
+	 * reading are alternatives, and one of them is enough.
+	 *
+	 * The exclusions of the text are held out of that choice and asked for
+	 * beside it. They say what is not wanted, which is never one of the ways a
+	 * document may match - inside the choice, a document a person asked to be
+	 * rid of would come back through a filter read out of the same text.
 	 */
 	private static Query replacement(Place place, UserText left, ListIterable<Reading> read) {
-		var parts = Lists.mutable.<Query>empty();
-		if(!left.isEmpty()) {
-			var clause = place.clause();
-			parts.add(clause.withMatcher(clause.matcher().withText(left.text())));
+		var clause = place.clause();
+		var matcher = clause.matcher();
+
+		if(matcher.join() != TextMatcher.Join.ANY) {
+			var parts = Lists.mutable.<Query>empty();
+			if(!left.isEmpty()) {
+				parts.add(clause.withMatcher(matcher.withText(left.text())));
+			}
+
+			for(var reading : read) {
+				parts.add(reading.clause(place));
+			}
+
+			return parts.size() == 1 ? parts.get(0) : AndQuery.of(parts);
+		}
+
+		var wanted = new UserText(left.parts().reject(UserText.Part::exclude));
+		var unwanted = new UserText(left.parts().select(UserText.Part::exclude));
+
+		var alternatives = Lists.mutable.<Query>empty();
+		if(!wanted.isEmpty()) {
+			alternatives.add(clause.withMatcher(matcher.withText(wanted.text())));
 		}
 
 		for(var reading : read) {
-			parts.add(reading.clause(place));
+			alternatives.add(reading.clause(place));
 		}
 
-		return parts.size() == 1 ? parts.get(0) : AndQuery.of(parts);
+		// A reading was found, so there is always something to choose between
+		var choice = alternatives.size() == 1
+			? alternatives.get(0)
+			: OrQuery.of(alternatives);
+
+		if(unwanted.isEmpty()) {
+			return choice;
+		}
+
+		return AndQuery.of(
+			clause.withMatcher(matcher.withText(unwanted.text())),
+			choice
+		);
 	}
 
 	private static boolean isLoose(UserText.Part part) {

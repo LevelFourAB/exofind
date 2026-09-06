@@ -18,6 +18,8 @@ Common workflows use mise tasks: `mise run dev`, `build`, `test`, `verify`, `sto
 
 `mise run site` serves the website, including documentation and demo pages. `mise run site:build` builds the website. The website build is separate from the engine build; the engine does not require Node.js.
 
+Run every task that installs Node dependencies outside an agent sandbox. Inside one, `pnpm install` removes `website/node_modules` and then fails to fill it: the sandbox refuses the reflink that copies a package out of the store, and the run stops with `ERR_PNPM_EPERM`. What is left is a part-installed directory, so a later build fails for a reason that has nothing to do with the change being made. Repair it by running the task again outside the sandbox.
+
 `mise run bench` runs JMH benchmarks under `src/benchmark/java`. These benchmarks compile only under the `benchmark` profile. For details, see `docs/how-to/benchmark-the-engine.md`.
 
 Run targeted tests with Maven directly:

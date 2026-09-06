@@ -119,6 +119,45 @@ public class UserTextTest {
 		assertThat(phrase.match(), is(TextMatcher.Match.PHRASE));
 	}
 
+	@Test
+	public void testJoinSaysHowTheLooseWordsCombine() {
+		var base = TextMatcher.of("ignored").withJoin(TextMatcher.Join.ANY);
+		var required = UserText.parse("red nike").required(base);
+
+		assertThat(required.get(0).text(), is("red nike"));
+		assertThat(required.get(0).match(), is(TextMatcher.Match.ANY));
+	}
+
+	/**
+	 * A quoted phrase is one of the parts the join combines, so it still asks
+	 * for its words in the order they were typed. What changes is how much the
+	 * phrase has to do: under a join of any it is one more way to match rather
+	 * than a condition, which is decided where the parts are put together.
+	 */
+	@Test
+	public void testJoinLeavesAQuotedPhraseAPhrase() {
+		var base = TextMatcher.of("ignored").withJoin(TextMatcher.Join.ANY);
+		var required = UserText.parse("red \"apple watch\"").required(base);
+
+		assertThat(required.get(0).match(), is(TextMatcher.Match.ANY));
+		assertThat(required.get(1).text(), is("apple watch"));
+		assertThat(required.get(1).match(), is(TextMatcher.Match.PHRASE));
+	}
+
+	/**
+	 * There is no reading of "leave this out" under which it is optional, so
+	 * an exclusion is the same whatever the parts of the text combine to.
+	 */
+	@Test
+	public void testJoinNeverReachesAnExclusion() {
+		var base = TextMatcher.of("ignored").withJoin(TextMatcher.Join.ANY);
+		var excluded = UserText.parse("shoes -leather -\"apple watch\"").excluded(base);
+
+		assertThat(excluded.collect(TextMatcher::text), contains("leather", "apple watch"));
+		assertThat(excluded.get(0).match(), is(TextMatcher.Match.ALL));
+		assertThat(excluded.get(1).match(), is(TextMatcher.Match.PHRASE));
+	}
+
 	/**
 	 * Only the part the text ended in the middle of can hold a word somebody
 	 * is still typing.

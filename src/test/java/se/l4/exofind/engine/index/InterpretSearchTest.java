@@ -116,6 +116,40 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		assertThat(ids(result), is(List.of()));
 	}
 
+	/**
+	 * A reading stands where the words it was read from stood, so under a
+	 * join of any it is one more way to match rather than one more condition.
+	 */
+	@Test
+	public void testReadingIsOneWayToMatchWhenWordsAreJoinedWithAny() throws IOException {
+		var index = shop();
+
+		// No phone costs under 100
+		assertThat(ids(search(index, user("phone under 100"))), is(List.of()));
+
+		var result = search(index, anyOf("phone under 100"));
+
+		// The phones by their name, the cheap product by the price that was
+		// read, and the book by the words the reading came from
+		assertThat(ids(result), containsInAnyOrder("1", "4", "5", "6"));
+		assertThat(result.interpreted().filters().get(0).field(), is("price"));
+	}
+
+	/**
+	 * The exclusion applies to the reading as much as to the words, so what a
+	 * person asked to be rid of does not come back through a filter read out
+	 * of the same text.
+	 */
+	@Test
+	public void testExclusionReachesAReadingWhenWordsAreJoinedWithAny() throws IOException {
+		var index = shop();
+
+		// `Everything under 100` is the book the words of the reading find
+		var result = search(index, anyOf("phone under 100 -everything"));
+
+		assertThat(ids(result), containsInAnyOrder("1", "4", "5"));
+	}
+
 	@Test
 	public void testTextThatIsNotFromASearchBoxIsNotRead() throws IOException {
 		var index = shop();
@@ -1367,6 +1401,10 @@ public class InterpretSearchTest extends AbstractIndexTest {
 
 	private static TextMatcher user(String text) {
 		return TextMatcher.of(text).withMatch(TextMatcher.Match.USER);
+	}
+
+	private static TextMatcher anyOf(String text) {
+		return user(text).withJoin(TextMatcher.Join.ANY);
 	}
 
 	private static SearchResult search(Index index, TextMatcher matcher) throws IOException {

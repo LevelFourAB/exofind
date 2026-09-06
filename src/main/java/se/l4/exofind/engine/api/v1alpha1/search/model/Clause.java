@@ -139,6 +139,23 @@ public sealed interface Clause
 		Matcher.Text.Match match,
 
 		/**
+		 * How the parts of {@code user} text combine. Defaults to {@code all}.
+		 * Only applies to {@code user} mode.
+		 */
+		@Schema(
+			description = """
+				How the parts of `user` text combine: `all` requires every \
+				word and every quoted phrase, `any` accepts a document that \
+				holds one of them. Excluded terms (`-word`) always apply, and \
+				a filter read out of the text is one of the parts. Setting \
+				`join` with any other `match` returns \
+				`search:clause:join_not_applicable`. See [Reading what was \
+				typed](https://exofind.dev/reference/search-api/#reading-what-was-typed).""",
+			defaultValue = "all"
+		)
+		Matcher.Text.Join join,
+
+		/**
 		 * Prefix matching behavior on the final query term. Defaults to
 		 * {@code last_token}.
 		 */

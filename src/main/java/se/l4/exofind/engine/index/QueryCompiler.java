@@ -1577,9 +1577,12 @@ public class QueryCompiler {
 		var phrases = field.getType().isPhraseSearchable(encounter);
 		var clauses = Lists.mutable.<Query>empty();
 
-		for(var part : typed.required(matcher)) {
-			clauses.add(Query.field(name, phrases ? part : withoutPhrase(part)));
-		}
+		joined(
+			matcher,
+			typed.required(matcher)
+				.collect(part -> (Query) Query.field(name, phrases ? part : withoutPhrase(part))),
+			clauses
+		);
 
 		var excluded = typed.excluded(matcher)
 			.collect(part -> (Query) Query.field(name, phrases ? part : withoutPhrase(part)));
@@ -1588,6 +1591,26 @@ public class QueryCompiler {
 		}
 
 		return compileAll(clauses);
+	}
+
+	/**
+	 * Put the parts a typed text has to find into the clauses of the query it
+	 * becomes, combined as its {@link TextMatcher.Join} says.
+	 *
+	 * Under a join of any the parts become one clause holding all of them, so
+	 * that what is left of the query still holds around it - the exclusions of
+	 * the text are not one of the ways to match, and never become optional.
+	 */
+	private static void joined(
+		TextMatcher matcher,
+		ListIterable<Query> required,
+		MutableList<Query> into
+	) {
+		if(matcher.join() == TextMatcher.Join.ANY && required.size() > 1) {
+			into.add(OrQuery.of(required));
+		} else {
+			into.addAllIterable(required);
+		}
 	}
 
 	/**
@@ -1779,10 +1802,11 @@ public class QueryCompiler {
 	 *
 	 * Every part is the same text search the caller wrote, asked of the same
 	 * fields and combined the same way - what a person typed decides which
-	 * clauses there are, never how each of them behaves. The exclusions are
-	 * one {@code not}, so a document is dropped as soon as any of them matches
-	 * it, and a text of nothing but exclusions still runs against the whole
-	 * index.
+	 * clauses there are, never how each of them behaves. How much the parts
+	 * have to do is the {@link TextMatcher.Join} of the clause. The exclusions
+	 * are one {@code not} beside them, so a document is dropped as soon as any
+	 * of them matches it however the parts combine, and a text of nothing but
+	 * exclusions still runs against the whole index.
 	 *
 	 * @param clause
 	 * @return
@@ -1804,9 +1828,11 @@ public class QueryCompiler {
 		}
 
 		var clauses = Lists.mutable.<Query>empty();
-		for(var part : typed.required(matcher)) {
-			clauses.add(userTextPart(clause, part));
-		}
+		joined(
+			matcher,
+			typed.required(matcher).collect(part -> (Query) userTextPart(clause, part)),
+			clauses
+		);
 
 		var excluded = typed.excluded(matcher)
 			.collect(part -> (Query) userTextPart(clause, part));

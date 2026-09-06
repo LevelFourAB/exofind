@@ -877,7 +877,7 @@ public class IndexSettingsResourceTest {
 		var response = search.search(
 			index,
 			new SearchRequest(
-				List.of(new Clause.Text(text, null, null, null, null, null, null, null, null)),
+				List.of(new Clause.Text(text, null, null, null, null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null,
 				null, null, null, null
 			)
@@ -1415,7 +1415,7 @@ public class IndexSettingsResourceTest {
 			index,
 			new SearchRequest(
 				List.of(new Clause.Text(
-					text, null, Matcher.Text.Match.USER, null, null, null, null, null, null
+					text, null, Matcher.Text.Match.USER, null, null, null, null, null, null, null
 				)),
 				null, null, null, null, null, null, null, null, null, null, null,
 				null, null, null, null

@@ -843,6 +843,56 @@ public class SearchTest extends AbstractIndexTest {
 		assertThat(ids(result), contains("1"));
 	}
 
+	/**
+	 * A search box over a body of writing describes what somebody is after
+	 * rather than listing what every document has to hold, so one word of the
+	 * text is enough.
+	 */
+	@Test
+	public void testUserTextJoinedWithAnyNeedsOneWordOnly() throws IOException {
+		var index = books();
+
+		// No book holds both words
+		assertThat(ids(search(index, Query.text(user("silent cleaning")))), is(empty()));
+
+		var result = search(index, Query.text(anyOf("silent cleaning")));
+
+		assertThat(ids(result), containsInAnyOrder("1", "2", "3"));
+	}
+
+	/**
+	 * An exclusion says what is not wanted, and there is no reading of that
+	 * under which it is one of several ways to match.
+	 */
+	@Test
+	public void testUserTextJoinedWithAnyStillLeavesSomethingOut() throws IOException {
+		var index = books();
+
+		// `The Quiet Sea` is the third book the loose words find
+		var result = search(index, Query.text(anyOf("silent cleaning -quiet")));
+
+		assertThat(ids(result), containsInAnyOrder("1", "2"));
+	}
+
+	@Test
+	public void testUserTextJoinedWithAnyTakesAQuotedPhraseAsOneWayToMatch()
+		throws IOException {
+		var index = books();
+
+		var result = search(index, Query.text(anyOf("\"quiet sea\" cleaning")));
+
+		assertThat(ids(result), containsInAnyOrder("2", "3"));
+	}
+
+	@Test
+	public void testUserTextJoinedWithAnyInAFieldClause() throws IOException {
+		var index = books();
+
+		var result = search(index, Query.field("name", anyOf("spring quiet")));
+
+		assertThat(ids(result), containsInAnyOrder("1", "2", "3"));
+	}
+
 	@Test
 	public void testTypoToleranceMatchesMisspelledWord() throws IOException {
 		var index = typos(
@@ -2222,6 +2272,10 @@ public class SearchTest extends AbstractIndexTest {
 
 	private static TextMatcher user(String text) {
 		return TextMatcher.of(text).withMatch(TextMatcher.Match.USER);
+	}
+
+	private static TextMatcher anyOf(String text) {
+		return user(text).withJoin(TextMatcher.Join.ANY);
 	}
 
 	private static FieldDef.Builder string() {

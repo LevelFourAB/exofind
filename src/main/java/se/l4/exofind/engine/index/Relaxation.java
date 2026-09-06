@@ -183,8 +183,12 @@ final class Relaxation {
 	 * Get the matcher a clause lets words go from, or {@code null} if it is not
 	 * such a clause.
 	 *
-	 * A phrase holds the words somebody put in quotes and matching any word is
-	 * already as wide as a search goes, so neither has anything to let go of.
+	 * A phrase holds the words somebody put in quotes, and matching any word -
+	 * either as {@link TextMatcher.Match#ANY} or as typed text joined with
+	 * {@link TextMatcher.Join#ANY} - is already as wide as a search goes. None
+	 * of them has anything to let go of: a document holding one word is a
+	 * result, so no word kept anything off the page and none of them can be why
+	 * it is empty. Every count taken to judge them would be paid for nothing.
 	 */
 	private static TextMatcher matcherOf(Query clause) {
 		TextMatcher matcher = null;
@@ -198,8 +202,12 @@ final class Relaxation {
 			return null;
 		}
 
-		return matcher.match() == TextMatcher.Match.ALL
-			|| matcher.match() == TextMatcher.Match.USER
+		if(matcher.match() == TextMatcher.Match.ALL) {
+			return matcher;
+		}
+
+		return matcher.match() == TextMatcher.Match.USER
+			&& matcher.join() != TextMatcher.Join.ANY
 			? matcher
 			: null;
 	}

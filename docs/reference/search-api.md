@@ -79,6 +79,7 @@ The `text` clause accepts the following options:
 
 - `fields`: An object mapping field names to score weights. A field mapped to `null` uses the weight from its field definition. If omitted, searches all searchable fields.
 - `match`: Term matching mode: `"all"` (default), `"any"`, `"phrase"`, or `"user"`. `"phrase"` requires terms to appear in exact order and adjacent. `"user"` parses search syntax such as quotes and negation (see [Reading what was typed](#reading-what-was-typed)).
+- `join`: Combination mode for parsed query parts: `"all"` (default) or `"any"`. Applies only to `"match": "user"`. See [Reading what was typed](#reading-what-was-typed).
 - `prefix`: Prefix matching behavior on the final query term: `"last_token"` (default) matches the trailing word as a prefix; `"off"` requires an exact word match.
 - `typos`: Typo tolerance handling: `"auto"` (default) follows each field's `typoTolerance` configuration and the [typo exclusions](admin-api.md#typo-exclusions) in the search settings of the index; `"off"` disables typo tolerance for the clause.
 - `slop`: Number of intervening words permitted between terms in a phrase. Defaults to `0` (words must be adjacent).
@@ -96,7 +97,7 @@ When fields produce different token counts during analysis (such as through deco
 
 #### Reading what was typed
 
-Setting `"match": "user"` parses input using search syntax and combines remaining terms with `all`:
+Setting `"match": "user"` parses input using search syntax and combines the parsed parts according to `join` (default `"all"`):
 
 ```json
 { "type": "text", "text": "running shoes \"trail ready\" -leather", "match": "user" }
@@ -114,13 +115,30 @@ User query syntax does not generate parse errors. Options configured on the clau
 
 If quoted text targets a field configured only for `autocomplete`, `user` mode treats the quoted phrase as individual terms rather than returning an error. A query containing only exclusions evaluates against all documents in the index. A query containing no searchable terms matches no documents.
 
+##### Combining what was typed
+
+The `join` option controls how parsed query parts are combined in `user` mode:
+
+```json
+{ "type": "text", "text": "storage layout", "match": "user", "join": "any" }
+```
+
+- `"all"` (default): Requires documents to match every loose word and quoted phrase.
+- `"any"`: Matches documents satisfying at least one loose word or quoted phrase.
+
+Excluded terms (`-term`) always apply regardless of `join`. Filters read from query text (see [Reading numbers and units](#reading-numbers-and-units)) are included as parts combined by `join`. Under `"join": "any"`, a document matching either the remaining text or the read filter matches the query, and excluded terms still remove documents from both.
+
+Setting `join` with any `match` mode other than `"user"` returns `search:clause:join_not_applicable`.
+
+When `"join": "any"` is set, query relaxation is disabled and the response omits the `relaxed` object. See [Finding something rather than nothing](#finding-something-rather-than-nothing).
+
 #### Reading numbers and units
 
 A search in `user` mode reads a number typed next to a unit, or next to a comparative word, as a filter on the number field that declares the unit. The filter is part of the search that runs, so the hits, the total, and the facet counts all reflect it.
 
 Only a `text` clause with `"match": "user"` is read. Match modes `"all"`, `"any"`, and `"phrase"` are never read. A `field` clause with a `text` matcher is never read. Quoted phrases and exclusions (`-word`) are never read.
 
-A `text` clause is read in any position within `query`: at the top level, inside `and`, `or`, `not`, `boost`, or `nested` clauses, or within rankings of a `fuse` clause. The clause is replaced in place by a single clause containing the remaining query text and, for each reading, either its filter or its words as text. Request `filters` and the `filter` properties of `knn` and `fuse` clauses are not read.
+A `text` clause is read in any position within `query`: at the top level, inside `and`, `or`, `not`, `boost`, or `nested` clauses, or within rankings of a `fuse` clause. The clause is replaced in place by a single clause containing the remaining query text and, for each reading, either its filter or its words as text. These parts combine according to `join`: under `"join": "all"`, all parts must match; under `"join": "any"`, matching any one part is sufficient. Excluded terms (`-term`) always apply regardless of `join`. Request `filters` and the `filter` properties of `knn` and `fuse` clauses are not read.
 
 A search can specify multiple `text` clauses with the same query text, such as across root-level fields and inside a `nested` clause over variant fields. Each clause is read and receives the filters that its position supports. If `text` clauses contain different text or specify different `interpret` targets, none is read.
 
@@ -317,6 +335,8 @@ When `"match": "all"` produces zero results, the `relax` option controls how the
 | `off` | Does not relax terms; returns an empty result set. |
 
 Relaxation occurs only when the initial query returns zero matches. Only loose, unquoted words are eligible for relaxation; quoted phrases and negated terms (`-term`) are never dropped. Relaxation stops while at least one word remains. Dropped terms still contribute to scoring, ranking documents containing those terms above documents that do not.
+
+Relaxation does not apply to `"match": "any"` or to `"match": "user"` with `"join": "any"`, and the response omits the `relaxed` object. A single term is enough to match in these modes, so no term kept documents out of the results and dropping one cannot produce more.
 
 When a query is relaxed, the response includes a `relaxed` object:
 

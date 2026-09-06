@@ -366,7 +366,7 @@ public class SearchResourceTest {
 			"shop",
 			request(List.of(new Clause.Text(
 				"shoes under 100 kr", null, Matcher.Text.Match.USER,
-				null, null, null, null, null, null
+				null, null, null, null, null, null, null
 			)))
 		);
 
@@ -470,7 +470,7 @@ public class SearchResourceTest {
 			"pricelists",
 			request(List.of(new Clause.Text(
 				"rain under 100", null, Matcher.Text.Match.USER,
-				null, null, null, null, null,
+				null, null, null, null, null, null,
 				new Clause.Text.Interpret.Targets(List.of(
 					new Clause.Text.Target("prices.amount", customer, List.of(store))
 				))
@@ -741,7 +741,7 @@ public class SearchResourceTest {
 
 		var response = resource.search(
 			"books",
-			request(List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null)))
+			request(List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)))
 		);
 
 		assertThat(ids(response), contains("1"));
@@ -762,7 +762,7 @@ public class SearchResourceTest {
 		var response = resource.search(
 			"books",
 			new SearchRequest(
-				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null)),
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
 				null, null, null, null, null,
 				new SearchRequest.Highlight(fields),
 				null, null, null, null, null, null, null, null, null
@@ -1579,7 +1579,7 @@ public class SearchResourceTest {
 			"1",
 			0,
 			new SearchRequest(
-				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null)),
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
 				null, null, null, null, null, null, null, null, null, null, null, null, null,
 				null, null
 			)
@@ -1985,7 +1985,7 @@ public class SearchResourceTest {
 				"category",
 				new FacetValuesRequest(
 					null,
-					List.of(new Clause.Text("spring", null, null, null, null, null, null, null, null)),
+					List.of(new Clause.Text("spring", null, null, null, null, null, null, null, null, null)),
 					null,
 					null,
 					null,

@@ -2271,6 +2271,14 @@ components:
             out. Empty when everything typed was read.
           examples:
           - shoes
+    Join:
+      description: "How the parts of `user` text combine: `all` requires every word\
+        \ and every quoted phrase, `any` accepts a document holding one of them. Excluded\
+        \ terms always apply."
+      type: string
+      enum:
+      - all
+      - any
     KeyDefinition:
       description: "What a key should be allowed to do. See [Permissions](https://exofind.dev/reference/auth/#permissions)."
       examples:
@@ -4274,6 +4282,15 @@ components:
           type: string
           default: all
           $ref: "#/components/schemas/Match"
+        join:
+          description: "How the parts of `user` text combine: `all` requires every\
+            \ word and every quoted phrase, `any` accepts a document that holds one\
+            \ of them. Excluded terms (`-word`) always apply, and a filter read out\
+            \ of the text is one of the parts. Setting `join` with any other `match`\
+            \ returns `search:clause:join_not_applicable`. See [Reading what was typed](https://exofind.dev/reference/search-api/#reading-what-was-typed)."
+          type: string
+          default: all
+          $ref: "#/components/schemas/Join"
         prefix:
           description: Prefix matching behavior on the final query term. `last_token`
             matches the trailing word as a prefix; `off` requires an exact word match.
@@ -4335,6 +4352,14 @@ components:
           type: string
           default: all
           $ref: "#/components/schemas/Match"
+        join:
+          description: "How the parts of `user` text combine: `all` requires every\
+            \ word and every quoted phrase, `any` accepts a document that holds one\
+            \ of them. Excluded terms (`-word`) always apply. Setting `join` with\
+            \ any other `match` returns `search:clause:join_not_applicable`."
+          type: string
+          default: all
+          $ref: "#/components/schemas/Join"
         prefix:
           description: Prefix matching behavior on the final query term. `last_token`
             matches the trailing word as a prefix; `off` requires an exact word match.

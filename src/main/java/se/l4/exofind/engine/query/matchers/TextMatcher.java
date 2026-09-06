@@ -11,6 +11,8 @@ package se.l4.exofind.engine.query.matchers;
  *   what was typed
  * @param match
  *   how the words in it are combined
+ * @param join
+ *   how the parts of a typed text combine, read by {@link Match#USER} alone
  * @param prefix
  *   how the word that is still being typed is treated
  * @param typos
@@ -26,6 +28,7 @@ package se.l4.exofind.engine.query.matchers;
 public record TextMatcher(
 	String text,
 	Match match,
+	Join join,
 	Prefix prefix,
 	Typos typos,
 	int slop,
@@ -60,7 +63,7 @@ public record TextMatcher(
 
 		/**
 		 * Read the text the way people write in a search box, and combine what
-		 * is left as {@link #ALL}. Quoting asks for a phrase and a leading
+		 * is left as {@link Join} says. Quoting asks for a phrase and a leading
 		 * minus leaves something out; see {@link UserText} for the whole of
 		 * what is understood.
 		 *
@@ -70,6 +73,37 @@ public record TextMatcher(
 		 * to; the others are for a caller that knows what it is asking.
 		 */
 		USER
+	}
+
+	/**
+	 * How the parts of a typed text combine. Only {@link Match#USER} reads
+	 * this - every other mode says the same thing in {@code match} itself.
+	 *
+	 * A search box over a catalogue answers with less the more is typed, which
+	 * is what somebody looking for one product expects. A box over a body of
+	 * writing does the opposite: a reader who types three words is describing
+	 * what they are after rather than listing what every page has to hold, and
+	 * a page holding two of the three is still the page they wanted.
+	 *
+	 * What was typed on purpose keeps its meaning either way. A quoted phrase
+	 * is one of the parts, so under {@link #ANY} it is one more way to match
+	 * rather than a condition. A part marked to be left out always leaves its
+	 * documents out, whatever the parts combine to - an exclusion says what is
+	 * not wanted, and there is no reading of that under which it is optional.
+	 *
+	 * A text joined with {@link #ANY} is as wide as a search goes, so there is
+	 * nothing left for {@link Relax} to let go of and nothing is let go of.
+	 */
+	public enum Join {
+		/**
+		 * Every part of the text has to hold.
+		 */
+		ALL,
+
+		/**
+		 * One part of the text is enough.
+		 */
+		ANY
 	}
 
 	/**
@@ -124,8 +158,9 @@ public record TextMatcher(
 	 * Only loose words are ever let go. A quoted phrase and a word marked to be
 	 * left out were asked for deliberately, and {@link Match#PHRASE} is that
 	 * same deliberate ask written as its own clause, so neither is touched. A
-	 * search matching {@link Match#ANY} is already as wide as it goes and has
-	 * nothing to let go of.
+	 * search matching {@link Match#ANY}, or typed text joined with
+	 * {@link Join#ANY}, is already as wide as it goes and has nothing to let go
+	 * of.
 	 *
 	 * Whatever is let go is answered alongside the results, because a page that
 	 * quietly ignored half of what was typed is worse than an empty one - the
@@ -185,6 +220,10 @@ public record TextMatcher(
 			match = Match.ALL;
 		}
 
+		if(join == null) {
+			join = Join.ALL;
+		}
+
 		if(interpret == null) {
 			interpret = Interpret.AUTO;
 		}
@@ -225,7 +264,7 @@ public record TextMatcher(
 	 * @param slop
 	 */
 	public TextMatcher(String text, Match match, Prefix prefix, Typos typos, int slop) {
-		this(text, match, prefix, typos, slop, null, null);
+		this(text, match, null, prefix, typos, slop, null, null);
 	}
 
 	/**
@@ -247,7 +286,7 @@ public record TextMatcher(
 		int slop,
 		Relax relax
 	) {
-		this(text, match, prefix, typos, slop, relax, null);
+		this(text, match, null, prefix, typos, slop, relax, null);
 	}
 
 	/**
@@ -281,7 +320,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withText(String text) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -291,7 +330,21 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withMatch(Match match) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
+	}
+
+	/**
+	 * Get this matcher with the parts of its text combined in the given way.
+	 *
+	 * Only {@link Match#USER} has parts to combine. Under every other mode
+	 * {@code match} already says how the words go together, and this says
+	 * nothing.
+	 *
+	 * @param join
+	 * @return
+	 */
+	public TextMatcher withJoin(Join join) {
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -301,7 +354,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withPrefix(Prefix prefix) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -311,7 +364,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withTypos(Typos typos) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -322,7 +375,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withRelax(Relax relax) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -340,7 +393,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withSlop(int slop) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	/**
@@ -350,7 +403,7 @@ public record TextMatcher(
 	 * @return
 	 */
 	public TextMatcher withInterpret(Interpret interpret) {
-		return new TextMatcher(text, match, prefix, typos, slop, relax, interpret);
+		return new TextMatcher(text, match, join, prefix, typos, slop, relax, interpret);
 	}
 
 	@Override

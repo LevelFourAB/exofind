@@ -570,6 +570,10 @@ function marked(text) {
  * to hold all of the words. The words that make a question are dropped by the
  * index rather than here; the stopword list is in the definition.
  *
+ * The text is read as a search box rather than as words: `join` is what makes
+ * one word enough, so quoting a phrase and putting a minus in front of a word
+ * both mean here what they mean everywhere else a person types into a box.
+ *
  * The lead of a page is boosted because a page is often searched for by name,
  * and what answers "facets" is the top of the page about facets rather than
  * whichever of its sections happens to say the word most often.
@@ -582,7 +586,8 @@ function requestFor(text) {
 			{
 				type: 'text',
 				text,
-				match: 'any',
+				match: 'user',
+				join: 'any',
 				fields: { title: null, heading: null, text: null }
 			},
 			{

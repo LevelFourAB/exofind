@@ -126,6 +126,7 @@ public class SearchRequestMapperTest {
 					"silent spr",
 					fields,
 					Matcher.Text.Match.ANY,
+					null,
 					Matcher.Text.Prefix.OFF,
 					null,
 					null,
@@ -161,6 +162,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					null,
+					null,
 					null
 				)
 			),
@@ -179,6 +181,7 @@ public class SearchRequestMapperTest {
 					"apple watch",
 					null,
 					Matcher.Text.Match.PHRASE,
+					null,
 					null,
 					null,
 					2,
@@ -207,6 +210,7 @@ public class SearchRequestMapperTest {
 					null,
 					null,
 					null,
+					null,
 					null
 				)
 			),
@@ -216,7 +220,122 @@ public class SearchRequestMapperTest {
 		var query = (TextQuery) mapped.request().query().get(0);
 		assertThat(query.matcher().match(), is(TextMatcher.Match.USER));
 		assertThat(query.matcher().slop(), is(0));
+		assertThat(query.matcher().join(), is(TextMatcher.Join.ALL));
 		assertThat(query.matcher().interpret(), is(TextMatcher.Interpret.AUTO));
+	}
+
+	@Test
+	public void testTextClauseCarriesJoin() {
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(
+				new Clause.Text(
+					"shoes -leather",
+					null,
+					Matcher.Text.Match.USER,
+					Matcher.Text.Join.ANY,
+					null,
+					null,
+					null,
+					null,
+					null,
+					null
+				)
+			),
+			LIMITS
+		);
+
+		var query = (TextQuery) mapped.request().query().get(0);
+		assertThat(query.matcher().join(), is(TextMatcher.Join.ANY));
+	}
+
+	/**
+	 * Only text somebody typed has parts to combine. Every other match mode
+	 * says how its words go together in `match` itself, so a `join` beside it
+	 * is a second answer to a question already answered - and one the engine
+	 * quietly does nothing with looks the same to its caller as one that
+	 * worked.
+	 */
+	@Test
+	public void testJoinWithoutTypedTextIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Text(
+						"apple watch",
+						null,
+						Matcher.Text.Match.ALL,
+						Matcher.Text.Join.ANY,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:join_not_applicable"));
+		assertThat(pathsOf(e), contains("/query/0/join"));
+	}
+
+	/**
+	 * A clause that names no match mode is matching every word, which is a
+	 * mode that says how its words combine.
+	 */
+	@Test
+	public void testJoinWithoutAMatchModeIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Text(
+						"apple watch",
+						null,
+						null,
+						Matcher.Text.Join.ALL,
+						null,
+						null,
+						null,
+						null,
+						null,
+						null
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:join_not_applicable"));
+		assertThat(pathsOf(e), contains("/query/0/join"));
+	}
+
+	@Test
+	public void testTextMatcherCarriesJoin() {
+		var mapped = SearchRequestMapper.toEngine(
+			withQuery(
+				new Clause.Field(
+					"name",
+					new Matcher.Text(
+						"shoes -leather",
+						Matcher.Text.Match.USER,
+						Matcher.Text.Join.ANY,
+						null,
+						null,
+						null,
+						null,
+						null
+					)
+				)
+			),
+			LIMITS
+		);
+
+		var query = (FieldQuery) mapped.request().query().get(0);
+		assertThat(((TextMatcher) query.matcher()).join(), is(TextMatcher.Join.ANY));
 	}
 
 	@Test
@@ -227,6 +346,7 @@ public class SearchRequestMapperTest {
 					"shoes under 100",
 					null,
 					Matcher.Text.Match.USER,
+					null,
 					null,
 					null,
 					null,
@@ -260,6 +380,7 @@ public class SearchRequestMapperTest {
 					"rain under 100",
 					null,
 					Matcher.Text.Match.USER,
+					null,
 					null,
 					null,
 					null,
@@ -306,6 +427,7 @@ public class SearchRequestMapperTest {
 						null,
 						null,
 						null,
+						null,
 						new Clause.Text.Interpret.Targets(List.of())
 					)
 				),
@@ -327,6 +449,7 @@ public class SearchRequestMapperTest {
 						"rain under 100",
 						null,
 						Matcher.Text.Match.USER,
+						null,
 						null,
 						null,
 						null,
@@ -361,6 +484,7 @@ public class SearchRequestMapperTest {
 						Matcher.Text.Match.PHRASE,
 						null,
 						null,
+						null,
 						-1,
 						null,
 						null,
@@ -392,6 +516,7 @@ public class SearchRequestMapperTest {
 						Matcher.Text.Match.ALL,
 						null,
 						null,
+						null,
 						2,
 						null,
 						null,
@@ -417,6 +542,7 @@ public class SearchRequestMapperTest {
 					Matcher.Text.Match.USER,
 					null,
 					null,
+					null,
 					2,
 					null,
 					null
@@ -438,6 +564,7 @@ public class SearchRequestMapperTest {
 			withQuery(
 				new Clause.Text(
 					"silent spring",
+					null,
 					null,
 					null,
 					null,
@@ -920,7 +1047,7 @@ public class SearchRequestMapperTest {
 				new Clause.Fuse(
 					List.of(
 						new Clause.Fuse.Ranking(List.of(new Clause.Text(
-							"waterproof jacket", null, null, null, null, null, null, null, null
+							"waterproof jacket", null, null, null, null, null, null, null, null, null
 						)), null),
 						new Clause.Fuse.Ranking(
 							List.of(new Clause.Knn("embedding", new float[] { 1f }, 50, null)),
@@ -951,7 +1078,7 @@ public class SearchRequestMapperTest {
 				new Clause.Fuse(
 					List.of(
 						new Clause.Fuse.Ranking(
-							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null)),
+							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null, null)),
 							null
 						),
 						new Clause.Fuse.Ranking(
@@ -979,7 +1106,7 @@ public class SearchRequestMapperTest {
 				withQuery(
 					new Clause.Fuse(
 						List.of(new Clause.Fuse.Ranking(
-							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null)),
+							List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null, null)),
 							null
 						)),
 						null, null, null
@@ -1036,7 +1163,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Fuse(
 						List.of(
 							new Clause.Fuse.Ranking(
-								List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null)),
+								List.of(new Clause.Text("jacket", null, null, null, null, null, null, null, null, null)),
 								null
 							),
 							new Clause.Fuse.Ranking(
@@ -1203,7 +1330,7 @@ public class SearchRequestMapperTest {
 					List.of(new Clause.Nested(
 						"variants",
 						List.of(new Clause.Text(
-							"waterproof", null, null, null, null, null, null, null, null
+							"waterproof", null, null, null, null, null, null, null, null, null
 						)),
 						null
 					)),
@@ -2168,7 +2295,7 @@ public class SearchRequestMapperTest {
 						List.of(new Clause.Nested(
 							"variants",
 							List.of(new Clause.Text(
-								"waterproof", null, null, null, null, null, null, null, null
+								"waterproof", null, null, null, null, null, null, null, null, null
 							)),
 							null
 						))

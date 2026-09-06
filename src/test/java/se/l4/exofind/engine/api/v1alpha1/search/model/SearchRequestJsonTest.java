@@ -43,6 +43,45 @@ public class SearchRequestJsonTest {
 	}
 
 	@Test
+	public void testTextClauseReadsJoin() throws Exception {
+		var json = """
+			{
+				"query": [
+					{ "type": "text", "text": "silent spring", "match": "user", "join": "any" }
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var clause = (Clause.Text) request.query().get(0);
+		assertThat(clause.match(), is(Matcher.Text.Match.USER));
+		assertThat(clause.join(), is(Matcher.Text.Join.ANY));
+	}
+
+	@Test
+	public void testTextMatcherReadsJoin() throws Exception {
+		var json = """
+			{
+				"query": [
+					{
+						"field": "name",
+						"match": {
+							"type": "text", "text": "silent spring",
+							"match": "user", "join": "any"
+						}
+					}
+				]
+			}
+			""";
+
+		var request = mapper.readValue(json, SearchRequest.class);
+
+		var match = (Matcher.Text) ((Clause.Field) request.query().get(0)).match();
+		assertThat(match.join(), is(Matcher.Text.Join.ANY));
+	}
+
+	@Test
 	public void testFiltersAndFacets() throws Exception {
 		var json = """
 			{

@@ -69,6 +69,9 @@ The documentation includes the following how-to guides.
 
 - [Searching an index](how-to/search-an-index.md): Work with the search box, the
   scope it runs in, user-selected filters, facets, ordering, and highlighting.
+- [Searching from a search box](how-to/search-from-a-search-box.md): Send what a
+  person typed straight to the engine, choose how many of their words a document
+  has to hold, and show them when the search that ran was not the one they typed.
 - [Reading numbers in the search box](how-to/read-numbers-in-the-search-box.md):
   Declare a unit on a price or a size so that `under 100 kr` and `256gb` become
   filters, and show the shopper what was read.
