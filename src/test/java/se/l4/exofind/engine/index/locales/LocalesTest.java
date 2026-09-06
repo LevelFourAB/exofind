@@ -111,10 +111,10 @@ public class LocalesTest {
 	);
 
 	/**
-	 * Thai words do not inflect, so there are no two forms to bring together
-	 * and nothing for a stemmer to do.
+	 * Thai and Vietnamese words do not inflect, so there are no two forms to
+	 * bring together and nothing for a stemmer to do.
 	 */
-	private static final List<String> NOT_STEMMED = List.of("th");
+	private static final List<String> NOT_STEMMED = List.of("th", "vi");
 
 	/**
 	 * Locales whose stopword list is not made of words - Korean drops its
@@ -616,6 +616,19 @@ public class LocalesTest {
 	@Test
 	public void testThaiSegmentsWords() {
 		assertThat(terms("th", "แมวกินปลา"), is(contains("แมว", "กิน", "ปลา")));
+	}
+
+	/**
+	 * Vietnamese writes a space between syllables, and the syllables are what
+	 * is indexed - here the two of `điện thoại`, a phone, with the grammar
+	 * around them dropped and their tone marks kept.
+	 */
+	@Test
+	public void testVietnameseKeepsSyllablesAndDropsGrammar() {
+		assertThat(
+			terms("vi", "điện thoại của tôi đã được sửa"),
+			is(contains("điện", "thoại", "sửa"))
+		);
 	}
 
 	@Test

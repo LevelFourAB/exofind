@@ -1,0 +1,121 @@
+# Vietnamese stopwords, one per line.
+#
+# Vietnamese writes a space between syllables rather than between words, and
+# the engine indexes the syllables. This list holds the syllables that are
+# grammar on their own: conjunctions, prepositions, tense and aspect markers,
+# negation, degree, pronouns, demonstratives, determiners and particles.
+#
+# A syllable is left out when it is as often part of a content word as it is
+# grammar - `sao` is why but also star, `bao` is how much but also a case,
+# `tất` is all but also a sock, and the kinship terms used as pronouns name the
+# people a product is for. Dropping such a syllable would lose the word it
+# belongs to from every document.
+
+# Conjunctions and prepositions
+và
+với
+của
+cho
+từ
+đến
+tới
+tại
+trong
+trên
+dưới
+về
+bởi
+vì
+nên
+nhưng
+mà
+hoặc
+nếu
+thì
+rằng
+là
+để
+như
+theo
+cùng
+bằng
+giữa
+sau
+trước
+ngoài
+khi
+lúc
+do
+dù
+tuy
+
+# Tense, aspect, negation and degree
+đã
+đang
+sẽ
+vừa
+từng
+chưa
+không
+chẳng
+chả
+cũng
+đều
+chỉ
+lại
+vẫn
+còn
+nữa
+rồi
+rất
+quá
+lắm
+càng
+hơn
+nhất
+được
+bị
+có
+
+# Pronouns and demonstratives
+tôi
+ta
+chúng
+mình
+bạn
+nó
+họ
+ai
+gì
+đâu
+nào
+mấy
+này
+đó
+kia
+ấy
+đây
+đấy
+vậy
+
+# Determiners
+các
+những
+mọi
+mỗi
+một
+vài
+nhiều
+cả
+
+# Particles
+à
+ạ
+nhé
+nhỉ
+chứ
+thôi
+ơi
+hả
+ừ
+vâng

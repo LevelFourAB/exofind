@@ -1,7 +1,10 @@
 package se.l4.exofind.engine.index.locales;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -138,7 +141,8 @@ import morfologik.stemming.Dictionary;
  * needs on top of Unicode case folding for two spellings of a word to meet.
  * Collation always comes from ICU, which knows every locale here. A language
  * that glues compounds into one word also names its {@link Decompounder}
- * data, shipped with the engine rather than by Lucene.
+ * data, shipped with the engine rather than by Lucene, and a language Lucene
+ * ships no stopword list for reads the engine's own, kept next to this class.
  *
  * A language is only listed when there are real rules for it - segmentation,
  * a stopword list or a stemmer. Any locale can still be sorted by its own
@@ -680,6 +684,17 @@ public final class Locales {
 			)));
 
 		/*
+		 * Vietnamese writes a space between syllables rather than between
+		 * words, and the syllables are what is indexed. Words do not inflect,
+		 * so there is nothing to stem; what is Vietnamese's own is the list
+		 * of syllables that are grammar. Lucene ships none, so the engine
+		 * carries its own, written to hold only syllables that are seldom
+		 * part of a content word.
+		 */
+		register(locales, StandardLocaleSupport.of("vi")
+			.withStopWords(() -> resourceWords("stopwords-vi.txt")));
+
+		/*
 		 * Chinese words come from a hidden Markov model, as nothing in the
 		 * text marks where one ends. Chinese does not inflect, so there is
 		 * nothing to stem - the Porter stemmer here serves the Latin words
@@ -713,6 +728,30 @@ public final class Locales {
 	private static CharArraySet stopWords(String name) {
 		var words = new CharArraySet(1 << 10, false);
 		LocaleData.forName(name).read("stopwords.txt", words::add);
+		return CharArraySet.unmodifiableSet(words);
+	}
+
+	/**
+	 * Read a word list the engine ships next to this class, for the locales
+	 * whose list neither Lucene nor a locale data set holds. One word per
+	 * line; blank lines and lines starting with {@code #} are left out.
+	 */
+	private static CharArraySet resourceWords(String name) {
+		var words = new CharArraySet(1 << 8, false);
+		try(var reader = new BufferedReader(new InputStreamReader(
+			Locales.class.getResourceAsStream(name),
+			StandardCharsets.UTF_8
+		))) {
+			String line;
+			while((line = reader.readLine()) != null) {
+				var word = line.trim();
+				if(!word.isEmpty() && !word.startsWith("#")) {
+					words.add(word);
+				}
+			}
+		} catch(IOException e) {
+			throw new UncheckedIOException("Unable to read the word list `" + name + "`", e);
+		}
 		return CharArraySet.unmodifiableSet(words);
 	}
 

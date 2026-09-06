@@ -65,6 +65,7 @@ The following table lists the supported language tags and their analysis capabil
 | `th` | Thai | yes | | | |
 | `tr` | Turkish | yes | yes | | |
 | `uk` | Ukrainian | yes | yes | | |
+| `vi` | Vietnamese | yes | | | |
 | `zh` | Chinese | yes | yes | yes | |
 | `zh-Hant` | Chinese (Traditional) | yes | yes | yes | |
 
@@ -74,8 +75,8 @@ The following table lists the supported language tags and their analysis capabil
 - **Stemming**: The built-in `matching` analyzer chain applies stemming for the locale. A custom chain applies stemming by specifying the locale on a `stemming` component. Stemming behavior varies by language:
   - Japanese reduces elongated final vowels in loanwords.
   - Chinese stems mixed Latin words.
-  - Korean and Thai do not have stemming rules because words do not inflect.
-- **Own segmentation**: Indicates languages that use a dictionary-based word segmenter instead of Unicode segmentation because words are written without spaces. Thai words are segmented using standard Unicode segmentation.
+  - Korean, Thai and Vietnamese do not have stemming rules because words do not inflect.
+- **Own segmentation**: Indicates languages that use a dictionary-based word segmenter instead of Unicode segmentation because words are written without spaces. Thai words are segmented using standard Unicode segmentation. Vietnamese writes a space between syllables rather than between words, so the engine indexes the syllables. The Vietnamese stopword list holds the syllables that are grammar on their own, and leaves out a syllable that is as often part of a content word.
 - **Compound splitting**: Indicates locales that include decompounding data (for example, searching for `jakke` matches `regnjakke`). Decompounding requires decompounding data on the node. For more information, see [compound words](analysis.md#compound-words).
 - **Locale data**: Icelandic reads its stopwords, stemming, and compound parts from the [locale data directory](configuration.md#locale-data) rather than from components built into the engine. A node without the data reports Icelandic as unsupported.
 - **Normalization**: Applied automatically when a language requires rules beyond Unicode case folding. Normalization covers the following cases:
