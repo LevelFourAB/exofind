@@ -105,7 +105,7 @@ The following table lists indexer configuration variables:
 | `EXOFIND_INDEXER_REINDEX_CATCHUP_INTERVAL` | Interval at which a `ready` reindex job replays what changed in the source, so a manual promote stays quick. | `30s` |
 | `EXOFIND_INDEXER_REINDEX_PROMOTE_GRACE` | Delay between a reindex job's promote and its final catch-up sweep, for writes that resolved the index name just before the promote. | `1s` |
 | `EXOFIND_NODE_ID` | Identifier this node uses in the leadership table. | Hostname with a random suffix |
-| `EXOFIND_NODE_ADDRESS` | Network address where this node serves write requests. Recorded in the leadership table so other nodes can forward write requests. Must be reachable by other nodes. If not set, write requests to other nodes are rejected instead of forwarded. | None |
+| `EXOFIND_NODE_ADDRESS` | Network address where this node serves write requests. Recorded in the leadership table so other nodes can forward write requests. Must be reachable by other nodes. Forwarded requests carry the caller's credential, so use a private network or an `https://` address. If not set, write requests to other nodes are rejected instead of forwarded. | None |
 
 The indexer requires storage that enforces conditional writes (`If-Match` on
 `PUT`) to prevent write collisions. Amazon S3 and SeaweedFS enforce conditional
