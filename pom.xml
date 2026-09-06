@@ -20,7 +20,6 @@
 		<quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
 		<quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
 		<quarkus.platform.version>3.38.2</quarkus.platform.version>
-		<skipITs>true</skipITs>
 		<surefire-plugin.version>3.5.0</surefire-plugin.version>
 		<!--
 			The OTLP registry carries opentelemetry-proto, whose generated code
@@ -259,7 +258,6 @@
 							<goal>build</goal>
 							<goal>generate-code</goal>
 							<goal>generate-code-tests</goal>
-							<goal>native-image-agent</goal>
 						</goals>
 					</execution>
 				</executions>
@@ -316,26 +314,6 @@
 					-->
 					<argLine>-javaagent:${org.mockito:mockito-core:jar}</argLine>
 					<systemPropertyVariables>
-						<java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
-						<maven.home>${maven.home}</maven.home>
-					</systemPropertyVariables>
-				</configuration>
-			</plugin>
-
-			<plugin>
-				<artifactId>maven-failsafe-plugin</artifactId>
-				<version>${surefire-plugin.version}</version>
-				<executions>
-					<execution>
-						<goals>
-							<goal>integration-test</goal>
-							<goal>verify</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<systemPropertyVariables>
-						<native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
 						<java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
 						<maven.home>${maven.home}</maven.home>
 					</systemPropertyVariables>
@@ -436,19 +414,6 @@
 					</plugin>
 				</plugins>
 			</build>
-		</profile>
-
-		<profile>
-			<id>native</id>
-			<activation>
-				<property>
-					<name>native</name>
-				</property>
-			</activation>
-			<properties>
-				<skipITs>false</skipITs>
-				<quarkus.native.enabled>true</quarkus.native.enabled>
-			</properties>
 		</profile>
 	</profiles>
 </project>

@@ -25,7 +25,6 @@ Run targeted tests with Maven directly:
 ```bash
 ./mvnw test -Dtest=IndexTest              # one test class
 ./mvnw test -Dtest=IndexTest#testMethod   # one test method
-./mvnw verify -Pnative                    # integration tests, needs a native build
 ```
 
 Tests that interact with remote storage start a container through Testcontainers. These tests require Docker, but do not require manually started services. Development mode (`mise run dev`) stores everything on local disk, because `EXOFIND_STORAGE_MODE` defaults to `local`. To run it against object storage, start SeaweedFS with `mise run storage` and set the mode and the remote settings from `docs/reference/configuration.md`.
