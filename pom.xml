@@ -35,6 +35,7 @@
 		<jmh.version>1.37</jmh.version>
 		<build-helper-plugin.version>3.6.0</build-helper-plugin.version>
 		<quarkus-micrometer-registry.version>3.7.0</quarkus-micrometer-registry.version>
+		<google-auth-library.version>1.48.0</google-auth-library.version>
 	</properties>
 
 	<dependencyManagement>
@@ -185,6 +186,11 @@
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>sts</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>${google-auth-library.version}</version>
 		</dependency>
 
 		<dependency>

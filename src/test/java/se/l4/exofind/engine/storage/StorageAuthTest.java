@@ -17,6 +17,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.core.exception.SdkClientException;
 
@@ -163,6 +164,43 @@ public class StorageAuthTest {
 		);
 
 		assertThat(e.getMessage(), containsString("EXOFIND_STORAGE_REMOTE_CREDENTIALS_FILE"));
+	}
+
+	/**
+	 * The Google Cloud source carries no settings of its own and has to be
+	 * named. The AWS source also looks for the credentials of the
+	 * environment, so nothing present tells the two apart.
+	 */
+	@Test
+	void testGcpIsNamed() {
+		var auth = fromConfig("gcp", null, null, null, null, null);
+
+		assertThat(auth, is(new StorageAuth.Gcp()));
+	}
+
+	/**
+	 * The Google Cloud source signs nothing. The client leaves the request
+	 * unsigned so that an access token carries the identity.
+	 */
+	@Test
+	void testGcpSignsNothing() {
+		var auth = fromConfig("gcp", null, null, null, null, null);
+
+		assertThat(auth.credentialsProvider(), instanceOf(AnonymousCredentialsProvider.class));
+	}
+
+	/**
+	 * A key pair beside the Google Cloud source says two different things
+	 * about how a request is authorized, and is refused.
+	 */
+	@Test
+	void testGcpRefusesKeyPair() {
+		var e = assertThrows(IllegalStateException.class,
+			() -> fromConfig("gcp", "key", "secret", null, null, null)
+		);
+
+		assertThat(e.getMessage(), containsString("EXOFIND_STORAGE_REMOTE_ACCESS_KEY"));
+		assertThat(e.getMessage(), containsString("'gcp'"));
 	}
 
 	@Test

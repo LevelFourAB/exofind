@@ -1,9 +1,11 @@
 package se.l4.exofind.engine.storage;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Optional;
 
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -11,19 +13,22 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.profiles.ProfileFile;
 import software.amazon.awssdk.profiles.ProfileFileSupplier;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
 
 /**
- * Where a node gets the credentials it signs object storage requests with.
+ * Where a node gets the credentials it authorizes object storage requests
+ * with.
  *
  * <p>The engine does not renew credentials itself. Each source hands the
- * client a provider from the AWS SDK that caches what it resolved and fetches
- * fresh credentials ahead of their expiry, so a token that is replaced
+ * client something that caches what it resolved and fetches fresh credentials
+ * ahead of their expiry: a provider from the AWS SDK, or for {@link Gcp} the
+ * library that mints Google Cloud access tokens. A credential that is replaced
  * underneath a running node is picked up without a restart. What differs
- * between sources is only where the provider looks.
+ * between sources is only where it looks.
  *
  * <p>Which source a deployment uses is named by
  * {@code EXOFIND_STORAGE_REMOTE_AUTH}, or inferred from which of the source
@@ -45,6 +50,24 @@ public sealed interface StorageAuth {
 	 * @return
 	 */
 	AwsCredentialsProvider credentialsProvider();
+
+	/**
+	 * An interceptor that puts the identity of this node on every request, for
+	 * a source the client cannot sign with. Called once when the storage is
+	 * opened.
+	 *
+	 * <p>Empty for every source that signs, where the SDK authorizes a request
+	 * with the credentials of {@link #credentialsProvider()}. Only Google
+	 * Cloud Storage accepts a token in place of a signature.
+	 *
+	 * @return
+	 * @throws IOException
+	 *   if the identity could not be taken up, leaving the node unable to
+	 *   reach the storage
+	 */
+	default Optional<ExecutionInterceptor> authorization() throws IOException {
+		return Optional.empty();
+	}
 
 	/**
 	 * The region to sign requests for when the configuration names none.
@@ -185,6 +208,45 @@ public sealed interface StorageAuth {
 	}
 
 	/**
+	 * The credentials Google Cloud hands a workload: the identity a node on
+	 * GKE, Cloud Run or Compute Engine runs as, a service account key file
+	 * named by {@code GOOGLE_APPLICATION_CREDENTIALS}, a federated identity,
+	 * or the credentials of a developer signed in with {@code gcloud}.
+	 *
+	 * <p>A node on Google Cloud then reaches a bucket with no secret in its
+	 * configuration. Google Cloud Storage accepts an access token in place of
+	 * a signature, so the client signs nothing and
+	 * {@link GoogleCredentialsInterceptor} puts the token on every request.
+	 *
+	 * <p>Only Google Cloud Storage accepts these credentials. A node that
+	 * names this source and reaches another storage refuses to start, see
+	 * {@link ObjectStorage}.
+	 */
+	record Gcp() implements StorageAuth {
+		public static final String NAME = "gcp";
+
+		@Override
+		public String name() {
+			return NAME;
+		}
+
+		/**
+		 * Nothing to sign with. The SDK leaves a request unsigned for these
+		 * credentials, and {@link GoogleCredentialsInterceptor} then sets the
+		 * {@code Authorization} header.
+		 */
+		@Override
+		public AwsCredentialsProvider credentialsProvider() {
+			return AnonymousCredentialsProvider.create();
+		}
+
+		@Override
+		public Optional<ExecutionInterceptor> authorization() throws IOException {
+			return Optional.of(new GoogleCredentialsInterceptor());
+		}
+	}
+
+	/**
 	 * Work out the source from the settings, in the form the configuration
 	 * names them.
 	 *
@@ -192,7 +254,9 @@ public sealed interface StorageAuth {
 	 * the settings of the other sources refused. With it unset, the settings
 	 * present decide: a key pair means {@link Static}, a file means
 	 * {@link File}, and nothing at all means {@link Aws}. A key pair and a
-	 * file together are refused.
+	 * file together are refused. {@link Gcp} carries no settings of its own
+	 * and is never inferred, because {@link Aws} also looks for the
+	 * credentials of the environment.
 	 *
 	 * @param auth
 	 *   value of {@code EXOFIND_STORAGE_REMOTE_AUTH}
@@ -278,9 +342,19 @@ public sealed interface StorageAuth {
 					profile.orElse(File.DEFAULT_PROFILE)
 				);
 			}
+			case Gcp.NAME -> {
+				refuse(key, "EXOFIND_STORAGE_REMOTE_ACCESS_KEY", name);
+				refuse(secret, "EXOFIND_STORAGE_REMOTE_SECRET_KEY", name);
+				refuse(token, "EXOFIND_STORAGE_REMOTE_SESSION_TOKEN", name);
+				refuse(file, "EXOFIND_STORAGE_REMOTE_CREDENTIALS_FILE", name);
+				refuse(profile, "EXOFIND_STORAGE_REMOTE_CREDENTIALS_PROFILE", name);
+
+				yield new Gcp();
+			}
 			default -> throw new IllegalStateException(
 				"EXOFIND_STORAGE_REMOTE_AUTH is '" + name + "', which is none of '"
-					+ Static.NAME + "', '" + Aws.NAME + "' or '" + File.NAME + "'"
+					+ Static.NAME + "', '" + Aws.NAME + "', '" + File.NAME + "' or '"
+					+ Gcp.NAME + "'"
 			);
 		};
 	}

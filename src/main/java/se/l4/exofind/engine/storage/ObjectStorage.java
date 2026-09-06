@@ -3,6 +3,7 @@ package se.l4.exofind.engine.storage;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.function.Consumer;
@@ -28,6 +29,10 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * registry, the indexer lease and the keys - shares this one client and one
  * bucket, so a deployment is configured once and there is a single place
  * deciding where an object lands.
+ *
+ * <p>The client speaks the S3 API. An endpoint at Google Cloud Storage also
+ * gets {@link GoogleStorageInterceptor}, which states the condition of a write
+ * the way that storage takes it.
  */
 public class ObjectStorage {
 	/**
@@ -66,8 +71,9 @@ public class ObjectStorage {
 	 *   whether this node may act as the indexer, which is what makes the
 	 *   conditional write check worth making
 	 * @throws IOException
-	 *   if no credentials could be resolved, the check could not be made, or
-	 *   the storage does not enforce conditional writes
+	 *   if no credentials could be resolved, the credentials are for a
+	 *   storage other than the endpoint, the check could not be made, or the
+	 *   storage does not enforce conditional writes
 	 */
 	public ObjectStorage(
 		Optional<String> url,
@@ -99,6 +105,31 @@ public class ObjectStorage {
 		this.bucket = bucket;
 		this.prefix = prefix;
 
+		var interceptors = new ArrayList<ExecutionInterceptor>();
+		if(interceptor != null) {
+			interceptors.add(interceptor);
+		}
+
+		var google = GoogleStorageInterceptor.isGoogleStorage(url);
+		if(auth instanceof StorageAuth.Gcp && !google) {
+			throw new IOException(
+				"EXOFIND_STORAGE_REMOTE_AUTH is '" + auth.name() + "', whose"
+					+ " credentials only Google Cloud Storage takes. Set"
+					+ " EXOFIND_STORAGE_REMOTE_URL to https://"
+					+ GoogleStorageInterceptor.HOST + ", or name the source the"
+					+ " storage in EXOFIND_STORAGE_REMOTE_URL accepts"
+			);
+		}
+
+		if(google) {
+			/*
+			 * Google Cloud Storage states the condition of a write on the
+			 * generation of the object, not on its tag. Registered here so
+			 * that no caller depends on which storage it writes to.
+			 */
+			interceptors.add(new GoogleStorageInterceptor());
+		}
+
 		var credentials = auth.credentialsProvider();
 		try {
 			/*
@@ -108,7 +139,9 @@ public class ObjectStorage {
 			 * node that reaches the storage.
 			 */
 			credentials.resolveCredentials();
-		} catch(RuntimeException e) {
+
+			auth.authorization().ifPresent(interceptors::add);
+		} catch(IOException | RuntimeException e) {
 			throw new IOException(
 				"Unable to load credentials for the object storage with"
 					+ " EXOFIND_STORAGE_REMOTE_AUTH '" + auth.name() + "'; "
@@ -150,9 +183,7 @@ public class ObjectStorage {
 			.overrideConfiguration(o -> {
 				o.retryStrategy(AwsRetryStrategy.doNotRetry());
 
-				if(interceptor != null) {
-					o.addExecutionInterceptor(interceptor);
-				}
+				interceptors.forEach(o::addExecutionInterceptor);
 			})
 			.httpClientBuilder(UrlConnectionHttpClient.builder())
 			.build();

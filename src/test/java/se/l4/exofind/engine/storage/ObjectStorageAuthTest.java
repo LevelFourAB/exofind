@@ -130,6 +130,26 @@ public class ObjectStorageAuthTest {
 		assertRoundTrip(storage);
 	}
 
+	/**
+	 * The Google Cloud source authorizes with a token only Google Cloud
+	 * Storage accepts. A node pointed at another storage says so at startup,
+	 * before it asks Google Cloud for a token it cannot use.
+	 */
+	@Test
+	void testGcpSourceDemandsGoogleEndpoint() {
+		var e = assertThrows(IOException.class, () -> new ObjectStorage(
+			Optional.of("http://storage.example.com:8333"),
+			new StorageAuth.Gcp(),
+			Optional.empty(),
+			TestObjectStorage.BUCKET,
+			Optional.of(PREFIX + "/gcp"),
+			false
+		));
+
+		assertThat(e.getMessage(), containsString("'gcp'"));
+		assertThat(e.getMessage(), containsString(GoogleStorageInterceptor.HOST));
+	}
+
 	private static void assertRoundTrip(ObjectStorage storage) {
 		var key = storage.rootObject("round-trip");
 		var client = storage.client();

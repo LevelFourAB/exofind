@@ -43,14 +43,14 @@ The following table lists object storage configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_STORAGE_REMOTE_URL` | URL of the S3-compatible storage. Leave unset to reach Amazon S3 in the region. | None |
-| `EXOFIND_STORAGE_REMOTE_AUTH` | Where the credentials come from: `static` for a key pair, `aws` for the AWS environment the node runs in, or `file` for a credentials file that something else renews. The node refuses to start when the named source and the other credential settings disagree. See [Authenticating to object storage](../how-to/authenticate-to-object-storage.md). | `static` when a key pair is set, `file` when a credentials file is set, otherwise `aws` |
+| `EXOFIND_STORAGE_REMOTE_URL` | URL of the S3-compatible storage. Leave unset to reach Amazon S3 in the region. Set it to `https://storage.googleapis.com` for Google Cloud Storage, which the node states its conditional writes differently for. | None |
+| `EXOFIND_STORAGE_REMOTE_AUTH` | Where the credentials come from: `static` for a key pair, `aws` for the AWS environment the node runs in, `gcp` for the Google Cloud environment, or `file` for a credentials file that something else renews. The node refuses to start when the named source and the other credential settings disagree. See [Authenticating to object storage](../how-to/authenticate-to-object-storage.md). | `static` when a key pair is set, `file` when a credentials file is set, otherwise `aws` |
 | `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` | Access key of the `static` source. | None |
 | `EXOFIND_STORAGE_REMOTE_SECRET_KEY` | Secret key of the `static` source. | None |
 | `EXOFIND_STORAGE_REMOTE_SESSION_TOKEN` | Session token issued with the key pair of the `static` source, for temporary credentials. | None |
 | `EXOFIND_STORAGE_REMOTE_CREDENTIALS_FILE` | File in the AWS credentials file format that the `file` source reads. The node reads it again whenever its modification time changes. | None |
 | `EXOFIND_STORAGE_REMOTE_CREDENTIALS_PROFILE` | Profile the `file` source reads from the file. | `default` |
-| `EXOFIND_STORAGE_REMOTE_REGION` | Region requests are signed for. With the `aws` source, the region the AWS environment names is used when this is unset. | `us-east-1` |
+| `EXOFIND_STORAGE_REMOTE_REGION` | Region requests are signed for. With the `aws` source, the region the AWS environment names is used when this is unset. The `gcp` source signs no request and ignores this setting. | `us-east-1` |
 | `EXOFIND_STORAGE_REMOTE_BUCKET` | Bucket where indexes are stored. | Required |
 | `EXOFIND_STORAGE_REMOTE_PREFIX` | Key prefix within the bucket when sharing a bucket with other services. | None |
 

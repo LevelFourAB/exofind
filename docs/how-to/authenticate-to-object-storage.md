@@ -2,8 +2,8 @@
 
 This guide shows you how to give a node the credentials it signs bucket
 requests with in `object` storage mode: a fixed key pair, the role of the AWS
-environment the node runs in, or a credentials file that something else
-renews.
+environment the node runs in, a credentials file that something else renews, or
+the credentials of the Google Cloud environment.
 
 ## Prerequisites
 
@@ -24,6 +24,7 @@ Before you begin, make sure that you have:
 | `static` | The key pair in `EXOFIND_STORAGE_REMOTE_ACCESS_KEY` and `EXOFIND_STORAGE_REMOTE_SECRET_KEY`, with `EXOFIND_STORAGE_REMOTE_SESSION_TOKEN` when the pair was issued for a session. | The storage issues long-lived keys, or you pass temporary credentials in yourself. |
 | `aws` | What the AWS environment hands the process: an instance role, a task role, or the role of a pod's service account. | The node runs on EC2, ECS, or EKS. |
 | `file` | A profile in a file in the AWS credentials file format, named by `EXOFIND_STORAGE_REMOTE_CREDENTIALS_FILE`. The node reads the file again whenever it changes. | Something other than the node renews the credentials, such as a secrets agent or a rotation script. |
+| `gcp` | An OAuth 2.0 access token from Google Cloud Application Default Credentials. | The node runs on Google Cloud or uses Google Cloud credentials, and the bucket is on Google Cloud Storage. |
 
 When `EXOFIND_STORAGE_REMOTE_AUTH` is unset, the node picks `static` when a key
 pair is set, `file` when a credentials file is set, and `aws` when neither is.
@@ -38,7 +39,9 @@ credentials on its own, and the node never restarts for a renewal.
 ## Option 1: Use a key pair
 
 Use this option with a storage that issues long-lived keys, such as SeaweedFS,
-MinIO, Cloudflare R2, or Google Cloud Storage through its HMAC keys.
+MinIO, Cloudflare R2, or Google Cloud Storage through its HMAC keys. On Google
+Cloud Storage you can also use the credentials of the environment, see
+[Option 4](#option-4-use-the-google-cloud-environment).
 
 1. Create a key pair in the storage with permission to list the bucket, and to
    read, write, and delete objects under the prefix the node uses.
@@ -174,6 +177,52 @@ The node runs the command when it needs credentials, and again when the
 credentials it printed expire. The command prints a JSON object with
 `Version`, `AccessKeyId`, `SecretAccessKey`, `SessionToken`, and `Expiration`,
 the format the AWS CLI reads from a `credential_process`.
+
+## Option 4: Use the Google Cloud environment
+
+Use this option when the node runs on Google Cloud or uses Google Cloud
+credentials, and the bucket is on Google Cloud Storage. The node gets
+credentials from Application Default Credentials, and its configuration holds
+no secret.
+
+1. Give the node a service account:
+
+   - On GKE, Cloud Run, or Compute Engine, run the workload as a service
+     account.
+   - On a host outside Google Cloud, set `GOOGLE_APPLICATION_CREDENTIALS` to
+     the path of a service account key file, or use federated identity.
+   - For local development, sign in with
+     `gcloud auth application-default login`.
+
+2. Grant the service account `roles/storage.objectUser` on the bucket, which
+   covers reading, writing, deleting, and listing objects.
+
+   A node that only searches works with `roles/storage.objectViewer`. For more
+   information, see [Running a public demo node](run-a-demo-node.md).
+
+3. Configure the nodes:
+
+   ```shell
+   EXOFIND_STORAGE_MODE=object
+   EXOFIND_STORAGE_REMOTE_AUTH=gcp
+   EXOFIND_STORAGE_REMOTE_URL=https://storage.googleapis.com
+   EXOFIND_STORAGE_REMOTE_BUCKET=exofind
+   ```
+
+   The node refuses to start when `EXOFIND_STORAGE_REMOTE_AUTH` is `gcp` and
+   `EXOFIND_STORAGE_REMOTE_URL` is not Google Cloud Storage. The `gcp` source
+   ignores `EXOFIND_STORAGE_REMOTE_REGION`.
+
+4. Start the nodes.
+
+The credentials come from Google Cloud Application Default Credentials: the
+identity a workload on GKE, Cloud Run, or Compute Engine runs as, a service
+account key file named by `GOOGLE_APPLICATION_CREDENTIALS`, a federated
+identity, or the credentials of a developer signed in with
+`gcloud auth application-default login`. The node requests an OAuth 2.0 access
+token with the `https://www.googleapis.com/auth/devstorage.read_write` scope
+when it starts and refuses to start without one. The library renews the token
+before it expires, and the node never restarts for a renewal.
 
 ## Verify the source
 

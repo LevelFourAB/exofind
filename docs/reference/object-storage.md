@@ -50,7 +50,8 @@ removes it again.
 The node compares entity tags for equality only. It does not read them as MD5
 digests. The storage has to return an entity tag on `PutObject`, `GetObject`,
 and `HeadObject`, and the tag has to change whenever the content of the object
-changes.
+changes. The tag the node keeps for an object on Google Cloud Storage also
+holds a generation, see [Google Cloud Storage](#google-cloud-storage).
 
 ## Consistency
 
@@ -68,7 +69,8 @@ The node expects the following of a storage:
 The node reaches and signs requests in the following way:
 
 - **Signing**: AWS Signature Version 4, for the region in
-  `EXOFIND_STORAGE_REMOTE_REGION` (default: `us-east-1`).
+  `EXOFIND_STORAGE_REMOTE_REGION` (default: `us-east-1`). The `gcp` source
+  sends an access token and signs nothing.
 - **Addressing**: path style when `EXOFIND_STORAGE_REMOTE_URL` is set, so the
   bucket is part of the path and the storage needs no wildcard DNS. Without a
   URL, the node reaches Amazon S3 with the bucket in the host name.
@@ -80,9 +82,46 @@ The node reaches and signs requests in the following way:
   request decides whether to make it again, so a storage that answers
   `503 Slow Down` sees no automatic retry from the client library.
 
+## Google Cloud Storage
+
+The node uses the Google Cloud Storage spelling of a conditional write when the
+host of `EXOFIND_STORAGE_REMOTE_URL` is `storage.googleapis.com` or ends with
+`.storage.googleapis.com`.
+
+Google Cloud Storage accepts `If-Match` and `If-None-Match` on `GetObject` and
+`HeadObject` only, not on writes. The node sends the following headers instead:
+
+| Header | Operation | Sent as |
+| --- | --- | --- |
+| `If-None-Match: *` | `PutObject` | `x-goog-if-generation-match: 0` |
+| `If-Match: <version>` | `PutObject` | `x-goog-if-generation-match: <generation>` |
+| `If-None-Match: <version>` | `GetObject`, `HeadObject` | `If-None-Match: <entity tag>` |
+
+The entity tag for an object on Google Cloud Storage holds two parts, formatted
+as `"<entity tag>@<generation>"`. A read compares the entity tag part, and a
+write states the generation part in `x-goog-if-generation-match`. If a write is
+answered without an `x-goog-generation` header, the node fails with an error
+naming `x-goog-generation`, because the version of the written object is
+unknown and every later write of it would be refused.
+
+A tag that names no generation is sent as generation `1`, which no object
+carries, so the write is refused. A client that invents a value for an
+`If-Match` header of the API gets a conflict.
+
+Google Cloud Storage limits write rates to about one write per second per
+object. A deployment writes two objects on a schedule:
+
+- The leadership table: one object for the whole deployment, written by every
+  indexer candidate at one third of `EXOFIND_INDEXER_LEASE_DURATION` (default
+  `30s`, so every 10 seconds).
+- The manifest of an index: written by the node that writes that index.
+
+Raise `EXOFIND_INDEXER_LEASE_DURATION` when a deployment has enough indexer
+candidates to write the leadership table more than once a second.
+
 ## Storages
 
 Amazon S3 and SeaweedFS enforce conditional writes, and the engine is tested
-against both. For any other storage, the startup check on a node that can index
-is the test: a node that starts as an indexer candidate runs against a storage
-that enforces them.
+against both. For every other storage, including Google Cloud Storage, the
+startup check on a node that can index is the test: a node that starts as an
+indexer candidate runs against a storage that enforces them.
