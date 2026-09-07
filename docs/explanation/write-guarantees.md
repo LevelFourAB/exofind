@@ -86,7 +86,7 @@ with a `2xx` but not yet committed and pushed to object storage by the old write
 are lost rather than merged.
 
 To learn more about epochs and conditional manifest writes, see
-[Synchronization](../explanation/synchronization.md).
+[Synchronization](synchronization.md).
 
 ## Architectural trade-offs and client strategies
 
@@ -94,7 +94,7 @@ Exofind uses an asynchronous durability model by design:
 
 - **Single writer per index**: Only one node writes to an index at a time,
   avoiding distributed transaction protocols. For more details on node roles,
-  see [Architecture](../explanation/architecture.md).
+  see [Architecture](architecture.md).
 - **Object storage as source of truth**: Nodes do not coordinate directly with
   each other. All state synchronizes through the bucket.
 - **Cost of remote pushes**: Uploading segment files and updating manifests on
@@ -120,3 +120,19 @@ patterns:
 - **Retry failed requests**: If a write fails due to network interruptions or
   node failover, resend the idempotent document write. For error handling and
   retry guidance, see [Handle API errors](../how-to/handle-api-errors.md).
+
+## Related
+
+- [Make a write visible to search](../how-to/make-writes-visible.md) - Closing
+  the gap between an accepted write and a search that can see it.
+- [Indexing documents](../how-to/index-documents.md) - Sending documents, and
+  committing once at the end of a load.
+- [Handle errors in a client](../how-to/handle-api-errors.md) - Routing a
+  failure by its code, and retrying without indexing anything twice.
+- [Synchronization](synchronization.md) - Manifests, epochs, and the leadership
+  table.
+- [Architecture](architecture.md) - Why storage is the source of truth.
+- [Storage layout](../reference/storage-layout.md) - The manifest and the epoch
+  prefix a commit writes.
+- [Configuration](../reference/configuration.md) - The commit, refresh, and
+  lease variables named here.

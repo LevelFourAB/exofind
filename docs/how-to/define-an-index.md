@@ -265,3 +265,4 @@ Choose a `pivot` value that represents a typical popular item in your catalog ra
 - [Using sub-documents](use-sub-documents.md) - Fields whose values are documents of their own.
 - [Rolling out a definition change](roll-out-a-definition-change.md) - Changing a definition for documents already indexed.
 - [Relevance](../explanation/relevance.md) - How boosts, tie breakers, and signals order results.
+- [Tuning ranking](tune-ranking.md) - Changing the order for an index that already holds documents.

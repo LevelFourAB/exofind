@@ -64,3 +64,4 @@ Verify that the generated client communicates with the deployment:
 - [API conventions](../reference/api-conventions.md) - The rules every endpoint shares, including media types, conditional requests, and status codes.
 - [Errors](../reference/errors.md) - The error body and the code vocabulary.
 - [Handle errors in a client](handle-api-errors.md) - Routing a failure by its code, and retrying without indexing anything twice.
+- [Testing an application against a node](test-against-a-node.md) - Running the client against a node in a container.

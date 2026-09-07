@@ -222,4 +222,5 @@ If the response omits `interpreted`, no filters were extracted. Verify that the 
 - [Reading numbers and units](../reference/search-api.md#reading-numbers-and-units) - Every shape that is read, how a unit is matched, and the `interpreted` object.
 - [Field types](../reference/field-types.md#int32-int64-float-double) - The `unit` property of a number field.
 - [Locales](../reference/locales.md#comparative-words) - The comparative words of each locale.
+- [Searching from a search box](search-from-a-search-box.md) - The punctuation a person can type, the join mode, and showing what was read back to them.
 - [Searching an index](search-an-index.md) - The search box, filters, facets, and ordering.

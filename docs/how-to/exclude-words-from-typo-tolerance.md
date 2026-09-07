@@ -85,3 +85,4 @@ If typo exclusions do not produce the expected search behavior, check the follow
 - [Defining an index](define-an-index.md) - Declaring typo tolerance on a field.
 - [Admin API](../reference/admin-api.md) - The search settings endpoints and their patch paths.
 - [Find out why a result ranked where it did](explain-a-result.md) - Checking which words a clause matched on.
+- [Searching from a search box](search-from-a-search-box.md) - Which typed words get typo tolerance in the first place.

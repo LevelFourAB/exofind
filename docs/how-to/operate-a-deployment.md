@@ -294,6 +294,8 @@ healthy:
 
 - [Admin API](../reference/admin-api.md) - Status shapes and index state descriptions.
 - [Configuration](../reference/configuration.md) - Configuration settings, intervals, and bounds.
+- [Storage layout](../reference/storage-layout.md) - Every object a node writes in the bucket, and what the local directory holds.
+- [Glossary](../reference/glossary.md) - The terms the status output and the log messages use.
 - [Running multiple nodes](run-multiple-nodes.md) - Candidacy, failover, and write forwarding.
 - [Deploying on Kubernetes](deploy-on-kubernetes.md) - Deployment manifests for search and write pools.
 - [Architecture](../explanation/architecture.md) - Object storage architecture and node persistence.

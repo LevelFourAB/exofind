@@ -172,4 +172,5 @@ If `suggestions` is empty, check the following causes:
 - [Suggesting what to search for](../reference/search-api.md#suggesting-what-to-search-for) - Suggest request fields, matching rules, and response structure.
 - [Field settings](../reference/admin-api.md#field-settings) - Configuring `suggest` and declared values on fields.
 - [Reading colours and brands in the search box](read-field-values-in-the-search-box.md) - Interpreting facet values directly from full search query strings.
+- [Searching from a search box](search-from-a-search-box.md) - Running the search once the person accepts a suggestion or keeps typing.
 - [Errors](../reference/errors.md) - Error codes returned by search and admin APIs.

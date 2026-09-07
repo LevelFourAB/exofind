@@ -199,6 +199,14 @@ documents rank higher in the relevance order.
 
 - [Relevance](../explanation/relevance.md) - How scoring and ranking layers
   interact.
+- [Find out why a result ranked where it did](explain-a-result.md) - Reading a
+  hit's score back as the clauses and fields you wrote.
+- [Searching an index](search-an-index.md) - The search request the boosts,
+  signals, and rescoring sit on.
+- [Changing synonyms without reindexing](change-synonyms-without-reindexing.md) -
+  The other search setting that changes results without a new generation.
+- [Rolling out a definition change](roll-out-a-definition-change.md) - Enabling
+  `sort` on a field that a signal or a tie breaker needs.
 - [Search API](../reference/search-api.md) - Reference for search query
   clauses, signals, and rescoring parameters.
 - [Field types](../reference/field-types.md) - Schema options for sortable

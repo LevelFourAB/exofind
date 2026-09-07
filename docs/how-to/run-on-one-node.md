@@ -100,4 +100,6 @@ To switch to object storage:
 - [Configuration](../reference/configuration.md) - The local and object storage settings.
 - [Securing a deployment](secure-a-deployment.md) - Keys for a node reachable by more than your laptop.
 - [Operating a deployment](operate-a-deployment.md) - Index status, disk, and upgrades.
+- [Testing an application against a node](test-against-a-node.md) - Running the same local-mode node in a test suite.
+- [Storage layout](../reference/storage-layout.md) - What the local directory holds, and what is lost with it.
 - [Getting started](../tutorials/getting-started.md) - Defining and searching a first index.

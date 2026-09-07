@@ -195,13 +195,17 @@ The node returns a `200 OK` response containing the matching document:
 
 ## Related
 
-- [Getting started](../tutorials/getting-started.md) - Run an interactive node
-  walkthrough.
-- [Make writes visible](make-writes-visible.md) - Understand commit and refresh
-  delays.
-- [Index documents](index-documents.md) - Learn batch loading and continuous
-  ingestion patterns.
-- [Configuration](../reference/configuration.md) - Complete list of environment
-  variables.
-- [Authentication](../reference/auth.md) - Configure authentication modes, keys,
-  and permissions.
+- [Getting started](../tutorials/getting-started.md) - Defining and searching a
+  first index by hand before a test suite does it.
+- [Make a write visible to search](make-writes-visible.md) - The commit and
+  refresh delays between a write and a search that can see it.
+- [Indexing documents](index-documents.md) - Loading a dataset and keeping it
+  current outside a test run.
+- [Handle errors in a client](handle-api-errors.md) - The failures a test suite
+  asserts on, and how a client routes them.
+- [Running on one node](run-on-one-node.md) - Running the same local-mode node
+  outside a test run.
+- [Configuration](../reference/configuration.md) - Every environment variable
+  the container takes.
+- [Authentication](../reference/auth.md) - Keys, permissions, roles, and the
+  keys API.

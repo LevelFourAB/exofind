@@ -91,3 +91,12 @@ Because of this order, a successor node always pulls a manifest that includes th
 An unassigned index does not wait for a coordination round. The first candidate node that receives a write claims the index immediately. This ensures newly created indexes acquire writers immediately and routes writes promptly if a holder fails.
 
 The leadership table ensures that at most one node expends effort writing to each index, and informs other nodes where to forward writes. The table does not guarantee data safety. For example, clock drift or a paused process can cause a stale node to attempt writes after its claim has lapsed. Conditional manifest writes and epoch scoping prevent stale writers from corrupting data. The leadership table maintains system liveness, while conditional writes provide safety.
+
+## Related
+
+- [What a write guarantees](write-guarantees.md) - What a client can assume after a write returns, and what a failover does to it.
+- [Storage layout](../reference/storage-layout.md) - The manifests, the leadership table, and the epoch prefixes as objects in the bucket.
+- [Object storage requirements](../reference/object-storage.md) - The conditional write headers a bucket has to enforce.
+- [Glossary](../reference/glossary.md) - Claims, epochs, manifests, and the other terms used here.
+- [Generations](generations.md) - Why an index is a name with generations under it.
+- [Running multiple nodes](../how-to/run-multiple-nodes.md) - Configuring candidacy, failover, and write routing.

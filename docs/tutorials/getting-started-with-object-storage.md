@@ -374,5 +374,9 @@ the following documents:
   the source of truth and how nodes coordinate.
 - [Synchronization](../explanation/synchronization.md): understand manifests,
   epochs, and the leadership table.
+- [What a write guarantees](../explanation/write-guarantees.md): find out when a
+  document that was accepted becomes durable in the bucket.
+- [Storage layout](../reference/storage-layout.md): see every object the node
+  writes under the prefix you configured.
 - [Configuration](../reference/configuration.md): explore all supported
   environment variables and options.

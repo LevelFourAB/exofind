@@ -5,9 +5,9 @@ Everything a deployment in `object` mode writes lives under the prefix set by
 `EXOFIND_STORAGE_REMOTE_BUCKET`. When no prefix is set, the objects sit at the
 root of the bucket. Every `.ef.bin` object is a Protocol Buffers message. For
 configuration parameters, see
-[Configuration](../reference/configuration.md). For storage operations and
+[Configuration](configuration.md). For storage operations and
 consistency requirements, see
-[Object storage requirements](../reference/object-storage.md).
+[Object storage requirements](object-storage.md).
 
 ## Objects beside the indexes
 

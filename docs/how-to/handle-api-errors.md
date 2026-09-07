@@ -92,4 +92,6 @@ Verify that your client handles failure conditions as expected:
 - [API conventions](../reference/api-conventions.md) - Media types, conditional requests, forwarding, and what each status code means.
 - [Generating an API client](generate-a-client.md) - Building the client the error handling sits in.
 - [Indexing documents](index-documents.md) - Recovering from a refused batch.
+- [Testing an application against a node](test-against-a-node.md) - Running the error paths against a node in a container.
+- [What a write guarantees](../explanation/write-guarantees.md) - Which writes a failover can lose, and why a retry is safe.
 - [Operating a deployment](operate-a-deployment.md) - Telling a node that is behind from one that is broken.

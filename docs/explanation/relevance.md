@@ -137,3 +137,5 @@ Exofind evaluates most ranking components at query time, making ranking adjustme
 - [Field types](../reference/field-types.md#ranking) - Reference for `ranking`, `signals`, and field-level settings.
 - [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `fuse`, `signals`, `rescore`, and `sort` parameters.
 - [Search an index](../how-to/search-an-index.md) - How-to guide for constructing search queries.
+- [Tuning ranking](../how-to/tune-ranking.md) - How-to guide for changing the order with boosts, signals, tie breakers, and rescoring.
+- [Searching from a search box](../how-to/search-from-a-search-box.md) - How-to guide for the `user` match mode, the join mode, and relaxation.

@@ -249,3 +249,4 @@ default).
 - [Operating a deployment](operate-a-deployment.md) - Monitoring node health, writer assignments, and storage operations.
 - [Rolling out a definition change](roll-out-a-definition-change.md) - Creating and switching between index generations safely.
 - [Generations](../explanation/generations.md) - How generation numbering, promotion, and immutable storage layouts work.
+- [Storage layout](../reference/storage-layout.md) - The registry object, the removal marks, and every other object the audit reads.

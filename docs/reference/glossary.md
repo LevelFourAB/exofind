@@ -25,7 +25,8 @@ periodically renew its claims before their lease expires. See
 
 An action that flushes Lucene changes and writes pending documents and
 definition updates to storage as a manifest push. See
-[Admin API](admin-api.md).
+[Admin API](admin-api.md) and
+[What a write guarantees](../explanation/write-guarantees.md).
 
 ## Definition
 

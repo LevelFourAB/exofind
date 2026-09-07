@@ -177,4 +177,5 @@ If the response omits `interpreted`, no filters were extracted. Check the follow
 - [Reading the values of a field](../reference/search-api.md#reading-the-values-of-a-field) - How a span of words is matched and the `interpreted` object.
 - [Field settings](../reference/admin-api.md#field-settings) - The `fields` object of the search settings.
 - [Reading numbers in the search box](read-numbers-in-the-search-box.md) - Reading a price or a size typed next to a unit.
+- [Searching from a search box](search-from-a-search-box.md) - The punctuation a person can type, the join mode, and showing what was read back to them.
 - [Searching an index](search-an-index.md) - The search box, filters, facets, and ordering.

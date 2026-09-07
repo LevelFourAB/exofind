@@ -107,4 +107,7 @@ Inspect the JSON response from the search endpoint to verify search box behavior
 - [Reading numbers in the search box](read-numbers-in-the-search-box.md) - Reading numbers and units out of search text as filters.
 - [Reading colours and brands in the search box](read-field-values-in-the-search-box.md) - Reading facet field values out of search text as filters.
 - [Suggesting what to search for while it is typed](suggest-while-typing.md) - Providing query and completion suggestions.
+- [Excluding words from typo tolerance](exclude-words-from-typo-tolerance.md) - Holding a brand name or a model code to its spelling.
+- [Tuning ranking](tune-ranking.md) - Ordering the documents the typed words match.
+- [Relevance](../explanation/relevance.md) - What decides the order when the search asks for none.
 - [Search API reference](../reference/search-api.md) - Complete syntax, options, and error codes for search clauses.

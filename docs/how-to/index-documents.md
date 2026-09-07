@@ -140,4 +140,5 @@ If a request fails, use the following guidelines:
 - [Searching an index](search-an-index.md) - Query and retrieve indexed documents.
 - [Make a write visible to search](make-writes-visible.md) - The commit and refresh delays between a write and a search that can see it.
 - [Running multiple nodes](run-multiple-nodes.md) - Keeping candidates that can take the writes.
+- [What a write guarantees](../explanation/write-guarantees.md) - What a `2xx` promises, and when a batch is durable.
 - [Architecture](../explanation/architecture.md) - Why a write reaches the one node that holds the index, and what happens when no node does.

@@ -251,10 +251,14 @@ following documents:
   maintain a continuous feed.
 - [Search an index](../how-to/search-an-index.md): configure queries with
   filters, facets, sorting, and highlighting.
+- [Test an application against a node](../how-to/test-against-a-node.md): run
+  the same node from an integration test suite.
 - [Secure a deployment](../how-to/secure-a-deployment.md): manage client API
   keys and credential rotation.
 - [Configuration](../reference/configuration.md): explore all supported
   environment variables and options.
+- [Glossary](../reference/glossary.md): look up the terms the rest of the
+  documentation uses.
 - [Getting started with object storage](getting-started-with-object-storage.md):
   run the same walkthrough against a bucket, which is what more than one node
   needs.

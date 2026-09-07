@@ -71,3 +71,5 @@ To confirm that candidate nodes are active and writing indexes:
 - [Deploying on Kubernetes](deploy-on-kubernetes.md) - Deploying multiple nodes using Kubernetes manifests.
 - [Operating a deployment](operate-a-deployment.md) - Monitoring and managing a running deployment.
 - [Synchronization](../explanation/synchronization.md) - How conditional writes to storage protect data integrity.
+- [What a write guarantees](../explanation/write-guarantees.md) - What a failover does to writes the old writer had accepted.
+- [Storage layout](../reference/storage-layout.md) - The objects the nodes coordinate through, and what each node keeps on disk.
