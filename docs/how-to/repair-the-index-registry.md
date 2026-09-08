@@ -20,17 +20,35 @@ Before you begin:
 
 ## Recognize a lost or corrupt registry
 
-The deployment registry is stored in remote object storage at
-`registry/indexes.ef.bin` under the configured storage prefix. It records which
-indexes exist, their available generations, and which generation serves requests
-for the bare index name.
+The deployment registry records which indexes exist, their available
+generations, and which generation serves requests for the bare index name. In
+object storage mode, it is stored at `registry/indexes.ef.bin` under the
+configured storage prefix. In local storage mode, it is stored in
+`registry.ef.bin` in `EXOFIND_STORAGE_LOCAL_DIRECTORY`, beside the index
+directories in `indexes/<index>@<generation>/`.
+
+A lost registry costs the whole deployment in local storage mode, where the
+index directories are the only copy of the data, and only a re-pull in object
+storage mode. Local storage mode has no audit or repair endpoint, so you put
+`registry.ef.bin` back from a backup.
 
 Identify registry problems by checking node logs, readiness checks, and index
 listings:
 
-- **Missing registry (`ABSENT`):** The node starts and reports ready, but
-  `GET /v1alpha1/admin/indexes` returns an empty list even though index data
-  remains under `indexes/<index>/<generation>/` in the bucket.
+- **Missing registry (`ABSENT`):** A node that already read the registry keeps
+  its copy and logs an error instead of serving an empty list:
+  ```text
+  The index registry is gone from the storage, but this node read it before. Keeping the copy this node holds. Restore the registry from a backup, or rebuild it with the registry repair endpoint if you store indexes in object storage
+  ```
+  Such a node stays ready and continues serving its copy. A node that starts
+  with a missing or empty registry keeps the index directories it holds instead
+  of deleting them, and logs an error:
+  ```text
+  The index registry lists no indexes, but this node has index directories on disk. A registry that was lost looks the same as a deployment with no indexes, so the node keeps the directories instead of deleting them. Requests for those indexes return not found until the registry lists them again. Restore the registry from a backup, or rebuild it with the registry repair endpoint if you store indexes in object storage
+  ```
+  Requests for unlisted indexes return `index:not_found`, and
+  `GET /v1alpha1/admin/indexes` does not list them until the registry lists them
+  again.
 - **Corrupt registry (`CORRUPT`):** A node that starts after the corruption
   stays running but never becomes ready: `GET /q/health/ready` returns HTTP
   `503` with the `index-registry` check marked `DOWN`. A node that read the

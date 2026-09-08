@@ -8,6 +8,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
 
+import org.apache.lucene.util.IOUtils;
+
 import com.google.protobuf.InvalidProtocolBufferException;
 
 /**
@@ -81,7 +83,17 @@ public class LocalRegistryStorage implements RegistryStorage {
 
 			Files.createDirectories(file.getParent());
 			Files.write(temp, contents);
+
+			/*
+			 * A rename makes the file visible under its final name, but it does
+			 * not put the contents on the disk. After a power loss the registry
+			 * file can exist and be empty while the Lucene commits beside it
+			 * survive, and an empty registry lists no indexes. Sync the contents
+			 * before the rename and the directory entry after it.
+			 */
+			IOUtils.fsync(temp, false);
 			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+			IOUtils.fsync(file.getParent(), true);
 
 			return versionOf(contents);
 		} finally {

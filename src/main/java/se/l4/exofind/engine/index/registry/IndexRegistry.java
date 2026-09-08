@@ -144,7 +144,22 @@ public class IndexRegistry {
 				}
 				case RegistryStorage.Read.Absent absent -> {
 					if(current.version() != null) {
-						snapshot = Snapshot.empty();
+						/*
+						 * The registry was there and is not any more. Nothing
+						 * deletes it, so it was lost. Dropping to an empty copy
+						 * would tell the rest of the node that the deployment
+						 * holds no indexes, and every local copy would go.
+						 */
+						logger.atError()
+							.log(
+								"The index registry is gone from the storage, but this node"
+									+ " read it before. Keeping the copy this node holds."
+									+ " Restore the registry from a backup, or rebuild it"
+									+ " with the registry repair endpoint if you store"
+									+ " indexes in object storage"
+							);
+
+						return false;
 					}
 				}
 				case RegistryStorage.Read.Loaded loaded -> snapshot = Snapshot.of(

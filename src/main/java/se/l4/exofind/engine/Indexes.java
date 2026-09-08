@@ -268,6 +268,13 @@ public class Indexes implements RegistryPoller.Listener {
 	private boolean sweptUnregistered;
 
 	/**
+	 * Whether this node has read a registry that lists at least one index since
+	 * it started. Until it has, a registry that lists none can be a registry
+	 * that was lost, and the copies this node holds are kept.
+	 */
+	private boolean registryListedIndexes;
+
+	/**
 	 * When the refresh loop last finished a pass, as {@link System#nanoTime()}.
 	 * Set before the first pass is scheduled, so that the time since a refresh
 	 * is measured from the node starting rather than from zero.
@@ -1400,10 +1407,22 @@ public class Indexes implements RegistryPoller.Listener {
 	 * copy is removed. Only a registry that has actually been read counts,
 	 * which is what keeps a node that has never reached the storage from
 	 * sweeping away everything it holds.
+	 *
+	 * <p>A registry that has never listed an index to this node is the
+	 * exception. A registry that was lost, restored without its file, or
+	 * emptied by a power loss looks the same as a deployment with no indexes,
+	 * and removing copies on that answer deletes the whole deployment when the
+	 * copies are the storage. The node keeps the copies and logs an error
+	 * instead. Once this node has read a registry that lists an index, a later
+	 * read that lists none is a delete, and the copies go.
 	 */
 	private void removeUnregisteredCopies() {
 		if(!registry.hasBeenRead()) {
 			return;
+		}
+
+		if(registry.list().notEmpty()) {
+			registryListedIndexes = true;
 		}
 
 		List<Path> copies;
@@ -1417,6 +1436,7 @@ public class Indexes implements RegistryPoller.Listener {
 			return;
 		}
 
+		var vanished = new ArrayList<String>();
 		for(var path : copies) {
 			var directory = path.getFileName().toString();
 			var name = IndexName.tryParse(directory).orElse(null);
@@ -1435,6 +1455,30 @@ public class Indexes implements RegistryPoller.Listener {
 				continue;
 			}
 
+			vanished.add(directory);
+		}
+
+		if(vanished.isEmpty()) {
+			return;
+		}
+
+		if(!registryListedIndexes) {
+			logger.atError()
+				.addKeyValue("directories", vanished.size())
+				.log(
+					"The index registry lists no indexes, but this node has index"
+						+ " directories on disk. A registry that was lost looks the same as"
+						+ " a deployment with no indexes, so the node keeps the directories"
+						+ " instead of deleting them. Requests for those indexes return not"
+						+ " found until the registry lists them again. Restore the registry"
+						+ " from a backup, or rebuild it with the registry repair endpoint"
+						+ " if you store indexes in object storage"
+				);
+
+			return;
+		}
+
+		for(var directory : vanished) {
 			removeVanished(directory);
 		}
 	}

@@ -97,4 +97,13 @@ public class InMemoryRegistryStorage implements RegistryStorage {
 		this.indexes = indexes;
 		this.version = "v" + (++versions);
 	}
+
+	/**
+	 * Throw away what is stored, so that reads answer that there is no
+	 * registry. Stands in for a registry object that was lost.
+	 */
+	public void lose() {
+		this.indexes = null;
+		this.version = null;
+	}
 }

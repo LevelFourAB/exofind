@@ -105,6 +105,32 @@ public class IndexRegistryTest {
 	}
 
 	/**
+	 * Nothing deletes the registry, so a registry that was there and is gone
+	 * was lost. Reading it as a deployment with no indexes would tell every
+	 * part of the node that each index it holds was deleted.
+	 */
+	@Test
+	public void testLostRegistryKeepsTheCopy() {
+		registry.create("books", "1");
+
+		storage.lose();
+
+		assertThat(registry.refresh(), is(false));
+		assertThat(registry.names(), contains("books"));
+	}
+
+	/**
+	 * A deployment that has never created an index has no registry either, and
+	 * that is an answer. A node reading it can go on to create the first index.
+	 */
+	@Test
+	public void testRegistryThatWasNeverWrittenCountsAsRead() {
+		assertThat(registry.refresh(), is(true));
+		assertThat(registry.hasBeenRead(), is(true));
+		assertThat(registry.names(), is(emptyIterable()));
+	}
+
+	/**
 	 * A node that has only ever seen corrupt contents has not read the
 	 * registry, so its empty copy stays a gap rather than an answer.
 	 */
