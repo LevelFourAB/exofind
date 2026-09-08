@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.lucene.util.Version;
 import org.junit.jupiter.api.AfterEach;
@@ -720,7 +721,48 @@ public class IndexTest {
 		index.addDocument(new Document(new Document.Value("field1", true)));
 
 		state.updateOwnership(false);
-		index.reopen(true);
+		assertThat(index.reopen(true), is(true));
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+	}
+
+	/**
+	 * A handover whose push fails hands nothing over: the reopen says so and
+	 * leaves the index with its writer, so the documents that were answered
+	 * are still here for the flush that is made when the handover is tried
+	 * again.
+	 */
+	@Test
+	public void testAFailedHandoverFlushKeepsTheIndex() throws IOException {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var pushFails = new AtomicBoolean();
+		var index = new Index(state, "test", path, new NoopSync() {
+			@Override
+			public void push(Set<String> files) throws IOException {
+				if(pushFails.get()) {
+					throw new IOException("The storage refused the push");
+				}
+			}
+		});
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+
+		index.addDocument(new Document(new Document.Value("field1", true)));
+
+		pushFails.set(true);
+		state.updateOwnership(false);
+		assertThat(index.reopen(true), is(false));
+
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+
+		// The writer is still here, so the handover can be tried again
+		pushFails.set(false);
+		assertThat(index.reopen(true), is(true));
 
 		assertThat(index.getState(), is(IndexState.USABLE));
 		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));

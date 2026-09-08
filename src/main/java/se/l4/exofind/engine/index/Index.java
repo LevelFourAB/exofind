@@ -1161,11 +1161,15 @@ public class Index {
 	 * @param flushFirst
 	 *   whether an index being reopened out of writing commits and pushes
 	 *   what it holds before the reopen, instead of it being dropped - for a
-	 *   handover this node chose, where the remote is still its to write. A
-	 *   flush that fails gives the changes up and the reopen continues.
+	 *   handover this node chose, where the remote is still its to write.
 	 *   Ignored once {@link #revokeWriting()} said the index was taken away
+	 * @return
+	 *   {@code false} when the flush of a handover failed and the index was
+	 *   left as it is, writer and all, so the caller can call the handover
+	 *   off and ask for the flush again later. {@code true} in every other
+	 *   case, including a reopen there was nothing to do for
 	 */
-	public void reopen(boolean flushFirst) {
+	public boolean reopen(boolean flushFirst) {
 		boolean flush;
 
 		syncLock.writeLock().lock();
@@ -1175,12 +1179,12 @@ public class Index {
 				 * The pull that is running decides how to open the index when
 				 * it finishes, and reads the node state at that point.
 				 */
-				return;
+				return true;
 			}
 
 			if(state == IndexState.CLOSED) {
 				// A closed instance is not brought back
-				return;
+				return true;
 			}
 
 			var shouldWrite = !isReadOnly();
@@ -1190,7 +1194,7 @@ public class Index {
 				 * reopened so that an ownership change about other indexes -
 				 * or one already applied - does not roll a writer back.
 				 */
-				return;
+				return true;
 			}
 
 			flush = flushFirst
@@ -1211,12 +1215,38 @@ public class Index {
 			try {
 				commitChanges(PushReason.HANDOVER);
 			} catch(IOException | RuntimeException e) {
+				if(mayPush) {
+					/*
+					 * The successor pulls what the remote holds, so pulling
+					 * here would drop the documents this instance answered for
+					 * and nothing would ever put them anywhere else. The index
+					 * is left as it is instead - writer, uncommitted documents
+					 * and all - so the caller can call the handover off and
+					 * ask for the flush again on a later round.
+					 */
+					logger.atWarn()
+						.addKeyValue("index", id)
+						.setCause(e)
+						.log(
+							"Could not push before handing the index over, keeping"
+								+ " the index here; " + e.getMessage()
+						);
+
+					return false;
+				}
+
+				/*
+				 * The index was taken away while the flush ran, so a successor
+				 * may already write it and nothing here may reach the remote
+				 * anymore. What only this instance holds is given up, which is
+				 * what the pull below does.
+				 */
 				logger.atWarn()
 					.addKeyValue("index", id)
 					.setCause(e)
 					.log(
-						"Could not push before handing the index over, giving up"
-							+ " its unpushed changes; " + e.getMessage()
+						"The index was taken away while it was being pushed for a"
+							+ " handover, giving up its unpushed changes; " + e.getMessage()
 					);
 			}
 		}
@@ -1224,7 +1254,7 @@ public class Index {
 		syncLock.writeLock().lock();
 		try {
 			if(state == IndexState.PULLING || state == IndexState.CLOSED) {
-				return;
+				return true;
 			}
 
 			state = IndexState.NEEDS_PULL;
@@ -1233,6 +1263,8 @@ public class Index {
 		}
 
 		pull();
+
+		return true;
 	}
 
 	/**

@@ -744,15 +744,24 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @param flush
 	 *   whether a generation being handed over may still push what it holds,
 	 *   {@code false} when another node may already write the index
+	 * @return
+	 *   {@code false} when a generation could not push what it holds and kept
+	 *   its writer, so the handover has to be called off. Every other
+	 *   generation is still reopened, and a failure after the push does not
+	 *   count - what the successor pulls is already written by then
 	 */
-	private void reopenOwned(String name, boolean flush) {
+	private boolean reopenOwned(String name, boolean flush) {
+		var flushed = true;
+
 		for(var entry : indexes.asMap().entrySet()) {
 			if(name != null && !IndexName.parse(entry.getKey()).index().equals(name)) {
 				continue;
 			}
 
 			try {
-				entry.getValue().reopen(flush);
+				if(!entry.getValue().reopen(flush)) {
+					flushed = false;
+				}
 			} catch(RuntimeException e) {
 				logger.atLevel(Interruptions.levelOf(e))
 					.addKeyValue("index", entry.getValue().getId())
@@ -760,6 +769,8 @@ public class Indexes implements RegistryPoller.Listener {
 					.log("Could not reopen index; " + e.getMessage());
 			}
 		}
+
+		return flushed;
 	}
 
 	/**
@@ -880,8 +891,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @param index
 	 *   name of the index, without a generation
 	 * @return
-	 *   completes when nothing more can be pushed from here; a flush that
-	 *   failed completes too, having given the changes up
+	 *   completes when nothing more can be pushed from here, and exceptionally
+	 *   when a generation could not be pushed - the index keeps its writer and
+	 *   is served here until the handover is tried again
 	 */
 	public CompletableFuture<Void> flushForHandover(String index) {
 		var flushed = new CompletableFuture<Void>();
@@ -893,7 +905,7 @@ public class Indexes implements RegistryPoller.Listener {
 		 */
 		queueOwnership(index, () -> {
 			try {
-				reopenOwned(index, true);
+				var pushed = reopenOwned(index, true);
 
 				// An evicted generation that is still closing may push while it does
 				for(var name : retiring.keySet()) {
@@ -903,7 +915,14 @@ public class Indexes implements RegistryPoller.Listener {
 					}
 				}
 
-				flushed.complete(null);
+				if(pushed) {
+					flushed.complete(null);
+				} else {
+					flushed.completeExceptionally(new IOException(
+						"Could not push everything the index `" + index
+							+ "` holds before handing it over"
+					));
+				}
 			} catch(Throwable t) {
 				flushed.completeExceptionally(t);
 			}

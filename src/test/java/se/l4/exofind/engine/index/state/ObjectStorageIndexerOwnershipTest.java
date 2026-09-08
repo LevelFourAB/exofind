@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
@@ -997,6 +999,113 @@ public class ObjectStorageIndexerOwnershipTest {
 				return false;
 			}
 		}, "the finished flush to hand the claim to the taker");
+	}
+
+	/**
+	 * A flush that could not push calls the handover off: the claim never
+	 * reaches the taker, because it would send the taker to a manifest that
+	 * is missing documents this node answered for. The index is written here
+	 * again instead, and the loss is not a revocation - what it holds is
+	 * still this node's to push.
+	 */
+	@Test
+	void testAFailedFlushKeepsTheClaimAndTheIndex() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var attempts = new AtomicInteger();
+		flush = name -> {
+			if(!"books".equals(name)) {
+				return CompletableFuture.completedFuture(null);
+			}
+
+			attempts.incrementAndGet();
+			return CompletableFuture.failedFuture(
+				new IOException("The storage refused the push")
+			);
+		};
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, null).toBuilder()
+					.setLoadBucket(7)
+					.setOffered(true)
+					.setTaker("b")
+					.build(),
+				claim("games", "a", alive, null)
+			),
+			List.of(candidate("b", alive, "http://b:8080"))
+		);
+
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(newOwnership("a"), revoked);
+
+		await(
+			() -> owned.contains("books"),
+			"the called-off handover to hand the index back"
+		);
+
+		await(() -> attempts.get() >= 2, "the flush to be asked for again");
+
+		Thread.sleep(LEASE.toMillis());
+
+		var held = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(held.getNode(), is("a"));
+		assertThat(held.getTaker(), is("b"));
+
+		assertThat(revoked.isEmpty(), is(true));
+	}
+
+	/**
+	 * The handover a failed flush called off is started anew on a later
+	 * round, so a storage hiccup delays a rebalance rather than stopping it.
+	 */
+	@Test
+	void testAHandoverIsMadeAgainAfterAFailedFlush() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var attempts = new AtomicInteger();
+		flush = name -> {
+			if("books".equals(name) && attempts.incrementAndGet() == 1) {
+				return CompletableFuture.failedFuture(
+					new IOException("The storage refused the push")
+				);
+			}
+
+			return CompletableFuture.completedFuture(null);
+		};
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, null).toBuilder()
+					.setLoadBucket(7)
+					.setOffered(true)
+					.setTaker("b")
+					.build(),
+				claim("games", "a", alive, null)
+			),
+			List.of(candidate("b", alive, "http://b:8080"))
+		);
+
+		start(newOwnership("a"));
+
+		await(() -> {
+			try {
+				var books = readTable().getClaimsList().stream()
+					.filter(c -> c.getIndex().equals("books"))
+					.findFirst()
+					.orElseThrow();
+				return "b".equals(books.getNode());
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the flush that was made again to hand the claim to the taker");
+
+		assertThat(attempts.get(), is(2));
 	}
 
 	/**

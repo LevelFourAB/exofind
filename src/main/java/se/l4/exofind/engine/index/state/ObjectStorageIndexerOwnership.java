@@ -77,10 +77,13 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * the taker, or dropped so a candidate below its share picks the index up.
  * A successor that sees the claim naming it can therefore never pull a
  * manifest the flush had not written yet, which is what makes documents
- * acknowledged here survive the handover. Shutting down hands everything
- * held over in the same order - flushed first, stepped out of the table
- * after - and a flush that outlives the lease leaves the claims to lapse
- * the way a crashed node's would.
+ * acknowledged here survive the handover. A flush that could not push calls
+ * the handover off: the claim stays, the index is written here again, and a
+ * later round starts the handover anew - moving the claim then would leave
+ * the successor without documents this node answered for. Shutting down
+ * hands everything held over in the same order - flushed first, stepped out
+ * of the table after - and a flush that fails or outlives the lease leaves
+ * the claims to lapse the way a crashed node's would.
  *
  * An index nothing holds - just created, or its holder just died - is taken
  * by whichever candidate is asked to write it, through {@link #tryClaim},
@@ -368,10 +371,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		/*
 		 * Waiting is bounded by the lease: past it the claims have lapsed on
 		 * their own, and there is nothing left to step out of but the
-		 * candidacy. A flush still running then is left behind the way a
-		 * crashed node's would be - successors wait the claims out, and the
-		 * conditional manifest writes keep a push that loses that race from
-		 * doing damage.
+		 * candidacy. A flush still running then, or one that could not push,
+		 * is left behind the way a crashed node's would be - successors wait
+		 * the claims out, and the conditional manifest writes keep a push
+		 * that loses that race from doing damage.
 		 */
 		var flushDone = false;
 		try {
@@ -380,7 +383,19 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		} catch(InterruptedException e) {
 			Thread.currentThread().interrupt();
 		} catch(ExecutionException | TimeoutException e) {
-			// Still flushing; the claims stay so the successor keeps waiting
+			/*
+			 * Still flushing, or the flush could not push what an index holds.
+			 * The claims stay either way: a successor that took one now would
+			 * pull a manifest without the documents this node answered for,
+			 * and waiting the claim out costs it a lease instead.
+			 */
+			logger.atWarn()
+				.addKeyValue("node", node)
+				.setCause(e)
+				.log(
+					"Could not push everything held before shutting down, leaving"
+						+ " the claims to lapse; " + e.getMessage()
+				);
 		}
 
 		/*
@@ -399,8 +414,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * to be stepped out of too.
 	 *
 	 * @return
-	 *   completes when nothing here can be pushed anymore; a flush that
-	 *   failed counts, having given its changes up
+	 *   completes when nothing here can be pushed anymore, and exceptionally
+	 *   when a flush could not push what its index holds - the claims are
+	 *   then left to lapse rather than released
 	 */
 	private CompletableFuture<Void> flushOnShutdown() {
 		var flushed = new CompletableFuture<Void>();
@@ -424,6 +440,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 							.addKeyValue("index", name)
 							.setCause(e)
 							.log("Could not flush before handing the index over; " + e.getMessage());
+
+						/*
+						 * A flush that could not even be asked for pushed
+						 * nothing, so the claims have to lapse rather than be
+						 * released.
+						 */
+						pending.add(CompletableFuture.failedFuture(e));
 					}
 				}
 
@@ -432,7 +455,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				drainFlushes.clear();
 
 				CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
-					.whenComplete((result, e) -> flushed.complete(null));
+					.whenComplete((result, e) -> {
+						if(e == null) {
+							flushed.complete(null);
+						} else {
+							flushed.completeExceptionally(e);
+						}
+					});
 			});
 		} catch(RejectedExecutionException e) {
 			// Never started, so nothing is held and there is nothing to flush
@@ -899,6 +928,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * dropped when there is none, which is what frees a shed index. A
 		 * claim on an index the registry no longer holds is neither - it is
 		 * left for the drop below, there is nothing to hand over anymore.
+		 * A flush that failed calls the handover off and keeps the index
+		 * here, because releasing the claim would send the successor to a
+		 * manifest that is missing documents this node answered for.
 		 */
 		var moved = false;
 		var nowDraining = new TreeSet<String>();
@@ -915,6 +947,27 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			var flush = drainFlushes.get(name);
 			if(flush != null && !flush.isDone()) {
 				nowDraining.add(name);
+				continue;
+			}
+
+			if(flush != null && flush.isCompletedExceptionally()) {
+				/*
+				 * Left out of the drains this round, and still in `mine`, so
+				 * the index is written here again and its claim keeps the
+				 * taker that answered. The round after this one starts the
+				 * handover anew, which asks for the flush again. Counted as a
+				 * move so nothing else is handed over, shed or offered while
+				 * this index is going nowhere.
+				 */
+				logger.atWarn()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.log(
+						"Keeping the index, it could not be pushed before the"
+							+ " handover; the handover is tried again"
+					);
+
+				moved = true;
 				continue;
 			}
 
@@ -1327,14 +1380,29 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		this.draining = rebuilt.draining();
 
 		for(var name : rebuilt.held()) {
-			if(!before.contains(name)) {
+			if(before.contains(name)) {
+				continue;
+			}
+
+			if(drainingBefore.contains(name)) {
+				/*
+				 * A handover called off, which is what a flush that could not
+				 * push leaves behind. The index still holds what the flush
+				 * would have pushed, so it is written here again rather than
+				 * left waiting for a successor that must not take it.
+				 */
+				logger.atInfo()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.log("Writing the index again, its handover was called off");
+			} else {
 				logger.atInfo()
 					.addKeyValue("node", node)
 					.addKeyValue("index", name)
 					.log("Took over writing the index");
-
-				listener.onOwnershipChanged(name, true);
 			}
+
+			listener.onOwnershipChanged(name, true);
 		}
 
 		for(var name : before) {
@@ -1387,8 +1455,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * A drain that just started is given its flush - after the listener
 		 * heard about the loss, because the flush pushes per what the
 		 * listener updated and would push nothing before it. A flush that
-		 * cannot be asked for reads as done, which hands the index over
-		 * without it the way a failing flush would.
+		 * cannot even be asked for reads as failed, which keeps the index
+		 * here the way a flush that could not push does.
 		 */
 		for(var name : rebuilt.draining()) {
 			if(drainingBefore.contains(name)) {
@@ -1405,13 +1473,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.setCause(e)
 					.log("Could not flush before handing the index over; " + e.getMessage());
 
-				flush = null;
+				flush = CompletableFuture.failedFuture(e);
 			}
 
-			drainFlushes.put(
-				name,
-				flush == null ? CompletableFuture.completedFuture(null) : flush
-			);
+			drainFlushes.put(name, flush);
 		}
 
 		for(var name : drainingBefore) {
