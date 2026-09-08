@@ -36,6 +36,7 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSync;
 import se.l4.exofind.engine.index.state.StateSync;
+import se.l4.exofind.engine.index.state.SyncConflictException;
 
 /**
  * Tests for an index committing without being asked to, and for what the state
@@ -113,7 +114,7 @@ public class IndexAutoCommitTest {
 
 		index.addDocument(new Document(new Document.Value("id", "1")));
 
-		sync.blockNextPush = true;
+		sync.holdNextPush();
 		var committing = CompletableFuture.runAsync(() -> {
 			try {
 				index.commit();
@@ -131,6 +132,109 @@ public class IndexAutoCommitTest {
 		committing.get(WAIT.toMillis(), TimeUnit.MILLISECONDS);
 
 		assertThat(index.getState(), is(IndexState.MODIFIED));
+	}
+
+	/**
+	 * A write is let through for as long as a push runs, and records its change
+	 * once the push is over. A push that conflicted gave the local copy up for
+	 * the remote, so that record must leave the index needing a pull: an index
+	 * saying it holds changes is never pulled, goes on taking writes, conflicts
+	 * on every commit after it, and drops everything it took when the pull
+	 * finally comes.
+	 */
+	@Test
+	public void aWriteRunningWhenAPushConflictsLeavesTheIndexNeedingAPull()
+		throws Exception
+	{
+		var sync = new BlockingSync();
+		var index = create("test", sync, CommitPolicy.disabled());
+
+		/*
+		 * Whether the write is still running when the conflict lands is up to
+		 * the two threads, so the race is run several times over. A round where
+		 * the write happened to be between two documents says nothing.
+		 */
+		for(var round = 0; round < 5; round++) {
+			index.addDocument(new Document(new Document.Value("id", "seed" + round)));
+
+			sync.holdNextPush();
+			sync.refuseNextPush = true;
+
+			var committing = CompletableFuture.runAsync(() -> {
+				try {
+					index.commit();
+					fail("The push was refused, so the commit should have failed");
+				} catch(SyncConflictException e) {
+					// The conflict this round is about
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			});
+
+			assertTrue(sync.pushStarted.await(WAIT.toMillis(), TimeUnit.MILLISECONDS));
+			assertThat(index.getState(), is(IndexState.PUSHING));
+
+			/*
+			 * Documents are written one after another for the whole of the
+			 * conflict, so that one of them is being written while it lands.
+			 */
+			var writes = new WriteLoop(index, round);
+			var writing = new Thread(writes, "writes-" + round);
+			writing.start();
+
+			assertTrue(writes.wrote.await(WAIT.toMillis(), TimeUnit.MILLISECONDS));
+
+			sync.release.countDown();
+			committing.get(WAIT.toMillis(), TimeUnit.MILLISECONDS);
+
+			var refused = writes.refused.await(WAIT.toMillis(), TimeUnit.MILLISECONDS);
+			writes.stop = true;
+			writing.join();
+
+			assertTrue(refused, "Writes went on being taken by an index needing a pull");
+			assertThat(index.getState(), is(IndexState.NEEDS_PULL));
+
+			// Back in step with the remote, ready for the next round
+			index.pull();
+			assertThat(index.getState(), is(IndexState.USABLE));
+		}
+	}
+
+	/**
+	 * Writes documents one after another until the index refuses one, which is
+	 * what an index that has to be pulled does.
+	 */
+	private static final class WriteLoop implements Runnable {
+		final CountDownLatch wrote = new CountDownLatch(1);
+		final CountDownLatch refused = new CountDownLatch(1);
+
+		private final Index index;
+		private final int round;
+
+		volatile boolean stop;
+
+		WriteLoop(Index index, int round) {
+			this.index = index;
+			this.round = round;
+		}
+
+		@Override
+		public void run() {
+			for(var i = 0; !stop; i++) {
+				try {
+					index.addDocument(
+						new Document(new Document.Value("id", round + ":" + i))
+					);
+
+					wrote.countDown();
+				} catch(IndexOutOfDateException e) {
+					refused.countDown();
+					return;
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			}
+		}
 	}
 
 	@Test
@@ -284,13 +388,25 @@ public class IndexAutoCommitTest {
 
 	/**
 	 * A sync whose push can be held open, so that something can be indexed
-	 * while it runs.
+	 * while it runs, and refused the way a remote another node has written
+	 * refuses one.
 	 */
 	private static class BlockingSync implements StateSync {
-		final CountDownLatch pushStarted = new CountDownLatch(1);
-		final CountDownLatch release = new CountDownLatch(1);
+		volatile CountDownLatch pushStarted = new CountDownLatch(1);
+		volatile CountDownLatch release = new CountDownLatch(1);
 
 		volatile boolean blockNextPush;
+		volatile boolean refuseNextPush;
+
+		/**
+		 * Hold the next push open until {@link #release} is counted down, with
+		 * latches of its own so one round can follow another.
+		 */
+		void holdNextPush() {
+			pushStarted = new CountDownLatch(1);
+			release = new CountDownLatch(1);
+			blockNextPush = true;
+		}
 
 		@Override
 		public boolean pull() throws IOException {
@@ -303,17 +419,22 @@ public class IndexAutoCommitTest {
 
 		@Override
 		public void push(Set<String> files) throws IOException {
-			if(!blockNextPush) {
-				return;
+			if(blockNextPush) {
+				blockNextPush = false;
+
+				var held = release;
+				pushStarted.countDown();
+
+				try {
+					held.await();
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
 			}
 
-			blockNextPush = false;
-			pushStarted.countDown();
-
-			try {
-				release.await();
-			} catch(InterruptedException e) {
-				Thread.currentThread().interrupt();
+			if(refuseNextPush) {
+				refuseNextPush = false;
+				throw new SyncConflictException("simulated conflict");
 			}
 		}
 

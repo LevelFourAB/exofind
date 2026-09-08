@@ -1455,8 +1455,16 @@ public class Index {
 			 * indexer means a second writer is running. Nothing was
 			 * overwritten and the remote is what to continue from, so local
 			 * changes are given up and the next refresh pulls it over.
+			 *
+			 * Stored under the lock, as a write let through while the push ran
+			 * records its change under it as well. Without the lock that record
+			 * can land after this one and say the index holds changes, which
+			 * nothing pulls.
 			 */
-			state = IndexState.NEEDS_PULL;
+			synchronized(stateLock) {
+				state = IndexState.NEEDS_PULL;
+			}
+
 			throw e;
 		} finally {
 			syncLock.readLock().unlock();
@@ -2001,13 +2009,27 @@ public class Index {
 	 * towards the next commit this index makes on its own, and towards the
 	 * write load the node sheds indexes by.
 	 *
+	 * <p>An index that has to be pulled goes on having to be pulled. The
+	 * change is counted the same way, as the writer really does hold it until
+	 * the pull rolls it back.
+	 *
 	 * @param changes
 	 *   how many documents the change covered
 	 */
 	private void markModified(long changes) {
 		synchronized(stateLock) {
 			modifications += changes;
-			state = IndexState.MODIFIED;
+
+			/*
+			 * A push that conflicted while this change was being made gave the
+			 * local copy up for the remote. Saying the index holds changes
+			 * would keep the refresh from pulling it, and every commit after
+			 * this one would conflict anew while the writes it took are
+			 * dropped by the pull that ends it.
+			 */
+			if(state != IndexState.NEEDS_PULL) {
+				state = IndexState.MODIFIED;
+			}
 		}
 
 		commitManager.recordChange(changes);
