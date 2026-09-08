@@ -967,12 +967,34 @@ public class Index {
 			}
 
 			/*
-			 * The in-memory log belongs to the state the pulled files replace.
-			 * Kept, a node that loses and regains an index would resume from
-			 * it instead of the pulled log file - whoever tracks loads the
-			 * file again through beginChangeTracking.
+			 * The in-memory log belongs to the state the pulled files replace,
+			 * so what is recorded from here on comes from the log the pull
+			 * brought. Reading it back here rather than leaving it to
+			 * beginChangeTracking is what makes a node that gains an index a
+			 * reindex is filling record from its first write: the job that
+			 * resumes here runs on another thread, and everything written
+			 * before it starts would be in the source and in no log.
 			 */
 			this.changeLog = null;
+			if(!isReadOnly()) {
+				var changes = localPath.resolve(CHANGES_FILE);
+				if(Files.exists(changes)) {
+					try {
+						this.changeLog = ChangeLog.load(changes);
+					} catch(IOException e) {
+						/*
+						 * Opened untracked rather than with an empty log, which
+						 * would say that nothing had changed. The job the log
+						 * belongs to reads the same bytes and fails on them, so
+						 * the reason reaches its record.
+						 */
+						logger.atError()
+							.addKeyValue("index", id)
+							.setCause(e)
+							.log("Could not read the change log; " + e.getMessage());
+					}
+				}
+			}
 
 			if(isReadOnly()) {
 				/*
@@ -7416,10 +7438,17 @@ public class Index {
 	 * the log is persisted and pushed with every commit - a node that takes
 	 * this index over resumes the same log rather than starting blind.
 	 *
-	 * <p>Tracking already underway is returned as it is. It ends with
+	 * <p>Tracking already underway is returned as it is - including tracking
+	 * this instance took up on its own, which it does whenever it opens for
+	 * writing over a copy holding a log. It ends with
 	 * {@link #endChangeTracking()} and does not survive {@link #close()};
 	 * what was committed of the log does, and is resumed by the next call
 	 * here.
+	 *
+	 * <p>The log is this instance's, and an instance that pulls replaces it
+	 * with the one the pull brought. A caller that spans a pull has to ask
+	 * again rather than hold on to what it was given, or it snapshots a log
+	 * nothing records into.
 	 *
 	 * @return
 	 *   the log the writes record into
@@ -7509,8 +7538,30 @@ public class Index {
 	}
 
 	/**
-	 * What {@link #holdWrites()} hands the caller: closing it lets writes
-	 * continue. Close once, from the thread that took the hold.
+	 * Pass the write gate before making a change, so that a caller can settle
+	 * what it writes where no {@link #holdWrites() hold} can come between the
+	 * two. Waits at the gate the way a write does, and the write the caller
+	 * then makes passes it again without waiting.
+	 *
+	 * <p>What this is for is the generation an index name answers from: a
+	 * caller that resolves the name and then writes can have the name start
+	 * answering from another generation in between, and its write lands in the
+	 * generation that was replaced. Resolving again inside the gate settles
+	 * it, because a promote is made under a hold.
+	 *
+	 * @return
+	 *   the entry, which the caller closes when the change is made
+	 */
+	public WriteHold enterWrite() {
+		var lock = writeGate.readLock();
+		lock.lock();
+		return lock::unlock;
+	}
+
+	/**
+	 * What {@link #holdWrites()} and {@link #enterWrite()} hand the caller:
+	 * closing it lets writes continue, or gives the gate up again. Close once,
+	 * from the thread that took it.
 	 */
 	public interface WriteHold extends AutoCloseable {
 		@Override

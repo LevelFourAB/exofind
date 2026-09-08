@@ -32,6 +32,7 @@ import se.l4.exofind.engine.index.IndexSourceRequiredException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.SearchTimeoutException;
+import se.l4.exofind.engine.index.registry.LiveGenerationMovedException;
 import se.l4.exofind.engine.index.registry.RegistryAuditUnavailableException;
 import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.settings.SearchSettingsException;
@@ -221,6 +222,14 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			/*
 			 * The index exists but answers for none of its generations, which
 			 * is fixed by promoting one rather than by changing the request.
+			 */
+			return Response.Status.CONFLICT;
+		} else if(e instanceof LiveGenerationMovedException) {
+			/*
+			 * The index started answering for another generation while the
+			 * reindex that asked for the promote was finishing. The target is
+			 * only caught up with the generation the job read, so what has to
+			 * change is which generation is live rather than the request.
 			 */
 			return Response.Status.CONFLICT;
 		} else if(e instanceof IndexStorageHeldException) {

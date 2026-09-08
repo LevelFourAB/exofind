@@ -77,16 +77,20 @@ To prevent documents written during a rebuild from disappearing at promotion, th
 
 The change log is an unordered set of keys. It identifies which documents might differ from the state when tracking began. A process catches up the new generation by reading each recorded document from the live generation in its current state. If the document exists, the process writes it to the new generation; if it was deleted, the process removes it. This replay is idempotent and order-insensitive.
 
-Replay occurs in rounds using log snapshots. Each round replays documents modified since the previous snapshot, making each subsequent round smaller. The rebuild finishes under a brief write hold:
+Replay occurs in rounds using log snapshots. Each round replays documents modified since the previous snapshot, making each subsequent round smaller. Under one write hold on the source generation, the job completes the rebuild in order:
 
-1. New writes pause at a gate while in-flight writes finish. Searches, commits, and pushes continue normally.
-2. The final tail of the change log replays to the new generation.
-3. The new generation is promoted using a conditional registry write.
-4. The write hold releases.
+1. Pause new writes at a gate while in-flight writes finish. Searches, commits, and pushes continue normally.
+2. Replay the final tail of the change log into the target generation.
+3. Promote the target generation with a conditional registry write.
+4. End change tracking on the source generation, and release the hold.
 
-Writes experience brief latency during the final hold—typically a few seconds—without rejected requests or new error states. Because tracking continues after promotion until it is ended, any write that completes against the old generation during the handoff is captured and replayed to the new live generation in a final sweep.
+Writes experience brief latency during the hold—typically a few seconds—without rejected requests or new error states.
 
-The change log is stored alongside Lucene files in `changes.ef.bin`. It commits and pushes with index manifests, allowing tracking to survive indexer failover.
+The promote is conditional on the index still serving from the generation the job read. If an operator promoted a third generation while the job ran, the registry refuses the promote with `index:generation:live_moved` (HTTP 409) and the job moves to the `failed` phase. The refusal prevents a target generation from replacing a generation it was never filled from, which would drop every document written to that generation.
+
+Every document write settles which generation it goes to inside that generation's write gate. It resolves the index name, takes the gate, and confirms that the name still resolves to the same generation before making the change. If the name moved to another generation in between, the write releases the gate, resolves the name again, and repeats; a write that keeps finding the name moved returns `index:generation:unsettled` (HTTP 400). A write that reached the gate before the hold resolves the name again when the hold releases, finds the new generation, and goes to it. A request that sends a stream of documents resolves the name once per document, not once per request, and a write addressed to a generation by name, such as `products@1`, always goes to that generation.
+
+The change log is stored alongside Lucene files in `changes.ef.bin`, saved on every commit, and pushed with the index manifests, so change tracking survives indexer failover. A node that takes an index over reads the log back when it opens the index for writing and records into it from its first write. What that node accepts is therefore recorded while the job that owns the log is still being resumed on it.
 
 ### Tracking requirements
 

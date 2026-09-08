@@ -36,8 +36,10 @@ import se.l4.exofind.engine.index.IndexReadonlyException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
+import se.l4.exofind.engine.index.registry.LiveGenerationMovedException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
+import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
@@ -52,10 +54,12 @@ import jakarta.inject.Inject;
  * <p>A job streams the documents of a source generation into an empty target
  * through {@link Index#scanDocuments}, while a {@link ChangeLog} on the
  * source records what changes meanwhile. Replay rounds work the backlog down;
- * the final round runs under {@link Index#holdWrites()}, so the target is
- * complete at the moment it is promoted. A job asked to leave the promote to
- * its creator stops just before that and catches up periodically until the
- * promote endpoint finishes it.
+ * the final round, the promote and the end of tracking all run under one
+ * {@link Index#holdWrites()}, so the target is complete at the moment it is
+ * promoted and nothing lands in the source after it - a write waiting at the
+ * gate resolves the index name again and finds the target. A job asked to
+ * leave the promote to its creator stops just before that and catches up
+ * periodically until the promote endpoint finishes it.
  *
  * <p>Every step is checkpointed in a record the storage holds - see
  * {@link ReindexJobStorage} - so status is answered from the record on any
@@ -178,13 +182,6 @@ public class ReindexJobs {
 	private final Duration catchUpInterval;
 
 	/**
-	 * How long the final drain waits after the promote before the one
-	 * post-promote sweep, for writes that resolved the index name before the
-	 * promote to land in the source.
-	 */
-	private final Duration promoteGrace;
-
-	/**
 	 * Runs the job bodies. Its size is the node's budget: accepted jobs past
 	 * it wait in the queue, in the pending phase.
 	 */
@@ -225,9 +222,7 @@ public class ReindexJobs {
 		@ConfigProperty(name = "exofind.indexer.reindex.sweep-interval", defaultValue = "30s")
 		Duration sweepInterval,
 		@ConfigProperty(name = "exofind.indexer.reindex.catchup-interval", defaultValue = "30s")
-		Duration catchUpInterval,
-		@ConfigProperty(name = "exofind.indexer.reindex.promote-grace", defaultValue = "1s")
-		Duration promoteGrace
+		Duration catchUpInterval
 	) {
 		this.nodeState = nodeState;
 		this.indexes = indexes;
@@ -236,7 +231,6 @@ public class ReindexJobs {
 		this.ownership = ownership;
 		this.sweepInterval = sweepInterval;
 		this.catchUpInterval = catchUpInterval;
-		this.promoteGrace = promoteGrace;
 
 		/*
 		 * Daemon threads, as a stop leaves a job that has not reached its next
@@ -454,14 +448,32 @@ public class ReindexJobs {
 				now
 			);
 
-			var version = storage.write(index, job.toStore(), expectedVersion);
-			if(version == null) {
-				throw new ReindexInProgressException(index);
-			}
+			/*
+			 * Carried here before the record is written, not after. A resume
+			 * reads the record and takes the job on unless this node already
+			 * carries it, so a record written while nothing carried it would
+			 * let the sweep or an ownership change run the same job a second
+			 * time on this node. Its lock is held until the record version is
+			 * in it, so nothing acts on a job that has no version yet.
+			 */
+			var accepted = new Running(index, job, null);
+			accepted.lock.lock();
+			try {
+				running.put(index, accepted);
 
-			var accepted = new Running(index, job, version);
-			running.put(index, accepted);
-			submit(accepted);
+				var version = storage.write(index, job.toStore(), expectedVersion);
+				if(version == null) {
+					throw new ReindexInProgressException(index);
+				}
+
+				accepted.version = version;
+				submit(accepted);
+			} catch(IOException | RuntimeException e) {
+				running.remove(index, accepted);
+				throw e;
+			} finally {
+				accepted.lock.unlock();
+			}
 
 			logger.atInfo()
 				.addKeyValue("index", index)
@@ -682,9 +694,8 @@ public class ReindexJobs {
 
 			var source = indexes.getOrThrow(current.job.sourceName());
 			var target = indexes.getOrThrow(current.job.targetName());
-			var log = source.beginChangeTracking();
 
-			promoteAndFinish(current, source, target, log);
+			promoteAndFinish(current, source, target);
 			return true;
 		} catch(JobCancelled e) {
 			finishCancelled(current);
@@ -695,6 +706,18 @@ public class ReindexJobs {
 		} catch(DocumentRefused e) {
 			fail(current, e);
 			throw e.toEngineException();
+		} catch(LiveGenerationMovedException e) {
+			/*
+			 * The index answers from a generation this target was not filled
+			 * from, so it can never be promoted - the job is closed rather
+			 * than left ready for a promote that keeps being refused.
+			 */
+			fail(current, e.getMessage());
+			throw e;
+		} catch(SyncConflictException e) {
+			// The index was taken away; the successor resumes from the record
+			abandon(current);
+			return false;
 		} catch(IOException e) {
 			throw new EngineException(IO_ERROR, e);
 		} finally {
@@ -798,12 +821,13 @@ public class ReindexJobs {
 			var target = indexes.getOrThrow(job.targetName());
 
 			/*
-			 * Loads the pushed log on a resume and starts a fresh one on a
-			 * new job - the log has to be recording before the source commit
-			 * below, or a write between the two would be in neither the
-			 * commit nor the log.
+			 * Takes up the log the source already holds - the one it read back
+			 * when it opened for writing - and starts a fresh one on a new
+			 * job. Tracking has to be on before the source commit below, or a
+			 * write between the two would be in neither the commit nor the
+			 * log.
 			 */
-			var log = source.beginChangeTracking();
+			changeLogOf(source);
 
 			if(job.phase() == ReindexPhase.PENDING || job.phase() == ReindexPhase.COPYING) {
 				/*
@@ -814,23 +838,25 @@ public class ReindexJobs {
 				source.commit();
 				checkpoint(current, j -> withPhase(j, ReindexPhase.COPYING));
 
-				copy(current, source, target, log);
+				copy(current, source, target);
 
+				var backlog = changeLogOf(source).size();
 				checkpoint(current, j -> withBacklog(
 					withPhase(j, ReindexPhase.REPLAYING),
-					log.size()
+					backlog
 				));
 			}
 
 			if(current.job.phase() == ReindexPhase.REPLAYING) {
-				replayRounds(current, source, target, log);
+				replayRounds(current, source, target);
 			}
 
 			if(current.job.phase() == ReindexPhase.READY
 				|| (current.job.phase() == ReindexPhase.REPLAYING && current.job.manualPromote())) {
+				var backlog = changeLogOf(source).size();
 				checkpoint(current, j -> withBacklog(
 					withPhase(j, ReindexPhase.READY),
-					log.size()
+					backlog
 				));
 				scheduleCatchUp(current);
 				return;
@@ -842,17 +868,27 @@ public class ReindexJobs {
 				 * The promote landed before the record could say so - the job
 				 * died in between. Only what follows the promote is left.
 				 */
-				finishPromoted(current, source, target, log);
+				current.promoted = true;
+				finishPromoted(current, source);
 				return;
 			}
 
-			promoteAndFinish(current, source, target, log);
+			promoteAndFinish(current, source, target);
 		} catch(JobCancelled e) {
 			// The cancel that raised the flag writes the record
 		} catch(JobLost e) {
 			abandon(current);
 		} catch(DocumentRefused e) {
 			fail(current, e);
+		} catch(SyncConflictException e) {
+			/*
+			 * Another node has written the remote of one of the generations,
+			 * which under a single indexer means the index was taken away from
+			 * here. Treated as a lost claim rather than as a failure: failing
+			 * would end tracking and push the source, and that push can still
+			 * win and take the successor's log with it.
+			 */
+			abandon(current);
 		} catch(IndexReadonlyException | IndexOutOfDateException e) {
 			/*
 			 * The index moved to another node mid-step; the record is the
@@ -876,7 +912,7 @@ public class ReindexJobs {
 	 * Stream the source into the target in primary key order, committing and
 	 * checkpointing per batch.
 	 */
-	private void copy(Running current, Index source, Index target, ChangeLog log)
+	private void copy(Running current, Index source, Index target)
 		throws IOException {
 		var keyField = source.getPrimaryKey().orElseThrow().getName();
 		var after = current.job.cursor() == null
@@ -909,6 +945,7 @@ public class ReindexJobs {
 
 				var cursor = lastKey[0];
 				var copied = read;
+				var backlog = changeLogOf(source).size();
 				checkpoint(current, j -> new ReindexJob(
 					j.index(),
 					j.target(),
@@ -917,7 +954,7 @@ public class ReindexJobs {
 					cursor,
 					j.documentsCopied() + copied,
 					j.sourceDocCount(),
-					log.size(),
+					backlog,
 					null,
 					j.manualPromote(),
 					j.startedAt(),
@@ -938,10 +975,14 @@ public class ReindexJobs {
 	 * bounded so a source written faster than it replays still reaches the
 	 * hold.
 	 */
-	private void replayRounds(Running current, Index source, Index target, ChangeLog log)
+	private void replayRounds(Running current, Index source, Index target)
 		throws IOException {
-		for(var round = 0; round < MAX_REPLAY_ROUNDS && log.size() > SMALL_BACKLOG; round++) {
-			replayRound(current, source, target, log);
+		for(
+			var round = 0;
+			round < MAX_REPLAY_ROUNDS && changeLogOf(source).size() > SMALL_BACKLOG;
+			round++
+		) {
+			replayRound(current, source, target);
 		}
 	}
 
@@ -950,8 +991,10 @@ public class ReindexJobs {
 	 * as it is and carried over, and forgotten once the target's push holds
 	 * it - a key written again meanwhile survives the forget.
 	 */
-	private void replayRound(Running current, Index source, Index target, ChangeLog log)
+	private void replayRound(Running current, Index source, Index target)
 		throws IOException {
+		var log = changeLogOf(source);
+
 		var snapshot = log.snapshot();
 		if(snapshot.keys().isEmpty()) {
 			return;
@@ -961,7 +1004,8 @@ public class ReindexJobs {
 		target.commit();
 		log.forget(snapshot);
 
-		checkpoint(current, j -> withBacklog(j, log.size()));
+		var backlog = log.size();
+		checkpoint(current, j -> withBacklog(j, backlog));
 	}
 
 	private void replay(
@@ -993,19 +1037,23 @@ public class ReindexJobs {
 
 	/**
 	 * The end of a job that promotes: hold writes, drain what is left,
-	 * promote conditionally, release - then what every promote is followed
-	 * by.
+	 * promote conditionally, stop tracking, release - then what every promote
+	 * is followed by.
 	 */
-	private void promoteAndFinish(Running current, Index source, Index target, ChangeLog log)
+	private void promoteAndFinish(Running current, Index source, Index target)
 		throws IOException {
 		checkpoint(current, j -> withPhase(j, ReindexPhase.PROMOTING));
 
 		/*
-		 * The hold covers only this final round: writes already underway
-		 * finish and are in the log, new ones wait at the gate, so the log
-		 * is empty at the moment of the promote.
+		 * Everything that decides where a write lands happens under one hold:
+		 * writes already underway finish and are in the log, new ones wait at
+		 * the gate and resolve the index name again when they are let through
+		 * - and by then it answers from the target. So the last drain, the
+		 * promote and the end of tracking see one another and no write comes
+		 * between them.
 		 */
 		try(var hold = source.holdWrites()) {
+			var log = changeLogOf(source);
 			var snapshot = log.snapshot();
 			replay(current, source, target, snapshot);
 			target.commit();
@@ -1019,7 +1067,21 @@ public class ReindexJobs {
 			 */
 			ensureRunnable(current);
 
-			registry.promote(current.index, current.job.target());
+			/*
+			 * Conditional on the source still being what the index answers
+			 * for. An operator who promoted a third generation while the job
+			 * ran sent the writes there untracked, and promoting the target
+			 * over it would drop every one of them from the name.
+			 */
+			registry.promote(current.index, current.job.target(), current.job.source());
+
+			/*
+			 * From here the job holds a live target, whatever else happens -
+			 * the record may only say so.
+			 */
+			current.promoted = true;
+
+			source.endChangeTracking();
 		}
 
 		logger.atInfo()
@@ -1027,31 +1089,18 @@ public class ReindexJobs {
 			.addKeyValue("target", current.job.targetName())
 			.log("Reindex promoted the generation it filled");
 
-		finishPromoted(current, source, target, log);
+		finishPromoted(current, source);
 	}
 
 	/**
-	 * What follows the promote: one sweep for writes that resolved the index
-	 * name before it and landed in the source after the release, then the
-	 * end of tracking.
+	 * What follows the promote: the source stops tracking and pushes, which is
+	 * what takes the log off the remote.
 	 */
-	private void finishPromoted(Running current, Index source, Index target, ChangeLog log)
-		throws IOException {
-		if(!promoteGrace.isZero()) {
-			try {
-				Thread.sleep(promoteGrace.toMillis());
-			} catch(InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-		}
-
-		var sweep = log.snapshot();
-		if(!sweep.keys().isEmpty()) {
-			replay(current, source, target, sweep);
-			target.commit();
-			log.forget(sweep);
-		}
-
+	private void finishPromoted(Running current, Index source) throws IOException {
+		/*
+		 * Ended here as well for a job that comes back to this after the
+		 * promote landed but the record did not, where nothing ended it.
+		 */
 		source.endChangeTracking();
 
 		/*
@@ -1097,15 +1146,17 @@ public class ReindexJobs {
 
 			var source = indexes.getOrThrow(current.job.sourceName());
 			var target = indexes.getOrThrow(current.job.targetName());
-			var log = source.beginChangeTracking();
 
-			replayRound(current, source, target, log);
+			replayRound(current, source, target);
 		} catch(JobCancelled e) {
 			// The cancel writes the record; the schedule is already cancelled
 		} catch(JobLost e) {
 			abandon(current);
 		} catch(DocumentRefused e) {
 			fail(current, e);
+		} catch(SyncConflictException e) {
+			// The index was taken away; the successor resumes from the record
+			abandon(current);
 		} catch(IndexReadonlyException | IndexOutOfDateException e) {
 			abandon(current);
 		} catch(Exception e) {
@@ -1289,6 +1340,10 @@ public class ReindexJobs {
 	 * cancelled, the partial target stays. Called under the job's lock.
 	 */
 	private void finishCancelled(Running current) {
+		if(closeIfPromoted(current)) {
+			return;
+		}
+
 		endTrackingQuietly(current.job);
 
 		try {
@@ -1304,6 +1359,40 @@ public class ReindexJobs {
 			.log("Reindex was cancelled");
 	}
 
+	/**
+	 * Close a job whose target is already live as done, whatever stopped it
+	 * afterwards. A cancel that arrives, or a step that throws, between the
+	 * promote and the record saying so would otherwise leave the index
+	 * answering from a generation the record calls cancelled or failed - and
+	 * the next job would read that record as leaving the target free.
+	 *
+	 * @return
+	 *   whether the job was closed here
+	 */
+	private boolean closeIfPromoted(Running current) {
+		if(!current.promoted) {
+			return false;
+		}
+
+		/*
+		 * Ordinarily done under the hold the promote was made in; repeated
+		 * here for the case where that step is what threw, so the generation
+		 * that was replaced does not go on recording into a log no job reads.
+		 */
+		endTrackingQuietly(current.job);
+
+		try {
+			checkpoint(current, j -> withBacklog(withPhase(j, ReindexPhase.DONE), 0));
+		} catch(IOException | JobLost e) {
+			logger.atWarn()
+				.addKeyValue("index", current.index)
+				.log("Could not record that the reindex promoted its target");
+		}
+
+		running.remove(current.index, current);
+		return true;
+	}
+
 	private void fail(Running current, DocumentRefused refused) {
 		fail(
 			current,
@@ -1314,11 +1403,17 @@ public class ReindexJobs {
 	}
 
 	/**
-	 * End a job that cannot continue, before any promote: tracking ends and
-	 * the record carries the reason. The target is never promoted partial or
-	 * wrong, which is what makes every reindex safe to attempt.
+	 * End a job that cannot continue: tracking ends and the record carries the
+	 * reason. The target is never promoted partial or wrong, which is what
+	 * makes every reindex safe to attempt - a job that already promoted is
+	 * closed as done instead, because by then the target is what the index
+	 * answers from.
 	 */
 	private void fail(Running current, String reason) {
+		if(closeIfPromoted(current)) {
+			return;
+		}
+
 		endTrackingQuietly(current.job);
 
 		try {
@@ -1369,6 +1464,17 @@ public class ReindexJobs {
 
 	private String liveOf(String index) {
 		return indexes.getRegistered(index).map(RegisteredIndex::live).orElse(null);
+	}
+
+	/**
+	 * Get the log of a source, asked for again at every step rather than kept.
+	 * A source that is pulled part way through a job - which a lost and
+	 * regained index is - carries the log the pull brought from then on, and a
+	 * job holding on to the one it started with would snapshot a log nothing
+	 * records into.
+	 */
+	private static ChangeLog changeLogOf(Index source) throws IOException {
+		return source.beginChangeTracking();
 	}
 
 	private static ReindexJob withPhase(ReindexJob job, ReindexPhase phase) {
@@ -1453,6 +1559,13 @@ public class ReindexJobs {
 		String version;
 		volatile boolean cancelled;
 		volatile ScheduledFuture<?> catchUp;
+
+		/**
+		 * Whether the registry already answers for the target. Set under the
+		 * write hold the promote is made in, so everything that ends the job
+		 * after it records the job as done rather than as cancelled or failed.
+		 */
+		volatile boolean promoted;
 
 		Running(String index, ReindexJob job, String version) {
 			this.index = index;

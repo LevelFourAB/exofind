@@ -95,6 +95,23 @@ public class Indexes implements RegistryPoller.Listener {
 			.withArguments("name")
 			.withMessage("`{{name}}` names an index rather than one generation of it");
 
+	private static final ErrorType LIVE_GENERATION_UNSETTLED =
+		ErrorType.withCode("index:generation:unsettled")
+			.withArguments("name")
+			.withMessage(
+				"The generation `{{name}}` answers from changed while the change"
+					+ " was being made, repeatedly - send it again"
+			);
+
+	/**
+	 * How many times {@link #write(String, WriteAction)} resolves the name
+	 * again before giving up. Each attempt past the first means a promote
+	 * landed in the moment between resolving the name and taking the write
+	 * gate, which one more attempt settles unless promotes are arriving
+	 * without pause.
+	 */
+	private static final int WRITE_RESOLVE_ATTEMPTS = 8;
+
 	/**
 	 * How long to wait for a retiring instance to finish closing before its
 	 * directory is used again. A close that takes longer is abandoned - the
@@ -2006,6 +2023,74 @@ public class Indexes implements RegistryPoller.Listener {
 		} finally {
 			metrics.recordIndexOpenWait(System.nanoTime() - start, ok);
 		}
+	}
+
+	/**
+	 * Change the generation a name answers from, with the name resolved again
+	 * at the moment the change is made.
+	 *
+	 * <p>Every change to the contents of an index goes through here. A caller
+	 * that resolved the name earlier and then wrote would write into the
+	 * generation the name answered from at that earlier moment: a promote in
+	 * between - which is how a reindex hands over, and how an operator rolls a
+	 * generation back - leaves that write in a generation nothing answers from
+	 * anymore, acknowledged and unreachable. That window is what a request
+	 * indexing a stream of documents is open across for as long as the stream
+	 * runs.
+	 *
+	 * <p>The name is therefore resolved inside the write gate of the
+	 * generation it names, and the action runs only while that generation is
+	 * still the one it answers from. A promote is made under a
+	 * {@link Index#holdWrites() hold} on the generation it replaces, so a
+	 * change either goes through before the promote or resolves the new
+	 * generation after it. A name that already carries a generation resolves
+	 * to itself and is written where it says.
+	 *
+	 * @param name
+	 *   the index, which is written to whichever generation is live, or one
+	 *   generation of it by name
+	 * @param action
+	 *   the change, called with the generation to make it in
+	 * @return
+	 *   what the action returned
+	 * @throws IndexNotFoundException
+	 *   if the deployment holds no such index or generation
+	 */
+	public <T> T write(String name, WriteAction<T> action) {
+		for(var attempt = 0; attempt < WRITE_RESOLVE_ATTEMPTS; attempt++) {
+			var index = getOrThrow(name);
+			try(var entry = index.enterWrite()) {
+				if(resolves(name, index)) {
+					return action.apply(index);
+				}
+			}
+		}
+
+		throw new ValidationException(
+			LIVE_GENERATION_UNSETTLED.toMessage(ObjectLocation.root(), "name", name)
+		);
+	}
+
+	/**
+	 * Get whether a name still answers from the generation it was resolved to.
+	 */
+	private boolean resolves(String name, Index index) {
+		return registry.resolve(IndexName.parse(name)).toString().equals(index.getId());
+	}
+
+	/**
+	 * One change to an index, as {@link #write(String, WriteAction)} runs it.
+	 */
+	@FunctionalInterface
+	public interface WriteAction<T> {
+		/**
+		 * Make the change in the generation the name answers from.
+		 *
+		 * @param index
+		 *   the generation, which answers for the name for as long as this
+		 *   call runs
+		 */
+		T apply(Index index);
 	}
 
 	/**

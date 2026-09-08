@@ -9,12 +9,15 @@ import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexClosedException;
 import se.l4.exofind.engine.index.IndexName;
@@ -31,7 +35,10 @@ import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
+import se.l4.exofind.engine.index.schema.FieldDef;
+import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.index.state.RecordingIndexRemovals;
@@ -230,6 +237,81 @@ public class IndexesTest {
 
 		assertThat(indexes.getOrThrow("books"), is(sameInstance(second)));
 		assertThat(indexes.getRegistered("books").orElseThrow().live(), is("2"));
+	}
+
+	/**
+	 * A write settles which generation it goes to at the moment it makes its
+	 * change, not when the request arrived. A promote is made under a hold on
+	 * the generation it replaces, so a write that was waiting at that gate
+	 * goes to the generation that took over - left in the one that was
+	 * replaced, it would be acknowledged and unreachable.
+	 */
+	@Test
+	public void testWriteWaitingAtTheGateGoesToThePromotedGeneration() throws Exception {
+		var first = indexes.create("books", keyed());
+		var second = indexes.createGeneration("books@2", keyed());
+
+		var wroteTo = new CompletableFuture<String>();
+		var writer = new Thread(() -> wroteTo.complete(
+			indexes.write("books", index -> {
+				try {
+					index.addDocument(new Document(new Document.Value("id", "1")));
+					return index.getId();
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			})
+		));
+
+		try(var hold = first.holdWrites()) {
+			writer.start();
+			awaitWaiting(writer);
+
+			indexes.promote("books@2");
+		}
+
+		assertThat(wroteTo.get(10, TimeUnit.SECONDS), is("books@2"));
+
+		first.commit();
+		second.commit();
+		assertThat(second.getDocumentCount(), is(1L));
+		assertThat(first.getDocumentCount(), is(0L));
+	}
+
+	/**
+	 * Wait for a thread to park, which is where a write waits at the gate a
+	 * hold has taken.
+	 */
+	private static void awaitWaiting(Thread thread) throws InterruptedException {
+		var deadline = System.currentTimeMillis() + 5000;
+		while(System.currentTimeMillis() < deadline) {
+			if(thread.getState() == Thread.State.WAITING) {
+				return;
+			}
+
+			Thread.sleep(10);
+		}
+
+		throw new AssertionError("The thread did not reach the write gate within the wait");
+	}
+
+	/**
+	 * A definition with a primary key, which is what a document needs to be
+	 * indexed under a key rather than added again.
+	 */
+	private static IndexDef keyed() {
+		return IndexDef.newBuilder()
+			.putFields(
+				"id",
+				FieldDef.newBuilder()
+					.setPrimaryKey(true)
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setString(StringFieldTypeDef.getDefaultInstance())
+					)
+					.build()
+			)
+			.build();
 	}
 
 	/**

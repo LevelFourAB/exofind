@@ -30,6 +30,7 @@ import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
+import se.l4.exofind.engine.index.registry.LiveGenerationMovedException;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
@@ -120,8 +121,7 @@ public class ReindexJobsTest {
 			ownership,
 			2,
 			Duration.ofMinutes(5),
-			Duration.ofMinutes(5),
-			Duration.ZERO
+			Duration.ofMinutes(5)
 		);
 	}
 
@@ -399,6 +399,76 @@ public class ReindexJobsTest {
 
 		awaitPhase("catalogue", ReindexPhase.DONE);
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("2"));
+	}
+
+	/**
+	 * A node that gains an index with a job on it serves writes from the
+	 * moment it claims the index, which is before anything resumes the job.
+	 * Those writes have to be recorded, or they sit in the source alone and
+	 * the promote drops them.
+	 */
+	@Test
+	public void writesASuccessorTakesBeforeTheJobResumesAreCarriedOver() throws Exception {
+		var source = catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		jobs.start("catalogue@2", null, "manual");
+		awaitPhase("catalogue", ReindexPhase.READY);
+
+		// The node dies and the index is taken over, with the job left ready
+		jobs.stop();
+		nodeState.updateOwnership(false);
+		source.reopen(false);
+		nodeState.updateOwnership(true);
+		source.reopen(false);
+
+		// Served before anything picked the record up again
+		source.addDocument(doc("4", "Rosehip soup", "soup"));
+		source.deleteDocument("1");
+
+		jobs = newJobs();
+		jobs.onStart(null);
+
+		await(() -> {
+			try {
+				return jobs.promoteThroughJob("catalogue@2");
+			} catch(ReindexTargetBusyException e) {
+				return false;
+			}
+		});
+
+		awaitPhase("catalogue", ReindexPhase.DONE);
+
+		var target = indexes.getOrThrow("catalogue@2");
+		assertThat(target.getDocument("4"), is(notNullValue()));
+		assertThat(target.getDocument("1"), is(nullValue()));
+	}
+
+	/**
+	 * The target was filled from one generation, so it is only complete
+	 * against that one. An operator who promotes a third generation while the
+	 * job waits sends the writes there untracked, and promoting the target
+	 * over it would take every one of them off the index name.
+	 */
+	@Test
+	public void aPromoteIsRefusedWhenAnotherGenerationWentLive() throws Exception {
+		catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		indexes.createGeneration("catalogue@3", definition().build());
+
+		jobs.start("catalogue@2", null, "manual");
+		awaitPhase("catalogue", ReindexPhase.READY);
+
+		registry.promote("catalogue", "3");
+
+		assertThrows(
+			LiveGenerationMovedException.class,
+			() -> jobs.promoteThroughJob("catalogue@2")
+		);
+
+		// The generation that was promoted stays live, and the job is closed
+		assertThat(registry.get("catalogue").orElseThrow().live(), is("3"));
+		awaitPhase("catalogue", ReindexPhase.FAILED);
 	}
 
 	@Test

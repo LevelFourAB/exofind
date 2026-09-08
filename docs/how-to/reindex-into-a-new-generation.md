@@ -129,6 +129,8 @@ If you started the job with `promote: "manual"`, complete the following steps on
 
    The promote endpoint drains any remaining change backlog, executes the promotion, and transitions the job to `done`. If you attempt to promote before the job reaches `ready`, the request returns `409 Conflict` with error code `reindex:target_busy`.
 
+   If another generation was promoted while the job ran, the request returns `409 Conflict` with error code `index:generation:live_moved`, and the job moves to the `failed` phase. The target holds only what the job read from its source, and none of the writes made to the generation promoted in between. Start a new reindex job that reads from the generation the index now serves from.
+
 ## Confirming the rollout
 
 To confirm that the new generation is serving live traffic, search the index by name:

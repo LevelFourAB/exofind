@@ -238,13 +238,26 @@ public class DocumentResource {
 	}
 
 	/**
-	 * The index a write may go to. A generation a reindex is filling is
-	 * refused - what lands in it has to come from the job alone, or the
-	 * job's replay would overwrite it.
+	 * Refuse a request that cannot be served before its body is read: a name
+	 * nothing here holds, and a generation a reindex is filling - what lands
+	 * in that has to come from the job alone, or the job's replay would
+	 * overwrite it.
 	 */
-	private Index writable(String name) {
+	private void checkWritable(String name) {
 		reindexJobs.checkTargetWritable(name);
-		return indexes.getOrThrow(name);
+		indexes.getOrThrow(name);
+	}
+
+	/**
+	 * Make one change to the generation a name answers from.
+	 *
+	 * <p>Each change resolves the name for itself rather than the request
+	 * resolving it once. A request that indexes a stream of documents is open
+	 * for as long as the stream runs, and the generation the name answers from
+	 * can be promoted while it is - see {@link Indexes#write}.
+	 */
+	private <T> T write(String name, Indexes.WriteAction<T> action) {
+		return indexes.write(name, action);
 	}
 
 	/**
@@ -399,12 +412,16 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = writable(name);
+		checkWritable(name);
 		var documents = body.documents();
 
 		return new DocumentsResponse(measure("add", () -> {
 			for(var i = 0; i < documents.size(); i++) {
-				addDocument(index, name, documents.get(i), i);
+				var position = i;
+				write(name, index -> {
+					addDocument(index, name, documents.get(position), position);
+					return null;
+				});
 			}
 
 			return documents.size();
@@ -436,14 +453,20 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = writable(name);
+		checkWritable(name);
 
 		return new DocumentsResponse(measure("add", () -> {
 			var indexed = 0;
 
 			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
 				while(hasNext(documents, indexed)) {
-					addDocument(index, name, documents.next(), indexed);
+					var json = documents.next();
+					var position = indexed;
+					write(name, index -> {
+						addDocument(index, name, json, position);
+						return null;
+					});
+
 					indexed++;
 				}
 			} catch(JacksonException e) {
@@ -604,7 +627,7 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = writable(name);
+		checkWritable(name);
 		var skipMissing = skipMissing(missing);
 		var missingKeys = Lists.mutable.empty();
 		var documents = body.documents();
@@ -612,7 +635,12 @@ public class DocumentResource {
 		var updated = measure("update", () -> {
 			var changed = 0;
 			for(var i = 0; i < documents.size(); i++) {
-				if(updateDocument(index, name, documents.get(i), i, skipMissing, missingKeys)) {
+				var position = i;
+				var applied = write(name, index -> updateDocument(
+					index, name, documents.get(position), position, skipMissing, missingKeys
+				));
+
+				if(applied) {
 					changed++;
 				}
 			}
@@ -650,7 +678,7 @@ public class DocumentResource {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = writable(name);
+		checkWritable(name);
 		var skipMissing = skipMissing(missing);
 		var missingKeys = Lists.mutable.empty();
 
@@ -660,7 +688,13 @@ public class DocumentResource {
 
 			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
 				while(hasNext(documents, read)) {
-					if(updateDocument(index, name, documents.next(), read, skipMissing, missingKeys)) {
+					var json = documents.next();
+					var position = read;
+					var applied = write(name, index -> updateDocument(
+						index, name, json, position, skipMissing, missingKeys
+					));
+
+					if(applied) {
 						changed++;
 					}
 
@@ -899,9 +933,9 @@ public class DocumentResource {
 			throw new ValidationException(CHANGE_MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
-		var index = writable(name);
+		checkWritable(name);
 
-		measure("update", () -> {
+		measure("update", () -> write(name, index -> {
 			var primaryKey = index.parsePrimaryKey(key);
 			var keyField = index.getPrimaryKey().orElseThrow().getName();
 
@@ -916,7 +950,7 @@ public class DocumentResource {
 			}
 
 			return 1;
-		});
+		}));
 
 		return Response.noContent().build();
 	}
@@ -1066,9 +1100,9 @@ public class DocumentResource {
 		)
 		@PathParam("key") String key
 	) {
-		var index = writable(name);
+		checkWritable(name);
 
-		measure("delete", () -> {
+		measure("delete", () -> write(name, index -> {
 			try {
 				index.deleteDocument(index.parsePrimaryKey(key));
 			} catch(IOException e) {
@@ -1076,7 +1110,7 @@ public class DocumentResource {
 			}
 
 			return 1;
-		});
+		}));
 
 		return Response.noContent().build();
 	}
@@ -1209,19 +1243,19 @@ public class DocumentResource {
 			);
 		}
 
-		var index = writable(name);
+		checkWritable(name);
 
 		if(body.keys() != null) {
-			return new DeleteResponse(measure("delete", () -> {
+			return new DeleteResponse(measure("delete", () -> write(name, index -> {
 				try {
 					return index.deleteDocuments(toKeys(body.keys()));
 				} catch(IOException e) {
 					throw new IndexException(IO_ERROR, e, "index", name);
 				}
-			}));
+			})));
 		}
 
-		return new DeleteResponse(measure("delete_by_query", () -> {
+		return new DeleteResponse(measure("delete_by_query", () -> write(name, index -> {
 			try {
 				return index.deleteByQuery(
 					SearchRequestMapper.toQuery(body.query(), "/query"),
@@ -1230,7 +1264,7 @@ public class DocumentResource {
 			} catch(IOException e) {
 				throw new IndexException(IO_ERROR, e, "index", name);
 			}
-		}));
+		})));
 	}
 
 	/**

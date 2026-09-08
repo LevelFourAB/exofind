@@ -408,10 +408,50 @@ public class IndexRegistry {
 	 *   if there is no such index, or it has no such generation
 	 */
 	public RegisteredIndex promote(String index, String generation) {
+		return promote(index, generation, null);
+	}
+
+	/**
+	 * Make an index answer for one of its generations, but only while it still
+	 * answers for the generation the caller worked from.
+	 *
+	 * <p>A caller that filled a generation from another one may only make it
+	 * live while the one it read is the one the index answers for. Promoted
+	 * over a third generation that went live meanwhile, it would take the
+	 * index back to what it read - and everything written to that third
+	 * generation would be gone from the name with nothing reporting it.
+	 *
+	 * @param index
+	 * @param generation
+	 * @param expectedLive
+	 *   the generation the index has to answer for, or {@code null} to promote
+	 *   whatever it answers for now
+	 * @return
+	 *   the index as it is now registered
+	 * @throws IndexNotFoundException
+	 *   if there is no such index, or it has no such generation
+	 * @throws LiveGenerationMovedException
+	 *   if the index answers for another generation than the expected one
+	 */
+	public RegisteredIndex promote(String index, String generation, String expectedLive) {
 		var updated = update(index, entry -> {
 			if(!entry.hasGeneration(generation)) {
 				throw new IndexNotFoundException(
 					IndexName.of(index, generation).toString()
+				);
+			}
+
+			/*
+			 * Read from the entry the write is conditional on rather than from
+			 * the caller's copy of the registry: the update refreshes before
+			 * every attempt, so this is what the index answers for at the
+			 * moment the promote is written.
+			 */
+			if(expectedLive != null && !expectedLive.equals(entry.live())) {
+				throw new LiveGenerationMovedException(
+					index,
+					expectedLive,
+					entry.live()
 				);
 			}
 
