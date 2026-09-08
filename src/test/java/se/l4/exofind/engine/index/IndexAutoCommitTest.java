@@ -298,6 +298,10 @@ public class IndexAutoCommitTest {
 		}
 
 		@Override
+		public void claimWriter() throws IOException {
+		}
+
+		@Override
 		public void push(Set<String> files) throws IOException {
 			if(!blockNextPush) {
 				return;

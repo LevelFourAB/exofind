@@ -134,7 +134,8 @@ public class ObjectStorageSync implements StateSync {
 
 	/**
 	 * Epoch this instance has claimed for its writes, or {@code -1} while it
-	 * has not written anything yet. Claimed once, before the first upload.
+	 * has not claimed one. Claimed when a writer opens on this copy, and
+	 * before the first upload where no writer opened here.
 	 */
 	private long sessionEpoch;
 
@@ -270,10 +271,12 @@ public class ObjectStorageSync implements StateSync {
 			var baseline = ensurePushBaseline(previousManifest);
 
 			/*
-			 * The epoch is claimed before the first upload of this session, so
-			 * a node whose claim is refused never uploads at all, and one
-			 * whose claim went through writes under a prefix no other session
-			 * can be writing to.
+			 * The writer opening is what normally claims the epoch, so this is
+			 * only reached where nothing did - a push made without a writer
+			 * having been opened here. Claimed before the first upload either
+			 * way, so a node whose claim is refused never uploads at all, and
+			 * one whose claim went through writes under a prefix no other
+			 * session can be writing to.
 			 */
 			if(sessionEpoch < 0) {
 				claimEpoch(baseline);
@@ -334,12 +337,28 @@ public class ObjectStorageSync implements StateSync {
 		}
 	}
 
+	@Override
+	public void claimWriter() throws IOException {
+		lock.lock();
+		try {
+			/*
+			 * The manifest the claim is written on top of is the one the remote
+			 * holds right now, checked here the way a push checks it. Writing
+			 * it moves the tag every other session holds, which is what refuses
+			 * the node this one is taking over from.
+			 */
+			claimEpoch(ensurePushBaseline(lastSyncedManifest));
+		} finally {
+			lock.unlock();
+		}
+	}
+
 	/**
 	 * Claim the epoch this session writes under, by rewriting the manifest
 	 * with the next one. The claim is conditional like any manifest write, so
 	 * when two nodes race for it one is refused - and since a session claims
-	 * before its first upload, the loser walks away without having overwritten
-	 * anything at all.
+	 * before it writes anything, the loser walks away without having
+	 * overwritten anything at all.
 	 *
 	 * @param baseline
 	 *   what the remote is known to hold, which is what the claim is written

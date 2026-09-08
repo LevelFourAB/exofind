@@ -174,6 +174,35 @@ public class IndexPullTest {
 	}
 
 	/**
+	 * A node whose claim on an index was taken away pushes nothing more,
+	 * whatever the push is for. A successor is writing the index and answering
+	 * for it, so a flush of what is only here would replace documents that
+	 * successor has already acknowledged - they are given up instead.
+	 */
+	@Test
+	public void testAnIndexTakenAwayPushesNothing() throws IOException {
+		var sync = new CopyingSync();
+		var index = create("held", sync);
+
+		index.addDocument(document("1"));
+		index.commit();
+
+		sync.pushed = null;
+
+		// The claim lapsed, so another node may already be writing the index
+		index.revokeWriting();
+
+		index.addDocument(document("2"));
+
+		assertThrows(IndexReadonlyException.class, index::commit);
+		assertThat(sync.pushed, is(nullValue()));
+
+		// Nor does the instance push what it holds on its way out
+		index.close(true);
+		assertThat(sync.pushed, is(nullValue()));
+	}
+
+	/**
 	 * Node state as it looks on a node that has been granted the indexer role.
 	 */
 	private static NodeState nodeState() {
@@ -291,6 +320,10 @@ public class IndexPullTest {
 			}
 
 			pushed = files;
+		}
+
+		@Override
+		public void claimWriter() throws IOException {
 		}
 
 		@Override

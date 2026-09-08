@@ -639,6 +639,14 @@ public class Indexes implements RegistryPoller.Listener {
 
 			@Override
 			public void onOwnershipRevoked(NodeState state, String index) {
+				/*
+				 * Said to the open generations here rather than in the queued
+				 * work: a flush queued for a handover this node had chosen may
+				 * still be ahead of it, and it must not push over what a
+				 * successor has already written.
+				 */
+				revokeWriting(index);
+
 				queueOwnership(index, () -> reopenOwned(index, false));
 			}
 		};
@@ -701,6 +709,29 @@ public class Indexes implements RegistryPoller.Listener {
 		queued.whenComplete((result, e) -> ownershipQueues.remove(key, queued));
 
 		return queued;
+	}
+
+	/**
+	 * Stop every generation of an index from pushing what it holds, because
+	 * the node lost the index without choosing to hand it over. Covers the
+	 * instances that are closing as well, which push while they do.
+	 *
+	 * @param name
+	 *   name of the index, without a generation
+	 */
+	private void revokeWriting(String name) {
+		for(var entry : indexes.asMap().entrySet()) {
+			if(IndexName.parse(entry.getKey()).index().equals(name)) {
+				entry.getValue().revokeWriting();
+			}
+		}
+
+		for(var retired : retiring.values()) {
+			var parsed = IndexName.tryParse(retired.name).orElse(null);
+			if(parsed != null && parsed.index().equals(name)) {
+				retired.index.revokeWriting();
+			}
+		}
 	}
 
 	/**

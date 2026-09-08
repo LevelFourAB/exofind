@@ -1094,6 +1094,10 @@ public class IndexTest {
 		}
 
 		@Override
+		public void claimWriter() throws IOException {
+		}
+
+		@Override
 		public boolean hasSyncedCommit() {
 			return false;
 		}

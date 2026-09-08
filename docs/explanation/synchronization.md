@@ -43,7 +43,9 @@ Hints stay advisory rather than authoritative state. A node verifies every local
 
 Lucene names its files by sequential numbering. Two independent writer sessions can both produce a file named `_5.cfs`. If both sessions uploaded files using that name, a writer that fails the manifest race could overwrite a file referenced by the winning writer's manifest.
 
-To prevent collisions, object keys are scoped to epochs. Before its first upload, a writer session claims an epoch by conditionally updating the manifest, and then uploads all files under `e<epoch>/`. If storage rejects the epoch claim, the session does not upload any files. File names remain local, while object keys are remote.
+To prevent collisions, object keys are scoped to epochs. A writer session claims an epoch by conditionally updating the manifest, and then uploads all files under `e<epoch>/`. If storage rejects the epoch claim, the session does not upload any files and does not open its writer. File names remain local, while object keys are remote.
+
+The claim happens when the writer opens, before the node acknowledges any write, rather than before the first upload. A node that takes an index over acknowledges writes from the moment its writer opens, but pushes only at the next commit interval. Claiming at the first push would leave that whole span with nothing refusing the node the index was taken from: a stale push accepted in it wins the manifest race, and the successor then abandons and pulls over the documents it has already acknowledged.
 
 Unchanged files retain their keys across epochs, and the manifest records each key alongside its corresponding file name. This mapping avoids re-uploading files that a previous indexer already pushed, making failovers efficient. After adopting a pulled manifest, a session claims a new epoch because the adopted manifest can reference keys from the epoch where it originated.
 
@@ -76,7 +78,7 @@ Two checks protect a local copy that loses files for another reason. When the lo
 
 The bucket maintains a single leadership table that tracks which node writes to each index. The table contains a claim entry for each index naming its holder, alongside an entry for each candidate node indicating that the candidate is alive. The table is updated as a whole, conditionally based on its version. If two candidates attempt concurrent updates, only one write succeeds.
 
-Every candidate runs a coordination round at an interval equal to one-third of the claim duration (`EXOFIND_INDEXER_LEASE_DURATION`). During a round, a candidate performs the following actions:
+Every candidate runs a coordination round at an interval equal to one-third of the claim duration (`EXOFIND_INDEXER_LEASE_DURATION`), measured from the start of the previous round rather than from its end. Three rounds have to fit inside a lease, so an interval that grew with the time storage took would let the claims of a running node lapse. During a round, a candidate performs the following actions:
 
 - Renews its own entries.
 - Takes over claims whose holders stopped renewing due to crashes, hangs, or network partitions.
@@ -97,6 +99,8 @@ Index handovers follow a strict order to protect acknowledged writes. A holder r
 3. In a subsequent round, the holder transfers the claim to the taker, or drops the claim for an under-capacity candidate to acquire.
 
 Because of this order, a successor node always pulls a manifest that includes the flush, preserving acknowledged documents across rebalances. A shutting-down node follows the same order for all held indexes: it flushes first, then removes itself from the table. If a flush exceeds the lease duration, the claims lapse instead of being released mid-flush. When a node loses a claim because the lease lapsed, it pushes nothing, because a successor might already be writing. The expired node drops unpushed data, while conditional writes prevent storage corruption.
+
+A node tells the two cases apart by how the claim left it. A claim it still holds while the index drains marks a handover it chose, so the index flushes. A claim that ends up naming another node, or that the round dropped along with a deleted index, marks a loss. Every generation of a lost index then stops pushing at once, including a flush that a handover queued moments earlier and the push that closing an index normally makes.
 
 An unassigned index does not wait for a coordination round. The first candidate node that receives a write claims the index immediately. This ensures newly created indexes acquire writers immediately and routes writes promptly if a holder fails.
 

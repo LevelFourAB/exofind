@@ -418,6 +418,19 @@ public class Index {
 	 */
 	private volatile boolean readerWithoutCommit;
 
+	/**
+	 * Whether what this instance holds may still be pushed. Set when a writer
+	 * opens on a claim the remote accepted, and cleared when the node lost the
+	 * index without choosing to hand it over - a successor may already be
+	 * writing it, so what is here is dropped instead.
+	 *
+	 * <p>A handover this node chose keeps it set. The node has already stopped
+	 * holding the index by the time such a flush runs, but the claim in the
+	 * table is still this node's and the successor is waiting for the flush,
+	 * which is what makes the push both allowed and necessary.
+	 */
+	private volatile boolean mayPush;
+
 	private final IndexSearcherManager searcherManager;
 
 	/**
@@ -978,6 +991,9 @@ public class Index {
 					this.reader = new MultiReader();
 					this.readerWithoutCommit = true;
 				}
+
+				// Nothing is held here anymore, and the next writer claims anew
+				this.mayPush = false;
 			} else {
 				// This is a writeable index, reopen the writer
 				this.snapshots =
@@ -1012,9 +1028,27 @@ public class Index {
 					config.setOpenMode(OpenMode.APPEND);
 				}
 
+				/*
+				 * The right to write is claimed before the writer opens, and not
+				 * before the first push. From here on this instance answers
+				 * writes, and the claim is what refuses the node it took the
+				 * index over from - which goes on pushing until something
+				 * refuses it. Made after everything the record of the last
+				 * synchronization decides has been read, as the claim replaces
+				 * that record.
+				 */
+				sync.claimWriter();
+
 				this.writer = new IndexWriter(directory, config);
 				this.reader = DirectoryReader.open(writer);
 				this.readerWithoutCommit = false;
+
+				/*
+				 * The claim above went through, so nothing else is writing the
+				 * remote and what this writer takes on may be pushed - until the
+				 * node is told the index was taken away again.
+				 */
+				this.mayPush = true;
 			}
 
 			/*
@@ -1129,6 +1163,7 @@ public class Index {
 	 *   what it holds before the reopen, instead of it being dropped - for a
 	 *   handover this node chose, where the remote is still its to write. A
 	 *   flush that fails gives the changes up and the reopen continues.
+	 *   Ignored once {@link #revokeWriting()} said the index was taken away
 	 */
 	public void reopen(boolean flushFirst) {
 		boolean flush;
@@ -1159,6 +1194,7 @@ public class Index {
 			}
 
 			flush = flushFirst
+				&& mayPush
 				&& writer != null
 				&& !shouldWrite
 				&& state != IndexState.USABLE;
@@ -1200,6 +1236,21 @@ public class Index {
 	}
 
 	/**
+	 * Stop this instance from pushing what it holds, because the node lost the
+	 * index without holding it being certain up to now. Another node may
+	 * already write it, so everything that is only here is given up rather
+	 * than pushed - including a flush that a handover queued moments before.
+	 *
+	 * <p>Said to the index rather than read from the node state, which the
+	 * flush of a handover this node chose reads as not holding the index
+	 * either. Taking the index back is what sets it again, by opening a writer
+	 * on a fresh claim.
+	 */
+	public void revokeWriting() {
+		this.mayPush = false;
+	}
+
+	/**
 	 * Why a push is being made, which is what decides whether the node having
 	 * stopped holding the index stops it.
 	 */
@@ -1226,7 +1277,8 @@ public class Index {
 	 *   why the push is being made, see {@link PushReason}
 	 * @throws IndexReadonlyException
 	 *   if the node stopped holding the index while the commit ran, where the
-	 *   push was the ordinary work of holding it
+	 *   push was the ordinary work of holding it, or if the index was taken
+	 *   away from the node rather than handed over - whatever the push is for
 	 * @throws IndexOutOfDateException
 	 *   if the local copy holds a commit this instance cannot name, which is
 	 *   what an index opened read-only holds until the reopen that follows a
@@ -1260,6 +1312,18 @@ public class Index {
 			 * the loss does.
 			 */
 			if(reason == PushReason.HELD && isReadOnly()) {
+				throw new IndexReadonlyException(id);
+			}
+
+			/*
+			 * A flush for a handover is made after the node stopped holding the
+			 * index, so the node state says nothing about whether it may still
+			 * be made. What does is the claim this instance opened its writer
+			 * under: given up only when the index was taken away rather than
+			 * handed over, which is exactly when a successor may already have
+			 * written what this push would replace.
+			 */
+			if(!mayPush) {
 				throw new IndexReadonlyException(id);
 			}
 
@@ -7624,7 +7688,9 @@ public class Index {
 	 * for it anew.
 	 *
 	 * @param commit
-	 *   whether to commit and push what this instance holds before it goes
+	 *   whether to commit and push what this instance holds before it goes.
+	 *   Nothing is pushed for an index the node lost rather than handed over,
+	 *   see {@link #revokeWriting()}
 	 * @throws IOException
 	 *   if the commit or the push failed. The index is closed either way, so
 	 *   that the directory and the lock on it are released; what the commit
@@ -7641,8 +7707,14 @@ public class Index {
 		 */
 		this.commitManager.close();
 
+		/*
+		 * An index the node lost without handing it over pushes nothing on the
+		 * way out either: a successor may already be writing it, and what is
+		 * only here was given up when the claim went. Closing then just lets
+		 * the directory go.
+		 */
 		IOException failed = null;
-		if(commit) {
+		if(commit && mayPush) {
 			try {
 				this.commitChanges(PushReason.HANDOVER);
 			} catch(IOException | RuntimeException e) {

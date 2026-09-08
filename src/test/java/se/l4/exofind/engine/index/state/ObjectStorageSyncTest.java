@@ -1170,6 +1170,59 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * A successor claims the right to write when its writer opens, before it
+	 * has anything to push. From that moment the node it took the index over
+	 * from is refused - rather than only once the successor pushes, which is
+	 * a whole commit interval later and long after the successor has begun
+	 * answering for documents of its own.
+	 */
+	@Test
+	void testClaimingTheWriterRefusesTheNodeTakenOverFrom() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		// The successor pulls the index and opens a writer over the copy
+		var successor = newSync(s3Client, otherLocalPath);
+		assertThat(successor.pull(), is(true));
+		successor.claimWriter();
+
+		assertThat(remoteManifest().getEpoch(), is(2L));
+
+		// The node it took over from pushes nothing more
+		var stale = createLocalFile("segments_2", 12);
+		assertThrows(SyncConflictException.class, () -> push(segment, stale));
+
+		// And the successor writes under the epoch it claimed
+		var next = createLocalFile(otherLocalPath, "segments_3", 14);
+		push(successor, segment, next);
+
+		assertThat(remoteKeyOf("segments_3"), is("e2/segments_3"));
+		verifyRemoteFile(next);
+	}
+
+	/**
+	 * Two nodes that both believe they write the index claim against the same
+	 * manifest, and the storage decides between them. The loser is refused
+	 * before it has uploaded anything.
+	 */
+	@Test
+	void testOnlyOneWriterClaimIsAccepted() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var first = newSync(s3Client, otherLocalPath);
+		first.pull();
+
+		var second = newSync(s3Client, otherLocalPath);
+		second.pull();
+
+		first.claimWriter();
+
+		assertThrows(SyncConflictException.class, second::claimWriter);
+		assertThat(remoteManifest().getEpoch(), is(2L));
+	}
+
+	/**
 	 * A writer that pulled someone else's state may find files of its own
 	 * epoch carried forward in it, so it claims a fresh epoch rather than
 	 * write where the adopted manifest is pointing.

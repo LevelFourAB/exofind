@@ -70,7 +70,9 @@ Candidate nodes manage index write assignments through a shared leadership table
 in object storage. If a writer node stops renewing its claim, its lease expires
 after `EXOFIND_INDEXER_LEASE_DURATION` (default: 30 seconds). Another candidate
 node then claims the index and begins a new writer session under a new storage
-epoch.
+epoch. The new writer claims that epoch as it opens, before it accepts a single
+write, so the entity tag the previous writer holds is already stale by the time
+the new writer answers its first request.
 
 If the previous writer was partitioned or paused and later attempts to commit,
 its push fails:

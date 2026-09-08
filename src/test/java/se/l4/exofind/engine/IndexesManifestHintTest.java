@@ -51,6 +51,10 @@ public class IndexesManifestHintTest {
 		}
 
 		@Override
+		public void claimWriter() {
+		}
+
+		@Override
 		public boolean pull() {
 			pulls.incrementAndGet();
 			return false;

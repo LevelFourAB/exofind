@@ -252,11 +252,18 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	/**
 	 * The table as one round rewrote it, together with the indexes this node
 	 * holds in it and the ones it only keeps claimed while they drain.
+	 *
+	 * @param dropped
+	 *   the claims the round let go of because the registry no longer holds
+	 *   their index. Kept apart from the claims that ended up naming another
+	 *   node: both stop this node writing, but only one of them says a
+	 *   successor is about to write instead
 	 */
 	private record Rebuilt(
 		IndexerLeadership table,
 		ImmutableSet<String> held,
-		ImmutableSet<String> draining
+		ImmutableSet<String> draining,
+		ImmutableSet<String> dropped
 	) {
 	}
 
@@ -633,6 +640,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return;
 		}
 
+		var roundStarted = System.nanoTime();
+
 		try {
 			coordinate();
 		} catch(Exception e) {
@@ -659,8 +668,18 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		var third = leaseDuration.toMillis() / 3;
 		var jitter = ThreadLocalRandom.current().nextLong(-third / 6, third / 6 + 1);
 
+		/*
+		 * Counted from where the round started rather than from where it ended,
+		 * so the rounds keep their period instead of drifting by however long
+		 * the storage took. Three rounds have to fit inside a lease, and a
+		 * round slow enough to push the next one past the expiry is exactly the
+		 * one whose claims would lapse with the node still there.
+		 */
+		var elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - roundStarted);
+		var delay = Math.max(0, third + jitter - elapsed);
+
 		try {
-			executor.schedule(this::tick, third + jitter, TimeUnit.MILLISECONDS);
+			executor.schedule(this::tick, delay, TimeUnit.MILLISECONDS);
 		} catch(RejectedExecutionException e) {
 			// The executor is shutting down, the loop ends here
 		}
@@ -964,6 +983,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 
 		String offering = null;
+		var dropped = new TreeSet<String>();
 
 		/*
 		 * A registry that has never been read claims and drops nothing - a
@@ -983,11 +1003,18 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				ahead -> names.contains(ahead.getKey()) || ahead.getValue() <= now
 			);
 
-			mine.removeIf(
-				name -> !names.contains(name)
-					&& !name.equals(forcedClaim)
-					&& !claimedAhead.containsKey(name)
-			);
+			mine.removeIf(name -> {
+				if(
+					names.contains(name)
+						|| name.equals(forcedClaim)
+						|| claimedAhead.containsKey(name)
+				) {
+					return false;
+				}
+
+				dropped.add(name);
+				return true;
+			});
 
 			var fairShare = fairShare(names.size(), otherCandidates.size() + 1);
 
@@ -1096,7 +1123,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		return new Rebuilt(
 			builder.build(),
 			Sets.immutable.ofAll(heldNow),
-			Sets.immutable.ofAll(nowDraining)
+			Sets.immutable.ofAll(nowDraining),
+			Sets.immutable.ofAll(dropped)
 		);
 	}
 
@@ -1310,13 +1338,48 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 
 		for(var name : before) {
-			if(!rebuilt.held().contains(name)) {
+			if(rebuilt.held().contains(name)) {
+				continue;
+			}
+
+			/*
+			 * A drain is a handover this node chose: the claim stays in the
+			 * table until the flush is done, so what the index holds is still
+			 * this node's to push. An index that leaves any other way leaves
+			 * with its claim, and nothing here may be pushed under it anymore.
+			 */
+			if(rebuilt.draining().contains(name)) {
 				logger.atInfo()
 					.addKeyValue("node", node)
 					.addKeyValue("index", name)
 					.log("Handing over writing the index");
 
 				listener.onOwnershipChanged(name, false);
+			} else if(rebuilt.dropped().contains(name)) {
+				/*
+				 * The index itself is gone rather than moved. Nothing is left
+				 * to push to and no successor is waiting, so this is the
+				 * ordinary end of writing an index.
+				 */
+				logger.atInfo()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.log("Stopped writing the index, the registry no longer holds it");
+
+				listener.onOwnershipRevoked(name);
+			} else {
+				/*
+				 * The claim ended up naming another node without this one
+				 * handing it over, which is what a claim that lapsed while the
+				 * node was paused looks like once it comes back. The successor
+				 * is already writing.
+				 */
+				logger.atError()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.log("Giving up writing the index, the claim is now another node's");
+
+				listener.onOwnershipRevoked(name);
 			}
 		}
 

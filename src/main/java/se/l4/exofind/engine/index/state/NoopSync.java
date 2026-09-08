@@ -19,6 +19,14 @@ public class NoopSync implements StateSync {
 	public void push(Set<String> files) throws IOException {
 	}
 
+	/**
+	 * Nothing is shared, so there is no other writer to be refused and nothing
+	 * to claim against.
+	 */
+	@Override
+	public void claimWriter() throws IOException {
+	}
+
 	@Override
 	public OptionalLong syncedVersion() {
 		return OptionalLong.empty();

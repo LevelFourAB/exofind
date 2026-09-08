@@ -24,6 +24,32 @@ public interface StateSync {
 	void push(Set<String> files) throws IOException;
 
 	/**
+	 * Claim the right to write the index, for the writer that is about to
+	 * open. What the claim leaves behind is what every push of this session is
+	 * conditional on, so a node whose claim on the index lapsed while it was
+	 * paused is refused by the remote rather than replacing what a successor
+	 * has already written.
+	 *
+	 * <p>Claimed here rather than before the first push, because the successor
+	 * acknowledges writes from the moment its writer opens. Claiming later
+	 * would leave the whole span between the takeover and the first push of
+	 * the successor with nothing refusing the node it took over from.
+	 *
+	 * <p>Called every time a writer opens, not once per instance: an index
+	 * that was lost and taken again continues from a manifest another node
+	 * wrote, and the claim is what says who writes it now.
+	 *
+	 * @throws SyncConflictException
+	 *   if the remote was changed by another node since this node last
+	 *   synchronized with it, which is what losing the index looks like from
+	 *   here. Nothing has been overwritten, and pulling is what brings the
+	 *   local copy back in step
+	 * @throws IOException
+	 *   if the claim could not be written
+	 */
+	void claimWriter() throws IOException;
+
+	/**
 	 * Pull the latest changes from the remote.
 	 *
 	 * @throws SyncIncompatibleException

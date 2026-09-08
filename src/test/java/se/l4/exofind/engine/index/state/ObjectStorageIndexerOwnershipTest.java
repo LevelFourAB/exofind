@@ -138,12 +138,30 @@ public class ObjectStorageIndexerOwnershipTest {
 	 * Start competing, recording which indexes are currently held.
 	 */
 	private Set<String> start(ObjectStorageIndexerOwnership ownership) {
+		return start(ownership, ConcurrentHashMap.newKeySet());
+	}
+
+	/**
+	 * Start competing, recording which indexes are currently held and, in
+	 * {@code revoked}, which of them were taken away rather than handed over -
+	 * the difference between what may still be pushed and what may not.
+	 */
+	private Set<String> start(ObjectStorageIndexerOwnership ownership, Set<String> revoked) {
 		Set<String> owned = ConcurrentHashMap.newKeySet();
-		ownership.start((index, owner) -> {
-			if(owner) {
-				owned.add(index);
-			} else {
+		ownership.start(new IndexerOwnership.Listener() {
+			@Override
+			public void onOwnershipChanged(String index, boolean owner) {
+				if(owner) {
+					owned.add(index);
+				} else {
+					owned.remove(index);
+				}
+			}
+
+			@Override
+			public void onOwnershipRevoked(String index) {
 				owned.remove(index);
+				revoked.add(index);
 			}
 		});
 		running.add(ownership);
@@ -392,6 +410,58 @@ public class ObjectStorageIndexerOwnershipTest {
 		var table = readTable();
 		assertThat(table.getClaimsList(), is(List.of()));
 		assertThat(table.getCandidatesList(), is(List.of()));
+	}
+
+	/**
+	 * A claim that ends up naming another node was taken away rather than
+	 * handed over, which is what happens to a candidate whose claims lapsed
+	 * while it was paused. The successor may already be writing, so the loss
+	 * is reported as a revocation - nothing the index still holds here may be
+	 * pushed under a claim that is no longer this node's.
+	 */
+	@Test
+	void testAClaimTakenByAnotherNodeIsRevoked() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(newOwnership("a"), revoked);
+		await(() -> owned.contains("books"), "the candidate to take the index");
+
+		/*
+		 * The table as it looks once the claims of a paused node lapsed and a
+		 * successor took the index over.
+		 */
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(claim("books", "successor", alive, null)),
+			List.of(candidate("successor", alive, null))
+		);
+
+		await(() -> revoked.contains("books"), "the lost claim to be revoked");
+		assertThat(owned.contains("books"), is(false));
+	}
+
+	/**
+	 * A handover this node chose is not a revocation: the claim stays in the
+	 * table while the flush runs, so what the index still holds here is pushed
+	 * before the successor takes over.
+	 */
+	@Test
+	void testAShedIndexIsHandedOverRatherThanRevoked() throws Exception {
+		names.set(Sets.immutable.of("a", "b"));
+
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var first = start(newOwnership("node-1"), revoked);
+		await(() -> first.size() == 2, "the first candidate to take every index");
+
+		var second = start(newOwnership("node-2"));
+
+		await(
+			() -> first.size() == 1 && second.size() == 1,
+			"the indexes to be divided evenly"
+		);
+
+		assertThat(revoked.isEmpty(), is(true));
 	}
 
 	/**
