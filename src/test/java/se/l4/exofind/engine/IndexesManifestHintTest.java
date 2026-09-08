@@ -178,6 +178,51 @@ public class IndexesManifestHintTest {
 	}
 
 	/**
+	 * A hint under the copy says the generation was replaced: a name deleted
+	 * and created again writes a first manifest whose version is below the one
+	 * the copy of the deleted index reached. Waiting that out would leave the
+	 * copy answering with the deleted documents until the verify interval, so
+	 * a pass acts on it.
+	 */
+	@Test
+	public void testHintUnderTheCopyIsPulled() throws Exception {
+		var registryStorage = new InMemoryRegistryStorage();
+		var registry = new IndexRegistry(registryStorage, Duration.ofMinutes(5));
+
+		var writer = newNode(
+			true,
+			registry,
+			new NoopSyncProvider(),
+			Duration.ZERO,
+			Duration.ofMinutes(10)
+		);
+		writer.create("books", IndexDef.getDefaultInstance());
+		writer.close();
+
+		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 12)));
+
+		var provider = new CountingSyncProvider();
+		var reader = newNode(false, registry, provider, Duration.ZERO, Duration.ofMinutes(10));
+		try {
+			reader.getOrThrow("books");
+			var sync = provider.syncs.get("books@1");
+
+			// The copy stands where the hint does, so a pass asks nothing
+			sync.synced = OptionalLong.of(12);
+			var before = sync.pulls.get();
+			reader.refresh();
+			assertThat(sync.pulls.get(), is(before));
+
+			// The copy is of the generation that was replaced, and stands over the new one
+			sync.synced = OptionalLong.of(40);
+			reader.refresh();
+			assertThat(sync.pulls.get(), is(before + 1));
+		} finally {
+			reader.close();
+		}
+	}
+
+	/**
 	 * A hint can be stale, so an unmoved hint only defers the pull - the
 	 * verify interval is where the deferral ends.
 	 */

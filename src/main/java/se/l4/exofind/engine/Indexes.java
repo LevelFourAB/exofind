@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -1158,8 +1159,16 @@ public class Indexes implements RegistryPoller.Listener {
 	 * than the refresh interval cost a busy index nothing. Past that, the
 	 * registry's version hint decides: the storage is asked when the index is
 	 * not in step with the remote, when the registry says nothing about the
-	 * generation's manifest, or when {@link #verifyInterval} has passed. A
-	 * hint only ever makes skipping a request safe, never wrong.
+	 * generation's manifest, or when {@link #verifyInterval} has passed.
+	 *
+	 * <p>Only a hint standing exactly where the copy does defers the request.
+	 * A hint above the copy is the ordinary case of a writer having pushed,
+	 * and one below it says the generation was replaced - a name deleted and
+	 * created again writes a first manifest whose version is under the one
+	 * the copy of the deleted index reached, and the copy would go on
+	 * answering with the deleted documents until the verify interval. The
+	 * copy can also stand a version or two above a hint that has not been
+	 * flushed yet, which costs one manifest request and settles.
 	 *
 	 * <p>Skipping turns the steady state of many open indexes from one storage
 	 * request each per pass into none. The registry, read once per pass for
@@ -1189,11 +1198,11 @@ public class Indexes implements RegistryPoller.Listener {
 		 * a hint of zero - a generation the remote holds no manifest for -
 		 * matches, so an empty generation is not asked for over and over.
 		 */
-		if(hint.getAsLong() > index.getSyncedManifestVersion().orElse(0)) {
+		if(hint.getAsLong() != index.getSyncedManifestVersion().orElse(0)) {
 			/*
 			 * A writer reported a version this copy is not at. A failed pull
-			 * lands here again on the next pass, as the copy stays behind the
-			 * hint until one succeeds.
+			 * lands here again on the next pass, as the copy stays away from
+			 * the hint until one succeeds.
 			 */
 			return true;
 		}
@@ -2114,12 +2123,12 @@ public class Indexes implements RegistryPoller.Listener {
 				/*
 				 * Cleared after winning the registration, so that only the
 				 * winner touches the storage. A name deleted earlier lands on
-				 * the prefix the delete marked, and the first generation is
-				 * opened by pulling - so what the delete left has to go
-				 * before the open, or the new index starts out holding the
-				 * old documents.
+				 * the prefix the delete marked and on the directory the old
+				 * copy used, and the first generation is opened by pulling -
+				 * so what the delete left has to go before the open, or the
+				 * new index starts out holding the old documents.
 				 */
-				prepareStorage(index.withGeneration(generation), true);
+				prepareForCreation(index.withGeneration(generation), true);
 
 				return openWithDefinition(index.withGeneration(generation), def);
 			} catch(RuntimeException e) {
@@ -2132,27 +2141,69 @@ public class Indexes implements RegistryPoller.Listener {
 	}
 
 	/**
-	 * Clear what a delete left under the prefix a generation is about to be
-	 * created on, see {@link IndexRemovals}.
+	 * Clear what a delete left where a generation is about to be created: the
+	 * prefix it takes in the shared storage, see {@link IndexRemovals}, and
+	 * the local copy this node holds of it.
+	 *
+	 * <p>The shared storage goes first, so that a prefix that is held refuses
+	 * the creation before this node gives up anything of its own.
+	 *
+	 * <p>The local copy goes with it because a node removes its copy of a
+	 * deleted index only when a registry poll tells it the index is gone,
+	 * which a creation can well arrive before. Opening the generation on the
+	 * copy the delete left would bring every document of the deleted index
+	 * back: the pull finds nothing in the cleared prefix, the writer opens on
+	 * the old segments, and the first push uploads them under the new name.
+	 * A copy holding changes that were never pushed goes too - the generation
+	 * it belonged to is no longer registered, so there is nothing left to push
+	 * them to.
 	 *
 	 * @param generation
 	 * @param wholeIndex
 	 *   whether the index itself is being created, in which case a mark over
-	 *   the index clears everything under it, settings and all
+	 *   the index clears everything under it, settings and all, and every
+	 *   local copy of the name goes rather than only the one being opened
 	 * @throws IndexStorageHeldException
 	 *   if the prefix holds a manifest nothing said was deleted
 	 * @throws UncheckedIOException
 	 *   if the storage could not be asked or cleared
 	 */
-	private void prepareStorage(IndexName generation, boolean wholeIndex) {
+	private void prepareForCreation(IndexName generation, boolean wholeIndex) {
 		try {
 			if(wholeIndex) {
 				removals.prepareForIndex(generation.index());
 			}
 
 			removals.prepareForGeneration(generation);
+
+			var copies = new LinkedHashSet<String>();
+			copies.add(generation.toString());
+
+			if(wholeIndex) {
+				copies.addAll(localCopiesOf(generation.index()));
+			}
+
+			for(var copy : copies) {
+				removeLocalCopy(copy);
+			}
 		} catch(IOException e) {
 			throw new UncheckedIOException(e);
+		}
+	}
+
+	/**
+	 * The names of the local copies this node holds of the generations of one
+	 * index.
+	 */
+	private List<String> localCopiesOf(String index) throws IOException {
+		try(var paths = Files.list(indexRoot)) {
+			return paths.filter(Files::isDirectory)
+				.map(path -> path.getFileName().toString())
+				.filter(name -> IndexName.tryParse(name)
+					.filter(parsed -> parsed.isPinned() && parsed.index().equals(index))
+					.isPresent()
+				)
+				.toList();
 		}
 	}
 
@@ -2188,8 +2239,8 @@ public class Indexes implements RegistryPoller.Listener {
 			registry.addGeneration(generation.index(), generation.generation());
 
 			try {
-				// Only the generation's own prefix; the index around it is in use
-				prepareStorage(generation, false);
+				// Only this generation; the rest of the index is in use
+				prepareForCreation(generation, false);
 
 				return openWithDefinition(generation, def);
 			} catch(RuntimeException e) {
@@ -2260,7 +2311,8 @@ public class Indexes implements RegistryPoller.Listener {
 	 * deleted and removed by a sweep after a grace period, see
 	 * {@link IndexRemovals}. An index created again under the same name
 	 * before then starts empty all the same: the creation clears the marked
-	 * prefix first.
+	 * prefix and the local copies of the name first, on whichever node runs
+	 * it.
 	 *
 	 * <p>The mark is written after the registry, so that every mark stands
 	 * for a delete that went through. A mark that could not be written is

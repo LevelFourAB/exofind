@@ -373,6 +373,71 @@ public class IndexesTest {
 	}
 
 	/**
+	 * A name deleted somewhere else and created again here lands on the
+	 * directory this node's copy of the deleted index uses, which a poll has
+	 * not yet said to remove. The creation removes it, so the new index starts
+	 * empty rather than with everything the deleted one held.
+	 */
+	@Test
+	public void testCreatingRemovesTheCopyOfADeletedIndex() throws IOException {
+		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
+		try {
+			indexes.create("books", IndexDef.getDefaultInstance());
+			indexes.createGeneration("books@2", IndexDef.getDefaultInstance());
+
+			other.refresh();
+			other.getOrThrow("books@1");
+			other.getOrThrow("books@2");
+
+			var copies = storageDirectory.resolve("other").resolve("indexes");
+			var first = copies.resolve("books@1").resolve("left-behind.txt");
+			var second = copies.resolve("books@2").resolve("left-behind.txt");
+			Files.writeString(first, "old");
+			Files.writeString(second, "old");
+
+			// The other node never reads that the index is gone before it is asked to create it
+			indexes.delete("books");
+			other.create("books", IndexDef.getDefaultInstance());
+
+			assertThat(Files.exists(first), is(false));
+			assertThat(Files.exists(second), is(false));
+		} finally {
+			other.close();
+		}
+	}
+
+	/**
+	 * A generation deleted and created again is the same story for one
+	 * generation, with the rest of the index left where it is.
+	 */
+	@Test
+	public void testCreatingAGenerationRemovesTheCopyOfADeletedOne() throws IOException {
+		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
+		try {
+			indexes.create("books", IndexDef.getDefaultInstance());
+			indexes.createGeneration("books@2", IndexDef.getDefaultInstance());
+
+			other.refresh();
+			other.getOrThrow("books@1");
+			other.getOrThrow("books@2");
+
+			var copies = storageDirectory.resolve("other").resolve("indexes");
+			var first = copies.resolve("books@1").resolve("left-behind.txt");
+			var second = copies.resolve("books@2").resolve("left-behind.txt");
+			Files.writeString(first, "old");
+			Files.writeString(second, "old");
+
+			indexes.delete("books@2");
+			other.createGeneration("books@2", IndexDef.getDefaultInstance());
+
+			assertThat(Files.exists(second), is(false));
+			assertThat(Files.exists(first), is(true));
+		} finally {
+			other.close();
+		}
+	}
+
+	/**
 	 * Storage that holds a generation nothing deleted refuses the creation,
 	 * which then leaves no registration behind - the same request succeeds
 	 * once the storage has been repaired or cleared.
