@@ -41,6 +41,7 @@ import org.apache.lucene.index.IndexNotFoundException;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.MultiBits;
@@ -771,6 +772,7 @@ public class Index {
 	 */
 	public void pull() {
 		IndexState startState;
+		boolean releasedWriter;
 
 		syncLock.writeLock().lock();
 		try {
@@ -800,6 +802,17 @@ public class Index {
 
 			startState = state;
 			state = IndexState.PULLING;
+
+			/*
+			 * The writer goes before anything is downloaded, and not after the
+			 * files have landed. Rolling one back removes every file in the
+			 * directory its commit does not name, and a pull downloads files
+			 * with those names.
+			 */
+			releasedWriter = writer != null;
+			if(releasedWriter) {
+				releaseWriter();
+			}
 		} finally {
 			syncLock.writeLock().unlock();
 		}
@@ -814,9 +827,11 @@ public class Index {
 			hasChanges = this.sync.pull();
 			metrics.recordPull(System.nanoTime() - started, true);
 
-			if(startState == IndexState.NEEDS_PULL || readerWithoutCommit) {
+			if(startState == IndexState.NEEDS_PULL || releasedWriter || readerWithoutCommit) {
 				// At start no changes may be pulled but an out of date index
-				// should be treated as having changes
+				// should be treated as having changes. So is an index whose
+				// writer was let go above, as only the reopen below opens the
+				// next one
 				hasChanges = true;
 			}
 		} catch(SyncIncompatibleException e) {
@@ -866,12 +881,13 @@ public class Index {
 			 * A failed pull leaves the local copy as it was, so the index goes
 			 * back to the state it was in rather than staying halfway through a
 			 * pull that nothing will finish. Unless the index was closed while
-			 * the pull ran - a closed instance stays closed.
+			 * the pull ran - a closed instance stays closed - or its writer was
+			 * let go above, as only another pull opens the next one.
 			 */
 			syncLock.writeLock().lock();
 			try {
 				if(state != IndexState.CLOSED) {
-					state = startState;
+					state = releasedWriter ? IndexState.NEEDS_PULL : startState;
 				}
 			} finally {
 				syncLock.writeLock().unlock();
@@ -938,30 +954,12 @@ public class Index {
 			}
 
 			/*
-			 * Opened from the writer that is about to go, and what it says is
-			 * about local state the pulled files replace either way.
-			 */
-			closeMergeReader();
-
-			/*
 			 * The in-memory log belongs to the state the pulled files replace.
 			 * Kept, a node that loses and regains an index would resume from
 			 * it instead of the pulled log file - whoever tracks loads the
 			 * file again through beginChangeTracking.
 			 */
 			this.changeLog = null;
-
-			if(this.writer != null) {
-				/*
-				 * The pulled files are the state to continue from, so anything
-				 * the previous writer had not committed is dropped along with
-				 * it. A writer also holds the lock on the directory, so the
-				 * next one can only be opened once this one is gone.
-				 */
-				this.writer.rollback();
-				this.writer = null;
-				this.snapshots = null;
-			}
 
 			if(isReadOnly()) {
 				/*
@@ -1003,6 +1001,17 @@ public class Index {
 					config.setMergePolicy(mergePolicy);
 				}
 
+				if(sync.hasSyncedCommit()) {
+					/*
+					 * The copy that was synchronized holds a commit, so one has
+					 * to be here. Allowed to create an index where it finds
+					 * none, Lucene would open an empty one and the next push
+					 * would write it over the remote. Append mode reports the
+					 * missing commit as an error instead.
+					 */
+					config.setOpenMode(OpenMode.APPEND);
+				}
+
 				this.writer = new IndexWriter(directory, config);
 				this.reader = DirectoryReader.open(writer);
 				this.readerWithoutCommit = false;
@@ -1034,6 +1043,47 @@ public class Index {
 		} finally {
 			syncLock.writeLock().unlock();
 		}
+	}
+
+	/**
+	 * Let the Lucene writer go, dropping whatever it has not committed. Called
+	 * before a pull downloads into the directory the writer holds, so that the
+	 * files it brings survive.
+	 *
+	 * <p>A rollback restores the directory to the last commit the writer made.
+	 * It deletes every {@code segments} file and segment file the commit does
+	 * not name, and a pull downloads files with those names. A writer rolled
+	 * back after a pull therefore deletes the copy that was pulled, and leaves
+	 * a directory holding no commit, or one holding files of two writers.
+	 *
+	 * <p>Called while the write lock is held, and only where the state stops
+	 * writes from arriving: the index has no writer until the pull opens the
+	 * next one.
+	 */
+	private void releaseWriter() {
+		/*
+		 * Opened from the writer that is about to go, and what it says is about
+		 * local state the pull replaces either way.
+		 */
+		closeMergeReader();
+
+		try {
+			this.writer.rollback();
+		} catch(IOException | RuntimeException e) {
+			/*
+			 * Lucene closes a writer whose rollback fails, so the directory and
+			 * the lock on it are free either way, and the pull downloads the
+			 * files a half finished rollback removed. Only what the rollback
+			 * may have taken with it is left to report.
+			 */
+			logger.atError()
+				.addKeyValue("index", id)
+				.setCause(e)
+				.log("Could not roll the index writer back before pulling; " + e.getMessage());
+		}
+
+		this.writer = null;
+		this.snapshots = null;
 	}
 
 	/**

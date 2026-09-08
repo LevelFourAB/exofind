@@ -62,6 +62,11 @@ public class IndexesManifestHintTest {
 		}
 
 		@Override
+		public boolean hasSyncedCommit() {
+			return false;
+		}
+
+		@Override
 		public OptionalInt luceneCreatedMajor() {
 			return OptionalInt.empty();
 		}

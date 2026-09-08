@@ -26,6 +26,15 @@ public class NoopSync implements StateSync {
 
 	/**
 	 * Nothing is written to describe the index, so the segments on disk are the
+	 * only record of what a commit is made up of.
+	 */
+	@Override
+	public boolean hasSyncedCommit() {
+		return false;
+	}
+
+	/**
+	 * Nothing is written to describe the index, so the segments on disk are the
 	 * only record of what created them.
 	 */
 	@Override

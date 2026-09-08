@@ -886,6 +886,26 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * A commit is only ever replaced by another commit, so files carrying none
+	 * where the last synchronization carried one describe a local copy that
+	 * lost its Lucene files. Pushing them would leave the remote naming no
+	 * segments and remove the objects holding them, which is not something a
+	 * pull could bring back.
+	 */
+	@Test
+	void testPushRefusesToDropEveryLuceneFile() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 20);
+		push(segment, definition);
+
+		assertThrows(IOException.class, () -> push(definition));
+
+		verifyRemoteManifest(1, segment, definition);
+		verifyRemoteFile(segment);
+		verifyRemoteFile(definition);
+	}
+
+	/**
 	 * Object storage rejecting a request with an error of its own says nothing
 	 * about whether the request can be served, so it is made again before the
 	 * sync gives up on it.

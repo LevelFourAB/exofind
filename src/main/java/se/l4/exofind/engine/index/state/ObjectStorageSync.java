@@ -239,6 +239,22 @@ public class ObjectStorageSync implements StateSync {
 			}
 
 			/*
+			 * A commit is only ever replaced by another commit, so files that
+			 * carry none where the last synchronization carried one describe a
+			 * local copy that lost its commit. Pushing them would replace the
+			 * remote with a manifest naming no segments and remove the objects
+			 * the segments are held in, which no other node could recover the
+			 * index from.
+			 */
+			if(namesCommit(previousManifest) && !namesCommit(manifest)) {
+				throw new IOException(
+					"Refusing to push, the local copy holds no Lucene commit while"
+						+ " the manifest at version " + previousManifest.getVersion()
+						+ " names one"
+				);
+			}
+
+			/*
 			 * Confirm the remote manifest is still the one this push builds on
 			 * before anything is uploaded. The conditional write of the
 			 * manifest is what actually decides the push, but that happens
@@ -487,12 +503,35 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	@Override
+	public boolean hasSyncedCommit() {
+		return namesCommit(lastSyncedManifest);
+	}
+
+	@Override
 	public OptionalInt luceneCreatedMajor() {
 		var manifest = lastSyncedManifest;
 
 		return manifest.hasLuceneCreatedMajor()
 			? OptionalInt.of(manifest.getLuceneCreatedMajor())
 			: OptionalInt.empty();
+	}
+
+	/**
+	 * Whether a manifest names the files of a Lucene commit. A manifest that
+	 * names none describes an index that only carries a definition, which is
+	 * how every index looks before its first commit.
+	 *
+	 * @param manifest
+	 *   manifest to read
+	 * @return
+	 */
+	private static boolean namesCommit(Manifest manifest) {
+		var names = manifest.getFilesList()
+			.stream()
+			.map(ManifestFile::getName)
+			.toArray(String[]::new);
+
+		return SegmentInfos.getLastCommitGeneration(names) >= 0;
 	}
 
 	/**

@@ -49,6 +49,20 @@ public interface StateSync {
 	OptionalLong syncedVersion();
 
 	/**
+	 * Whether the copy this node last synchronized holds a Lucene commit. Read
+	 * from the record of that synchronization and not from the directory, so
+	 * that it says what the directory has to hold. A directory that holds no
+	 * commit under such a record is a local copy that lost files, and opening
+	 * it as an empty index would publish that loss with the next push.
+	 *
+	 * <p>False for an index nothing has been committed to yet, and for an
+	 * implementation that keeps no record of its own.
+	 *
+	 * @return
+	 */
+	boolean hasSyncedCommit();
+
+	/**
 	 * The major Lucene version the index was created with, as the last
 	 * synchronization recorded it.
 	 *
