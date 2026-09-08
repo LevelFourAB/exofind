@@ -1227,6 +1227,10 @@ public class Index {
 	 * @throws IndexReadonlyException
 	 *   if the node stopped holding the index while the commit ran, where the
 	 *   push was the ordinary work of holding it
+	 * @throws IndexOutOfDateException
+	 *   if the local copy holds a commit this instance cannot name, which is
+	 *   what an index opened read-only holds until the reopen that follows a
+	 *   gain opens the writer
 	 * @throws SyncConflictException
 	 *   if the remote was written by another node
 	 * @throws IOException
@@ -1257,6 +1261,19 @@ public class Index {
 			 */
 			if(reason == PushReason.HELD && isReadOnly()) {
 				throw new IndexReadonlyException(id);
+			}
+
+			/*
+			 * A commit is only there to be named while a writer is open, as the
+			 * snapshot policy comes with it. An instance that was opened
+			 * read-only would push the definition alone, and the remote would
+			 * drop every segment the manifest stops naming - so a directory
+			 * holding a commit nothing here can name is left alone for the
+			 * reopen that opens the writer. Asked before the state is moved, so
+			 * that the refusal leaves the index the way it was found.
+			 */
+			if(snapshots == null && directory != null && DirectoryReader.indexExists(directory)) {
+				throw new IndexOutOfDateException(id, state);
 			}
 
 			/*
@@ -1660,6 +1677,8 @@ public class Index {
 	 * @throws IndexDefinitionIncompatibleException
 	 *   if the index holds documents that were not indexed under {@code def}
 	 *   and {@code allowStaleDocuments} is {@code false}
+	 * @throws IndexOutOfDateException
+	 *   if the index cannot be written right now, see {@link #checkModifiable()}
 	 * @throws IOException
 	 */
 	public void updateDefinition(
@@ -1669,23 +1688,15 @@ public class Index {
 	) throws IOException {
 		syncLock.writeLock().lock();
 		try {
-			if(state == IndexState.CLOSED) {
-				throw new IndexClosedException(id);
-			}
-
-			if(isReadOnly()) {
-				throw new IndexReadonlyException(id);
-			}
-
-			if(!state.canModifyContents()) {
-				/*
-				 * Modifying an index that is out of date would result in an
-				 * inconsistent state.
-				 *
-				 * An index should be pulled before being modified.
-				 */
-				throw new IndexOutOfDateException(id, state);
-			}
+			/*
+			 * The definition is pushed with the files of the newest commit, so
+			 * this is a write like any other: it goes through the same rules,
+			 * including the one that refuses an index whose writer the reopen
+			 * after a gain has not opened yet. Without it the push would name
+			 * the definition and no Lucene file, and the remote would keep only
+			 * that.
+			 */
+			checkModifiable();
 
 			if(expectedVersion != null && !expectedVersion.equals(definitionVersion)) {
 				throw new IndexVersionMismatchException(id, expectedVersion, definitionVersion);

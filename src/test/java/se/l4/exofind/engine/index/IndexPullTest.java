@@ -127,6 +127,53 @@ public class IndexPullTest {
 	}
 
 	/**
+	 * A node that gains an index answers for it before the reopen that opens
+	 * the writer has run, so the index is still open the read-only way. A
+	 * definition update arriving in that window has no commit to name, and
+	 * storing it would push a manifest holding the definition alone - which
+	 * takes every segment of the index with it. The update is refused instead,
+	 * for the caller to send again once the reopen is done.
+	 */
+	@Test
+	public void testDefinitionUpdateIsRefusedBeforeTheWriterOfAGainedIndexIsOpen()
+		throws IOException
+	{
+		var sync = new CopyingSync();
+		var path = indexRoot.resolve("gained");
+
+		var index = create("gained", sync);
+		index.addDocument(document("1"));
+		index.commit();
+		index.close(false);
+
+		/*
+		 * Opened while another node holds the index, which is what leaves it
+		 * with a reader over the commit and no writer.
+		 */
+		var nodeState = new NodeState(true);
+		nodeState.updateOwnership(false);
+
+		var reopenedSync = new CopyingSync();
+		reopenedSync.localPath = path;
+
+		var reopened = new Index(nodeState, "gained", path, reopenedSync);
+		indexes.add(reopened);
+		reopened.pull();
+
+		assertThat(reopened.getState(), is(IndexState.USABLE));
+
+		// The index is gained, and the reopen has not run yet
+		nodeState.updateOwnership(true);
+
+		assertThrows(
+			IndexOutOfDateException.class,
+			() -> reopened.updateDefinition(IndexDef.getDefaultInstance())
+		);
+
+		assertThat(reopenedSync.pushed, is(nullValue()));
+	}
+
+	/**
 	 * Node state as it looks on a node that has been granted the indexer role.
 	 */
 	private static NodeState nodeState() {
@@ -193,6 +240,11 @@ public class IndexPullTest {
 		 */
 		Path localPath;
 
+		/**
+		 * Files of the newest push, or {@code null} where nothing was pushed.
+		 */
+		Set<String> pushed;
+
 		@Override
 		public boolean pull() throws IOException {
 			if(download == null || localPath == null) {
@@ -237,6 +289,8 @@ public class IndexPullTest {
 			if(refusePush) {
 				throw new SyncConflictException("simulated conflict");
 			}
+
+			pushed = files;
 		}
 
 		@Override
