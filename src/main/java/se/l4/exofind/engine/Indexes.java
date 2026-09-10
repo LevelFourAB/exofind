@@ -1716,6 +1716,35 @@ public class Indexes implements RegistryPoller.Listener {
 	}
 
 	/**
+	 * Remove remote objects that no manifest names anymore, for every open
+	 * generation this node writes. A generation that is written is swept by
+	 * its pushes; this pass reaches the ones that receive no writes.
+	 *
+	 * <p>Sweeps only generations that are open. A held index that nothing
+	 * opened has no manifest in memory, and opening it costs a writer and a
+	 * pull, so its remote is left for the next time it opens.
+	 *
+	 * <p>Blocks on the remote, once per generation whose sweep is due. A
+	 * generation that fails is logged and stepped over.
+	 */
+	public void sweepRemoteOrphans() {
+		for(var index : indexes.asMap().values()) {
+			if(!nodeState.isIndexer(IndexName.parse(index.getId()).index())) {
+				continue;
+			}
+
+			try {
+				index.sweepRemote();
+			} catch(IOException | RuntimeException e) {
+				logger.atLevel(Interruptions.levelOf(e))
+					.addKeyValue("index", index.getId())
+					.setCause(e)
+					.log("Could not sweep the remote objects of the index; " + e.getMessage());
+			}
+		}
+	}
+
+	/**
 	 * Give a directory without a usage record one saying it was last used
 	 * now, which starts its idle period.
 	 */

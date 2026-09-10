@@ -1600,6 +1600,70 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * An index that receives no writes never pushes, so a timer asks it to
+	 * sweep instead. The sweep removes an old orphan with the manifest the
+	 * last push left, and leaves what that manifest names.
+	 */
+	@Test
+	void testSweepWithoutAPushRemovesOrphanedObjects() throws Exception {
+		var sweeping = newSync(s3Client, localPath, Duration.ofSeconds(-30));
+		var segment = createLocalFile("segments_1", 10);
+		push(sweeping, segment);
+
+		var orphan = createRemoteFile("e7/segments_9", 20);
+
+		sweeping.sweep();
+
+		verifyRemoteFileMissing(orphan);
+		verifyRemoteFile(segment);
+	}
+
+	/**
+	 * A node that lost the index holds a manifest the remote has moved past,
+	 * and an object it stopped naming may be named again by its successor.
+	 * The sweep compares the remote manifest with the one it synchronized
+	 * and removes nothing when the remote was replaced.
+	 */
+	@Test
+	void testSweepRemovesNothingWhenTheRemoteManifestWasReplaced() throws Exception {
+		var stale = newSync(s3Client, localPath, Duration.ofSeconds(-30));
+		var segment = createLocalFile("segments_1", 10);
+		push(stale, segment);
+
+		var successor = newSync(s3Client, otherLocalPath, Duration.ofHours(1));
+		successor.pull();
+		var next = createLocalFile(otherLocalPath, "segments_2", 12);
+		push(successor, segment, next);
+
+		var orphan = createRemoteFile("e7/segments_9", 20);
+
+		stale.sweep();
+
+		verifyRemoteFile(orphan);
+		verifyRemoteFile(next);
+	}
+
+	/**
+	 * An instance that has not synchronized with the remote since it was
+	 * created knows only what its disk says, which may be behind the remote.
+	 * The sweep asks for nothing and removes nothing.
+	 */
+	@Test
+	void testSweepBeforeAnySynchronizationRemovesNothing() throws Exception {
+		var orphan = createRemoteFile("e7/segments_9", 20);
+
+		var countingClient = Mockito.spy(s3Client);
+		var fresh = newSync(countingClient, localPath, Duration.ofSeconds(-30));
+
+		fresh.sweep();
+
+		// The remote holds no manifest, so the object is looked up by its key
+		verifyRemoteObject(orphan.name());
+		Mockito.verify(countingClient, Mockito.never())
+			.listObjectsV2Paginator(ArgumentMatchers.<Consumer<ListObjectsV2Request.Builder>>any());
+	}
+
+	/**
 	 * The sweep lists the whole index, and a node that comes back holding
 	 * hundreds of them would list every one on its first push. A new instance
 	 * counts its last sweep as having run somewhere inside the grace period,

@@ -1305,6 +1305,28 @@ public class Index {
 	}
 
 	/**
+	 * Remove remote objects that no manifest names anymore, for a generation
+	 * that receives no writes and so never pushes.
+	 *
+	 * <p>Does nothing unless this instance holds the write claim that its
+	 * writer opened under, see {@link #revokeWriting()}. A generation opened
+	 * read-only, or one whose claim was taken away, may hold a manifest the
+	 * remote has moved past.
+	 *
+	 * <p>Blocks on the remote, see {@link StateSync#sweep()}.
+	 *
+	 * @throws IOException
+	 *   if the remote could not be asked whether the sweep may run
+	 */
+	public void sweepRemote() throws IOException {
+		if(!mayPush) {
+			return;
+		}
+
+		sync.sweep();
+	}
+
+	/**
 	 * Why a push is being made, which is what decides whether the node having
 	 * stopped holding the index stops it.
 	 */

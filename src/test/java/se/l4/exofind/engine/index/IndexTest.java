@@ -685,6 +685,32 @@ public class IndexTest {
 	}
 
 	/**
+	 * A timer asks an index to sweep its remote. Only an instance that holds
+	 * the write claim passes the request on: one opened read-only, or one
+	 * whose claim was taken away, may hold a manifest the remote moved past.
+	 */
+	@Test
+	public void testSweepRemoteReachesTheSyncOnlyWhileTheIndexIsWritten() throws IOException {
+		var readerPath = indexRoot.resolve("reader");
+		Files.createDirectories(readerPath);
+		var readerSync = new RecordingSync();
+		var reader = new Index(nodeState(false), "reader", readerPath, readerSync);
+		indexes.add(reader);
+		reader.pull();
+		reader.sweepRemote();
+		assertThat(readerSync.sweeps, is(0));
+
+		var writerSync = new RecordingSync();
+		var writer = create("writer", nodeState(true), writerSync, IndexDef.newBuilder());
+		writer.sweepRemote();
+		assertThat(writerSync.sweeps, is(1));
+
+		writer.revokeWriting();
+		writer.sweepRemote();
+		assertThat(writerSync.sweeps, is(1));
+	}
+
+	/**
 	 * The definition a handover test writes: one boolean field, enough for a
 	 * document to be indexed and counted.
 	 */
@@ -1111,11 +1137,18 @@ public class IndexTest {
 	 */
 	private static class RecordingSync extends NoopSync {
 		int pushes;
+		int sweeps;
 
 		@Override
 		public void push(Set<String> files) throws IOException {
 			pushes++;
 			super.push(files);
+		}
+
+		@Override
+		public void sweep() throws IOException {
+			sweeps++;
+			super.sweep();
 		}
 	}
 

@@ -50,6 +50,29 @@ public interface StateSync {
 	void claimWriter() throws IOException;
 
 	/**
+	 * Remove objects under the index that no manifest names anymore, for a
+	 * caller that holds the write claim on the index.
+	 *
+	 * <p>Call this from a timer for an index that receives no writes. A push
+	 * runs the same sweep, so an index that is written needs no call. The
+	 * sweep runs at most once per grace period whatever the caller does, and
+	 * it removes only objects older than that period. A call that finds the
+	 * remote changed since this node last synchronized removes nothing.
+	 *
+	 * <p>Blocks on the remote: one metadata request on every call that is due
+	 * and a listing of the whole index when the sweep runs. Failures during
+	 * the listing and the removals are logged and left for a later call.
+	 *
+	 * <p>The default does nothing, for an implementation that shares nothing
+	 * with other nodes.
+	 *
+	 * @throws IOException
+	 *   if the remote could not be asked whether the sweep is safe to run
+	 */
+	default void sweep() throws IOException {
+	}
+
+	/**
 	 * Pull the latest changes from the remote.
 	 *
 	 * @throws SyncIncompatibleException

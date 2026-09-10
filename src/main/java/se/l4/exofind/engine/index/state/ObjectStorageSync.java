@@ -1090,12 +1090,69 @@ public class ObjectStorageSync implements StateSync {
 	 * push, and nothing younger than the grace period may be removed anyway.
 	 */
 	private void maybeSweepRemote(Manifest manifest) {
-		if(System.nanoTime() - lastSweepNanos < grace.toNanos()) {
+		if(!isSweepDue()) {
 			return;
 		}
 
 		lastSweepNanos = System.nanoTime();
 		sweepRemoteOrphans(manifest);
+	}
+
+	/**
+	 * Whether a grace period has passed since the sweep last ran. Listing
+	 * the whole index more often removes nothing more: an object has to be
+	 * older than the grace period before the sweep may touch it.
+	 */
+	private boolean isSweepDue() {
+		return System.nanoTime() - lastSweepNanos >= grace.toNanos();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>Waits for a push in progress on this instance to finish first.
+	 */
+	@Override
+	public void sweep() throws IOException {
+		lock.lock();
+		try {
+			if(!isSweepDue()) {
+				return;
+			}
+
+			/*
+			 * No tag means the remote has not been seen since this instance
+			 * was created, or holds no manifest. The manifest on disk may be
+			 * behind the remote, so it says nothing about what is unreferenced.
+			 */
+			if(lastSyncedManifestETag == null) {
+				return;
+			}
+
+			/*
+			 * A push sweeps right after its conditional manifest write, so it
+			 * sweeps with the manifest the remote holds. Nothing gives a timer
+			 * that guarantee. If the node lost the index, the successor may
+			 * name again a checksum-keyed object this node stopped naming. That
+			 * object is old and unnamed here, so a sweep with the stale
+			 * manifest would remove it. A successor replaces the manifest when
+			 * it claims the index, so a changed tag catches a loss this node
+			 * has not learned of yet.
+			 */
+			var etag = statManifestETag();
+			if(!lastSyncedManifestETag.equals(etag)) {
+				logger.atDebug()
+					.addKeyValue("index", index)
+					.log("Remote manifest was replaced since it was synchronized, skipping the sweep");
+
+				return;
+			}
+
+			lastSweepNanos = System.nanoTime();
+			sweepRemoteOrphans(lastSyncedManifest);
+		} finally {
+			lock.unlock();
+		}
 	}
 
 	/**

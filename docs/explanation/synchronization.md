@@ -70,7 +70,13 @@ Commit triggers determine when the push that records obsolete objects runs:
 - `EXOFIND_INDEXES_COMMIT_MAX_CHANGES` triggers a commit after reaching a change threshold (default 10,000 changes).
 - `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` triggers a commit after a time threshold (default 5 seconds).
 
-Under a normal write load, the writer deletes obsolete objects at the first push after the grace period, so the bucket holds about an hour of merged segments beside the index. When writes stop, such as when an index becomes read-only, a node loses the writer role, or the node stops, no further pushes occur. The writer runs the hourly orphan sweep only at the end of a push, so an index that no node writes is never swept and unreferenced objects remain in the bucket.
+Under a normal write load, the writer deletes obsolete objects at the first push after the grace period, so the bucket holds about an hour of merged segments beside the index. When writes stop, no further pushes occur. Every node that can index therefore also runs the orphan sweep on a timer.
+
+The timer ticks every `EXOFIND_INDEXES_REMOVAL_SWEEP_INTERVAL` (default: `10m`), the same interval the removal sweep uses. On every tick the node asks each open generation it writes to sweep. A generation lists its objects at most once per grace period, whether a push or the timer asks, and a new instance seeds its last sweep at a random point inside the grace period, so a node that opens many generations does not list all of them at once.
+
+A push sweeps right after its conditional manifest write, so it sweeps with the manifest the remote holds. A timer sweep has no such guarantee: the node may have lost the index without knowing it yet, and its successor may name again a checksum-keyed object this node stopped naming. A timer sweep therefore reads the entity tag of the remote manifest first and removes nothing when the tag differs from the one the node last synchronized. A successor replaces the manifest when it claims the index, so a changed tag also catches a claim the node has not learned of.
+
+As a known limit, only open generations are swept. A held index that nothing has opened has no manifest in memory, and opening it costs a writer and a pull, so its remote is left until it opens again.
 
 A push uploads all new files before writing the manifest conditionally. If a push stops halfway and uploads only some of its files, readers remain unharmed because they continue following the previous manifest. The unreferenced uploads sit harmlessly in the bucket until a later sweep removes them after the one-hour grace period. In contrast, publishing a manifest that names a missing object would break readers by causing their pulls to fail. To prevent missing objects, a push uploads all required files before updating the manifest, checks the remote baseline by entity tag before uploading, and treats a missing remote manifest as empty so all files are uploaded again.
 
