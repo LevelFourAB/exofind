@@ -44,6 +44,8 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
+import se.l4.exofind.engine.storage.ObjectStorage;
+
 /**
  * ObjectStorageSync is a {@link StateSync} implementation that synchronizes
  * the state of a directory with an S3 compatible object storage.
@@ -1527,8 +1529,8 @@ public class ObjectStorageSync implements StateSync {
 	 * @param reader
 	 *   reads the value from the response, called again for every attempt
 	 * @return
-	 *   the value, or {@code null} if the object does not exist or is unchanged
-	 *   according to the tag it was requested with
+	 *   the value, or {@code null} if the object does not exist or is still
+	 *   at the version the request named
 	 * @throws IOException
 	 *   if the object could not be fetched
 	 */
@@ -1544,14 +1546,24 @@ public class ObjectStorageSync implements StateSync {
 				return reader.read(response);
 			} catch(S3Exception e) {
 				if(e.statusCode() == 304) {
-					// 304 Not Modified indicates that we have the latest version
-					logger.atDebug()
-						.addKeyValue("index", index)
-						.addKeyValue("bucket", request.bucket())
-						.addKeyValue("object", request.key())
-						.log("File is up to date according to ETag");
+					if(ObjectStorage.isUnchanged(e, request.ifNoneMatch())) {
+						logger.atDebug()
+							.addKeyValue("index", index)
+							.addKeyValue("bucket", request.bucket())
+							.addKeyValue("object", request.key())
+							.log("File is up to date according to ETag");
 
-					return null;
+						return null;
+					}
+
+					/*
+					 * Same bytes under another version. A push on the
+					 * version this node holds would be refused, so fetch the
+					 * one the storage holds.
+					 */
+					try(var response = client.getObject(request.toBuilder().ifNoneMatch(null).build())) {
+						return reader.read(response);
+					}
 				}
 
 				if(e.statusCode() == 404) {

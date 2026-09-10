@@ -75,7 +75,15 @@ public class ObjectStorageSearchSettingsStorage implements SearchSettingsStorage
 			);
 		} catch(S3Exception e) {
 			if(e.statusCode() == 304) {
-				return new Read.Unchanged();
+				if(ObjectStorage.isUnchanged(e, knownVersion)) {
+					return new Read.Unchanged();
+				}
+
+				/*
+				 * Same bytes under another version. The known version would
+				 * refuse every write, so fetch the one the storage holds.
+				 */
+				return read(index, null);
 			}
 
 			if(e.statusCode() == 404) {

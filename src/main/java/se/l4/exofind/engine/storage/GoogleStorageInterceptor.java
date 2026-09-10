@@ -9,6 +9,7 @@ import software.amazon.awssdk.core.interceptor.Context;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.http.SdkHttpRequest;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -28,6 +29,13 @@ import software.amazon.awssdk.services.s3.model.PutObjectResponse;
  * the ETag part, so a poll of an unchanged object is still answered
  * {@code 304} and carries no body. A write states the generation part. No
  * caller reads either part.
+ *
+ * <p>The ETag alone does not name a version. A rewrite of an object to the
+ * same bytes keeps the ETag and takes a new generation, and a poll after it
+ * is answered {@code 304} although every write on the old generation is now
+ * refused. The {@code ETag} header of a {@code 304} is therefore rewritten to
+ * the full version as well, and {@link ObjectStorage#isUnchanged} lets a read
+ * treat the answer as unchanged only when that version is the one it named.
  *
  * <p>{@link ObjectStorage} registers this when the endpoint is Google Cloud
  * Storage, see {@link #isGoogleStorage}. A deployment that reaches the same
@@ -57,6 +65,13 @@ public class GoogleStorageInterceptor implements ExecutionInterceptor {
 
 	private static final String IF_MATCH = "If-Match";
 	private static final String IF_NONE_MATCH = "If-None-Match";
+	private static final String ETAG = "ETag";
+
+	/**
+	 * Status a read is answered with when the object still carries the ETag
+	 * the read named.
+	 */
+	private static final int NOT_MODIFIED = 304;
 
 	/**
 	 * Value {@code If-None-Match} carries on a write that demands the object
@@ -116,6 +131,43 @@ public class GoogleStorageInterceptor implements ExecutionInterceptor {
 			case GET, HEAD -> translateRead(request);
 			default -> request;
 		};
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>A {@code 304} becomes an exception instead of a response, so its
+	 * version is put together here, in the {@code ETag} header the exception
+	 * keeps. A {@code 304} without a generation keeps the ETag alone, which
+	 * names no version a read holds, so the read fetches the object again
+	 * rather than keep a generation that may be gone.
+	 */
+	@Override
+	public SdkHttpResponse modifyHttpResponse(
+		Context.ModifyHttpResponse context,
+		ExecutionAttributes attributes
+	) {
+		var response = context.httpResponse();
+		if(response.statusCode() != NOT_MODIFIED) {
+			return response;
+		}
+
+		var etag = response.firstMatchingHeader(ETAG);
+		var generation = response.firstMatchingHeader(GENERATION);
+		if(etag.isEmpty() || generation.isEmpty()) {
+			return response;
+		}
+
+		var builder = response.toBuilder();
+		for(var name : response.headers().keySet()) {
+			if(name.equalsIgnoreCase(ETAG)) {
+				builder.removeHeader(name);
+			}
+		}
+
+		return builder
+			.putHeader(ETAG, version(etag.get(), generation.get()))
+			.build();
 	}
 
 	/**

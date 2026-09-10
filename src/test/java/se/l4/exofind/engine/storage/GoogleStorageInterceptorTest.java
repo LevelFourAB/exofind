@@ -124,6 +124,68 @@ public class GoogleStorageInterceptorTest {
 	}
 
 	/**
+	 * A {@code 304} names the version the object is at, so a read can tell
+	 * an object at its version from one rewritten to the same bytes under a
+	 * new generation.
+	 */
+	@Test
+	void testVersionOfANotModifiedAnswer() {
+		var response = interceptor.modifyHttpResponse(
+			notModified(SdkHttpResponse.builder()
+				.statusCode(304)
+				.putHeader("ETag", "\"d41d8cd98f00b204\"")
+				.putHeader(GENERATION, "1712345678901234")),
+			new ExecutionAttributes()
+		);
+
+		assertThat(
+			response.firstMatchingHeader("ETag"),
+			is(Optional.of("\"d41d8cd98f00b204@1712345678901234\""))
+		);
+	}
+
+	/**
+	 * A {@code 304} without a generation keeps the ETag alone. That names no
+	 * version a read holds, so the read fetches the object rather than keep
+	 * a generation that may be gone.
+	 */
+	@Test
+	void testNotModifiedWithoutGenerationKeepsTheETag() {
+		var response = interceptor.modifyHttpResponse(
+			notModified(SdkHttpResponse.builder()
+				.statusCode(304)
+				.putHeader("ETag", "\"d41d8cd98f00b204\"")),
+			new ExecutionAttributes()
+		);
+
+		assertThat(
+			response.firstMatchingHeader("ETag"),
+			is(Optional.of("\"d41d8cd98f00b204\""))
+		);
+	}
+
+	/**
+	 * An answer with a body is left to {@link
+	 * GoogleStorageInterceptor#modifyResponse}, so its version is put
+	 * together once.
+	 */
+	@Test
+	void testAnswerWithBodyKeepsItsHeaders() {
+		var response = interceptor.modifyHttpResponse(
+			notModified(SdkHttpResponse.builder()
+				.statusCode(200)
+				.putHeader("ETag", "\"d41d8cd98f00b204\"")
+				.putHeader(GENERATION, "1712345678901234")),
+			new ExecutionAttributes()
+		);
+
+		assertThat(
+			response.firstMatchingHeader("ETag"),
+			is(Optional.of("\"d41d8cd98f00b204\""))
+		);
+	}
+
+	/**
 	 * The version of what a write left carries the new generation, which the
 	 * next write of the same object states.
 	 */
@@ -214,6 +276,13 @@ public class GoogleStorageInterceptorTest {
 		return SdkHttpRequest.builder()
 			.method(SdkHttpMethod.GET)
 			.uri(URI.create("https://storage.googleapis.com/bucket/key"));
+	}
+
+	private static InterceptorContext notModified(SdkHttpResponse.Builder httpResponse) {
+		return InterceptorContext.builder()
+			.request(GetObjectRequest.builder().bucket("bucket").key("key").build())
+			.httpResponse(httpResponse.build())
+			.build();
 	}
 
 	private static InterceptorContext written(SdkHttpResponse.Builder httpResponse) {

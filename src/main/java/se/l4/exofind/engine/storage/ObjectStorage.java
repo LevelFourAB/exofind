@@ -297,6 +297,52 @@ public class ObjectStorage {
 	}
 
 	/**
+	 * Whether a refused read says the object is still at the version the
+	 * read named. True for a {@code 304 Not Modified} whose {@code ETag}
+	 * header equals the version, or that carries no {@code ETag} at all.
+	 *
+	 * <p>The status alone is not enough. A storage compares the ETag on a
+	 * read, and on Google Cloud Storage the ETag is only part of the version:
+	 * a rewrite of the object to the same bytes keeps the ETag and moves the
+	 * generation, so a poll is still answered {@code 304} while every write
+	 * on the old version is refused. The {@code ETag} of the answer carries
+	 * the full version, see {@link GoogleStorageInterceptor}, and a caller
+	 * whose version differs from it reads the object again without a
+	 * condition.
+	 *
+	 * @param e
+	 * @param knownVersion
+	 *   version the read named in its {@code If-None-Match} header
+	 * @return
+	 */
+	public static boolean isUnchanged(S3Exception e, String knownVersion) {
+		if(e.statusCode() != 304) {
+			return false;
+		}
+
+		var details = e.awsErrorDetails();
+		if(details == null || details.sdkHttpResponse() == null) {
+			return true;
+		}
+
+		var etag = details.sdkHttpResponse().firstMatchingHeader("ETag");
+		return etag.isEmpty() || unquote(etag.get()).equals(unquote(knownVersion));
+	}
+
+	private static String unquote(String etag) {
+		if(etag == null) {
+			return "";
+		}
+
+		var trimmed = etag.trim();
+		if(trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+			return trimmed.substring(1, trimmed.length() - 1);
+		}
+
+		return trimmed;
+	}
+
+	/**
 	 * Check that the storage enforces conditional writes. A storage that
 	 * predates them ignores the condition instead of refusing the request, so
 	 * the only way to know is to write against conditions that do not hold and

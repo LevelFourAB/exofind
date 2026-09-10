@@ -32,7 +32,7 @@ and every object a node polls is read with one:
 | --- | --- | --- |
 | `If-None-Match: *` | `PutObject` | The write succeeds only when no object exists at the key. Otherwise the storage answers `412 Precondition Failed`. |
 | `If-Match: <entity tag>` | `PutObject` | The write succeeds only when the entity tag of the current object equals the given one. Otherwise the storage answers `412 Precondition Failed`. |
-| `If-None-Match: <entity tag>` | `GetObject` | The storage answers `304 Not Modified` without a body when the entity tag is unchanged. |
+| `If-None-Match: <entity tag>` | `GetObject` | The storage answers `304 Not Modified` without a body when the entity tag is unchanged. The node takes the object as unchanged when the `ETag` header of the answer equals the tag it named, or when the answer carries no `ETag`. |
 
 A storage can answer `409 Conflict` to a conditional write it could not
 decide, because another write to the same key was in progress. The node treats
@@ -103,6 +103,14 @@ write states the generation part in `x-goog-if-generation-match`. If a write is
 answered without an `x-goog-generation` header, the node fails with an error
 naming `x-goog-generation`, because the version of the written object is
 unknown and every later write of it would be refused.
+
+A rewrite of an object to the same bytes keeps its entity tag and moves its
+generation, so a poll after it is answered `304 Not Modified` while a write on
+the old generation is refused. The node takes a `304` as unchanged only when
+the `ETag` and `x-goog-generation` headers of the answer name the version it
+holds. Otherwise it reads the object again without a condition and holds the
+version that read answers. A `304` without an `x-goog-generation` header is
+read again the same way.
 
 A tag that names no generation is sent as generation `1`, which no object
 carries, so the write is refused. A client that invents a value for an

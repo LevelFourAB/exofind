@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.registry;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -8,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +20,12 @@ import org.mockito.Mockito;
 import se.l4.exofind.engine.index.state.TestObjectStorage;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.SdkHttpResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
@@ -137,6 +144,76 @@ public class ObjectStorageRegistryStorageTest {
 
 		assertThat(version, is(nullValue()));
 		assertThat(currentIndexes(), is(registryOf("books", "records")));
+	}
+
+	/**
+	 * A poll on the version the node holds is answered without a body, and
+	 * the node keeps what it has.
+	 */
+	@Test
+	void testReadOnCurrentVersionIsUnchanged() throws IOException {
+		var version = registryStorage.write(registryOf("books"), null);
+
+		assertThat(
+			registryStorage.read(version),
+			is(instanceOf(RegistryStorage.Read.Unchanged.class))
+		);
+	}
+
+	/**
+	 * A storage that names versions by more than the entity tag can answer a
+	 * poll {@code 304} while the object has moved to a version it refuses the
+	 * one the node holds against. Google Cloud Storage does so after a
+	 * rewrite to the same bytes. The registry is then read again, so the node
+	 * ends up holding the version the storage does instead of one it can not
+	 * write on.
+	 */
+	@Test
+	void testReadAnsweredWithAnotherVersionIsReadAgain() throws IOException {
+		var reads = new AtomicInteger();
+		var storage = new ObjectStorage(
+			Optional.of(TestObjectStorage.url()),
+			TestObjectStorage.auth(),
+			Optional.empty(),
+			TestObjectStorage.BUCKET,
+			Optional.of("test" + RandomStringUtils.insecure().nextAlphabetic(10)),
+			false,
+			new ExecutionInterceptor() {
+				@Override
+				public SdkHttpResponse modifyHttpResponse(
+					Context.ModifyHttpResponse context,
+					ExecutionAttributes attributes
+				) {
+					if(context.request() instanceof GetObjectRequest) {
+						reads.incrementAndGet();
+					}
+
+					var response = context.httpResponse();
+					if(response.statusCode() != 304) {
+						return response;
+					}
+
+					// The same bytes, at a version the node has not seen
+					var etag = response.firstMatchingHeader("ETag").orElseThrow();
+					return response.toBuilder()
+						.removeHeader("ETag")
+						.putHeader("ETag", etag.replaceAll("\"$", "@2\""))
+						.build();
+				}
+			}
+		);
+		var registryStorage = new ObjectStorageRegistryStorage(storage);
+
+		var wanted = registryOf("books");
+		var version = registryStorage.write(wanted, null);
+		reads.set(0);
+
+		var read = registryStorage.read(version);
+
+		assertThat(read, is(instanceOf(RegistryStorage.Read.Loaded.class)));
+		assertThat(((RegistryStorage.Read.Loaded) read).indexes(), is(wanted));
+		assertThat(((RegistryStorage.Read.Loaded) read).version(), is(version));
+		assertThat(reads.get(), is(2));
 	}
 
 	private String currentVersion() throws IOException {
