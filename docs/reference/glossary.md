@@ -186,8 +186,9 @@ from object storage to its local disk. See
 ## Push
 
 An operation where a writer node uploads new index files to storage,
-conditionally updates the remote manifest, and deletes unreferenced obsolete
-objects. See [Synchronization](../explanation/synchronization.md).
+conditionally updates the remote manifest, and deletes the obsolete objects
+that an earlier manifest stopped naming more than a grace period ago. See
+[Synchronization](../explanation/synchronization.md).
 
 ## Refresh interval
 

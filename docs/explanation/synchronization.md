@@ -53,18 +53,24 @@ Epochs keep the uploads of two sessions apart, but not two uploads of one sessio
 
 Unchanged files retain their keys across epochs, and the manifest records each key alongside its corresponding file name. This mapping avoids re-uploading files that a previous indexer already pushed, making failovers efficient. After adopting a pulled manifest, a session claims a new epoch because the adopted manifest can reference keys from the epoch where it originated.
 
-When pushing an update, the system diffs the old and new manifests to identify and delete unreferenced objects. If this cleanup is interrupted, a periodic listing sweep removes any remaining unreferenced objects. The sweep only processes objects older than a grace period to avoid racing against uploads that are not yet recorded in a manifest.
+When a push replaces the manifest, the writer records the objects the new manifest no longer names. The writer deletes them at the first push after a one-hour grace period. This delay exists because a reader that pulled the old manifest can still be downloading an object, and a missing object fails its whole pull. A first pull of a large index takes longer than the commit interval, so a writer that deleted at once could fail every attempt while merges run.
+
+A periodic listing sweep removes unreferenced objects that a push did not clean up. The sweep skips objects younger than the grace period. The sweep also skips objects the writer stopped naming less than a grace period ago, regardless of upload age.
+
+The recorded list lives in memory, so a writer that stops loses it. The sweep of the next writer measures the age of those objects from their upload. A writer restart during a long pull therefore lets that sweep remove an object the reader is still downloading.
+
+A failed pull keeps the files it verified. The retry compares size and checksum against the manifest and downloads only what is missing or differs. The pull always downloads an entry without a checksum, because a file with the same name and size that a writer on the node left behind would otherwise pass.
 
 ## How merged files leave the bucket
 
-When Lucene merges small segments into larger ones, the files of the merged segments stop belonging to the index once a commit includes the merged segment. Nothing is deleted from the bucket when the merge finishes. Instead, the push following the next commit deletes the objects that the new manifest stopped naming.
+When Lucene merges small segments into larger ones, a commit includes the merged segment and drops the old segment files from the index. The merge deletes nothing from the bucket directly. The push following the commit records the objects the new manifest no longer names, and the writer deletes them at the first push after a one-hour grace period.
 
-The commit triggers determine how long obsolete objects remain in the bucket:
+Commit triggers determine when the push that records obsolete objects runs:
 
 - `EXOFIND_INDEXES_COMMIT_MAX_CHANGES` triggers a commit after reaching a change threshold (default 10,000 changes).
 - `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` triggers a commit after a time threshold (default 5 seconds).
 
-Under a normal write load, obsolete objects are deleted within seconds of the merge. However, if writes stop—such as when an index becomes read-only, the node loses the writer role, or the node stops—no further pushes occur. Because the hourly sweep for orphans only runs at the end of a push, an index that no node writes is never swept, and unreferenced objects remain in the bucket.
+Under a normal write load, the writer deletes obsolete objects at the first push after the grace period, so the bucket holds about an hour of merged segments beside the index. When writes stop, such as when an index becomes read-only, a node loses the writer role, or the node stops, no further pushes occur. The writer runs the hourly orphan sweep only at the end of a push, so an index that no node writes is never swept and unreferenced objects remain in the bucket.
 
 A push uploads all new files before writing the manifest conditionally. If a push stops halfway and uploads only some of its files, readers remain unharmed because they continue following the previous manifest. The unreferenced uploads sit harmlessly in the bucket until a later sweep removes them after the one-hour grace period. In contrast, publishing a manifest that names a missing object would break readers by causing their pulls to fail. To prevent missing objects, a push uploads all required files before updating the manifest, checks the remote baseline by entity tag before uploading, and treats a missing remote manifest as empty so all files are uploaded again.
 

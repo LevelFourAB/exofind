@@ -104,16 +104,16 @@ public class ObjectStorageSyncTest {
 
 	/**
 	 * Create a sync instance with a grace period of its own, for exercising
-	 * the sweep without waiting out the default.
+	 * the sweep and the delayed deletes without waiting out the default.
 	 */
-	private ObjectStorageSync newSync(S3Client client, Path path, Duration orphanGrace) {
+	private ObjectStorageSync newSync(S3Client client, Path path, Duration grace) {
 		return new ObjectStorageSync(
 			client,
 			"test",
 			path,
 			TestObjectStorage.BUCKET,
 			bucketPrefix,
-			orphanGrace
+			grace
 		);
 	}
 
@@ -873,25 +873,152 @@ public class ObjectStorageSyncTest {
 	 * cost storage without being of use to anyone. The push that stops
 	 * referencing them is what removes them.
 	 */
+	/**
+	 * An object the manifest stops naming stays in the bucket for the grace
+	 * period, since a reader that pulled the previous manifest may still be
+	 * downloading it. The push after the period has passed removes it.
+	 *
+	 * <p>The first push is old enough for the sweep to run at the second one
+	 * and to find the object older than the grace period by its upload. The
+	 * sweep has to leave it alone as well, or the hold does nothing for a
+	 * merge of segments uploaded long ago.
+	 */
 	@Test
-	void testPushRemovesRemoteFilesOutsideOfTheManifest() throws Exception {
+	void testPushRemovesRemoteFilesOutsideOfTheManifestAfterTheGracePeriod()
+		throws Exception
+	{
+		var grace = Duration.ofSeconds(1);
+		var writer = newSync(s3Client, localPath, grace);
+
 		var segment1 = createLocalFile("segments_1", 10);
 		var d1 = createLocalFile("data", 100);
-		push(segment1, d1);
+		push(writer, segment1, d1);
 
-		verifyRemoteFile(d1);
+		var d1Key = remoteKeyOf(d1.name);
+		verifyRemoteObject(d1Key);
+
+		Thread.sleep(grace.plusMillis(200).toMillis());
 
 		// The data of the first segment is replaced by the data of the second
 		Files.delete(localPath.resolve(d1.name));
 		var segment2 = createLocalFile("segments_2", 10);
 		var d2 = createLocalFile("data2", 2048);
-		push(segment1, segment2, d2);
+		push(writer, segment1, segment2, d2);
 
 		verifyRemoteManifest(2, segment1, segment2, d2);
 		verifyRemoteFile(segment1);
 		verifyRemoteFile(segment2);
 		verifyRemoteFile(d2);
-		verifyRemoteFileMissing(d1);
+		verifyRemoteObject(d1Key);
+
+		Thread.sleep(grace.plusMillis(200).toMillis());
+
+		var d3 = createLocalFile("data3", 50);
+		push(writer, segment1, segment2, d2, d3);
+
+		verifyRemoteObjectMissing(d1Key);
+	}
+
+	/**
+	 * A push that stops naming an object while another node is downloading
+	 * it must not fail that download. The pull started against the previous
+	 * manifest and finishes with every file that manifest names.
+	 */
+	@Test
+	void testPushKeepsObjectAReaderIsStillDownloading() throws Exception {
+		var segment1 = createLocalFile("segments_1", 10);
+		var d1 = createLocalFile("data", 100);
+		push(segment1, d1);
+
+		var d1Key = remoteKeyOf(d1.name);
+		var d1Object = bucketPrefix + "/" + d1Key;
+
+		var segment2 = createLocalFile("segments_2", 10);
+		var d2 = createLocalFile("data2", 2048);
+
+		/*
+		 * The reader's download of the data file is where the writer pushes
+		 * a commit that no longer names it.
+		 */
+		var readingClient = Mockito.spy(s3Client);
+		Mockito.doAnswer(invocation -> {
+			push(segment1, segment2, d2);
+			return invocation.callRealMethod();
+		})
+			.when(readingClient)
+			.getObject(ArgumentMatchers.argThat(
+				(GetObjectRequest request) -> request != null && d1Object.equals(request.key())
+			));
+
+		var reader = newSync(readingClient, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+
+		verifyLocalFile(otherLocalPath, segment1);
+		verifyLocalFile(otherLocalPath, d1);
+		verifyRemoteObject(d1Key);
+	}
+
+	/**
+	 * A pull that fails part way leaves the files it verified in place, and
+	 * the next attempt keeps them instead of downloading them again. The
+	 * last synced manifest does not name them, so it is the size and the
+	 * checksum in the manifest being pulled that vouch for them.
+	 */
+	@Test
+	void testPullRetryKeepsVerifiedFiles() throws Exception {
+		var d1 = createLocalFile("data", 100);
+		var segment = createLocalFile("segments_1", 10);
+		var terms = createLocalFile("terms", 30);
+		push(d1, segment, terms);
+
+		var d1Key = bucketPrefix + "/" + remoteKeyOf(d1.name);
+		var segmentKey = bucketPrefix + "/" + remoteKeyOf(segment.name);
+		var termsKey = remoteKeyOf(terms.name);
+
+		// The last file in manifest order is missing, so the first pull fails after the others
+		removeRemoteObject(termsKey);
+
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThrows(IOException.class, () -> reader.pull());
+
+		verifyLocalFile(otherLocalPath, d1);
+		verifyLocalFile(otherLocalPath, segment);
+
+		putRemoteObject(termsKey, Files.readAllBytes(localPath.resolve(terms.name)));
+
+		var countingClient = Mockito.spy(s3Client);
+		var restarted = newSync(countingClient, otherLocalPath);
+		assertThat(restarted.pull(), is(true));
+
+		verifyLocalFile(otherLocalPath, d1);
+		verifyLocalFile(otherLocalPath, segment);
+		verifyLocalFile(otherLocalPath, terms);
+
+		Mockito.verify(countingClient, Mockito.never())
+			.getObject(ArgumentMatchers.argThat(
+				(GetObjectRequest request) -> request != null
+					&& (d1Key.equals(request.key()) || segmentKey.equals(request.key()))
+			));
+	}
+
+	/**
+	 * A local file no manifest vouches for is only kept when its contents
+	 * match, a file of the right name and size with other contents is
+	 * replaced.
+	 */
+	@Test
+	void testPullReplacesUnsyncedLocalFileOfSameSize() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var d1 = createLocalFile("data", 100);
+		push(segment, d1);
+
+		createLocalFile(otherLocalPath, "data", 100);
+
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+
+		verifyLocalFile(otherLocalPath, segment);
+		verifyLocalFile(otherLocalPath, d1);
 	}
 
 	/**
@@ -1175,7 +1302,9 @@ public class ObjectStorageSyncTest {
 		assertThat(secondKey.matches("e1/definition\\.ef\\.bin\\.[0-9a-f]{8}"), is(true));
 
 		verifyRemoteFile(replaced);
-		verifyRemoteObjectMissing(firstKey);
+
+		// The previous contents stay for a reader still pulling the previous manifest
+		verifyRemoteObject(firstKey);
 	}
 
 	/**
@@ -1287,6 +1416,42 @@ public class ObjectStorageSyncTest {
 		} catch(IOException e) {
 			fail("unexpected error: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Verify that the remote holds an object under the given key, whatever
+	 * the remote manifest says about it.
+	 */
+	private void verifyRemoteObject(String key) {
+		try {
+			s3Client.getObject(
+				GetObjectRequest.builder()
+					.bucket(TestObjectStorage.BUCKET)
+					.key(bucketPrefix + "/" + key)
+					.build()
+			).close();
+		} catch(S3Exception e) {
+			if(e.statusCode() == 404) {
+				fail("object " + key + " not found in remote bucket");
+			}
+
+			fail("unexpected error: " + e.getMessage());
+		} catch(IOException e) {
+			fail("unexpected error: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Remove the object under the given key, standing in for a delete the
+	 * manifest knows nothing about.
+	 */
+	private void removeRemoteObject(String key) {
+		s3Client.deleteObject(
+			DeleteObjectRequest.builder()
+				.bucket(TestObjectStorage.BUCKET)
+				.key(bucketPrefix + "/" + key)
+				.build()
+		);
 	}
 
 	/**

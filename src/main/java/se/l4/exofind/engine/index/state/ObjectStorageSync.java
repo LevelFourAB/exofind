@@ -12,8 +12,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -31,6 +33,7 @@ import org.apache.lucene.util.IOUtils;
 
 import se.l4.exofind.engine.index.LuceneCompatibility;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.storage.ObjectStorage;
 
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -43,8 +46,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-
-import se.l4.exofind.engine.storage.ObjectStorage;
 
 /**
  * ObjectStorageSync is a {@link StateSync} implementation that synchronizes
@@ -93,11 +94,14 @@ public class ObjectStorageSync implements StateSync {
 	private static final Duration RETRY_DELAY = Duration.ofMillis(100);
 
 	/**
-	 * How old an unreferenced remote object has to be before the sweep may
-	 * remove it, which doubles as how often the sweep is worth running. A
-	 * younger object may belong to a push that is still underway.
+	 * How long an object stays in the bucket after the manifest stops naming
+	 * it, and how old an object no manifest names has to be before the sweep
+	 * may remove it. Both cover a transfer that is underway: a reader that
+	 * pulled the previous manifest may still be downloading the object, and
+	 * a push may still be about to name it. The period doubles as how often
+	 * the sweep is worth running.
 	 */
-	private static final Duration DEFAULT_ORPHAN_GRACE = Duration.ofHours(1);
+	private static final Duration DEFAULT_GRACE = Duration.ofHours(1);
 
 	/**
 	 * Errors that describe a temporary condition in the object storage, such as
@@ -121,12 +125,21 @@ public class ObjectStorageSync implements StateSync {
 	private final Lock lock;
 
 	/**
-	 * Objects that are no longer referenced by any manifest but that could not
-	 * be removed from the remote yet. Removal is retried on the next push.
+	 * Objects a push of this instance stopped naming, each with the
+	 * {@link System#nanoTime()} of that push. A reader that pulled the
+	 * manifest before it may still be downloading the object, so no path
+	 * that removes objects - the diff after a push or the sweep - may touch
+	 * one until the grace period has passed since that time. A later push
+	 * removes what the period has run out for, and retries what could not
+	 * be removed.
+	 *
+	 * <p>Held in memory only. An instance that stops with entries here leaves
+	 * them for the sweep, which measures the age of an object from its
+	 * upload and may remove it earlier than the hold would have.
 	 */
-	private final Set<String> pendingRemoteDeletes;
+	private final Map<String, Long> pendingRemoteDeletes;
 
-	private final Duration orphanGrace;
+	private final Duration grace;
 
 	/*
 	 * Replaced only while the lock is held, but read without it by
@@ -164,31 +177,40 @@ public class ObjectStorageSync implements StateSync {
 		String remoteBucket,
 		String remotePrefix
 	) {
-		this(client, index, localPath, remoteBucket, remotePrefix, DEFAULT_ORPHAN_GRACE);
+		this(client, index, localPath, remoteBucket, remotePrefix, DEFAULT_GRACE);
 	}
 
+	/**
+	 * Create a sync with a grace period of its own.
+	 *
+	 * @param grace
+	 *   how long an object stays in the bucket after a push stops naming
+	 *   it, and how old an object no manifest names has to be before the
+	 *   sweep removes it. A period that is not positive removes objects as
+	 *   soon as they are found
+	 */
 	public ObjectStorageSync(
 		S3Client client,
 		String index,
 		Path localPath,
 		String remoteBucket,
 		String remotePrefix,
-		Duration orphanGrace
+		Duration grace
 	) {
 		this.client = client;
 		this.index = index;
 		this.localPath = localPath;
 		this.remoteBucket = remoteBucket;
 		this.remotePrefix = remotePrefix;
-		this.orphanGrace = orphanGrace;
+		this.grace = grace;
 
 		this.lock = new ReentrantLock();
-		this.pendingRemoteDeletes = new LinkedHashSet<>();
+		this.pendingRemoteDeletes = new LinkedHashMap<>();
 
 		this.lastSyncedManifest = loadFromDisk();
 		this.lastSyncedManifestETag = null;
 		this.sessionEpoch = -1;
-		this.lastSweepNanos = System.nanoTime() - startingSweepAge(orphanGrace);
+		this.lastSweepNanos = System.nanoTime() - startingSweepAge(grace);
 	}
 
 	/**
@@ -201,14 +223,14 @@ public class ObjectStorageSync implements StateSync {
 	 * lists every one of them at once. Nothing is lost by waiting: a sweep
 	 * may only remove objects older than the grace period.
 	 *
-	 * @param orphanGrace
+	 * @param grace
 	 *   how long an unreferenced object is left alone
 	 * @return
 	 *   the age in nanoseconds, and zero for a grace period that is not
 	 *   positive, where every push sweeps anyway
 	 */
-	private static long startingSweepAge(Duration orphanGrace) {
-		var nanos = orphanGrace.toNanos();
+	private static long startingSweepAge(Duration grace) {
+		var nanos = grace.toNanos();
 		return nanos > 0 ? ThreadLocalRandom.current().nextLong(nanos) : 0;
 	}
 
@@ -501,6 +523,25 @@ public class ObjectStorageSync implements StateSync {
 					isUnchanged(currentFiles.get(file.getName()), file)
 						&& Files.exists(localFile)
 				) {
+					continue;
+				}
+
+				/*
+				 * A file the last synced manifest does not vouch for may still
+				 * be the one wanted: a pull that failed part way left every
+				 * file it had verified in place, and the next attempt is
+				 * spared downloading them again. The file is checked against
+				 * the manifest the way a download is, and is put on the disk
+				 * again since nothing says who wrote it.
+				 */
+				if(holdsOnDisk(file, localFile)) {
+					logger.atDebug()
+						.addKeyValue("index", index)
+						.addKeyValue("file", file.getName())
+						.log("Keeping local file that matches the manifest");
+
+					IOUtils.fsync(localFile, false);
+					renamedInto.add(localFile.getParent());
 					continue;
 				}
 
@@ -977,35 +1018,51 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	/**
-	 * Remove objects that the previous manifest referenced but the new one does
-	 * not, as nothing will ask for them again.
+	 * Remove objects that a push of this instance stopped naming, once they
+	 * have been unnamed for the grace period.
 	 *
-	 * A node that started pulling the previous manifest may still be
-	 * downloading one of these objects and see it disappear. That fails its
-	 * pull, which is retried against the manifest that replaced it, so the only
-	 * cost is a round of downloads.
+	 * <p>The objects the previous manifest named and the new one does not are
+	 * recorded with the time of this push, and nothing removes them before
+	 * the grace period has passed. A node that pulled the previous manifest
+	 * may still be downloading one of them, and a download that finds its
+	 * object gone fails the whole pull. A first pull of a busy index takes
+	 * longer than the interval between two commits, so removing at once
+	 * could fail every attempt.
 	 *
-	 * Failures are not fatal, the push itself has already succeeded at this
-	 * point. The objects are remembered and removed by a later push instead.
+	 * <p>Failures are not fatal, the push itself has already succeeded at
+	 * this point. The objects stay recorded and a later push removes them.
 	 */
 	private void deleteObsoleteRemoteObjects(Manifest previous, Manifest current) {
+		var now = System.nanoTime();
+
 		var referenced = new HashSet<String>();
 		for(var file : current.getFilesList()) {
 			referenced.add(keyOf(file));
 		}
 
+		/*
+		 * The time is replaced for a key that is already recorded. The key
+		 * was named by the manifest this push replaced, so a reader may have
+		 * started downloading it a moment ago whatever an earlier push said.
+		 */
 		for(var file : previous.getFilesList()) {
 			if(!referenced.contains(keyOf(file))) {
-				pendingRemoteDeletes.add(keyOf(file));
+				pendingRemoteDeletes.put(keyOf(file), now);
 			}
 		}
 
-		var keys = pendingRemoteDeletes.iterator();
-		while(keys.hasNext()) {
-			var key = keys.next();
+		var entries = pendingRemoteDeletes.entrySet().iterator();
+		while(entries.hasNext()) {
+			var entry = entries.next();
+			var key = entry.getKey();
+
 			if(referenced.contains(key)) {
 				// The file came back, it is part of the index again
-				keys.remove();
+				entries.remove();
+				continue;
+			}
+
+			if(isHeld(entry.getValue(), now)) {
 				continue;
 			}
 
@@ -1016,7 +1073,7 @@ public class ObjectStorageSync implements StateSync {
 
 			try {
 				removeObject(remotePrefix + "/" + key);
-				keys.remove();
+				entries.remove();
 			} catch(IOException e) {
 				logger.atWarn()
 					.addKeyValue("index", index)
@@ -1033,12 +1090,25 @@ public class ObjectStorageSync implements StateSync {
 	 * push, and nothing younger than the grace period may be removed anyway.
 	 */
 	private void maybeSweepRemote(Manifest manifest) {
-		if(System.nanoTime() - lastSweepNanos < orphanGrace.toNanos()) {
+		if(System.nanoTime() - lastSweepNanos < grace.toNanos()) {
 			return;
 		}
 
 		lastSweepNanos = System.nanoTime();
 		sweepRemoteOrphans(manifest);
+	}
+
+	/**
+	 * Check if an object a push stopped naming is still inside its grace
+	 * period, during which a reader may be downloading it.
+	 *
+	 * @param unnamedAt
+	 *   {@link System#nanoTime()} of the push that stopped naming the object
+	 * @param now
+	 *   {@link System#nanoTime()} of the check
+	 */
+	private boolean isHeld(long unnamedAt, long now) {
+		return now - unnamedAt < grace.toNanos();
 	}
 
 	/**
@@ -1048,10 +1118,13 @@ public class ObjectStorageSync implements StateSync {
 	 * accepted are referenced by nothing and seen by nobody - listing the
 	 * remote is the only way to find them.
 	 *
-	 * Only objects older than the grace period are touched, a younger one may
-	 * belong to a push that is still underway.
+	 * <p>Only objects older than the grace period are touched, a younger one
+	 * may belong to a push that is still underway. An object a push of this
+	 * instance stopped naming is left alone for the same period from that
+	 * push, however old its upload is: a reader may be downloading it, and
+	 * the age of the upload says nothing about that.
 	 *
-	 * Failures are not fatal, whatever could not be listed or removed is
+	 * <p>Failures are not fatal, whatever could not be listed or removed is
 	 * picked up by a later sweep.
 	 */
 	private void sweepRemoteOrphans(Manifest manifest) {
@@ -1063,7 +1136,8 @@ public class ObjectStorageSync implements StateSync {
 			referenced.add(keyOf(file));
 		}
 
-		var cutoff = Instant.now().minus(orphanGrace);
+		var now = System.nanoTime();
+		var cutoff = Instant.now().minus(grace);
 		var prefix = remotePrefix + "/";
 
 		try {
@@ -1079,6 +1153,11 @@ public class ObjectStorageSync implements StateSync {
 				}
 
 				if(item.lastModified() != null && item.lastModified().isAfter(cutoff)) {
+					continue;
+				}
+
+				var unnamedAt = pendingRemoteDeletes.get(key);
+				if(unnamedAt != null && isHeld(unnamedAt, now)) {
 					continue;
 				}
 
@@ -1331,6 +1410,19 @@ public class ObjectStorageSync implements StateSync {
 			return previous.getChecksum();
 		}
 
+		return readChecksum(path);
+	}
+
+	/**
+	 * Read a file from start to end and compute its CRC-32C.
+	 *
+	 * @param path
+	 *   file to read
+	 * @return
+	 * @throws IOException
+	 *   if the file could not be read
+	 */
+	private static int readChecksum(Path path) throws IOException {
 		var checksum = new CRC32C();
 		var buffer = new byte[64 * 1024];
 
@@ -1342,6 +1434,39 @@ public class ObjectStorageSync implements StateSync {
 		}
 
 		return (int) checksum.getValue();
+	}
+
+	/**
+	 * Check if a local file holds what a manifest entry describes, for a file
+	 * the last synced manifest does not vouch for. The size and the checksum
+	 * are compared the way {@link #verifyDownload} compares them, and an
+	 * entry without a checksum matches nothing: a file of the right name and
+	 * size that a writer on this node left behind would pass on size alone.
+	 *
+	 * @param file
+	 *   entry the manifest holds for the file
+	 * @param localFile
+	 *   path the file is stored under locally
+	 * @return
+	 *   {@code true} if the local file can stand in for a download
+	 */
+	private boolean holdsOnDisk(ManifestFile file, Path localFile) {
+		if(!file.hasChecksum() || !Files.isRegularFile(localFile)) {
+			return false;
+		}
+
+		try {
+			return Files.size(localFile) == file.getSize()
+				&& readChecksum(localFile) == file.getChecksum();
+		} catch(IOException e) {
+			logger.atDebug()
+				.addKeyValue("index", index)
+				.addKeyValue("file", file.getName())
+				.setCause(e)
+				.log("Could not read local file, downloading it instead");
+
+			return false;
+		}
 	}
 
 	/**
