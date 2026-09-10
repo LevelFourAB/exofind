@@ -49,8 +49,9 @@ A generation lives under the prefix `indexes/<index>/<generation>/`:
 | --- | --- |
 | `manifest.ef.bin` | The generation manifest: the latest Lucene segment generation, the list of files (name, size, checksum, key), a version number, the epoch of the writer session that wrote it, and the Lucene versions that created and last wrote the index. Replaced conditionally on its entity tag by the index writer. |
 | `removed.ef.bin` | The removal mark of this generation, holding `removed_at` in milliseconds since the epoch. Written when the generation is deleted. |
-| `e<epoch>/<file>` | A file listed in the manifest, uploaded during the writer session with that epoch. Holds Lucene segment files (`.cfs`, `.si`, and related index files) and `definition.ef.bin` (the index definition). |
-| `<file>` | A file written under an older layout before storage keys were recorded in the manifest. The manifest references these files by their bare names. |
+| `e<epoch>/<file>` | A Lucene segment file (`.cfs`, `.si`, and related index files) listed in the manifest, uploaded during the writer session with that epoch. |
+| `e<epoch>/<file>.ef.bin.<checksum>` | A file the engine keeps beside the segments, such as `definition.ef.bin` (the index definition) and `changes.ef.bin` (the change log), uploaded during the writer session with that epoch. The checksum is the CRC-32C of the contents as eight hexadecimal digits. |
+| `<file>` and `e<epoch>/<file>.ef.bin` | A file written under an older layout, before storage keys or the checksum suffix were recorded in the manifest. The manifest references these files by the key it holds. |
 
 The node adheres to the following rules when managing generation files:
 
@@ -64,6 +65,11 @@ The node adheres to the following rules when managing generation files:
 - **Epoch isolation:** The epoch is assigned when a node claims the index
   writer role. Two writer sessions never write to the same key because each
   session uploads under its own epoch prefix.
+- **Content isolation:** Lucene never writes to a name twice, so the epoch
+  prefix alone keeps its uploads apart. A file the engine rewrites in place
+  carries its checksum in the key, so two pushes of the same session never
+  write to the same key either. A pull verifies the size and checksum of every
+  downloaded file against the manifest and fails on a mismatch.
 
 For more details on synchronization mechanisms, see
 [Synchronization](../explanation/synchronization.md).

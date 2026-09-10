@@ -9,6 +9,7 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -1140,6 +1141,144 @@ public class ObjectStorageSyncTest {
 
 		verifyRemoteFile(segment);
 		verifyRemoteFile(next);
+	}
+
+	/**
+	 * A file the engine rewrites in place is keyed by its contents as well as
+	 * the epoch, so a rewrite within one session uploads to a key of its own
+	 * instead of replacing the object the previous manifest names. Lucene
+	 * files keep the plain epoch key, as Lucene never writes to a name twice.
+	 */
+	@Test
+	void testRewrittenFileIsKeyedByItsContents() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 100);
+		push(segment, definition);
+
+		var firstKey = remoteKeyOf("definition.ef.bin");
+		assertThat(remoteKeyOf("segments_1"), is("e1/segments_1"));
+		assertThat(firstKey.matches("e1/definition\\.ef\\.bin\\.[0-9a-f]{8}"), is(true));
+
+		var replaced = createLocalFile("definition.ef.bin", 100);
+		push(segment, replaced);
+
+		var secondKey = remoteKeyOf("definition.ef.bin");
+		assertThat(secondKey.equals(firstKey), is(false));
+		assertThat(secondKey.matches("e1/definition\\.ef\\.bin\\.[0-9a-f]{8}"), is(true));
+
+		verifyRemoteFile(replaced);
+		verifyRemoteObjectMissing(firstKey);
+	}
+
+	/**
+	 * The checksum of a Lucene file is carried over from the previous manifest
+	 * when the file has not been modified since, as Lucene never rewrites a
+	 * file. A file the engine rewrites in place is read every time, so a
+	 * rewrite that keeps the size and an old modification time is still
+	 * noticed and uploaded.
+	 */
+	@Test
+	void testRewrittenFileIsHashedWhenItLooksUnchanged() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 100);
+		push(segment, definition);
+
+		var firstKey = remoteKeyOf("definition.ef.bin");
+
+		var replaced = createLocalFile("definition.ef.bin", 100);
+		Files.setLastModifiedTime(
+			localPath.resolve("definition.ef.bin"),
+			FileTime.from(Instant.now().minus(Duration.ofMinutes(5)))
+		);
+		push(segment, replaced);
+
+		assertThat(remoteKeyOf("definition.ef.bin").equals(firstKey), is(false));
+		verifyRemoteFile(replaced);
+	}
+
+	/**
+	 * A pull checks every download against the manifest. An object that holds
+	 * other bytes than the manifest describes fails the pull and leaves
+	 * nothing behind, instead of being moved into the index as if it were the
+	 * file named.
+	 */
+	@Test
+	void testPullRejectsFileWithWrongChecksum() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 100);
+		push(segment, definition);
+
+		putRemoteObject(remoteKeyOf("definition.ef.bin"), randomBytes(100));
+
+		var other = newSync(s3Client, otherLocalPath);
+		var e = assertThrows(IOException.class, other::pull);
+		assertThat(e.getMessage().contains("checksum"), is(true));
+
+		assertThat(Files.exists(otherLocalPath.resolve("definition.ef.bin")), is(false));
+		assertThat(
+			Files.exists(otherLocalPath.resolve("definition.ef.bin.download.tmp")),
+			is(false)
+		);
+	}
+
+	/**
+	 * The size is checked as well, which is what catches a truncated download
+	 * of a file from a manifest written before checksums were recorded.
+	 */
+	@Test
+	void testPullRejectsFileWithWrongSize() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 100);
+		push(segment, definition);
+
+		putRemoteObject(remoteKeyOf("definition.ef.bin"), randomBytes(60));
+
+		var other = newSync(s3Client, otherLocalPath);
+		var e = assertThrows(IOException.class, other::pull);
+		assertThat(e.getMessage().contains("bytes"), is(true));
+
+		assertThat(Files.exists(otherLocalPath.resolve("definition.ef.bin")), is(false));
+	}
+
+	private static byte[] randomBytes(int size) {
+		var bytes = new byte[size];
+		for(int i = 0; i < size; i++) {
+			bytes[i] = (byte) (Math.random() * 256);
+		}
+		return bytes;
+	}
+
+	/**
+	 * Replace the object under the given key with the given bytes, standing in
+	 * for a write the manifest knows nothing about.
+	 */
+	private void putRemoteObject(String key, byte[] bytes) {
+		s3Client.putObject(
+			PutObjectRequest.builder()
+				.bucket(TestObjectStorage.BUCKET)
+				.key(bucketPrefix + "/" + key)
+				.build(),
+			RequestBody.fromBytes(bytes)
+		);
+	}
+
+	private void verifyRemoteObjectMissing(String key) {
+		try {
+			s3Client.getObject(
+				GetObjectRequest.builder()
+					.bucket(TestObjectStorage.BUCKET)
+					.key(bucketPrefix + "/" + key)
+					.build()
+			).close();
+
+			fail("object " + key + " should have been removed from the remote bucket");
+		} catch(S3Exception e) {
+			if(e.statusCode() != 404) {
+				fail("unexpected error: " + e.getMessage());
+			}
+		} catch(IOException e) {
+			fail("unexpected error: " + e.getMessage());
+		}
 	}
 
 	/**

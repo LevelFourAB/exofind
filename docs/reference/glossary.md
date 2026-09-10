@@ -50,7 +50,9 @@ deployment. See [Architecture](../explanation/architecture.md).
 
 A writer session identifier claimed by an indexer before uploading files. Epoch
 scoping ensures that files are uploaded under `e<epoch>/` so concurrent writer
-sessions never write to the same storage keys. See
+sessions never write to the same storage keys. Files the engine rewrites in
+place also carry their checksum in the key, so two pushes of one session never
+write to the same key either. See
 [Synchronization](../explanation/synchronization.md).
 
 ## Facet

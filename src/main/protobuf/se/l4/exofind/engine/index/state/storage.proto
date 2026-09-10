@@ -40,7 +40,10 @@ message ManifestFile {
 	 * prefix. Files are written under a prefix named for the epoch of the
 	 * writer that uploaded them, and keep that key for as long as their
 	 * contents stay the same, so a file is never uploaded again just because
-	 * the epoch moved on.
+	 * the epoch moved on. A file the engine rewrites in place, which is any
+	 * file named with the `.ef.bin` suffix, also carries its checksum in the
+	 * key, so no two contents of it ever share an object. A reader treats the
+	 * key as opaque and never derives it from the name.
 	 *
 	 * Unset in a manifest written before keys were recorded, where the name
 	 * is also the key.

@@ -22,6 +22,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
+import java.util.zip.CheckedInputStream;
 
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.SegmentInfos;
@@ -67,6 +68,15 @@ public class ObjectStorageSync implements StateSync {
 	 * garbage.
 	 */
 	private static final String DOWNLOAD_SUFFIX = ".download.tmp";
+
+	/**
+	 * Suffix of the files the engine keeps next to the Lucene files, such as
+	 * the definition and the change log. Lucene names a file once and never
+	 * writes to that name again, but the engine rewrites these files in place
+	 * under the same name. The sync tells the two apart by this suffix, so a
+	 * file added beside the index has to carry it or its uploads reuse a key.
+	 */
+	private static final String ENGINE_FILE_SUFFIX = ".ef.bin";
 
 	/**
 	 * Number of times a request to the object storage is attempted before it is
@@ -797,7 +807,8 @@ public class ObjectStorageSync implements StateSync {
 	 * @param localFile
 	 *   path the file is stored under locally
 	 * @throws IOException
-	 *   if the file is missing from the remote or could not be downloaded
+	 *   if the file is missing from the remote, could not be downloaded, or
+	 *   does not hold what the manifest says it holds
 	 */
 	private void downloadFile(ManifestFile file, Path localFile) throws IOException {
 		Files.createDirectories(localFile.getParent());
@@ -816,8 +827,12 @@ public class ObjectStorageSync implements StateSync {
 					.key(remotePrefix + "/" + keyOf(file))
 					.build(),
 				response -> {
-					Files.copy(response, tempFile, StandardCopyOption.REPLACE_EXISTING);
-					return Boolean.TRUE;
+					var checksum = new CRC32C();
+					try(var in = new CheckedInputStream(response, checksum)) {
+						Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
+					}
+
+					return (int) checksum.getValue();
 				}
 			);
 
@@ -827,6 +842,8 @@ public class ObjectStorageSync implements StateSync {
 						+ " but it is missing from object storage"
 				);
 			}
+
+			verifyDownload(file, tempFile, downloaded);
 
 			/*
 			 * On the disk before it is given the name the manifest knows it
@@ -846,6 +863,42 @@ public class ObjectStorageSync implements StateSync {
 			}
 
 			throw e;
+		}
+	}
+
+	/**
+	 * Check that a downloaded file holds what the manifest says its object
+	 * holds. The manifest is the only description of the object a reader has,
+	 * so a truncated response or an object rewritten under the key of another
+	 * would otherwise be moved into the index as if it were the file named.
+	 *
+	 * @param file
+	 *   entry the manifest holds for the file
+	 * @param tempFile
+	 *   where the download was written
+	 * @param checksum
+	 *   CRC-32C of the bytes that were downloaded
+	 * @throws IOException
+	 *   if the size differs, or the checksum differs where the manifest
+	 *   records one
+	 */
+	private static void verifyDownload(ManifestFile file, Path tempFile, int checksum)
+		throws IOException
+	{
+		var size = Files.size(tempFile);
+		if(size != file.getSize()) {
+			throw new IOException(
+				"Downloaded " + file.getName() + " from " + keyOf(file) + " is "
+					+ size + " bytes but the manifest says " + file.getSize()
+			);
+		}
+
+		if(file.hasChecksum() && file.getChecksum() != checksum) {
+			throw new IOException(
+				"Downloaded " + file.getName() + " from " + keyOf(file)
+					+ " has checksum " + String.format("%08x", checksum)
+					+ " but the manifest says " + String.format("%08x", file.getChecksum())
+			);
 		}
 	}
 
@@ -1067,19 +1120,20 @@ public class ObjectStorageSync implements StateSync {
 			var path = resolveLocal(name);
 			var attributes = Files.readAttributes(path, BasicFileAttributes.class);
 
+			var checksum = checksumOf(
+				previousFiles.get(name), name, path, attributes, unchangedSince
+			);
+
 			var file = ManifestFile.newBuilder()
 				.setName(name)
 				.setSize(attributes.size())
-				.setChecksum(
-					checksumOf(previousFiles.get(name), path, attributes, unchangedSince)
-				);
+				.setChecksum(checksum);
 
 			/*
 			 * A file whose contents are what the previous manifest describes
 			 * keeps the key it already has, wherever an earlier epoch put it.
-			 * Anything else is going to be uploaded, which happens under the
-			 * epoch of this session so that no other session can be writing
-			 * the same key.
+			 * Anything else is going to be uploaded, under a key no accepted
+			 * manifest can be naming.
 			 */
 			var previousFile = previousFiles.get(name);
 			if(previousFile != null && isUnchanged(previousFile, file.build())) {
@@ -1087,7 +1141,7 @@ public class ObjectStorageSync implements StateSync {
 					file.setKey(previousFile.getKey());
 				}
 			} else {
-				file.setKey("e" + epoch + "/" + name);
+				file.setKey(uploadKeyOf(name, epoch, checksum));
 			}
 
 			builder.addFiles(file.build());
@@ -1177,15 +1231,57 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	/**
+	 * The key a file is uploaded under, relative to the index's prefix. Every
+	 * upload goes below the epoch of the session, so two sessions never write
+	 * the same key even when Lucene names their files the same.
+	 *
+	 * <p>A file the engine rewrites in place carries its checksum in the key
+	 * as well. Without it, every push of such a file within one session goes
+	 * to the same key, and a push whose manifest is refused has by then
+	 * replaced an object the accepted manifest still names, with no reader
+	 * able to tell. With it, different contents land under different keys and
+	 * a refused push leaves nothing but an orphan for the sweep.
+	 *
+	 * @param name
+	 *   name Lucene or the engine knows the file by
+	 * @param epoch
+	 *   epoch of the session uploading it
+	 * @param checksum
+	 *   CRC-32C of the contents being uploaded
+	 */
+	private static String uploadKeyOf(String name, long epoch, int checksum) {
+		var key = "e" + epoch + "/" + name;
+		return isRewrittenInPlace(name)
+			? key + "." + String.format("%08x", checksum)
+			: key;
+	}
+
+	/**
+	 * Check if a file is one the engine rewrites under the same name, as
+	 * opposed to a Lucene file that is written once and then only ever
+	 * removed.
+	 */
+	private static boolean isRewrittenInPlace(String name) {
+		return name.endsWith(ENGINE_FILE_SUFFIX);
+	}
+
+	/**
 	 * Work out the checksum to record for a file, reading it only when it may
 	 * have changed since the previous manifest was written. Reading every file
 	 * on every push would mean reading the whole index each time a single
 	 * document is committed, and Lucene never rewrites a file it has already
 	 * published.
 	 *
+	 * <p>A file the engine rewrites in place is always read. The shortcut
+	 * trusts the modification time, and a rewrite that keeps the size and
+	 * lands within the resolution of the clock would pass for unchanged, and
+	 * so never be uploaded. These files are few and small next to the segments.
+	 *
 	 * @param previous
 	 *   entry the file had in the previous manifest, or {@code null} if it is
 	 *   new
+	 * @param name
+	 *   name the file is tracked under
 	 * @param path
 	 * @param attributes
 	 * @param unchangedSince
@@ -1196,12 +1292,14 @@ public class ObjectStorageSync implements StateSync {
 	 */
 	private static int checksumOf(
 		ManifestFile previous,
+		String name,
 		Path path,
 		BasicFileAttributes attributes,
 		FileTime unchangedSince
 	) throws IOException {
 		if(
-			previous != null
+			!isRewrittenInPlace(name)
+				&& previous != null
 				&& previous.hasChecksum()
 				&& previous.getSize() == attributes.size()
 				&& unchangedSince != null

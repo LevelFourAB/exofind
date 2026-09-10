@@ -1495,6 +1495,11 @@ public class Index {
 	 * belong to a commit that does not exist yet and are left out, as another
 	 * node has no use for them.
 	 *
+	 * <p>A file the engine adds here is rewritten in place, unlike a Lucene
+	 * file, and has to be named with the {@code .ef.bin} suffix. The sync
+	 * keys such a file by its contents so that a rewrite never replaces the
+	 * object an earlier manifest names.
+	 *
 	 * @param commit
 	 *   commit to take the files of, or {@code null} for an index that has not
 	 *   been committed yet
