@@ -370,19 +370,40 @@ public class ObjectStorageSync implements StateSync {
 	 * before it writes anything, the loser walks away without having
 	 * overwritten anything at all.
 	 *
+	 * <p>Where the remote holds no manifest nothing is written. The claim
+	 * would have to be a manifest naming no files, and a reader that pulls
+	 * one removes every file it holds and answers with nothing until the
+	 * push that follows has uploaded the whole index. The push is what
+	 * fences that session instead: its manifest is written on the condition
+	 * that there still is none, so of two sessions that both found the
+	 * remote empty, only the first to push is accepted.
+	 *
 	 * @param baseline
-	 *   what the remote is known to hold, which is what the claim is written
-	 *   on top of. Naming files the remote does not have would publish a
-	 *   manifest a reader cannot follow for as long as the claim stands
+	 *   what the remote is known to hold, as {@link #ensurePushBaseline}
+	 *   reports it, which is what the claim is written on top of. Naming
+	 *   files the remote does not have would publish a manifest a reader
+	 *   cannot follow for as long as the claim stands
 	 * @throws SyncConflictException
 	 *   if another node changed the remote manifest first
 	 * @throws IOException
 	 *   if the claim could not be written
 	 */
 	private void claimEpoch(Manifest baseline) throws IOException {
+		var epoch = baseline.getEpoch() + 1;
+
+		if(lastSyncedManifestETag == null) {
+			logger.atInfo()
+				.addKeyValue("index", index)
+				.addKeyValue("epoch", epoch)
+				.log("Remote holds no manifest, writer epoch is claimed by the first push");
+
+			this.sessionEpoch = epoch;
+			return;
+		}
+
 		var claimed = baseline.toBuilder()
 			.setVersion(baseline.getVersion() + 1)
-			.setEpoch(baseline.getEpoch() + 1)
+			.setEpoch(epoch)
 			.build();
 
 		logger.atInfo()

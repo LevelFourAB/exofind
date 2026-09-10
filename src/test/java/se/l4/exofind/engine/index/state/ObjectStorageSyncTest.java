@@ -647,21 +647,29 @@ public class ObjectStorageSyncTest {
 	/**
 	 * Two manifests are ordered by their version rather than by the segment
 	 * number, so every push has to move it along. The first push of a session
-	 * moves it twice, once for the epoch claim and once for the content.
+	 * over an existing manifest moves it twice, once for the epoch claim and
+	 * once for the content, while the push that creates the manifest claims
+	 * the epoch in the same write.
 	 */
 	@Test
 	void testPushAdvancesManifestVersion() throws Exception {
 		var segment1 = createLocalFile("segments_1", 10);
 		push(segment1);
-		assertThat(remoteManifest().getVersion(), is(2L));
+		assertThat(remoteManifest().getVersion(), is(1L));
 
 		var segment2 = createLocalFile("segments_2", 10);
 		push(segment1, segment2);
-		assertThat(remoteManifest().getVersion(), is(3L));
+		assertThat(remoteManifest().getVersion(), is(2L));
 
 		// Nothing changed locally, so the version stays where it is
 		push(segment1, segment2);
-		assertThat(remoteManifest().getVersion(), is(3L));
+		assertThat(remoteManifest().getVersion(), is(2L));
+
+		// A new session claims its epoch before its content lands
+		var restarted = newSync(s3Client);
+		var segment3 = createLocalFile("segments_3", 10);
+		push(restarted, segment1, segment2, segment3);
+		assertThat(remoteManifest().getVersion(), is(4L));
 	}
 
 	@Test
@@ -1056,7 +1064,7 @@ public class ObjectStorageSyncTest {
 		push(restarted, segment, next);
 
 		verifyRemoteManifest(2, segment, next);
-		assertThat(remoteManifest().getVersion(), is(4L));
+		assertThat(remoteManifest().getVersion(), is(3L));
 	}
 
 	/**
@@ -1112,12 +1120,12 @@ public class ObjectStorageSyncTest {
 		push(failingSync, segment, next);
 
 		verifyRemoteManifest(2, segment, next);
-		assertThat(remoteManifest().getVersion(), is(4L));
+		assertThat(remoteManifest().getVersion(), is(3L));
 
 		// The node recovered the tag of its own write and can keep pushing
 		var third = createLocalFile("segments_3", 14);
 		push(failingSync, segment, next, third);
-		assertThat(remoteManifest().getVersion(), is(5L));
+		assertThat(remoteManifest().getVersion(), is(4L));
 	}
 
 	/**
@@ -1455,12 +1463,7 @@ public class ObjectStorageSyncTest {
 		var segment = createLocalFile("segments_1", 10);
 		push(segment);
 
-		s3Client.deleteObject(
-			DeleteObjectRequest.builder()
-				.bucket(TestObjectStorage.BUCKET)
-				.key(bucketPrefix + "/manifest.ef.bin")
-				.build()
-		);
+		removeRemoteManifest();
 
 		var next = createLocalFile("segments_2", 12);
 		push(segment, next);
@@ -1468,6 +1471,84 @@ public class ObjectStorageSyncTest {
 		verifyRemoteManifest(2, segment, next);
 		verifyRemoteFile(segment);
 		verifyRemoteFile(next);
+	}
+
+	/**
+	 * A remote whose manifest was removed holds nothing for a claim to be
+	 * written over. A claim written as a manifest naming no files would have
+	 * every reader remove its copy and answer with nothing until the push
+	 * that follows has uploaded the whole index, so the claim writes nothing
+	 * and the push is what takes the epoch.
+	 */
+	@Test
+	void testClaimingTheWriterWritesNothingWhenTheRemoteManifestIsGone() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+
+		removeRemoteManifest();
+
+		sync.claimWriter();
+
+		// The reader finds no manifest to follow and keeps what it holds
+		assertThat(reader.pull(), is(false));
+		verifyLocalFile(otherLocalPath, segment);
+
+		// The push recreates the manifest under the epoch the claim took
+		var next = createLocalFile("segments_2", 12);
+		push(segment, next);
+
+		verifyRemoteManifest(2, segment, next);
+		assertThat(remoteManifest().getEpoch(), is(2L));
+		assertThat(remoteKeyOf("segments_2"), is("e2/segments_2"));
+
+		assertThat(reader.pull(), is(true));
+		verifyLocalFile(otherLocalPath, segment);
+		verifyLocalFile(otherLocalPath, next);
+	}
+
+	/**
+	 * Two sessions that both found the remote without a manifest both claim
+	 * without writing, and the push decides between them: the manifest is
+	 * written on the condition that there still is none, so the second push
+	 * is refused.
+	 */
+	@Test
+	void testFirstPushDecidesBetweenWritersThatFoundNoManifest() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var other = newSync(s3Client, otherLocalPath);
+		assertThat(other.pull(), is(true));
+
+		removeRemoteManifest();
+
+		sync.claimWriter();
+		other.claimWriter();
+
+		var next = createLocalFile("segments_2", 12);
+		push(segment, next);
+
+		var otherNext = createLocalFile(otherLocalPath, "segments_3", 14);
+		assertThrows(SyncConflictException.class, () -> push(other, segment, otherNext));
+
+		verifyRemoteManifest(2, segment, next);
+		verifyRemoteFileMissing(otherNext);
+	}
+
+	/**
+	 * Remove the manifest of the index from the remote and leave its objects
+	 * in place, the way removing the one object by hand would.
+	 */
+	private void removeRemoteManifest() {
+		s3Client.deleteObject(
+			DeleteObjectRequest.builder()
+				.bucket(TestObjectStorage.BUCKET)
+				.key(bucketPrefix + "/manifest.ef.bin")
+				.build()
+		);
 	}
 
 	/**
