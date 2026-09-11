@@ -59,7 +59,7 @@ export const DEMOS = [
 	{
 		name: 'discogs',
 		title: 'Record shop',
-		summary: '50 000 records from Discogs, and every pressing of them.',
+		summary: '300 000 records from Discogs, and every pressing of them.',
 		shows: [
 			'sub-documents',
 			'facets and ordering inside a value',
