@@ -43,6 +43,12 @@ const JSON_TYPE = 'application/json';
 /** The tag an operation is listed under when it carries none. */
 const UNTAGGED = 'Other';
 
+/** Where the engine writes the permission an endpoint requires. */
+const PERMISSION = 'x-required-permission';
+
+/** How the paragraph the engine closes a description with starts. */
+const REQUIREMENT = 'Requires the ';
+
 export const document = parseYaml(source);
 
 /**
@@ -60,6 +66,17 @@ export const document = parseYaml(source);
  * @property {Response[]} responses every answer the endpoint states, in status
  *   order
  * @property {boolean} secured whether the endpoint wants an API key
+ * @property {Permission | null} permission what a caller has to be granted
+ */
+
+/**
+ * @typedef {object} Permission
+ * @property {string} id the name as it is written in a key
+ * @property {'index' | 'any-index' | 'deployment'} scope what it is checked
+ *   against
+ * @property {string[]} roles the roles that include it
+ * @property {boolean} anonymous whether a request carrying no credential may
+ *   reach the endpoint
  */
 
 /**
@@ -92,12 +109,13 @@ export function operations() {
 				method: method.toUpperCase(),
 				path,
 				summary: operation.summary ?? operation.operationId,
-				description: operation.description ?? '',
+				description: descriptionOf(operation),
 				tag: operation.tags?.[0] ?? UNTAGGED,
 				parameters: [...item.parameters ?? [], ...operation.parameters ?? []],
 				body: bodyOf(operation),
 				responses: responsesOf(operation),
-				secured: (operation.security ?? document.security ?? []).length > 0
+				secured: (operation.security ?? document.security ?? []).length > 0,
+				permission: permissionOf(operation)
 			});
 		}
 	}
@@ -182,6 +200,46 @@ export function authentication() {
 	if(!scheme) return null;
 
 	return { name, description: scheme.description ?? '', scheme: scheme.scheme ?? '' };
+}
+
+/**
+ * What a caller has to be granted to reach an operation.
+ *
+ * The engine writes it from the annotation the endpoint is served under - see
+ * `RequiredPermissionFilter` - so the page states what the node checks rather
+ * than what somebody remembered to write. An operation without it is drawn
+ * without the panel rather than with an empty one.
+ */
+function permissionOf(operation) {
+	const id = operation[PERMISSION];
+	if(!id) return null;
+
+	return {
+		id,
+		scope: operation['x-permission-scope'] ?? 'index',
+		roles: operation['x-permission-roles'] ?? [],
+		anonymous: operation['x-permission-anonymous'] === true
+	};
+}
+
+/**
+ * The description of an operation, without the paragraph stating what it
+ * requires.
+ *
+ * That paragraph is written last by the engine and always opens the same way,
+ * so that a generated client carries the fact as a doc comment. Here it is
+ * drawn beside the endpoint instead, and a page that showed both would say it
+ * twice. `RequiredPermissionFilterTest` holds the engine to the shape this
+ * looks for.
+ */
+function descriptionOf(operation) {
+	const description = operation.description ?? '';
+	if(!operation[PERMISSION]) return description;
+
+	const paragraphs = description.split('\n\n');
+	if(!paragraphs[paragraphs.length - 1].startsWith(REQUIREMENT)) return description;
+
+	return paragraphs.slice(0, -1).join('\n\n').trimEnd();
 }
 
 /** The JSON request body of an operation, or `null` where it takes none. */
