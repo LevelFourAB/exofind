@@ -75,10 +75,6 @@ export default defineConfig({
 				{ icon: 'github', label: 'GitHub', href: REPO }
 			],
 
-			editLink: {
-				baseUrl: `${REPO}/edit/main/`
-			},
-
 			/*
 			 * Starlight runs its own Markdown transforms - asides, heading
 			 * anchor links - only on files inside its collection directory,

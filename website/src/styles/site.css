@@ -61,7 +61,7 @@
 	--sl-color-bg-nav: var(--sl-color-black);
 	--sl-color-bg-sidebar: var(--sl-color-black);
 	--sl-color-bg-inline-code: var(--sl-color-gray-6);
-	--sl-color-bg-accent: var(--sl-color-accent);
+	--sl-color-bg-accent: var(--sl-color-text-accent);
 	--sl-color-hairline: var(--sl-color-gray-5);
 	--sl-color-hairline-light: var(--sl-color-gray-5);
 	--sl-color-hairline-shade: var(--sl-color-gray-5);
@@ -484,6 +484,82 @@ main .sl-container {
 main .content-panel + .content-panel {
 	border-top: 0;
 	padding-block-start: 0;
+}
+
+/*
+ * The end of the page sits at the end of the window, not under the last line
+ * of a short page. A page with two paragraphs on it - an index page such as
+ * the one that lists the tutorials - otherwise puts the columns of links and
+ * the colophon halfway up the window, with the background under them, which
+ * reads as a page that failed to load the rest of itself.
+ *
+ * Starlight gives the page itself the height of the window and nothing under
+ * it, so each box between the page and the footer is made to take the height
+ * it is given and pass it on: the frame, the two-column wrapper, the pane, the
+ * article, and the last panel with the footer in it. The footer is then held
+ * down by an automatic margin, which is a margin only while there is room left
+ * over - a page longer than the window keeps the footer directly under its
+ * last line.
+ *
+ * The wrapper is a column below the width where the table of contents moves
+ * beside the article, and Starlight makes it a row above that width, so only
+ * the narrow half is stated here. It is named by its own class rather than as
+ * a child of the frame, because the frame holds a script as well and a rule
+ * that gives every child a `display` makes the browser draw the script.
+ */
+.main-frame {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+}
+
+.main-frame > .lg\:sl-flex {
+	flex: 1;
+}
+
+@media (max-width: 71.9375rem) {
+	.main-frame > .lg\:sl-flex {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.main-pane {
+		flex: 1;
+	}
+}
+
+/*
+ * The pane is given no `flex` of its own, because above that width it is one
+ * of two columns in a row and a basis of zero would take the width Starlight
+ * measures for it. A column in a row is already as tall as the row.
+ */
+.main-pane {
+	display: flex;
+	flex-direction: column;
+}
+
+main,
+main > .content-panel:last-child,
+main > .content-panel:last-child > .sl-container {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+}
+
+/*
+ * The container of the last panel is given its width back. Starlight holds the
+ * article against the right of the pane with an automatic inline margin, and a
+ * box with such a margin is as wide as its content once it is in a column
+ * rather than in the flow. That makes the panel narrower than the panel with
+ * the title in it, and the title then stands to the left of the axis the page
+ * is written on.
+ */
+main > .content-panel:last-child > .sl-container {
+	width: 100%;
+}
+
+main > .content-panel:last-child > .sl-container > footer {
+	margin-block-start: auto;
 }
 
 .sl-markdown-content {
@@ -1074,15 +1150,25 @@ h1:not(:where(.not-content *)) {
 	padding: 0.6875rem 1.125rem;
 }
 
+/*
+ * The one filled thing on the site, so it is filled with the readable half of
+ * the blue - the same one the links are set in - and lettered in the paper of
+ * whichever theme is showing. The mid blue is bright enough on a light page and
+ * too dark under paper letters on a dark one, which is what `text-accent`
+ * already answers for the links.
+ *
+ * Hover moves the fill towards the ink of the theme, so it darkens on paper and
+ * lightens in the dark, and the letters gain contrast either way.
+ */
 .sl-link-button.primary {
-	background: var(--sl-color-accent);
-	border-color: var(--sl-color-accent);
+	background: var(--sl-color-text-accent);
+	border-color: var(--sl-color-text-accent);
 	color: var(--sl-color-black);
 }
 
 .sl-link-button.primary:hover {
-	background: var(--sl-color-accent-high);
-	border-color: var(--sl-color-accent-high);
+	background: color-mix(in srgb, var(--sl-color-text-accent) 78%, var(--sl-color-white));
+	border-color: color-mix(in srgb, var(--sl-color-text-accent) 78%, var(--sl-color-white));
 	color: var(--sl-color-black);
 }
 
@@ -1185,5 +1271,15 @@ h1:not(:where(.not-content *)) {
 			opacity: 1;
 			transform: scaleX(1);
 		}
+	}
+}
+
+@media print {
+	.print\:hidden {
+		display: none !important;
+	}
+
+	.header {
+		display: none !important;
 	}
 }

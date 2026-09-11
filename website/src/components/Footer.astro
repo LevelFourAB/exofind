@@ -68,7 +68,7 @@ const columns = [
 	<slot />
 </Default>
 
-<div class="ways-on not-content">
+<div class="ways-on not-content print:hidden">
 	{columns.map((column) => (
 		<nav aria-label={column.label}>
 			<h2>{column.label}</h2>
@@ -83,7 +83,7 @@ const columns = [
 	))}
 </div>
 
-<p class="colophon">
+<p class="colophon print:hidden">
 	Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a> and is
 	available under the Apache License 2.0.
 </p>
@@ -111,9 +111,21 @@ const columns = [
 		display: grid;
 		gap: 1.875rem 2.5rem;
 		grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-		margin-block-start: 3rem;
+		margin-block-start: 0rem;
 		padding-block-start: 1.25rem;
 		border-block-start: 1px solid var(--sl-color-gray-5);
+	}
+
+	/*
+	 * A page with no prev/next links and nothing to say about its source - the
+	 * front page, and a page built rather than read from `docs/` - leaves
+	 * Starlight's own footer with no height, and the columns then start
+	 * against the last line of the page. Such a page gives them the gap the
+	 * prev/next block takes on every other page, so the end of the article
+	 * reads the same everywhere.
+	 */
+	:global(footer:not(:has(.meta *, .pagination-links a))) + .ways-on {
+		margin-block-start: 3.5rem;
 	}
 
 	/*

@@ -32,21 +32,25 @@
  * other control here is a custom element, and those are built again from the
  * markup that arrives.
  */
-import config from 'virtual:starlight/user-config';
+import config from "virtual:starlight/user-config";
 
-import LanguageSelect from 'virtual:starlight/components/LanguageSelect';
-import Search from 'virtual:starlight/components/Search';
-import SiteTitle from 'virtual:starlight/components/SiteTitle';
-import SocialIcons from 'virtual:starlight/components/SocialIcons';
-import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
+import LanguageSelect from "virtual:starlight/components/LanguageSelect";
+import Search from "virtual:starlight/components/Search";
+import SiteTitle from "virtual:starlight/components/SiteTitle";
+import SocialIcons from "virtual:starlight/components/SocialIcons";
+import ThemeSelect from "virtual:starlight/components/ThemeSelect";
 
-import { sectionsOf } from '../nav.mjs';
+import { sectionsOf } from "../nav.mjs";
 
-const sections = sectionsOf(Astro.locals.starlightRoute.sidebar, Astro.url.pathname);
+const sections = sectionsOf(
+	Astro.locals.starlightRoute.sidebar,
+	Astro.url.pathname,
+);
 
 /* Starlight renders no search when there is nothing to search. */
 const searchable =
-	config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
+	config.pagefind ||
+	config.components.Search !== "@astrojs/starlight/components/Search.astro";
 ---
 
 <div class="header">
@@ -56,8 +60,11 @@ const searchable =
 		</div>
 
 		<nav class="sections sl-hidden lg:sl-flex" aria-label="Sections">
-			{sections.map(section => (
-				<a href={section.href} aria-current={section.current ? 'true' : undefined}>
+			{sections.map((section) => (
+				<a
+					href={section.href}
+					aria-current={section.current ? "true" : undefined}
+				>
 					{section.label}
 				</a>
 			))}
@@ -65,7 +72,11 @@ const searchable =
 	</div>
 
 	<div class="right-group sl-flex print:hidden">
-		{searchable && <div class="search sl-flex" transition:persist><Search /></div>}
+		{searchable && (
+			<div class="search sl-flex" transition:persist>
+				<Search />
+			</div>
+		)}
 
 		<div class="meta sl-hidden md:sl-flex">
 			<div class="social-icons sl-flex">
@@ -117,7 +128,7 @@ const searchable =
 		color: var(--sl-color-white);
 	}
 
-	.sections a[aria-current='true'] {
+	.sections a[aria-current="true"] {
 		color: var(--sl-color-text-accent);
 		font-weight: 600;
 	}
@@ -131,7 +142,7 @@ const searchable =
 
 	/* The hairline that separates what leaves the site from what changes it. */
 	.social-icons::after {
-		content: '';
+		content: "";
 		height: 1.375rem;
 		border-inline-end: 1px solid var(--sl-color-gray-5);
 	}

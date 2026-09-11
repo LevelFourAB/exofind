@@ -68,7 +68,7 @@
 
 .demo__what { font-variant-numeric: tabular-nums; }
 
-.demo__index::before { content: 'index '; color: var(--rule-strong); }
+.demo__index::before { content: 'index '; color: var(--ink-2); }
 
 /* The count arrives from the node, so it is absent until a node answers. */
 .demo__size:not(:empty)::before { content: ' · '; }
@@ -182,7 +182,7 @@
 .demo .ask__input:focus-visible { outline: 0; }
 
 .ask__input::placeholder {
-	color: var(--rule-strong);
+	color: var(--ink-2);
 	font-weight: 500;
 }
 
@@ -349,7 +349,12 @@
 }
 
 .choice:hover .choice__label { color: var(--signal); }
-.choice--empty { color: var(--ink-2); opacity: 0.5; }
+/*
+ * A value nothing matches is set in the quieter ink rather than faded out: a
+ * row at part opacity falls under the contrast a reader needs to tell one
+ * value from the next, and the two inks say the same thing at full strength.
+ */
+.choice--empty { color: var(--ink-2); }
 
 .choice input {
 	appearance: none;
