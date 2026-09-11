@@ -25,6 +25,7 @@ import GithubSlugger from 'github-slugger';
 import { parse as parseYaml } from 'yaml';
 
 import { DEMOS } from '../src/examples/demos.mjs';
+import { typesIn } from '../src/openapi/types.mjs';
 import { partsFrom } from '../src/sidebar.mjs';
 import { BASE } from '../src/site.mjs';
 
@@ -243,8 +244,8 @@ function documentFor({ slug, part, title, section, position }) {
 /* --- the REST API -------------------------------------------------------- */
 
 /**
- * A document per endpoint page, read from the OpenAPI document the site
- * generates those pages from.
+ * A document per endpoint page and per type page, read from the OpenAPI
+ * document the site generates those pages from.
  *
  * The prose is written on the Java sources and reaches this file through the
  * engine build - see `tools/api-descriptions/`. A stale copy is a stale
@@ -253,7 +254,7 @@ function documentFor({ slug, part, title, section, position }) {
  */
 async function apiDocuments() {
 	const api = parseYaml(await readFile(fileURLToPath(OPENAPI), 'utf-8'));
-	const documents = [];
+	const documents = [...typeDocuments(api)];
 
 	for(const [path, operations] of Object.entries(api.paths ?? {})) {
 		for(const [method, operation] of Object.entries(operations)) {
@@ -278,6 +279,49 @@ async function apiDocuments() {
 	}
 
 	return documents;
+}
+
+/**
+ * A document per type page.
+ *
+ * Which types have pages is decided by `../src/openapi/types.mjs`, the module
+ * the site builds the pages from, so the two cannot disagree: a page the site
+ * publishes is a page its search can find, and a type that loses its page here
+ * loses it there in the same build.
+ *
+ * The text is the description of the type and of each of its variants. The
+ * properties are not in it - a reader searching for `locales` wants the guide
+ * that explains locales, not every type that carries a property of that name.
+ *
+ * @param {object} api the parsed OpenAPI document
+ * @returns {object[]}
+ */
+function typeDocuments(api) {
+	const schemas = api.components?.schemas ?? {};
+
+	return typesIn(api).map(type => {
+		const schema = schemas[type.name] ?? {};
+
+		const variants = (schema.oneOf ?? [])
+			.map(member => schemas[String(member.$ref ?? '').split('/').pop()])
+			.filter(Boolean)
+			.map(member => member.description ?? '');
+
+		const markdown = [type.description, ...variants].filter(Boolean).join('\n\n');
+		const text = plain(markdown);
+
+		return {
+			id: `api/types/${type.name}`,
+			url: `${BASE}/api/types/${type.name}/`,
+			part: 'REST API',
+			title: type.name,
+			heading: 'Type',
+			text: text.slice(0, TEXT_LIMIT),
+			excerpt: excerptOf(markdown, text),
+			lead: true,
+			position: 0
+		};
+	});
 }
 
 /* --- the demos ----------------------------------------------------------- */

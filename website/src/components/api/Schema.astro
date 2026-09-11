@@ -13,6 +13,8 @@ import Fields from "./Fields.astro";
 import Prose from "./Prose.astro";
 
 import { modelOf } from "../../openapi/schema.mjs";
+import { typePathOf } from "../../openapi/sidebar.mjs";
+import { hasTypePage } from "../../openapi/spec.mjs";
 
 const { schema, label = "Type", named = true } = Astro.props;
 
@@ -33,7 +35,13 @@ const union =
 <div class="schema">
 	{named && (
 		<div class="named">
-			<span class="type">{model.type}</span>
+			{hasTypePage(model.name) ? (
+				<a class="type" href={typePathOf(model.name)}>
+					{model.type}
+				</a>
+			) : (
+				<span class="type">{model.type}</span>
+			)}
 			<span class="label">{label}</span>
 		</div>
 	)}
@@ -71,6 +79,17 @@ const union =
 		font-family: var(--sl-font-mono);
 		font-size: 0.90625rem;
 		font-weight: 500;
+	}
+
+	/* A body whose type has a page of its own links to it - see `./Fields.astro`. */
+	a.type {
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-4);
+		text-underline-offset: 0.2em;
+	}
+
+	a.type:hover {
+		text-decoration-color: currentColor;
 	}
 
 	.says {

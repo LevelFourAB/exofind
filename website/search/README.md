@@ -49,10 +49,18 @@ of the page.
 
 The Markdown is read from `docs/` rather than from the built site, so indexing
 needs no site build. Both agree because both derive the same things from the
-same files. Two other sources are indexed as one document each: an endpoint
-page, from the OpenAPI document under [`../public/`](../public/openapi.yaml),
-and a demo page, from the list in
+same files. Two other sources are indexed as one document each: a page of the
+REST API - an endpoint or a type - from the OpenAPI document under
+[`../public/`](../public/openapi.yaml), and a demo page, from the list in
 [`../src/examples/demos.mjs`](../src/examples/demos.mjs).
+
+Which types have pages is decided by
+[`../src/openapi/types.mjs`](../src/openapi/types.mjs), the module the site
+builds those pages from, so a page the site publishes is a page the search can
+find. The text of one is the description of the type and of each of its
+variants; the properties are left out, because a reader searching for `locales`
+wants the guide that explains locales rather than every type that carries a
+property of that name.
 
 ## What is tuned, and why
 

@@ -18,9 +18,18 @@
  * is what makes that finish: a type already open above this row arrives with no
  * fields and is marked as repeated, so a clause inside a clause is a line rather
  * than a loop.
+ *
+ * Where the walk stops, the name links. A row that names a type with a page of
+ * its own - a union, a type that holds itself, a type several endpoints take -
+ * carries the address of that page, so the clause inside the clause is a line
+ * the reader can follow rather than a dead end. `../../openapi/types.mjs` decides
+ * which names those are, and every other name stays the text it was.
  */
 import Example from "./Example.astro";
 import Prose from "./Prose.astro";
+
+import { typePathOf } from "../../openapi/sidebar.mjs";
+import { hasTypePage } from "../../openapi/spec.mjs";
 
 const { fields } = Astro.props;
 ---
@@ -30,9 +39,15 @@ const { fields } = Astro.props;
 		<div class="field">
 			<div class="head">
 				<code class="key">{field.key}</code>
-				<span class:list={["type", field.name && "named"]}>
-					{field.type}
-				</span>
+				{hasTypePage(field.name) ? (
+					<a class="type named" href={typePathOf(field.name)}>
+						{field.type}
+					</a>
+				) : (
+					<span class:list={["type", field.name && "named"]}>
+						{field.type}
+					</span>
+				)}
 				{field.required && <span class="flag">required</span>}
 			</div>
 
@@ -58,7 +73,16 @@ const { fields } = Astro.props;
 						{field.variants.map((variant) => (
 							<div class="variant">
 								<div class="head">
-									<code class="key">{variant.name}</code>
+									{hasTypePage(variant.name) ? (
+										<a
+											class="key"
+											href={typePathOf(variant.name)}
+										>
+											{variant.name}
+										</a>
+									) : (
+										<code class="key">{variant.name}</code>
+									)}
 									{variant.value && (
 										<span class="selects">
 											{variant.selector}:{" "}
@@ -143,6 +167,32 @@ const { fields } = Astro.props;
 
 	.type.named {
 		color: var(--sl-color-text-accent);
+	}
+
+	/*
+	 * A type with a page of its own is the same accent, underlined. The accent
+	 * already says the row names something; the rule is what says this one can be
+	 * opened, which is the difference between `Clause` and `Match` and not a
+	 * difference a reader should have to hover to find.
+	 */
+	a.type.named {
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-4);
+		text-underline-offset: 0.2em;
+	}
+
+	a.type.named:hover {
+		text-decoration-color: currentColor;
+	}
+
+	a.key {
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-4);
+		text-underline-offset: 0.2em;
+	}
+
+	a.key:hover {
+		text-decoration-color: currentColor;
 	}
 
 	.flag {

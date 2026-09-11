@@ -65,7 +65,7 @@ const MACHINE_READABLE = [
 	{
 		label: 'REST API pages',
 		href: siteUrl('/api/'),
-		description: 'A page per endpoint, generated from the OpenAPI document.'
+		description: 'A page per endpoint, and a page per type that several endpoints hold, generated from the OpenAPI document.'
 	}
 ];
 

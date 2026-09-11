@@ -1,0 +1,93 @@
+---
+/*
+ * A page per type, for the types the endpoint pages cannot state in full.
+ *
+ * The URL is the name the OpenAPI document declares the type under, which is the
+ * name a generated client gives the class a reader is holding while they read
+ * this. `../../../openapi/types.mjs` decides which types get a page; the rest of
+ * the schemas in the document are stated where they are used and nowhere else.
+ *
+ * The sections are worked out here rather than in the component, because
+ * Starlight draws the on-this-page list from headings it is given before the page
+ * is rendered. So the list is built once and the component draws the headings
+ * from it: a section that arrives in the list is a section on the page, and a
+ * heading the list does not name cannot be drawn. `Type.astro` states what each
+ * section holds.
+ */
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { slug } from "github-slugger";
+
+import Type from "../../../components/api/Type.astro";
+import { exampleOf } from "../../../openapi/example.mjs";
+import { plain } from "../../../openapi/markdown.mjs";
+import { modelOf } from "../../../openapi/schema.mjs";
+import { types } from "../../../openapi/spec.mjs";
+
+export function getStaticPaths() {
+	return types().map((type) => ({
+		params: { type: type.name },
+		props: { type },
+	}));
+}
+
+const { type } = Astro.props;
+
+const model = modelOf(type.schema);
+
+/*
+ * The example is built from the schema rather than only read from it, because
+ * most of these types state none of their own: the document states its examples
+ * on the endpoints, and a type page with nothing to copy is the failure this page
+ * was written against. A type that holds nothing but a value - an enumeration, a
+ * string with a format - is shown without one, because the rows of the type
+ * already state every value it takes.
+ */
+const example =
+	model.fields.length > 0 || model.variants.length > 0
+		? exampleOf(type.schema)
+		: undefined;
+
+const written =
+	example === undefined || example === null
+		? null
+		: JSON.stringify(example, null, 2);
+
+/**
+ * The sections this type has, in the order the page draws them.
+ *
+ * A key rather than a heading is what the component asks for, so that renaming a
+ * heading is one edit here and the anchor follows it.
+ */
+const sections = [
+	written && { key: "example", text: "Example" },
+	model.variants.length > 0
+		? { key: "variants", text: "Types" }
+		: model.fields.length > 0 && { key: "properties", text: "Properties" },
+	type.operations.length > 0 && { key: "endpoints", text: "Endpoints" },
+	type.parents.length > 0 && { key: "types", text: "Other types" },
+]
+	.filter(Boolean)
+	.map((section) => ({ ...section, slug: slug(section.text) }));
+---
+
+<StarlightPage
+	headings={sections.map((section) => ({
+		depth: 2,
+		slug: section.slug,
+		text: section.text,
+	}))}
+	frontmatter={{
+		title: type.name,
+		description:
+			plain(type.description) ||
+			`The ${type.name} type of the Exofind REST API.`,
+		/*
+		 * A list of one entry is a column spent saying what the first heading on
+		 * the screen already says. An enumeration has only the endpoints that take
+		 * it, and is drawn without the list.
+		 */
+		tableOfContents: sections.length > 1,
+	}}
+>
+	<Type type={type} model={model} written={written} sections={sections} />
+</StarlightPage>

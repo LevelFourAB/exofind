@@ -1,0 +1,424 @@
+---
+/*
+ * One type: what it holds, and where a caller writes one.
+ *
+ * The endpoint pages state a type where it is used, which is the right place to
+ * read it the first time and the wrong place to read it the fourth. A clause
+ * holds clauses, so no endpoint page states one in full; `Locales` is written out
+ * under ten different properties; a union hides its variants three disclosures
+ * deep. This page is the one place each of those is stated once, at the top of a
+ * page, with the endpoints that take one listed under it.
+ *
+ * One column, not the two an endpoint has. There is no call to put in the second:
+ * a type is a part of a call rather than a call, and the example of it belongs
+ * under the description it is an example of. The second column is the on-this-page
+ * list instead, which a type page can use and an endpoint page cannot: the
+ * sections here are a handful of short ones rather than one long table of rows.
+ *
+ * The model and the sections are worked out by `../../pages/api/types/[type].astro`
+ * and arrive as props, because Starlight is given the headings of a page before
+ * the page renders and the two lists have to be one. A heading is drawn with the
+ * anchor the list gave it.
+ *
+ * The last two sections are the ones a reader cannot get from the schema. A type
+ * says nothing about who holds it, so "Used by" is built by walking the document
+ * from every endpoint - see `../../openapi/types.mjs` - and it is what turns a
+ * page a reader arrived at from a row into a way back into the API.
+ */
+import { Code } from "@astrojs/starlight/components";
+
+import Fields from "./Fields.astro";
+import Prose from "./Prose.astro";
+
+import { pathOf, typePathOf } from "../../openapi/sidebar.mjs";
+import { hasTypePage } from "../../openapi/spec.mjs";
+
+const { type, model, written, sections } = Astro.props;
+
+/** A section by its key: the heading to draw, and the anchor the list gave it. */
+const sectionOf = (key) => sections.find((section) => section.key === key);
+
+const example = sectionOf("example");
+const variants = sectionOf("variants");
+const properties = sectionOf("properties");
+const used = sectionOf("endpoints");
+const held = sectionOf("types");
+---
+
+<div class="type not-content">
+	<div class="intro">
+		<Prose text={model.description} class="lede" />
+
+		{model.notes.length > 0 && (
+			<dl class="notes">
+				{model.notes.map((note) => (
+					<>
+						<dt>{note.label}</dt>
+						<dd>{note.value}</dd>
+					</>
+				))}
+			</dl>
+		)}
+	</div>
+
+	{example && (
+		<section>
+			<h2 id={example.slug}>{example.text}</h2>
+			<Code code={written} lang="json" frame="none" wrap />
+		</section>
+	)}
+
+	{variants && (
+		<section>
+			<h2 id={variants.slug}>{variants.text}</h2>
+
+			<div class="variants">
+				{model.variants.map((variant) => (
+					<div class="variant">
+						<div class="head">
+							{hasTypePage(variant.name) ? (
+								<a class="name" href={typePathOf(variant.name)}>
+									{variant.name}
+								</a>
+							) : (
+								<code class="name">{variant.name}</code>
+							)}
+
+							{variant.value && (
+								<span class="selects">
+									{variant.selector}:{" "}
+									<code>"{variant.value}"</code>
+								</span>
+							)}
+						</div>
+
+						<Prose
+							text={variant.description}
+							variant="inline"
+							class="says"
+						/>
+
+						{variant.fields.length > 0 && (
+							<Fields fields={variant.fields} />
+						)}
+					</div>
+				))}
+			</div>
+		</section>
+	)}
+
+	{properties && (
+		<section>
+			<h2 id={properties.slug}>{properties.text}</h2>
+			<Fields fields={model.fields} />
+		</section>
+	)}
+
+	{used && (
+		<section>
+			<h2 id={used.slug}>{used.text}</h2>
+
+			<p class="says">
+				Endpoints where the request or responses uses this type.
+			</p>
+
+			<ul class="endpoints">
+				{type.operations.map((operation) => (
+					<li>
+						<a href={pathOf(operation)}>
+							<span
+								class:list={[
+									"method",
+									`method-${operation.method.toLowerCase()}`,
+								]}
+							>
+								{operation.method}
+							</span>
+							<span class="summary">{operation.summary}</span>
+							<code class="path">{operation.path}</code>
+						</a>
+					</li>
+				))}
+			</ul>
+		</section>
+	)}
+
+	{held && (
+		<section>
+			<h2 id={held.slug}>{held.text}</h2>
+
+			<p class="says">Types that reference this one.</p>
+
+			<ul class="held">
+				{type.parents.map((parent) => (
+					<li>
+						<a href={typePathOf(parent)}>{parent}</a>
+					</li>
+				))}
+			</ul>
+		</section>
+	)}
+</div>
+
+<style>
+	.type {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	/* The name of the type, set as the one line on the page a reader copies. */
+	.named {
+		align-items: baseline;
+		border-block: 1px solid var(--sl-color-gray-5);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.75rem;
+		padding-block: 0.6875rem;
+	}
+
+	.name {
+		background: none;
+		color: var(--sl-color-white);
+		font-family: var(--sl-font-mono);
+		font-size: 0.875rem;
+		font-weight: 500;
+		padding: 0;
+	}
+
+	.flag {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		margin-inline-start: auto;
+		text-transform: uppercase;
+	}
+
+	.lede {
+		font-size: 1rem;
+		line-height: 1.65;
+		margin-block-start: 1.125rem;
+	}
+
+	/* What shape the type is, for a reader who has not met a union in this API yet. */
+	.kind {
+		color: var(--sl-color-gray-2);
+		font-size: 0.90625rem;
+		line-height: 1.6;
+		margin-block-start: 0.75rem;
+	}
+
+	/* The same rows a property states what it accepts in - see `./Fields.astro`. */
+	.notes {
+		display: grid;
+		gap: 0.25rem 1.25rem;
+		grid-template-columns: minmax(0, 1fr);
+		margin: 1rem 0 0;
+	}
+
+	@media (min-width: 45rem) {
+		.notes {
+			grid-template-columns: 5rem minmax(0, 1fr);
+		}
+	}
+
+	.notes dt {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		line-height: 1.7;
+		text-transform: uppercase;
+	}
+
+	.notes dd {
+		color: var(--sl-color-gray-2);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
+	/*
+	 * The heading of a section, drawn as `../../styles/site.css` draws the
+	 * manual's and as `./Operation.astro` draws an endpoint's: a rule the width of
+	 * the column, the numeral hung in the margin, and the words on the axis
+	 * everything else starts at.
+	 */
+	h2 {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: var(--sl-color-white);
+		counter-increment: doc-section;
+		font-size: var(--sl-text-h2);
+		font-weight: 600;
+		letter-spacing: -0.015em;
+		line-height: 1.2;
+		margin-block: 2.25rem 1rem;
+		padding-block-start: 1rem;
+		position: relative;
+	}
+
+	h2::before {
+		color: var(--sl-color-gray-3);
+		content: counter(doc-section, decimal-leading-zero);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+		letter-spacing: 0.04em;
+		position: absolute;
+		right: 0;
+		top: 1.125rem;
+	}
+
+	@media (min-width: 50rem) {
+		h2 {
+			margin-block-start: 3.25rem;
+			margin-inline-start: calc(-1 * var(--doc-margin));
+			padding-block-start: 1.375rem;
+			padding-inline-start: var(--doc-margin);
+		}
+
+		h2::before {
+			font-size: 0.8125rem;
+			left: 0;
+			right: auto;
+			top: 1.625rem;
+		}
+	}
+
+	.says {
+		color: var(--sl-color-gray-2);
+		line-height: 1.6;
+		margin: 0 0 0.75rem;
+	}
+
+	/*
+	 * A variant is a block rather than a row, because this page is the one place
+	 * the variants of a union are read side by side and a disclosure each would
+	 * put every one of them behind a click.
+	 */
+	.variant {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		padding-block: 0.875rem;
+	}
+
+	.variant:last-child {
+		border-block-end: 1px solid var(--sl-color-gray-5);
+	}
+
+	.variant > .head {
+		align-items: baseline;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.625rem;
+	}
+
+	.variant > .head > .name {
+		color: var(--sl-color-text-accent);
+		font-size: 0.90625rem;
+	}
+
+	.variant > .head > a.name {
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-4);
+		text-underline-offset: 0.2em;
+	}
+
+	.variant > .head > a.name:hover {
+		text-decoration-color: currentColor;
+	}
+
+	.variant .says {
+		margin-block: 0.3125rem 0;
+	}
+
+	/*
+	 * The value that selects a variant is the other half of what identifies it,
+	 * so it is set beside the name - see `variantsOf` in `../../openapi/schema.mjs`.
+	 */
+	.selects {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+	}
+
+	.selects code {
+		background: none;
+		color: var(--sl-color-white);
+		font-size: 1em;
+		padding: 0;
+	}
+
+	/* A row per endpoint, as the overview lists them - see `../../pages/api/index.astro`. */
+	.endpoints {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.endpoints a {
+		align-items: baseline;
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: inherit;
+		display: grid;
+		gap: 0.125rem 1rem;
+		grid-template-columns: 3.25rem minmax(0, 1fr) auto;
+		padding-block: 0.5rem;
+		text-decoration: none;
+	}
+
+	.endpoints li:last-child a {
+		border-block-end: 1px solid var(--sl-color-gray-5);
+	}
+
+	.summary {
+		color: var(--sl-color-white);
+		font-size: 0.9375rem;
+	}
+
+	.endpoints a:hover .summary {
+		color: var(--sl-color-text-accent);
+	}
+
+	.endpoints .path {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		overflow-wrap: anywhere;
+	}
+
+	@media (max-width: 44rem) {
+		.endpoints a {
+			grid-template-columns: 3.25rem minmax(0, 1fr);
+		}
+
+		.endpoints .path {
+			grid-column: 2;
+		}
+	}
+
+	/* The types that hold this one, as names to scan rather than rows to read. */
+	.held {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 1rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.held a {
+		color: var(--sl-color-text-accent);
+		font-family: var(--sl-font-mono);
+		font-size: 0.8125rem;
+		text-decoration-color: var(--sl-color-gray-4);
+	}
+
+	.held a:hover {
+		text-decoration-color: currentColor;
+	}
+</style>

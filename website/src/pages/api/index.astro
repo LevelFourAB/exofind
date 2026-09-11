@@ -9,6 +9,10 @@
  * want to do finds it faster by reading thirty-one lines than by opening eight
  * groups in the sidebar.
  *
+ * The types close the page. They are the parts a request is built from that no
+ * one endpoint states in full - see `../../openapi/types.mjs` - and a reader who
+ * has a type name and no endpoint to hang it on starts here.
+ *
  * A tag links to the page of the manual that explains the endpoints under it,
  * where the document names one. That is the division these pages are built
  * around: an endpoint page states one call in full, and the manual explains the
@@ -18,18 +22,23 @@ import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
 
 import Prose from "../../components/api/Prose.astro";
 import { localHref } from "../../openapi/markdown.mjs";
-import { pathOf } from "../../openapi/sidebar.mjs";
+import { pathOf, typePathOf } from "../../openapi/sidebar.mjs";
 import {
 	authentication,
 	document,
 	sections,
 	serverUrl,
+	types,
 } from "../../openapi/spec.mjs";
 import { REPO } from "../../site.mjs";
 import { slug } from "github-slugger";
 
 const auth = authentication();
 const listed = sections();
+const listedTypes = types();
+
+/** The heading the types are listed under, which is also its own anchor. */
+const TYPES = "Types";
 
 /*
  * The on-this-page list, stated rather than collected. Starlight reads the
@@ -37,11 +46,14 @@ const listed = sections();
  * the headings below are the ones a reader sees, so they are the ones named
  * here, and each `slug` is the `id` of the heading it stands for.
  */
-const headings = listed.map((section) => ({
-	depth: 2,
-	slug: slug(section.name),
-	text: section.name,
-}));
+const headings = [
+	...listed.map((section) => ({
+		depth: 2,
+		slug: slug(section.name),
+		text: section.name,
+	})),
+	{ depth: 2, slug: slug(TYPES), text: TYPES },
+];
 ---
 
 <StarlightPage
@@ -90,6 +102,23 @@ const headings = listed.map((section) => ({
 			</section>
 		</>
 	))}
+
+	<h2 id={slug(TYPES)}>{TYPES}</h2>
+	<section class="section not-content">
+		<p class="says">
+			The types a request or an answer is built from that more than one
+			endpoint holds, that hold themselves, or that are one of several
+			types. Every other type is stated on the endpoint that takes it.
+		</p>
+
+		<ul class="types">
+			{listedTypes.map((type) => (
+				<li>
+					<a href={typePathOf(type.name)}>{type.name}</a>
+				</li>
+			))}
+		</ul>
+	</section>
 </StarlightPage>
 
 <style>
@@ -210,6 +239,31 @@ const headings = listed.map((section) => ({
 		font-family: var(--sl-font-mono);
 		font-size: 0.75rem;
 		overflow-wrap: anywhere;
+	}
+
+	/*
+	 * The types as names in a block rather than as a row each. A reader here is
+	 * looking a name up, so what the list has to do is put fifty of them where
+	 * one is found without scrolling.
+	 */
+	.types {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 1rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.types a {
+		color: var(--sl-color-text-accent);
+		font-family: var(--sl-font-mono);
+		font-size: 0.8125rem;
+		text-decoration-color: var(--sl-color-gray-4);
+	}
+
+	.types a:hover {
+		text-decoration-color: currentColor;
 	}
 
 	/* Below the width there is room for three columns, the path goes under. */

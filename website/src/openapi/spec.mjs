@@ -11,7 +11,8 @@
  * operation with its parameters already gathered, a response with its schema
  * and its example already picked out. The modules beside this one take it from
  * there - `./schema.mjs` turns a schema into the rows of a table, `./example.mjs`
- * into a body to show, and `./snippet.mjs` into a call to copy.
+ * into a body to show, `./snippet.mjs` into a call to copy, and `./types.mjs`
+ * picks out the types that are worth a page of their own.
  *
  * One rule runs through all four: a `$ref` is never inlined. Sixteen of the
  * schemas in this document reach themselves - a clause holds clauses, an object
@@ -21,6 +22,8 @@
  */
 
 import { parse as parseYaml } from 'yaml';
+
+import { typesIn } from './types.mjs';
 
 /*
  * The document arrives as text rather than as a file read at run time, because
@@ -188,6 +191,46 @@ export function sections() {
 			operations: listed.filter(operation => operation.tag === name)
 		};
 	});
+}
+
+/**
+ * @typedef {import('./types.mjs').Type} DeclaredType
+ * @property {Operation[]} operations the endpoints that can hold one, in place of
+ *   the ids `./types.mjs` answers with
+ */
+
+/**
+ * The types that have pages of their own, in alphabetical order.
+ *
+ * `./types.mjs` states the rule and answers with the `operationId` of each
+ * endpoint that can hold the type, because it is written to answer about a
+ * document the indexer reads as well - see the note at the top of it. A page
+ * wants the endpoint rather than its id, so they are looked up here.
+ *
+ * @returns {DeclaredType[]}
+ */
+export function types() {
+	const listed = operations();
+
+	return typesIn(document).map(type => ({
+		...type,
+		operations: type.operations
+			.map(id => listed.find(operation => operation.id === id))
+			.filter(Boolean)
+	}));
+}
+
+/**
+ * Whether a type has a page, which is what decides whether a row links to one.
+ *
+ * A row names a type that has no page more often than not, and the name is still
+ * what the row states. It is set as text there rather than as a link to nothing.
+ *
+ * @param {string | null | undefined} name
+ * @returns {boolean}
+ */
+export function hasTypePage(name) {
+	return Boolean(name) && typesIn(document).some(type => type.name === name);
 }
 
 /**
