@@ -207,6 +207,9 @@ limits of object storage, and what that costs a deployment.
 - [Text analysis](explanation/analysis.md): Why one chain serves both sides of a
   search, where the two sides differ on purpose, and why a change to a chain
   needs a new generation.
+- [Where a setting lives](explanation/where-settings-live.md): Which of the
+  index definition, the search settings, and the search request owns a setting,
+  and how fast a change to each one reaches the nodes.
 - [Relevance](explanation/relevance.md): The layers results are ordered by, what
   each one is for, and which of them a change reaches without reindexing.
 - [Signal fields](explanation/signal-fields.md): Why a number a ranking reads is
