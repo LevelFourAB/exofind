@@ -14,13 +14,19 @@
  * around: an endpoint page states one call in full, and the manual explains the
  * parts of the API that are not one call.
  */
-import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
 
-import Prose from '../../components/api/Prose.astro';
-import { localHref } from '../../openapi/markdown.mjs';
-import { pathOf } from '../../openapi/sidebar.mjs';
-import { authentication, document, sections, serverUrl } from '../../openapi/spec.mjs';
-import { REPO } from '../../site.mjs';
+import Prose from "../../components/api/Prose.astro";
+import { localHref } from "../../openapi/markdown.mjs";
+import { pathOf } from "../../openapi/sidebar.mjs";
+import {
+	authentication,
+	document,
+	sections,
+	serverUrl,
+} from "../../openapi/spec.mjs";
+import { REPO } from "../../site.mjs";
+import { slug } from "github-slugger";
 
 const auth = authentication();
 const listed = sections();
@@ -31,54 +37,48 @@ const listed = sections();
  * the headings below are the ones a reader sees, so they are the ones named
  * here, and each `slug` is the `id` of the heading it stands for.
  */
-const headings = [
-	{ depth: 2, slug: 'endpoints', text: 'Endpoints' },
-	{ depth: 2, slug: 'reading-an-endpoint', text: 'Reading an endpoint' }
-];
+const headings = listed.map((section) => ({
+	depth: 2,
+	slug: slug(section.name),
+	text: section.name,
+}));
 ---
 
 <StarlightPage
 	headings={headings}
 	frontmatter={{
-		title: 'REST API',
-		description: 'API endpoints for Exofind, how to call them and what to expect when you do.'
+		title: "REST API",
+		description:
+			"API endpoints for Exofind, how to call them and what to expect when you do.",
 	}}
 >
 	<p>
-		API endpoints. Full OpenAPI spec is available at <a href="/openapi.yaml">/openapi.yaml</a>.
+		API endpoints, see{" "}
+		<a href="/reference/api-conventions/">API reference</a> for general
+		API-guidance. Full OpenAPI spec is available at{" "}
+		<a href="/openapi.yaml">/openapi.yaml</a>.
 	</p>
 
-	<div class="start not-content">
-		{auth && (
-			<div class="fact">
-				<span class="label">Key</span>
-				<code>Authorization: Bearer &lt;key&gt;</code>
-				<Prose text={auth.description} variant="inline" class="says" />
-			</div>
-		)}
-	</div>
-
-	<h2 id="endpoints">Endpoints</h2>
-
-	<div class="sections not-content">
-		{listed.map(section => (
-			<section class="section">
-				<div class="section-head">
-					<h3>{section.name}</h3>
-					{section.reference && (
-						<a class="reference" href={localHref(section.reference.href)}>
-							{section.reference.label}
-						</a>
-					)}
-				</div>
-
-				<Prose text={section.description} variant="inline" class="says" />
+	{listed.map((section) => (
+		<>
+			<h2 id={slug(section.name)}>{section.name}</h2>
+			<section class="section not-content">
+				<Prose
+					text={section.description}
+					variant="inline"
+					class="says"
+				/>
 
 				<ul class="endpoints">
-					{section.operations.map(operation => (
+					{section.operations.map((operation) => (
 						<li>
 							<a href={pathOf(operation)}>
-								<span class:list={['method', `method-${operation.method.toLowerCase()}`]}>
+								<span
+									class:list={[
+										"method",
+										`method-${operation.method.toLowerCase()}`,
+									]}
+								>
 									{operation.method}
 								</span>
 								<span class="summary">{operation.summary}</span>
@@ -88,27 +88,8 @@ const headings = [
 					))}
 				</ul>
 			</section>
-		))}
-	</div>
-
-	<h2 id="reading-an-endpoint">Reading an endpoint</h2>
-
-	<p>
-		Each endpoint states its parameters, its body and every status it answers
-		with. A property carries the name of its type - <code>Clause</code>,
-		<code>Matcher</code>, <code>FieldDefinition</code> - which is the name a
-		generated client gives it too, and a type that is one of several opens
-		into the list of what it may be.
-	</p>
-
-	<p>
-		The call beside an endpoint is the call to make: the request itself, and
-		then four languages to make it from, each reading the key from an
-		environment variable. It carries the parameters the endpoint requires;
-		the optional ones are stated on the left, where what they do is stated
-		with them. The engine's own examples are
-		in <a href={`${REPO}/tree/main/examples`}>examples/</a>.
-	</p>
+		</>
+	))}
 </StarlightPage>
 
 <style>
