@@ -15,6 +15,7 @@ import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.AuthContext;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexListResponse;
@@ -139,11 +140,63 @@ public class ReindexResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			A reindex job is already in progress (`reindex:in_progress`), the \
-			target generation is busy being reindexed (`reindex:target_busy`), \
-			or no node is available to write the index.""",
+		description = "The job could not be started.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "reindex:target_generation_required",
+		status = 400,
+		when = "The target names an index without a generation. Name one as `index@generation`."
+	)
+	@ReturnsError(
+		value = "reindex:target_is_live",
+		status = 400,
+		when = "The target is the live generation. Fill another generation and promote it."
+	)
+	@ReturnsError(
+		value = "reindex:target_not_empty",
+		status = 400,
+		when = "The target generation already holds documents."
+	)
+	@ReturnsError(
+		value = "reindex:source_is_target",
+		status = 400,
+		when = "The source and the target are the same generation."
+	)
+	@ReturnsError(
+		value = "reindex:source_other_index",
+		status = 400,
+		when = "The source belongs to another index."
+	)
+	@ReturnsError(
+		value = "reindex:primary_key_mismatch",
+		status = 400,
+		when = "The source and the target declare different primary keys."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "reindex:in_progress",
+		status = 409,
+		when = "A reindex job is already running for the index. Wait for it, or cancel it."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "Another job holds the target generation."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	@APIResponse(
 		responseCode = "502",
@@ -213,9 +266,19 @@ public class ReindexResource {
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No job exists for this index (`reindex:not_found`), the index does \
-			not exist, or the caller key lacks permissions on the index.""",
+			No job exists for this index, the index does not exist, or the \
+			caller key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "reindex:not_found",
+		status = 404,
+		when = "The index has no reindex job."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
 	public ReindexInfo status(
 		@Parameter(
@@ -269,14 +332,34 @@ public class ReindexResource {
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			No job exists for this index (`reindex:not_found`), the index does \
-			not exist, or the caller key lacks permissions on the index.""",
+			No job exists for this index, the index does not exist, or the \
+			caller key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = "No node is available to write the index.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "reindex:not_found",
+		status = 404,
+		when = "The index has no reindex job."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	@APIResponse(
 		responseCode = "502",

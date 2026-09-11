@@ -77,6 +77,52 @@ public final class ApiEndpoints {
 	}
 
 	/**
+	 * How an endpoint and an operation of the OpenAPI document are matched up:
+	 * the HTTP method and the path, as the document spells them.
+	 *
+	 * <p>Both filters that write into the document look an operation up this
+	 * way, so a path spelled one way here is spelled that way for all of them.
+	 */
+	public static String key(Method endpoint) {
+		return key(methodOf(endpoint), pathOf(endpoint));
+	}
+
+	/**
+	 * The same key, built from what an operation of the document states.
+	 */
+	public static String key(String method, String path) {
+		return method + " " + path;
+	}
+
+	/** The HTTP method an endpoint is served under. */
+	private static String methodOf(Method endpoint) {
+		for(var annotation : METHODS) {
+			if(endpoint.getAnnotation(annotation) != null) {
+				return annotation.getSimpleName();
+			}
+		}
+
+		throw new IllegalStateException(describe(endpoint) + " carries no HTTP method");
+	}
+
+	/** The path an endpoint is served at, as the document spells it. */
+	private static String pathOf(Method endpoint) {
+		var type = endpoint.getDeclaringClass().getAnnotation(jakarta.ws.rs.Path.class);
+		var method = endpoint.getAnnotation(jakarta.ws.rs.Path.class);
+
+		var path = (type == null ? "" : type.value())
+			+ "/" + (method == null ? "" : method.value());
+
+		var cleaned = path.replaceAll("/+", "/");
+
+		if(cleaned.length() > 1 && cleaned.endsWith("/")) {
+			cleaned = cleaned.substring(0, cleaned.length() - 1);
+		}
+
+		return cleaned.startsWith("/") ? cleaned : "/" + cleaned;
+	}
+
+	/**
 	 * Every compiled class of the API, resources and models alike, in the
 	 * order they were walked in.
 	 */

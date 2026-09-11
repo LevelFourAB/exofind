@@ -14,15 +14,9 @@ import org.eclipse.microprofile.openapi.models.Operation;
 import org.eclipse.microprofile.openapi.models.responses.APIResponses;
 
 import se.l4.exofind.engine.api.ApiEndpoints;
+import se.l4.exofind.engine.api.errors.ErrorCodeFilter;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Role;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HEAD;
-import jakarta.ws.rs.OPTIONS;
-import jakarta.ws.rs.PATCH;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.PUT;
 
 /**
  * Writes what an endpoint requires into the OpenAPI document, from the
@@ -103,7 +97,7 @@ public class RequiredPermissionFilter implements OASFilter {
 			if(operations == null) continue;
 
 			for(var operation : operations.entrySet()) {
-				var key = key(operation.getKey().name(), path.getKey());
+				var key = ApiEndpoints.key(operation.getKey().name(), path.getKey());
 				var permission = required.get(key);
 
 				if(permission == null) {
@@ -156,28 +150,46 @@ public class RequiredPermissionFilter implements OASFilter {
 			operation.setResponses(responses);
 		}
 
-		add(responses, key, UNAUTHENTICATED, """
-			The request carries no credential this node accepts. Absent, malformed, \
-			unknown and lapsed keys are all answered alike, so a refusal cannot be \
-			used to find out which keys exist. The response carries \
-			`WWW-Authenticate: Bearer`.""");
+		add(
+			responses,
+			key,
+			UNAUTHENTICATED,
+			"""
+				The request carries no credential this node accepts. Absent, malformed, \
+				unknown and lapsed keys are all answered alike, so a refusal cannot be \
+				used to find out which keys exist. The response carries \
+				`WWW-Authenticate: Bearer`.""",
+			"auth:unauthenticated",
+			"The request carries no credential this node accepts."
+		);
 
 		add(
 			responses,
 			key,
 			FORBIDDEN,
-			"The API key does not have the `" + permission.id() + "` permission."
+			"The API key does not have the `" + permission.id() + "` permission.",
+			"auth:forbidden",
+			"The key is accepted but does not hold the `" + permission.id() + "` permission."
 		);
 
 		inStatusOrder(responses);
 	}
 
-	/** Add one answer, or report the endpoint that states it for itself. */
+	/**
+	 * Add one answer, or report the endpoint that states it for itself.
+	 *
+	 * <p>The answer carries its error code the way every other answer does, so
+	 * that a reader meets the refusals in the same shape as the failures an
+	 * endpoint declares for itself. {@code ErrorCodeFilter} states what the
+	 * extension holds.
+	 */
 	private static void add(
 		APIResponses responses,
 		String key,
 		String status,
-		String description
+		String description,
+		String code,
+		String when
 	) {
 		if(responses.getAPIResponse(status) != null) {
 			throw new IllegalStateException(
@@ -186,15 +198,19 @@ public class RequiredPermissionFilter implements OASFilter {
 			);
 		}
 
-		responses.addAPIResponse(
-			status,
-			OASFactory.createAPIResponse()
-				.description(description)
-				.content(OASFactory.createContent().addMediaType(
-					JSON,
-					OASFactory.createMediaType().schema(OASFactory.createSchema().ref(ERROR_RESPONSE))
-				))
+		var response = OASFactory.createAPIResponse()
+			.description(description + "\n\n" + ErrorCodeFilter.OPENING + "`" + code + "` - " + when)
+			.content(OASFactory.createContent().addMediaType(
+				JSON,
+				OASFactory.createMediaType().schema(OASFactory.createSchema().ref(ERROR_RESPONSE))
+			));
+
+		response.addExtension(
+			ErrorCodeFilter.CODES,
+			List.of(Map.of(ErrorCodeFilter.CODE, code, ErrorCodeFilter.WHEN, when))
 		);
+
+		responses.addAPIResponse(status, response);
 	}
 
 	/**
@@ -326,7 +342,7 @@ public class RequiredPermissionFilter implements OASFilter {
 				continue;
 			}
 
-			var key = key(methodOf(endpoint), pathOf(endpoint));
+			var key = ApiEndpoints.key(endpoint);
 			var seen = required.putIfAbsent(key, permission);
 
 			if(
@@ -343,40 +359,4 @@ public class RequiredPermissionFilter implements OASFilter {
 		return required;
 	}
 
-	/** The HTTP method an endpoint is served under. */
-	private static String methodOf(Method endpoint) {
-		if(endpoint.getAnnotation(GET.class) != null) return "GET";
-		if(endpoint.getAnnotation(POST.class) != null) return "POST";
-		if(endpoint.getAnnotation(PUT.class) != null) return "PUT";
-		if(endpoint.getAnnotation(DELETE.class) != null) return "DELETE";
-		if(endpoint.getAnnotation(PATCH.class) != null) return "PATCH";
-		if(endpoint.getAnnotation(HEAD.class) != null) return "HEAD";
-		if(endpoint.getAnnotation(OPTIONS.class) != null) return "OPTIONS";
-
-		throw new IllegalStateException(
-			ApiEndpoints.describe(endpoint) + " carries no HTTP method"
-		);
-	}
-
-	/** The path an endpoint is served at, as the document spells it. */
-	private static String pathOf(Method endpoint) {
-		var type = endpoint.getDeclaringClass().getAnnotation(jakarta.ws.rs.Path.class);
-		var method = endpoint.getAnnotation(jakarta.ws.rs.Path.class);
-
-		var path = (type == null ? "" : type.value())
-			+ "/" + (method == null ? "" : method.value());
-
-		var cleaned = path.replaceAll("/+", "/");
-
-		if(cleaned.length() > 1 && cleaned.endsWith("/")) {
-			cleaned = cleaned.substring(0, cleaned.length() - 1);
-		}
-
-		return cleaned.startsWith("/") ? cleaned : "/" + cleaned;
-	}
-
-	/** How an endpoint and an operation of the document are matched up. */
-	private static String key(String method, String path) {
-		return method + " " + path;
-	}
 }

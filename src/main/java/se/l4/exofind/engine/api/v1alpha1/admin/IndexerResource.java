@@ -13,6 +13,7 @@ import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.AuthContext;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexerListResponse;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.index.state.IndexerLeadershipUnreadableException;
@@ -92,9 +93,14 @@ public class IndexerResource {
 		responseCode = "503",
 		description = """
 			Indexer leadership assignments could not be read from shared \
-			storage (`indexer:leadership_unreadable`). Retrying the request is \
-			expected to work once storage responds.""",
+			storage. Retrying the request is expected to work once storage \
+			responds.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "indexer:leadership_unreadable",
+		status = 503,
+		when = "Leadership assignments could not be read from shared state storage. Send the request again once storage answers."
 	)
 	public IndexerListResponse list() {
 		var overview = ownership.overview()

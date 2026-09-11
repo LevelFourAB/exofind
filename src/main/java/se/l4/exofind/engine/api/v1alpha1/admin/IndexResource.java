@@ -20,6 +20,7 @@ import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.AuthContext;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.errors.UnrepresentableStateException;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.GenerationSummary;
@@ -211,10 +212,8 @@ public class IndexResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The stored definition holds settings this API version cannot \
-			represent (`index:definition:unrepresentable`), or the index needs \
-			engine features this node does not have (`index:unsupported`). \
-			Send the request to a node running a version that supports it.""",
+			The node cannot describe the index. Send the request to a node \
+			running a version that supports it.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -223,6 +222,26 @@ public class IndexResource {
 			The request raced the index being closed. Retrying the request \
 			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:definition:unrepresentable",
+		status = 409,
+		when = "The stored definition holds settings this API version cannot describe."
+	)
+	@ReturnsError(
+		value = "index:unsupported",
+		status = 409,
+		when = "The index needs engine features this node does not have."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed. Sending it again reopens the index."
 	)
 	public Response get(
 		@Parameter(
@@ -336,9 +355,68 @@ public class IndexResource {
 		responseCode = "400",
 		description = """
 			The definition failed validation - the response details each \
-			problem - or `reindex` was given on a request that creates no \
-			generation (`index:reindex_needs_new_generation`).""",
+			problem - or the request asks for a reindex it cannot run.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:reindex_needs_new_generation",
+		status = 400,
+		when = "`reindex` was given on a request that creates no generation."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The name belongs to no index, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:definition:incompatible",
+		status = 409,
+		when = "The definition conflicts with documents already stored in the generation. Write the change to a new generation."
+	)
+	@ReturnsError(
+		value = "index:definition:unrepresentable",
+		status = 409,
+		when = "The stored definition holds settings this API version cannot describe."
+	)
+	@ReturnsError(
+		value = "index:unsupported",
+		status = 409,
+		when = "The index needs engine features this node does not have."
+	)
+	@ReturnsError(
+		value = "reindex:in_progress",
+		status = 409,
+		when = "A reindex job is already running for the index."
+	)
+	@ReturnsError(
+		value = "index:generation:storage_held",
+		status = 409,
+		when = "Storage holds a generation under the new name that nothing deleted. Repair the registry, or remove its objects."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:registry:conflict",
+		status = 409,
+		when = "The registry kept being written by other nodes. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:version-mismatch",
+		status = 412,
+		when = "The `If-Match` version is not the one the stored definition is at. Read the index again and rebuild the change."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed. Sending it again reopens the index."
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -562,16 +640,38 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			The generation is the live one (`index:generation:is_live`), no \
-			node is available to write the index, or the registry write \
-			failed.""",
+		description = "The index or generation cannot be removed right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
 		description = "The index writer did not respond to the forwarded request.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:generation:is_live",
+		status = 409,
+		when = "The generation is the live one. Promote another generation first."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:registry:conflict",
+		status = 409,
+		when = "The registry kept being written by other nodes. Send the request again."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	public Response delete(
 		@Parameter(
@@ -636,9 +736,7 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "400",
-		description = """
-			The path names no generation \
-			(`index:generation:name_required`).""",
+		description = "The path names no generation.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -650,11 +748,38 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			A reindex job is still filling this generation \
-			(`reindex:target_busy`), no node is available to write the index, \
-			or the registry write failed.""",
+		description = "The generation cannot be promoted right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:generation:name_required",
+		status = 400,
+		when = "The path names an index without a generation. Name one as `index@generation`."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "A reindex job is still filling this generation. Promote it once the job is ready."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:registry:conflict",
+		status = 409,
+		when = "The registry kept being written by other nodes. Send the request again."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	@APIResponse(
 		responseCode = "502",
@@ -715,9 +840,7 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			No node is available to write the index, or this node lost the \
-			writer role while serving the request (`index:readonly`).""",
+		description = "The index cannot be committed right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -731,6 +854,31 @@ public class IndexResource {
 			The request raced the index being closed. Retrying the request \
 			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed. Sending it again reopens the index."
 	)
 	public IndexStatus commit(
 		@Parameter(
@@ -798,6 +946,16 @@ public class IndexResource {
 			The request raced the index being closed. Retrying the request \
 			reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed. Sending it again reopens the index."
 	)
 	public IndexStatus pull(
 		@Parameter(

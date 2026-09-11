@@ -28,6 +28,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.errors.UnrepresentableStateException;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
@@ -197,10 +198,28 @@ public class IndexSettingsResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			Settings storage could not be reached \
-			(`index:settings:io_error`, `index:settings:unavailable`).""",
+		description = "Settings storage could not be reached.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:settings:not_found",
+		status = 404,
+		when = "The index has no search settings stored."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:settings:io_error",
+		status = 409,
+		when = "Settings storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:unavailable",
+		status = 409,
+		when = "Settings storage could not be reached. Send the request again once it answers."
 	)
 	public Response get(
 		@Parameter(
@@ -283,9 +302,7 @@ public class IndexSettingsResource {
 		responseCode = "400",
 		description = """
 			The request body is missing, or the settings failed validation \
-			against the generation the index answers from (`index:ranking:*`, \
-			`index:settings:synonyms:*`, `index:settings:typo_exclusions:*`, \
-			`index:settings:fields:*`).""",
+			against the generation the index answers from.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -296,20 +313,81 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			Concurrent modifications prevented the settings from being stored \
-			(`index:settings:conflict`), storage could not be reached \
-			(`index:settings:io_error`, `index:settings:unavailable`), or no \
-			node is available to write the index. The stored settings remain \
+			The settings could not be stored. The stored settings remain \
 			unchanged; send the request again.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "412",
 		description = """
-			The `If-Match` version does not match the stored settings \
-			(`index:settings:version_mismatch`). Read them again and rebuild \
-			the change on the version that comes back.""",
+			The `If-Match` version does not match the stored settings. Read them \
+			again and rebuild the change on the version that comes back.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no body."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:unknown_field",
+		status = 400,
+		when = "A synonym set names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:field_not_text",
+		status = 400,
+		when = "A synonym set names a field that is not searched as text."
+	)
+	@ReturnsError(
+		value = "index:settings:typo_exclusions:unknown_field",
+		status = 400,
+		when = "A typo exclusion names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:unknown_field",
+		status = 400,
+		when = "The field settings name a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:ranking:field_not_sortable",
+		status = 400,
+		when = "A ranking signal names a field that is not sortable."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:settings:conflict",
+		status = 409,
+		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:io_error",
+		status = 409,
+		when = "Settings storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:unavailable",
+		status = 409,
+		when = "Settings storage could not be reached. Send the request again once it answers."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:settings:version_mismatch",
+		status = 412,
+		when = "The `If-Match` version is not the one the stored settings are at. Read them again and rebuild the change."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	@APIResponse(
 		responseCode = "502",
@@ -433,10 +511,9 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The request body is missing, a key is not a path or names a place \
-			the settings cannot be changed at (`request:update:*`), or the \
-			result failed validation against the generation the index answers \
-			from (`index:ranking:*`).""",
+			The request body is missing, a key names a place the settings cannot \
+			be changed at, or the result failed validation against the \
+			generation the index answers from.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -447,13 +524,73 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			Concurrent modifications prevented the change from being made \
-			(`index:settings:conflict`), the stored settings hold parts this \
-			version cannot describe (`index:settings:unrepresentable`), \
-			storage could not be reached (`index:settings:io_error`, \
-			`index:settings:unavailable`), or no node is available to write \
-			the index. The stored settings are unchanged.""",
+			The change could not be made. The stored settings are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no body."
+	)
+	@ReturnsError(
+		value = "request:update:path_invalid",
+		status = 400,
+		when = "A key of the change could not be read as a path."
+	)
+	@ReturnsError(
+		value = "request:update:no_match",
+		status = 400,
+		when = "A selector names nothing the settings hold. A selector never creates the value it names."
+	)
+	@ReturnsError(
+		value = "request:update:value_invalid",
+		status = 400,
+		when = "A key names a field that cannot hold the given value."
+	)
+	@ReturnsError(
+		value = "index:ranking:field_not_sortable",
+		status = 400,
+		when = "A ranking signal names a field that is not sortable."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:settings:conflict",
+		status = 409,
+		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:unrepresentable",
+		status = 409,
+		when = "The stored settings hold parts this node cannot describe. Send the request to a node that supports them, or replace the settings with a `PUT`."
+	)
+	@ReturnsError(
+		value = "index:settings:io_error",
+		status = 409,
+		when = "Settings storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:unavailable",
+		status = 409,
+		when = "Settings storage could not be reached. Send the request again once it answers."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:settings:version_mismatch",
+		status = 412,
+		when = "The `If-Match` version is not the one the stored settings are at. Read them again and rebuild the change."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	@APIResponse(
 		responseCode = "412",
@@ -967,11 +1104,39 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The change could not be stored (`index:settings:conflict`, \
-			`index:settings:io_error`, `index:settings:unavailable`), or no \
-			node is available to write the index. The stored settings are \
+			The change could not be stored. The stored settings are \
 			unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:settings:conflict",
+		status = 409,
+		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:io_error",
+		status = 409,
+		when = "Settings storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:settings:unavailable",
+		status = 409,
+		when = "Settings storage could not be reached. Send the request again once it answers."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
 	)
 	@APIResponse(
 		responseCode = "502",

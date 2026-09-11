@@ -14,6 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.CreatedKey;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyDefinition;
@@ -100,11 +101,18 @@ public class KeyResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			Key storage is unavailable on this node \
-			(`auth:keys:unavailable`) or could not be reached \
-			(`auth:keys:io_error`).""",
+		description = "Key storage is unavailable on this node, or could not be reached.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "auth:keys:unavailable",
+		status = 409,
+		when = "The node is not configured with key storage."
+	)
+	@ReturnsError(
+		value = "auth:keys:io_error",
+		status = 409,
+		when = "Key storage answered with an error. Send the request again."
 	)
 	public KeyListResponse list() {
 		return new KeyListResponse(
@@ -159,19 +167,45 @@ public class KeyResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The request body is missing, specifies an unknown role, \
-			permission, or index pattern, or contains an invalid `expiresAt` \
-			timestamp (`auth:key:*`). All validation errors are reported.""",
+			The request body is missing, or the key definition failed \
+			validation. All validation errors are reported.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			Key storage is unavailable on this node (`auth:keys:unavailable`), \
-			could not be reached (`auth:keys:io_error`), or concurrent updates \
-			from other nodes conflicted with this request \
-			(`auth:keys:conflict`). The stored keys are unchanged.""",
+			The key could not be stored. The stored keys are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no body."
+	)
+	@ReturnsError(
+		value = "auth:key:unknown_role",
+		status = 400,
+		when = "The definition names a role this version does not have."
+	)
+	@ReturnsError(
+		value = "auth:key:unknown_permission",
+		status = 400,
+		when = "The definition names a permission this version does not have."
+	)
+	@ReturnsError(
+		value = "auth:keys:unavailable",
+		status = 409,
+		when = "The node is not configured with key storage."
+	)
+	@ReturnsError(
+		value = "auth:keys:io_error",
+		status = 409,
+		when = "Key storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "auth:keys:conflict",
+		status = 409,
+		when = "Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again."
 	)
 	public Response create(
 		@RequestBody(content = @Content(
@@ -233,16 +267,34 @@ public class KeyResource {
 	@APIResponse(responseCode = "204", description = "The key was revoked.")
 	@APIResponse(
 		responseCode = "404",
-		description = "No key has this ID (`auth:key:not_found`).",
+		description = "No key has this ID.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			Key storage is unavailable on this node, could not be reached, or \
-			concurrent updates from other nodes conflicted with this request. \
-			The stored keys are unchanged.""",
+			The key could not be revoked. The stored keys are unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "auth:key:not_found",
+		status = 404,
+		when = "No key is stored under this ID."
+	)
+	@ReturnsError(
+		value = "auth:keys:unavailable",
+		status = 409,
+		when = "The node is not configured with key storage."
+	)
+	@ReturnsError(
+		value = "auth:keys:io_error",
+		status = 409,
+		when = "Key storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "auth:keys:conflict",
+		status = 409,
+		when = "Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again."
 	)
 	public Response delete(
 		@Parameter(

@@ -24,6 +24,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
@@ -245,18 +246,10 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The request is not a valid search. The `code` property names the \
-			reason, such as `search:filter:scores` when a filter clause \
-			affects the score, `index:query:usage_not_enabled` when a field is \
-			not configured for the requested usage, or `search:page:too_deep` \
-			when `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
-
-			A request that asks for more than the node allows is refused with \
-			the same status. The `code` names the cap it exceeded: \
-			`search:limit:too_large`, `search:query:too_many_clauses`, \
-			`search:query:too_deep`, `search:clause:k_too_large`, or \
-			`search:clause:depth_too_large`. See \
-			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
+			The request is not a valid search, or it asks for more than the node \
+			allows. See \
+			[Search configuration](https://exofind.dev/reference/configuration/#search) \
+			for the caps.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -269,23 +262,78 @@ public class SearchResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			The index currently has no live generation \
-			(`index:no_live_generation`). Promote a generation and send the \
-			request again.""",
+		description = "The index cannot be searched right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = """
-			The request raced the index being closed to free local resources \
-			(`index:closed`). Sending the same request again reopens it.
-
-			Also returned when the search collected for longer than \
-			`EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The results collected \
-			before the node stopped are dropped, so narrow the search instead \
-			of repeating it.""",
+		description = "The search did not finish on the node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "search:filter:scores",
+		status = 400,
+		when = "A clause under `filter` affects the score. Move it out of `filter`."
+	)
+	@ReturnsError(
+		value = "index:query:field_not_found",
+		status = 400,
+		when = "A clause names a field the index does not have."
+	)
+	@ReturnsError(
+		value = "index:query:usage_not_enabled",
+		status = 400,
+		when = "A field is not defined for the usage the clause asks of it."
+	)
+	@ReturnsError(
+		value = "search:page:too_deep",
+		status = 400,
+		when = "`offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead."
+	)
+	@ReturnsError(
+		value = "search:limit:too_large",
+		status = 400,
+		when = "`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next`."
+	)
+	@ReturnsError(
+		value = "search:query:too_many_clauses",
+		status = 400,
+		when = "The query holds more clauses than the node allows."
+	)
+	@ReturnsError(
+		value = "search:query:too_deep",
+		status = 400,
+		when = "The query nests deeper than the node allows."
+	)
+	@ReturnsError(
+		value = "search:clause:k_too_large",
+		status = 400,
+		when = "A `knn` clause asks for more neighbours than the node allows."
+	)
+	@ReturnsError(
+		value = "search:clause:depth_too_large",
+		status = 400,
+		when = "A clause reaches deeper into objects than the node allows."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "search:timeout",
+		status = 503,
+		when = "The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again."
 	)
 	public SearchResponse search(
 		@Parameter(
@@ -414,19 +462,10 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The request is not one that can be counted. The `code` property \
-			names the reason, such as `index:query:field_not_found` when the \
-			field does not exist, `index:query:usage_not_enabled` when it is \
-			not defined for `facet`, `index:query:facet_prefix_on_a_tree` \
-			when its values are paths through a tree, \
-			`search:facet:limit_invalid` when `limit` is outside 1 to 1000, \
-			or `search:filter:scores` when a filter clause affects the score.
-
-			A request that asks for more than the node allows is refused with \
-			the same status: `search:query:too_many_clauses`, \
-			`search:query:too_deep`, `search:clause:k_too_large`, or \
-			`search:clause:depth_too_large`. See \
-			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
+			The request is not one that can be counted, or it asks for more than \
+			the node allows. See \
+			[Search configuration](https://exofind.dev/reference/configuration/#search) \
+			for the caps.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -439,23 +478,78 @@ public class SearchResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			The index currently has no live generation \
-			(`index:no_live_generation`). Promote a generation and send the \
-			request again.""",
+		description = "The index cannot be searched right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = """
-			The request raced the index being closed to free local resources \
-			(`index:closed`). Sending the same request again reopens it.
-
-			Also returned when counting collected for longer than \
-			`EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The counts collected \
-			before the node stopped are dropped, so narrow the search instead \
-			of repeating it.""",
+		description = "The counting did not finish on the node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:query:field_not_found",
+		status = 400,
+		when = "The request names a field the index does not have."
+	)
+	@ReturnsError(
+		value = "index:query:usage_not_enabled",
+		status = 400,
+		when = "The field is not defined for `facet` usage."
+	)
+	@ReturnsError(
+		value = "index:query:facet_prefix_on_a_tree",
+		status = 400,
+		when = "A prefix was given for a field whose values are paths through a tree."
+	)
+	@ReturnsError(
+		value = "search:facet:limit_invalid",
+		status = 400,
+		when = "`limit` is outside 1 to 1000."
+	)
+	@ReturnsError(
+		value = "search:filter:scores",
+		status = 400,
+		when = "A clause under `filter` affects the score. Move it out of `filter`."
+	)
+	@ReturnsError(
+		value = "search:query:too_many_clauses",
+		status = 400,
+		when = "The query holds more clauses than the node allows."
+	)
+	@ReturnsError(
+		value = "search:query:too_deep",
+		status = 400,
+		when = "The query nests deeper than the node allows."
+	)
+	@ReturnsError(
+		value = "search:clause:k_too_large",
+		status = 400,
+		when = "A `knn` clause asks for more neighbours than the node allows."
+	)
+	@ReturnsError(
+		value = "search:clause:depth_too_large",
+		status = 400,
+		when = "A clause reaches deeper into objects than the node allows."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "search:timeout",
+		status = 503,
+		when = "Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again."
 	)
 	public FacetValuesResponse facetValues(
 		@Parameter(
@@ -591,20 +685,71 @@ public class SearchResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The request is not one that can be answered. The `code` property \
-			names the reason, such as `search:suggest:limit_invalid` when \
-			`limit` is outside 1 to 100, `search:locale:unsupported` when the \
-			locale is one the node has no rules for, \
-			`index:query:field_not_found` when a filter names a field the \
-			index does not have, or `search:filter:scores` when a filter \
-			clause affects the score.
-
-			A request that asks for more than the node allows is refused with \
-			the same status: `search:query:too_many_clauses`, \
-			`search:query:too_deep`, `search:clause:k_too_large`, or \
-			`search:clause:depth_too_large`. See \
-			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
+			The request is not one that can be answered, or it asks for more \
+			than the node allows. See \
+			[Search configuration](https://exofind.dev/reference/configuration/#search) \
+			for the caps.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "search:suggest:limit_invalid",
+		status = 400,
+		when = "`limit` is outside 1 to 100."
+	)
+	@ReturnsError(
+		value = "search:locale:unsupported",
+		status = 400,
+		when = "The request names a locale the node has no rules for."
+	)
+	@ReturnsError(
+		value = "index:query:field_not_found",
+		status = 400,
+		when = "A filter names a field the index does not have."
+	)
+	@ReturnsError(
+		value = "search:filter:scores",
+		status = 400,
+		when = "A clause under `filter` affects the score. Move it out of `filter`."
+	)
+	@ReturnsError(
+		value = "search:query:too_many_clauses",
+		status = 400,
+		when = "The filter holds more clauses than the node allows."
+	)
+	@ReturnsError(
+		value = "search:query:too_deep",
+		status = 400,
+		when = "The filter nests deeper than the node allows."
+	)
+	@ReturnsError(
+		value = "search:clause:k_too_large",
+		status = 400,
+		when = "A `knn` clause asks for more neighbours than the node allows."
+	)
+	@ReturnsError(
+		value = "search:clause:depth_too_large",
+		status = 400,
+		when = "A clause reaches deeper into objects than the node allows."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "search:timeout",
+		status = 503,
+		when = "Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What it collected is dropped, so narrow the filters rather than sending the request again."
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -739,33 +884,60 @@ public class SearchResource {
 		responseCode = "400",
 		description = """
 			The request is not a valid search, or the index declares no primary \
-			key so a hit cannot be named (`index:no_primary_key`).""",
+			key so a hit cannot be named.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			The index does not exist, or the key has no permissions on it. \
-			Also returned when no document exists under `key` \
-			(`index:explain:document_not_found`), or that document has no \
-			value along the `hits` path at `index` \
-			(`index:explain:value_not_found`).""",
+			The index does not exist, the key has no permissions on it, or the \
+			explanation names something the index does not hold.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			The index currently has no live generation \
-			(`index:no_live_generation`).""",
+		description = "The index cannot be searched right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = """
-			The request raced the index being closed to free local resources \
-			(`index:closed`), or the search behind the explanation collected \
-			for longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`).""",
+		description = "The explanation did not finish on the node.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index declares no primary key, so a hit cannot be named."
+	)
+	@ReturnsError(
+		value = "index:explain:document_not_found",
+		status = 404,
+		when = "Nothing is indexed under `key`."
+	)
+	@ReturnsError(
+		value = "index:explain:value_not_found",
+		status = 404,
+		when = "The document holds no value along the `hits` path at `index`."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "search:timeout",
+		status = 503,
+		when = "The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`."
 	)
 	public ExplainResponse explain(
 		@Parameter(

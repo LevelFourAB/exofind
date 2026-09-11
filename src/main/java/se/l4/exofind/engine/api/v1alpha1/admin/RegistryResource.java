@@ -14,6 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.RegistryAuditResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.RegistryRepairRequest;
@@ -110,8 +111,13 @@ public class RegistryResource {
 		responseCode = "409",
 		description = """
 			The endpoint was called on a node configured with local storage \
-			rather than shared storage (`index:registry:audit_unavailable`).""",
+			rather than shared storage.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:registry:audit_unavailable",
+		status = 409,
+		when = "The node stores indexes on local disk, where there is no shared registry to audit."
 	)
 	public RegistryAuditResponse audit() {
 		return toResponse(auditOrThrow().audit());
@@ -185,11 +191,25 @@ public class RegistryResource {
 	@APIResponse(
 		responseCode = "409",
 		description = """
-			The endpoint was called on a node configured with local storage \
-			(`index:registry:audit_unavailable`), or writing the repaired \
-			registry failed (`index:registry:conflict`, \
-			`index:registry:io_error`). The registry remains unchanged.""",
+			The endpoint was called on a node configured with local storage, or \
+			writing the repaired registry failed. The registry remains \
+			unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:registry:audit_unavailable",
+		status = 409,
+		when = "The node stores indexes on local disk, where there is no shared registry to repair."
+	)
+	@ReturnsError(
+		value = "index:registry:conflict",
+		status = 409,
+		when = "The registry kept being written by other nodes. The registry is unchanged; send the request again."
+	)
+	@ReturnsError(
+		value = "index:registry:io_error",
+		status = 409,
+		when = "Registry storage answered with an error. The registry is unchanged; send the request again."
 	)
 	public RegistryRepairResponse repair(
 		@RequestBody(content = @Content(

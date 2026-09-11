@@ -30,6 +30,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteResponse;
@@ -341,9 +342,9 @@ public class DocumentResource {
 		responseCode = "400",
 		description = """
 			A document was rejected by validation, a line could not be read as \
-			JSON (`request:document:malformed`), or the request body could not \
-			be parsed. The `path` of each error identifies the document and \
-			field location, such as `documents[1].nonexistent`.""",
+			JSON, or the request body could not be parsed. The `path` of each \
+			error identifies the document and field location, such as \
+			`documents[1].nonexistent`.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -355,28 +356,58 @@ public class DocumentResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			No node is available to write the index (`indexer:unavailable`), \
-			the index is currently synchronizing (`index:out-of-date`), the \
-			node lost the writer role during execution (`index:readonly`), or \
-			the target generation is locked by an active reindex job \
-			(`reindex:target_busy`).""",
+		description = "The index cannot be written to right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = """
-			The request was forwarded to the index writer and the writer did \
-			not respond (`indexer:unreachable`). Retrying the same request is \
-			expected to work.""",
+		description = "The node holding the index did not answer.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = """
-			The request raced an index being closed to free local resources on \
-			the node (`index:closed`). Retrying the request reopens the index.""",
+		description = "The index is not open on the node right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:document:malformed",
+		status = 400,
+		when = "A line of the body could not be read as JSON."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:out-of-date",
+		status = 409,
+		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
 	)
 	public DocumentsResponse add(
 		@Parameter(
@@ -526,25 +557,8 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			A change failed validation, a document key was not found when \
-			`missing` was set to `fail` (`request:update:not_found`), the \
-			index definition declares no primary key (`index:no_primary_key`), \
-			or the index does not store document copies \
-			(`index:source:not_kept`) - resend the complete document in that \
-			case.
-
-			A path is rejected when it cannot be parsed \
-			(`request:update:path_invalid`), reaches into a field the index \
-			does not have (`request:update:path_unknown_field`), names a \
-			single value of a field that holds neither locale variants nor \
-			objects (`request:update:selector_not_supported`), names a locale \
-			the field holds no variant for (`request:update:locale_unknown`), \
-			adds a value to a field that holds a single value \
-			(`request:update:add_not_multiple`), reaches inside a field whose \
-			values are not objects (`request:update:not_an_object`), or \
-			reaches into a list of objects without specifying which value \
-			(`request:update:value_required`). A selector that names no value \
-			the document holds is rejected with `request:update:no_match`.""",
+			A change failed validation, or a path in it names something the \
+			index or the document does not hold.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -556,25 +570,103 @@ public class DocumentResource {
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			No node is available to write the index, the index is currently \
-			synchronizing, or the target generation is locked by an active \
-			reindex job.""",
+		description = "The index cannot be written to right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = """
-			The request was forwarded to the index writer and the writer did \
-			not respond.""",
+		description = "The node holding the index did not answer.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = """
-			The request raced the index being closed to free local resources. \
-			Repeating the request reopens the index.""",
+		description = "The index is not open on the node right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:update:not_found",
+		status = 400,
+		when = "A document the change names is not indexed and `missing` is `fail`."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so a document cannot be named."
+	)
+	@ReturnsError(
+		value = "index:source:not_kept",
+		status = 400,
+		when = "The index does not store document copies. Send the complete document instead."
+	)
+	@ReturnsError(
+		value = "request:update:path_invalid",
+		status = 400,
+		when = "A path in the change could not be read."
+	)
+	@ReturnsError(
+		value = "request:update:path_unknown_field",
+		status = 400,
+		when = "A path reaches into a field the index does not have."
+	)
+	@ReturnsError(
+		value = "request:update:selector_not_supported",
+		status = 400,
+		when = "A path names one value of a field that holds neither locale variants nor objects."
+	)
+	@ReturnsError(
+		value = "request:update:locale_unknown",
+		status = 400,
+		when = "A path names a locale the field holds no variant for."
+	)
+	@ReturnsError(
+		value = "request:update:add_not_multiple",
+		status = 400,
+		when = "A change adds a value to a field that holds a single value."
+	)
+	@ReturnsError(
+		value = "request:update:not_an_object",
+		status = 400,
+		when = "A path reaches inside a field whose values are not objects."
+	)
+	@ReturnsError(
+		value = "request:update:value_required",
+		status = 400,
+		when = "A path reaches into a list of objects without saying which value."
+	)
+	@ReturnsError(
+		value = "request:update:no_match",
+		status = 400,
+		when = "A selector names no value the document holds. A selector never creates the value it names."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:out-of-date",
+		status = 409,
+		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
 	)
 	public UpdateResponse update(
 		@Parameter(
@@ -822,48 +914,98 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The change was rejected by validation, the key value cannot be \
-			parsed as the defined key field type \
-			(`index:query:invalid_value`), the body names the primary key \
-			field as another document than the path does \
-			(`request:update:key_conflicting`), the index definition declares \
-			no primary key (`index:no_primary_key`), or the index does not \
-			store document copies (`index:source:not_kept`) - resend the whole \
-			document in that case.
-
-			A path is refused for the same reasons as in batch updates, \
-			reported by the same `request:update:*` codes.""",
+			The change was rejected by validation, or a path in it names \
+			something the index or the document does not hold. A path is \
+			refused for the same reasons as in a batch update.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			Nothing is indexed under the key (`index:document:not_found`), no \
-			index with the specified name exists on this node, or the caller \
-			key lacks permissions on the index.""",
+			Nothing is indexed under the key, no index with the specified name \
+			exists on this node, or the caller key lacks permissions on the \
+			index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
-		description = """
-			No node is available to write the index, the index is currently \
-			synchronizing, or the target generation is locked by an active \
-			reindex job.""",
+		description = "The index cannot be written to right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "502",
-		description = """
-			The request was forwarded to the index writer and the writer did \
-			not respond.""",
+		description = "The node holding the index did not answer.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",
-		description = """
-			The request raced the index being closed to free local resources. \
-			Repeating the request reopens the index.""",
+		description = "The index is not open on the node right now.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:query:invalid_value",
+		status = 400,
+		when = "The key in the path cannot be read as the type of the primary key field."
+	)
+	@ReturnsError(
+		value = "request:update:key_conflicting",
+		status = 400,
+		when = "The body gives the primary key field a value other than the key in the path."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so a document cannot be named."
+	)
+	@ReturnsError(
+		value = "index:source:not_kept",
+		status = 400,
+		when = "The index does not store document copies. Send the complete document instead."
+	)
+	@ReturnsError(
+		value = "request:update:path_invalid",
+		status = 400,
+		when = "A path in the change could not be read."
+	)
+	@ReturnsError(
+		value = "request:update:no_match",
+		status = 400,
+		when = "A selector names no value the document holds. A selector never creates the value it names."
+	)
+	@ReturnsError(
+		value = "index:document:not_found",
+		status = 404,
+		when = "Nothing is indexed under the key. Index the document whole first."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:out-of-date",
+		status = 409,
+		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
 	)
 	public Response patch(
 		@Parameter(
@@ -1008,10 +1150,49 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The key value cannot be parsed as the defined key field type \
-			(`index:query:invalid_value`), or the index definition declares no \
-			primary key (`index:no_primary_key`).""",
+			The key cannot be read as the type of the primary key field, or the \
+			index declares no primary key.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:query:invalid_value",
+		status = 400,
+		when = "The key in the path cannot be read as the type of the primary key field."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so a document cannot be named."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:out-of-date",
+		status = 409,
+		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -1111,13 +1292,59 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The request body includes neither `keys` nor `query` \
-			(`request:delete:target_required`), includes both \
-			(`request:delete:target_conflicting`), specifies a `locale` \
-			without a `query` (`request:delete:locale_without_query`), \
-			contains a key that cannot be parsed as the defined key field \
-			type, or contains a query the index cannot execute.""",
+			The body does not name what to delete, or it names a key or a query \
+			the index cannot use.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:delete:target_required",
+		status = 400,
+		when = "The body holds neither `keys` nor `query`."
+	)
+	@ReturnsError(
+		value = "request:delete:target_conflicting",
+		status = 400,
+		when = "The body holds both `keys` and `query`. Send one of them."
+	)
+	@ReturnsError(
+		value = "request:delete:locale_without_query",
+		status = 400,
+		when = "The body states a `locale` without a `query`."
+	)
+	@ReturnsError(
+		value = "index:query:invalid_value",
+		status = 400,
+		when = "A key cannot be read as the type of the primary key field."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:out-of-date",
+		status = 409,
+		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -1289,11 +1516,34 @@ public class DocumentResource {
 	@APIResponse(
 		responseCode = "400",
 		description = """
-			The index definition declares no primary key \
-			(`index:no_primary_key`), the index does not store document copies \
-			(`index:source:not_kept`), or the `limit` parameter is not a whole \
-			number from 1 to 10000 (`request:scan:limit_invalid`).""",
+			The index cannot be scanned, or the `limit` parameter is out of \
+			range.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so documents cannot be scanned in key order."
+	)
+	@ReturnsError(
+		value = "index:source:not_kept",
+		status = 400,
+		when = "The index does not store document copies, so a scan has nothing to return."
+	)
+	@ReturnsError(
+		value = "request:scan:limit_invalid",
+		status = 400,
+		when = "The `limit` parameter is not a whole number from 1 to 10000."
+	)
+	@ReturnsError(
+		value = "index:not-found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
 	)
 	@APIResponse(
 		responseCode = "404",
