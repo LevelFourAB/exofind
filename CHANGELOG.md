@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.3.0](https://github.com/LevelFourAB/exofind/compare/v0.2.0...v0.3.0) (2026-09-10)
+
+
+### Features
+
+* Keep replaced index files in the bucket for a grace period before deleting them ([7e361b4](https://github.com/LevelFourAB/exofind/commit/7e361b42d740e2b1199140802c395d577349d3b8))
+* Sweep orphaned objects from an open index on a timer ([c29cce1](https://github.com/LevelFourAB/exofind/commit/c29cce156342f0771d7bc8077587517c1e52a4ca))
+* User queries can now match any of the words instead of all words ([d4e5806](https://github.com/LevelFourAB/exofind/commit/d4e5806cefc8bdd49db12e0b4575e56ebbd764b2))
+
+
+### Bug fixes
+
+* A failover no longer loses recently written documents ([c003f23](https://github.com/LevelFourAB/exofind/commit/c003f23ec0bc5e77083a367aa0165491665206de))
+* A lost index registry no longer deletes the indexes on a node ([ae3d9b6](https://github.com/LevelFourAB/exofind/commit/ae3d9b67eaacb7e3fa3ae8a6f68a6b7847adf01a))
+* A push conflict no longer loses the documents written around it ([4569113](https://github.com/LevelFourAB/exofind/commit/45691133c5841ffa5b4ffb838fcdc55371c28b38))
+* Handle stale generations in Google Cloud Storage without getting stuck ([7069e87](https://github.com/LevelFourAB/exofind/commit/7069e87d0c8b45e5a7f0a6edc8540d6358ce22ff))
+* Keep writes made during a reindex instead of dropping them at the promote ([b2c43b6](https://github.com/LevelFourAB/exofind/commit/b2c43b6c8bab4f6075c31d82338138246f961cb7))
+* Pulled files that do not match the manifest are rejected instead of used ([a602fe8](https://github.com/LevelFourAB/exofind/commit/a602fe85bf5c84e1b5962255c7ae43716baccdd2))
+* Recreating a deleted index no longer brings the old documents back ([3f6a698](https://github.com/LevelFourAB/exofind/commit/3f6a698b93d874a5345cd9d7d732ff08c5eb5228))
+* Stop a definition update from emptying an index when taking over indexing for it ([37f04a8](https://github.com/LevelFourAB/exofind/commit/37f04a832c4ea71f15a1cbe46acca4848a0e8755))
+* Stop a failed push from handing an index over without its writes ([efda453](https://github.com/LevelFourAB/exofind/commit/efda45395d7daf26584db8ca96614c4eac3365b2))
+* Stop a rejoining node from deleting an index from storage ([6eef1f7](https://github.com/LevelFourAB/exofind/commit/6eef1f78e03b2c59964b5a161204d2b659254c39))
+* Vanished manifests no longer makes readers drop their index files ([f3ecdf6](https://github.com/LevelFourAB/exofind/commit/f3ecdf6a337734bd1b761432cd1426e7e62357cf))
+
+
+### Documentation
+
+* Add cross-links and related sections for new pages ([50eec3a](https://github.com/LevelFourAB/exofind/commit/50eec3aa010943e1ec623d5512a3b7b7a628bbae))
+* Add search powered by project to website ([b2aaab3](https://github.com/LevelFourAB/exofind/commit/b2aaab359503b30fded777b383de34ec2a379e26))
+* Add storage layout, glossary, write guarantees, testing and ranking pages ([6018451](https://github.com/LevelFourAB/exofind/commit/6018451596dbabefe2a5d09e1dabde8175851186))
+* Improve example copy and relevance ([38002ea](https://github.com/LevelFourAB/exofind/commit/38002eac1581191c22be6efb2863fbd6a4265c4e))
+* Limit snippets in the website search ([233e2ac](https://github.com/LevelFourAB/exofind/commit/233e2ac60aee2c1cce5a5c9e352ed2f8a93ab1bd))
+* Loading states for examples ([a0a1593](https://github.com/LevelFourAB/exofind/commit/a0a1593350e3d72ac0881910274fc40712147c7b))
+* Reset scroll when typing into the website search ([3a1fd6e](https://github.com/LevelFourAB/exofind/commit/3a1fd6ebe8524427596c24742b214687a8a9e5d7))
+* Stop the loading bar sticking after pressing Back from a demo ([66230b8](https://github.com/LevelFourAB/exofind/commit/66230b80431467453413f0c016588e380608ed9e))
+
 ## [0.2.0](https://github.com/LevelFourAB/exofind/compare/v0.1.0...v0.2.0) (2026-09-06)
 
 
