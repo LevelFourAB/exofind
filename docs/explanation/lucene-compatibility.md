@@ -14,9 +14,9 @@ The engine compares the index version against Lucene's `Version.MIN_SUPPORTED_MA
 
 The admin API reports an unreadable index in one of two states, depending on which direction resolves the issue:
 
-- `UNSUPPORTED`: The definition uses a capability that this build does not support. A newer node wrote the definition. Upgrading this node resolves the issue. Definitions record the features they require so that an older node rejects them cleanly instead of indexing without the required capability.
-- `INCOMPATIBLE`: The Lucene files are older than the supported window. Upgrading the node moves further away from being able to read the files. The only resolution is to reindex the documents into a new index.
+- `unsupported`: The definition uses a capability that this build does not support. A newer node wrote the definition. Upgrading this node resolves the issue. Definitions record the features they require so that an older node rejects them cleanly instead of indexing without the required capability.
+- `incompatible`: The Lucene files are older than the supported window. Upgrading the node moves further away from being able to read the files. The only resolution is to reindex the documents into a new index.
 
-Because resolving an `INCOMPATIBLE` state requires reindexing, the engine warns before an index becomes unreadable. When an index is one major version away from the compatibility limit, Exofind reports its `luceneCompatibility` value as `ENDING` while a readable copy still exists to reindex from.
+Because resolving an `incompatible` state requires reindexing, the engine warns before an index becomes unreadable. When an index is one major version away from the compatibility limit, Exofind reports its `luceneCompatibility` value as `ending` while a readable copy still exists to reindex from.
 
 For instructions on upgrading, see [Survive Lucene upgrades](../how-to/survive-lucene-upgrades.md).

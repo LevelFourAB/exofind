@@ -29,8 +29,8 @@ import se.l4.exofind.engine.index.registry.RegistryAuditReport;
 )
 public record RegistryAuditResponse(
 	@Schema(description = """
-		The state of the registry object: `PRESENT`, `ABSENT` (no registry \
-		object), or `CORRUPT` (contents cannot be parsed).""")
+		The state of the registry object: `present`, `absent` (no registry \
+		object), or `corrupt` (contents cannot be parsed).""")
 	RegistryAuditReport.Registry registry,
 
 	@Schema(description = """
@@ -50,15 +50,15 @@ public record RegistryAuditResponse(
 	 */
 	public static final String EXAMPLE = """
 		{
-		  "registry": "PRESENT",
+		  "registry": "present",
 		  "indexes": [
 		    {
 		      "name": "products",
 		      "registered": true,
 		      "live": "2",
 		      "generations": [
-		        { "name": "1", "registered": true, "stored": "SYNCED" },
-		        { "name": "2", "registered": true, "stored": "SYNCED" }
+		        { "name": "1", "registered": true, "stored": "synced" },
+		        { "name": "2", "registered": true, "stored": "synced" }
 		      ]
 		    },
 		    {
@@ -66,7 +66,7 @@ public record RegistryAuditResponse(
 		      "registered": false,
 		      "removedAt": "2026-09-03T10:15:00Z",
 		      "generations": [
-		        { "name": "1", "registered": false, "stored": "SYNCED" }
+		        { "name": "1", "registered": false, "stored": "synced" }
 		      ]
 		    }
 		  ],
@@ -141,8 +141,8 @@ public record RegistryAuditResponse(
 			  "registered": true,
 			  "live": "2",
 			  "generations": [
-			    { "name": "1", "registered": true, "stored": "SYNCED" },
-			    { "name": "2", "registered": true, "stored": "SYNCED" }
+			    { "name": "1", "registered": true, "stored": "synced" },
+			    { "name": "2", "registered": true, "stored": "synced" }
 			  ]
 			}""";
 	}
@@ -171,11 +171,11 @@ public record RegistryAuditResponse(
 		boolean registered,
 
 		@Schema(description = """
-			What storage holds under it. `SYNCED`: storage holds a manifest; \
-			nodes can pull and serve this generation. `INCOMPLETE`: storage \
+			What storage holds under it. `synced`: storage holds a manifest; \
+			nodes can pull and serve this generation. `incomplete`: storage \
 			holds a prefix without a manifest (such as an unfinished push or \
 			what an interrupted removal left of a deleted generation). \
-			`MISSING`: the generation is registered, but nothing exists in \
+			`missing`: the generation is registered, but nothing exists in \
 			storage.""")
 		RegistryAuditReport.Stored stored,
 
@@ -191,6 +191,6 @@ public record RegistryAuditResponse(
 	) {
 		/** The example generation, as the JSON the engine answers with. */
 		public static final String EXAMPLE = """
-			{ "name": "1", "registered": true, "stored": "SYNCED" }""";
+			{ "name": "1", "registered": true, "stored": "synced" }""";
 	}
 }

@@ -785,9 +785,9 @@ public class IndexDefinitionJsonTest {
 			is(
 				"{\"name\":\"books\",\"generation\":\"2\",\"live\":true,"
 					+ "\"version\":\"abc123\",\"definition\":{\"fields\":{}},"
-					+ "\"status\":{\"state\":\"USABLE\",\"readOnly\":false,"
+					+ "\"status\":{\"state\":\"usable\",\"readOnly\":false,"
 					+ "\"indexer\":{\"node\":\"node-1\",\"address\":\"http://node-1:8080\"},"
-					+ "\"luceneCompatibility\":\"CURRENT\",\"luceneCreatedMajor\":10},"
+					+ "\"luceneCompatibility\":\"current\",\"luceneCreatedMajor\":10},"
 					+ "\"generations\":[{\"name\":\"2\",\"live\":true,"
 					+ "\"createdAt\":\"2026-08-16T10:00:00Z\"}]}"
 			)
@@ -803,8 +803,8 @@ public class IndexDefinitionJsonTest {
 		assertThat(
 			mapper.writeValueAsString(status),
 			is(
-				"{\"state\":\"NEEDS_PULL\",\"readOnly\":true,"
-					+ "\"luceneCompatibility\":\"UNKNOWN\"}"
+				"{\"state\":\"needs_pull\",\"readOnly\":true,"
+					+ "\"luceneCompatibility\":\"unknown\"}"
 			)
 		);
 	}

@@ -29,15 +29,15 @@ The response includes the compatibility status:
 
 ```json
 "status": {
-  "state": "USABLE",
-  "luceneCompatibility": "ENDING",
+  "state": "usable",
+  "luceneCompatibility": "ending",
   "luceneCreatedMajor": 9
 }
 ```
 
-A value of `CURRENT` requires no action. A value of `ENDING` warns you that the
+A value of `current` requires no action. A value of `ending` warns you that the
 index is readable now, but the next major Lucene version drops support for it.
-A node holding an `ENDING` index also writes a warning once to its log while a
+A node holding an `ending` index also writes a warning once to its log while a
 readable copy is still available to reindex from.
 
 ## Reindexing an index before upgrading
@@ -45,8 +45,8 @@ readable copy is still available to reindex from.
 Before you upgrade nodes across a major Lucene version, complete the following
 steps:
 
-1. List the indexes and identify every index that reports `ENDING`.
-2. Add a new generation with the same definition for each `ENDING` index.
+1. List the indexes and identify every index that reports `ending`.
+2. Add a new generation with the same definition for each `ending` index.
 3. Index the documents into the new generation:
    - If the index keeps full documents, reindex the documents from the index
      itself.
@@ -60,15 +60,15 @@ change](roll-out-a-definition-change.md), keeping the definition unchanged.
 ## Confirming the result
 
 Check the status of the new generation. Indexing rewrites the files under the
-current major version, so the new generation reports `CURRENT`, and callers
+current major version, so the new generation reports `current`, and callers
 never learn that the update happened.
 
 ## Recovering an unreadable index
 
 If an index passes beyond the compatibility window, it reports `state` as
-`INCOMPATIBLE` and `luceneCompatibility` as `"UNREADABLE"`. The engine refuses
+`incompatible` and `luceneCompatibility` as `"unreadable"`. The engine refuses
 the index during pulling before it fetches any files, and no current node can
-open the index. Unlike with `UNSUPPORTED`, upgrading nodes moves further away
+open the index. Unlike with `unsupported`, upgrading nodes moves further away
 from compatibility.
 
 To recover the documents, use one of the following methods:

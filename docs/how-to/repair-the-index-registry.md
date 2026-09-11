@@ -35,7 +35,7 @@ storage mode. Local storage mode has no audit or repair endpoint, so you put
 Identify registry problems by checking node logs, readiness checks, and index
 listings:
 
-- **Missing registry (`ABSENT`):** A node that already read the registry keeps
+- **Missing registry (`absent`):** A node that already read the registry keeps
   its copy and logs an error instead of serving an empty list:
   ```text
   The index registry is gone from the storage, but this node read it before. Keeping the copy this node holds. Restore the registry from a backup, or rebuild it with the registry repair endpoint if you store indexes in object storage
@@ -49,7 +49,7 @@ listings:
   Requests for unlisted indexes return `index:not_found`, and
   `GET /v1alpha1/admin/indexes` does not list them until the registry lists them
   again.
-- **Corrupt registry (`CORRUPT`):** A node that starts after the corruption
+- **Corrupt registry (`corrupt`):** A node that starts after the corruption
   stays running but never becomes ready: `GET /q/health/ready` returns HTTP
   `503` with the `index-registry` check marked `DOWN`. A node that read the
   registry before the corruption stays ready and keeps serving the copy it
@@ -72,9 +72,9 @@ by the receiving node without forwarding to an indexer.
    GET /v1alpha1/admin/registry/audit
    ```
 2. Inspect the `registry` field in the response:
-   - `PRESENT`: The registry object exists and can be parsed.
-   - `ABSENT`: No registry object exists in the storage bucket.
-   - `CORRUPT`: The registry object exists but its contents cannot be parsed.
+   - `present`: The registry object exists and can be parsed.
+   - `absent`: No registry object exists in the storage bucket.
+   - `corrupt`: The registry object exists but its contents cannot be parsed.
 3. Review the `indexes` list in the response. Each index entry provides the
    following fields:
    - `name`: The index name.
@@ -88,12 +88,12 @@ by the receiving node without forwarding to an indexer.
      promotion, and a repair skips them unless restored.
    - `generations`: The generations found for the index.
 4. Review the `stored` state for each generation:
-   - `SYNCED`: The bucket contains a completed `manifest.ef.bin` file. Nodes
+   - `synced`: The bucket contains a completed `manifest.ef.bin` file. Nodes
      can pull and serve this generation.
-   - `INCOMPLETE`: The bucket prefix exists without a manifest. This occurs
+   - `incomplete`: The bucket prefix exists without a manifest. This occurs
      when an initial push was interrupted or when storage remains from a swept
      generation.
-   - `MISSING`: The generation is registered in the registry, but no data
+   - `missing`: The generation is registered in the registry, but no data
      exists in the bucket.
    Each generation also includes `removedAt` when a delete marked the storage
    and the sweep has not removed it yet. Marked generations are unregistered,
@@ -103,17 +103,17 @@ by the receiving node without forwarding to an indexer.
 
 ## Inspect storage drift on a healthy deployment
 
-You can run the audit endpoint on a healthy deployment (`registry: PRESENT`) to
+You can run the audit endpoint on a healthy deployment (`registry: present`) to
 detect orphaned or unreferenced data:
 
-- **Unregistered `SYNCED` generations:** A deleted index now shows `removedAt`
+- **Unregistered `synced` generations:** A deleted index now shows `removedAt`
   and waits for the sweep. An unregistered generation without `removedAt` is an
   interrupted rollout, or storage deleted before removal marks existed. To
   remove such leftover storage, register it with a repair and then delete it
   through the API, which marks it for the sweep.
-- **`INCOMPLETE` generations:** Leftover prefixes from aborted pushes or disk
+- **`incomplete` generations:** Leftover prefixes from aborted pushes or disk
   sweeps.
-- **`MISSING` generations:** Registered generations whose storage data was
+- **`missing` generations:** Registered generations whose storage data was
   removed from the bucket.
 
 Because object storage cannot determine whether an unregistered generation is
@@ -122,8 +122,8 @@ entries before manually cleaning storage objects.
 
 ## Repair the registry
 
-A repair replaces a `CORRUPT` registry or creates an `ABSENT` registry using
-valid data found in the bucket. The repair only registers `SYNCED` generations
+A repair replaces a `corrupt` registry or creates an `absent` registry using
+valid data found in the bucket. The repair only registers `synced` generations
 that are not already present in the registry. It never deletes indexes,
 generations, or bucket data. Existing registered indexes retain their settings,
 features, and live generation assignments.
@@ -131,13 +131,13 @@ features, and live generation assignments.
 1. Verify that no rollout operations are currently running.
 2. Send a repair request to the admin API.
 
-   To register all `SYNCED` generations without setting live generations for
+   To register all `synced` generations without setting live generations for
    newly created indexes:
    ```http
    POST /v1alpha1/admin/registry/actions/repair
    ```
 
-   To register all `SYNCED` generations and configure each newly created index
+   To register all `synced` generations and configure each newly created index
    to answer for its highest-numbered generation:
    ```http
    POST /v1alpha1/admin/registry/actions/repair
@@ -224,11 +224,11 @@ follows:
 - **`409 Conflict` with `index:registry:conflict`:** A concurrent registry
   write occurred during the repair. Retry the request when other operations
   finish.
-- **`MISSING` findings:** The repair does not restore missing bucket data.
+- **`missing` findings:** The repair does not restore missing bucket data.
   Remove the generation from the registry or restore the missing objects from a
   storage backup.
-- **`INCOMPLETE` and `unusable` findings:** The repair ignores these prefixes.
-  An `INCOMPLETE` generation carrying `removedAt` is an interrupted removal that
+- **`incomplete` and `unusable` findings:** The repair ignores these prefixes.
+  An `incomplete` generation carrying `removedAt` is an interrupted removal that
   the next sweep pass finishes. Delete other unneeded leftover objects directly
   from your bucket.
 
@@ -247,7 +247,7 @@ indexes:
    ```http
    GET /v1alpha1/admin/registry/audit
    ```
-   Verify that `"registry": "PRESENT"` and all expected generations report
+   Verify that `"registry": "present"` and all expected generations report
    `"registered": true`.
 3. Query the index listing on the node that handled the repair:
    ```http

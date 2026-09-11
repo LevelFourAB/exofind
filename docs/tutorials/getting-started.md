@@ -122,7 +122,7 @@ the index status, and an `ETag` header:
   "name": "books",
   "version": "9f2c1a0b3d4e5f60",
   "definition": { "...": "as sent" },
-  "status": { "state": "USABLE", "readOnly": false, "...": "..." }
+  "status": { "state": "usable", "readOnly": false, "...": "..." }
 }
 ```
 

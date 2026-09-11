@@ -4,6 +4,8 @@ import java.time.Instant;
 
 import org.eclipse.collections.api.list.ListIterable;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * The registry compared with what the storage actually holds, from one read
  * of each: every index either of them names, and where the two disagree.
@@ -33,22 +35,28 @@ public record RegistryAuditReport(
 ) {
 	/**
 	 * The state the registry object was found in.
+	 *
+	 * <p>The REST API answers with the lowercase name of a constant, which is
+	 * what the {@code @JsonProperty} on each of them gives.
 	 */
 	public enum Registry {
 		/**
 		 * The registry exists and could be read.
 		 */
+		@JsonProperty("present")
 		PRESENT,
 
 		/**
 		 * There is no registry, so every index in the storage is unregistered.
 		 */
+		@JsonProperty("absent")
 		ABSENT,
 
 		/**
 		 * There is a registry but its contents can not be parsed. A repair
 		 * replaces it with one rebuilt from the storage.
 		 */
+		@JsonProperty("corrupt")
 		CORRUPT
 	}
 
@@ -106,11 +114,15 @@ public record RegistryAuditReport(
 
 	/**
 	 * What the storage holds for a generation.
+	 *
+	 * <p>The REST API answers with the lowercase name of a constant, which is
+	 * what the {@code @JsonProperty} on each of them gives.
 	 */
 	public enum Stored {
 		/**
 		 * The generation has a manifest, so a node can pull and serve it.
 		 */
+		@JsonProperty("synced")
 		SYNCED,
 
 		/**
@@ -118,12 +130,14 @@ public record RegistryAuditReport(
 		 * finished, or what an interrupted removal left of a deleted
 		 * generation. Not registrable, as there is nothing to serve from.
 		 */
+		@JsonProperty("incomplete")
 		INCOMPLETE,
 
 		/**
 		 * The storage holds nothing under the generation, so a node that does
 		 * not already hold a copy has nowhere to pull it from.
 		 */
+		@JsonProperty("missing")
 		MISSING
 	}
 }

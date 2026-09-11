@@ -4,6 +4,8 @@ import java.util.OptionalInt;
 
 import org.apache.lucene.util.Version;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * How much longer the Lucene files of an index can be read.
  *
@@ -19,6 +21,10 @@ import org.apache.lucene.util.Version;
  * it: an index that is {@link #ENDING} today becomes {@link #UNREADABLE} the
  * moment this node is upgraded across a Lucene major, and reindexing it is the
  * only way back.
+ *
+ * <p>The REST API answers with the lowercase name of a constant, which is what
+ * the {@code @JsonProperty} on each of them gives. Metrics tag with the
+ * constant name itself.
  */
 public enum LuceneCompatibility {
 	/**
@@ -26,22 +32,26 @@ public enum LuceneCompatibility {
 	 * not be asked either, which is what an index with no commit yet looks
 	 * like. Says nothing about whether it can be read.
 	 */
+	@JsonProperty("unknown")
 	UNKNOWN,
 	/**
 	 * Created by the major this build uses, so it survives the next Lucene
 	 * major as well.
 	 */
+	@JsonProperty("current")
 	CURRENT,
 	/**
 	 * Created by the major before this build's, which Lucene still reads. The
 	 * next Lucene major drops it, so it has to be reindexed before this node is
 	 * upgraded across one.
 	 */
+	@JsonProperty("ending")
 	ENDING,
 	/**
 	 * Created too far back for this build to open at all. Only reindexing the
 	 * documents into a new index brings the data back.
 	 */
+	@JsonProperty("unreadable")
 	UNREADABLE;
 
 	/**

@@ -90,10 +90,10 @@ public record IndexInfo(
 		    }
 		  },
 		  "status": {
-		    "state": "USABLE",
+		    "state": "usable",
 		    "readOnly": false,
 		    "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
-		    "luceneCompatibility": "CURRENT"
+		    "luceneCompatibility": "current"
 		  },
 		  "generations": [
 		    { "name": "1", "live": false, "createdAt": "2026-08-16T11:02:07Z" },

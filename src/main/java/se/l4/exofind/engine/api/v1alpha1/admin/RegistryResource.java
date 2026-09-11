@@ -153,7 +153,7 @@ public class RegistryResource {
 		operationId = "repairRegistry",
 		summary = "Repair the registry from storage",
 		description = """
-			Registers every `SYNCED` generation that storage holds and the \
+			Registers every `synced` generation that storage holds and the \
 			registry does not name. The repair operation only adds entries: it \
 			keeps existing entries as stored and never deletes an index, a \
 			generation, or storage data. If the registry is absent, the repair \

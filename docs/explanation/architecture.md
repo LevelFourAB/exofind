@@ -91,17 +91,17 @@ write request, the node refuses the request with `409 Conflict`.
 An index on a node progresses through the lifecycle states listed in
 [the admin API reference](../reference/admin-api.md#index-states):
 
-- `NEEDS_PULL`: The node discovers the index in the registry.
-- `PULLING`: The node downloads index files from storage.
-- `USABLE`: The node serves reads and search queries from the local copy.
-- `MODIFIED`: The writer node accumulates changes locally.
-- `PUSHING`: The writer node commits and pushes changes back to storage.
+- `needs_pull`: The node discovers the index in the registry.
+- `pulling`: The node downloads index files from storage.
+- `usable`: The node serves reads and search queries from the local copy.
+- `modified`: The writer node accumulates changes locally.
+- `pushing`: The writer node commits and pushes changes back to storage.
 
 Two states indicate errors rather than lifecycle steps:
 
-- `UNSUPPORTED`: The index definition requires a capability that the current
+- `unsupported`: The index definition requires a capability that the current
   node build does not have. You resolve this by upgrading the node.
-- `INCOMPATIBLE`: The Lucene files are too old for the current build to open.
+- `incompatible`: The Lucene files are too old for the current build to open.
   Upgrading the node makes this issue worse rather than better.
 
 For more details on index version differences, see

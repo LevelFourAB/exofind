@@ -1,30 +1,45 @@
 package se.l4.exofind.engine.index;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * Where one open generation stands against the copy in remote storage, and
+ * whether it can be written to.
+ *
+ * <p>The REST API answers with the lowercase name of a constant, which is what
+ * the {@code @JsonProperty} on each of them gives. Metrics tag with the
+ * constant name itself.
+ */
 public enum IndexState {
 	/**
 	 * The index needs to be pulled from the remote to ensure that the
 	 * contents are up to date.
 	 */
+	@JsonProperty("needs_pull")
 	NEEDS_PULL,
 	/**
 	 * The index is in a usable state, meaning it is likely up to date but
 	 * for read only indexes this is not guaranteed.
 	 */
+	@JsonProperty("usable")
 	USABLE,
 	/**
 	 * The index is modified, meaning it has local changes that are not yet
 	 * pushed to the remote.
 	 */
+	@JsonProperty("modified")
 	MODIFIED,
 	/**
 	 * The index is being pulled from the remote. This state is a temporary
 	 * state and will be changed to USABLE when the pull is complete.
 	 */
+	@JsonProperty("pulling")
 	PULLING,
 	/**
 	 * The index is being pushed to the remote. This state is a temporary
 	 * state and will be changed to USABLE when the push is complete.
 	 */
+	@JsonProperty("pushing")
 	PUSHING,
 	/**
 	 * The definition of the index needs something this version of the engine
@@ -32,6 +47,7 @@ public enum IndexState {
 	 * newer version wrote the definition, and left behind when this node is
 	 * upgraded and pulls again.
 	 */
+	@JsonProperty("unsupported")
 	UNSUPPORTED,
 	/**
 	 * The Lucene files were created by a version so far back that this build
@@ -40,12 +56,14 @@ public enum IndexState {
 	 * them, not closer - so the way out is indexing the documents into a new
 	 * generation and promoting it.
 	 */
+	@JsonProperty("incompatible")
 	INCOMPATIBLE,
 	/**
 	 * The index has been closed on this node and can no longer be used. This
 	 * state is final for the instance - the index itself is opened again by
 	 * asking for it anew, which creates a fresh instance.
 	 */
+	@JsonProperty("closed")
 	CLOSED;
 
 	public boolean canModifyContents() {

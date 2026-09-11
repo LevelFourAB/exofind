@@ -110,21 +110,21 @@ To inspect the indexes available on a node and their local status:
    Example response body:
    ```json
    "status": {
-     "state": "USABLE",
+     "state": "usable",
      "readOnly": true,
      "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
-     "luceneCompatibility": "CURRENT"
+     "luceneCompatibility": "current"
    }
    ```
 3. Check the index `state`:
-   - Standard operational states: `NEEDS_PULL`, `PULLING`, `USABLE`, and on
-     writer nodes `MODIFIED` and `PUSHING`. See
+   - Standard operational states: `needs_pull`, `pulling`, `usable`, and on
+     writer nodes `modified` and `pushing`. See
      [Index states](../reference/admin-api.md#index-states).
-   - `CLOSED`: The node closed the index to free disk space or slots.
+   - `closed`: The node closed the index to free disk space or slots.
      Requesting the index automatically reopens it.
-   - `UNSUPPORTED`: The index definition requires features missing in this node
+   - `unsupported`: The index definition requires features missing in this node
      version. Upgrade the node.
-   - `INCOMPATIBLE`: The Lucene index files are too old for this build. See
+   - `incompatible`: The Lucene index files are too old for this build. See
      [Survive Lucene upgrades](survive-lucene-upgrades.md).
 
 ## Tell whether a node is current
@@ -132,7 +132,7 @@ To inspect the indexes available on a node and their local status:
 Changes become searchable on a reader node within the commit delay plus one
 refresh interval: `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL` (5 seconds by default)
 plus `EXOFIND_INDEXES_REFRESH_INTERVAL` (30 seconds by default). A node reporting
-`NEEDS_PULL` or `PULLING` is within this refresh window.
+`needs_pull` or `pulling` is within this refresh window.
 
 To immediately update an index without waiting for the next refresh interval:
 
@@ -223,16 +223,16 @@ directory. See [Run on one node](run-on-one-node.md).
 Nodes of different versions can run against the same remote bucket. To perform
 a rolling upgrade:
 
-1. Check for indexes reporting `"luceneCompatibility": "ENDING"`. Reindex these
+1. Check for indexes reporting `"luceneCompatibility": "ending"`. Reindex these
    indexes before upgrading across major Lucene versions. See
    [Survive Lucene upgrades](survive-lucene-upgrades.md).
 2. Upgrade nodes one at a time.
 3. Upgrade all nodes before applying index definitions that use new features.
    If an un-upgraded node encounters a new feature in a definition, it marks the
-   index `UNSUPPORTED` and stops serving it.
+   index `unsupported` and stops serving it.
 
 To roll back to an older version, reverse the process. An older build reads data
-it created, but reports `UNSUPPORTED` for features created by newer versions.
+it created, but reports `unsupported` for features created by newer versions.
 
 ## Back up
 
@@ -270,7 +270,7 @@ Monitor and configure alerts for the following log messages:
 | `Giving up writing the index` | The node stopped writing an index without handing it over. Remote storage stopped responding or claims expired. |
 | `Index holds changes the remote never got` | A push failed and the local copy is now the only copy. |
 | `Local copies exceed the disk budget` | The disk budget cannot be met by sweeping local copies. |
-| `Index was created with Lucene …` | Compatibility is `ENDING` or `UNREADABLE`. |
+| `Index was created with Lucene …` | Compatibility is `ending` or `unreadable`. |
 | `Authentication is turned off` | Authentication is disabled; all requests are permitted. See [Secure a deployment](secure-a-deployment.md). |
 | `Storing everything on this node's disk` | The node started in `local` storage mode instead of `object` storage mode. |
 
@@ -288,7 +288,7 @@ healthy:
    ```http
    GET /v1alpha1/admin/indexes
    ```
-   Verify that all expected indexes are listed and report a `USABLE` state.
+   Verify that all expected indexes are listed and report a `usable` state.
 
 ## Related
 

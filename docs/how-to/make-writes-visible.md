@@ -59,7 +59,7 @@ The writer node makes changes searchable immediately after a commit finishes. If
 
    ```json
    {
-     "state": "USABLE",
+     "state": "usable",
      "readOnly": false,
      "indexer": {
        "node": "node-1",
@@ -143,7 +143,7 @@ To verify that an index is ready and check how many documents a node can search:
    ```
 
    Check these fields in the response:
-   - `state`: Must be `USABLE` (or `MODIFIED` on a writer with pending local changes). A state of `NEEDS_PULL` or `PULLING` indicates the node is synchronizing with storage.
+   - `state`: Must be `usable` (or `modified` on a writer with pending local changes). A state of `needs_pull` or `pulling` indicates the node is synchronizing with storage.
    - `readOnly`: Shows `false` on the writer node and `true` on reader nodes.
    - `indexer`: Identifies the node currently responsible for writing the index.
 
@@ -169,7 +169,7 @@ Nothing in the API tells you whether a particular node holds a particular write:
 
 - **No version tokens or receipts**: Exofind does not provide acknowledgement tokens, transaction IDs, or sequence numbers that you can poll. You cannot ask a node if it contains a specific write.
 - **No response markers**: Search responses do not include generation markers or metadata indicating which index commit answered the query.
-- **Status is not a receipt**: An index state of `USABLE` on a reader node indicates that the local index is healthy and operational; it does not guarantee that the node holds the most recent commit.
+- **Status is not a receipt**: An index state of `usable` on a reader node indicates that the local index is healthy and operational; it does not guarantee that the node holds the most recent commit.
 - **Search keys cannot query admin status**: An API key with only the `search` permission cannot call commit, pull, or status endpoints. Applications that manage visibility must have keys with administrative permissions (`indexes.read`, `indexes.commit`, `indexes.pull`).
 
 ## Related

@@ -70,10 +70,10 @@ A `GET` request on an index endpoint and every successful `PUT` request return a
   "version": "9f2c1a0b3d4e5f60",
   "definition": { "...": "as stored" },
   "status": {
-    "state": "USABLE",
+    "state": "usable",
     "readOnly": false,
     "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
-    "luceneCompatibility": "CURRENT",
+    "luceneCompatibility": "current",
     "luceneCreatedMajor": 10
   },
   "generations": [
@@ -428,14 +428,16 @@ The `status.state` field indicates the remote synchronization state as observed 
 
 | State | Description |
 |-------|-------------|
-| `NEEDS_PULL` | A newer remote state exists and has not been pulled yet. |
-| `PULLING` | The node is fetching remote state. The state becomes `USABLE` when complete. |
-| `USABLE` | The index is serving searches. On a read-only node, data is as current as the last pull. |
-| `MODIFIED` | The index has local changes that are not yet pushed. Only writer nodes reach this state. |
-| `PUSHING` | The node is pushing local changes. The state becomes `USABLE` when complete. |
-| `UNSUPPORTED` | The definition requires engine features not present on this node version. Upgrade the node to resolve. |
-| `INCOMPATIBLE` | The Lucene files are too old for this build to open. Reindexing into a new generation is required. |
-| `CLOSED` | The index is closed on this node. A new request opens a fresh instance. |
+| `needs_pull` | A newer remote state exists and has not been pulled yet. |
+| `pulling` | The node is fetching remote state. The state becomes `usable` when complete. |
+| `usable` | The index is serving searches. On a read-only node, data is as current as the last pull. |
+| `modified` | The index has local changes that are not yet pushed. Only writer nodes reach this state. |
+| `pushing` | The node is pushing local changes. The state becomes `usable` when complete. |
+| `unsupported` | The definition requires engine features not present on this node version. Upgrade the node to resolve. |
+| `incompatible` | The Lucene files are too old for this build to open. Reindexing into a new generation is required. |
+| `closed` | The index is closed on this node. A new request opens a fresh instance. |
+
+The [`exofind.index.state` metric](metrics.md) tags with the uppercase form of these names, such as `NEEDS_PULL`.
 
 The `status.readOnly` field indicates whether the answering node can modify the index. Only the node holding the index can modify it.
 
@@ -449,12 +451,12 @@ The `status.luceneCompatibility` field indicates Lucene version compatibility. L
 
 | Value | Description |
 |-------|-------------|
-| `CURRENT` | Created by the current major version. Compatible with the current and next Lucene major versions. |
-| `ENDING` | Readable by the current version, but unsupported by the next Lucene major version. Reindex before upgrading across major versions. |
-| `UNREADABLE` | Too old to open. The index reports the `INCOMPATIBLE` state and requires reindexing. |
-| `UNKNOWN` | No version was recorded and no commit exists to determine the version (for example, on an empty index). |
+| `current` | Created by the current major version. Compatible with the current and next Lucene major versions. |
+| `ending` | Readable by the current version, but unsupported by the next Lucene major version. Reindex before upgrading across major versions. |
+| `unreadable` | Too old to open. The index reports the `incompatible` state and requires reindexing. |
+| `unknown` | No version was recorded and no commit exists to determine the version (for example, on an empty index). |
 
-The `status.luceneCreatedMajor` field contains the recorded Lucene major version. This field is omitted when compatibility is `UNKNOWN`.
+The `status.luceneCreatedMajor` field contains the recorded Lucene major version. This field is omitted when compatibility is `unknown`.
 
 ## Actions
 
@@ -614,15 +616,15 @@ Both endpoints are served by whichever node receives them and are never forwarde
 
 ```json
 {
-  "registry": "PRESENT",
+  "registry": "present",
   "indexes": [
     {
       "name": "products",
       "registered": true,
       "live": "2",
       "generations": [
-        { "name": "1", "registered": true, "stored": "SYNCED" },
-        { "name": "2", "registered": true, "stored": "SYNCED" }
+        { "name": "1", "registered": true, "stored": "synced" },
+        { "name": "2", "registered": true, "stored": "synced" }
       ]
     },
     {
@@ -630,7 +632,7 @@ Both endpoints are served by whichever node receives them and are never forwarde
       "registered": false,
       "proposedLive": "1",
       "generations": [
-        { "name": "1", "registered": false, "stored": "SYNCED" }
+        { "name": "1", "registered": false, "stored": "synced" }
       ]
     }
   ],
@@ -640,7 +642,7 @@ Both endpoints are served by whichever node receives them and are never forwarde
 
 The response contains the following fields:
 
-- `registry`: The state of the registry object: `PRESENT`, `ABSENT` (no registry object), or `CORRUPT` (contents cannot be parsed).
+- `registry`: The state of the registry object: `present`, `absent` (no registry object), or `corrupt` (contents cannot be parsed).
 - `indexes`: Every index named by the registry or found in storage, ordered by name. Each entry contains:
   - `name`: The name of the index.
   - `registered`: A boolean indicating whether the registry has an entry for the index.
@@ -649,9 +651,9 @@ The response contains the following fields:
   - `removedAt`: When the index was deleted, as an ISO 8601 timestamp. Present while the storage of the deleted index waits for the sweep that removes it; omitted otherwise.
   - `generations`: A list of generations found for the index. Each entry contains `name`, `registered` (boolean), `stored`, and `removedAt`.
     - `stored`: What storage holds under the generation:
-      - `SYNCED`: Storage holds a manifest; nodes can pull and serve this generation.
-      - `INCOMPLETE`: Storage holds a prefix without a manifest (such as an unfinished push or what an interrupted removal left of a deleted generation).
-      - `MISSING`: The generation is registered, but nothing exists in storage.
+      - `synced`: Storage holds a manifest; nodes can pull and serve this generation.
+      - `incomplete`: Storage holds a prefix without a manifest (such as an unfinished push or what an interrupted removal left of a deleted generation).
+      - `missing`: The generation is registered, but nothing exists in storage.
     - `removedAt`: When the generation was deleted on its own, as an ISO 8601 timestamp. Present while its storage waits for the sweep that removes it. A generation of a deleted index carries the index's `removedAt` instead. Omitted otherwise.
 - `unusable`: A list of storage prefixes whose names no index or generation may carry (as `index` or `index/generation`). A repair never registers these prefixes.
 
@@ -659,7 +661,7 @@ The response contains the following fields:
 
 `POST /v1alpha1/admin/registry/actions/repair` registers what storage holds. This endpoint requires the `registry.repair` permission (deployment-scoped).
 
-The repair operation only adds entries. It registers every `SYNCED` generation that the registry does not name, and keeps existing entries as stored. Marked storage is skipped unless restored. It never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
+The repair operation only adds entries. It registers every `synced` generation that the registry does not name, and keeps existing entries as stored. Marked storage is skipped unless restored. It never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
 
 The write is conditional and rebuilds on top of concurrent registry changes. The node that served the repair applies the repaired registry immediately. Other nodes pick up the changes within their registry refresh interval (`EXOFIND_INDEXES_REFRESH_INTERVAL`).
 

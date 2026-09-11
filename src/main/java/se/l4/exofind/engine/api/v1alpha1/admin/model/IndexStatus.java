@@ -23,7 +23,7 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
  *   it, when the holder could not be read, or on nodes using local storage
  *   where {@code readOnly} already answers
  * @param luceneCompatibility
- *   Lucene version compatibility; an index reported as {@code ENDING} is
+ *   Lucene version compatibility; an index reported as {@code ending} is
  *   readable now but unsupported by the next Lucene major version, requiring
  *   reindexing before upgrading across major versions
  * @param luceneCreatedMajor
@@ -45,14 +45,14 @@ import se.l4.exofind.engine.index.LuceneCompatibility;
 public record IndexStatus(
 	@Schema(description = """
 		The remote synchronization state as observed by the answering node: \
-		`NEEDS_PULL` (a newer remote state exists and has not been pulled \
-		yet), `PULLING` (the node is fetching remote state), `USABLE` (the \
-		index is serving searches), `MODIFIED` (the index has local changes \
+		`needs_pull` (a newer remote state exists and has not been pulled \
+		yet), `pulling` (the node is fetching remote state), `usable` (the \
+		index is serving searches), `modified` (the index has local changes \
 		that are not yet pushed; only writer nodes reach this state), \
-		`PUSHING` (the node is pushing local changes), `UNSUPPORTED` (the \
+		`pushing` (the node is pushing local changes), `unsupported` (the \
 		definition requires engine features not present on this node version), \
-		`INCOMPATIBLE` (the Lucene files are too old for this build to open), \
-		or `CLOSED` (the index is closed on this node; a new request opens a \
+		`incompatible` (the Lucene files are too old for this build to open), \
+		or `closed` (the index is closed on this node; a new request opens a \
 		fresh instance).""")
 	IndexState state,
 
@@ -71,12 +71,12 @@ public record IndexStatus(
 	IndexerInfo indexer,
 
 	@Schema(description = """
-		Indicates Lucene version compatibility. `CURRENT`: created by the \
+		Indicates Lucene version compatibility. `current`: created by the \
 		current major version, and compatible with the current and next Lucene \
-		major versions. `ENDING`: readable by the current version, but \
+		major versions. `ending`: readable by the current version, but \
 		unsupported by the next Lucene major version; reindex before upgrading \
-		across major versions. `UNREADABLE`: too old to open; the index \
-		reports the `INCOMPATIBLE` state and requires reindexing. `UNKNOWN`: \
+		across major versions. `unreadable`: too old to open; the index \
+		reports the `incompatible` state and requires reindexing. `unknown`: \
 		no version was recorded and no commit exists to determine the version, \
 		such as on an empty index.""")
 	LuceneCompatibility luceneCompatibility,
@@ -84,7 +84,7 @@ public record IndexStatus(
 	@Schema(
 		description = """
 			The recorded Lucene major version the index was created with. \
-			Omitted when compatibility is `UNKNOWN`.""",
+			Omitted when compatibility is `unknown`.""",
 		examples = "10"
 	)
 	Integer luceneCreatedMajor,
@@ -102,10 +102,10 @@ public record IndexStatus(
 	 */
 	public static final String EXAMPLE = """
 		{
-		  "state": "USABLE",
+		  "state": "usable",
 		  "readOnly": false,
 		  "indexer": { "node": "node-a-7f21", "address": "http://node-a:8080" },
-		  "luceneCompatibility": "CURRENT",
+		  "luceneCompatibility": "current",
 		  "luceneCreatedMajor": 10
 		}""";
 }

@@ -98,7 +98,7 @@ components:
       examples:
       - name: "1"
         registered: true
-        stored: SYNCED
+        stored: synced
       properties:
         name:
           type: string
@@ -109,10 +109,10 @@ components:
           type: boolean
           description: A boolean indicating whether the registry names the generation.
         stored:
-          description: "What storage holds under it. `SYNCED`: storage holds a manifest;\
-            \ nodes can pull and serve this generation. `INCOMPLETE`: storage holds\
+          description: "What storage holds under it. `synced`: storage holds a manifest;\
+            \ nodes can pull and serve this generation. `incomplete`: storage holds\
             \ a prefix without a manifest (such as an unfinished push or what an interrupted\
-            \ removal left of a deleted generation). `MISSING`: the generation is\
+            \ removal left of a deleted generation). `missing`: the generation is\
             \ registered, but nothing exists in storage."
           type: string
           $ref: "#/components/schemas/Stored"
@@ -134,10 +134,10 @@ components:
         generations:
         - name: "1"
           registered: true
-          stored: SYNCED
+          stored: synced
         - name: "2"
           registered: true
-          stored: SYNCED
+          stored: synced
       properties:
         name:
           type: string
@@ -2231,12 +2231,12 @@ components:
               matching: {}
               sort: {}
         status:
-          state: USABLE
+          state: usable
           readOnly: false
           indexer:
             node: node-a-7f21
             address: http://node-a:8080
-          luceneCompatibility: CURRENT
+          luceneCompatibility: current
         generations:
         - name: "1"
           live: false
@@ -2334,36 +2334,36 @@ components:
     IndexState:
       type: string
       enum:
-      - NEEDS_PULL
-      - USABLE
-      - MODIFIED
-      - PULLING
-      - PUSHING
-      - UNSUPPORTED
-      - INCOMPATIBLE
-      - CLOSED
+      - needs_pull
+      - usable
+      - modified
+      - pulling
+      - pushing
+      - unsupported
+      - incompatible
+      - closed
     IndexStatus:
       type: object
       description: "The observed state reported by the answering node. The API does\
         \ not accept this object as input. See [Index states](https://exofind.dev/reference/admin-api/#index-states)."
       examples:
-      - state: USABLE
+      - state: usable
         readOnly: false
         indexer:
           node: node-a-7f21
           address: http://node-a:8080
-        luceneCompatibility: CURRENT
+        luceneCompatibility: current
         luceneCreatedMajor: 10
       properties:
         state:
           description: "The remote synchronization state as observed by the answering\
-            \ node: `NEEDS_PULL` (a newer remote state exists and has not been pulled\
-            \ yet), `PULLING` (the node is fetching remote state), `USABLE` (the index\
-            \ is serving searches), `MODIFIED` (the index has local changes that are\
-            \ not yet pushed; only writer nodes reach this state), `PUSHING` (the\
-            \ node is pushing local changes), `UNSUPPORTED` (the definition requires\
-            \ engine features not present on this node version), `INCOMPATIBLE` (the\
-            \ Lucene files are too old for this build to open), or `CLOSED` (the index\
+            \ node: `needs_pull` (a newer remote state exists and has not been pulled\
+            \ yet), `pulling` (the node is fetching remote state), `usable` (the index\
+            \ is serving searches), `modified` (the index has local changes that are\
+            \ not yet pushed; only writer nodes reach this state), `pushing` (the\
+            \ node is pushing local changes), `unsupported` (the definition requires\
+            \ engine features not present on this node version), `incompatible` (the\
+            \ Lucene files are too old for this build to open), or `closed` (the index\
             \ is closed on this node; a new request opens a fresh instance)."
           type: string
           $ref: "#/components/schemas/IndexState"
@@ -2381,12 +2381,12 @@ components:
           type: object
           $ref: "#/components/schemas/IndexerInfo"
         luceneCompatibility:
-          description: "Indicates Lucene version compatibility. `CURRENT`: created\
+          description: "Indicates Lucene version compatibility. `current`: created\
             \ by the current major version, and compatible with the current and next\
-            \ Lucene major versions. `ENDING`: readable by the current version, but\
+            \ Lucene major versions. `ending`: readable by the current version, but\
             \ unsupported by the next Lucene major version; reindex before upgrading\
-            \ across major versions. `UNREADABLE`: too old to open; the index reports\
-            \ the `INCOMPATIBLE` state and requires reindexing. `UNKNOWN`: no version\
+            \ across major versions. `unreadable`: too old to open; the index reports\
+            \ the `incompatible` state and requires reindexing. `unknown`: no version\
             \ was recorded and no commit exists to determine the version, such as\
             \ on an empty index."
           type: string
@@ -2395,7 +2395,7 @@ components:
           type: integer
           format: int32
           description: The recorded Lucene major version the index was created with.
-            Omitted when compatibility is `UNKNOWN`.
+            Omitted when compatibility is `unknown`.
           examples:
           - 10
         settingsUnsupportedFeatures:
@@ -3081,10 +3081,10 @@ components:
     LuceneCompatibility:
       type: string
       enum:
-      - UNKNOWN
-      - CURRENT
-      - ENDING
-      - UNREADABLE
+      - unknown
+      - current
+      - ending
+      - unreadable
     Mapping:
       type: object
       description: The input and target terms of a one-way synonym mapping rule.
@@ -3856,14 +3856,14 @@ components:
     Registry:
       type: string
       enum:
-      - PRESENT
-      - ABSENT
-      - CORRUPT
+      - present
+      - absent
+      - corrupt
     RegistryAuditResponse:
       description: "The registry compared with what remote storage holds. Reported\
         \ by the engine and never accepted as input. See [Audit](https://exofind.dev/reference/admin-api/#audit)."
       examples:
-      - registry: PRESENT
+      - registry: present
         indexes:
         - name: products
           registered: true
@@ -3871,23 +3871,23 @@ components:
           generations:
           - name: "1"
             registered: true
-            stored: SYNCED
+            stored: synced
           - name: "2"
             registered: true
-            stored: SYNCED
+            stored: synced
         - name: staging
           registered: false
           removedAt: 2026-09-03T10:15:00Z
           generations:
           - name: "1"
             registered: false
-            stored: SYNCED
+            stored: synced
         unusable: []
       type: object
       properties:
         registry:
-          description: "The state of the registry object: `PRESENT`, `ABSENT` (no\
-            \ registry object), or `CORRUPT` (contents cannot be parsed)."
+          description: "The state of the registry object: `present`, `absent` (no\
+            \ registry object), or `corrupt` (contents cannot be parsed)."
           type: string
           $ref: "#/components/schemas/Registry"
         indexes:
@@ -4901,9 +4901,9 @@ components:
     Stored:
       type: string
       enum:
-      - SYNCED
-      - INCOMPLETE
-      - MISSING
+      - synced
+      - incomplete
+      - missing
     StringFieldDefinition:
       required:
       - type
@@ -6122,12 +6122,12 @@ paths:
                           matching: {}
                           sort: {}
                     status:
-                      state: USABLE
+                      state: usable
                       readOnly: false
                       indexer:
                         node: node-a-7f21
                         address: http://node-a:8080
-                      luceneCompatibility: CURRENT
+                      luceneCompatibility: current
                     generations:
                     - name: "1"
                       live: false
@@ -6160,12 +6160,12 @@ paths:
                           matching: {}
                           sort: {}
                     status:
-                      state: USABLE
+                      state: usable
                       readOnly: false
                       indexer:
                         node: node-a-7f21
                         address: http://node-a:8080
-                      luceneCompatibility: CURRENT
+                      luceneCompatibility: current
                     generations:
                     - name: "1"
                       live: false
@@ -6343,12 +6343,12 @@ paths:
                           matching: {}
                           sort: {}
                     status:
-                      state: USABLE
+                      state: usable
                       readOnly: false
                       indexer:
                         node: node-a-7f21
                         address: http://node-a:8080
-                      luceneCompatibility: CURRENT
+                      luceneCompatibility: current
                     generations:
                     - name: "1"
                       live: false
@@ -6560,12 +6560,12 @@ paths:
               examples:
                 status:
                   value:
-                    state: USABLE
+                    state: usable
                     readOnly: false
                     indexer:
                       node: node-a-7f21
                       address: http://node-a:8080
-                    luceneCompatibility: CURRENT
+                    luceneCompatibility: current
                     luceneCreatedMajor: 10
               schema:
                 $ref: "#/components/schemas/IndexStatus"
@@ -6699,12 +6699,12 @@ paths:
                           matching: {}
                           sort: {}
                     status:
-                      state: USABLE
+                      state: usable
                       readOnly: false
                       indexer:
                         node: node-a-7f21
                         address: http://node-a:8080
-                      luceneCompatibility: CURRENT
+                      luceneCompatibility: current
                     generations:
                     - name: "1"
                       live: false
@@ -6831,12 +6831,12 @@ paths:
               examples:
                 status:
                   value:
-                    state: USABLE
+                    state: usable
                     readOnly: false
                     indexer:
                       node: node-a-7f21
                       address: http://node-a:8080
-                    luceneCompatibility: CURRENT
+                    luceneCompatibility: current
                     luceneCreatedMajor: 10
               schema:
                 $ref: "#/components/schemas/IndexStatus"
@@ -8141,7 +8141,7 @@ paths:
     post:
       summary: Repair the registry from storage
       description: |-
-        Registers every `SYNCED` generation that storage holds and the registry does not name. The repair operation only adds entries: it keeps existing entries as stored and never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
+        Registers every `synced` generation that storage holds and the registry does not name. The repair operation only adds entries: it keeps existing entries as stored and never deletes an index, a generation, or storage data. If the registry is absent, the repair writes it fresh. If the registry is corrupt, the repair replaces it with one rebuilt from storage.
 
         When `"promoteNewest": true`, each index created by the repair answers for its highest-numbered generation. Hand-named generations are not selected. Indexes that are already registered keep what they answer for. When omitted or false, created indexes answer for nothing until a generation is promoted.
 
@@ -8259,7 +8259,7 @@ paths:
               examples:
                 audit:
                   value:
-                    registry: PRESENT
+                    registry: present
                     indexes:
                     - name: products
                       registered: true
@@ -8267,17 +8267,17 @@ paths:
                       generations:
                       - name: "1"
                         registered: true
-                        stored: SYNCED
+                        stored: synced
                       - name: "2"
                         registered: true
-                        stored: SYNCED
+                        stored: synced
                     - name: staging
                       registered: false
                       removedAt: 2026-09-03T10:15:00Z
                       generations:
                       - name: "1"
                         registered: false
-                        stored: SYNCED
+                        stored: synced
                     unusable: []
               schema:
                 $ref: "#/components/schemas/RegistryAuditResponse"
