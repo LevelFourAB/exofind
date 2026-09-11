@@ -6,7 +6,7 @@ The reference pages that follow describe the API by subject. For one page per en
 
 ## Shape of the API
 
-Every endpoint is served under the path prefix `/v1alpha1`. The API version is `v1alpha1`. Exofind is experimental and the API changes without maintaining backward compatibility.
+Every endpoint is served under the path prefix `/v1alpha1`. The API version is `v1alpha1`. For what a change to the API can do within that version, see [Compatibility](#compatibility).
 
 The API contains the following endpoint groups:
 
@@ -22,6 +22,52 @@ The API contains the following endpoint groups:
 The endpoint `GET /q/health/ready` reports whether a node is ready. It is outside the versioned API and requires no credentials.
 
 An index name in a path parameter represents either the index itself (such as `books`), which references its active generation, or a specific generation by name (such as `books@2`).
+
+## Compatibility
+
+An API version whose name ends in `alpha` can include breaking changes. The [changelog](https://github.com/LevelFourAB/exofind/blob/main/CHANGELOG.md) records each breaking change.
+
+Apart from changes recorded in the changelog, the API follows the rules in this section.
+
+### Changes that arrive within a version
+
+The following changes can occur without a change to the version prefix:
+
+- A new endpoint or a new HTTP method on an existing path.
+- A new optional request field. Omitted fields retain the behavior of the previous release.
+- A new response field.
+- A new error code, or a new value for a field that carries a fixed set of values.
+- A more specific status code for a condition that previously returned `500 Internal Server Error`.
+
+### What a client must do
+
+To maintain compatibility across releases within an API version, a client must:
+
+- Ignore unknown response fields.
+- Match on the `code` field of an error body instead of `message`, and handle unknown error codes.
+- Accept unknown values in fields that carry a fixed set of values.
+- Send only explicitly set fields. Omitted fields take their documented defaults.
+
+### What holds for the life of a version
+
+The following do not change while the version prefix remains the same:
+
+- The path, HTTP method, and meaning of an endpoint.
+- The name, type, and meaning of a request field or response field.
+- The meaning of an error code. Error codes are never renamed or reused.
+- The permission an endpoint requires.
+- The status class of a condition. A condition that returns `409 Conflict` does not change to `400 Bad Request`.
+
+### What compatibility does not cover
+
+Compatibility guarantees do not cover search result behavior. The following can change within an API version:
+
+- The order of search hits and the scores that produce that order.
+- The text of a highlight fragment.
+- The precision of a facet count.
+- The documents a search query matches when the change results from analysis, typo tolerance, or query interpretation.
+
+Compatibility rules cover index definition fields and usages. They do not cover ranking and matching behavior.
 
 ## Media types
 
