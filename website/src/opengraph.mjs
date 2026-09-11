@@ -85,9 +85,11 @@ export const FONTS = [
  * Whether a route produces a page an image can be drawn for. The site
  * publishes routes that are not HTML - `llms.txt`, a Markdown copy of every
  * document - and the integration would read each one as a document and fail on
- * the tags it does not have.
+ * the tags it does not have. The sitemap in `../astro.config.mjs` keeps the
+ * same routes out for its own reason, and calls this with a `URL`.
  *
- * @param {import('astro-opengraph-images').Page} page
+ * @param {{ pathname: string }} page the route, or anything else that carries
+ *   the path it is served at
  * @returns {boolean}
  */
 export function isPage({ pathname }) {

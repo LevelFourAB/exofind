@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'astro/config';
 import { unified } from '@astrojs/markdown-remark';
+import sitemap from '@astrojs/sitemap';
 import starlight from '@astrojs/starlight';
 import openGraphImages from 'astro-opengraph-images';
 
@@ -177,6 +178,20 @@ export default defineConfig({
 			options: { width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT, fonts: FONTS },
 			pathFilter: isPage,
 			render
+		}),
+
+		/*
+		 * `/sitemap-index.xml` and the sitemap it names, so a crawler is told
+		 * every page rather than finding the ones it can reach by link.
+		 * `public/robots.txt` points at the index.
+		 *
+		 * The filter is the one the link previews use, and for the same
+		 * reason: the site publishes routes that are not pages - `llms.txt`,
+		 * the Markdown copy of every document - and a crawler has no use for
+		 * them.
+		 */
+		sitemap({
+			filter: page => isPage(new URL(page))
 		})
 	]
 });

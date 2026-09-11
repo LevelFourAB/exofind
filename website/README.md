@@ -184,6 +184,18 @@ Four things about the section are worth knowing before changing it:
 document rather than from the built site, so it spells the URL of an endpoint
 itself. A change to where a page is served is a change in both files.
 
+## What the site publishes for a crawler
+
+`@astrojs/sitemap` writes `/sitemap-index.xml` and the sitemap it names from
+every route the build produced, so a page is listed whether or not another page
+links to it. It is configured in [`astro.config.mjs`](astro.config.mjs) with the
+filter the link previews use, which keeps the routes that are not pages -
+`llms.txt`, the Markdown copy of every document - out of it.
+
+[`public/robots.txt`](public/robots.txt) points at the index. It states the
+origin in full, as the sitemap convention asks for an absolute URL, so a change
+to `SITE` in [`src/site.mjs`](src/site.mjs) is a change in that file too.
+
 ## What the site publishes for a machine reader
 
 An agent asked to write something against a node arrives with no sidebar and no
