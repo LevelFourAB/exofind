@@ -20,11 +20,11 @@
  * it, because prev/next and the edit link are what a reader at the end of a
  * page is looking for first.
  */
-import Default from '@astrojs/starlight/components/Footer.astro';
+import Default from "@astrojs/starlight/components/Footer.astro";
 
-import { COMPARE_BASE } from '../compare.mjs';
-import { parts } from '../nav.mjs';
-import { COMPANY, REPO, withBase } from '../site.mjs';
+import { COMPARE_BASE } from "../compare.mjs";
+import { parts } from "../nav.mjs";
+import { COMPANY, REPO, withBase } from "../site.mjs";
 
 /**
  * The comparison pages, defined into the bundle by `../../astro.config.mjs`
@@ -44,39 +44,39 @@ const COMPARISONS = __COMPARISONS__;
  */
 const columns = [
 	{
-		label: 'Documentation',
-		links: [
-			...parts(),
-			{ label: 'REST API', href: withBase('/api/') }
-		]
+		label: "Documentation",
+		links: [...parts(), { label: "REST API", href: withBase("/api/") }],
 	},
 	{
-		label: 'Compare',
-		links: COMPARISONS.map(entry => ({
+		label: "Compare",
+		links: COMPARISONS.map((entry) => ({
 			label: entry.engine,
-			href: withBase(`${COMPARE_BASE}/${entry.slug}/`)
-		}))
+			href: withBase(`${COMPARE_BASE}/${entry.slug}/`),
+		})),
 	},
 	{
-		label: 'Elsewhere',
+		label: "Elsewhere",
 		links: [
-			{ label: 'Demos', href: withBase('/examples/') },
-			{ label: 'Source on GitHub', href: REPO },
-			{ label: 'OpenAPI document', href: withBase('/openapi.yaml') },
-		]
-	}
+			{ label: "Source on GitHub", href: REPO },
+			{ label: "OpenAPI document", href: withBase("/openapi.yaml") },
+		],
+	},
 ];
 ---
 
-<Default><slot /></Default>
+<Default>
+	<slot />
+</Default>
 
 <div class="ways-on not-content">
-	{columns.map(column => (
+	{columns.map((column) => (
 		<nav aria-label={column.label}>
 			<h2>{column.label}</h2>
 			<ul>
-				{column.links.map(link => (
-					<li><a href={link.href}>{link.label}</a></li>
+				{column.links.map((link) => (
+					<li>
+						<a href={link.href}>{link.label}</a>
+					</li>
 				))}
 			</ul>
 		</nav>
@@ -84,7 +84,8 @@ const columns = [
 </div>
 
 <p class="colophon">
-	Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a> and is available under the Apache License 2.0.
+	Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a> and is
+	available under the Apache License 2.0.
 </p>
 
 <style>
