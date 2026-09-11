@@ -12,6 +12,7 @@ import { Code, TabItem, Tabs } from '@astrojs/starlight/components';
 
 import DemoList from '../components/DemoList.astro';
 import { demo } from '../examples/demos.mjs';
+import { documentAt, partNamed } from '../nav.mjs';
 import { COMPANY } from '../site.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -107,33 +108,63 @@ const features = [
 ];
 
 /*
- * The four kinds of documentation, each entered at the page a reader who has
- * only read the front page should start it at. They are the sections of
- * `docs/README.md` and they say what each kind is for, which is what tells a
- * reader with a question which of the four to open.
+ * The four kinds of documentation. They are the sections of `docs/README.md`,
+ * and the line under each says what that kind of documentation is for, which
+ * is what tells a reader with a question which of the four to open.
+ *
+ * The heading leads to the landing page of the part, which lists every page in
+ * it with the sentence the index describes it with. The pages under the
+ * heading are the shortcut past that list, for a reader who has read the front
+ * page and nothing else: a few pages of the part that are worth opening first.
+ * A part is named rather than linked by path, and so is a page, so that the
+ * titles are the ones the index gives and a document renamed, moved or dropped
+ * fails the build - see `../nav.mjs`.
+ *
+ * The pages linked under "What it does" are left out here. They are a screen
+ * above, and a reader who has just passed over them is served better by four
+ * other ways in than by the same six links again.
  */
 const doors = [
 	{
-		title: 'Tutorials',
-		body: 'Run a node and define an index.',
-		href: `${base}/tutorials/getting-started/`
+		part: 'Tutorials',
+		body: 'Learn the engine by running it.',
+		pages: [
+			'tutorials/getting-started',
+			'tutorials/getting-started-with-object-storage'
+		]
 	},
 	{
-		title: 'How-to guides',
+		part: 'How-to guides',
 		body: 'Solve one task at a time.',
-		href: `${base}/how-to/define-an-index/`
+		pages: [
+			'how-to/define-an-index',
+			'how-to/index-documents',
+			'how-to/tune-ranking'
+		]
 	},
 	{
-		title: 'Reference',
-		body: 'API references, field types and other details.',
-		href: `${base}/reference/configuration/`
+		part: 'Reference',
+		body: 'Look up a setting, a request or an error code.',
+		pages: [
+			'reference/search-api',
+			'reference/field-types',
+			'reference/configuration'
+		]
 	},
 	{
-		title: 'Explanation',
-		body: 'Covers why the design is the way it is.',
-		href: `${base}/explanation/architecture/`
+		part: 'Explanation',
+		body: 'Find out why the design is the way it is.',
+		pages: [
+			'explanation/synchronization',
+			'explanation/write-guarantees',
+			'explanation/relevance'
+		]
 	}
-];
+].map(door => ({
+	...partNamed(door.part),
+	body: door.body,
+	pages: door.pages.map(documentAt)
+}));
 ---
 
 <StarlightPage
@@ -202,10 +233,15 @@ const doors = [
 
 	<div class="doors not-content">
 		{doors.map(door => (
-			<a class="door" href={door.href}>
-				<h3>{door.title}</h3>
+			<div class="door">
+				<h3><a href={door.href}>{door.label}</a></h3>
 				<p>{door.body}</p>
-			</a>
+				<ul>
+					{door.pages.map(page => (
+						<li><a href={page.href}>{page.label}</a></li>
+					))}
+				</ul>
+			</div>
 		))}
 	</div>
 
@@ -255,7 +291,6 @@ const doors = [
 		display: grid;
 		gap: 0.375rem;
 		padding-block-start: 0.8125rem;
-		text-decoration: none;
 	}
 
 	.features {
@@ -288,14 +323,16 @@ const doors = [
 	 * The underline is there before the pointer is, because a link that only
 	 * appears on hover is a link a touch device never shows.
 	 */
-	.feature h3 a {
+	.feature h3 a,
+	.door h3 a {
 		color: inherit;
 		text-decoration: underline;
 		text-decoration-color: var(--sl-color-gray-5);
 		text-underline-offset: 0.2em;
 	}
 
-	.feature h3 a:hover {
+	.feature h3 a:hover,
+	.door h3 a:hover {
 		color: var(--sl-color-text-accent);
 		text-decoration-color: currentColor;
 	}
@@ -308,18 +345,46 @@ const doors = [
 		margin-block: 0;
 	}
 
-	/* Four ways in, side by side, and one line each about what is behind them. */
+	/*
+	 * Four ways in, side by side: what each kind of documentation is for, and
+	 * a few of its pages. The columns are wider than the features are narrow,
+	 * because a page title runs longer than the line above it.
+	 */
 	.doors {
 		display: grid;
 		gap: 1.875rem 2.5rem;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
 	}
 
 	.door h3 {
 		font-size: 1rem;
 	}
 
-	.door:hover h3 {
+	/*
+	 * The pages are a list rather than a sentence, because the reader is
+	 * picking one out of them rather than reading them. They carry the
+	 * underline of the heading above them at the weight of the line between,
+	 * which is what keeps the cell one block instead of two.
+	 */
+	.door ul {
+		display: grid;
+		gap: 0.3125rem;
+		list-style: none;
+		margin-block: 0.25rem 0;
+		padding-inline: 0;
+	}
+
+	.door li a {
+		color: var(--sl-color-gray-2);
+		font-size: 0.875rem;
+		line-height: 1.45;
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-5);
+		text-underline-offset: 0.2em;
+	}
+
+	.door li a:hover {
 		color: var(--sl-color-text-accent);
+		text-decoration-color: currentColor;
 	}
 </style>

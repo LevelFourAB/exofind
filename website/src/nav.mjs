@@ -26,6 +26,21 @@ import { BASE } from './site.mjs';
 /* global __DOCS_PARTS__ */
 export const PARTS = __DOCS_PARTS__;
 
+/**
+ * Every document the manual lists, by the slug the documentation index spells
+ * it with. This is what `documentAt` looks a page up in, so that a page named
+ * outside the index - by the front page - is named once and described by the
+ * index rather than by a second copy of its title.
+ *
+ * @type {Map<string, { label: string, slug: string, description: string }>}
+ */
+const DOCUMENTS = new Map(
+	PARTS
+		.flatMap(part => part.groups)
+		.flatMap(group => group.items)
+		.map(item => [item.slug, item])
+);
+
 /*
  * Parts the header leaves out. The tutorials are two documents and the front
  * page leads with them, so the header spends its room on the parts a reader
@@ -163,6 +178,56 @@ export function parts() {
 			label: part.label,
 			href: entryTo(part) ?? `${BASE}/${part.slugs[0]}/`
 		}));
+}
+
+/**
+ * One part of the manual by the name the documentation index gives it, with
+ * the page it is entered at.
+ *
+ * A page outside the manual that links into a named part - the front page
+ * does, under "Where to go" - asks for it here rather than writing the path,
+ * so that the link leads to the landing page of the part and a section renamed
+ * in the index fails the build instead of publishing a link to nothing.
+ *
+ * @param {string} label what the documentation index calls the part
+ * @returns {{ label: string, href: string }}
+ * @throws {Error} if the index lists no part of that name
+ */
+export function partNamed(label) {
+	const part = PARTS.find(candidate => candidate.label === label);
+
+	if(!part || part.slugs.length === 0) {
+		throw new Error(`The documentation index has no part called ${label}`);
+	}
+
+	return { label: part.label, href: entryTo(part) ?? `${BASE}/${part.slugs[0]}/` };
+}
+
+/**
+ * One document of the manual by its slug, which is the path `docs/README.md`
+ * links it at, less the `.md`.
+ *
+ * The title and the sentence come from the index, so a page named here is
+ * described the way it is described everywhere else on the site, and a page
+ * that is renamed, moved or dropped fails the build rather than leaving a link
+ * to nothing behind.
+ *
+ * @param {string} slug for example `how-to/define-an-index`
+ * @returns {{ label: string, href: string, description: string }}
+ * @throws {Error} if the index lists no document at that slug
+ */
+export function documentAt(slug) {
+	const document = DOCUMENTS.get(slug);
+
+	if(!document) {
+		throw new Error(`The documentation index lists no document at ${slug}`);
+	}
+
+	return {
+		label: document.label,
+		href: `${BASE}/${slug}/`,
+		description: document.description
+	};
 }
 
 /**
