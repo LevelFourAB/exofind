@@ -52,30 +52,49 @@ const written =
 		? null
 		: JSON.stringify(example, null, 2);
 
+/*
+ * A variant of a union is a section of its own rather than a row, so each one is
+ * a heading, and the on-this-page list names them under the section that holds
+ * them. The name is what the list says and the component matches a variant by,
+ * so that the anchor of a variant is decided in the same place as every other
+ * anchor on the page.
+ */
+const variants = model.variants.map((variant) => ({
+	text: variant.name,
+	slug: slug(variant.name),
+}));
+
 /**
  * The sections this type has, in the order the page draws them.
  *
  * A key rather than a heading is what the component asks for, so that renaming a
- * heading is one edit here and the anchor follows it.
+ * heading is one edit here and the anchor follows it. A section that holds
+ * headings of its own states them as `items`.
  */
 const sections = [
 	written && { key: "example", text: "Example" },
 	model.variants.length > 0
-		? { key: "variants", text: "Types" }
+		? { key: "variants", text: "Types", items: variants }
 		: model.fields.length > 0 && { key: "properties", text: "Properties" },
 	type.operations.length > 0 && { key: "endpoints", text: "Endpoints" },
 	type.parents.length > 0 && { key: "types", text: "Other types" },
 ]
 	.filter(Boolean)
 	.map((section) => ({ ...section, slug: slug(section.text) }));
+
+/** Every heading on the page, flattened into the list Starlight is given. */
+const headings = sections.flatMap((section) => [
+	{ depth: 2, slug: section.slug, text: section.text },
+	...(section.items ?? []).map((item) => ({
+		depth: 3,
+		slug: item.slug,
+		text: item.text,
+	})),
+]);
 ---
 
 <StarlightPage
-	headings={sections.map((section) => ({
-		depth: 2,
-		slug: section.slug,
-		text: section.text,
-	}))}
+	headings={headings}
 	frontmatter={{
 		title: type.name,
 		description:
@@ -86,7 +105,7 @@ const sections = [
 		 * the screen already says. An enumeration has only the endpoints that take
 		 * it, and is drawn without the list.
 		 */
-		tableOfContents: sections.length > 1,
+		tableOfContents: headings.length > 1,
 	}}
 >
 	<Type type={type} model={model} written={written} sections={sections} />

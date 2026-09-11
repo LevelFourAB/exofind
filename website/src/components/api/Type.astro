@@ -40,6 +40,19 @@ const sectionOf = (key) => sections.find((section) => section.key === key);
 
 const example = sectionOf("example");
 const variants = sectionOf("variants");
+
+/**
+ * The anchor of a variant heading, by the name the heading states.
+ *
+ * The variants are drawn from the model, and the anchors come from the list the
+ * page gave Starlight, so the two are matched by name: a variant the list does
+ * not name is drawn without an anchor rather than under one the list cannot
+ * reach.
+ */
+const variantAnchors = new Map(
+	(variants?.items ?? []).map((item) => [item.text, item.slug]),
+);
+
 const properties = sectionOf("properties");
 const used = sectionOf("endpoints");
 const held = sectionOf("types");
@@ -75,7 +88,7 @@ const held = sectionOf("types");
 			<div class="variants">
 				{model.variants.map((variant) => (
 					<div class="variant">
-						<div class="head">
+						<h3 class="head" id={variantAnchors.get(variant.name)}>
 							{hasTypePage(variant.name) ? (
 								<a class="name" href={typePathOf(variant.name)}>
 									{variant.name}
@@ -90,7 +103,7 @@ const held = sectionOf("types");
 									<code>"{variant.value}"</code>
 								</span>
 							)}
-						</div>
+						</h3>
 
 						<Prose
 							text={variant.description}
@@ -302,7 +315,6 @@ const held = sectionOf("types");
 	 * put every one of them behind a click.
 	 */
 	.variant {
-		border-block-start: 1px solid var(--sl-color-gray-5);
 		padding-block: 0.875rem;
 	}
 
@@ -319,7 +331,7 @@ const held = sectionOf("types");
 
 	.variant > .head > .name {
 		color: var(--sl-color-text-accent);
-		font-size: 0.90625rem;
+		font-size: var(--sl-text-h3);
 	}
 
 	.variant > .head > a.name {
@@ -330,6 +342,10 @@ const held = sectionOf("types");
 
 	.variant > .head > a.name:hover {
 		text-decoration-color: currentColor;
+	}
+
+	.variant > .head + .prose {
+		margin-block-end: var(--sl-text-h3);
 	}
 
 	.variant .says {
