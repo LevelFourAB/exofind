@@ -1,44 +1,162 @@
 ---
 /*
- * The end of every page, with a line that names who publishes the engine.
+ * The end of every page: the ways on from it, and a line that names who
+ * publishes the engine.
  *
  * A reader who wants to ask something about Exofind finds the repository from
  * the header and nothing else, and an issue is not where a question about
- * running it belongs. The line under the article is the one place that is on
- * every page - a demo and an endpoint page as well - so it is where the
- * publisher and the way to reach them are stated.
+ * running it belongs. The end of the article is the one place that is on every
+ * page - a demo and an endpoint page as well - so it is where the publisher
+ * and the way to reach them are stated.
  *
- * It is written under Starlight's own footer rather than in place of it,
- * because prev/next and the edit link are what a reader at the end of a page
- * is looking for first.
+ * It carries the comparison pages for the opposite reason. Those are written
+ * for someone who has not decided to read the manual, so they are in no
+ * sidebar and in no part; a column here is where a reader who has read to the
+ * end of a page meets them. The other two columns are the manual and the rest
+ * of the site, because a column of comparisons on its own would read as the
+ * only thing the footer is for.
+ *
+ * All of it is written under Starlight's own footer rather than in place of
+ * it, because prev/next and the edit link are what a reader at the end of a
+ * page is looking for first.
  */
 import Default from '@astrojs/starlight/components/Footer.astro';
 
-import { COMPANY } from '../site.mjs';
+import { COMPARE_BASE } from '../compare.mjs';
+import { parts } from '../nav.mjs';
+import { COMPANY, REPO, withBase } from '../site.mjs';
+
+/**
+ * The comparison pages, defined into the bundle by `../../astro.config.mjs`
+ * from what `../compare.mjs` reads. A page is rendered from a bundle and
+ * cannot read the repository, which is why they arrive as a constant rather
+ * than as an import.
+ *
+ * @type {import('../compare.mjs').Comparison[]}
+ */
+/* global __COMPARISONS__ */
+const COMPARISONS = __COMPARISONS__;
+
+/*
+ * The parts of the manual come from `docs/README.md`, so a section added
+ * there is in the footer as well. The REST API is generated rather than
+ * written, so it is named here - the same split `EXTRA` in `../nav.mjs` makes.
+ */
+const columns = [
+	{
+		label: 'Documentation',
+		links: [
+			...parts(),
+			{ label: 'REST API', href: withBase('/api/') }
+		]
+	},
+	{
+		label: 'Compare',
+		links: COMPARISONS.map(entry => ({
+			label: entry.engine,
+			href: withBase(`${COMPARE_BASE}/${entry.slug}/`)
+		}))
+	},
+	{
+		label: 'Elsewhere',
+		links: [
+			{ label: 'Demos', href: withBase('/examples/') },
+			{ label: 'Source on GitHub', href: REPO },
+			{ label: 'OpenAPI document', href: withBase('/openapi.yaml') },
+		]
+	}
+];
 ---
 
 <Default><slot /></Default>
 
+<div class="ways-on not-content">
+	{columns.map(column => (
+		<nav aria-label={column.label}>
+			<h2>{column.label}</h2>
+			<ul>
+				{column.links.map(link => (
+					<li><a href={link.href}>{link.label}</a></li>
+				))}
+			</ul>
+		</nav>
+	))}
+</div>
+
 <p class="colophon">
-	Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a> and is available under Apache License 2.0.
+	Exofind is built by <a href={COMPANY.href}>{COMPANY.name}</a> and is available under the Apache License 2.0.
 </p>
 
 <style>
 	/*
-	 * The same hairline the blocks above it carry, spanning the numeral column
-	 * with the text pushed back onto the axis the page is written on. See the
-	 * comment over `--doc-margin` in `../styles/site.css`.
+	 * The columns and the line under them carry the same hairline the blocks
+	 * above them do, spanning the numeral column with the text pushed back
+	 * onto the axis the page is written on. See the comment over
+	 * `--doc-margin` in `../styles/site.css`.
 	 */
+	.ways-on,
 	.colophon {
+		margin-inline-start: calc(-1 * var(--doc-margin));
+		padding-inline-start: var(--doc-margin);
+	}
+
+	/*
+	 * The three columns fit across the prose column, which is a little under
+	 * 36rem: three tracks of the minimum and two gaps come to 30.5rem. A wider
+	 * minimum wraps the last column under the first two on a full-width
+	 * window, which reads as a mistake rather than as a fold.
+	 */
+	.ways-on {
+		display: grid;
+		gap: 1.875rem 2.5rem;
+		grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+		margin-block-start: 3rem;
+		padding-block-start: 1.25rem;
 		border-block-start: 1px solid var(--sl-color-gray-5);
+	}
+
+	/*
+	 * The heading of a column is a label rather than a title: it is set in the
+	 * mono face the rest of the site labels with, so that the links under it
+	 * are the only prose in the block.
+	 */
+	.ways-on h2 {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		line-height: 1.2;
+		margin: 0 0 0.625rem;
+		text-transform: uppercase;
+	}
+
+	.ways-on ul {
+		display: grid;
+		gap: 0.3125rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.ways-on a {
+		color: var(--sl-color-gray-2);
+		font-size: 0.875rem;
+		line-height: 1.5;
+		text-decoration: none;
+	}
+
+	.ways-on a:hover {
+		color: var(--sl-color-text-accent);
+	}
+
+	.colophon {
 		color: var(--sl-color-gray-3);
 		font-family: var(--sl-font-mono);
 		font-size: 0.75rem;
 		line-height: 1.6;
 		margin-block: 2rem 0;
-		margin-inline-start: calc(-1 * var(--doc-margin));
 		padding-block-start: 0.875rem;
-		padding-inline-start: var(--doc-margin);
 	}
 
 	.colophon a {

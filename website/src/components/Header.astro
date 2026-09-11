@@ -42,7 +42,7 @@ import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
 
 import { sectionsOf } from '../nav.mjs';
 
-const sections = sectionsOf(Astro.locals.starlightRoute.sidebar);
+const sections = sectionsOf(Astro.locals.starlightRoute.sidebar, Astro.url.pathname);
 
 /* Starlight renders no search when there is nothing to search. */
 const searchable =

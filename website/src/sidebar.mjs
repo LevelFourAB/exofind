@@ -8,9 +8,11 @@
  * index appears in the sidebar, and one that is not in the index is not
  * hidden away on the site while looking present in the repository.
  *
- * The same index also carries a sentence per document saying what the page
- * gets the reader. The sidebar has no room for it, so it is read here for
- * `/llms.txt` - see `./pages/llms.txt.ts`.
+ * The same index also carries the sentence that opens a section and a sentence
+ * per document saying what the page gets the reader. The sidebar has no room
+ * for either, so both are read here for the pages built from them: `/llms.txt`
+ * - see `./pages/llms.txt.ts` - and the landing page of each part of the
+ * manual - see `./pages/[part].astro`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -106,26 +108,80 @@ export function sidebarFrom(index) {
 }
 
 /**
+ * @typedef {object} Group
+ * @property {string | null} label the `###` heading over the documents, or
+ *   `null` for the documents listed before the first one
+ * @property {{ label: string, slug: string, description: string }[]} items
+ *   every document under it, in the order the index lists them
+ */
+
+/**
  * @typedef {object} Part
  * @property {string} label what the documentation index calls the part
+ * @property {string | null} path where the landing page of the part is served,
+ *   which is the directory its documents are in - `null` where they are in
+ *   more than one, and the part then has no landing page
+ * @property {string} lede the paragraph the index opens the section with, or
+ *   an empty string where it opens with none
+ * @property {Group[]} groups the documents of the part, divided as the index
+ *   divides them
  * @property {string[]} slugs every document in it, in the order it lists them
  */
 
 /**
  * The parts of the manual - what the `##` headings of the documentation index
- * are, and which documents are under each. This is what the header and the
- * label over a page title are built from: the sidebar shows some sections as
- * their contents, and a reader still has to be told which kind of
- * documentation they have landed in.
+ * are, and which documents are under each. This is what the header, the label
+ * over a page title and the landing page of each part are built from: the
+ * sidebar shows some sections as their contents, and a reader still has to be
+ * told which kind of documentation they have landed in.
  *
  * @param {URL} index the `README.md` that lists the documentation
  * @returns {Part[]} one per section that lists documents, in index order
  */
 export function partsFrom(index) {
-	return sectionsIn(index).map(section => ({
-		label: section.label,
-		slugs: slugsIn(section)
-	}));
+	return sectionsIn(index).map(section => {
+		const slugs = slugsIn(section);
+
+		return {
+			label: section.label,
+			path: directoryOf(slugs),
+			lede: section.lede ?? '',
+			groups: groupsIn(section),
+			slugs
+		};
+	});
+}
+
+/**
+ * The documents of a section, in the sub-sections the index divides it into.
+ * The documents listed before the first `###` heading are a group of their
+ * own, and a section that has no sub-sections at all is one such group.
+ */
+function groupsIn(section) {
+	const documents = section.items.filter(item => !item.items);
+	const subgroups = section.items.filter(item => item.items);
+
+	return [
+		...documents.length > 0 ? [{ label: null, items: documents }] : [],
+		...subgroups.map(group => ({ label: group.label, items: group.items }))
+	];
+}
+
+/**
+ * The one directory a set of documents is in, or `null` where they are in more
+ * than one or in the root.
+ *
+ * A part is served at the directory its documents are in - `how-to/index.md`
+ * is at `/how-to/`, under the guides themselves - so the landing page needs no
+ * path of its own to be kept in step with the index. A directory holding a
+ * slash is refused as well: the route that builds the landing pages matches
+ * one path segment.
+ */
+function directoryOf(slugs) {
+	const directories = new Set(slugs.map(slug => slug.split('/').slice(0, -1).join('/')));
+	const [only] = directories;
+
+	return directories.size === 1 && only !== '' && !only.includes('/') ? only : null;
 }
 
 /**
@@ -172,6 +228,7 @@ function sectionsIn(index) {
 	let section = null;
 	let subgroup = null;
 	let entry = null;
+	let opening = false;
 
 	for(const line of readFileSync(index, 'utf-8').split('\n')) {
 		/*
@@ -197,19 +254,40 @@ function sectionsIn(index) {
 		if(subsection && section) {
 			subgroup = { label: subsection[1], items: [] };
 			section.items.push(subgroup);
+			opening = false;
 			continue;
 		}
 
 		const heading = line.match(SECTION);
 		if(heading) {
-			section = { label: heading[1], items: [] };
+			section = { label: heading[1], lede: '', items: [] };
 			subgroup = null;
+			opening = true;
 			sections.push(section);
 			continue;
 		}
 
 		const listed = line.match(ENTRY);
+
+		/*
+		 * The paragraph a section opens with, which the landing page of the
+		 * part leads with. Only the paragraph directly under the heading is
+		 * taken: a second one answers a question the index has and the landing
+		 * page does not, such as where to find the generated API pages.
+		 */
+		if(opening && section && !listed) {
+			if(line.trim() === '') {
+				opening = section.lede === '';
+			} else {
+				section.lede = `${section.lede} ${line.trim()}`.trim();
+			}
+
+			continue;
+		}
+
 		if(listed && section) {
+			opening = false;
+
 			entry = {
 				label: listed[1],
 				slug: listed[2].replace(/\.md$/, ''),
@@ -240,15 +318,17 @@ function pruned(group) {
  * A group as Starlight takes it, closed if `CLOSED` names it and open
  * otherwise, and a link as the label and slug alone.
  *
- * The description read from the index is dropped here. Starlight validates a
+ * Everything else the index carries - the description of a document, the
+ * paragraph a section opens with - is dropped here. Starlight validates a
  * sidebar entry against a strict schema and refuses a property it does not
- * know, so an entry keeps only what a sidebar is built from.
+ * know, so an entry is built from the two or three properties a sidebar needs
+ * instead of from what the section holds.
  */
 function grouped(item, closed) {
 	if(!item.items) return { label: item.label, slug: item.slug };
 
 	return {
-		...item,
+		label: item.label,
 		collapsed: closed.delete(item.label),
 		items: item.items.map(child => grouped(child, closed))
 	};

@@ -1,0 +1,78 @@
+---
+/*
+ * A description from the OpenAPI document, rendered where it is read.
+ *
+ * The generated pages are drawn as components rather than written as Markdown,
+ * and a component cannot wait for anything while it is laying out a list. This
+ * one can: it is handed one description, waits for that description alone, and
+ * every instance of it in a list of fields waits at the same time. That is what
+ * lets a field deep inside a tagged union carry the same prose as the endpoint
+ * at the top of the page.
+ *
+ * Everything on these pages sits inside `.not-content`, where the styles that
+ * draw the manual do not reach, so the prose is drawn here instead - see the
+ * bottom of this file.
+ */
+import { html, inline } from "../../openapi/markdown.mjs";
+
+const {
+	text,
+	as: Tag = "div",
+	variant = "block",
+	class: className,
+} = Astro.props;
+
+const rendered = variant === "inline" ? await inline(text) : await html(text);
+---
+
+{rendered && (
+	<Tag class:list={["prose", variant, className]} set:html={rendered} />
+)}
+
+<style>
+	.prose {
+		color: var(--sl-color-gray-2);
+	}
+
+	.prose.inline {
+		display: block;
+	}
+
+	.prose :global(p) {
+		margin: 0;
+		max-width: 68ch;
+	}
+
+	.prose :global(p + p) {
+		margin-block-start: 0.625rem;
+	}
+
+	.prose :global(a) {
+		color: inherit;
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-4);
+		text-underline-offset: 0.2em;
+	}
+
+	.prose :global(a:hover) {
+		color: var(--sl-color-text-accent);
+		text-decoration-color: currentColor;
+	}
+
+	.prose :global(code) {
+		background: none;
+		color: var(--sl-color-white);
+		font-family: var(--sl-font-mono);
+		font-size: 0.90625rem;
+		overflow-wrap: break-word;
+	}
+
+	.prose :global(ul) {
+		margin: 0.5rem 0 0;
+		padding-inline-start: 1.125rem;
+	}
+
+	.prose :global(li + li) {
+		margin-block-start: 0.25rem;
+	}
+</style>

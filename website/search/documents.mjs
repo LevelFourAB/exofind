@@ -2,11 +2,12 @@
  * The site as documents to search.
  *
  * Every page the site publishes becomes one or more documents here: the manual
- * under `docs/`, a page per REST endpoint, and the demos. A page is not one
- * document but one per section, because a reader searching a manual is looking
- * for the paragraph that answers them rather than for the page it is on - and
- * a section is the smallest piece the site can link to, since Starlight gives
- * every heading an anchor.
+ * under `docs/`, the pages written for the site alone under
+ * `../src/content/pages/`, a page per REST endpoint, and the demos. A page is
+ * not one document but one per section, because a reader searching a manual is
+ * looking for the paragraph that answers them rather than for the page it is
+ * on - and a section is the smallest piece the site can link to, since
+ * Starlight gives every heading an anchor.
  *
  * The Markdown is read from the repository rather than from the built site.
  * That keeps indexing independent of a site build, and the two agree because
@@ -30,6 +31,17 @@ import { BASE } from '../src/site.mjs';
 const DOCS = new URL('../../docs/', import.meta.url);
 const DOCS_INDEX = new URL('README.md', DOCS);
 const OPENAPI = new URL('../public/openapi.yaml', import.meta.url);
+
+/*
+ * The second directory of Markdown the site publishes - prose written for the
+ * site rather than for the repository, which today is the comparison pages.
+ * The site's loader reads both roots, so both are read here; a page indexed
+ * from only one of them is a page the site publishes and cannot find.
+ */
+const PAGES = new URL('../src/content/pages/', import.meta.url);
+
+/** What a hit from `PAGES` is labelled with, by the directory it is in. */
+const PAGE_PARTS = { compare: 'Compare' };
 
 /** Longest excerpt shown beside a hit that highlighted nothing, in characters. */
 const EXCERPT_LIMIT = 180;
@@ -56,6 +68,7 @@ const TEXT_LIMIT = 10000;
 export async function documentsFor({ build }) {
 	const documents = [
 		...await manualDocuments(),
+		...await pageDocuments(),
 		...await apiDocuments(),
 		...demoDocuments()
 	];
@@ -67,15 +80,40 @@ export async function documentsFor({ build }) {
 
 /** Every section of every document under `docs/`. */
 async function manualDocuments() {
-	const root = fileURLToPath(DOCS);
 	const parts = partOfSlug();
 
-	const files = await documentsIn(root);
+	return sectionsUnder(DOCS, slug => parts.get(slug));
+}
+
+/**
+ * Every section of every page written for the site alone.
+ *
+ * These are the same Markdown as the manual and are cut up the same way. What
+ * differs is the label, which no documentation index states: it comes from the
+ * directory the page is in.
+ */
+async function pageDocuments() {
+	return sectionsUnder(PAGES, slug => PAGE_PARTS[slug.split('/')[0]]);
+}
+
+/**
+ * Every section of every document under a root, labelled by what the root
+ * says about each.
+ *
+ * A slug is the path under the root without its extension, which is also the
+ * path the site serves the page at - both roots the site loads work that way.
+ *
+ * @param {URL} root the directory to read
+ * @param {(slug: string) => string | undefined} partOf the label for a page
+ */
+async function sectionsUnder(root, partOf) {
+	const path = fileURLToPath(root);
+	const files = await documentsIn(path);
 
 	const pages = await Promise.all(files.map(async file => {
-		const slug = posix(relative(root, file)).replace(/\.md$/, '');
+		const slug = posix(relative(path, file)).replace(/\.md$/, '');
 
-		return sectionsOf(slug, parts.get(slug), await readFile(file, 'utf-8'));
+		return sectionsOf(slug, partOf(slug), await readFile(file, 'utf-8'));
 	}));
 
 	return pages.flat();
@@ -97,7 +135,7 @@ function partOfSlug() {
 }
 
 /**
- * Every Markdown file under `docs/`, except the ones the site does not publish.
+ * Every Markdown file under a root, except the ones the site does not publish.
  *
  * The same files the site's own loader reads - see
  * `../src/content/loader.mjs`. A README is the index of the directory it sits

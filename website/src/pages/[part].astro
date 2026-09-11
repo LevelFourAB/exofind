@@ -1,0 +1,82 @@
+---
+/*
+ * The landing page of a part of the manual: `/how-to/`, `/reference/`, and one
+ * for every other `##` section of `docs/README.md` whose documents are in a
+ * directory of their own.
+ *
+ * A sidebar group is navigation and not a page, so without this the directory
+ * a reader sees in the address bar - and the one the header and the footer
+ * would have to link into - answers with nothing. A part is entered here
+ * instead of at whichever guide happens to be listed first, which asked the
+ * reader to take the first page for the whole of the section.
+ *
+ * Everything on the page is read from the documentation index: the paragraph
+ * the section opens with, the `###` headings that divide it, and the sentence
+ * under each document. Nothing is written here, so a guide added to
+ * `docs/README.md` is on the landing page of its part with no second edit -
+ * see `../sidebar.mjs`.
+ *
+ * The route matches one path segment, and `directoryOf` in that file refuses a
+ * directory holding a slash for the same reason.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import GithubSlugger from 'github-slugger';
+
+import DocList from '../components/DocList.astro';
+import { PARTS } from '../nav.mjs';
+
+export function getStaticPaths() {
+	return PARTS
+		.filter(part => part.path && part.groups.length > 0)
+		.map(part => ({ params: { part: part.path }, props: { part } }));
+}
+
+/*
+ * What to head the documents of a part the index does not divide with. Every
+ * list on these pages is under a heading, so that a part of two pages and a
+ * part of forty are the same page with a different amount in it: the heading
+ * carries the rule that starts the list, and the on-this-page list has
+ * something to hold.
+ */
+const UNDIVIDED = 'All pages';
+
+/** @type {{ part: import('../sidebar.mjs').Part }} */
+const { part } = Astro.props;
+
+/*
+ * A heading per group, with the anchor Starlight gives a heading of the same
+ * text, so that the on-this-page list and the headings it lists agree.
+ *
+ * Only a part that is one group takes the heading above. A part the index
+ * divides can list documents before its first `###` heading, and those are
+ * some of its pages and not all of them, so they stay under no heading.
+ */
+const slugger = new GithubSlugger();
+const groups = part.groups.map(group => {
+	const label = group.label ?? (part.groups.length === 1 ? UNDIVIDED : null);
+
+	return { ...group, label, anchor: label ? slugger.slug(label) : null };
+});
+
+const headings = groups
+	.filter(group => group.anchor)
+	.map(group => ({ depth: 2, slug: group.anchor, text: group.label }));
+---
+
+<StarlightPage
+	frontmatter={{
+		title: part.label,
+		description: part.lede,
+		tableOfContents: headings.length > 0
+	}}
+	headings={headings}
+>
+	{part.lede && <p>{part.lede}</p>}
+
+	{groups.map(group => (
+		<>
+			{group.label && <h2 id={group.anchor}>{group.label}</h2>}
+			<DocList items={group.items} />
+		</>
+	))}
+</StarlightPage>

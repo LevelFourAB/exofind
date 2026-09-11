@@ -1,21 +1,9 @@
 /*
- * The two things about a page that cannot be said where the page is declared:
- * the state the generated part of the sidebar arrives in, and the link preview
- * image.
+ * The one thing about a page that cannot be said where the page is declared:
+ * the link preview image.
  *
- * The REST API section is generated, and the plugin that generates it has a
- * single setting for whether a group arrives closed - one that closes the
- * section and every tag group inside it together. Closed tags are a second
- * door between the reader and an endpoint, so the section is left open there
- * and closed here instead, once the groups exist. The manual's own sections
- * need none of this: they are written in `./sidebar.mjs`, which says which of
- * them arrive closed and why.
- *
- * Starlight runs the plugin's middleware after this one, so both jobs are done
- * after `next()`. Before it the API section is still the placeholder the
- * plugin replaces, and the head Starlight assembles is not there to add to. A
- * group Starlight is told is closed still opens itself on a page inside it, so
- * `collapsed` sets a starting state and does not hold the group shut.
+ * The tag that points at it is added after `next()`, because before that the
+ * head Starlight assembles is not there to add to.
  */
 
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
@@ -23,22 +11,12 @@ import { getImagePath } from 'astro-opengraph-images/util.js';
 
 import { PREVIEW_HEIGHT, PREVIEW_WIDTH } from './site.mjs';
 
-/**
- * The generated section that arrives closed, under the label
- * `../astro.config.mjs` gives it. A label that names no group is an error
- * rather than a section quietly staying open once it is renamed - the same
- * discipline `EXTRA` in `./nav.mjs` is held to, and the same three places
- * have to agree.
- */
-const CLOSED = 'REST API';
-
 export const onRequest = defineRouteMiddleware(async (context, next) => {
 	await next();
 
 	const route = context.locals.starlightRoute;
 
 	route.head.push(...previewTags(context, altTextFor(route)));
-	closeGeneratedSection(route.sidebar);
 });
 
 /**

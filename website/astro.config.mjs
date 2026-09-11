@@ -5,9 +5,10 @@ import { defineConfig } from 'astro/config';
 import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
 import openGraphImages from 'astro-opengraph-images';
-import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi';
 
+import { comparisons } from './src/compare.mjs';
 import { DEMOS } from './src/examples/demos.mjs';
+import { apiSidebarGroup } from './src/openapi/sidebar.mjs';
 import { FONTS, isPage, render } from './src/opengraph.mjs';
 import { CATALOGUE, DOCS_INDEX, PARTS } from './src/parts.mjs';
 import { remarkRewriteLinks, remarkStripTitle } from './src/plugins/remark-docs.mjs';
@@ -34,11 +35,16 @@ export default defineConfig({
 	 * path relative to a source file no longer leads to the repository from
 	 * one. What reads them is `./src/nav.mjs`, and the catalogue the same file
 	 * yields is read by `./src/pages/llms.txt.ts`.
+	 *
+	 * The comparison pages arrive the same way and for the same reason. They
+	 * are read from the files themselves by `./src/compare.mjs`, and the
+	 * footer of every page is what lists them.
 	 */
 	vite: {
 		define: {
 			__DOCS_PARTS__: JSON.stringify(PARTS),
-			__DOCS_CATALOGUE__: JSON.stringify(CATALOGUE)
+			__DOCS_CATALOGUE__: JSON.stringify(CATALOGUE),
+			__COMPARISONS__: JSON.stringify(comparisons())
 		}
 	},
 
@@ -81,66 +87,20 @@ export default defineConfig({
 			 * rather than a bare `<div>`. The loader in
 			 * `./src/content/loader.mjs` tells the renderer which file it is
 			 * rendering, which is the other half of the same check.
+			 *
+			 * Both roots the loader reads are named, or a heading on a
+			 * comparison page would get no anchor and the site's own search
+			 * would send a hit for it to the top of the page.
 			 */
 			markdown: {
-				processedDirs: ['../docs']
+				processedDirs: ['../docs', './src/content/pages']
 			},
 
 			customCss: ['./src/styles/site.css'],
 
 			/*
-			 * A page per endpoint, generated from the OpenAPI document the
-			 * engine build writes. The document is read from `public/`, so the
-			 * site publishes it at `/openapi.yaml` as well - the manual tells
-			 * a reader to build a client from it, and that reader should get
-			 * the same copy these pages state. `mise run site:openapi`
-			 * refreshes it.
-			 *
-			 * These pages state one endpoint's request and response in full.
-			 * The pages under `docs/reference/` explain the parts of the API
-			 * that are not one endpoint - a clause, a facet, a cursor - and
-			 * each side links to the other.
-			 */
-			plugins: [
-				starlightOpenAPI([
-					{
-						base: 'api',
-						schema: './public/openapi.yaml',
-						sidebar: {
-							label: 'REST API',
-							collapsed: false,
-							operations: { badges: true }
-						},
-						/*
-						 * A call in four languages on every endpoint page, so
-						 * that a reader sees the request they are about to
-						 * make rather than the shape of it. The request body
-						 * and the response carry a generated example as well,
-						 * which is what the two `true` settings are, and both
-						 * give way to an example the OpenAPI document states
-						 * itself where there is one.
-						 */
-						snippets: {
-							operation: {
-								clients: {
-									shell: [ 'curl' ],
-									javascript: [ 'fetch' ],
-									java: [ 'nethttp' ],
-									go: [ 'nethttp' ]
-								},
-								default: { target: 'shell', client: 'curl' }
-							},
-							requestBody: true,
-							response: true
-						}
-					}
-				])
-			],
-
-			/*
-			 * The sidebar is settled here, after the generated section has
-			 * been put in place of its placeholder. What it does and why is on
-			 * the module.
+			 * What a page carries besides the page: the link preview image.
+			 * What it does and why is on the module.
 			 */
 			routeMiddleware: './src/route-data.mjs',
 
@@ -172,7 +132,20 @@ export default defineConfig({
 
 			sidebar: [
 				...sidebarFrom(DOCS_INDEX),
-				...openAPISidebarGroups,
+				/*
+				 * A page per endpoint, generated from the OpenAPI document the
+				 * engine build writes - see `./src/openapi/`. The document is
+				 * read from `public/`, so the site publishes it at
+				 * `/openapi.yaml` as well: the manual tells a reader to build a
+				 * client from it, and that reader should get the same copy
+				 * these pages state. `mise run site:openapi` refreshes it.
+				 *
+				 * These pages state one endpoint's request and response in
+				 * full. The pages under `docs/reference/` explain the parts of
+				 * the API that are not one endpoint - a clause, a facet, a
+				 * cursor - and each side links to the other.
+				 */
+				apiSidebarGroup(),
 				{
 					label: 'Demos',
 					/*

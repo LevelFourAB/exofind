@@ -5,8 +5,12 @@
  * from the sidebar of the page being rendered: the sidebar already carries the
  * path the site is served under and knows which page is current, and the index
  * says which part each document belongs to even where the sidebar shows a
- * section as its contents. There is no landing page per part, so a part is
- * entered at the first page listed under it.
+ * section as its contents.
+ *
+ * A part is entered at its landing page, which `./pages/[part].astro` builds
+ * from the same index and serves at the directory the documents of the part
+ * are in. A part whose documents are in more than one directory has no landing
+ * page and is entered at the first page listed under it.
  */
 
 import { BASE } from './site.mjs';
@@ -20,7 +24,7 @@ import { BASE } from './site.mjs';
  * @type {import('./sidebar.mjs').Part[]}
  */
 /* global __DOCS_PARTS__ */
-const PARTS = __DOCS_PARTS__;
+export const PARTS = __DOCS_PARTS__;
 
 /*
  * Parts the header leaves out. The tutorials are two documents and the front
@@ -50,15 +54,22 @@ const EXTRA = ['REST API', 'Demos'];
  * then the sidebar groups that are not documentation. A section holding no
  * link at all is left out.
  *
+ * The landing page of a part is in no sidebar, so the path of the page being
+ * rendered is what marks a section the reader is on the landing page of. Every
+ * other page is marked by the sidebar.
+ *
  * @param {any[]} sidebar `Astro.locals.starlightRoute.sidebar`
+ * @param {string} pathname the path the page being rendered is served at,
+ *   base and all
  * @returns {Section[]}
  * @throws {Error} if a part the header leaves out, or a group it carries, is
  *   not there to leave out or carry
  */
-export function sectionsOf(sidebar) {
+export function sectionsOf(sidebar, pathname) {
 	const links = linksBySlug(sidebar);
 	const omitted = new Set(OMITTED);
 	const extra = new Set(EXTRA);
+	const here = slugOf(pathname);
 
 	const sections = [];
 
@@ -66,7 +77,13 @@ export function sectionsOf(sidebar) {
 		if(omitted.delete(part.label)) continue;
 
 		const found = part.slugs.map(slug => links.get(slug)).filter(link => link);
-		if(found.length > 0) sections.push(sectionOver(part.label, found));
+		if(found.length === 0) continue;
+
+		sections.push({
+			label: part.label,
+			href: entryTo(part) ?? found[0].href,
+			current: found.some(link => link.isCurrent) || here === part.path
+		});
 	}
 
 	for(const entry of sidebar) {
@@ -92,13 +109,18 @@ export function sectionsOf(sidebar) {
 }
 
 /**
- * What part of the manual a page is in, or `null` when it is in none - the
- * front page and the demo pages are rendered without a sidebar, and a page
- * that is not listed in `docs/README.md` is in no part either.
+ * What part of the site a page is in, or `null` when it is in none - the front
+ * page and the demo pages are rendered without a sidebar, and a page in no
+ * sidebar is in no part either.
  *
  * This is the label over a page title. Unlike the header, it names every part,
  * the tutorials included: what the header leaves out to spend its room
  * elsewhere, a reader still has to be told they are reading.
+ *
+ * The pages that are not documentation - an endpoint, the demo catalogue - are
+ * in no part of the manual, and are labelled with the sidebar group they are
+ * under instead. Without that an endpoint arrived at from a search result is a
+ * page titled `Search an index` with nothing on it that says it is the REST API.
  *
  * @param {any[]} sidebar `Astro.locals.starlightRoute.sidebar`
  * @returns {string | null}
@@ -110,7 +132,46 @@ export function sectionOf(sidebar) {
 	if(!current) return null;
 
 	const slug = slugOf(current.href);
-	return PARTS.find(part => part.slugs.includes(slug))?.label ?? null;
+	const part = PARTS.find(candidate => candidate.slugs.includes(slug));
+
+	return part?.label ?? groupOver(sidebar, current);
+}
+
+/** The top-level sidebar group a link is under, or `null` for a link outside them all. */
+function groupOver(sidebar, link) {
+	const group = sidebar.find(entry => entry.type === 'group' && linksIn(entry).includes(link));
+
+	return group?.label ?? null;
+}
+
+/**
+ * Every part of the manual, with the page it is entered at.
+ *
+ * The header works from the sidebar of the page being rendered, because it
+ * marks the section the reader is in. The footer cannot: it is on the demo
+ * pages and the front page too, and those are rendered without a sidebar. So
+ * it works from the index alone, which says the same thing about where a part
+ * is entered.
+ *
+ * @returns {{ label: string, href: string }[]} every part, in the order the
+ *   documentation index holds them
+ */
+export function parts() {
+	return PARTS
+		.filter(part => part.slugs.length > 0)
+		.map(part => ({
+			label: part.label,
+			href: entryTo(part) ?? `${BASE}/${part.slugs[0]}/`
+		}));
+}
+
+/**
+ * The landing page of a part, or `null` for a part that has none. A part that
+ * has none is entered at the first page listed under it - see the comment at
+ * the top of this file.
+ */
+function entryTo(part) {
+	return part.path ? `${BASE}/${part.path}/` : null;
 }
 
 /** A header section over the links it holds, entered at the first of them. */

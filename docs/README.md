@@ -13,7 +13,8 @@ without keeping compatibility.
 
 ## Tutorials
 
-The documentation includes the following tutorials:
+A tutorial takes you from nothing to an index that answers searches. Start here
+if you have not run Exofind before.
 
 - [Getting started](tutorials/getting-started.md): Run the published image with
   Docker, define your first index, and search it. Nothing to check out and
@@ -24,7 +25,8 @@ The documentation includes the following tutorials:
 
 ## How-to guides
 
-The documentation includes the following how-to guides.
+A how-to guide solves one task for someone who already runs a node. Each guide
+states what it needs, the requests to send, and what to do when one is refused.
 
 ### Working with the API
 
@@ -143,9 +145,11 @@ The documentation includes the following how-to guides.
 
 ## Reference
 
-The documentation includes the following reference topics. Alongside them, the
-website carries a page per endpoint at <https://exofind.dev/api/>, generated
-from the OpenAPI document.
+Reference states what the engine is: every setting, every part of a request and
+a response, and every code an error carries.
+
+Alongside these pages, the website carries a page per endpoint at
+<https://exofind.dev/api/>, generated from the OpenAPI document.
 
 - [API conventions](reference/api-conventions.md): The rules every endpoint
   shares - versioning, media types, conditional requests, forwarding, and what
@@ -177,7 +181,8 @@ from the OpenAPI document.
 
 ## Explanation
 
-The documentation includes the following explanations:
+An explanation gives the reason behind a design: what the engine does about the
+limits of object storage, and what that costs a deployment.
 
 - [Architecture](explanation/architecture.md): Why storage is the source of
   truth, and what nodes are for.

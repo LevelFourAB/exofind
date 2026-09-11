@@ -1,0 +1,93 @@
+---
+/*
+ * The documents of one part of the manual, as a list of rows.
+ *
+ * The sentence under each title is the one `docs/README.md` describes the
+ * document with, so the landing page of a part says the same thing about a
+ * page that `/llms.txt` and the search result for it say. The shape is the one
+ * the demos are listed in - see `./DemoList.astro`: a rule over each row, the
+ * title on the axis, and the sentence under it.
+ *
+ * A row is one link. The title is the part a reader aims at, and the sentence
+ * is what they are choosing by, so a link around only the title would be a
+ * target the width of a few words on a page that is a list of choices.
+ */
+import { withBase } from '../site.mjs';
+
+/**
+ * @typedef {object} Props
+ * @property {{ label: string, slug: string, description: string }[]} items the
+ *   documents to list, in the order they are to be offered in
+ */
+const { items } = Astro.props;
+---
+
+<ul class="doc-list not-content">
+	{items.map(item => (
+		<li>
+			<a class="doc-row" href={withBase(`/${item.slug}/`)}>
+				<h3>{item.label}</h3>
+				{item.description && <p>{item.description}</p>}
+			</a>
+		</li>
+	))}
+</ul>
+
+<style>
+	.doc-list {
+		display: grid;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.doc-row {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: inherit;
+		display: grid;
+		gap: 0.3125rem;
+		padding-block: 0.9375rem;
+		text-decoration: none;
+	}
+
+	/*
+	 * The rules divide the rows and close the list. The first row draws none:
+	 * what is over it is the heading of the section, which carries a rule of
+	 * its own, or the paragraph the part opens with, and a rule under either
+	 * of those reads as a mistake.
+	 */
+	.doc-list > li:first-child .doc-row {
+		border-block-start: 0;
+	}
+
+	.doc-list > li:last-child .doc-row {
+		border-block-end: 1px solid var(--sl-color-gray-5);
+	}
+
+	.doc-row h3 {
+		font-size: 1.0625rem;
+		font-weight: 600;
+		letter-spacing: -0.005em;
+		line-height: 1.3;
+		margin: 0;
+	}
+
+	/*
+	 * The row answers the pointer with a line under its title and no change of
+	 * colour. The blue on this site is the current section and the one primary
+	 * action; a list where every row turns blue under the pointer spends it on
+	 * the thing the reader is already pointing at.
+	 */
+	.doc-row:hover h3 {
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
+	}
+
+	.doc-row p {
+		color: var(--sl-color-gray-2);
+		font-size: 0.9375rem;
+		line-height: 1.55;
+		margin: 0;
+		max-width: 70ch;
+	}
+</style>

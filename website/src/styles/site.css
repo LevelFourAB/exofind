@@ -409,28 +409,23 @@ starlight-menu-button[aria-expanded='true'] button {
  * something; each way of changing something has a colour of its own. The blue
  * is not among them: on this site blue means the page you are on.
  */
-.sidebar-content .sl-openapi-method-get,
-.sl-markdown-content .sl-openapi-operation-method-badge.get {
+.method-get {
 	--method: var(--sl-color-gray-3);
 }
 
-.sidebar-content .sl-openapi-method-post,
-.sl-markdown-content .sl-openapi-operation-method-badge.post {
+.method-post {
 	--method: light-dark(#1f7a4d, #55b98a);
 }
 
-.sidebar-content .sl-openapi-method-put,
-.sl-markdown-content .sl-openapi-operation-method-badge.put {
+.method-put {
 	--method: light-dark(#8a5a06, #d3a04f);
 }
 
-.sidebar-content .sl-openapi-method-patch,
-.sl-markdown-content .sl-openapi-operation-method-badge.patch {
+.method-patch {
 	--method: light-dark(#0f6d75, #4bb6bf);
 }
 
-.sidebar-content .sl-openapi-method-delete,
-.sl-markdown-content .sl-openapi-operation-method-badge.delete {
+.method-delete {
 	--method: light-dark(#a72f2f, #e58585);
 }
 
@@ -453,12 +448,22 @@ starlight-menu-button[aria-expanded='true'] button {
 	padding-inline: 0.25rem;
 }
 
-/* On the page it is read as the endpoint, so it keeps its size and its rule. */
-.sl-markdown-content .sl-openapi-operation-method-badge {
-	background: none;
-	border-color: var(--method, var(--sl-color-gray-3));
+/*
+ * On a page it is read as the endpoint rather than as a note beside a title, so
+ * it is drawn at the size the line it is in is read at and its rule is drawn at
+ * full strength. Two places use it: the line at the top of an endpoint's page,
+ * and the list of every endpoint on the overview.
+ */
+.method {
+	border: 1px solid var(--method, var(--sl-color-gray-3));
 	color: var(--method, var(--sl-color-gray-3));
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
 	letter-spacing: 0.04em;
+	line-height: 1.5;
+	padding-inline: 0.3125rem;
+	text-align: center;
 }
 
 /* ----------------------------------------------------------------------- */
@@ -584,19 +589,18 @@ main .content-panel + .content-panel {
  * The child combinator is deliberate. A descendant selector would also find
  * the headings inside an aside or a card and hang those into the margin.
  *
- * An endpoint's page is generated rather than written, and its headings arrive
- * in two shapes a written page has neither of: each is wrapped in a
- * `.sl-heading-wrapper`, so that the anchor link can sit at the end of the
- * heading's last line, and the generator puts some of those wrappers in a
- * section of their own. The wrapper is what carries the rule and the numeral,
- * because the heading inside it is set inline. Both shapes are named a level at
- * a time: a heading deeper in - one naming a response header or an example -
- * is a heading within a section rather than a section of the page, and is not
- * counted.
+ * A heading that carries an anchor link arrives wrapped in a
+ * `.sl-heading-wrapper`, so that the link can sit at the end of the heading's
+ * last line. The wrapper is what carries the rule and the numeral there,
+ * because the heading inside it is set inline.
+ *
+ * The endpoint pages draw the same heading themselves - see
+ * `../components/api/Operation.astro`. They are components rather than Markdown,
+ * so nothing here reaches them, and they count in the same sequence because the
+ * counter is reset on the article they are in.
  */
 .sl-markdown-content > h2,
-.sl-markdown-content > .sl-heading-wrapper.level-h2,
-.sl-markdown-content > section > .sl-heading-wrapper.level-h2 {
+.sl-markdown-content > .sl-heading-wrapper.level-h2 {
 	align-items: baseline;
 	border-block-start: 1px solid var(--sl-color-gray-5);
 	counter-increment: doc-section;
@@ -610,8 +614,7 @@ main .content-panel + .content-panel {
 }
 
 .sl-markdown-content > h2::before,
-.sl-markdown-content > .sl-heading-wrapper.level-h2::before,
-.sl-markdown-content > section > .sl-heading-wrapper.level-h2::before {
+.sl-markdown-content > .sl-heading-wrapper.level-h2::before {
 	color: var(--sl-color-gray-3);
 	content: counter(doc-section, decimal-leading-zero);
 	font-family: var(--sl-font-mono);
@@ -625,8 +628,7 @@ main .content-panel + .content-panel {
 }
 
 .sl-markdown-content > h3,
-.sl-markdown-content > .sl-heading-wrapper.level-h3,
-.sl-markdown-content > section > .sl-heading-wrapper.level-h3 {
+.sl-markdown-content > .sl-heading-wrapper.level-h3 {
 	font-weight: 600;
 	letter-spacing: -0.005em;
 	margin-block-start: 1.75rem;
@@ -639,8 +641,7 @@ main .content-panel + .content-panel {
 	 * the axis.
 	 */
 	.sl-markdown-content > h2,
-	.sl-markdown-content > .sl-heading-wrapper.level-h2,
-	.sl-markdown-content > section > .sl-heading-wrapper.level-h2 {
+	.sl-markdown-content > .sl-heading-wrapper.level-h2 {
 		display: block;
 		margin-block-start: 3.25rem;
 		margin-inline-start: calc(-1 * var(--doc-margin));
@@ -650,8 +651,7 @@ main .content-panel + .content-panel {
 	}
 
 	.sl-markdown-content > h2::before,
-	.sl-markdown-content > .sl-heading-wrapper.level-h2::before,
-	.sl-markdown-content > section > .sl-heading-wrapper.level-h2::before {
+	.sl-markdown-content > .sl-heading-wrapper.level-h2::before {
 		font-size: 0.8125rem;
 		inset-block-start: 1.625rem;
 		inset-inline-start: 0;
@@ -660,8 +660,7 @@ main .content-panel + .content-panel {
 	}
 
 	.sl-markdown-content > h3,
-	.sl-markdown-content > .sl-heading-wrapper.level-h3,
-	.sl-markdown-content > section > .sl-heading-wrapper.level-h3 {
+	.sl-markdown-content > .sl-heading-wrapper.level-h3 {
 		margin-block-start: 2.125rem;
 	}
 }
@@ -748,26 +747,25 @@ main .content-panel + .content-panel {
 /* ----------------------------------------------------------------------- */
 
 /*
- * A field of a request body and what is said about it are two columns, which
- * is what `starlight-openapi` lays them out as at every width.
+ * An endpoint is two columns - what it takes, and the call to make - and it is
+ * given the room a page of the manual has plus the column that page's
+ * on-this-page list sits in. An endpoint page has no such list, so that is room
+ * going spare, and it is the room that makes two columns fit.
  *
- * Below the width the sidebar appears at there is no room for two. The name
- * column keeps a quarter of the page, and the measure left to the description
- * breaks `index:query:usage_not_enabled` over three lines. That is the failure
- * the tables above are given a floor to avoid. A phone stacks them instead.
+ * The width is written this way rather than as a number so that the band an
+ * endpoint occupies is the band every other page occupies: the same left edge,
+ * ending where the list ends. Moving between a guide and the endpoint it links
+ * to moves nothing but the words. How the two columns divide the band is on
+ * `../components/api/Operation.astro`.
  *
- * A field is a row of the grid its list makes, and stacking it is dropping out
- * of that grid rather than narrowing a column: the name and the description
- * are placed by column number, and neither number means anything once the row
- * lays its own children out. The selector is a step longer than it looks as
- * though it needs to be, because the rule being reset is a component's own and
- * scoped, which carries a class of its own.
+ * The three-column rule higher up this file cannot do it: it is written for a
+ * page that has the list, and these pages do not.
  */
-@media (max-width: 49.999rem) {
-	.sl-markdown-content .sl-openapi-keys .sl-openapi-key {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
+@media (min-width: 72rem) {
+	:root:has(.api) {
+		--sl-content-width: calc(
+			min(58rem, 100vw - 2 * var(--sl-sidebar-width)) + var(--sl-sidebar-width)
+		);
 	}
 }
 

@@ -1,0 +1,282 @@
+---
+/*
+ * The properties of an object, and everything under them.
+ *
+ * A row states four things in a fixed order: the name of the property, the name
+ * of its type, whether it is required, and what it is for. The type is the one
+ * these pages were rebuilt for - `Clause[]`, `Matcher`, `Match` - because a
+ * reader who has the name of a type can look it up, ask for it, and recognise it
+ * in the next endpoint that takes one.
+ *
+ * What is under a property is behind a disclosure rather than on the page,
+ * because the tree is deep: a search request holds clauses, a clause is one of
+ * eight types, and one of those holds a matcher that is one of nine more. Opened
+ * all the way down it is a page no one reads to the end of; closed, the first
+ * screen is the nine properties of a search.
+ *
+ * The component renders itself for what is under a row. `../../openapi/schema.mjs`
+ * is what makes that finish: a type already open above this row arrives with no
+ * fields and is marked as repeated, so a clause inside a clause is a line rather
+ * than a loop.
+ */
+import Prose from "./Prose.astro";
+
+const { fields } = Astro.props;
+---
+
+<div class="fields">
+	{fields.map((field) => (
+		<div class="field">
+			<div class="head">
+				<code class="key">{field.key}</code>
+				<span class:list={["type", field.name && "named"]}>
+					{field.type}
+				</span>
+				{field.required && <span class="flag">required</span>}
+			</div>
+
+			<Prose text={field.description} variant="inline" class="says" />
+
+			{field.notes.length > 0 && (
+				<dl class="notes">
+					{field.notes.map((note) => (
+						<div class="note">
+							<dt>{note.label}</dt>
+							<dd>{note.value}</dd>
+						</div>
+					))}
+				</dl>
+			)}
+
+			{field.repeated && (
+				<p class="repeated">
+					Holds {field.name} in turn. Its properties are the ones
+					listed above.
+				</p>
+			)}
+
+			{field.variants.length > 0 && (
+				<details>
+					<summary>{field.variants.length} types</summary>
+					<div class="inner">
+						{field.variants.map((variant) => (
+							<div class="variant">
+								<div class="head">
+									<code class="key">{variant.name}</code>
+									{variant.value && (
+										<span class="selects">
+											{variant.selector}:{" "}
+											<code>"{variant.value}"</code>
+										</span>
+									)}
+								</div>
+
+								<Prose
+									text={variant.description}
+									variant="inline"
+									class="says"
+								/>
+
+								{variant.fields.length > 0 && (
+									<Astro.self fields={variant.fields} />
+								)}
+							</div>
+						))}
+					</div>
+				</details>
+			)}
+
+			{field.variants.length === 0 && field.fields.length > 0 && (
+				<details>
+					<summary>
+						{field.fields.length}{" "}
+						{field.fields.length === 1 ? "property" : "properties"}
+					</summary>
+					<div class="inner">
+						<Astro.self fields={field.fields} />
+					</div>
+				</details>
+			)}
+		</div>
+	))}
+</div>
+
+<style>
+	.field {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		padding-block: 0.75rem;
+	}
+
+	/*
+	 * The name, the type and the flag read as one line. They wrap onto a second
+	 * before they are squeezed, because the type is the half of the line a
+	 * reader came to it for and a broken name says less than a wrapped row.
+	 */
+	.head {
+		align-items: baseline;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.625rem;
+	}
+
+	.key {
+		background: none;
+		color: var(--sl-color-white);
+		font-family: var(--sl-font-mono);
+		font-size: 0.90625rem;
+		font-weight: 500;
+		padding: 0;
+	}
+
+	/*
+	 * A named type is set in the accent, because it is the one part of the row
+	 * that names something the reader can go and read about. A type with no name
+	 * of its own - `string`, `object` - is a note about this row alone and is
+	 * set as one.
+	 */
+	.type {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		letter-spacing: 0.01em;
+	}
+
+	.type.named {
+		color: var(--sl-color-text-accent);
+	}
+
+	.flag {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+	}
+
+	.says {
+		line-height: 1.6;
+		margin-block-start: 0.3125rem;
+	}
+
+	/* What the field accepts, as pairs on one line for as long as they fit. */
+	.notes {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 1.25rem;
+		margin: 0.4375rem 0 0;
+	}
+
+	.note {
+		display: flex;
+		gap: 0.4375rem;
+	}
+
+	.note dt {
+		color: var(--sl-color-text-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		line-height: 1.7;
+		text-transform: uppercase;
+	}
+
+	.note dd {
+		color: var(--sl-color-gray-2);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
+	.repeated {
+		color: var(--sl-color-gray-3);
+		font-size: 0.90625rem;
+		margin: 0.375rem 0 0;
+	}
+
+	summary {
+		color: var(--sl-color-gray-3);
+		cursor: pointer;
+		display: inline-flex;
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		gap: 0.4375rem;
+		letter-spacing: 0.16em;
+		list-style: none;
+		margin-block-start: 0.5rem;
+		text-transform: uppercase;
+	}
+
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	/* A sign that turns, rather than the triangle a browser draws. */
+	summary::before {
+		content: "+";
+		font-variant-numeric: tabular-nums;
+	}
+
+	details[open] > summary::before {
+		content: "\2013";
+	}
+
+	summary:hover {
+		color: var(--sl-color-text-accent);
+	}
+
+	/*
+	 * What is inside a row is set in from it and hung off a rule, so that a row
+	 * four levels down is read as belonging to the one above it rather than as a
+	 * row of the endpoint.
+	 */
+	.inner {
+		border-inline-start: 1px solid var(--sl-color-gray-5);
+		margin-block-start: 0.25rem;
+		padding-inline-start: 1rem;
+	}
+
+	/* The rule between rows is the rail; the first row does not repeat it. */
+	.inner .field:first-child,
+	.inner .variant:first-child > .fields > .field:first-child {
+		border-block-start: 0;
+		padding-block-start: 0.25rem;
+	}
+
+	.variant + .variant {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		margin-block-start: 0.625rem;
+		padding-block-start: 0.625rem;
+	}
+
+	.variant > .head > .key {
+		color: var(--sl-color-text-accent);
+	}
+
+	.variant > .fields {
+		margin-inline-start: 0.625rem;
+		margin-block-start: 0.625rem;
+		margin-block-end: 0.625rem;
+	}
+
+	/*
+	 * The value that selects a variant is the other half of what identifies it,
+	 * so it is set beside the name rather than left in the properties - see
+	 * `variantsOf` in `../../openapi/schema.mjs`.
+	 */
+	.selects {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+	}
+
+	.selects code {
+		background: none;
+		color: var(--sl-color-white);
+		font-size: 1em;
+		padding: 0;
+	}
+</style>

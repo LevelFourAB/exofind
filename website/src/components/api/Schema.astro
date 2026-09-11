@@ -1,0 +1,93 @@
+---
+/*
+ * A body: the name of its type, what the document says about it, and its
+ * properties.
+ *
+ * The name is stated even though the properties follow it. A request body is
+ * `SearchRequest` and the answer is `SearchResponse`, and those are the names a
+ * generated client gives the classes a reader is holding while they read this.
+ * Without them the page describes a shape that the reader has to match up with
+ * the types in their editor by eye.
+ */
+import Fields from "./Fields.astro";
+import Prose from "./Prose.astro";
+
+import { modelOf } from "../../openapi/schema.mjs";
+
+const { schema, label = "Type", named = true } = Astro.props;
+
+const model = modelOf(schema);
+
+/*
+ * A body that is a tagged union rather than an object is shown as one row that
+ * opens into its types. No endpoint in this document takes one today; a page
+ * that silently showed nothing for one would be the failure that is easiest to
+ * miss, because it looks like an endpoint with no body at all.
+ */
+const union =
+	model.variants.length > 0
+		? [{ key: model.name ?? "body", required: true, ...model }]
+		: null;
+---
+
+<div class="schema">
+	{named && (
+		<div class="named">
+			<span class="label">{label}</span>
+			<span class="type">{model.type}</span>
+		</div>
+	)}
+
+	<Prose text={model.description} class="says" />
+
+	{union && <Fields fields={union} />}
+	{!union && model.fields.length > 0 && <Fields fields={model.fields} />}
+	{!union && model.fields.length === 0 && (
+		<p class="plain">
+			A value of type <code>{model.type}</code>.
+		</p>
+	)}
+</div>
+
+<style>
+	.named {
+		align-items: baseline;
+		display: flex;
+		gap: 0.625rem;
+		margin-block-end: 0.5rem;
+	}
+
+	.label {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-weight: 500;
+		font-size: 0.8125rem;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+	}
+
+	.type {
+		color: var(--sl-color-text-accent);
+		font-family: var(--sl-font-mono);
+		font-size: 0.90625rem;
+		font-weight: 500;
+	}
+
+	.says {
+		line-height: 1.6;
+		margin-block-end: 0.75rem;
+	}
+
+	.plain {
+		color: var(--sl-color-gray-2);
+		margin: 0;
+	}
+
+	.plain code {
+		background: none;
+		color: var(--sl-color-white);
+		font-family: var(--sl-font-mono);
+		font-size: 0.90625rem;
+		padding: 0;
+	}
+</style>

@@ -1,0 +1,389 @@
+---
+/*
+ * One endpoint: what it is, what it takes, and what it answers.
+ *
+ * The page is two columns from the width the sidebar and a readable measure
+ * leave room for one. The left column is the endpoint stated in full - every
+ * parameter, every property of the body, every status it answers with. The right
+ * column is one call and its answer, and it follows the reader down the page,
+ * because the reader is reading the left column in order to write what is in the
+ * right one.
+ *
+ * Below that width there is one column and the call comes first. A reader on a
+ * phone is looking something up rather than writing code against it, and the
+ * call is the fastest answer to "what does this endpoint want".
+ *
+ * The headings are the manual's, numeral and rule and all, so that an endpoint
+ * reads as a page of the same book as the guide that links to it. They are drawn
+ * here because everything on this page sits inside `.not-content`, where the
+ * styles that draw the manual do not reach - which is deliberate: the rest of
+ * this page is a table of types rather than prose.
+ */
+import Fields from "./Fields.astro";
+import Panels from "./Panels.astro";
+import Prose from "./Prose.astro";
+import Schema from "./Schema.astro";
+
+import { requestExample, responseExample } from "../../openapi/example.mjs";
+import { modelOf } from "../../openapi/schema.mjs";
+import { snippetsFor } from "../../openapi/snippet.mjs";
+import { authentication, serverUrl } from "../../openapi/spec.mjs";
+
+const { operation } = Astro.props;
+
+const request = requestExample(operation);
+const snippets = snippetsFor(operation, serverUrl(), request);
+const response = responseExample(operation);
+const auth = authentication();
+
+/**
+ * A parameter as a row of the same shape a property is.
+ *
+ * The description is moved onto the schema because that is where a row reads it
+ * from. A parameter states its own, one level above the schema that says what it
+ * accepts, and the two are one thing to the reader.
+ */
+const asField = (parameter) => ({
+	key: parameter.name,
+	required: Boolean(parameter.required),
+	...modelOf({ ...parameter.schema, description: parameter.description }),
+});
+
+const parametersIn = (where) =>
+	operation.parameters
+		.filter((parameter) => parameter.in === where)
+		.map(asField);
+
+const path = parametersIn("path");
+const query = parametersIn("query");
+const headers = parametersIn("header");
+
+/** The path, with its placeholders marked so that they are read as values to fill in. */
+const segments = operation.path.split(/(\{[^}]+\})/).filter(Boolean);
+
+/** What a status says about the answer, which is what its colour says too. */
+const classOf = (status) => `status-${status.charAt(0)}xx`;
+---
+
+<div class="api not-content">
+	<div class="intro">
+		<div class="call">
+			<span
+				class:list={[
+					"method",
+					`method-${operation.method.toLowerCase()}`,
+				]}
+			>
+				{operation.method}
+			</span>
+			<code class="path">
+				{segments.map((segment) =>
+					segment.startsWith("{") ? (
+						<span class="placeholder">{segment}</span>
+					) : (
+						segment
+					),
+				)}
+			</code>
+		</div>
+
+		<Prose text={operation.description} class="lede" />
+	</div>
+
+	<aside class="panels">
+		<Panels snippets={snippets} response={response} />
+	</aside>
+
+	<div class="spec">
+		{path.length > 0 && (
+			<section>
+				<h2>Path parameters</h2>
+				<Fields fields={path} />
+			</section>
+		)}
+
+		{query.length > 0 && (
+			<section>
+				<h2>Query parameters</h2>
+				<Fields fields={query} />
+			</section>
+		)}
+
+		{headers.length > 0 && (
+			<section>
+				<h2>Headers</h2>
+				<Fields fields={headers} />
+			</section>
+		)}
+
+		{operation.body && (
+			<section>
+				<h2>Body</h2>
+				<Schema
+					schema={operation.body.schema}
+					label={operation.body.required ? "Required" : "Optional"}
+				/>
+			</section>
+		)}
+
+		<section>
+			<h2>Responses</h2>
+
+			<div class="responses">
+				{operation.responses.map((answer) => (
+					<div class="response">
+						<div class="head">
+							<span
+								class:list={["status", classOf(answer.status)]}
+							>
+								{answer.status}
+							</span>
+							<Prose
+								text={answer.description}
+								variant="inline"
+								class="says"
+							/>
+						</div>
+
+						{answer.schema && (
+							<details>
+								{/* The summary names the type, so the body inside does not name it again. */}
+								<summary>{modelOf(answer.schema).type}</summary>
+								<div class="inner">
+									<Schema
+										schema={answer.schema}
+										named={false}
+									/>
+								</div>
+							</details>
+						)}
+					</div>
+				))}
+			</div>
+		</section>
+
+		{operation.secured && auth && (
+			<section>
+				<h2>Authorization</h2>
+				<Prose text={auth.description} class="lede" />
+			</section>
+		)}
+	</div>
+</div>
+
+<style>
+	/*
+	 * One column until there is room for the call to sit beside what it is built
+	 * from. The three parts are written in the order a narrow window reads them:
+	 * what the endpoint is, the call to make, and then the endpoint in full. A
+	 * reader on a phone is looking something up rather than writing code against
+	 * it, and the call is the fastest answer to what the endpoint wants.
+	 */
+	.api {
+		display: flex;
+		flex-direction: column;
+		gap: 2rem;
+	}
+
+	/*
+	 * From the width two columns fit, the same three parts are placed rather
+	 * than reordered: the words down the left, the call down the right, and the
+	 * call follows the reader, because the reader is reading the left column in
+	 * order to write what is in the right one.
+	 */
+	@media (min-width: 72rem) {
+		/*
+		 * The page takes the width of a page of the manual plus the column its
+		 * on-this-page list sits in - see `../../styles/site.css` - and the two
+		 * columns divide all of it. Three parts to two: the left column states
+		 * an endpoint a row at a time and the rows are read as prose, so it
+		 * keeps the larger share, and the right column is given enough that a
+		 * call is read rather than deciphered. The floor under it is what a
+		 * `curl` line with an index name in it needs before wrapping turns into
+		 * one word a line.
+		 */
+		.api {
+			display: grid;
+			column-gap: 2.5rem;
+			grid-template-columns: minmax(0, 3fr) minmax(21rem, 2fr);
+			grid-template-rows: auto 1fr;
+			row-gap: 0;
+		}
+
+		.intro,
+		.spec {
+			grid-column: 1;
+			min-width: 0;
+		}
+
+		/*
+		 * The call follows the reader down the page. A call longer than the
+		 * window - a search, which carries a whole query in its body - scrolls
+		 * inside the column rather than being held with its end off the bottom
+		 * of the screen, which is what a taller sticky block does: the reader
+		 * scrolls the page and the part they want never arrives.
+		 */
+		.panels {
+			align-self: start;
+			grid-column: 2;
+			grid-row: 1 / span 2;
+			max-height: calc(100vh - var(--sl-nav-height) - 3rem);
+			min-width: 0;
+			overflow-y: auto;
+			position: sticky;
+			/* Clear of the header, which is what the page scrolls under. */
+			top: calc(var(--sl-nav-height) + 1.5rem);
+		}
+	}
+
+	/* The endpoint itself, set as the one line on the page a reader copies. */
+	.call {
+		align-items: baseline;
+		border-block: 1px solid var(--sl-color-gray-5);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.75rem;
+		padding-block: 0.6875rem;
+	}
+
+	.path {
+		color: var(--sl-color-white);
+		font-family: var(--sl-font-mono);
+		font-size: 0.875rem;
+		overflow-wrap: anywhere;
+	}
+
+	/* A placeholder is a value the reader supplies, so it is not set as the path is. */
+	.placeholder {
+		color: var(--sl-color-gray-3);
+	}
+
+	.lede {
+		font-size: 1rem;
+		line-height: 1.65;
+		margin-block-start: 1.125rem;
+	}
+
+	/*
+	 * The heading of a section, drawn as `../../styles/site.css` draws the
+	 * manual's: a rule that runs the width of the column, the numeral hung in
+	 * the margin beside it, and the words on the axis everything else starts at.
+	 */
+	h2 {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: var(--sl-color-white);
+		counter-increment: doc-section;
+		font-size: var(--sl-text-h2);
+		font-weight: 600;
+		letter-spacing: -0.015em;
+		line-height: 1.2;
+		margin-block: 2.25rem 1rem;
+		padding-block-start: 1rem;
+		position: relative;
+	}
+
+	h2::before {
+		color: var(--sl-color-gray-3);
+		content: counter(doc-section, decimal-leading-zero);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+		letter-spacing: 0.04em;
+		position: absolute;
+		right: 0;
+		top: 1.125rem;
+	}
+
+	@media (min-width: 50rem) {
+		h2 {
+			margin-block-start: 3.25rem;
+			margin-inline-start: calc(-1 * var(--doc-margin));
+			padding-block-start: 1.375rem;
+			padding-inline-start: var(--doc-margin);
+		}
+
+		h2::before {
+			font-size: 0.8125rem;
+			left: 0;
+			right: auto;
+			top: 1.625rem;
+		}
+	}
+
+	/* An answer is a status, a sentence, and the body it carries. */
+	.response {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		padding-block: 0.75rem;
+	}
+
+	.response .head {
+		align-items: baseline;
+		display: flex;
+		gap: 0.75rem;
+	}
+
+	.status {
+		color: var(--status, var(--sl-color-gray-3));
+		font-family: var(--sl-font-mono);
+		font-size: 0.8125rem;
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+	}
+
+	/*
+	 * Three colours, for the three things a status says: the call worked, the
+	 * caller has something to fix, or the node does. They are the greens and reds
+	 * the methods are drawn in - see `../../styles/site.css`.
+	 */
+	.status-2xx {
+		--status: light-dark(#1f7a4d, #55b98a);
+	}
+
+	.status-4xx {
+		--status: light-dark(#8a5a06, #d3a04f);
+	}
+
+	.status-5xx {
+		--status: light-dark(#a72f2f, #e58585);
+	}
+
+	.response .says {
+		line-height: 1.6;
+	}
+
+	summary {
+		color: var(--sl-color-gray-3);
+		cursor: pointer;
+		display: inline-flex;
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		gap: 0.4375rem;
+		letter-spacing: 0.08em;
+		list-style: none;
+		margin-block-start: 0.5rem;
+	}
+
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	summary::before {
+		content: "+";
+	}
+
+	details[open] > summary::before {
+		content: "\2013";
+	}
+
+	summary:hover {
+		color: var(--sl-color-text-accent);
+	}
+
+	.inner {
+		border-inline-start: 1px solid var(--sl-color-gray-5);
+		margin-block-start: 0.625rem;
+		padding-inline-start: 1rem;
+	}
+</style>

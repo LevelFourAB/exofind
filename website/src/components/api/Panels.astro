@@ -1,0 +1,297 @@
+---
+/*
+ * The column beside an endpoint: the call, and the answer to that call.
+ *
+ * The two are one example rather than two. Where the document states them, the
+ * request is a search for a book and the response is the books it finds, so a
+ * reader can read down the column and see what they are about to get back.
+ *
+ * The first tab is the request itself, written as HTTP. A reader who opens an
+ * endpoint wants to know what it wants before they decide what to send it from,
+ * and that answer is shorter in HTTP than in any of the four languages under it.
+ *
+ * The language is remembered across pages. `syncKey` is what does it: a reader
+ * who picks Go on the first endpoint they open is reading Go on the next one,
+ * which is the difference between the column being useful and being five tabs
+ * that have to be set again on every page.
+ *
+ * A long example is cut off at `--api-example-height` and opened by the button
+ * under it. A search carries a whole query in its body and answers with a page
+ * of hits, and left whole the two of them push everything else on the page below
+ * the fold. The button appears only where there is something behind it, which is
+ * measured in the browser: a tab that is not showing has no height to measure,
+ * and a line that wraps is taller than the line count says.
+ *
+ * Only the first success is shown. The other answers an endpoint states are
+ * failures, and a failure is read once, in the table on the left, rather than
+ * carried in the column a reader copies from.
+ *
+ * The code wraps rather than scrolling sideways. The column is the width of the
+ * on-this-page list, and a URL with an index name in it is wider than that: left
+ * to scroll, the half of the call a reader has to read is the half they cannot
+ * see. A wrapped line keeps the indentation of the line it came from, so the
+ * shape of the body survives the wrap.
+ */
+import { Code, TabItem, Tabs } from '@astrojs/starlight/components';
+
+const { snippets, response } = Astro.props;
+
+const body = response?.body === undefined || response?.body === null
+	? null
+	: JSON.stringify(response.body, null, '\t');
+---
+
+<div class="panels">
+	<section class="panel">
+		<h2 class="panel-head">Request</h2>
+
+		<Tabs syncKey="api-language">
+			{snippets.map(snippet => (
+				<TabItem label={snippet.label}>
+					<api-example>
+						<div class="example" data-example>
+							<Code code={snippet.code} lang={snippet.lang} frame="code" wrap />
+						</div>
+						<button class="more" type="button" aria-expanded="false" hidden>Show all</button>
+					</api-example>
+				</TabItem>
+			))}
+		</Tabs>
+	</section>
+
+	{response && (
+		<section class="panel">
+			<h2 class="panel-head">
+				Response
+				<span class="status">{response.status}</span>
+			</h2>
+
+			{body && (
+				<api-example>
+					<div class="example" data-example>
+						<Code code={body} lang="json" frame="code" wrap />
+					</div>
+					<button class="more" type="button" aria-expanded="false" hidden>Show all</button>
+				</api-example>
+			)}
+
+			{!body && <p class="empty">No body. The status is the whole answer.</p>}
+		</section>
+	)}
+</div>
+
+<script>
+	/*
+	 * The button under an example, and whether there is anything behind it.
+	 *
+	 * Both answers come from the browser. The block is cut off in CSS, so what
+	 * is hidden is the difference between what the block holds and the height it
+	 * was given, and that difference changes with the width of the column and
+	 * with which language tab is showing. A tab that is not showing is not laid
+	 * out at all: it measures zero, the button stays hidden, and the observer
+	 * measures it again when the reader opens it.
+	 */
+	class ApiExample extends HTMLElement {
+		connectedCallback() {
+			/*
+			 * Both children are taken from this element alone. The code block
+			 * carries a copy button of its own, and an unscoped search for a
+			 * button finds that one first.
+			 */
+			const example = this.querySelector<HTMLElement>(':scope > [data-example]');
+			const button = this.querySelector<HTMLButtonElement>(':scope > button');
+			this.dataset.connected = `${!!example}/${!!button}/${this.children.length}`;
+			if(!example || !button) return;
+
+			const measure = () => {
+				if(this.hasAttribute('open')) return;
+				button.hidden = example.scrollHeight <= example.clientHeight + 1;
+				this.dataset.ran = `${example.scrollHeight}/${example.clientHeight}/${button.hidden}`;
+			};
+
+			button.addEventListener('click', () => {
+				const open = this.toggleAttribute('open');
+
+				button.setAttribute('aria-expanded', String(open));
+				button.textContent = open ? 'Show less' : 'Show all';
+
+				if(! open) measure();
+			});
+
+			/*
+			 * The code inside is never cut off itself, so its own height is the
+			 * height the example would have whole. Watching it covers the tab
+			 * being opened, the window being resized, and the code rewrapping.
+			 */
+			new ResizeObserver(measure).observe(example.firstElementChild ?? example);
+		}
+	}
+
+	customElements.define('api-example', ApiExample);
+</script>
+
+<style>
+	/*
+	 * The column is narrow and a call is not, so every box between the column
+	 * and the code is told it may be narrower than what is in it. Without that
+	 * a grid or flex item is as wide as its longest line - a URL with an index
+	 * name in it - and the code runs off the page instead of scrolling inside
+	 * its own frame.
+	 */
+	.panels {
+		display: grid;
+		gap: 1.75rem;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.panel {
+		min-width: 0;
+	}
+
+	.panel :global(.tab-panel),
+	.panel :global(.expressive-code) {
+		min-width: 0;
+	}
+
+	.panel-head {
+		align-items: baseline;
+		border-block-end: 1px solid var(--sl-color-gray-5);
+		color: var(--sl-color-gray-3);
+		display: flex;
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		gap: 0.625rem;
+		letter-spacing: 0.16em;
+		line-height: 1.2;
+		margin: 0 0 0.75rem;
+		padding-block-end: 0.5rem;
+		text-transform: uppercase;
+	}
+
+	/* The status the body belongs to, which is the one thing in the head that is read as a value. */
+	.status {
+		color: var(--sl-color-white);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.04em;
+	}
+
+	.empty {
+		color: var(--sl-color-gray-3);
+		font-size: 0.875rem;
+		margin: 0;
+	}
+
+	/*
+	 * The tabs are the site's labels rather than the rounded row Starlight
+	 * ships: no fill, a rule under the row, and the language that is showing
+	 * marked with the same underline a current page gets in the sidebar.
+	 */
+	.panel :global(.tablist-wrapper) {
+		margin-block: 0;
+	}
+
+	.panel :global(.tablist-wrapper ul) {
+		border-block-end: 0;
+		gap: 0.25rem;
+	}
+
+	.panel :global(.tablist-wrapper a) {
+		border-block-end: 2px solid transparent;
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		padding: 0.25rem 0.5rem;
+	}
+
+	.panel :global(.tablist-wrapper a[aria-selected='true']) {
+		border-block-end-color: var(--sl-color-text-accent);
+		color: var(--sl-color-white);
+	}
+
+	.panel :global(.tab-panel) {
+		margin-block-start: 0.75rem;
+	}
+
+	/*
+	 * A call is read at the size the rest of the furniture is read at rather
+	 * than at the size prose is, because the column is narrow and a wrapped URL
+	 * costs more than the two points.
+	 */
+	.panel :global(.expressive-code) {
+		font-size: 0.8125rem;
+	}
+
+	.panel :global(.expressive-code pre) {
+		border-radius: 0;
+	}
+
+	/*
+	 * How much of a long example is shown before the button under it. It is
+	 * about sixteen lines, which is a search request down to the end of its
+	 * query and a search response down to the first hit: enough that a reader
+	 * sees what kind of thing the example is and decides whether to open it.
+	 */
+	api-example {
+		--api-example-height: 22rem;
+
+		display: block;
+	}
+
+	.example {
+		overflow: hidden;
+	}
+
+	api-example:not([open]) .example {
+		max-height: var(--api-example-height);
+	}
+
+	/*
+	 * The last lines fade out where the block is cut off, so that the cut reads
+	 * as more to come rather than as the end of the example. It is drawn only
+	 * while the button is showing, because the button showing is the one thing
+	 * on the page that knows the block is cut off at all.
+	 */
+	api-example:not([open]):has(.more:not([hidden])) .example {
+		mask-image: linear-gradient(to bottom, #000 calc(100% - 3.5rem), transparent);
+	}
+
+	/* The same disclosure the rows on the left carry, run across the column. */
+	.more {
+		align-items: center;
+		background: none;
+		border: 0;
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		color: var(--sl-color-gray-3);
+		cursor: pointer;
+		display: flex;
+		font-family: var(--sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		gap: 0.4375rem;
+		letter-spacing: 0.16em;
+		padding: 0.5rem 0;
+		text-transform: uppercase;
+		width: 100%;
+	}
+
+	/* The `display` above outranks the one the browser gives a hidden element. */
+	.more[hidden] {
+		display: none;
+	}
+
+	.more::before {
+		content: '+';
+		font-variant-numeric: tabular-nums;
+	}
+
+	api-example[open] .more::before {
+		content: '\2013';
+	}
+
+	.more:hover {
+		color: var(--sl-color-text-accent);
+	}
+</style>

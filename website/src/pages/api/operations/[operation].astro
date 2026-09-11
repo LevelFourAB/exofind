@@ -1,0 +1,39 @@
+---
+/*
+ * A page per endpoint, generated from the OpenAPI document the engine build
+ * writes.
+ *
+ * The URL is the endpoint's `operationId`, which is the one name for an
+ * endpoint that the engine, the generated clients and this site all use. It is
+ * also what the site's own search indexes these pages by - see
+ * `../../../../search/documents.mjs` - so the two agree without either reading
+ * the other.
+ *
+ * There is no on-this-page list. An endpoint has five headings at most, and the
+ * column it would take is the column the call goes in.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+
+import Operation from '../../../components/api/Operation.astro';
+import { plain } from '../../../openapi/markdown.mjs';
+import { operations } from '../../../openapi/spec.mjs';
+
+export function getStaticPaths() {
+	return operations().map(operation => ({
+		params: { operation: operation.id },
+		props: { operation }
+	}));
+}
+
+const { operation } = Astro.props;
+---
+
+<StarlightPage
+	frontmatter={{
+		title: operation.summary,
+		description: plain(operation.description) || `${operation.method} ${operation.path}`,
+		tableOfContents: false
+	}}
+>
+	<Operation operation={operation} />
+</StarlightPage>
