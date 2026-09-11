@@ -30,6 +30,7 @@ import se.l4.exofind.engine.query.FieldSort;
 import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.GeoDistanceSort;
 import se.l4.exofind.engine.query.KnnQuery;
+import se.l4.exofind.engine.query.LinearSignal;
 import se.l4.exofind.engine.query.NestedQuery;
 import se.l4.exofind.engine.query.NotQuery;
 import se.l4.exofind.engine.query.OrQuery;
@@ -125,7 +126,7 @@ public class SearchRequestMapper {
 	private static final ErrorType SIGNAL_SHAPE_INVALID =
 		ErrorType.withCode("search:signal:shape_invalid")
 			.withMessage(
-				"A ranking signal has to be exactly one shape - `saturation`, or `decay`"
+				"A ranking signal has to be exactly one shape - `saturation`, `decay`, or `linear`"
 			);
 
 	private static final ErrorType SIGNAL_PIVOT_INVALID =
@@ -135,6 +136,10 @@ public class SearchRequestMapper {
 	private static final ErrorType SIGNAL_HALF_LIFE_INVALID =
 		ErrorType.withCode("search:signal:half_life_invalid")
 			.withMessage("The `halfLife` of a decay signal has to be a number of seconds above zero");
+
+	private static final ErrorType SIGNAL_CEILING_INVALID =
+		ErrorType.withCode("search:signal:ceiling_invalid")
+			.withMessage("The `ceiling` of a linear signal has to be a number above zero");
 
 	private static final ErrorType SIGNAL_WEIGHT_INVALID =
 		ErrorType.withCode("search:signal:weight_invalid")
@@ -1465,8 +1470,10 @@ public class SearchRequestMapper {
 
 			var weight = signal.weight() == null ? 1f : signal.weight();
 
-			if(signal.saturation() != null && signal.decay() != null
-				|| signal.saturation() == null && signal.decay() == null) {
+			var shapes = (signal.saturation() == null ? 0 : 1)
+				+ (signal.decay() == null ? 0 : 1)
+				+ (signal.linear() == null ? 0 : 1);
+			if(shapes != 1) {
 				errors.add(SIGNAL_SHAPE_INVALID.toMessage(Location.create(path)));
 				continue;
 			}
@@ -1481,6 +1488,17 @@ public class SearchRequestMapper {
 					);
 				} else if(valid) {
 					result.add(new SaturationSignal(signal.field(), pivot, weight));
+				}
+			} else if(signal.linear() != null) {
+				var ceiling = signal.linear().ceiling();
+				if(ceiling == null || !(ceiling > 0) || !Double.isFinite(ceiling)) {
+					errors.add(
+						SIGNAL_CEILING_INVALID.toMessage(
+							Location.create(path + "/linear/ceiling")
+						)
+					);
+				} else if(valid) {
+					result.add(new LinearSignal(signal.field(), ceiling, weight));
 				}
 			} else {
 				var halfLife = signal.decay().halfLife();

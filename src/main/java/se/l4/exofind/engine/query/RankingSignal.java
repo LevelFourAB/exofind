@@ -32,7 +32,7 @@ import java.time.Duration;
  * {@link SearchRequest.Signals}. The type is the name a shape goes by outside
  * the engine, so it is never renamed or reused.
  */
-public sealed interface RankingSignal permits SaturationSignal, DecaySignal {
+public sealed interface RankingSignal permits SaturationSignal, DecaySignal, LinearSignal {
 	/**
 	 * Get the unique identifier for this kind of shape.
 	 *
@@ -83,5 +83,21 @@ public sealed interface RankingSignal permits SaturationSignal, DecaySignal {
 	 */
 	static DecaySignal decay(String field, Duration halfLife) {
 		return new DecaySignal(field, halfLife, 1f);
+	}
+
+	/**
+	 * Rank a document higher the closer its value is to a ceiling, as
+	 * {@code value / ceiling} held between zero and one. The shape for a score
+	 * computed elsewhere that already lies in a known range, which saturation
+	 * would bend.
+	 *
+	 * @param field
+	 *   name of the field, as it is called in the definition of the index
+	 * @param ceiling
+	 *   the value that counts for all of what the signal can give
+	 * @return
+	 */
+	static LinearSignal linear(String field, double ceiling) {
+		return new LinearSignal(field, ceiling, 1f);
 	}
 }

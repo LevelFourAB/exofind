@@ -42,6 +42,7 @@ import se.l4.exofind.engine.query.FieldSort;
 import se.l4.exofind.engine.query.FuseQuery;
 import se.l4.exofind.engine.query.GeoDistanceSort;
 import se.l4.exofind.engine.query.KnnQuery;
+import se.l4.exofind.engine.query.LinearSignal;
 import se.l4.exofind.engine.query.NestedQuery;
 import se.l4.exofind.engine.query.NotQuery;
 import se.l4.exofind.engine.query.OrQuery;
@@ -895,6 +896,7 @@ public class QueryCompiler {
 		return switch(signal) {
 			case SaturationSignal s -> new RankingSignals.Saturation(s.pivot());
 			case DecaySignal s -> new RankingSignals.Decay(s.halfLife().toMillis(), now);
+			case LinearSignal s -> new RankingSignals.Linear(s.ceiling());
 		};
 	}
 

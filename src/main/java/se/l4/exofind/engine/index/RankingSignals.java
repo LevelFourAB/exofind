@@ -234,7 +234,7 @@ public final class RankingSignals extends DoubleValuesSource {
 	 * here, an entry in {@code permits} and a branch where signals are
 	 * compiled.
 	 */
-	public sealed interface Shape permits Saturation, Decay {
+	public sealed interface Shape permits Saturation, Decay, Linear {
 		/**
 		 * Get what the given value contributes, between zero and one.
 		 *
@@ -242,6 +242,35 @@ public final class RankingSignals extends DoubleValuesSource {
 		 * @return
 		 */
 		double contribution(double value);
+	}
+
+	/**
+	 * Contribute by how far a value is toward a ceiling, all of it at the
+	 * ceiling and beyond.
+	 *
+	 * @param ceiling
+	 *   the value that counts for everything
+	 */
+	public record Linear(double ceiling) implements Shape {
+		@Override
+		public String toString() {
+			return "linear, ceiling " + ceiling;
+		}
+
+		@Override
+		public double contribution(double value) {
+			/*
+			 * Held to the range a shape answers in: a score below zero counts
+			 * for nothing, and one past the ceiling for no more than the
+			 * ceiling - the bound is what lets a search skip documents that
+			 * cannot compete.
+			 */
+			if(!(value > 0)) {
+				return 0;
+			}
+
+			return Math.min(value / ceiling, 1);
+		}
 	}
 
 	/**

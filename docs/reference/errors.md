@@ -52,10 +52,10 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `auth:*` | Caller identity and permissions | `auth:unauthenticated`, `auth:forbidden` |
 | `auth:key:*` | Key validation failure or unassigned key ID | `auth:key:unknown_role`, `auth:key:unknown_permission`, `auth:key:not_found` |
 | `auth:keys:*` | Key storage failure | `auth:keys:unavailable`, `auth:keys:conflict`, `auth:keys:io_error` |
-| `index:field:*` | Field definition validation failure | `index:field:invalid_name`, `index:field:sorting_not_supported`, `index:field:number:invalid_unit`, `index:field:vector:missing_dimensions` |
+| `index:field:*` | Field definition validation failure | `index:field:invalid_name`, `index:field:sorting_not_supported`, `index:field:signal_not_supported`, `index:field:signal:usage_conflict`, `index:field:number:invalid_unit`, `index:field:vector:missing_dimensions` |
 | `index:field:analyzer:*` | Analysis chain validation failure | `index:field:analyzer:unknown_ref`, `index:field:analyzer:unsupported_locale` |
 | `index:schema:*` | Index-wide schema rule failure | `index:schema:multiple_primary_keys`, `index:schema:unsupported_features` |
-| `index:ranking:*` | Ranking signal or tie-breaker configuration error | `index:ranking:field_not_sortable`, `index:ranking:signal:shape_not_supported`, `index:ranking:signal:invalid_pivot` |
+| `index:ranking:*` | Ranking signal or tie-breaker configuration error | `index:ranking:field_not_sortable`, `index:ranking:signal:shape_not_supported`, `index:ranking:signal:invalid_pivot`, `index:ranking:signal:invalid_ceiling` |
 | `index:locales:*` | Index locale declaration error | `index:locales:default_locale_required` |
 | `index:locale_fallback:*` | Locale fallback chain configuration error | `index:locale_fallback:locale_not_held`, `index:locale_fallback:unsupported_locale` |
 | `index:resources:*` | Shared resource validation failure | `index:resources:synonyms:one_sided` |
@@ -103,7 +103,7 @@ The following error codes require specific handling in client applications:
 - `index:query:interpret:fallback_unit`: Returned when a `fallback` target declares a different `unit` than the target it stands in for. Every target of a chain must be in one unit, so a number in the text means the same thing on every product.
 - `search:clause:interpret_fields_required`: Returned when the `interpret` of a `text` clause is an object whose `fields` is empty or missing. Name at least one target, or use `"auto"` or `"off"`.
 - `search:clause:interpret_when_unsupported`: Returned when the `when` of a target holds a `nested`, `knn` or `fuse` clause. `when` accepts what a `nested` clause accepts: `field`, `text`, `and`, `or`, `not` and `boost`.
-- `index:source:not_kept`: Returned when attempting a partial document update on an index where `source` is `none`, or on a document indexed when `source` was `none`. Resend the entire document.
+- `index:source:not_kept`: Returned when attempting a partial document update on an index where `source` is `none`, or on a document indexed when `source` was `none`. Resend the entire document. A change that names only the primary key and [signal fields](field-types.md#signal-fields) does not require the source.
 - `request:update:no_match`: Returned when a change names one value by a selector, such as `variants[sku=V-2]` in a document or `ranking.signals[field=sales]` in search settings, and nothing the selector matches is stored. A selector never creates the value it names, so add a value with `variants[]` instead. The remaining `request:update:*` codes report a path the endpoint cannot use and are listed in the [Documents API](documents-api.md#constraints-and-errors) and, for search settings, in the [Admin API](admin-api.md#changing-part-of-the-search-settings).
 - `request:update:value_invalid`: Returned when a `PATCH` of search settings names a field that cannot hold the given value, such as a list where the settings hold an object.
 - `index:document:not_found`: Returned with HTTP `404` by `PATCH /v1alpha1/indexes/{name}/documents/{key}` when nothing is indexed under the key. A change says what to change about a document, so the document is indexed whole first.

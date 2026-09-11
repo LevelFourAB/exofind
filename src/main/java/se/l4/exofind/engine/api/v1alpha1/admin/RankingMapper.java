@@ -19,7 +19,7 @@ final class RankingMapper {
 	private static final ErrorType INVALID_SIGNAL_SHAPE =
 		ErrorType.withCode("index:ranking:signal:invalid_shape")
 			.withMessage(
-				"A ranking signal has to be exactly one shape - `saturation`, or `decay`"
+				"A ranking signal has to be exactly one shape - `saturation`, `decay`, or `linear`"
 			);
 
 	private RankingMapper() {
@@ -64,7 +64,10 @@ final class RankingMapper {
 	}
 
 	private static RankingConfig.Signal toStored(IndexDefinition.Ranking.Signal signal) {
-		if((signal.saturation() == null) == (signal.decay() == null)) {
+		var shapes = (signal.saturation() == null ? 0 : 1)
+			+ (signal.decay() == null ? 0 : 1)
+			+ (signal.linear() == null ? 0 : 1);
+		if(shapes != 1) {
 			throw new EngineException(INVALID_SIGNAL_SHAPE);
 		}
 
@@ -92,6 +95,14 @@ final class RankingMapper {
 				decay.setHalfLifeSeconds(signal.decay().halfLife());
 			}
 			builder.setDecay(decay);
+		}
+
+		if(signal.linear() != null) {
+			var linear = RankingConfig.Signal.Linear.newBuilder();
+			if(signal.linear().ceiling() != null) {
+				linear.setCeiling(signal.linear().ceiling());
+			}
+			builder.setLinear(linear);
 		}
 
 		return builder.build();
@@ -153,10 +164,18 @@ final class RankingMapper {
 			);
 		}
 
+		IndexDefinition.Ranking.Signal.Linear linear = null;
+		if(signal.hasLinear()) {
+			linear = new IndexDefinition.Ranking.Signal.Linear(
+				signal.getLinear().hasCeiling() ? signal.getLinear().getCeiling() : null
+			);
+		}
+
 		return new IndexDefinition.Ranking.Signal(
 			signal.hasField() ? signal.getField() : null,
 			saturation,
 			decay,
+			linear,
 			signal.hasWeight() ? signal.getWeight() : null
 		);
 	}

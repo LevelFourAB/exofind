@@ -677,6 +677,15 @@ components:
             \ fields, it also enables range buckets."
           type: object
           $ref: "#/components/schemas/FacetUsage"
+        signal:
+          description: "Makes the field a ranking signal that is refreshed in place\
+            \ through the document update action, without indexing the document again.\
+            \ A signal field is sortable and is returned in results, but is left out\
+            \ of the document source and cannot be combined with `filter`, `facet`,\
+            \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
+            \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
+          type: object
+          $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -1412,6 +1421,15 @@ components:
             \ fields, it also enables range buckets."
           type: object
           $ref: "#/components/schemas/FacetUsage"
+        signal:
+          description: "Makes the field a ranking signal that is refreshed in place\
+            \ through the document update action, without indexing the document again.\
+            \ A signal field is sortable and is returned in results, but is left out\
+            \ of the document source and cannot be combined with `filter`, `facet`,\
+            \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
+            \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
+          type: object
+          $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -2234,6 +2252,15 @@ components:
             \ fields, it also enables range buckets."
           type: object
           $ref: "#/components/schemas/FacetUsage"
+        signal:
+          description: "Makes the field a ranking signal that is refreshed in place\
+            \ through the document update action, without indexing the document again.\
+            \ A signal field is sortable and is returned in results, but is left out\
+            \ of the document source and cannot be combined with `filter`, `facet`,\
+            \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
+            \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
+          type: object
+          $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -2322,6 +2349,15 @@ components:
             \ fields, it also enables range buckets."
           type: object
           $ref: "#/components/schemas/FacetUsage"
+        signal:
+          description: "Makes the field a ranking signal that is refreshed in place\
+            \ through the document update action, without indexing the document again.\
+            \ A signal field is sortable and is returned in results, but is left out\
+            \ of the document source and cannot be combined with `filter`, `facet`,\
+            \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
+            \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
+          type: object
+          $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -2600,6 +2636,21 @@ components:
     LetterTokenizer:
       type: object
       description: Splits text on non-letter characters. Carries no options.
+    Linear:
+      type: object
+      description: "Ranks a value as `value / ceiling`, held between `0` and `1`.\
+        \ The shape for a score computed elsewhere that already lies in a known range."
+      required:
+      - ceiling
+      properties:
+        ceiling:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: The value that counts for all of what the signal can give.
+            Must be above zero.
+          examples:
+          - 1
     LocaleFallback:
       type: object
       description: "Fills missing locale values in a document from available translations\
@@ -3249,6 +3300,23 @@ components:
             \ as much. Required, and must be greater than `0`."
           examples:
           - 604800
+    RankingLinear:
+      type: object
+      description: "Computes `value / ceiling`, held between `0` and `1`. Values below\
+        \ `0` evaluate to `0` and values above the ceiling to `1`. The shape for a\
+        \ score computed elsewhere that already lies in a known range, such as an\
+        \ engagement score between `0` and `1`."
+      required:
+      - ceiling
+      properties:
+        ceiling:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: "The value that counts for all of what the signal can give.\
+            \ Required, and must be greater than `0`."
+          examples:
+          - 1
     RankingSaturation:
       type: object
       description: "Computes `value / (value + pivot)`, reaching `0.5` at the pivot\
@@ -4106,6 +4174,12 @@ components:
           description: Ranks by how long ago the value was. For timestamp fields.
           type: object
           $ref: "#/components/schemas/Decay"
+        linear:
+          description: "Ranks by how far the value is toward a ceiling, as `value\
+            \ / ceiling` held between `0` and `1`. For number fields holding a score\
+            \ computed elsewhere."
+          type: object
+          $ref: "#/components/schemas/Linear"
         weight:
           type: number
           format: float
@@ -4137,6 +4211,13 @@ components:
           description: Ranks by how long ago the value was. For `timestamp` fields.
           type: object
           $ref: "#/components/schemas/RankingDecay"
+        linear:
+          description: "Ranks by how far the value is toward a ceiling, as `value\
+            \ / ceiling` held between `0` and `1`. For `int32`, `int64`, `float` and\
+            \ `double` fields holding a score computed elsewhere, such as an engagement\
+            \ score between `0` and `1`."
+          type: object
+          $ref: "#/components/schemas/RankingLinear"
         weight:
           type: number
           format: float
@@ -4144,6 +4225,10 @@ components:
             \ of its score. At `1`, a document at the top of the signal reaches twice\
             \ the score of one holding no value at all."
           default: 1
+    SignalUsage:
+      type: object
+      description: Makes a number field a ranking signal that is refreshed in place
+        through the document update action. Carries no configuration options.
     SignalsMode:
       description: "How search request signals meet the ranking configured on the\
         \ index: `\"add\"` ranks by both; `\"replace\"` ranks by the request's signals\

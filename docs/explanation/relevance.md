@@ -45,7 +45,9 @@ The transformation shape prevents signals from distorting search quality:
 - A document with no value for a signal receives a shape value of 0. It is not penalized or multiplied away, so adding a signal does not bury existing documents that lack the value.
 - A signal can boost a document score by at most its `weight`, regardless of how large the underlying value is. A high-selling item cannot outrank a document with a significantly better text match.
 
-The choice of shape depends on what the signal measures. An unbounded count saturates toward 1, while an age signal decays by halving over time. Because Exofind evaluates signals at query time rather than storing them in index structures, you can adjust signal configurations in the index definition or pass custom signals in a search request without reindexing documents.
+The choice of shape depends on what the signal measures. An unbounded count saturates toward 1, while an age signal decays by halving over time. A score computed outside the engine that already lies in a known range, such as an engagement score between 0 and 1 or a margin in percent, uses a linear shape, because saturation would bend a score that is already bounded. Because Exofind evaluates signals at query time rather than storing them in index structures, you can adjust signal configurations in the index definition or pass custom signals in a search request without reindexing documents.
+
+The value of a signal field is written only as sort doc values. Lucene can replace doc values per document without touching the rest of the segment. When an update names only the primary key and signal fields, the engine refreshes those fields in place without reading or rewriting the document. On object storage, a refresh reaches searching nodes as a few small files per segment rather than as new segments, which costs a fraction of a reindex. See [Signal fields](../reference/field-types.md#signal-fields).
 
 ## What breaks the remaining ties
 

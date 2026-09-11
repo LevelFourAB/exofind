@@ -6,6 +6,8 @@ import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.collections.api.set.SetIterable;
 
+import se.l4.exofind.engine.index.schema.IndexFeatures;
+
 /**
  * The capabilities a stored search settings object can use, and which of them
  * this build has.
@@ -78,8 +80,21 @@ public final class SearchSettingsFeatures {
 	 */
 	public static final String SUGGEST_VALUES = "suggest_values";
 
+	/**
+	 * The ranking holds a signal shaped as a share of a ceiling - the {@code
+	 * linear} shape. The same name the definition carries for it, so a node
+	 * that cannot open an index for the shape sets settings holding it aside
+	 * for the same reason.
+	 *
+	 * <p>Named besides {@link #RANKING} because a node knowing signals in
+	 * general reads the shape as unset and skips the signal, which is a
+	 * different order of the same documents than its peers answer with.
+	 */
+	public static final String RANKING_SIGNAL_LINEAR = IndexFeatures.RANKING_SIGNAL_LINEAR;
+
 	private static final ImmutableSet<String> SUPPORTED = Sets.immutable.of(
 		RANKING,
+		RANKING_SIGNAL_LINEAR,
 		QUERY_SYNONYMS,
 		TYPO_EXCLUSIONS,
 		INTERPRET_VALUES,
@@ -103,6 +118,7 @@ public final class SearchSettingsFeatures {
 
 		if(settings.hasRanking()) {
 			features.add(RANKING);
+			IndexFeatures.collectRanking(settings.getRanking(), features);
 		}
 
 		if(!settings.getSynonymsMap().isEmpty()) {

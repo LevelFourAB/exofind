@@ -401,6 +401,28 @@ public final class IndexFeatures {
 	public static final String INDEX_RANKING_SIGNALS = "index.ranking_signals";
 
 	/**
+	 * A ranking signal reads a value as a share of a ceiling - the {@code
+	 * linear} shape.
+	 *
+	 * Named besides the signals themselves because it arrived later: a node
+	 * knowing signals in general reads the shape as unset, refuses the
+	 * definition for a signal naming no shape, and could not open the index.
+	 * The name says why instead.
+	 */
+	public static final String RANKING_SIGNAL_LINEAR = "ranking.signal_linear";
+
+	/**
+	 * A number field is a ranking signal refreshed in place.
+	 *
+	 * Named because it changes what is written: a node without it would keep
+	 * the value in the copy of the document, where a refresh cannot reach it,
+	 * and would write the document again with the value it arrived with - so
+	 * a refresh through an aware node would be undone by the next write
+	 * through the other, and a read would answer whichever copy it found.
+	 */
+	public static final String FIELD_SIGNAL = "field.signal";
+
+	/**
 	 * The index fills the locales a document holds no value in from another
 	 * locale.
 	 *
@@ -445,10 +467,12 @@ public final class IndexFeatures {
 			INDEX_SOURCE,
 			INDEX_RANKING,
 			INDEX_RANKING_SIGNALS,
+			RANKING_SIGNAL_LINEAR,
 			INDEX_LOCALE_FALLBACK,
 			FIELD_FILTER,
 			FIELD_SORT,
 			FIELD_FACET,
+			FIELD_SIGNAL,
 			FIELD_MATCHING,
 			FIELD_AUTOCOMPLETE,
 			FIELD_KEYWORD,
@@ -552,6 +576,8 @@ public final class IndexFeatures {
 			if(definition.getRanking().getSignalsCount() > 0) {
 				features.add(INDEX_RANKING_SIGNALS);
 			}
+
+			collectRanking(definition.getRanking(), features);
 		}
 
 		/*
@@ -599,6 +625,21 @@ public final class IndexFeatures {
 		}
 
 		return features.toSortedList().toImmutable();
+	}
+
+	/**
+	 * Gather what the shapes of a ranking ask for, beyond signals in general.
+	 * Shared with the search settings, which carry a ranking of their own.
+	 *
+	 * @param ranking
+	 * @param features
+	 */
+	public static void collectRanking(RankingConfig ranking, MutableSet<String> features) {
+		for(var signal : ranking.getSignalsList()) {
+			if(signal.hasLinear()) {
+				features.add(RANKING_SIGNAL_LINEAR);
+			}
+		}
 	}
 
 	/**
@@ -813,6 +854,10 @@ public final class IndexFeatures {
 
 		if(field.hasFacet()) {
 			features.add(FIELD_FACET);
+		}
+
+		if(field.hasSignal()) {
+			features.add(FIELD_SIGNAL);
 		}
 	}
 

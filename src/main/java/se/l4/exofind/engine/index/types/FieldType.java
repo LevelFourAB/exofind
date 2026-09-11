@@ -62,6 +62,53 @@ public interface FieldType {
 	}
 
 	/**
+	 * Get if a field of this type can be a ranking signal refreshed in place.
+	 * Only a type whose sort doc values hold one number per document can,
+	 * as that is the one form of a value Lucene replaces without indexing
+	 * the document again.
+	 *
+	 * @return
+	 */
+	default boolean isSignalSupported() {
+		return false;
+	}
+
+	/**
+	 * Create the doc values field a refresh of a signal writes over the value
+	 * a document holds - the same field {@link #createFields} writes for
+	 * sorting, so a refreshed value reads back the way an indexed one does.
+	 *
+	 * @param encounter
+	 * @param value
+	 *   the value as it arrived, checked the way an indexed value is
+	 * @return
+	 * @throws se.l4.exofind.engine.errors.ValidationException
+	 *   if the value is not one the field accepts
+	 * @throws UnsupportedOperationException
+	 *   if the type is not one {@link #isSignalSupported} accepts
+	 */
+	default IndexableField createSignalField(IndexEncounter encounter, Object value) {
+		throw new UnsupportedOperationException(
+			"Fields of this type can not be signals, which validation refuses"
+		);
+	}
+
+	/**
+	 * Read a value of a signal field back from the number its sort doc values
+	 * hold, undoing what {@link #createSignalField} encoded.
+	 *
+	 * @param docValue
+	 * @return
+	 * @throws UnsupportedOperationException
+	 *   if the type is not one {@link #isSignalSupported} accepts
+	 */
+	default Object readSignalValue(long docValue) {
+		throw new UnsupportedOperationException(
+			"Fields of this type can not be signals, which validation refuses"
+		);
+	}
+
+	/**
 	 * Get if a field can take part in a search for text somebody typed.
 	 *
 	 * Unlike the capabilities above this one depends on the field rather than

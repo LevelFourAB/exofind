@@ -6,6 +6,7 @@ import java.util.Optional;
 import se.l4.exofind.engine.index.analysis.SynonymOverlay;
 import se.l4.exofind.engine.index.analysis.TypoExclusions;
 import se.l4.exofind.engine.index.locales.LocaleSupport;
+import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
@@ -113,7 +114,7 @@ public class IndexEncounterImpl implements IndexEncounter {
 
 	@Override
 	public boolean isSorted() {
-		return fieldDef.hasSort();
+		return Field.sortable(fieldDef);
 	}
 
 	@Override

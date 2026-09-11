@@ -52,6 +52,16 @@ public record Signal(
 	Decay decay,
 
 	/**
+	 * Ranks by how far the value is toward a ceiling. For number fields
+	 * holding a score computed elsewhere.
+	 */
+	@Schema(description = """
+		Ranks by how far the value is toward a ceiling, as `value / ceiling` \
+		held between `0` and `1`. For number fields holding a score computed \
+		elsewhere.""")
+	Linear linear,
+
+	/**
 	 * How much the signal can lift a document at most, as a share of its score.
 	 * Defaults to 1.
 	 */
@@ -110,6 +120,32 @@ public record Signal(
 			examples = "604800"
 		)
 		Long halfLife
+	) {
+	}
+
+	/**
+	 * Ranks a value as {@code value / ceiling}, held between zero and one.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = """
+		Ranks a value as `value / ceiling`, held between `0` and `1`. The \
+		shape for a score computed elsewhere that already lies in a known \
+		range.""")
+	public record Linear(
+		/**
+		 * The value that counts for all of what the signal can give. Must be
+		 * above zero.
+		 */
+		@Schema(
+			description = """
+				The value that counts for all of what the signal can give. \
+				Must be above zero.""",
+			required = true,
+			exclusiveMinimum = true,
+			minimum = "0",
+			examples = "1"
+		)
+		Double ceiling
 	) {
 	}
 }

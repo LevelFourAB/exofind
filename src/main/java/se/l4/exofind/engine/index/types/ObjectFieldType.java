@@ -343,6 +343,16 @@ public class ObjectFieldType implements FieldType {
 			));
 		}
 
+		/*
+		 * A signal is refreshed by the primary key of the document, which
+		 * names the whole document and not one value inside it.
+		 */
+		if(def.hasSignal()) {
+			errors.add(INNER_USAGE_NOT_SUPPORTED.toMessage(
+				location, "name", name, "usage", "signal"
+			));
+		}
+
 		if(def.getType().getTypeCase() == FieldTypeDef.TypeCase.OBJECT) {
 			if(underNested && def.getMultiple()
 					&& def.getType().getObject().getMode() == ObjectFieldTypeDef.Mode.MODE_NESTED) {

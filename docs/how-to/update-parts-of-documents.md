@@ -9,7 +9,7 @@ The single rule that governs all partial updates is that the path replaces exact
 Before you update parts of documents, ensure you have:
 
 - An index definition that declares a primary key.
-- An index configured to store document sources (`source` is not set to `none`).
+- An index configured to store document sources (`source` is not set to `none`), unless you update only [signal fields](../reference/field-types.md#signal-fields).
 - The `documents.write` permission for the index.
 
 The examples below use a `products` index whose `variants` object field declares `"key": "sku"`. Where a field declares no key, use the `field=value` selector form shown alongside each example.
@@ -180,6 +180,34 @@ The examples below use a `products` index whose `variants` object field declares
    ```
 
    The request returns `204 No Content` when the document is changed. A key nothing is indexed under returns `404` with `index:document:not_found` instead of creating a document. Every path means what it means in a batch, so you can move between the two forms without rewriting the change.
+
+9. Refresh a ranking signal across the catalogue:
+
+   To update numeric ranking scores without rewriting entire documents, declare a number field with `"signal": {}` in your index definition. When a score already lies in a known range, configure a `linear` ranking signal:
+
+   ```json
+   {
+     "fields": {
+       "popularity": { "type": "double", "signal": {}, "validation": { "min": 0, "max": 1 } }
+     },
+     "ranking": {
+       "signals": [ { "field": "popularity", "linear": { "ceiling": 1 } } ]
+     }
+   }
+   ```
+
+   To refresh the scores, send an update request that names only the primary key and the signal field for each document. The engine replaces the doc values in place without reading or rewriting the document, even on an index where `source` is set to `none`:
+
+   ```http
+   POST /v1alpha1/indexes/products/documents/actions/update?missing=skip
+   Content-Type: application/x-ndjson
+
+   {"id": "1", "popularity": 0.82}
+   {"id": "2", "popularity": 0.07}
+   {"id": "3", "popularity": null}
+   ```
+
+   Setting the field to `null` clears the score, after which the signal contributes nothing to the document ranking. Send refresh requests as a few large batches rather than many small requests, because each batch rewrites the values of the field for every segment it touches. Documents indexed whole without the signal field retain their current value. For more information, see [Signal fields](../reference/field-types.md#signal-fields).
 
 ## Confirming the result
 

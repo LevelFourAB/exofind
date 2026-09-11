@@ -32,6 +32,7 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.query.Facet;
+import se.l4.exofind.engine.query.LinearSignal;
 import se.l4.exofind.engine.query.RankingSignal;
 import se.l4.exofind.engine.query.SaturationSignal;
 import se.l4.exofind.engine.query.matchers.AnyMatcher;
@@ -178,31 +179,7 @@ public abstract class NumberFieldType implements FieldType {
 		IndexEncounter encounter,
 		Object value0
 	) {
-		var location = ObjectLocation.root().forField(encounter.getFieldName());
-
-		var value = coerce(value0);
-		if(value == null) {
-			throw new ValidationException(
-				INVALID_VALUE.toMessage(
-					location,
-					"name", encounter.getFieldName(),
-					"type", typeName()
-				)
-			);
-		}
-
-		var type = encounter.getFieldType();
-		var min = declaredMin(type);
-		var max = declaredMax(type);
-		if(min != null && compare(value, min) < 0 || max != null && compare(value, max) > 0) {
-			throw new ValidationException(
-				OUT_OF_BOUNDS.toMessage(
-					location,
-					"name", encounter.getFieldName(),
-					"value", value
-				)
-			);
-		}
+		var value = accepted(encounter, value0);
 
 		var results = Lists.mutable.<IndexableField>empty();
 
@@ -238,6 +215,73 @@ public abstract class NumberFieldType implements FieldType {
 		}
 
 		return results;
+	}
+
+	/**
+	 * Get a value as the number this field holds, refusing what the field
+	 * does not accept - a value that can not be read as the type, or one
+	 * outside the bounds the definition declares.
+	 *
+	 * @param encounter
+	 * @param value0
+	 * @return
+	 * @throws ValidationException
+	 *   if the value is not one the field accepts
+	 */
+	private Number accepted(IndexEncounter encounter, Object value0) {
+		var location = ObjectLocation.root().forField(encounter.getFieldName());
+
+		var value = coerce(value0);
+		if(value == null) {
+			throw new ValidationException(
+				INVALID_VALUE.toMessage(
+					location,
+					"name", encounter.getFieldName(),
+					"type", typeName()
+				)
+			);
+		}
+
+		var type = encounter.getFieldType();
+		var min = declaredMin(type);
+		var max = declaredMax(type);
+		if(min != null && compare(value, min) < 0 || max != null && compare(value, max) > 0) {
+			throw new ValidationException(
+				OUT_OF_BOUNDS.toMessage(
+					location,
+					"name", encounter.getFieldName(),
+					"value", value
+				)
+			);
+		}
+
+		return value;
+	}
+
+	@Override
+	public boolean isSignalSupported() {
+		return true;
+	}
+
+	@Override
+	public IndexableField createSignalField(IndexEncounter encounter, Object value) {
+		return sortDocValuesField(encounter.name(FieldNames.SORT), accepted(encounter, value));
+	}
+
+	/**
+	 * The sort doc values hold the value in the width the type writes it -
+	 * for a float or a double the raw bits, the way Lucene's doc values
+	 * fields for them and the sort that reads them agree on - which is what
+	 * decides how a doc value reads back.
+	 */
+	@Override
+	public Object readSignalValue(long docValue) {
+		return switch(sortType()) {
+			case INT -> (int) docValue;
+			case FLOAT -> Float.intBitsToFloat((int) docValue);
+			case DOUBLE -> Double.longBitsToDouble(docValue);
+			default -> docValue;
+		};
 	}
 
 	@Override
@@ -347,12 +391,13 @@ public abstract class NumberFieldType implements FieldType {
 
 	/**
 	 * A number is a count of something, so how far it is above a pivot is what
-	 * a ranking reads from it. Age means nothing here - a number is not an
+	 * a ranking reads from it - or, for a score computed elsewhere, how far it
+	 * is toward a ceiling. Age means nothing here - a number is not an
 	 * instant, however much it looks like one.
 	 */
 	@Override
 	public boolean isRankingSupported(RankingSignal signal) {
-		return signal instanceof SaturationSignal;
+		return signal instanceof SaturationSignal || signal instanceof LinearSignal;
 	}
 
 	@Override

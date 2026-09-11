@@ -58,4 +58,23 @@ public class RankingSignalsTest {
 		assertThat(saturation.contribution(0), is(0d));
 		assertThat(saturation.contribution(-10), is(0d));
 	}
+
+	/**
+	 * A score already in its range passes through as it is, and one outside
+	 * it is held to the ends - the bound is what lets a search skip documents
+	 * that cannot compete.
+	 */
+	@Test
+	public void testLinearIsTheShareOfTheCeiling() {
+		var linear = new RankingSignals.Linear(1);
+
+		assertThat(linear.contribution(0.25), is(closeTo(0.25, 1e-9)));
+		assertThat(linear.contribution(1), is(1d));
+		assertThat(linear.contribution(4), is(1d));
+		assertThat(linear.contribution(0), is(0d));
+		assertThat(linear.contribution(-0.5), is(0d));
+
+		var percent = new RankingSignals.Linear(100);
+		assertThat(percent.contribution(30), is(closeTo(0.3, 1e-9)));
+	}
 }

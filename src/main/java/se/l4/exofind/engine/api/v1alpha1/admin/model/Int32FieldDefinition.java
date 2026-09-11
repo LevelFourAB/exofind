@@ -59,6 +59,9 @@ public record Int32FieldDefinition(
 	@Schema(description = FieldDefinition.FACET_DESCRIPTION)
 	Facet facet,
 
+	@Schema(description = FieldDefinition.SIGNAL_DESCRIPTION)
+	Signal signal,
+
 	@Schema(description = """
 		Sets allowed numeric bounds. Documents containing values outside these \
 		bounds are rejected.""")

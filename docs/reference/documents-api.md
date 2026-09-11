@@ -97,7 +97,9 @@ The endpoint returns status `200 OK` with the count of indexed documents:
 
 ## Changing some of the fields
 
-You can change one document by its key in the URL path, or change several documents in a batch. Both forms describe the change the same way, and both require an index that declares a primary key and keeps document sources.
+You can change one document by its key in the URL path, or change several documents in a batch. Both forms describe the change the same way, and both require an index that declares a primary key. A change needs the document source unless it names only [signal fields](field-types.md#signal-fields).
+
+A change that names only the primary key and signal fields refreshes those fields in place. The engine replaces doc values without reading or rewriting the document. This is called a refresh, and it works on an index where `source` is `none`. A change that names any other field, adds a value, or reaches inside a field reads the document from its source, merges it, and indexes it again. Signal fields named in that change take the specified values, while unnamed signal fields keep their existing values.
 
 ### Change documents in a batch
 
@@ -180,10 +182,11 @@ Updates follow these rules:
 - Multiple updates to the same document in a single batch apply in the order provided.
 - Every change to one document is applied and validated as a whole. If validation fails, the request is rejected and the document remains unchanged.
 - The whole document is rewritten in the index either way, so a change to one sub-document costs what rewriting the document costs. For more information, see [How sub-documents are stored](../explanation/document-blocks.md).
+- A change that names only signal fields refreshes doc values in place without rewriting the document. Setting a signal field to `null` clears the value. A refresh rewrites the doc values of the field once per touched segment at the next commit, so send refreshes in a few large batches rather than many small requests.
 
 #### Constraints and errors
 
-- If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. For more information, see the [Admin API](admin-api.md).
+- If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. A change that names only signal fields works when `source` is `none`. For more information, see the [Admin API](admin-api.md).
 - If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
 - If `missing` is set to `fail` (default) and a document key is not found, the request fails. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
 - A selector that names no value the document holds returns `request:update:no_match`. A key nothing matches is not created.

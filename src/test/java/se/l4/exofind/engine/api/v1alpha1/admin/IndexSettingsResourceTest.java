@@ -170,14 +170,14 @@ public class IndexSettingsResourceTest {
 				"sales",
 				new Int64FieldDefinition(
 					null, null, null, true, null, null,
-					new FieldDefinition.Sort(null, null), null, null, null
+					new FieldDefinition.Sort(null, null), null, null, null, null
 				)
 			);
 			fields.put(
 				"views",
 				new Int64FieldDefinition(
 					null, null, null, true, null, null,
-					new FieldDefinition.Sort(null, null), null, null, null
+					new FieldDefinition.Sort(null, null), null, null, null, null
 				)
 			);
 		}
@@ -294,7 +294,7 @@ public class IndexSettingsResourceTest {
 		rankBySalesInSettings();
 
 		// No document holds a view count, so this signal reorders nothing itself
-		var added = List.of(new Signal("views", new Signal.Saturation(50d), null, null));
+		var added = List.of(new Signal("views", new Signal.Saturation(50d), null, null, null));
 
 		assertThat(ids(added), contains("3", "2", "1"));
 
@@ -315,6 +315,7 @@ public class IndexSettingsResourceTest {
 					List.of(new IndexDefinition.Ranking.Signal(
 						"sales",
 						new IndexDefinition.Ranking.Signal.Saturation(50d),
+						null,
 						null,
 						null
 					))
@@ -547,11 +548,13 @@ public class IndexSettingsResourceTest {
 						"sales",
 						new IndexDefinition.Ranking.Signal.Saturation(50d),
 						null,
+						null,
 						1f
 					),
 					new IndexDefinition.Ranking.Signal(
 						"views",
 						new IndexDefinition.Ranking.Signal.Saturation(10d),
+						null,
 						null,
 						1f
 					)
@@ -607,6 +610,7 @@ public class IndexSettingsResourceTest {
 					List.of(new IndexDefinition.Ranking.Signal(
 						"sales",
 						new IndexDefinition.Ranking.Signal.Saturation(50d),
+						null,
 						null,
 						null
 					))

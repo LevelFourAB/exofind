@@ -676,7 +676,7 @@ public class SearchRequestMapperTest {
 	@Test
 	public void testSignalsAreAddedToTheIndexRankingWhenNoModeIsGiven() {
 		var mapped = SearchRequestMapper.toEngine(
-			withSignals(List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null))),
+			withSignals(List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null, null))),
 			LIMITS
 		);
 
@@ -690,7 +690,7 @@ public class SearchRequestMapperTest {
 	public void testSignalsReplaceTheIndexRankingWhenAskedTo() {
 		var mapped = SearchRequestMapper.toEngine(
 			withSignals(
-				List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null)),
+				List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null, null)),
 				SearchRequest.SignalsMode.REPLACE
 			),
 			LIMITS
@@ -721,8 +721,8 @@ public class SearchRequestMapperTest {
 		var mapped = SearchRequestMapper.toEngine(
 			withSignals(
 				List.of(
-					new Signal("purchases", new Signal.Saturation(50.0), null, 0.5f),
-					new Signal("published", null, new Signal.Decay(604800L), null)
+					new Signal("purchases", new Signal.Saturation(50.0), null, null, 0.5f),
+					new Signal("published", null, new Signal.Decay(604800L), null, null)
 				)
 			),
 			LIMITS
@@ -744,17 +744,18 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(
 				withSignals(
 					Arrays.asList(
-						new Signal(null, new Signal.Saturation(50.0), null, null),
-						new Signal("purchases", null, null, null),
+						new Signal(null, new Signal.Saturation(50.0), null, null, null),
+						new Signal("purchases", null, null, null, null),
 						new Signal(
 							"purchases",
 							new Signal.Saturation(50.0),
 							new Signal.Decay(1L),
+							null,
 							null
 						),
-						new Signal("purchases", new Signal.Saturation(0.0), null, null),
-						new Signal("published", null, new Signal.Decay(0L), null),
-						new Signal("purchases", new Signal.Saturation(50.0), null, -1f)
+						new Signal("purchases", new Signal.Saturation(0.0), null, null, null),
+						new Signal("published", null, new Signal.Decay(0L), null, null),
+						new Signal("purchases", new Signal.Saturation(50.0), null, null, -1f)
 					)
 				),
 				LIMITS
@@ -2361,7 +2362,7 @@ public class SearchRequestMapperTest {
 				new Rescore(
 					200,
 					List.of(new Clause.Field("brand", new Matcher.Equals("aurora"))),
-					List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null)),
+					List.of(new Signal("purchases", new Signal.Saturation(50.0), null, null, null)),
 					0.5f
 				),
 				10, 0
@@ -2506,7 +2507,7 @@ public class SearchRequestMapperTest {
 					new Rescore(
 						200,
 						null,
-						List.of(new Signal("purchases", null, null, null)),
+						List.of(new Signal("purchases", null, null, null, null)),
 						null
 					),
 					10, 0

@@ -542,9 +542,12 @@ Signals modify relevance scores by evaluating document field values:
 ```json
 "signals": [
   { "field": "purchases", "saturation": { "pivot": 50 } },
-  { "field": "published", "decay": { "halfLife": 604800 }, "weight": 0.5 }
+  { "field": "published", "decay": { "halfLife": 604800 }, "weight": 0.5 },
+  { "field": "popularity", "linear": { "ceiling": 1 } }
 ]
 ```
+
+Each signal names exactly one shape. `saturation` and `linear` read number fields, and `decay` reads timestamp fields. The shapes and their parameters are described under [Signals](field-types.md#signals) in the field types reference. A signal reads a field defined for `sort`, or a [signal field](field-types.md#signal-fields) whose value is refreshed in place.
 
 A search request adds its signals to the ranking configured on the index. The `signalsMode` property controls this:
 

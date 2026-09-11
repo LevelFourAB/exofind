@@ -294,8 +294,26 @@ public class DefinitionCompatibility {
 			errors.add(usage(location, name, "facet"));
 		}
 
+		if(after.hasSignal() != before.hasSignal()) {
+			/*
+			 * A signal field is written as sort doc values alone and left out of
+			 * the copy of the document. Turning it on leaves the documents
+			 * already indexed holding the value in their copy and not in the
+			 * doc values a signal reads; turning it off leaves them holding it
+			 * in the doc values and not in the copy a plain field reads back
+			 * from. Both directions move the value somewhere the earlier
+			 * documents never wrote it, so unlike the other usages both are
+			 * reported.
+			 */
+			errors.add(
+				after.hasSignal()
+					? usage(location, name, "signal")
+					: setting(location, name, "signal")
+			);
+		}
+
 		if(after.hasSort()) {
-			if(!before.hasSort()) {
+			if(!before.hasSort() && !before.hasSignal()) {
 				errors.add(usage(location, name, "sort"));
 			} else if(before.getType().hasString()
 				&& collation(before.getSort()) != collation(after.getSort())) {

@@ -13,9 +13,9 @@ by relevance. An explicit `sort` parameter overrides relevance ordering.
 Before you begin, ensure you have:
 
 - An index that contains documents.
-- `sort` enabled on all fields that carry a signal or tie breaker. Enabling
-  `sort` on an existing field is a definition change that requires a reindex.
-  See [Rolling out a definition change](roll-out-a-definition-change.md).
+- `sort` or `signal` enabled on all fields that carry a signal or tie breaker.
+  Enabling either on an existing field is a definition change that requires a
+  reindex. See [Rolling out a definition change](roll-out-a-definition-change.md).
 - An API key with the `search` and `indexes.read` permissions.
 - The `settings.write` permission on your API key to store ranking
   configurations in search settings.
@@ -69,9 +69,14 @@ Before you begin, ensure you have:
 3. Rank by document values with signals:
 
    Use signals to adjust relevance scores based on document values. Configure
-   `saturation` on numeric fields (such as sales or purchases) or `decay` on
-   timestamp fields (such as publication dates), along with an optional
-   `weight` multiplier (default `1`):
+   `saturation` on number fields (such as sales or purchases), `linear` on a
+   number field holding a score that already lies in a known range (such as
+   an engagement score between `0` and `1`), or `decay` on timestamp fields
+   (such as publication dates). You can set an optional `weight` multiplier
+   (default `1`). To refresh a score across the catalogue without indexing the
+   documents again, declare its field with `signal` enabled and send the new
+   values through the update action. See [Refresh a ranking signal across the
+   catalogue](update-parts-of-documents.md).
 
    Choose one of the following two options depending on your goal:
 

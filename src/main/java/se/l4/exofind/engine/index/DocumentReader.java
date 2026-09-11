@@ -553,7 +553,7 @@ public class DocumentReader {
 		var source = doc.getBinaryValue(FieldNames.SOURCE);
 		if(source != null) {
 			if(fields.isEmpty()) {
-				return cutVariants(DocumentSource.decode(source));
+				return withSignals(doc, cutVariants(DocumentSource.decode(source)));
 			}
 
 			/*
@@ -562,7 +562,10 @@ public class DocumentReader {
 			 * what a page of results ordinarily costs. What was not asked for
 			 * is stepped over instead.
 			 */
-			return cutObjects(cutVariants(DocumentSource.decode(source, this::wanted)));
+			return withSignals(
+				doc,
+				cutObjects(cutVariants(DocumentSource.decode(source, this::wanted)))
+			);
 		}
 
 		var values = Lists.mutable.<Document.Value>empty();
@@ -659,6 +662,52 @@ public class DocumentReader {
 		}
 
 		return new Document(values.toArray(new Document.Value[0]));
+	}
+
+	/**
+	 * Add the signal fields to a document decoded from its copy. The copy
+	 * leaves them out, as their values are refreshed in place; what was read
+	 * for them sits beside the copy as stored fields, put there by
+	 * {@link SignalValues#fill} from the doc values.
+	 *
+	 * @param doc
+	 *   the Lucene document the copy was read from
+	 * @param document
+	 *   the document as decoded from the copy
+	 * @return
+	 */
+	private Document withSignals(
+		org.apache.lucene.document.Document doc,
+		Document document
+	) {
+		if(!schema.hasSignalFields()) {
+			return document;
+		}
+
+		MutableList<Document.Value> values = null;
+		for(var field : schema.getSignalFields()) {
+			var name = field.getName();
+			if(!wanted(name)) {
+				continue;
+			}
+
+			var stored = doc.getField(FieldNames.name(name, null, FieldNames.STORED));
+			if(stored == null) {
+				continue;
+			}
+
+			if(values == null) {
+				values = Lists.mutable.of(document.fields());
+			}
+
+			encounter.updateValue(name, field.getDef());
+			values.add(new Document.Value(
+				name,
+				field.getType().readStored(encounter, stored)
+			));
+		}
+
+		return values == null ? document : new Document(values.toArray(new Document.Value[0]));
 	}
 
 	/**

@@ -463,14 +463,14 @@ public class IndexDefinitionMapperTest {
 		var pages = new Int32FieldDefinition(
 			null, null, null, true, null,
 			new FieldDefinition.Filter(),
-			null, null,
+			null, null, null,
 			new Int32FieldDefinition.Validation(1, 10_000),
 			null
 		);
 		var isbn = new Int64FieldDefinition(
 			null, null, null, null, null,
 			new FieldDefinition.Filter(),
-			null, null,
+			null, null, null,
 			null,
 			null
 		);
@@ -478,7 +478,7 @@ public class IndexDefinitionMapperTest {
 			null, null, null, null, null,
 			null,
 			new FieldDefinition.Sort(null, null),
-			null,
+			null, null,
 			new FloatFieldDefinition.Validation(0f, null),
 			"kilogram"
 		);
@@ -486,6 +486,7 @@ public class IndexDefinitionMapperTest {
 			null, null, null, null, null,
 			null, null,
 			new FieldDefinition.Facet(),
+			null,
 			new DoubleFieldDefinition.Validation(null, 100.0),
 			"SEK"
 		);
@@ -577,7 +578,7 @@ public class IndexDefinitionMapperTest {
 				"price", new DoubleFieldDefinition(
 					null, null, null, null, null,
 					new FieldDefinition.Filter(), null, null,
-					null, null
+					null, null, null
 				)
 			)
 		);
@@ -690,7 +691,7 @@ public class IndexDefinitionMapperTest {
 				"width", new DoubleFieldDefinition(
 					null, null, null, null, null,
 					new FieldDefinition.Filter(), null, null,
-					null, null
+					null, null, null
 				)
 			)
 		);
@@ -1451,12 +1452,14 @@ public class IndexDefinitionMapperTest {
 					"purchases",
 					new IndexDefinition.Ranking.Signal.Saturation(50.0),
 					null,
+					null,
 					0.5f
 				),
 				new IndexDefinition.Ranking.Signal(
 					"published",
 					null,
 					new IndexDefinition.Ranking.Signal.Decay(604800L),
+					null,
 					null
 				)
 			)
@@ -1486,6 +1489,7 @@ public class IndexDefinitionMapperTest {
 					"purchases",
 					new IndexDefinition.Ranking.Signal.Saturation(50.0),
 					new IndexDefinition.Ranking.Signal.Decay(604800L),
+					null,
 					null
 				)
 			)
@@ -1503,7 +1507,7 @@ public class IndexDefinitionMapperTest {
 	public void testSignalOfNoShapeIsRefused() {
 		var ranking = new IndexDefinition.Ranking(
 			null,
-			List.of(new IndexDefinition.Ranking.Signal("purchases", null, null, null))
+			List.of(new IndexDefinition.Ranking.Signal("purchases", null, null, null, null))
 		);
 
 		assertThrows(
@@ -1609,7 +1613,7 @@ public class IndexDefinitionMapperTest {
 				),
 				"purchases",
 				new Int64FieldDefinition(
-					null, null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null, null,
 					new Int64FieldDefinition.Validation(0L, null),
 					null
 				),
@@ -1640,6 +1644,7 @@ public class IndexDefinitionMapperTest {
 					new IndexDefinition.Ranking.Signal(
 						"purchases",
 						new IndexDefinition.Ranking.Signal.Saturation(50.0),
+						null,
 						null,
 						0.5f
 					)

@@ -57,13 +57,42 @@ public final class DocumentSource {
 	 * @return
 	 */
 	public static byte[] encode(Document doc) {
-		return encodeDocument(doc).build().toByteArray();
+		return encode(doc, null);
+	}
+
+	/**
+	 * Get a document as the bytes it is kept as, leaving out the fields of the
+	 * document that are kept elsewhere.
+	 *
+	 * <p>A signal field is what is left out: its value lives in doc values a
+	 * refresh replaces, and a copy here would go on answering with what the
+	 * document was first given. Only the fields of the document itself are
+	 * judged - a field inside an object is never a signal.
+	 *
+	 * @param doc
+	 *   the document, whose fields are expected to have been checked against
+	 *   the definition already
+	 * @param kept
+	 *   answers for the name of a field of the document, {@code false} to
+	 *   leave the field out - {@code null} to keep every field
+	 * @return
+	 */
+	public static byte[] encode(Document doc, Predicate<String> kept) {
+		return encodeDocument(doc, kept).build().toByteArray();
 	}
 
 	private static SourceDocument.Builder encodeDocument(Document doc) {
+		return encodeDocument(doc, null);
+	}
+
+	private static SourceDocument.Builder encodeDocument(Document doc, Predicate<String> kept) {
 		var builder = SourceDocument.newBuilder();
 
 		for(var value : doc.fields()) {
+			if(kept != null && !kept.test(value.name())) {
+				continue;
+			}
+
 			builder.addFields(encode(value));
 		}
 

@@ -116,6 +116,38 @@ Represents numeric values of the specified width. Enabling `filter` supports bot
 |---|---|---|---|
 | `validation` | object | None | Sets allowed numeric bounds. Sub-properties: `min` and `max`. Documents containing values outside these bounds are rejected. |
 | `unit` | string | None | Declares a unit for the field: an ISO 4217 currency code, a CLDR unit identifier, or any other text matched as written. A search in user mode reads a number typed next to the unit or next to a comparative word as a filter on the field. See [Reading numbers and units](search-api.md#reading-numbers-and-units). Changing `unit` needs no reindex. A blank unit returns `index:field:number:invalid_unit`. |
+| `signal` | object | None | Configures the numeric field as a signal field whose values are refreshed in place. See [Signal fields](#signal-fields). |
+
+### Signal fields
+
+A field definition property named `signal`, configured as an empty object (`"signal": {}`), designates a numeric field (`int32`, `int64`, `float`, or `double`) as a signal field.
+
+The engine stores signal field values only as doc values and omits them from the stored document source. Lucene can replace doc values per document without rewriting the rest of the segment.
+
+```json
+"popularity": { "type": "double", "signal": {}, "validation": { "min": 0, "max": 1 } }
+```
+
+A signal field behaves as follows:
+
+- **Sortable:** Signal fields are sortable and can be read by [ranking signals](#signals), tie breakers, and `sort` without explicitly configuring `sort`.
+- **Retrieval:** Search results and document reads (`GET` by key, or index scans) return the current value. When a search specifies `fields`, the signal field is returned only if named in `fields`. When a search specifies no `fields`, all fields including signal fields are returned.
+- **In-place refresh:** Updates sent to the [document update action](documents-api.md#change-documents-in-a-batch) (`POST /v1alpha1/indexes/{name}/documents/actions/update` in JSON or NDJSON, or `PATCH /v1alpha1/indexes/{name}/documents/{key}`) that specify only the primary key and signal fields refresh doc values in place. The engine does not read or rewrite the document. A refresh succeeds on an index configured with `"source": "none"`.
+- **Standard updates:** Updates that include non-signal fields, add array values (`field[]`), or use selectors or dotted paths read the document source, merge, and reindex. Named signal fields take the value provided in the update, and omitted signal fields keep their existing value.
+- **Full document indexing:** Indexing a complete document with a value for a signal field replaces the value. Indexing a complete document without a value for a signal field retains the existing value.
+- **Clearing values:** Setting a signal field to `null` in an update clears its value. A cleared field contributes `0` to ranking signals, identical to a document that never held a value.
+- **Validation and missing keys:** Values must match the field type and fall within `validation.min` and `validation.max` when declared. Invalid values return a validation error and make no changes. The `missing` query parameter applies to refreshes (`fail` by default, or `skip` to skip unindexed keys and list them under `missing` in the response).
+- **Performance:** A refresh rewrites doc values once per segment touched at the next commit. On object storage, a refresh writes small files per segment rather than creating new segments. Send refreshes in a few large batches rather than many small requests.
+- **Compatibility:** Adding or removing `signal` on an existing field requires a new generation (see [Rolling out a definition change](../how-to/roll-out-a-definition-change.md)). Adding `sort` to a signal field is compatible. Definitions using signal fields record the `field.signal` feature name.
+- **Restrictions:** `signal` cannot be combined with `filter`, `facet`, `stored`, `multiple`, `locales`, or `primaryKey`. A signal field cannot have a wildcard in its name and cannot sit inside an `object` field.
+
+| Error code | Condition |
+|---|---|
+| `index:field:signal_not_supported` | `signal` is enabled on a field that is not a numeric type. |
+| `index:field:signal:usage_conflict` | `signal` is combined with `filter`, `facet`, `stored`, `locales`, or `primaryKey`. |
+| `index:field:signal:wildcard` | `signal` is enabled on a field whose name contains a wildcard. |
+| `index:field:invalid_sortable` | `signal` is combined with `multiple`. |
+| `index:field:object:inner_usage_not_supported` | `signal` is enabled on a field inside an `object` field. |
 
 ## `timestamp`
 
@@ -359,8 +391,9 @@ A signal computes a value between `0` and `1` and multiplies the relevance score
 |---|---|---|
 | `saturation` | Numeric types (`int32`, `int64`, `float`, `double`) | Computes `value / (value + pivot)`. Reaches `0.5` at `pivot`. Values below `0` evaluate to `0`. `pivot` is required and must be greater than `0`. |
 | `decay` | `timestamp` | Halves the multiplier every `halfLife` seconds of age. Values dated at or after the current time evaluate to `1`. `halfLife` is required and must be greater than `0`. |
+| `linear` | Numeric types (`int32`, `int64`, `float`, `double`) | Computes `value / ceiling`, held between `0` and `1`. Values below `0` evaluate to `0` and values above `ceiling` evaluate to `1`. `ceiling` is required and must be greater than `0`. Used for scores computed outside the engine that already lie in a known range (such as an engagement score between `0` and `1` or a margin in percent). |
 
-Signals are evaluated at search time without reindexing. Signals apply only when sorting by relevance. Query-level signals override index-level signals (see [Search API signals](search-api.md#signals)).
+Signals are evaluated at search time without reindexing. Signals apply only when sorting by relevance. Query-level signals override index-level signals (see [Search API signals](search-api.md#signals)). To refresh the value a signal reads without indexing the document again, declare the field as a [signal field](#signal-fields).
 
 ## Declared locales
 

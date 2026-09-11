@@ -38,6 +38,7 @@ import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
 import se.l4.exofind.engine.index.schema.Int64FieldTypeDef;
 import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
+import se.l4.exofind.engine.index.schema.SignalConfig;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.schema.TimestampFieldTypeDef;
@@ -329,6 +330,10 @@ public class IndexDefinitionMapper {
 
 		if(field.facet() != null) {
 			builder.setFacet(FacetConfig.getDefaultInstance());
+		}
+
+		if(field.signal() != null) {
+			builder.setSignal(SignalConfig.getDefaultInstance());
 		}
 
 		builder.setType(
@@ -1116,6 +1121,8 @@ public class IndexDefinitionMapper {
 
 		FieldDefinition.Facet facet = field.hasFacet() ? new FieldDefinition.Facet() : null;
 
+		FieldDefinition.Signal signal = field.hasSignal() ? new FieldDefinition.Signal() : null;
+
 		var type = field.getType();
 		return switch(type.getTypeCase()) {
 			case STRING -> {
@@ -1212,6 +1219,7 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
+					signal,
 					validation,
 					int32.hasUnit() ? int32.getUnit() : null
 				);
@@ -1237,6 +1245,7 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
+					signal,
 					validation,
 					int64.hasUnit() ? int64.getUnit() : null
 				);
@@ -1262,6 +1271,7 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
+					signal,
 					validation,
 					floatType.hasUnit() ? floatType.getUnit() : null
 				);
@@ -1287,6 +1297,7 @@ public class IndexDefinitionMapper {
 					filter,
 					sort,
 					facet,
+					signal,
 					validation,
 					doubleType.hasUnit() ? doubleType.getUnit() : null
 				);

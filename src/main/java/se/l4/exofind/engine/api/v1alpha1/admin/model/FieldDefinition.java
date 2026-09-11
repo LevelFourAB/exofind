@@ -142,6 +142,15 @@ public sealed interface FieldDefinition
 		Enables value count aggregations. On numeric and timestamp fields, it \
 		also enables range buckets.""";
 
+	String SIGNAL_DESCRIPTION = """
+		Makes the field a ranking signal that is refreshed in place through the \
+		document update action, without indexing the document again. A signal \
+		field is sortable and is returned in results, but is left out of the \
+		document source and cannot be combined with `filter`, `facet`, \
+		`stored`, `multiple`, `locales` or `primaryKey`. A document indexed \
+		without a value keeps the value the field holds. See [Signal \
+		fields](https://exofind.dev/reference/field-types/#signal-fields).""";
+
 	String UNIT_DESCRIPTION = """
 		What the values are measured in: an ISO 4217 currency code such as \
 		`SEK`, a CLDR unit identifier such as `kilogram` or `gigabyte`, or any \
@@ -192,6 +201,15 @@ public sealed interface FieldDefinition
 	 * Enables counting how many documents share each value of this field.
 	 */
 	Facet facet();
+
+	/**
+	 * Makes this field a ranking signal that is refreshed in place, without
+	 * the document being indexed again. Only the number types answer with
+	 * anything but {@code null}.
+	 */
+	default Signal signal() {
+		return null;
+	}
 
 	/**
 	 * A role defines a preset combination of usages for a common kind of field.
@@ -491,5 +509,19 @@ public sealed interface FieldDefinition
 			configuration options."""
 	)
 	record Facet() {
+	}
+
+	/**
+	 * Makes a number field a ranking signal that is refreshed in place.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(
+		name = "SignalUsage",
+		description = """
+			Makes a number field a ranking signal that is refreshed in place \
+			through the document update action. Carries no configuration \
+			options."""
+	)
+	record Signal() {
 	}
 }

@@ -117,6 +117,29 @@ public class Field {
 			"Field `{{name}}` is marked as a primary key, but `{{type}}` fields can not be primary keys"
 		);
 
+	private static ErrorType SIGNAL_NOT_SUPPORTED = ErrorType
+		.withCode("index:field:signal_not_supported")
+		.withArguments("name", "type")
+		.withMessage(
+			"Field `{{name}}` is a signal, but `{{type}}` fields can not be refreshed in place"
+		);
+
+	private static ErrorType SIGNAL_WILDCARD = ErrorType
+		.withCode("index:field:signal:wildcard")
+		.withArguments("name")
+		.withMessage(
+			"Field `{{name}}` is a signal, but a name with a wildcard can not be one - a"
+				+ " signal is refreshed by the name it was declared under"
+		);
+
+	private static ErrorType SIGNAL_USAGE_CONFLICT = ErrorType
+		.withCode("index:field:signal:usage_conflict")
+		.withArguments("name", "usage")
+		.withMessage(
+			"Field `{{name}}` is a signal, which is refreshed in place, so it can not also"
+				+ " be `{{usage}}` - that would go stale on every refresh"
+		);
+
 	private final FieldDef def;
 	private final FieldType type;
 	private final String name;
@@ -283,8 +306,12 @@ public class Field {
 			}
 		}
 
-		if(def.hasSort() && def.getMultiple()) {
+		if(sortable(def) && def.getMultiple()) {
 			errors.add(INVALID_SORTABLE.toMessage(location, "name", name));
+		}
+
+		if(def.hasSignal()) {
+			validateSignal(location, name, def, errors);
 		}
 
 		var type = def.getType();
@@ -327,7 +354,60 @@ public class Field {
 			);
 		}
 
+		if(def.hasSignal() && !fieldType.get().isSignalSupported()) {
+			errors.add(
+				SIGNAL_NOT_SUPPORTED.toMessage(location, "name", name, "type", typeName(type))
+			);
+		}
+
 		return fieldType.get();
+	}
+
+	/**
+	 * Check what a signal field may not also be. The value of a signal is
+	 * replaced in place, and only its sort doc values can be; anything else
+	 * holding the value would keep what the document was first given.
+	 */
+	private static void validateSignal(
+		ObjectLocation location,
+		String name,
+		FieldDef def,
+		MutableCollection<ErrorMessage> errors
+	) {
+		if(name.contains("*")) {
+			errors.add(SIGNAL_WILDCARD.toMessage(location, "name", name));
+		}
+
+		if(def.getPrimaryKey()) {
+			errors.add(SIGNAL_USAGE_CONFLICT.toMessage(location, "name", name, "usage", "primaryKey"));
+		}
+
+		if(def.getStored()) {
+			errors.add(SIGNAL_USAGE_CONFLICT.toMessage(location, "name", name, "usage", "stored"));
+		}
+
+		if(def.hasLocales()) {
+			errors.add(SIGNAL_USAGE_CONFLICT.toMessage(location, "name", name, "usage", "locales"));
+		}
+
+		if(def.hasFilter()) {
+			errors.add(SIGNAL_USAGE_CONFLICT.toMessage(location, "name", name, "usage", "filter"));
+		}
+
+		if(def.hasFacet()) {
+			errors.add(SIGNAL_USAGE_CONFLICT.toMessage(location, "name", name, "usage", "facet"));
+		}
+	}
+
+	/**
+	 * Get if a definition writes the doc values a sort reads, which a field
+	 * defined for sorting does and a signal field does as its only form.
+	 *
+	 * @param def
+	 * @return
+	 */
+	public static boolean sortable(FieldDef def) {
+		return def.hasSort() || def.hasSignal();
 	}
 
 	/**
@@ -415,12 +495,26 @@ public class Field {
 	}
 
 	/**
-	 * Get if the field is stored.
+	 * Get if the value of the field can be read back on its own, without the
+	 * copy of the document - a stored field from its stored copy, and a signal
+	 * field from its doc values.
 	 *
 	 * @return
 	 */
 	public boolean isStored() {
-		return def.getStored();
+		return def.getStored() || def.hasSignal();
+	}
+
+	/**
+	 * Get if the field is a ranking signal refreshed in place. Such a field
+	 * writes nothing but the doc values a sort reads, is left out of the copy
+	 * of the document, and is read back from the doc values - see
+	 * {@code SignalValues}.
+	 *
+	 * @return
+	 */
+	public boolean isSignal() {
+		return def.hasSignal();
 	}
 
 	/**
@@ -532,12 +626,14 @@ public class Field {
 	}
 
 	/**
-	 * Get if results can be ordered by this field.
+	 * Get if results can be ordered by this field, which holds for a field
+	 * defined for sorting and for a signal field, whose value is written as
+	 * the same doc values.
 	 *
 	 * @return
 	 */
 	public boolean isSorted() {
-		return def.hasSort();
+		return sortable(def);
 	}
 
 	/**

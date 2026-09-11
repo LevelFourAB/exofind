@@ -416,8 +416,8 @@ public record IndexDefinition(
 		 * by at most its weight without overriding match relevance.
 		 *
 		 * <p>Each signal requires exactly one shape matching the field type:
-		 * saturation relative to a pivot for numeric fields, or decay over time
-		 * for timestamp fields.
+		 * saturation relative to a pivot or a linear share of a ceiling for
+		 * numeric fields, or decay over time for timestamp fields.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
@@ -460,6 +460,17 @@ public record IndexDefinition(
 				Ranks by how long ago the value was. For `timestamp` \
 				fields.""")
 			Decay decay,
+
+			/**
+			 * Ranks by how far the value is toward a ceiling. For numeric
+			 * fields holding a score computed elsewhere.
+			 */
+			@Schema(description = """
+				Ranks by how far the value is toward a ceiling, as `value / \
+				ceiling` held between `0` and `1`. For `int32`, `int64`, \
+				`float` and `double` fields holding a score computed elsewhere, \
+				such as an engagement score between `0` and `1`.""")
+			Linear linear,
 
 			/**
 			 * How much the signal can lift a document at most, as a share of
@@ -538,6 +549,40 @@ public record IndexDefinition(
 					examples = "604800"
 				)
 				Long halfLife
+			) {
+			}
+
+			/**
+			 * Ranks by how far a value is toward a ceiling, computed as
+			 * {@code value / ceiling} and held between 0 and 1. Used for a
+			 * score computed elsewhere that already lies in a known range,
+			 * which saturation would bend.
+			 */
+			@JsonInclude(JsonInclude.Include.NON_NULL)
+			@Schema(
+				name = "RankingLinear",
+				description = """
+					Computes `value / ceiling`, held between `0` and `1`. Values \
+					below `0` evaluate to `0` and values above the ceiling to \
+					`1`. The shape for a score computed elsewhere that already \
+					lies in a known range, such as an engagement score between \
+					`0` and `1`."""
+			)
+			public record Linear(
+				/**
+				 * The value that counts for all of what the signal can give.
+				 * Required, and must be greater than zero.
+				 */
+				@Schema(
+					description = """
+						The value that counts for all of what the signal can \
+						give. Required, and must be greater than `0`.""",
+					required = true,
+					exclusiveMinimum = true,
+					minimum = "0",
+					examples = "1"
+				)
+				Double ceiling
 			) {
 			}
 		}

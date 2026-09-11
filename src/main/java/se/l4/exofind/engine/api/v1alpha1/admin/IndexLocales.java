@@ -323,6 +323,7 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
+				value.signal(),
 				value.validation(),
 				value.unit()
 			);
@@ -335,6 +336,7 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
+				value.signal(),
 				value.validation(),
 				value.unit()
 			);
@@ -347,6 +349,7 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
+				value.signal(),
 				value.validation(),
 				value.unit()
 			);
@@ -359,6 +362,7 @@ public class IndexLocales {
 				value.filter(),
 				value.sort(),
 				value.facet(),
+				value.signal(),
 				value.validation(),
 				value.unit()
 			);

@@ -31,6 +31,7 @@ import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.facet.FacetsCollector;
 import org.apache.lucene.index.DirectoryReader;
@@ -281,6 +282,14 @@ public class Index {
 	private static final byte[] DELETED = new byte[0];
 
 	/**
+	 * Stands for a document that was written since the merge reader was
+	 * opened by an index that keeps no copy of its documents - there to say the
+	 * document is there, for a refresh of its signal fields, where the reader
+	 * would not know of it yet.
+	 */
+	private static final byte[] PRESENT = new byte[0];
+
+	/**
 	 * How many buckets the per-document locks are spread over. Two documents in
 	 * the same bucket wait for each other, which costs nothing unless they are
 	 * being updated at the same moment.
@@ -293,6 +302,13 @@ public class Index {
 	 * the next partial update that needs one.
 	 */
 	private static final long MAX_PENDING_SOURCE_BYTES = 16L * 1024 * 1024;
+
+	/**
+	 * What one entry of {@link #pendingSources} is counted as costing beyond
+	 * the bytes it holds, so that entries holding no bytes - a removal, or a
+	 * document of an index that keeps no copies - are bounded too.
+	 */
+	private static final long PENDING_ENTRY_OVERHEAD = 64;
 
 	private final NodeState nodeState;
 
@@ -505,6 +521,16 @@ public class Index {
 	private final Map<BytesRef, byte[]> pendingSources;
 
 	/**
+	 * The values of the signal fields of every document written or refreshed
+	 * since {@link #mergeReader} was opened, by primary key and then by field,
+	 * holding {@code null} for a field the document holds no value for. Kept
+	 * beside {@link #pendingSources} because the copy leaves the signal fields
+	 * out, and a refresh writes no copy at all. Forgotten together with the
+	 * sources.
+	 */
+	private final Map<BytesRef, MutableMap<String, Object>> pendingSignals;
+
+	/**
 	 * How much {@link #pendingSources} is holding. Growing past
 	 * {@link #MAX_PENDING_SOURCE_BYTES} drops what is remembered rather than
 	 * reopening there and then, so an index that is only written to never pays
@@ -700,6 +726,7 @@ public class Index {
 
 		this.mergeLock = new Object();
 		this.pendingSources = new HashMap<>();
+		this.pendingSignals = new HashMap<>();
 		this.documentLocks = new ReentrantLock[DOCUMENT_LOCKS];
 		for(var i = 0; i < documentLocks.length; i++) {
 			this.documentLocks[i] = new ReentrantLock();
@@ -2376,7 +2403,12 @@ public class Index {
 			 */
 			byte[] source = null;
 			if(schema.isSourceStored()) {
-				source = DocumentSource.encode(doc);
+				/*
+				 * The signal fields are left out of the copy: their values are
+				 * refreshed in place, and a copy would go on answering with
+				 * what the document was first given. See SignalValues.
+				 */
+				source = DocumentSource.encode(doc, SignalValues.keptInSource(schema));
 				luceneDoc.add(new StoredField(FieldNames.SOURCE, source));
 			}
 
@@ -2403,6 +2435,18 @@ public class Index {
 			}
 
 			try {
+				/*
+				 * A signal field the document did not give keeps the value the
+				 * index holds for it: the value belongs to whatever refreshes
+				 * it, and a catalogue reload that never mentions it must not
+				 * wipe what the last refresh wrote. Read under the lock, so a
+				 * refresh cannot slip in between the read and the write.
+				 */
+				MutableMap<String, Object> signalValues = null;
+				if(schema.hasSignalFields()) {
+					signalValues = carrySignalsOver(doc, luceneDoc, encounter, primaryKeyTerm);
+				}
+
 				if(childDocs.isEmpty()) {
 					if(primaryKeyTerm != null) {
 						writer.updateDocument(primaryKeyTerm, luceneDoc);
@@ -2439,8 +2483,21 @@ public class Index {
 					}
 				}
 
-				if(primaryKeyTerm != null && source != null) {
-					rememberSource(primaryKeyTerm.bytes(), source);
+				if(primaryKeyTerm != null) {
+					if(source != null) {
+						rememberSource(primaryKeyTerm.bytes(), source);
+					} else if(signalValues != null) {
+						/*
+						 * Without a copy there is nothing to remember but that
+						 * the document is there, which is what a refresh of its
+						 * signal fields asks before the reader knows of it.
+						 */
+						rememberSource(primaryKeyTerm.bytes(), PRESENT);
+					}
+
+					if(signalValues != null) {
+						rememberSignals(primaryKeyTerm.bytes(), signalValues);
+					}
 				}
 			} finally {
 				if(documentLock != null) {
@@ -2458,6 +2515,73 @@ public class Index {
 			syncLock.readLock().unlock();
 			writeGate.readLock().unlock();
 		}
+	}
+
+	/**
+	 * Give a document being written the values of the signal fields it did
+	 * not give, from what the index holds for its key, and say what every
+	 * signal field of it holds once written.
+	 *
+	 * @param doc
+	 *   the document as given
+	 * @param luceneDoc
+	 *   the Lucene document built from it, which the carried values are added
+	 *   to
+	 * @param encounter
+	 *   the encounter the fields were built with
+	 * @param primaryKeyTerm
+	 *   the key of the document, or {@code null} when the index declares no
+	 *   primary key - then nothing can be carried over, as nothing names what
+	 *   the document replaces
+	 * @return
+	 *   what each signal field holds, by name, {@code null} for one holding
+	 *   nothing
+	 * @throws IOException
+	 */
+	private MutableMap<String, Object> carrySignalsOver(
+		Document doc,
+		org.apache.lucene.document.Document luceneDoc,
+		IndexEncounterImpl encounter,
+		Term primaryKeyTerm
+	) throws IOException {
+		var values = Maps.mutable.<String, Object>empty();
+		MutableList<Field> missing = null;
+
+		for(var field : schema.getSignalFields()) {
+			var name = field.getName();
+			var written = luceneDoc.getField(FieldNames.name(name, null, FieldNames.SORT));
+			if(written != null) {
+				values.put(name, field.getType().readSignalValue(written.numericValue().longValue()));
+				continue;
+			}
+
+			if(missing == null) {
+				missing = Lists.mutable.empty();
+			}
+			missing.add(field);
+		}
+
+		if(missing == null || primaryKeyTerm == null) {
+			if(missing != null) {
+				missing.forEach(field -> values.put(field.getName(), null));
+			}
+
+			return values;
+		}
+
+		var current = currentSignals(primaryKeyTerm);
+		for(var field : missing) {
+			var name = field.getName();
+			var value = current == null ? null : current.get(name);
+			values.put(name, value);
+
+			if(value != null) {
+				encounter.updateValue(name, field.getDef());
+				luceneDoc.add(field.getType().createSignalField(encounter, value));
+			}
+		}
+
+		return values;
 	}
 
 	/**
@@ -2981,10 +3105,6 @@ public class Index {
 		try {
 			checkModifiable();
 
-			if(!schema.isSourceStored()) {
-				throw new IndexSourceNotKeptException(id);
-			}
-
 			var field = primaryKeyField();
 			var primaryKey = patch.get(field.getName());
 			if(primaryKey == null) {
@@ -3001,6 +3121,22 @@ public class Index {
 			encounter.updateValue(field.getName(), field.getDef());
 
 			var term = field.getType().createPrimaryKeyTerm(encounter, primaryKey);
+
+			/*
+			 * A patch that names nothing but signal fields is applied to their
+			 * doc values alone, which touches neither the copy of the document
+			 * nor the rest of what was indexed for it - so it needs no copy to
+			 * merge into, and costs what writing a number per segment costs
+			 * rather than what indexing the document costs.
+			 */
+			var signals = signalChanges(patch, field);
+			if(signals != null) {
+				return updateSignals(term, encounter, signals);
+			}
+
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceNotKeptException(id);
+			}
 
 			/*
 			 * Held across the read and the write, so that another update of the
@@ -3028,6 +3164,221 @@ public class Index {
 	}
 
 	/**
+	 * Get the changes of a patch as changes to signal fields, when that is all
+	 * the patch holds beside the primary key.
+	 *
+	 * <p>A change qualifies when it replaces a signal field whole with at most
+	 * one value. A patch holding any other change - another field, a value
+	 * added to the field, a place inside it - goes through the copy of the
+	 * document, where the signal fields it names are carried along the way
+	 * every other field is.
+	 *
+	 * @return
+	 *   the changes to signal fields, or {@code null} when the patch holds
+	 *   anything else
+	 */
+	private ListIterable<DocumentPatch.Change> signalChanges(DocumentPatch patch, Field primaryKey) {
+		if(!schema.hasSignalFields()) {
+			return null;
+		}
+
+		var changes = Lists.mutable.<DocumentPatch.Change>empty();
+		for(var change : patch.changes()) {
+			if(change.field().equals(primaryKey.getName())) {
+				continue;
+			}
+
+			if(change.inner() != null
+				|| !(change.selector() instanceof DocumentPatch.Selector.All)
+				|| change.values().size() > 1
+				|| !SignalValues.isSignal(schema, change.field())) {
+				return null;
+			}
+
+			changes.add(change);
+		}
+
+		/*
+		 * A patch naming nothing but the key changes nothing, and is left to
+		 * the path that reads and writes the document back as it is - which
+		 * is also what tells the caller whether the key is there.
+		 */
+		return changes.isEmpty() ? null : changes;
+	}
+
+	/**
+	 * Replace the values of signal fields of one document in place, leaving
+	 * everything else indexed for it as it is.
+	 *
+	 * @param term
+	 *   the key of the document
+	 * @param encounter
+	 *   the encounter the key was built with, pointed at each field in turn
+	 * @param changes
+	 *   the changes, each to one signal field
+	 * @return
+	 *   whether a document was found under the key
+	 * @throws ValidationException
+	 *   if a value is not one its field accepts
+	 * @throws IOException
+	 */
+	private boolean updateSignals(
+		Term term,
+		IndexEncounterImpl encounter,
+		ListIterable<DocumentPatch.Change> changes
+	) throws IOException {
+		var fields = new org.apache.lucene.document.Field[changes.size()];
+		var values = Maps.mutable.<String, Object>empty();
+
+		for(var i = 0; i < fields.length; i++) {
+			var change = changes.get(i);
+			var field = schema.getField(change.field()).orElseThrow();
+			encounter.updateValue(field.getName(), field.getDef());
+
+			if(change.values().isEmpty()) {
+				/*
+				 * Named and given nothing empties the field, which for doc
+				 * values is a field with no value for the document - the same
+				 * as a document that never held one.
+				 */
+				fields[i] = new NumericDocValuesField(
+					FieldNames.name(field.getName(), null, FieldNames.SORT),
+					(Long) null
+				);
+				values.put(field.getName(), null);
+			} else {
+				var written = field.getType().createSignalField(
+					encounter,
+					change.values().getFirst().value()
+				);
+				fields[i] = (org.apache.lucene.document.Field) written;
+				values.put(
+					field.getName(),
+					field.getType().readSignalValue(written.numericValue().longValue())
+				);
+			}
+		}
+
+		/*
+		 * Held so that a whole document written for the same key cannot read
+		 * what it carries over between this deciding the key is there and
+		 * writing the values - the two would then race for the doc values,
+		 * and Lucene applies the later of them.
+		 */
+		var documentLock = lockFor(term.bytes());
+		documentLock.lock();
+		try {
+			if(!exists(term)) {
+				return false;
+			}
+
+			/*
+			 * The values of an object field carry the key of their document
+			 * too, so the update reaches them as well. Harmless: a signal is
+			 * read for documents, and a value of an object field is never
+			 * asked for one.
+			 */
+			writer.updateDocValues(term, fields);
+			rememberSignals(term.bytes(), values);
+		} finally {
+			documentLock.unlock();
+		}
+
+		var log = this.changeLog;
+		if(log != null) {
+			log.record(term.bytes());
+		}
+
+		markModified(1);
+		return true;
+	}
+
+	/**
+	 * Get whether a document is indexed under a key, as of everything written
+	 * so far.
+	 */
+	private boolean exists(Term term) throws IOException {
+		synchronized(mergeLock) {
+			var pending = pendingSources.get(term.bytes());
+			if(pending != null) {
+				return pending != DELETED;
+			}
+
+			return mergeReaderDoc(term) >= 0;
+		}
+	}
+
+	/**
+	 * Get the values the signal fields hold for a key, as of everything
+	 * written so far.
+	 *
+	 * @return
+	 *   the values by field, {@code null} for a field holding nothing - or
+	 *   {@code null} when nothing is indexed under the key
+	 */
+	private MapIterable<String, Object> currentSignals(Term term) throws IOException {
+		synchronized(mergeLock) {
+			var pending = pendingSources.get(term.bytes());
+			if(pending == DELETED) {
+				return null;
+			}
+
+			/*
+			 * A whole write remembers every signal field of the document, and
+			 * a refresh only the ones it touched - the rest are in the reader,
+			 * which is where the refresh found the document.
+			 */
+			var signals = pendingSignals.get(term.bytes());
+			var doc = -1;
+			if(signals == null || signals.size() < schema.getSignalFields().size()) {
+				doc = mergeReaderDoc(term);
+				if(doc < 0 && signals == null) {
+					return null;
+				}
+			}
+
+			return valuesOf(
+				SignalValues.withValues(schema, mergeReader, doc, new Document(), signals)
+			);
+		}
+	}
+
+	/**
+	 * Get the signal fields of a document by name.
+	 */
+	private static MapIterable<String, Object> valuesOf(Document document) {
+		var values = Maps.mutable.<String, Object>empty();
+		for(var value : document.fields()) {
+			values.put(value.name(), value.value());
+		}
+
+		return values;
+	}
+
+	/**
+	 * Find the document a key names in the merge reader, opening or reopening
+	 * the reader first when what it holds cannot be trusted.
+	 *
+	 * @return
+	 *   the id of the document within the reader, or {@code -1} when it holds
+	 *   none under the key
+	 */
+	private int mergeReaderDoc(Term term) throws IOException {
+		if(mergeReaderStale || mergeReader == null) {
+			/*
+			 * The index was written in a way the remembered sources could
+			 * not record, so the reader is the only thing that can answer -
+			 * and reopening it makes it hold everything remembered as well.
+			 */
+			refreshMergeReader();
+		}
+
+		var searcher = new IndexSearcher(mergeReader);
+		var hits = searcher.search(parentsOnly(new TermQuery(term)), 1);
+		return hits.totalHits.value() == 0 ? -1 : hits.scoreDocs[0].doc;
+	}
+
+	/**
 	 * Read the stored copy of the document a term names, taking it from what
 	 * has been written since the merge reader was opened when it is there.
 	 *
@@ -3049,22 +3400,38 @@ public class Index {
 			}
 
 			var pending = pendingSources.get(term.bytes());
-			if(pending != null) {
-				return pending == DELETED ? null : DocumentSource.decode(new BytesRef(pending));
-			}
-
-			if(mergeReader == null) {
-				refreshMergeReader();
-			}
-
-			var searcher = new IndexSearcher(mergeReader);
-			var hits = searcher.search(parentsOnly(new TermQuery(term)), 1);
-			if(hits.totalHits.value() == 0) {
+			if(pending == DELETED) {
 				return null;
 			}
 
-			var stored = mergeReader.storedFields()
-				.document(hits.scoreDocs[0].doc, Set.of(FieldNames.SOURCE));
+			/*
+			 * The copy leaves the signal fields out, so they are filled in
+			 * beside it: from what was remembered for the key when it was
+			 * written or refreshed since the reader was opened, and from the
+			 * doc values of the reader for the rest.
+			 */
+			var signals = pendingSignals.get(term.bytes());
+
+			if(pending != null) {
+				if(pending == PRESENT) {
+					throw new IndexSourceNotKeptException(id);
+				}
+
+				return SignalValues.withValues(
+					schema,
+					mergeReader,
+					-1,
+					DocumentSource.decode(new BytesRef(pending)),
+					signals
+				);
+			}
+
+			var doc = mergeReaderDoc(term);
+			if(doc < 0) {
+				return null;
+			}
+
+			var stored = mergeReader.storedFields().document(doc, Set.of(FieldNames.SOURCE));
 
 			var source = stored.getBinaryValue(FieldNames.SOURCE);
 			if(source == null) {
@@ -3077,7 +3444,13 @@ public class Index {
 				throw new IndexSourceNotKeptException(id);
 			}
 
-			return DocumentSource.decode(source);
+			return SignalValues.withValues(
+				schema,
+				mergeReader,
+				doc,
+				DocumentSource.decode(source),
+				signals
+			);
 		}
 	}
 
@@ -3092,10 +3465,10 @@ public class Index {
 
 			var previous = pendingSources.put(key, source);
 			if(previous != null) {
-				pendingSourceBytes -= previous.length;
+				pendingSourceBytes -= PENDING_ENTRY_OVERHEAD + previous.length;
 			}
 
-			pendingSourceBytes += source.length;
+			pendingSourceBytes += PENDING_ENTRY_OVERHEAD + source.length;
 
 			if(pendingSourceBytes > MAX_PENDING_SOURCE_BYTES) {
 				/*
@@ -3110,14 +3483,51 @@ public class Index {
 	}
 
 	/**
+	 * Remember what the signal fields of a document hold after a write or a
+	 * refresh of it, so that a read of the document before the merge reader
+	 * is reopened answers with those rather than with the reader's doc
+	 * values. A refresh names only the fields it touched, and the entry keeps
+	 * what earlier refreshes said about the others.
+	 *
+	 * @param values
+	 *   the values by field, {@code null} for a field left holding nothing
+	 */
+	private void rememberSignals(BytesRef primaryKey, MapIterable<String, Object> values) {
+		synchronized(mergeLock) {
+			var key = BytesRef.deepCopyOf(primaryKey);
+			var held = pendingSignals.get(key);
+			if(held == null) {
+				held = Maps.mutable.empty();
+				pendingSignals.put(key, held);
+				pendingSourceBytes += PENDING_ENTRY_OVERHEAD;
+			}
+
+			var into = held;
+			values.forEachKeyValue(into::put);
+
+			if(pendingSourceBytes > MAX_PENDING_SOURCE_BYTES) {
+				forgetSources();
+				mergeReaderStale = true;
+			}
+		}
+	}
+
+	/**
 	 * Remember that a document was removed, so that an update of it is told it
 	 * is gone rather than reading it from a reader opened before the removal.
 	 */
 	private void rememberRemoved(BytesRef primaryKey) {
 		synchronized(mergeLock) {
-			var previous = pendingSources.put(BytesRef.deepCopyOf(primaryKey), DELETED);
+			var key = BytesRef.deepCopyOf(primaryKey);
+			var previous = pendingSources.put(key, DELETED);
 			if(previous != null) {
-				pendingSourceBytes -= previous.length;
+				pendingSourceBytes -= PENDING_ENTRY_OVERHEAD + previous.length;
+			}
+
+			pendingSourceBytes += PENDING_ENTRY_OVERHEAD;
+
+			if(pendingSignals.remove(key) != null) {
+				pendingSourceBytes -= PENDING_ENTRY_OVERHEAD;
 			}
 		}
 	}
@@ -3135,6 +3545,7 @@ public class Index {
 
 	private void forgetSources() {
 		pendingSources.clear();
+		pendingSignals.clear();
 		pendingSourceBytes = 0;
 	}
 
@@ -3483,6 +3894,7 @@ public class Index {
 					hits.scoreDocs[0].doc,
 					null
 				);
+				SignalValues.fill(schema, searcher.getIndexReader(), hits.scoreDocs[0].doc, doc, null);
 
 				var reader = DocumentReader.everyVariant(schema, Sets.immutable.<String>empty());
 				if(reader.needsChildren()) {
@@ -3725,9 +4137,9 @@ public class Index {
 
 					var doc = documentOf(postings, liveDocs);
 					if(doc != NO_DOCUMENT) {
-						receiver.accept(
-							documents.read(documentCache.read(searcher, storedFields, doc, null))
-						);
+						var stored = documentCache.read(searcher, storedFields, doc, null);
+						SignalValues.fill(schema, reader, doc, stored, null);
+						receiver.accept(documents.read(stored));
 
 						read++;
 					}
@@ -7337,10 +7749,13 @@ public class Index {
 		Arrays.sort(ordered);
 
 		var storedFields = searcher.storedFields();
+		var reader = searcher.getIndexReader();
 		var documents = IntObjectMaps.mutable
 			.<org.apache.lucene.document.Document>ofInitialCapacity(ordered.length);
 		for(var docId : ordered) {
-			documents.put(docId, documentCache.read(searcher, storedFields, docId, names));
+			var stored = documentCache.read(searcher, storedFields, docId, names);
+			SignalValues.fill(schema, reader, docId, stored, names);
+			documents.put(docId, stored);
 		}
 
 		return documents;

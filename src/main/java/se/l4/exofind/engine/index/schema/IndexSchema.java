@@ -22,6 +22,7 @@ import se.l4.exofind.engine.index.analysis.AnalyzerChains;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.types.FieldTypes;
 import se.l4.exofind.engine.query.DecaySignal;
+import se.l4.exofind.engine.query.LinearSignal;
 import se.l4.exofind.engine.query.RankingSignal;
 import se.l4.exofind.engine.query.SaturationSignal;
 
@@ -109,6 +110,14 @@ public class IndexSchema {
 
 		final ImmutableList<Field> fieldList;
 
+		/**
+		 * The fields refreshed in place, in name order - what a read of a
+		 * document fills from doc values, and what a write leaves out of the
+		 * copy. Empty for most indexes, so the paths that consult it cost
+		 * nothing there.
+		 */
+		final ImmutableList<Field> signalFields;
+
 		final boolean sourceStored;
 
 		final boolean highlightsInPostings;
@@ -146,6 +155,7 @@ public class IndexSchema {
 			Field primaryKey,
 			ImmutableSet<String> requiredFields,
 			ImmutableList<Field> fieldList,
+			ImmutableList<Field> signalFields,
 			boolean sourceStored,
 			boolean highlightsInPostings,
 			ImmutableList<RankingConfig.TieBreaker> tieBreakers,
@@ -166,6 +176,7 @@ public class IndexSchema {
 			this.primaryKey = primaryKey;
 			this.requiredFields = requiredFields;
 			this.fieldList = fieldList;
+			this.signalFields = signalFields;
 			this.sourceStored = sourceStored;
 			this.highlightsInPostings = highlightsInPostings;
 			this.tieBreakers = tieBreakers;
@@ -243,6 +254,10 @@ public class IndexSchema {
 	private static ErrorType SIGNAL_INVALID_HALF_LIFE =
 		ErrorType.withCode("index:ranking:signal:invalid_half_life")
 			.withMessage("The `halfLife` of a decay signal has to be longer than nothing");
+
+	private static ErrorType SIGNAL_INVALID_CEILING =
+		ErrorType.withCode("index:ranking:signal:invalid_ceiling")
+			.withMessage("The `ceiling` of a linear signal has to be a number above zero");
 
 	private static ErrorType SIGNAL_INVALID_WEIGHT =
 		ErrorType.withCode("index:ranking:signal:invalid_weight")
@@ -479,6 +494,7 @@ public class IndexSchema {
 			false,
 			null,
 			Sets.immutable.empty(),
+			Lists.immutable.empty(),
 			Lists.immutable.empty(),
 			true,
 			false,
@@ -940,7 +956,7 @@ public class IndexSchema {
 			return false;
 		}
 
-		if(!field.hasSort()) {
+		if(!Field.sortable(field)) {
 			errors.add(TIE_BREAKER_NOT_SORTABLE.toMessage(location, "name", name));
 		}
 
@@ -995,6 +1011,15 @@ public class IndexSchema {
 
 				yield true;
 			}
+			case LINEAR -> {
+				var ceiling = signal.getLinear().getCeiling();
+				if(!signal.getLinear().hasCeiling() || !(ceiling > 0) || !Double.isFinite(ceiling)) {
+					errors.add(SIGNAL_INVALID_CEILING.toMessage(location));
+					yield false;
+				}
+
+				yield true;
+			}
 			default -> {
 				errors.add(SIGNAL_SHAPE_NOT_SET.toMessage(location));
 				yield false;
@@ -1013,7 +1038,7 @@ public class IndexSchema {
 			return;
 		}
 
-		if(!field.hasSort()) {
+		if(!Field.sortable(field)) {
 			errors.add(SIGNAL_NOT_SORTABLE.toMessage(location, "name", name));
 			return;
 		}
@@ -1115,6 +1140,11 @@ public class IndexSchema {
 				Duration.ofSeconds(signal.getDecay().getHalfLifeSeconds()),
 				weight
 			);
+			case LINEAR -> new LinearSignal(
+				signal.getField(),
+				signal.getLinear().getCeiling(),
+				weight
+			);
 			default -> throw new IllegalArgumentException(
 				"A ranking signal has to name a shape, which validation is what makes sure of"
 			);
@@ -1192,6 +1222,10 @@ public class IndexSchema {
 			primaryKey,
 			requiredFields.toImmutable(),
 			fields.valuesView()
+				.toSortedList((a, b) -> compareFieldNames(a.getName(), b.getName()))
+				.toImmutable(),
+			fields.valuesView()
+				.select(Field::isSignal)
 				.toSortedList((a, b) -> compareFieldNames(a.getName(), b.getName()))
 				.toImmutable(),
 			storesSource(definition),
@@ -1399,6 +1433,30 @@ public class IndexSchema {
 	 */
 	public boolean hasNestedStoredFields() {
 		return state.nestedStoredFields;
+	}
+
+	/**
+	 * Get the fields refreshed in place, in name order. Their values live only
+	 * in the doc values a sort reads: a write leaves them out of the copy of
+	 * the document, and a read fills them from the doc values - see
+	 * {@code SignalValues}.
+	 *
+	 * @return
+	 *   the fields, empty when the index has none
+	 */
+	public ImmutableList<Field> getSignalFields() {
+		return state.signalFields;
+	}
+
+	/**
+	 * Get whether the index has any field refreshed in place, which is what
+	 * says whether a read has doc values to fill and a write has fields to
+	 * leave out of the copy.
+	 *
+	 * @return
+	 */
+	public boolean hasSignalFields() {
+		return state.signalFields.notEmpty();
 	}
 
 	/**
