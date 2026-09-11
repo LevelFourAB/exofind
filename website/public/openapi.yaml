@@ -5249,28 +5249,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexerListResponse"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.read` permission.
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.read` permission.
+            code: auth:forbidden
         "503":
-          description: Indexer leadership assignments could not be read from shared
-            storage (`indexer:leadership_unreadable`). Retrying the request is expected
-            to work once storage responds.
+          description: |-
+            Indexer leadership assignments could not be read from shared storage. Retrying the request is expected to work once storage responds.
+
+            Error codes: `indexer:leadership_unreadable` - Leadership assignments could not be read from shared state storage. Send the request again once storage answers.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Leadership assignments could not be read from shared state storage.
+              Send the request again once storage answers.
+            code: indexer:leadership_unreadable
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -5313,20 +5327,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexListResponse"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.read` permission.
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.read` permission.
+            code: auth:forbidden
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -5495,69 +5518,121 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "400":
-          description: The definition failed validation - the response details each
-            problem - or `reindex` was given on a request that creates no generation
-            (`index:reindex_needs_new_generation`).
+          description: |-
+            The definition failed validation - the response details each problem - or the request asks for a reindex it cannot run.
+
+            Error codes: `index:reindex_needs_new_generation` - `reindex` was given on a request that creates no generation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: '`reindex` was given on a request that creates no generation.'
+            code: index:reindex_needs_new_generation
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.write` permission.
+          description: |-
+            The API key does not have the `indexes.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.write` permission.
+            code: auth:forbidden
         "404":
-          description: "`If-Match` was sent for an index that does not exist, `books@2`\
-            \ named an index that does not exist, or the key has no grant covering\
-            \ the name."
+          description: |-
+            `If-Match` was sent for an index that does not exist, `books@2` named an index that does not exist, or the key has no grant covering the name.
+
+            Error codes: `index:not-found` - The name belongs to no index, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The name belongs to no index, or the key holds no grant covering\
+              \ it."
+            code: index:not-found
         "409":
-          description: "The definition conflicts with documents stored in the generation\
-            \ (`index:definition:incompatible`), the stored definition contains settings\
-            \ this API version cannot represent (`index:definition:unrepresentable`),\
-            \ the index requires engine features this node does not have (`index:unsupported`),\
-            \ a reindex job is already running (`reindex:in_progress`), storage holds\
-            \ a generation under the new name that nothing deleted (`index:generation:storage_held`),\
-            \ no node is available to write the index (`indexer:unavailable`), or\
-            \ the registry write failed."
+          description: |-
+            The definition conflicts with documents stored in the generation (`index:definition:incompatible`), the stored definition contains settings this API version cannot represent (`index:definition:unrepresentable`), the index requires engine features this node does not have (`index:unsupported`), a reindex job is already running (`reindex:in_progress`), storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), no node is available to write the index (`indexer:unavailable`), or the registry write failed.
+
+            Error codes: `index:definition:incompatible` - The definition conflicts with documents already stored in the generation. Write the change to a new generation. `index:definition:unrepresentable` - The stored definition holds settings this API version cannot describe. `index:unsupported` - The index needs engine features this node does not have. `reindex:in_progress` - A reindex job is already running for the index. `index:generation:storage_held` - Storage holds a generation under the new name that nothing deleted. Repair the registry, or remove its objects. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The definition conflicts with documents already stored in the generation.
+              Write the change to a new generation.
+            code: index:definition:incompatible
+          - when: The stored definition holds settings this API version cannot describe.
+            code: index:definition:unrepresentable
+          - when: The index needs engine features this node does not have.
+            code: index:unsupported
+          - when: A reindex job is already running for the index.
+            code: reindex:in_progress
+          - when: "Storage holds a generation under the new name that nothing deleted.\
+              \ Repair the registry, or remove its objects."
+            code: index:generation:storage_held
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The registry kept being written by other nodes. Send the request
+              again.
+            code: index:registry:conflict
         "412":
-          description: The `If-Match` version does not match the stored definition.
-            Re-read the index and rebuild the change against the new version.
+          description: |-
+            The `If-Match` version does not match the stored definition. Re-read the index and rebuild the change against the new version.
+
+            Error codes: `index:version-mismatch` - The `If-Match` version is not the one the stored definition is at. Read the index again and rebuild the change.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The `If-Match` version is not the one the stored definition is at.
+              Read the index again and rebuild the change.
+            code: index:version-mismatch
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced the index being closed. Retrying the request
-            reopens the index.
+          description: |-
+            The request raced the index being closed. Retrying the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed. Sending it again reopens
+              the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.write
@@ -5626,43 +5701,69 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.read` permission.
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.read` permission.
+            code: auth:forbidden
         "404":
-          description: "No index or generation has this name, or the key has no grant\
-            \ covering it."
+          description: |-
+            No index or generation has this name, or the key has no grant covering it.
+
+            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "409":
-          description: "The stored definition holds settings this API version cannot\
-            \ represent (`index:definition:unrepresentable`), or the index needs engine\
-            \ features this node does not have (`index:unsupported`). Send the request\
-            \ to a node running a version that supports it."
+          description: |-
+            The node cannot describe the index. Send the request to a node running a version that supports it.
+
+            Error codes: `index:definition:unrepresentable` - The stored definition holds settings this API version cannot describe. `index:unsupported` - The index needs engine features this node does not have.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The stored definition holds settings this API version cannot describe.
+            code: index:definition:unrepresentable
+          - when: The index needs engine features this node does not have.
+            code: index:unsupported
         "503":
-          description: The request raced the index being closed. Retrying the request
-            reopens the index.
+          description: |-
+            The request raced the index being closed. Retrying the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed. Sending it again reopens
+              the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -5698,40 +5799,73 @@ paths:
         "204":
           description: The index or generation was removed.
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.delete` permission.
+          description: |-
+            The API key does not have the `indexes.delete` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.delete` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.delete` permission.
+            code: auth:forbidden
         "404":
-          description: "No index or generation has this name, or the key has no grant\
-            \ covering it."
+          description: |-
+            No index or generation has this name, or the key has no grant covering it.
+
+            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "409":
-          description: "The generation is the live one (`index:generation:is_live`),\
-            \ no node is available to write the index, or the registry write failed."
+          description: |-
+            The index or generation cannot be removed right now.
+
+            Error codes: `index:generation:is_live` - The generation is the live one. Promote another generation first. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The generation is the live one. Promote another generation first.
+            code: index:generation:is_live
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The registry kept being written by other nodes. Send the request
+              again.
+            code: index:registry:conflict
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.delete
@@ -5778,47 +5912,84 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexStatus"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.commit` permission.
+          description: |-
+            The API key does not have the `indexes.commit` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.commit` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.commit` permission.
+            code: auth:forbidden
         "404":
-          description: "No index or generation has this name, or the key has no grant\
-            \ covering it."
+          description: |-
+            No index or generation has this name, or the key has no grant covering it.
+
+            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "409":
-          description: "No node is available to write the index, or this node lost\
-            \ the writer role while serving the request (`index:readonly`)."
+          description: |-
+            The index cannot be committed right now.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
+            code: index:readonly
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced the index being closed. Retrying the request
-            reopens the index.
+          description: |-
+            The request raced the index being closed. Retrying the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed. Sending it again reopens
+              the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.commit
@@ -5886,46 +6057,86 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "400":
-          description: The path names no generation (`index:generation:name_required`).
+          description: |-
+            The path names no generation.
+
+            Error codes: `index:generation:name_required` - The path names an index without a generation. Name one as `index@generation`.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The path names an index without a generation. Name one as `index@generation`.
+            code: index:generation:name_required
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.promote` permission.
+          description: |-
+            The API key does not have the `indexes.promote` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.promote` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.promote` permission.
+            code: auth:forbidden
         "404":
-          description: "No index or generation has this name, or the key has no grant\
-            \ covering it."
+          description: |-
+            No index or generation has this name, or the key has no grant covering it.
+
+            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "409":
-          description: "A reindex job is still filling this generation (`reindex:target_busy`),\
-            \ no node is available to write the index, or the registry write failed."
+          description: |-
+            The generation cannot be promoted right now.
+
+            Error codes: `reindex:target_busy` - A reindex job is still filling this generation. Promote it once the job is ready. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: A reindex job is still filling this generation. Promote it once
+              the job is ready.
+            code: reindex:target_busy
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The registry kept being written by other nodes. Send the request
+              again.
+            code: index:registry:conflict
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.promote
@@ -5972,34 +6183,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexStatus"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.pull` permission.
+          description: |-
+            The API key does not have the `indexes.pull` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.pull` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.pull` permission.
+            code: auth:forbidden
         "404":
-          description: "No index or generation has this name, or the key has no grant\
-            \ covering it."
+          description: |-
+            No index or generation has this name, or the key has no grant covering it.
+
+            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "503":
-          description: The request raced the index being closed. Retrying the request
-            reopens the index.
+          description: |-
+            The request raced the index being closed. Retrying the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed. Sending it again reopens
+              the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.pull
@@ -6048,27 +6280,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.read` permission.
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.read` permission.
+            code: auth:forbidden
         "404":
-          description: "No job exists for this index (`reindex:not_found`), the index\
-            \ does not exist, or the caller key lacks permissions on the index."
+          description: |-
+            No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
+
+            Error codes: `reindex:not_found` - The index has no reindex job. `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no reindex job.
+            code: reindex:not_found
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -6133,50 +6382,96 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "400":
-          description: "The target does not specify a generation by name, does not\
-            \ exist, is not empty, is the live generation, or the source and target\
-            \ primary keys do not match."
+          description: |-
+            The target does not specify a generation by name, does not exist, is not empty, is the live generation, or the source and target primary keys do not match.
+
+            Error codes: `reindex:target_generation_required` - The target names an index without a generation. Name one as `index@generation`. `reindex:target_is_live` - The target is the live generation. Fill another generation and promote it. `reindex:target_not_empty` - The target generation already holds documents. `reindex:source_is_target` - The source and the target are the same generation. `reindex:source_other_index` - The source belongs to another index. `reindex:primary_key_mismatch` - The source and the target declare different primary keys.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The target names an index without a generation. Name one as `index@generation`.
+            code: reindex:target_generation_required
+          - when: The target is the live generation. Fill another generation and promote
+              it.
+            code: reindex:target_is_live
+          - when: The target generation already holds documents.
+            code: reindex:target_not_empty
+          - when: The source and the target are the same generation.
+            code: reindex:source_is_target
+          - when: The source belongs to another index.
+            code: reindex:source_other_index
+          - when: The source and the target declare different primary keys.
+            code: reindex:primary_key_mismatch
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.reindex` permission.
+          description: |-
+            The API key does not have the `indexes.reindex` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.reindex` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.reindex` permission.
+            code: auth:forbidden
         "404":
-          description: "The specified index or generation does not exist, or the caller\
-            \ key lacks permissions on the index."
+          description: |-
+            The specified index or generation does not exist, or the caller key lacks permissions on the index.
+
+            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "409":
-          description: "A reindex job is already in progress (`reindex:in_progress`),\
-            \ the target generation is busy being reindexed (`reindex:target_busy`),\
-            \ or no node is available to write the index."
+          description: |-
+            The job could not be started.
+
+            Error codes: `reindex:in_progress` - A reindex job is already running for the index. Wait for it, or cancel it. `reindex:target_busy` - Another job holds the target generation. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "A reindex job is already running for the index. Wait for it, or\
+              \ cancel it."
+            code: reindex:in_progress
+          - when: Another job holds the target generation.
+            code: reindex:target_busy
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond.
+          description: |-
+            The request was forwarded to the index writer and the writer did not respond.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.reindex
@@ -6224,40 +6519,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.reindex` permission.
+          description: |-
+            The API key does not have the `indexes.reindex` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.reindex` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.reindex` permission.
+            code: auth:forbidden
         "404":
-          description: "No job exists for this index (`reindex:not_found`), the index\
-            \ does not exist, or the caller key lacks permissions on the index."
+          description: |-
+            No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
+
+            Error codes: `reindex:not_found` - The index has no reindex job. `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no reindex job.
+            code: reindex:not_found
+          - when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+            code: index:not-found
         "409":
-          description: No node is available to write the index.
+          description: |-
+            No node is available to write the index.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond.
+          description: |-
+            The request was forwarded to the index writer and the writer did not respond.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.reindex
@@ -6369,57 +6694,110 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "400":
-          description: "The request body is missing, or the settings failed validation\
-            \ against the generation the index answers from (`index:ranking:*`, `index:settings:synonyms:*`,\
-            \ `index:settings:typo_exclusions:*`, `index:settings:fields:*`)."
+          description: |-
+            The request body is missing, or the settings failed validation against the generation the index answers from.
+
+            Error codes: `request:missing_body` - The request carries no body. `index:settings:synonyms:unknown_field` - A synonym set names a field the generation does not have. `index:settings:synonyms:field_not_text` - A synonym set names a field that is not searched as text. `index:settings:typo_exclusions:unknown_field` - A typo exclusion names a field the generation does not have. `index:settings:fields:unknown_field` - The field settings name a field the generation does not have. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no body.
+            code: request:missing_body
+          - when: A synonym set names a field the generation does not have.
+            code: index:settings:synonyms:unknown_field
+          - when: A synonym set names a field that is not searched as text.
+            code: index:settings:synonyms:field_not_text
+          - when: A typo exclusion names a field the generation does not have.
+            code: index:settings:typo_exclusions:unknown_field
+          - when: The field settings name a field the generation does not have.
+            code: index:settings:fields:unknown_field
+          - when: A ranking signal names a field that is not sortable.
+            code: index:ranking:field_not_sortable
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `settings.write` permission.
+          description: |-
+            The API key does not have the `settings.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `settings.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `settings.write` permission.
+            code: auth:forbidden
         "404":
-          description: "No index has this name, or the API key lacks permissions covering\
-            \ it."
+          description: |-
+            No index has this name, or the API key lacks permissions covering it.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "Concurrent modifications prevented the settings from being\
-            \ stored (`index:settings:conflict`), storage could not be reached (`index:settings:io_error`,\
-            \ `index:settings:unavailable`), or no node is available to write the\
-            \ index. The stored settings remain unchanged; send the request again."
+          description: |-
+            The settings could not be stored. The stored settings remain unchanged; send the request again.
+
+            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Other writers kept changing the settings. The stored settings are
+              unchanged; send the request again.
+            code: index:settings:conflict
+          - when: Settings storage answered with an error. Send the request again.
+            code: index:settings:io_error
+          - when: Settings storage could not be reached. Send the request again once
+              it answers.
+            code: index:settings:unavailable
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
         "412":
-          description: The `If-Match` version does not match the stored settings (`index:settings:version_mismatch`).
-            Read them again and rebuild the change on the version that comes back.
+          description: |-
+            The `If-Match` version does not match the stored settings. Read them again and rebuild the change on the version that comes back.
+
+            Error codes: `index:settings:version_mismatch` - The `If-Match` version is not the one the stored settings are at. Read them again and rebuild the change.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The `If-Match` version is not the one the stored settings are at.
+              Read them again and rebuild the change.
+            code: index:settings:version_mismatch
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: settings.write
@@ -6500,60 +6878,113 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "400":
-          description: "The request body is missing, a key is not a path or names\
-            \ a place the settings cannot be changed at (`request:update:*`), or the\
-            \ result failed validation against the generation the index answers from\
-            \ (`index:ranking:*`)."
+          description: |-
+            The request body is missing, a key names a place the settings cannot be changed at, or the result failed validation against the generation the index answers from.
+
+            Error codes: `request:missing_body` - The request carries no body. `request:update:path_invalid` - A key of the change could not be read as a path. `request:update:no_match` - A selector names nothing the settings hold. A selector never creates the value it names. `request:update:value_invalid` - A key names a field that cannot hold the given value. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no body.
+            code: request:missing_body
+          - when: A key of the change could not be read as a path.
+            code: request:update:path_invalid
+          - when: A selector names nothing the settings hold. A selector never creates
+              the value it names.
+            code: request:update:no_match
+          - when: A key names a field that cannot hold the given value.
+            code: request:update:value_invalid
+          - when: A ranking signal names a field that is not sortable.
+            code: index:ranking:field_not_sortable
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `settings.write` permission.
+          description: |-
+            The API key does not have the `settings.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `settings.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `settings.write` permission.
+            code: auth:forbidden
         "404":
-          description: "No index has this name, or the API key lacks permissions covering\
-            \ it."
+          description: |-
+            No index has this name, or the API key lacks permissions covering it.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "Concurrent modifications prevented the change from being made\
-            \ (`index:settings:conflict`), the stored settings hold parts this version\
-            \ cannot describe (`index:settings:unrepresentable`), storage could not\
-            \ be reached (`index:settings:io_error`, `index:settings:unavailable`),\
-            \ or no node is available to write the index. The stored settings are\
-            \ unchanged."
+          description: |-
+            The change could not be made. The stored settings are unchanged.
+
+            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:unrepresentable` - The stored settings hold parts this node cannot describe. Send the request to a node that supports them, or replace the settings with a `PUT`. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Other writers kept changing the settings. The stored settings are
+              unchanged; send the request again.
+            code: index:settings:conflict
+          - when: "The stored settings hold parts this node cannot describe. Send\
+              \ the request to a node that supports them, or replace the settings\
+              \ with a `PUT`."
+            code: index:settings:unrepresentable
+          - when: Settings storage answered with an error. Send the request again.
+            code: index:settings:io_error
+          - when: Settings storage could not be reached. Send the request again once
+              it answers.
+            code: index:settings:unavailable
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
         "412":
-          description: The `If-Match` version does not match the stored settings (`index:settings:version_mismatch`).
-            Read them again and rebuild the change on the version that comes back.
+          description: |-
+            The `If-Match` version does not match the stored settings (`index:settings:version_mismatch`). Read them again and rebuild the change on the version that comes back.
+
+            Error codes: `index:settings:version_mismatch` - The `If-Match` version is not the one the stored settings are at. Read them again and rebuild the change.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The `If-Match` version is not the one the stored settings are at.
+              Read them again and rebuild the change.
+            code: index:settings:version_mismatch
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: settings.write
@@ -6604,34 +7035,58 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.read` permission.
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.read` permission.
+            code: auth:forbidden
         "404":
-          description: "The index has no search settings (`index:settings:not_found`),\
-            \ the index does not exist, or the API key lacks permission on the index."
+          description: |-
+            The index has no search settings (`index:settings:not_found`), the index does not exist, or the API key lacks permission on the index.
+
+            Error codes: `index:settings:not_found` - The index has no search settings stored. `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no search settings stored.
+            code: index:settings:not_found
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "Settings storage could not be reached (`index:settings:io_error`,\
-            \ `index:settings:unavailable`)."
+          description: |-
+            Settings storage could not be reached.
+
+            Error codes: `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Settings storage answered with an error. Send the request again.
+            code: index:settings:io_error
+          - when: Settings storage could not be reached. Send the request again once
+              it answers.
+            code: index:settings:unavailable
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -6667,41 +7122,75 @@ paths:
           description: "The index has no search settings any more, whether or not\
             \ it had any."
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `settings.write` permission.
+          description: |-
+            The API key does not have the `settings.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `settings.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `settings.write` permission.
+            code: auth:forbidden
         "404":
-          description: "No index has this name, or the API key lacks permissions covering\
-            \ it."
+          description: |-
+            No index has this name, or the API key lacks permissions covering it.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "The change could not be stored (`index:settings:conflict`,\
-            \ `index:settings:io_error`, `index:settings:unavailable`), or no node\
-            \ is available to write the index. The stored settings are unchanged."
+          description: |-
+            The change could not be stored. The stored settings are unchanged.
+
+            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Other writers kept changing the settings. The stored settings are
+              unchanged; send the request again.
+            code: index:settings:conflict
+          - when: Settings storage answered with an error. Send the request again.
+            code: index:settings:io_error
+          - when: Settings storage could not be reached. Send the request again once
+              it answers.
+            code: index:settings:unavailable
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
         "502":
-          description: The index writer did not respond to the forwarded request.
+          description: |-
+            The index writer did not respond to the forwarded request.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: settings.write
@@ -6745,27 +7234,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/KeyListResponse"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `keys.read` permission.
+          description: |-
+            The API key does not have the `keys.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `keys.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `keys.read` permission.
+            code: auth:forbidden
         "409":
-          description: Key storage is unavailable on this node (`auth:keys:unavailable`)
-            or could not be reached (`auth:keys:io_error`).
+          description: |-
+            Key storage is unavailable on this node, or could not be reached.
+
+            Error codes: `auth:keys:unavailable` - The node is not configured with key storage. `auth:keys:io_error` - Key storage answered with an error. Send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The node is not configured with key storage.
+            code: auth:keys:unavailable
+          - when: Key storage answered with an error. Send the request again.
+            code: auth:keys:io_error
       security:
       - apiKey: []
       x-required-permission: keys.read
@@ -6826,37 +7331,62 @@ paths:
               schema:
                 $ref: "#/components/schemas/CreatedKey"
         "400":
-          description: "The request body is missing, specifies an unknown role, permission,\
-            \ or index pattern, or contains an invalid `expiresAt` timestamp (`auth:key:*`).\
-            \ All validation errors are reported."
+          description: |-
+            The request body is missing, or the key definition failed validation. All validation errors are reported.
+
+            Error codes: `request:missing_body` - The request carries no body. `auth:key:unknown_role` - The definition names a role this version does not have. `auth:key:unknown_permission` - The definition names a permission this version does not have.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no body.
+            code: request:missing_body
+          - when: The definition names a role this version does not have.
+            code: auth:key:unknown_role
+          - when: The definition names a permission this version does not have.
+            code: auth:key:unknown_permission
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `keys.write` permission.
+          description: |-
+            The API key does not have the `keys.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `keys.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `keys.write` permission.
+            code: auth:forbidden
         "409":
-          description: "Key storage is unavailable on this node (`auth:keys:unavailable`),\
-            \ could not be reached (`auth:keys:io_error`), or concurrent updates from\
-            \ other nodes conflicted with this request (`auth:keys:conflict`). The\
-            \ stored keys are unchanged."
+          description: |-
+            The key could not be stored. The stored keys are unchanged.
+
+            Error codes: `auth:keys:unavailable` - The node is not configured with key storage. `auth:keys:io_error` - Key storage answered with an error. Send the request again. `auth:keys:conflict` - Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The node is not configured with key storage.
+            code: auth:keys:unavailable
+          - when: Key storage answered with an error. Send the request again.
+            code: auth:keys:io_error
+          - when: Other nodes kept changing the stored keys. The stored keys are unchanged;
+              send the request again.
+            code: auth:keys:conflict
       security:
       - apiKey: []
       x-required-permission: keys.write
@@ -6890,34 +7420,58 @@ paths:
         "204":
           description: The key was revoked.
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `keys.write` permission.
+          description: |-
+            The API key does not have the `keys.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `keys.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `keys.write` permission.
+            code: auth:forbidden
         "404":
-          description: No key has this ID (`auth:key:not_found`).
+          description: |-
+            No key has this ID.
+
+            Error codes: `auth:key:not_found` - No key is stored under this ID.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No key is stored under this ID.
+            code: auth:key:not_found
         "409":
-          description: "Key storage is unavailable on this node, could not be reached,\
-            \ or concurrent updates from other nodes conflicted with this request.\
-            \ The stored keys are unchanged."
+          description: |-
+            The key could not be revoked. The stored keys are unchanged.
+
+            Error codes: `auth:keys:unavailable` - The node is not configured with key storage. `auth:keys:io_error` - Key storage answered with an error. Send the request again. `auth:keys:conflict` - Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The node is not configured with key storage.
+            code: auth:keys:unavailable
+          - when: Key storage answered with an error. Send the request again.
+            code: auth:keys:io_error
+          - when: Other nodes kept changing the stored keys. The stored keys are unchanged;
+              send the request again.
+            code: auth:keys:conflict
       security:
       - apiKey: []
       x-required-permission: keys.write
@@ -6976,29 +7530,48 @@ paths:
         "400":
           description: Bad Request
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `registry.repair` permission.
+          description: |-
+            The API key does not have the `registry.repair` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `registry.repair` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `registry.repair` permission.
+            code: auth:forbidden
         "409":
-          description: "The endpoint was called on a node configured with local storage\
-            \ (`index:registry:audit_unavailable`), or writing the repaired registry\
-            \ failed (`index:registry:conflict`, `index:registry:io_error`). The registry\
-            \ remains unchanged."
+          description: |-
+            The endpoint was called on a node configured with local storage, or writing the repaired registry failed. The registry remains unchanged.
+
+            Error codes: `index:registry:audit_unavailable` - The node stores indexes on local disk, where there is no shared registry to repair. `index:registry:conflict` - The registry kept being written by other nodes. The registry is unchanged; send the request again. `index:registry:io_error` - Registry storage answered with an error. The registry is unchanged; send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node stores indexes on local disk, where there is no shared\
+              \ registry to repair."
+            code: index:registry:audit_unavailable
+          - when: The registry kept being written by other nodes. The registry is
+              unchanged; send the request again.
+            code: index:registry:conflict
+          - when: Registry storage answered with an error. The registry is unchanged;
+              send the request again.
+            code: index:registry:io_error
       security:
       - apiKey: []
       x-required-permission: registry.repair
@@ -7051,27 +7624,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegistryAuditResponse"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `registry.audit` permission.
+          description: |-
+            The API key does not have the `registry.audit` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `registry.audit` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `registry.audit` permission.
+            code: auth:forbidden
         "409":
-          description: The endpoint was called on a node configured with local storage
-            rather than shared storage (`index:registry:audit_unavailable`).
+          description: |-
+            The endpoint was called on a node configured with local storage rather than shared storage.
+
+            Error codes: `index:registry:audit_unavailable` - The node stores indexes on local disk, where there is no shared registry to audit.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node stores indexes on local disk, where there is no shared\
+              \ registry to audit."
+            code: index:registry:audit_unavailable
       security:
       - apiKey: []
       x-required-permission: registry.audit
@@ -7112,20 +7700,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexListResponse"
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `indexes.read` permission.
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `indexes.read` permission.
+            code: auth:forbidden
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -7189,42 +7786,72 @@ paths:
               schema:
                 $ref: "#/components/schemas/ScanResponse"
         "400":
-          description: "The index definition declares no primary key (`index:no_primary_key`),\
-            \ the index does not store document copies (`index:source:not_kept`),\
-            \ or the `limit` parameter is not a whole number from 1 to 10000 (`request:scan:limit_invalid`)."
+          description: |-
+            The index cannot be scanned, or the `limit` parameter is out of range.
+
+            Error codes: `index:no_primary_key` - The index definition declares no primary key, so documents cannot be scanned in key order. `index:source:not_kept` - The index does not store document copies, so a scan has nothing to return. `request:scan:limit_invalid` - The `limit` parameter is not a whole number from 1 to 10000.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The index definition declares no primary key, so documents cannot\
+              \ be scanned in key order."
+            code: index:no_primary_key
+          - when: "The index does not store document copies, so a scan has nothing\
+              \ to return."
+            code: index:source:not_kept
+          - when: The `limit` parameter is not a whole number from 1 to 10000.
+            code: request:scan:limit_invalid
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `documents.read` permission.
+          description: |-
+            The API key does not have the `documents.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `documents.read` permission.
+            code: auth:forbidden
         "404":
-          description: "No index with the specified name exists on this node, or the\
-            \ API key lacks permissions on the index."
+          description: |-
+            No index with the specified name exists on this node, or the API key lacks permissions on the index.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "503":
-          description: The request raced the index being closed to free local resources.
-            Repeating the request reopens the index.
+          description: |-
+            The request raced the index being closed to free local resources. Repeating the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
       security:
       - apiKey: []
       summary: Read documents
@@ -7292,60 +7919,100 @@ paths:
                   value:
                     indexed: 2
         "400":
-          description: "A document was rejected by validation, a line could not be\
-            \ read as JSON (`request:document:malformed`), or the request body could\
-            \ not be parsed. The `path` of each error identifies the document and\
-            \ field location, such as `documents[1].nonexistent`."
+          description: |-
+            A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location, such as `documents[1].nonexistent`.
+
+            Error codes: `request:document:malformed` - A line of the body could not be read as JSON.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: A line of the body could not be read as JSON.
+            code: request:document:malformed
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `documents.write` permission.
+          description: |-
+            The API key does not have the `documents.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `documents.write` permission.
+            code: auth:forbidden
         "404":
-          description: "No index with the specified name exists on this node, or the\
-            \ API key lacks permissions on the index."
+          description: |-
+            No index with the specified name exists on this node, or the API key lacks permissions on the index.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "No node is available to write the index (`indexer:unavailable`),\
-            \ the index is currently synchronizing (`index:out-of-date`), the node\
-            \ lost the writer role during execution (`index:readonly`), or the target\
-            \ generation is locked by an active reindex job (`reindex:target_busy`)."
+          description: |-
+            The index cannot be written to right now.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The index is synchronizing. Send the request again.
+            code: index:out-of-date
+          - when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
+            code: index:readonly
+          - when: "An active reindex job holds the target generation. Wait for the\
+              \ job, or write to another generation."
+            code: reindex:target_busy
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond (`indexer:unreachable`). Retrying the same request is
-            expected to work.
+          description: |-
+            The node holding the index did not answer.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced an index being closed to free local resources
-            on the node (`index:closed`). Retrying the request reopens the index.
+          description: |-
+            The index is not open on the node right now.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
       security:
       - apiKey: []
       summary: Index documents
@@ -7419,59 +8086,103 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeleteResponse"
         "400":
-          description: "The request body includes neither `keys` nor `query` (`request:delete:target_required`),\
-            \ includes both (`request:delete:target_conflicting`), specifies a `locale`\
-            \ without a `query` (`request:delete:locale_without_query`), contains\
-            \ a key that cannot be parsed as the defined key field type, or contains\
-            \ a query the index cannot execute."
+          description: |-
+            The body does not name what to delete, or it names a key or a query the index cannot use.
+
+            Error codes: `request:delete:target_required` - The body holds neither `keys` nor `query`. `request:delete:target_conflicting` - The body holds both `keys` and `query`. Send one of them. `request:delete:locale_without_query` - The body states a `locale` without a `query`. `index:query:invalid_value` - A key cannot be read as the type of the primary key field.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The body holds neither `keys` nor `query`.
+            code: request:delete:target_required
+          - when: The body holds both `keys` and `query`. Send one of them.
+            code: request:delete:target_conflicting
+          - when: The body states a `locale` without a `query`.
+            code: request:delete:locale_without_query
+          - when: A key cannot be read as the type of the primary key field.
+            code: index:query:invalid_value
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `documents.delete` permission.
+          description: |-
+            The API key does not have the `documents.delete` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.delete` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `documents.delete` permission.
+            code: auth:forbidden
         "404":
-          description: "No index with the specified name exists on this node, or the\
-            \ API key lacks permissions on the index."
+          description: |-
+            No index with the specified name exists on this node, or the API key lacks permissions on the index.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "No node is available to write the index, the index is currently\
-            \ synchronizing, or the target generation is locked by an active reindex\
-            \ job."
+          description: |-
+            No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The index is synchronizing. Send the request again.
+            code: index:out-of-date
+          - when: "An active reindex job holds the target generation. Wait for the\
+              \ job, or write to another generation."
+            code: reindex:target_busy
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond.
+          description: |-
+            The request was forwarded to the index writer and the writer did not respond.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced the index being closed to free local resources.
-            Repeating the request reopens the index.
+          description: |-
+            The request raced the index being closed to free local resources. Repeating the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: documents.delete
@@ -7538,57 +8249,120 @@ paths:
                     updated: 1998
         "400":
           description: |-
-            A change failed validation, a document key was not found when `missing` was set to `fail` (`request:update:not_found`), the index definition declares no primary key (`index:no_primary_key`), or the index does not store document copies (`index:source:not_kept`) - resend the complete document in that case.
+            A change failed validation, or a path in it names something the index or the document does not hold.
 
-            A path is rejected when it cannot be parsed (`request:update:path_invalid`), reaches into a field the index does not have (`request:update:path_unknown_field`), names a single value of a field that holds neither locale variants nor objects (`request:update:selector_not_supported`), names a locale the field holds no variant for (`request:update:locale_unknown`), adds a value to a field that holds a single value (`request:update:add_not_multiple`), reaches inside a field whose values are not objects (`request:update:not_an_object`), or reaches into a list of objects without specifying which value (`request:update:value_required`). A selector that names no value the document holds is rejected with `request:update:no_match`.
+            Error codes: `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: A document the change names is not indexed and `missing` is `fail`.
+            code: request:update:not_found
+          - when: "The index definition declares no primary key, so a document cannot\
+              \ be named."
+            code: index:no_primary_key
+          - when: The index does not store document copies. Send the complete document
+              instead.
+            code: index:source:not_kept
+          - when: A path in the change could not be read.
+            code: request:update:path_invalid
+          - when: A path reaches into a field the index does not have.
+            code: request:update:path_unknown_field
+          - when: A path names one value of a field that holds neither locale variants
+              nor objects.
+            code: request:update:selector_not_supported
+          - when: A path names a locale the field holds no variant for.
+            code: request:update:locale_unknown
+          - when: A change adds a value to a field that holds a single value.
+            code: request:update:add_not_multiple
+          - when: A path reaches inside a field whose values are not objects.
+            code: request:update:not_an_object
+          - when: A path reaches into a list of objects without saying which value.
+            code: request:update:value_required
+          - when: A selector names no value the document holds. A selector never creates
+              the value it names.
+            code: request:update:no_match
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `documents.write` permission.
+          description: |-
+            The API key does not have the `documents.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `documents.write` permission.
+            code: auth:forbidden
         "404":
-          description: "No index with the specified name exists on this node, or the\
-            \ API key lacks permissions on the index."
+          description: |-
+            No index with the specified name exists on this node, or the API key lacks permissions on the index.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "No node is available to write the index, the index is currently\
-            \ synchronizing, or the target generation is locked by an active reindex\
-            \ job."
+          description: |-
+            The index cannot be written to right now.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The index is synchronizing. Send the request again.
+            code: index:out-of-date
+          - when: "An active reindex job holds the target generation. Wait for the\
+              \ job, or write to another generation."
+            code: reindex:target_busy
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond.
+          description: |-
+            The node holding the index did not answer.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced the index being closed to free local resources.
-            Repeating the request reopens the index.
+          description: |-
+            The index is not open on the node right now.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
       security:
       - apiKey: []
       summary: Update fields of existing documents
@@ -7663,58 +8437,113 @@ paths:
           description: The document was changed.
         "400":
           description: |-
-            The change was rejected by validation, the key value cannot be parsed as the defined key field type (`index:query:invalid_value`), the body names the primary key field as another document than the path does (`request:update:key_conflicting`), the index definition declares no primary key (`index:no_primary_key`), or the index does not store document copies (`index:source:not_kept`) - resend the whole document in that case.
+            The change was rejected by validation, or a path in it names something the index or the document does not hold. A path is refused for the same reasons as in a batch update.
 
-            A path is refused for the same reasons as in batch updates, reported by the same `request:update:*` codes.
+            Error codes: `index:query:invalid_value` - The key in the path cannot be read as the type of the primary key field. `request:update:key_conflicting` - The body gives the primary key field a value other than the key in the path. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key in the path cannot be read as the type of the primary key
+              field.
+            code: index:query:invalid_value
+          - when: The body gives the primary key field a value other than the key
+              in the path.
+            code: request:update:key_conflicting
+          - when: "The index definition declares no primary key, so a document cannot\
+              \ be named."
+            code: index:no_primary_key
+          - when: The index does not store document copies. Send the complete document
+              instead.
+            code: index:source:not_kept
+          - when: A path in the change could not be read.
+            code: request:update:path_invalid
+          - when: A selector names no value the document holds. A selector never creates
+              the value it names.
+            code: request:update:no_match
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `documents.write` permission.
+          description: |-
+            The API key does not have the `documents.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.write` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `documents.write` permission.
+            code: auth:forbidden
         "404":
-          description: "Nothing is indexed under the key (`index:document:not_found`),\
-            \ no index with the specified name exists on this node, or the caller\
-            \ key lacks permissions on the index."
+          description: |-
+            Nothing is indexed under the key, no index with the specified name exists on this node, or the caller key lacks permissions on the index.
+
+            Error codes: `index:document:not_found` - Nothing is indexed under the key. Index the document whole first. `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Nothing is indexed under the key. Index the document whole first.
+            code: index:document:not_found
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "No node is available to write the index, the index is currently\
-            \ synchronizing, or the target generation is locked by an active reindex\
-            \ job."
+          description: |-
+            The index cannot be written to right now.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The index is synchronizing. Send the request again.
+            code: index:out-of-date
+          - when: "An active reindex job holds the target generation. Wait for the\
+              \ job, or write to another generation."
+            code: reindex:target_busy
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond.
+          description: |-
+            The node holding the index did not answer.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced the index being closed to free local resources.
-            Repeating the request reopens the index.
+          description: |-
+            The index is not open on the node right now.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: documents.write
@@ -7756,57 +8585,101 @@ paths:
           description: "The document was removed, whether or not a document existed\
             \ under the specified key."
         "400":
-          description: "The key value cannot be parsed as the defined key field type\
-            \ (`index:query:invalid_value`), or the index definition declares no primary\
-            \ key (`index:no_primary_key`)."
+          description: |-
+            The key cannot be read as the type of the primary key field, or the index declares no primary key.
+
+            Error codes: `index:query:invalid_value` - The key in the path cannot be read as the type of the primary key field. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key in the path cannot be read as the type of the primary key
+              field.
+            code: index:query:invalid_value
+          - when: "The index definition declares no primary key, so a document cannot\
+              \ be named."
+            code: index:no_primary_key
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `documents.delete` permission.
+          description: |-
+            The API key does not have the `documents.delete` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.delete` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `documents.delete` permission.
+            code: auth:forbidden
         "404":
-          description: "No index with the specified name exists on this node, or the\
-            \ API key lacks permissions on the index."
+          description: |-
+            No index with the specified name exists on this node, or the API key lacks permissions on the index.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: "No node is available to write the index, the index is currently\
-            \ synchronizing, or the target generation is locked by an active reindex\
-            \ job."
+          description: |-
+            No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: No node is available to write the index. Send the request again
+              once one is.
+            code: indexer:unavailable
+          - when: The index is synchronizing. Send the request again.
+            code: index:out-of-date
+          - when: "An active reindex job holds the target generation. Wait for the\
+              \ job, or write to another generation."
+            code: reindex:target_busy
         "502":
-          description: The request was forwarded to the index writer and the writer
-            did not respond.
+          description: |-
+            The request was forwarded to the index writer and the writer did not respond.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+            code: indexer:unreachable
         "503":
-          description: The request raced the index being closed to free local resources.
-            Repeating the request reopens the index.
+          description: |-
+            The request raced the index being closed to free local resources. Repeating the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
       security:
       - apiKey: []
       x-required-permission: documents.delete
@@ -7886,52 +8759,99 @@ paths:
                 $ref: "#/components/schemas/FacetValuesResponse"
         "400":
           description: |-
-            The request is not one that can be counted. The `code` property names the reason, such as `index:query:field_not_found` when the field does not exist, `index:query:usage_not_enabled` when it is not defined for `facet`, `index:query:facet_prefix_on_a_tree` when its values are paths through a tree, `search:facet:limit_invalid` when `limit` is outside 1 to 1000, or `search:filter:scores` when a filter clause affects the score.
+            The request is not one that can be counted, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            A request that asks for more than the node allows is refused with the same status: `search:query:too_many_clauses`, `search:query:too_deep`, `search:clause:k_too_large`, or `search:clause:depth_too_large`. See [Search configuration](https://exofind.dev/reference/configuration/#search).
+            Error codes: `index:query:field_not_found` - The request names a field the index does not have. `index:query:usage_not_enabled` - The field is not defined for `facet` usage. `index:query:facet_prefix_on_a_tree` - A prefix was given for a field whose values are paths through a tree. `search:facet:limit_invalid` - `limit` is outside 1 to 1000. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request names a field the index does not have.
+            code: index:query:field_not_found
+          - when: The field is not defined for `facet` usage.
+            code: index:query:usage_not_enabled
+          - when: A prefix was given for a field whose values are paths through a
+              tree.
+            code: index:query:facet_prefix_on_a_tree
+          - when: '`limit` is outside 1 to 1000.'
+            code: search:facet:limit_invalid
+          - when: A clause under `filter` affects the score. Move it out of `filter`.
+            code: search:filter:scores
+          - when: The query holds more clauses than the node allows.
+            code: search:query:too_many_clauses
+          - when: The query nests deeper than the node allows.
+            code: search:query:too_deep
+          - when: A `knn` clause asks for more neighbours than the node allows.
+            code: search:clause:k_too_large
+          - when: A clause reaches deeper into objects than the node allows.
+            code: search:clause:depth_too_large
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `search` permission.
+          description: |-
+            The API key does not have the `search` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `search` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `search` permission.
+            code: auth:forbidden
         "404":
-          description: "The index does not exist, or the key has no permissions on\
-            \ it. An index on which a key has no permissions returns this status as\
-            \ though it did not exist."
+          description: |-
+            The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: The index currently has no live generation (`index:no_live_generation`).
-            Promote a generation and send the request again.
+          description: |-
+            The index cannot be searched right now.
+
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no live generation. Promote one and send the request
+              again.
+            code: index:no_live_generation
         "503":
           description: |-
-            The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
+            The counting did not finish on the node.
 
-            Also returned when counting collected for longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The counts collected before the node stopped are dropped, so narrow the search instead of repeating it.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
+          - when: "Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it\
+              \ collected is dropped, so narrow the search rather than sending it\
+              \ again."
+            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search
@@ -8035,52 +8955,100 @@ paths:
                 $ref: "#/components/schemas/SearchResponse"
         "400":
           description: |-
-            The request is not a valid search. The `code` property names the reason, such as `search:filter:scores` when a filter clause affects the score, `index:query:usage_not_enabled` when a field is not configured for the requested usage, or `search:page:too_deep` when `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
+            The request is not a valid search, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            A request that asks for more than the node allows is refused with the same status. The `code` names the cap it exceeded: `search:limit:too_large`, `search:query:too_many_clauses`, `search:query:too_deep`, `search:clause:k_too_large`, or `search:clause:depth_too_large`. See [Search configuration](https://exofind.dev/reference/configuration/#search).
+            Error codes: `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `index:query:field_not_found` - A clause names a field the index does not have. `index:query:usage_not_enabled` - A field is not defined for the usage the clause asks of it. `search:page:too_deep` - `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead. `search:limit:too_large` - `limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next`. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: A clause under `filter` affects the score. Move it out of `filter`.
+            code: search:filter:scores
+          - when: A clause names a field the index does not have.
+            code: index:query:field_not_found
+          - when: A field is not defined for the usage the clause asks of it.
+            code: index:query:usage_not_enabled
+          - when: '`offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the
+              `next` cursor instead.'
+            code: search:page:too_deep
+          - when: '`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller
+              page and follow `next`.'
+            code: search:limit:too_large
+          - when: The query holds more clauses than the node allows.
+            code: search:query:too_many_clauses
+          - when: The query nests deeper than the node allows.
+            code: search:query:too_deep
+          - when: A `knn` clause asks for more neighbours than the node allows.
+            code: search:clause:k_too_large
+          - when: A clause reaches deeper into objects than the node allows.
+            code: search:clause:depth_too_large
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `search` permission.
+          description: |-
+            The API key does not have the `search` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `search` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `search` permission.
+            code: auth:forbidden
         "404":
-          description: "The index does not exist, or the key has no permissions on\
-            \ it. An index on which a key has no permissions returns this status as\
-            \ though it did not exist."
+          description: |-
+            The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: The index currently has no live generation (`index:no_live_generation`).
-            Promote a generation and send the request again.
+          description: |-
+            The index cannot be searched right now.
+
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no live generation. Promote one and send the request
+              again.
+            code: index:no_live_generation
         "503":
           description: |-
-            The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
+            The search did not finish on the node.
 
-            Also returned when the search collected for longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`). The results collected before the node stopped are dropped, so narrow the search instead of repeating it.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
+          - when: "The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`.\
+              \ What it collected is dropped, so narrow the search rather than sending\
+              \ it again."
+            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search
@@ -8190,49 +9158,85 @@ paths:
               schema:
                 $ref: "#/components/schemas/ExplainResponse"
         "400":
-          description: "The request is not a valid search, or the index declares no\
-            \ primary key so a hit cannot be named (`index:no_primary_key`)."
+          description: |-
+            The request is not a valid search, or the index declares no primary key so a hit cannot be named.
+
+            Error codes: `index:no_primary_key` - The index declares no primary key, so a hit cannot be named.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The index declares no primary key, so a hit cannot be named."
+            code: index:no_primary_key
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `search` permission.
+          description: |-
+            The API key does not have the `search` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `search` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `search` permission.
+            code: auth:forbidden
         "404":
-          description: "The index does not exist, or the key has no permissions on\
-            \ it. Also returned when no document exists under `key` (`index:explain:document_not_found`),\
-            \ or that document has no value along the `hits` path at `index` (`index:explain:value_not_found`)."
+          description: |-
+            The index does not exist, the key has no permissions on it, or the explanation names something the index does not hold.
+
+            Error codes: `index:explain:document_not_found` - Nothing is indexed under `key`. `index:explain:value_not_found` - The document holds no value along the `hits` path at `index`. `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: Nothing is indexed under `key`.
+            code: index:explain:document_not_found
+          - when: The document holds no value along the `hits` path at `index`.
+            code: index:explain:value_not_found
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: The index currently has no live generation (`index:no_live_generation`).
+          description: |-
+            The index cannot be searched right now.
+
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no live generation. Promote one and send the request
+              again.
+            code: index:no_live_generation
         "503":
-          description: "The request raced the index being closed to free local resources\
-            \ (`index:closed`), or the search behind the explanation collected for\
-            \ longer than `EXOFIND_SEARCH_TIMEOUT` (`search:timeout`)."
+          description: |-
+            The explanation did not finish on the node.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
+          - when: The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`.
+            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search
@@ -8315,52 +9319,98 @@ paths:
                 $ref: "#/components/schemas/SuggestResponse"
         "400":
           description: |-
-            The request is not one that can be answered. The `code` property names the reason, such as `search:suggest:limit_invalid` when `limit` is outside 1 to 100, `search:locale:unsupported` when the locale is one the node has no rules for, `index:query:field_not_found` when a filter names a field the index does not have, or `search:filter:scores` when a filter clause affects the score.
+            The request is not one that can be answered, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            A request that asks for more than the node allows is refused with the same status: `search:query:too_many_clauses`, `search:query:too_deep`, `search:clause:k_too_large`, or `search:clause:depth_too_large`. See [Search configuration](https://exofind.dev/reference/configuration/#search).
+            Error codes: `search:suggest:limit_invalid` - `limit` is outside 1 to 100. `search:locale:unsupported` - The request names a locale the node has no rules for. `index:query:field_not_found` - A filter names a field the index does not have. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `search:query:too_many_clauses` - The filter holds more clauses than the node allows. `search:query:too_deep` - The filter nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: '`limit` is outside 1 to 100.'
+            code: search:suggest:limit_invalid
+          - when: The request names a locale the node has no rules for.
+            code: search:locale:unsupported
+          - when: A filter names a field the index does not have.
+            code: index:query:field_not_found
+          - when: A clause under `filter` affects the score. Move it out of `filter`.
+            code: search:filter:scores
+          - when: The filter holds more clauses than the node allows.
+            code: search:query:too_many_clauses
+          - when: The filter nests deeper than the node allows.
+            code: search:query:too_deep
+          - when: A `knn` clause asks for more neighbours than the node allows.
+            code: search:clause:k_too_large
+          - when: A clause reaches deeper into objects than the node allows.
+            code: search:clause:depth_too_large
         "401":
-          description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
-            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
-            \ Bearer`."
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request carries no credential this node accepts.
+            code: auth:unauthenticated
         "403":
-          description: The API key does not have the `search` permission.
+          description: |-
+            The API key does not have the `search` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `search` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The key is accepted but does not hold the `search` permission.
+            code: auth:forbidden
         "404":
-          description: "The index does not exist, or the key has no permissions on\
-            \ it. An index on which a key has no permissions returns this status as\
-            \ though it did not exist."
+          description: |-
+            The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
+
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: "The node holds no such index, or the key has no permission on it."
+            code: index:not-found
         "409":
-          description: The index currently has no live generation (`index:no_live_generation`).
-            Promote a generation and send the request again.
+          description: |-
+            The index currently has no live generation (`index:no_live_generation`). Promote a generation and send the request again.
+
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The index has no live generation. Promote one and send the request
+              again.
+            code: index:no_live_generation
         "503":
           description: |-
             The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
 
             Also returned when counting collected for longer than `EXOFIND_SUGGEST_TIMEOUT` (`search:timeout`). The counts collected before the node stopped are dropped, so narrow the filters instead of repeating the request.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What it collected is dropped, so narrow the filters rather than sending the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+            code: index:closed
+          - when: "Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What\
+              \ it collected is dropped, so narrow the filters rather than sending\
+              \ the request again."
+            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search

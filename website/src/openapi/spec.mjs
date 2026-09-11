@@ -49,6 +49,12 @@ const PERMISSION = 'x-required-permission';
 /** How the paragraph the engine closes a description with starts. */
 const REQUIREMENT = 'Requires the ';
 
+/** Where the engine writes the error codes one answer carries. */
+const CODES = 'x-error-codes';
+
+/** How the paragraph the engine closes an answer's description with starts. */
+const RETURNED = 'Error codes: ';
+
 export const document = parseYaml(source);
 
 /**
@@ -83,8 +89,16 @@ export const document = parseYaml(source);
  * @typedef {object} Response
  * @property {string} status the status code, or `default`
  * @property {string} description what the status means here
+ * @property {ErrorCode[]} codes the error codes the status carries, in the
+ *   order the endpoint declares them
  * @property {object | null} schema the body, or `null` for a status with none
  * @property {unknown} example the example the document states, if it states one
+ */
+
+/**
+ * @typedef {object} ErrorCode
+ * @property {string} code as the `code` field of the error response spells it
+ * @property {string} when what makes the endpoint answer with it
  */
 
 /**
@@ -260,15 +274,34 @@ function responsesOf(operation) {
 	return Object.entries(operation.responses ?? {})
 		.map(([status, response]) => {
 			const content = response.content?.[JSON_TYPE];
+			const codes = response[CODES] ?? [];
 
 			return {
 				status,
-				description: response.description ?? '',
+				description: withoutCodes(response.description ?? '', codes),
+				codes,
 				schema: content?.schema ?? null,
 				example: content ? exampleIn(content) : undefined
 			};
 		})
 		.sort((first, second) => Number(first.status || 1000) - Number(second.status || 1000));
+}
+
+/**
+ * The description of an answer, without the paragraph listing its error codes.
+ *
+ * The engine writes that paragraph last so that a generated client carries the
+ * codes as a doc comment - see `ErrorCodeFilter`. Here the codes are drawn as
+ * rows under the answer instead, and a page that showed both would say each one
+ * twice.
+ */
+function withoutCodes(description, codes) {
+	if(codes.length === 0) return description;
+
+	const paragraphs = description.split('\n\n');
+	if(!paragraphs[paragraphs.length - 1].startsWith(RETURNED)) return description;
+
+	return paragraphs.slice(0, -1).join('\n\n').trimEnd();
 }
 
 /**

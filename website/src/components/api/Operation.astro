@@ -67,6 +67,9 @@ const classOf = (status) => `status-${status.charAt(0)}xx`;
 /** Where a reader goes to read what a permission covers and how to grant it. */
 const PERMISSIONS = "/reference/auth/#permissions";
 
+/** Where a reader goes to read what a code means across the whole API. */
+const ERROR_CODES = "/reference/errors/#error-codes";
+
 /**
  * What an index-scoped permission is checked against.
  *
@@ -200,6 +203,29 @@ const permission = operation.permission;
 										schema={answer.schema}
 										named={false}
 									/>
+								</div>
+							</details>
+						)}
+
+						{answer.codes.length > 0 && (
+							<details>
+								<summary>Error codes</summary>
+								<div class="inner">
+									<dl class="codes">
+										{answer.codes.map((error) => (
+											<>
+												<dt>
+													<a
+														class="code"
+														href={ERROR_CODES}
+													>
+														{error.code}
+													</a>
+												</dt>
+												<dd>{error.when}</dd>
+											</>
+										))}
+									</dl>
 								</div>
 							</details>
 						)}
@@ -464,6 +490,53 @@ const permission = operation.permission;
 
 	.response .says {
 		line-height: 1.6;
+	}
+
+	/*
+	 * The codes one answer carries, a row each: the code a client branches on,
+	 * and what produced it. A caller reading this section is writing the branch,
+	 * so the code is the column they scan and the sentence is what they read
+	 * once. The rows are indented to the width the status sits in, which puts
+	 * them under the sentence the status was given rather than beside it.
+	 */
+	.codes {
+		display: grid;
+		gap: 0.3125rem 1.25rem;
+		grid-template-columns: minmax(0, 1fr);
+		margin: 0.5rem 0 0;
+	}
+
+	.codes dt {
+		min-width: 0;
+	}
+
+	.codes dd {
+		color: var(--sl-color-gray-2);
+		line-height: 1.6;
+		margin: 0;
+	}
+
+	.code {
+		color: var(--sl-color-white);
+		font-family: var(--sl-font-mono);
+		font-size: 0.90625rem;
+		overflow-wrap: anywhere;
+		text-decoration-color: var(--sl-color-gray-4);
+	}
+
+	.code:hover {
+		color: var(--sl-color-text-accent);
+	}
+
+	/* From the width a code and a line to read beside it both fit, the two sit in a row. */
+	@media (min-width: 45rem) {
+		.codes {
+			grid-template-columns: 15rem minmax(0, 1fr);
+		}
+
+		.codes dt {
+			line-height: 1.75;
+		}
 	}
 
 	/*

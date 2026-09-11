@@ -149,6 +149,13 @@ job at the top of the file; what follows is how they fit together.
   `Operation.astro` is the page, `Fields.astro` the rows and everything under
   them, `Schema.astro` a body, and `Panels.astro` the column beside it.
 
+An answer also states the error codes it carries. The engine writes them from
+the `@ReturnsError` annotations on the endpoint into `x-error-codes` on the
+answer, and `spec.mjs` reads them into `codes` on a response. `Operation.astro`
+draws one row per code and drops the closing `Error codes:` paragraph the engine
+adds to the description, because that paragraph exists for a generated client
+rather than for this page. `ErrorCodeFilter` is the other half of that agreement.
+
 Four things about the section are worth knowing before changing it:
 
 - **A `$ref` is never followed to the end.** Sixteen schemas in this document
