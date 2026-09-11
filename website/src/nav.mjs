@@ -124,13 +124,17 @@ export function sectionsOf(sidebar, pathname) {
 }
 
 /**
- * What part of the site a page is in, or `null` when it is in none - the front
- * page and the demo pages are rendered without a sidebar, and a page in no
- * sidebar is in no part either.
+ * What part of the site a page is in and where that part is entered, or `null`
+ * when the page is in none - the front page and the demo pages are rendered
+ * without a sidebar, and a page in no sidebar is in no part either.
  *
  * This is the label over a page title. Unlike the header, it names every part,
  * the tutorials included: what the header leaves out to spend its room
- * elsewhere, a reader still has to be told they are reading.
+ * elsewhere, a reader still has to be told they are reading. The link is what
+ * makes the label a way back to the rest of the part rather than only a note
+ * about it, which is what a reader who arrived from a search result wants and
+ * what a reader on a narrow window, where the sidebar is behind a button, has
+ * nothing else to reach.
  *
  * The pages that are not documentation - an endpoint, the demo catalogue - are
  * in no part of the manual, and are labelled with the sidebar group they are
@@ -138,7 +142,7 @@ export function sectionsOf(sidebar, pathname) {
  * page titled `Search an index` with nothing on it that says it is the REST API.
  *
  * @param {any[]} sidebar `Astro.locals.starlightRoute.sidebar`
- * @returns {string | null}
+ * @returns {{ label: string, href: string } | null}
  */
 export function sectionOf(sidebar) {
 	const current = linksIn({ type: 'group', entries: sidebar })
@@ -149,14 +153,27 @@ export function sectionOf(sidebar) {
 	const slug = slugOf(current.href);
 	const part = PARTS.find(candidate => candidate.slugs.includes(slug));
 
-	return part?.label ?? groupOver(sidebar, current);
+	return part ? entryOf(part) : groupOver(sidebar, current);
 }
 
-/** The top-level sidebar group a link is under, or `null` for a link outside them all. */
+/**
+ * The top-level sidebar group a link is under and where that group is entered,
+ * or `null` for a link outside them all.
+ *
+ * A group that is not a part of the manual has no landing page built for it, so
+ * it is entered at the first page under it - which for both such groups is the
+ * page that lists the rest: the API overview and the demo catalogue.
+ *
+ * That page itself is titled without a label. `Demos` over a page titled
+ * `Demos`, linking to the page the reader is on, says nothing twice.
+ */
 function groupOver(sidebar, link) {
 	const group = sidebar.find(entry => entry.type === 'group' && linksIn(entry).includes(link));
+	if(!group) return null;
 
-	return group?.label ?? null;
+	const entered = linksIn(group)[0];
+
+	return entered === link ? null : { label: group.label, href: entered.href };
 }
 
 /**
@@ -172,12 +189,7 @@ function groupOver(sidebar, link) {
  *   documentation index holds them
  */
 export function parts() {
-	return PARTS
-		.filter(part => part.slugs.length > 0)
-		.map(part => ({
-			label: part.label,
-			href: entryTo(part) ?? `${BASE}/${part.slugs[0]}/`
-		}));
+	return PARTS.filter(part => part.slugs.length > 0).map(entryOf);
 }
 
 /**
@@ -200,7 +212,7 @@ export function partNamed(label) {
 		throw new Error(`The documentation index has no part called ${label}`);
 	}
 
-	return { label: part.label, href: entryTo(part) ?? `${BASE}/${part.slugs[0]}/` };
+	return entryOf(part);
 }
 
 /**
@@ -237,6 +249,15 @@ export function documentAt(slug) {
  */
 function entryTo(part) {
 	return part.path ? `${BASE}/${part.path}/` : null;
+}
+
+/**
+ * A part with the page it is entered at. The header works from the sidebar and
+ * so falls back to the first page of the part that is in it; everything else
+ * has only the index, and falls back to the first page the index lists.
+ */
+function entryOf(part) {
+	return { label: part.label, href: entryTo(part) ?? `${BASE}/${part.slugs[0]}/` };
 }
 
 /** A header section over the links it holds, entered at the first of them. */

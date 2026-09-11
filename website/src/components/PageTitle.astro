@@ -9,8 +9,15 @@
  * on a narrow window, where the sidebar is behind a button, it is the only
  * thing that says it at all.
  *
+ * The label links to the page the section is entered at, which lists every
+ * page in it. That is the way back out of a page arrived at from a search
+ * result or from a link in the prose, and on a narrow window it is the only
+ * one the page carries without the menu being opened.
+ *
  * A page in no section - the front page, a demo, anything not listed in
- * `docs/README.md` - is titled without a label rather than with an empty one.
+ * `docs/README.md` - is titled without a label rather than with an empty one,
+ * and so is the page a section is entered at, which the label would lead back
+ * to from itself.
  */
 import { sectionOf } from '../nav.mjs';
 
@@ -25,11 +32,36 @@ const PAGE_TITLE_ID = '_top';
 const section = sectionOf(Astro.locals.starlightRoute.sidebar);
 ---
 
-{section && <p class="doc-eyebrow">{section}</p>}
+{section && (
+	<p class="doc-eyebrow">
+		<a href={section.href}>{section.label}</a>
+	</p>
+)}
 
 <h1 id={PAGE_TITLE_ID}>{Astro.locals.starlightRoute.entry.data.title}</h1>
 
 <style>
+	/*
+	 * The label keeps the look it has everywhere else - `../styles/site.css`
+	 * gives `.doc-eyebrow` that - and the link keeps the colour of the label
+	 * rather than taking the one a link is given, so that the first line of
+	 * the page is still a label and not a second heading.
+	 *
+	 * The underline is there before the pointer is, because a link that only
+	 * appears on hover is a link a touch device never shows.
+	 */
+	.doc-eyebrow a {
+		color: inherit;
+		text-decoration: underline;
+		text-decoration-color: var(--sl-color-gray-5);
+		text-underline-offset: 0.35em;
+	}
+
+	.doc-eyebrow a:hover {
+		color: var(--sl-color-text-accent);
+		text-decoration-color: currentColor;
+	}
+
 	h1 {
 		color: var(--sl-color-white);
 		font-size: var(--sl-text-h1);
