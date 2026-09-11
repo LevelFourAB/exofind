@@ -1,0 +1,113 @@
+---
+/*
+ * The button that opens the menu.
+ *
+ * It is Starlight's own, at the width this site collapses to a single column:
+ * 72rem, where the header drops its sections and the on-this-page list becomes
+ * a dropdown, rather than Starlight's 50rem. `./PageFrame.astro` says why the
+ * site has one width and not two.
+ *
+ * The look - an icon on the page rather than a filled disc floating over it -
+ * is in `../styles/site.css` with the rest of the header.
+ */
+import { Icon } from '@astrojs/starlight/components';
+---
+
+<starlight-menu-button class="print:hidden">
+	<button
+		aria-expanded="false"
+		aria-label={Astro.locals.t('menuButton.accessibleLabel')}
+		aria-controls="starlight__sidebar"
+		class="sl-flex lg:sl-hidden"
+	>
+		<Icon name="bars" class="open-menu" />
+		<Icon name="close" class="close-menu" />
+	</button>
+</starlight-menu-button>
+
+<script>
+	/** The width the site stops being a single column at, and the button goes. */
+	const WIDE = matchMedia('(min-width: 72em)');
+
+	class StarlightMenuButton extends HTMLElement {
+		btn = this.querySelector('button')!;
+
+		constructor() {
+			super();
+
+			this.btn.addEventListener('click', () => this.toggleExpanded());
+
+			/* Escape closes the menu. */
+			const parentNav = this.closest('nav');
+			if(parentNav) {
+				parentNav.addEventListener('keyup', e => this.closeOnEscape(e));
+			}
+
+			/* A window widened past the button leaves no way to close the menu. */
+			WIDE.addEventListener('change', () => this.setExpanded(false));
+		}
+
+		setExpanded(expanded: boolean) {
+			this.setAttribute('aria-expanded', String(expanded));
+			document.body.toggleAttribute('data-mobile-menu-expanded', expanded);
+
+			/* Keep the keyboard in the header and the menu while it is open. */
+			document.querySelectorAll<HTMLElement>('.main-frame, .sl-skip-link').forEach(el => {
+				el.toggleAttribute('inert', expanded);
+			});
+		}
+
+		toggleExpanded() {
+			this.setExpanded(this.getAttribute('aria-expanded') !== 'true');
+		}
+
+		closeOnEscape(e: KeyboardEvent) {
+			if(e.code === 'Escape') {
+				this.setExpanded(false);
+				this.btn.focus();
+			}
+		}
+	}
+
+	customElements.define('starlight-menu-button', StarlightMenuButton);
+</script>
+
+<style>
+@layer starlight.core {
+	button {
+		position: fixed;
+		top: calc((var(--sl-nav-height) - var(--sl-menu-button-size)) / 2);
+		inset-inline-end: var(--sl-nav-pad-x);
+		z-index: var(--sl-z-index-navbar);
+		border: 0;
+		border-radius: 50%;
+		width: var(--sl-menu-button-size);
+		height: var(--sl-menu-button-size);
+		padding: 0.5rem;
+		background-color: var(--sl-color-white);
+		color: var(--sl-color-black);
+		box-shadow: var(--sl-shadow-md);
+		cursor: pointer;
+	}
+
+	[aria-expanded='true'] button .open-menu,
+	:not([aria-expanded='true']) button .close-menu {
+		display: none;
+	}
+}
+</style>
+
+<style is:global>
+@layer starlight.core {
+	/* The page behind an open menu does not scroll with it. */
+	[data-mobile-menu-expanded] {
+		overflow: hidden;
+	}
+
+	@media (min-width: 72rem) {
+		[data-mobile-menu-expanded] {
+			overflow: auto;
+		}
+	}
+}
+</style>

@@ -73,6 +73,13 @@
 	--sl-content-width: 58rem;
 	--sl-content-gap-y: 1.125rem;
 
+	/*
+	 * The menu button is a target a thumb can hit at every width. Starlight
+	 * gives it 2rem, which on the window it matters most on - a phone, where
+	 * it is the only way to the rest of the site - is under the mark.
+	 */
+	--sl-menu-button-size: 2.75rem;
+
 	/* The manual's own sizes, rather than the ones Starlight ships with. */
 	--sl-text-h1: 2.0625rem;
 	--sl-text-h2: 1.375rem;
@@ -124,7 +131,6 @@
 @media (min-width: 50rem) {
 	:root {
 		--sl-nav-height: 3.5rem;
-		--sl-menu-button-size: 2.75rem;
 
 		--sl-text-h1: 2.625rem;
 		--sl-text-h2: 1.5625rem;
@@ -239,19 +245,43 @@ site-search dialog {
 
 /*
  * The menu button on a narrow window is an icon on the page rather than a
- * filled disc floating over it, and it is as wide as a thumb.
+ * filled disc floating over it, and it is as wide as a thumb. The icon is
+ * centred in that target, so that the two icons the button shows - the bars
+ * and the cross - sit in the same place as each other and in line with the
+ * controls beside them.
  */
 starlight-menu-button button,
 starlight-menu-button[aria-expanded='true'] button {
+	align-items: center;
 	background: none;
 	border-radius: 0;
 	box-shadow: none;
 	color: var(--sl-color-gray-2);
+	justify-content: center;
 }
 
 /* ----------------------------------------------------------------------- */
 /* The sidebar                                                             */
 /* ----------------------------------------------------------------------- */
+
+/*
+ * The content is given the whole window until the navigation column appears
+ * beside it at 72rem. Starlight starts the offset at 50rem, where it opens the
+ * column; `../components/PageFrame.astro` holds the column back to the width
+ * the rest of the furniture changes at, and this is the offset following it.
+ *
+ * The offset is what the on-this-page dropdown is placed by as well, so a
+ * window between the two widths gets that across the whole window too.
+ */
+html[data-has-sidebar] {
+	--sl-content-inline-start: 0;
+}
+
+@media (min-width: 72rem) {
+	html[data-has-sidebar] {
+		--sl-content-inline-start: var(--sl-sidebar-width);
+	}
+}
 
 .sidebar-pane {
 	border-inline-end-color: var(--sl-color-gray-5);

@@ -110,8 +110,11 @@ export default defineConfig({
 			 * is for. The title of a page is labelled with the part of the
 			 * manual it is in, the front page leads with one line rather than
 			 * with the site name, and the theme is three cells rather than a
-			 * dropdown. The end of a page names who publishes the engine. Why
-			 * each is replaced, and what it costs, is on the component.
+			 * dropdown. The end of a page names who publishes the engine. The
+			 * frame gives every page the same menu, at the one width the site
+			 * becomes a single column at, and the button that opens it is
+			 * shown at that width rather than Starlight's. Why each is
+			 * replaced, and what it costs, is on the component.
 			 *
 			 * Pagefind is left on. It is what the search falls back to when no
 			 * node answers, and Starlight builds it whether or not it is what
@@ -121,6 +124,8 @@ export default defineConfig({
 				Footer: './src/components/Footer.astro',
 				Head: './src/components/Head.astro',
 				Header: './src/components/Header.astro',
+				MobileMenuToggle: './src/components/MobileMenuToggle.astro',
+				PageFrame: './src/components/PageFrame.astro',
 				Hero: './src/components/Hero.astro',
 				PageTitle: './src/components/PageTitle.astro',
 				Search: './src/components/Search.astro',

@@ -1,0 +1,133 @@
+---
+/*
+ * The frame every page is drawn in: the header across the top, the navigation
+ * column beside the content, and the menu that column becomes on a narrow
+ * window.
+ *
+ * Starlight renders the column, and with it the menu button, only for a page
+ * that is shown with a sidebar. The front page, the demo catalogue and the
+ * demos are shown without one, so a reader who arrived at any of them had the
+ * site name and the search and nothing that led anywhere - the header drops
+ * its sections below 72rem. The column is rendered here whatever the page, so
+ * there is one menu, holding one thing, on every page of the site.
+ *
+ * It stays a menu until 72rem rather than Starlight's 50rem, which is the
+ * width the on-this-page list appears at and the width the header shows its
+ * sections at. One width is what makes the menu one menu: below it every page
+ * is a single column with a button, above it every page has whichever of the
+ * two lists it holds.
+ *
+ * The styles are Starlight's own, with the column moved to that width and
+ * scoped to the pages that have one. A page without a sidebar keeps the pane
+ * hidden at every width and reaches it through the button alone.
+ */
+import Sidebar from 'virtual:starlight/components/Sidebar';
+import MobileMenuToggle from 'virtual:starlight/components/MobileMenuToggle';
+
+const { hasSidebar } = Astro.locals.starlightRoute;
+---
+
+<div class="page sl-flex">
+	<header class="header"><slot name="header" /></header>
+
+	<nav class="sidebar print:hidden" aria-label={Astro.locals.t('sidebarNav.accessibleLabel')}>
+		<MobileMenuToggle />
+		<div id="starlight__sidebar" class="sidebar-pane">
+			<div class="sidebar-content sl-flex">
+				{/*
+				  * The same list either way. A page shown without a sidebar is
+				  * still a page of this site, and the sidebar of the page being
+				  * rendered is worked out whether or not the page shows one, so
+				  * the menu holds the manual on the front page as it does
+				  * everywhere else.
+				  */}
+				{hasSidebar ? <slot name="sidebar" /> : <Sidebar />}
+			</div>
+		</div>
+	</nav>
+
+	<div class="main-frame"><slot /></div>
+</div>
+
+{/*
+  * Kept in Starlight's own layer, so that `../styles/site.css` goes on
+  * restyling the frame from outside it as it does the rest of the theme.
+  */}
+<style>
+@layer starlight.core {
+	.page {
+		flex-direction: column;
+		min-height: 100vh;
+	}
+
+	/*
+	 * The end of the row leaves room for the menu button, which floats over
+	 * it rather than sitting in it.
+	 */
+	.header {
+		z-index: var(--sl-z-index-navbar);
+		position: fixed;
+		inset-inline-start: 0;
+		inset-block-start: 0;
+		width: 100%;
+		height: var(--sl-nav-height);
+		border-bottom: 1px solid var(--sl-color-hairline-shade);
+		padding: var(--sl-nav-pad-y) var(--sl-nav-pad-x);
+		padding-inline-end: calc(var(--sl-nav-gap) + var(--sl-nav-pad-x) + var(--sl-menu-button-size));
+		background-color: var(--sl-color-bg-nav);
+	}
+
+	.sidebar-pane {
+		visibility: var(--sl-sidebar-visibility, hidden);
+		position: fixed;
+		z-index: var(--sl-z-index-menu);
+		inset-block: var(--sl-nav-height) 0;
+		inset-inline-start: 0;
+		width: 100%;
+		background-color: var(--sl-color-black);
+		overflow-y: auto;
+		scrollbar-gutter: stable;
+	}
+
+	:global([aria-expanded='true']) ~ .sidebar-pane {
+		--sl-sidebar-visibility: visible;
+	}
+
+	.sidebar-content {
+		height: 100%;
+		min-height: max-content;
+		padding: 1rem var(--sl-sidebar-pad-x) 0;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.main-frame {
+		padding-top: calc(var(--sl-nav-height) + var(--sl-mobile-toc-height));
+		padding-inline-start: var(--sl-content-inline-start);
+	}
+
+	@media (min-width: 72rem) {
+		.header {
+			padding-inline-end: var(--sl-nav-pad-x);
+		}
+
+		.sidebar-content::after {
+			content: '';
+			padding-bottom: 1px;
+		}
+
+		/*
+		 * The column, which only a page shown with a sidebar has. On every
+		 * other page the pane stays what it is below this width: a menu,
+		 * hidden until the button opens it - and the button is gone here, so
+		 * it stays hidden.
+		 */
+		:global([data-has-sidebar]) .sidebar-pane {
+			--sl-sidebar-visibility: visible;
+			width: var(--sl-sidebar-width);
+			background-color: var(--sl-color-bg-sidebar);
+			border-inline-end: 1px solid var(--sl-color-hairline-shade);
+		}
+	}
+}
+</style>
