@@ -204,6 +204,9 @@ limits of object storage, and what that costs a deployment.
   of an `object` field costs to hold, change, and search.
 - [Lucene compatibility](explanation/lucene-compatibility.md): Why an index can
   outlive the code that can read it, and what the engine does about it.
+- [Text analysis](explanation/analysis.md): Why one chain serves both sides of a
+  search, where the two sides differ on purpose, and why a change to a chain
+  needs a new generation.
 - [Relevance](explanation/relevance.md): The layers results are ordered by, what
   each one is for, and which of them a change reaches without reindexing.
 - [Signal fields](explanation/signal-fields.md): Why a number a ranking reads is
