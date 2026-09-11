@@ -54,6 +54,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 		`equals` matcher. Specifying a matcher unsupported by the target field \
 		type returns an error. See \
 		[Matchers](https://exofind.dev/reference/search-api/#matchers).""",
+	examples = Matcher.EXAMPLE,
 	oneOf = {
 		Matcher.Equals.class, Matcher.In.class, Matcher.Any.class, Matcher.Prefix.class,
 		Matcher.Under.class, Matcher.Range.class, Matcher.Ranges.class, Matcher.Text.class,
@@ -82,12 +83,20 @@ public sealed interface Matcher
 	String TYPE_DESCRIPTION = "Selects the matcher type.";
 
 	/**
+	 * The example matcher, as the JSON a caller writes. The OpenAPI schema of
+	 * this union shows this text, and each matcher type shows one of its own.
+	 */
+	String EXAMPLE = """
+		{ "value": "fiction" }""";
+
+	/**
 	 * Matches field values equal to the specified value.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "EqualsMatcher",
 		description = "Matches field values equal to `value`.",
+		examples = Equals.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -104,6 +113,9 @@ public sealed interface Matcher
 		)
 		Object value
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "value": "fiction" }""";
 	}
 
 	/**
@@ -116,6 +128,7 @@ public sealed interface Matcher
 		description = """
 			Matches field values equal to any value in `values`. An empty \
 			array matches no documents.""",
+		examples = In.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -128,6 +141,9 @@ public sealed interface Matcher
 		@Schema(description = "The values that a field value may equal.", required = true)
 		List<Object> values
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "in", "values": [ "fiction", "poetry" ] }""";
 	}
 
 	/**
@@ -136,6 +152,7 @@ public sealed interface Matcher
 	@Schema(
 		name = "AnyMatcher",
 		description = "Matches any document that contains a value for the field.",
+		examples = Any.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -145,6 +162,9 @@ public sealed interface Matcher
 		requiredProperties = "type"
 	)
 	record Any() implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "any" }""";
 	}
 
 	/**
@@ -157,6 +177,7 @@ public sealed interface Matcher
 		description = """
 			Matches string field values starting with `value`, evaluated \
 			against the entire field value.""",
+		examples = Prefix.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -173,6 +194,9 @@ public sealed interface Matcher
 		)
 		String value
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "prefix", "value": "EX-" }""";
 	}
 
 	/**
@@ -190,6 +214,7 @@ public sealed interface Matcher
 			[`hierarchy`](https://exofind.dev/reference/field-types/#string). \
 			Path segments must match complete levels, so `Men/Sho` matches \
 			nothing where a `prefix` matcher matches.""",
+		examples = Under.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -206,6 +231,9 @@ public sealed interface Matcher
 		)
 		String path
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "under", "path": "Men/Shoes" }""";
 	}
 
 	/**
@@ -219,6 +247,7 @@ public sealed interface Matcher
 			Matches values within bounds. Accepts inclusive (`gte`, `lte`) and \
 			exclusive (`gt`, `lt`) bounds; either side may be left open, and \
 			at least one bound is required (`search:matcher:range_empty`).""",
+		examples = Range.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -252,6 +281,9 @@ public sealed interface Matcher
 		@Schema(description = "Upper bound, exclusive.", examples = "20")
 		Object lt
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "range", "gte": 10, "lt": 20 }""";
 	}
 
 	/**
@@ -265,6 +297,7 @@ public sealed interface Matcher
 			Matches values falling within any of the specified range objects. \
 			An empty array matches no documents, matching the behavior of an \
 			empty `in` matcher.""",
+		examples = Ranges.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -289,6 +322,10 @@ public sealed interface Matcher
 		)
 		List<Range> values
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "ranges", "values": [ { "gte": 10, "lt": 20 }, { "gte": 50 } ] }""";
+
 		/**
 		 * One range, bounded on each side by an inclusive or exclusive bound.
 		 */
@@ -297,7 +334,8 @@ public sealed interface Matcher
 			name = "MatcherRange",
 			description = """
 				One range of a `ranges` matcher, bounded on each side by an \
-				inclusive or exclusive bound. At least one bound is required."""
+				inclusive or exclusive bound. At least one bound is required.""",
+			examples = Range.EXAMPLE
 		)
 		public record Range(
 			/**
@@ -324,6 +362,9 @@ public sealed interface Matcher
 			@Schema(description = "Upper bound, exclusive.", examples = "20")
 			Object lt
 		) {
+			/** The example range, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "gte": 10, "lt": 20 }""";
 		}
 	}
 
@@ -337,6 +378,7 @@ public sealed interface Matcher
 		description = """
 			Matches geopoint values within `radius` meters of the specified \
 			latitude and longitude coordinates.""",
+		examples = Distance.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -382,6 +424,9 @@ public sealed interface Matcher
 		)
 		Double radius
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "distance", "lat": 59.3, "lon": 18.1, "radius": 5000 }""";
 	}
 
 	/**
@@ -392,6 +437,7 @@ public sealed interface Matcher
 		name = "TextMatcher",
 		description = """
 			Matches text within a single field using field-level analysis.""",
+		examples = Text.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -505,6 +551,10 @@ public sealed interface Matcher
 		)
 		Interpret interpret
 	) implements Matcher {
+		/** The example matcher, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "text", "text": "silent spring", "match": "phrase" }""";
+
 		/**
 		 * Whether parts of the text are read as filters on the fields of the
 		 * index. Only applies to {@code user} mode.

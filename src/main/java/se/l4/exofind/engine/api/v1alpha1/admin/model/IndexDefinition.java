@@ -148,7 +148,8 @@ public record IndexDefinition(
 			Declares the locales that localized fields in an index support, \
 			defined once at the index level instead of on every field. The \
 			engine expands these locales onto each field before storing the \
-			index definition."""
+			index definition.""",
+		examples = Locales.EXAMPLE
 	)
 	public record Locales(
 		/**
@@ -179,6 +180,9 @@ public record IndexDefinition(
 			these supported locales and the default locale by using `only`.""")
 		List<String> supported
 	) {
+		/** The example declaration, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "defaultLocale": "en", "supported": [ "sv", "de" ] }""";
 	}
 
 	/**
@@ -203,13 +207,16 @@ public record IndexDefinition(
 	 * retain their variants until reindexed.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Fills missing locale values in a document from available translations \
-		during indexing. Fallback values are analyzed using the target \
-		fallback locale. Document retrieval is unaffected: documents return as \
-		originally provided. Applies to every locale-specific field except \
-		those setting `"locales": { "fallback": "disabled" }`. Modifying \
-		fallback rules applies only to documents indexed after the change.""")
+	@Schema(
+		description = """
+			Fills missing locale values in a document from available translations \
+			during indexing. Fallback values are analyzed using the target \
+			fallback locale. Document retrieval is unaffected: documents return as \
+			originally provided. Applies to every locale-specific field except \
+			those setting `"locales": { "fallback": "disabled" }`. Modifying \
+			fallback rules applies only to documents indexed after the change.""",
+		examples = LocaleFallback.EXAMPLE
+	)
 	public record LocaleFallback(
 		/**
 		 * The ordered list of locales to evaluate when populating a missing
@@ -229,6 +236,9 @@ public record IndexDefinition(
 			`defaultLocale`.""")
 		List<String> chain
 	) {
+		/** The example configuration, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "chain": [ "da", "en" ] }""";
 	}
 
 	/**
@@ -274,9 +284,12 @@ public record IndexDefinition(
 	 * </pre>
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Shared resources defined for an index, referenced by name from \
-		individual fields.""")
+	@Schema(
+		description = """
+			Shared resources defined for an index, referenced by name from \
+			individual fields.""",
+		examples = Resources.EXAMPLE
+	)
 	public record Resources(
 		/**
 		 * Named analysis chains, referenced from a field usage with {@code
@@ -307,26 +320,56 @@ public record IndexDefinition(
 			analyzer chain with `"synonyms": { "named": "..." }`.""")
 		Map<String, Synonyms> synonyms
 	) {
+		/** The example resources, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "analyzers": { "prose": { "preset": "full_text" } },
+			  "stopwords": { "brands": [ "acme" ] },
+			  "synonyms": {
+			    "cars": {
+			      "rules": [
+			        { "equivalent": [ "car", "automobile" ] },
+			        { "mapping": { "from": [ "ny" ], "to": [ "new york" ] } }
+			      ]
+			    }
+			  }
+			}""";
+
 		/**
 		 * Synonym rules applied during indexing. Modifying a synonym set
 		 * applies only to documents indexed after the change.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = """
-			Synonym rules applied during indexing. Modifying a synonym set \
-			applies only to documents indexed after the change.""")
+		@Schema(
+			description = """
+				Synonym rules applied during indexing. Modifying a synonym set \
+				applies only to documents indexed after the change.""",
+			examples = Synonyms.EXAMPLE
+		)
 		public record Synonyms(
 			@Schema(description = "The list of rules for the synonym set.", required = true)
 			List<Rule> rules
 		) {
+			/** The example set, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{
+				  "rules": [
+				    { "equivalent": [ "car", "automobile" ] },
+				    { "mapping": { "from": [ "ny" ], "to": [ "new york" ] } }
+				  ]
+				}""";
+
 			/**
 			 * A single synonym rule, configured as either equivalent terms or a
 			 * one-way mapping.
 			 */
 			@JsonInclude(JsonInclude.Include.NON_NULL)
-			@Schema(description = """
-				A single synonym rule, configured as either equivalent terms \
-				or a one-way mapping.""")
+			@Schema(
+				description = """
+					A single synonym rule, configured as either equivalent terms \
+					or a one-way mapping.""",
+				examples = Rule.EXAMPLE
+			)
 			public record Rule(
 				/**
 				 * Interchangeable terms where each term matches every other
@@ -348,10 +391,17 @@ public record IndexDefinition(
 					reverse.""")
 				Mapping mapping
 			) {
+				/** The example rule, as the JSON a caller writes. */
+				public static final String EXAMPLE = """
+					{ "equivalent": [ "car", "automobile" ] }""";
+
 				@JsonInclude(JsonInclude.Include.NON_NULL)
-				@Schema(description = """
-					The input and target terms of a one-way synonym mapping \
-					rule.""")
+				@Schema(
+					description = """
+						The input and target terms of a one-way synonym mapping \
+						rule.""",
+					examples = Mapping.EXAMPLE
+				)
 				public record Mapping(
 					@Schema(description = "Source terms matched by the mapping rule.", required = true)
 					List<String> from,
@@ -362,6 +412,9 @@ public record IndexDefinition(
 					)
 					List<String> to
 				) {
+					/** The example mapping, as the JSON a caller writes. */
+					public static final String EXAMPLE = """
+						{ "from": [ "ny" ], "to": [ "new york" ] }""";
 				}
 			}
 		}
@@ -381,9 +434,12 @@ public record IndexDefinition(
 	 * specifying an explicit sort order ignore them.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Tie-breaking rules and signal score multipliers. See \
-		[Relevance](https://exofind.dev/explanation/relevance/).""")
+	@Schema(
+		description = """
+			Tie-breaking rules and signal score multipliers. See \
+			[Relevance](https://exofind.dev/explanation/relevance/).""",
+		examples = Ranking.EXAMPLE
+	)
 	public record Ranking(
 		/**
 		 * Tie breakers applied in sequence until ties between documents are
@@ -406,6 +462,15 @@ public record IndexDefinition(
 			`signalsMode`.""")
 		List<Signal> signals
 	) {
+		/** The example ranking, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "tieBreakers": [ { "field": "sales", "direction": "descending" } ],
+			  "signals": [
+			    { "field": "purchases", "saturation": { "pivot": 50 }, "weight": 0.5 }
+			  ]
+			}""";
+
 		/**
 		 * A single document attribute value multiplied into relevance.
 		 *
@@ -428,7 +493,8 @@ public record IndexDefinition(
 				between `0` and `1`, and applied to the score as `1 + weight * \
 				shape`. A document with no value contributes `0`, ensuring a \
 				signal boosts a score by at most its configured weight. Each \
-				signal must specify exactly one shape matching the field type."""
+				signal must specify exactly one shape matching the field type.""",
+			examples = Signal.EXAMPLE
 		)
 		public record Signal(
 			/**
@@ -487,6 +553,10 @@ public record IndexDefinition(
 			)
 			Float weight
 		) {
+			/** The example signal, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "field": "purchases", "saturation": { "pivot": 50 }, "weight": 0.5 }""";
+
 			/**
 			 * Ranks by how far a value rises above a pivot, computed as
 			 * {@code value / (value + pivot)}. Reaches 0.5 at the pivot and
@@ -500,7 +570,8 @@ public record IndexDefinition(
 					Computes `value / (value + pivot)`, reaching `0.5` at the \
 					pivot and approaching but never reaching `1` above it. \
 					Values below `0` evaluate to `0`. The shape for a count \
-					with no ceiling, such as how often something was bought."""
+					with no ceiling, such as how often something was bought.""",
+				examples = Saturation.EXAMPLE
 			)
 			public record Saturation(
 				/**
@@ -518,6 +589,9 @@ public record IndexDefinition(
 				)
 				Double pivot
 			) {
+				/** The example shape, as the JSON a caller writes. */
+				public static final String EXAMPLE = """
+					{ "pivot": 50 }""";
 			}
 
 			/**
@@ -531,7 +605,8 @@ public record IndexDefinition(
 				description = """
 					Halves the multiplier every `halfLife` seconds of age. \
 					Values dated at or after the current time evaluate to \
-					`1`."""
+					`1`.""",
+				examples = Decay.EXAMPLE
 			)
 			public record Decay(
 				/**
@@ -550,6 +625,9 @@ public record IndexDefinition(
 				)
 				Long halfLife
 			) {
+				/** The example shape, as the JSON a caller writes. */
+				public static final String EXAMPLE = """
+					{ "halfLife": 604800 }""";
 			}
 
 			/**
@@ -566,7 +644,8 @@ public record IndexDefinition(
 					below `0` evaluate to `0` and values above the ceiling to \
 					`1`. The shape for a score computed elsewhere that already \
 					lies in a known range, such as an engagement score between \
-					`0` and `1`."""
+					`0` and `1`.""",
+				examples = Linear.EXAMPLE
 			)
 			public record Linear(
 				/**
@@ -584,6 +663,9 @@ public record IndexDefinition(
 				)
 				Double ceiling
 			) {
+				/** The example shape, as the JSON a caller writes. */
+				public static final String EXAMPLE = """
+					{ "ceiling": 1 }""";
 			}
 		}
 
@@ -591,7 +673,10 @@ public record IndexDefinition(
 		 * A tie-breaking rule using a field defined for sorting.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "A tie-breaking rule using a field defined for sorting.")
+		@Schema(
+			description = "A tie-breaking rule using a field defined for sorting.",
+			examples = TieBreaker.EXAMPLE
+		)
 		public record TieBreaker(
 			/**
 			 * The field to break ties by. Must have sorting enabled.
@@ -616,6 +701,10 @@ public record IndexDefinition(
 			)
 			Direction direction
 		) {
+			/** The example rule, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "field": "sales", "direction": "descending" }""";
+
 			@Schema(description = """
 				Which end of a tie-breaker field wins: `ascending` or \
 				`descending`.""")

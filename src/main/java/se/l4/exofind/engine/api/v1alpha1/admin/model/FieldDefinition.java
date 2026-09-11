@@ -63,6 +63,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 		engine defaults, and only explicitly configured properties are stored, \
 		preserving default values across engine updates. See [Field \
 		types](https://exofind.dev/reference/field-types/).""",
+	examples = FieldDefinition.EXAMPLE,
 	oneOf = {
 		StringFieldDefinition.class, BooleanFieldDefinition.class,
 		VectorFieldDefinition.class, Int32FieldDefinition.class,
@@ -98,6 +99,18 @@ public sealed interface FieldDefinition
 	 * with the one value that selects it.
 	 */
 	String TYPE_DESCRIPTION = "Selects the field type.";
+
+	/**
+	 * The example field, as the JSON a caller writes. The OpenAPI schema of this
+	 * union shows this text, and each field type shows one of its own.
+	 */
+	String EXAMPLE = """
+		{
+		  "type": "string",
+		  "stored": true,
+		  "filter": {},
+		  "matching": { "highlight": {} }
+		}""";
 
 	String ROLE_DESCRIPTION = """
 		Specifies a field role that applies a preset combination of usages. \
@@ -314,11 +327,14 @@ public sealed interface FieldDefinition
 	 * {@code only} narrows a field to fewer of them.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Configures locale-specific field values. On an index that declares \
-		`locales`, configuring `{}` gives the field every declared locale, and \
-		`only` narrows the field to a subset of those locales. See [Localize \
-		fields](https://exofind.dev/how-to/localize-fields/).""")
+	@Schema(
+		description = """
+			Configures locale-specific field values. On an index that declares \
+			`locales`, configuring `{}` gives the field every declared locale, and \
+			`only` narrows the field to a subset of those locales. See [Localize \
+			fields](https://exofind.dev/how-to/localize-fields/).""",
+		examples = Locales.EXAMPLE
+	)
 	record Locales(
 		/**
 		 * The BCP-47 fallback locale assumed for values that carry no locale.
@@ -392,6 +408,10 @@ public sealed interface FieldDefinition
 		)
 		Fallback fallback
 	) {
+		/** The example configuration, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "defaultLocale": "sv", "locales": [ "en", "de" ] }""";
+
 		@Schema(description = """
 			Controls whether a field participates in the index's locale \
 			fallback: `enabled` populates missing locales from fallback \
@@ -425,9 +445,12 @@ public sealed interface FieldDefinition
 		description = """
 			Enables filtering search results by exact field value. Filtering is \
 			exact across all types; exact-match normalization for string fields \
-			is configured under `keyword`."""
+			is configured under `keyword`.""",
+		examples = Filter.EXAMPLE
 	)
 	record Filter() {
+		/** The example usage, as the JSON a caller writes. */
+		public static final String EXAMPLE = "{}";
 	}
 
 	/**
@@ -438,7 +461,8 @@ public sealed interface FieldDefinition
 		name = "SortUsage",
 		description = """
 			Enables sorting search results by field value and configures value \
-			comparison."""
+			comparison.""",
+		examples = Sort.EXAMPLE
 	)
 	record Sort(
 		/**
@@ -465,6 +489,10 @@ public sealed interface FieldDefinition
 		)
 		Missing missing
 	) {
+		/** The example usage, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "collation": "locale", "missing": "last" }""";
+
 		@Schema(description = """
 			Collation order for string comparisons: `locale` orders by the \
 			rules of the locale so characters such as `å` sort in expected \
@@ -506,9 +534,12 @@ public sealed interface FieldDefinition
 		name = "FacetUsage",
 		description = """
 			Enables value count aggregations across search results. Carries no \
-			configuration options."""
+			configuration options.""",
+		examples = Facet.EXAMPLE
 	)
 	record Facet() {
+		/** The example usage, as the JSON a caller writes. */
+		public static final String EXAMPLE = "{}";
 	}
 
 	/**
@@ -520,8 +551,11 @@ public sealed interface FieldDefinition
 		description = """
 			Makes a number field a ranking signal that is refreshed in place \
 			through the document update action. Carries no configuration \
-			options."""
+			options.""",
+		examples = Signal.EXAMPLE
 	)
 	record Signal() {
+		/** The example usage, as the JSON a caller writes. */
+		public static final String EXAMPLE = "{}";
 	}
 }

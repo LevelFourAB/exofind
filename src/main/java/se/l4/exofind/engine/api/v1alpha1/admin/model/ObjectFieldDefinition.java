@@ -75,6 +75,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 		source; a stored child field below single objects also answers when the \
 		index keeps none. See \
 		[`object`](https://exofind.dev/reference/field-types/#object).""",
+	examples = ObjectFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -156,6 +157,20 @@ public record ObjectFieldDefinition(
 		fragments come back on value hits. `locales` works everywhere.""")
 	Map<String, FieldDefinition> fields
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{
+		  "type": "object",
+		  "multiple": true,
+		  "mode": "nested",
+		  "key": "sku",
+		  "fields": {
+		    "sku": { "type": "string", "required": true, "filter": {} },
+		    "color": { "type": "string", "filter": {} },
+		    "price": { "type": "double", "filter": {} }
+		  }
+		}""";
+
 	/**
 	 * Defines how object values are indexed relative to the parent document.
 	 */

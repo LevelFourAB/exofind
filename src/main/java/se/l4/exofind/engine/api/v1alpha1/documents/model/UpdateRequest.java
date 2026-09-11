@@ -23,12 +23,15 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param documents
  *   the changes to apply, in the order provided
  */
-@Schema(description = """
-	Field-level changes to documents already in an index. Every change to one \
-	document is applied and validated as a whole. If validation fails, the \
-	request is rejected and the document remains unchanged. For more \
-	information, see [Update \
-	behavior](https://exofind.dev/reference/documents-api/#update-behavior).""")
+@Schema(
+	description = """
+		Field-level changes to documents already in an index. Every change to one \
+		document is applied and validated as a whole. If validation fails, the \
+		request is rejected and the document remains unchanged. For more \
+		information, see [Update \
+		behavior](https://exofind.dev/reference/documents-api/#update-behavior).""",
+	examples = UpdateRequest.EXAMPLE
+)
 public record UpdateRequest(
 	@Schema(
 		description = """

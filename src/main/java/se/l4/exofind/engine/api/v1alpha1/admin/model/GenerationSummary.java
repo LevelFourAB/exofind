@@ -18,7 +18,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   recorded
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = "One generation of an index.")
+@Schema(
+	description = "One generation of an index.",
+	examples = GenerationSummary.EXAMPLE
+)
 public record GenerationSummary(
 	@Schema(
 		description = """
@@ -41,4 +44,7 @@ public record GenerationSummary(
 	)
 	String createdAt
 ) {
+	/** The example generation, as the JSON the engine answers with. */
+	public static final String EXAMPLE = """
+		{ "name": "2", "live": true, "createdAt": "2026-08-16T11:02:07Z" }""";
 }

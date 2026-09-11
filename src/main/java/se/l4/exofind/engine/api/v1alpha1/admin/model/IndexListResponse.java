@@ -54,7 +54,10 @@ public record IndexListResponse(
 	 *   all generations of the index, ordered by name
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "An index and the generations it holds.")
+	@Schema(
+		description = "An index and the generations it holds.",
+		examples = IndexSummary.EXAMPLE
+	)
 	public record IndexSummary(
 		@Schema(description = "The name of the index.", examples = "products")
 		String name,
@@ -70,5 +73,15 @@ public record IndexListResponse(
 		@Schema(description = "Every generation of the index, ordered by name.")
 		List<GenerationSummary> generations
 	) {
+		/** The example index, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "name": "products",
+			  "generation": "2",
+			  "generations": [
+			    { "name": "1", "live": false },
+			    { "name": "2", "live": true }
+			  ]
+			}""";
 	}
 }

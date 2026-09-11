@@ -39,10 +39,13 @@ public record SuggestResponse(
 	 * One thing to search for.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		One thing to search for: a value of a suggested field, shown by its \
-		label where the search settings declare one, with how much of it \
-		was typed and how many documents hold it.""")
+	@Schema(
+		description = """
+			One thing to search for: a value of a suggested field, shown by its \
+			label where the search settings declare one, with how much of it \
+			was typed and how many documents hold it.""",
+		examples = Suggestion.EXAMPLE
+	)
 	public record Suggestion(
 		/**
 		 * What to show and to search for.
@@ -130,6 +133,16 @@ public record SuggestResponse(
 		)
 		long count
 	) {
+		/** The example suggestion, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "text": "adidas",
+			  "typed": 3,
+			  "field": "brand",
+			  "value": "adidas",
+			  "label": "Adidas",
+			  "count": 87
+			}""";
 	}
 
 	/**

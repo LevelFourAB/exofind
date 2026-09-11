@@ -65,6 +65,6 @@ Observability:
 
 Build outputs that nothing compares:
 
-- **`website/public/openapi.yaml` is a checked-in copy.** Run `mise run site:openapi` after changing an endpoint, a schema, or an annotation description, or the site publishes the previous API. The site renders parameter examples and `@ExampleObject` bodies. An example on a `@Schema` reaches generated clients only.
+- **`website/public/openapi.yaml` is a checked-in copy.** Run `mise run site:openapi` after changing an endpoint, a schema, or an annotation description, or the site publishes the previous API. The site renders parameter examples, `@ExampleObject` bodies, and the `examples` of a `@Schema` beside the rows of the type that states it.
 - **The index the site searches itself with is loaded separately.** Run `mise run site:index` against the node the site searches after a page's text or headings change. `website/search/README.md` states what the load does.
 - **JMH benchmarks need a clean build after a source change.** Stale generated classes make the forks fail while the runner exits zero, so the failure shows only as missing results. `docs/how-to/benchmark-the-engine.md` states how to clean without losing indexes.

@@ -17,14 +17,17 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * {@code signalsMode} replaces them.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Document ranking signal used to adjust relevance scoring. Signals apply \
-	only when results are ordered by relevance, so an explicit `sort` \
-	overrides them. Targeting an unknown field returns \
-	`index:query:field_not_found`; targeting a field without sorting enabled \
-	returns `index:query:usage_not_enabled`; a signal function unsupported by \
-	the field type returns `index:invalid-query-type`. See \
-	[Signals](https://exofind.dev/reference/search-api/#signals).""")
+@Schema(
+	description = """
+		Document ranking signal used to adjust relevance scoring. Signals apply \
+		only when results are ordered by relevance, so an explicit `sort` \
+		overrides them. Targeting an unknown field returns \
+		`index:query:field_not_found`; targeting a field without sorting enabled \
+		returns `index:query:usage_not_enabled`; a signal function unsupported by \
+		the field type returns `index:invalid-query-type`. See \
+		[Signals](https://exofind.dev/reference/search-api/#signals).""",
+	examples = Signal.EXAMPLE
+)
 public record Signal(
 	/**
 	 * Field to read the value from, as named in the index definition. Must be a
@@ -73,15 +76,22 @@ public record Signal(
 	)
 	Float weight
 ) {
+	/** The example signal, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "field": "purchases", "saturation": { "pivot": 50 }, "weight": 0.5 }""";
+
 	/**
 	 * Ranks by how far a value is above a pivot, as
 	 * {@code value / (value + pivot)} - half at the pivot, approaching but
 	 * never reaching one above it.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Ranks a value as `value / (value + pivot)` - half at the pivot, \
-		approaching but never reaching one above it.""")
+	@Schema(
+		description = """
+			Ranks a value as `value / (value + pivot)` - half at the pivot, \
+			approaching but never reaching one above it.""",
+		examples = Saturation.EXAMPLE
+	)
 	public record Saturation(
 		/**
 		 * The value that counts for half of what the signal can give. Must be
@@ -98,13 +108,19 @@ public record Signal(
 		)
 		Double pivot
 	) {
+		/** The example shape, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "pivot": 50 }""";
 	}
 
 	/**
 	 * Ranks a timestamp by how long ago it was, halving every half life.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Ranks a timestamp by how long ago it was, halving every half life.")
+	@Schema(
+		description = "Ranks a timestamp by how long ago it was, halving every half life.",
+		examples = Decay.EXAMPLE
+	)
 	public record Decay(
 		/**
 		 * How many seconds it takes for the signal to be worth half as much.
@@ -121,16 +137,22 @@ public record Signal(
 		)
 		Long halfLife
 	) {
+		/** The example shape, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "halfLife": 604800 }""";
 	}
 
 	/**
 	 * Ranks a value as {@code value / ceiling}, held between zero and one.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Ranks a value as `value / ceiling`, held between `0` and `1`. The \
-		shape for a score computed elsewhere that already lies in a known \
-		range.""")
+	@Schema(
+		description = """
+			Ranks a value as `value / ceiling`, held between `0` and `1`. The \
+			shape for a score computed elsewhere that already lies in a known \
+			range.""",
+		examples = Linear.EXAMPLE
+	)
 	public record Linear(
 		/**
 		 * The value that counts for all of what the signal can give. Must be
@@ -147,5 +169,8 @@ public record Signal(
 		)
 		Double ceiling
 	) {
+		/** The example shape, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "ceiling": 1 }""";
 	}
 }

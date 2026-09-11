@@ -138,11 +138,14 @@ public record SearchResponse(
 	 * `document`.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		One result: usually a document that matched, or - for a search whose \
-		`hits` names an object field - one matched value of that field, with \
-		`index` and `value` present and the document holding it under \
-		`document`.""")
+	@Schema(
+		description = """
+			One result: usually a document that matched, or - for a search whose \
+			`hits` names an object field - one matched value of that field, with \
+			`index` and `value` present and the document holding it under \
+			`document`.""",
+		examples = Hit.EXAMPLE
+	)
 	public record Hit(
 		/**
 		 * Primary key of the document, omitted on an index without a primary
@@ -272,13 +275,24 @@ public record SearchResponse(
 			requested field. Omitted when matched values are not requested.""")
 		Map<String, MatchedValues> matched
 	) {
+		/** The example hit, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "id": "9781234567890",
+			  "score": 8.42,
+			  "document": { "name": "Silent Spring", "price": 12.50 },
+			  "highlights": { "name": [ "Silent <em>Spring</em>" ] }
+			}""";
 	}
 
 	/**
 	 * Matched values of an object field for a hit.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Matched values of a nested object field for a hit.")
+	@Schema(
+		description = "Matched values of a nested object field for a hit.",
+		examples = MatchedValues.EXAMPLE
+	)
 	public record MatchedValues(
 		/**
 		 * The matched values, up to the requested limit. Values are ordered by
@@ -311,6 +325,15 @@ public record SearchResponse(
 			limit is reached.""")
 		int totalValues
 	) {
+		/** The example values, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "values": [
+			    { "color": "red", "price": 18.00 },
+			    { "color": "blue", "price": 19.50 }
+			  ],
+			  "totalValues": 5
+			}""";
 	}
 
 	/**
@@ -331,7 +354,8 @@ public record SearchResponse(
 			Match counts for one faceted field. Counting per value returns \
 			`values` with `totalValues`; counting into ranges returns \
 			`buckets`, omitting the other representation. Facet counts exclude \
-			filter entries on the facet's own field by default."""
+			filter entries on the facet's own field by default.""",
+		examples = Facet.EXAMPLE
 	)
 	public record Facet(
 		/**
@@ -360,6 +384,15 @@ public record SearchResponse(
 			order.""")
 		List<FacetBucket> buckets
 	) {
+		/** The example result, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "values": [
+			    { "value": "fiction", "count": 87 },
+			    { "value": "poetry", "count": 41 }
+			  ],
+			  "totalValues": 2
+			}""";
 	}
 
 	/**
@@ -370,10 +403,13 @@ public record SearchResponse(
 	 * properties.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		One value of a faceted field with its match count. For hierarchical \
-		fields, returns an entry per hierarchy level and nests child levels \
-		under `values`. Other fields omit hierarchical properties.""")
+	@Schema(
+		description = """
+			One value of a faceted field with its match count. For hierarchical \
+			fields, returns an entry per hierarchy level and nests child levels \
+			under `values`. Other fields omit hierarchical properties.""",
+		examples = FacetValue.EXAMPLE
+	)
 	public record FacetValue(
 		/**
 		 * The facet value in its stored format: a string, boolean, number, or
@@ -444,6 +480,10 @@ public record SearchResponse(
 			Omitted for non-hierarchical fields.""")
 		Integer totalValues
 	) {
+		/** The example value, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{ "value": "fiction", "count": 87, "label": "Fiction" }""";
+
 		/**
 		 * A value standing on its own, which is what every field but one
 		 * holding paths counts.
@@ -478,7 +518,10 @@ public record SearchResponse(
 	 * One bucket of a faceted field with its match count.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One range bucket of a faceted field with its match count.")
+	@Schema(
+		description = "One range bucket of a faceted field with its match count.",
+		examples = FacetBucket.EXAMPLE
+	)
 	public record FacetBucket(
 		/**
 		 * Inclusive lower bound of the range bucket, as specified in the
@@ -513,6 +556,9 @@ public record SearchResponse(
 			bucket.""", examples = "17")
 		long count
 	) {
+		/** The example bucket, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{ "from": 100, "to": 200, "count": 17 }""";
 	}
 
 	/**
@@ -523,12 +569,15 @@ public record SearchResponse(
 	 * searched as text, so the results hold what the filter finds and what
 	 * the words find as text.
 	 */
-	@Schema(description = """
-		The filters a search read out of the query text, and the text that \
-		was left once their words were taken out. Present only when \
-		something was read. The words of a filter are still searched as \
-		text, so the results hold what the filter finds as well as what the \
-		words find as text, with the filter ranked first.""")
+	@Schema(
+		description = """
+			The filters a search read out of the query text, and the text that \
+			was left once their words were taken out. Present only when \
+			something was read. The words of a filter are still searched as \
+			text, so the results hold what the filter finds as well as what the \
+			words find as text, with the filter ranked first.""",
+		examples = Interpreted.EXAMPLE
+	)
 	public record Interpreted(
 		/**
 		 * The filters that were read, in the order their words were typed.
@@ -551,11 +600,27 @@ public record SearchResponse(
 		)
 		String text
 	) {
+		/** The example reading, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "filters": [
+			    {
+			      "field": "price",
+			      "match": { "type": "range", "lt": 500 },
+			      "words": [ "under", "500" ]
+			    }
+			  ],
+			  "text": "shoes"
+			}""";
+
 		/**
 		 * One filter read out of the query text.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "One filter read out of the query text.")
+		@Schema(
+			description = "One filter read out of the query text.",
+			examples = Filter.EXAMPLE
+		)
 		public record Filter(
 			/**
 			 * The field the filter is on.
@@ -602,6 +667,14 @@ public record SearchResponse(
 				request named. Absent when there are none.""")
 			List<Clause.Text.Target> fallback
 		) {
+			/** The example filter, as the JSON the engine answers with. */
+			public static final String EXAMPLE = """
+				{
+				  "field": "price",
+				  "match": { "type": "range", "lt": 500 },
+				  "words": [ "under", "500" ]
+				}""";
+
 			public Filter(String field, Matcher match, List<String> words) {
 				this(field, null, match, words, null);
 			}
@@ -614,10 +687,13 @@ public record SearchResponse(
 	 * <p>Present only when the initial query produced zero results. Total
 	 * counts and facet counts reflect the relaxed search.
 	 */
-	@Schema(description = """
-		Details of dropped query terms when query relaxation was applied. \
-		Present only when the initial query produced zero results. Total \
-		counts and facet counts reflect the relaxed search.""")
+	@Schema(
+		description = """
+			Details of dropped query terms when query relaxation was applied. \
+			Present only when the initial query produced zero results. Total \
+			counts and facet counts reflect the relaxed search.""",
+		examples = Relaxed.EXAMPLE
+	)
 	public record Relaxed(
 		/**
 		 * List of dropped words and the reason each was removed, in the order
@@ -637,13 +713,23 @@ public record SearchResponse(
 		)
 		String text
 	) {
+		/** The example relaxation, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "dropped": [ { "word": "waterproof", "reason": "unmatched" } ],
+			  "text": "running shoes"
+			}""";
+
 		/**
 		 * Details of a single dropped query word and the reason for its
 		 * removal.
 		 */
-		@Schema(description = """
-			Details of a single dropped query word and the reason for its \
-			removal.""")
+		@Schema(
+			description = """
+				Details of a single dropped query word and the reason for its \
+				removal.""",
+			examples = Dropped.EXAMPLE
+		)
 		public record Dropped(
 			/**
 			 * The word as it was typed.
@@ -657,6 +743,10 @@ public record SearchResponse(
 			@Schema(description = "Reason the word was dropped.")
 			Reason reason
 		) {
+			/** The example word, as the JSON the engine answers with. */
+			public static final String EXAMPLE = """
+				{ "word": "waterproof", "reason": "unmatched" }""";
+
 			/**
 			 * Reason a query word was dropped.
 			 */
@@ -686,7 +776,10 @@ public record SearchResponse(
 	/**
 	 * Total match count, measured in whatever unit the search returns.
 	 */
-	@Schema(description = "Total match count, measured in whatever unit the search returns.")
+	@Schema(
+		description = "Total match count, measured in whatever unit the search returns.",
+		examples = Total.EXAMPLE
+	)
 	public record Total(
 		/**
 		 * Total number of matching results.
@@ -703,13 +796,19 @@ public record SearchResponse(
 			`"total": "exact"` is requested or when calculating facets.""")
 		boolean exact
 	) {
+		/** The example total, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{ "count": 128, "exact": true }""";
 	}
 
 	/**
 	 * Pagination state and navigation cursors for the result window.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Pagination state and navigation cursors for the result window.")
+	@Schema(
+		description = "Pagination state and navigation cursors for the result window.",
+		examples = Page.EXAMPLE
+	)
 	public record Page(
 		/**
 		 * Maximum number of results returned in the page window.
@@ -751,6 +850,13 @@ public record SearchResponse(
 		@Schema(description = "Numbered page metadata, present when requested.")
 		Pages pages
 	) {
+		/** The example window, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "limit": 20,
+			  "offset": 0,
+			  "next": "c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0"
+			}""";
 	}
 
 	/**
@@ -766,7 +872,8 @@ public record SearchResponse(
 			Numbered page metadata, divided into `start`, `middle`, and `end` \
 			arrays to render `1 2 3 … 7` with ellipses at window boundaries. \
 			Page numbers are 1-based. Cursors inside encode count offsets and \
-			remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`."""
+			remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""",
+		examples = Pages.EXAMPLE
 	)
 	public record Pages(
 		/**
@@ -817,13 +924,28 @@ public record SearchResponse(
 			exceeds maximum page depth.""")
 		List<PageRef> end
 	) {
+		/** The example metadata, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "count": 7,
+			  "next": { "number": 4, "cursor": "b2Zmc2V0OjYw" },
+			  "start": [
+			    { "number": 1, "cursor": "b2Zmc2V0OjA" },
+			    { "number": 2, "cursor": "b2Zmc2V0OjIw" },
+			    { "number": 3, "cursor": "b2Zmc2V0OjQw", "current": true }
+			  ],
+			  "end": [ { "number": 7, "cursor": "b2Zmc2V0OjEyMA" } ]
+			}""";
 	}
 
 	/**
 	 * Metadata for a single numbered page.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Metadata for a single numbered page.")
+	@Schema(
+		description = "Metadata for a single numbered page.",
+		examples = PageRef.EXAMPLE
+	)
 	public record PageRef(
 		/**
 		 * 1-based page number.
@@ -844,5 +966,8 @@ public record SearchResponse(
 			True for the current page; omitted on all other pages.""")
 		Boolean current
 	) {
+		/** The example page, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{ "number": 3, "cursor": "b2Zmc2V0OjQw", "current": true }""";
 	}
 }

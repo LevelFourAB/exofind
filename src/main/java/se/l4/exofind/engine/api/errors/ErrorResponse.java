@@ -30,7 +30,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		namespaces such as `index:field:invalid_name`, are stable across API \
 		versions, and are never renamed or reused, so clients match on `code` \
 		rather than on `message`. See \
-		[Errors](https://exofind.dev/reference/errors/)."""
+		[Errors](https://exofind.dev/reference/errors/).""",
+	examples = ErrorResponse.EXAMPLE
 )
 public record ErrorResponse(
 	@Schema(
@@ -59,6 +60,20 @@ public record ErrorResponse(
 		one request at a time.""")
 	List<ErrorDetail> errors
 ) {
+	/** The example body, as the JSON the engine answers with. */
+	public static final String EXAMPLE = """
+		{
+		  "code": "validation",
+		  "message": "Request contains 1 error",
+		  "errors": [
+		    {
+		      "code": "index:field:invalid_primary_key_multiple",
+		      "message": "Field `id` is marked as a primary key and multiple, primary keys can not have multiple values",
+		      "path": "id"
+		    }
+		  ]
+		}""";
+
 	/**
 	 * @param code
 	 *   machine-readable code for this problem
@@ -72,7 +87,11 @@ public record ErrorResponse(
 	 *   own message from the code
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(name = "ErrorDetail", description = "One problem found in a request.")
+	@Schema(
+		name = "ErrorDetail",
+		description = "One problem found in a request.",
+		examples = ErrorDetail.EXAMPLE
+	)
 	public record ErrorDetail(
 		@Schema(
 			description = "The error code identifying this specific problem.",
@@ -100,5 +119,12 @@ public record ErrorResponse(
 			message of its own from the code.""")
 		Map<String, String> arguments
 	) {
+		/** The example problem, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "code": "index:field:invalid_primary_key_multiple",
+			  "message": "Field `id` is marked as a primary key and multiple, primary keys can not have multiple values",
+			  "path": "id"
+			}""";
 	}
 }

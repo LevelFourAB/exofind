@@ -15,9 +15,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   provided no address
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	The node currently writing an index, read from shared deployment state. \
-	Reported by the engine and never accepted as input.""")
+@Schema(
+	description = """
+		The node currently writing an index, read from shared deployment state. \
+		Reported by the engine and never accepted as input.""",
+	examples = IndexerInfo.EXAMPLE
+)
 public record IndexerInfo(
 	@Schema(description = "The name the node competes under.", examples = "node-a-7f21")
 	String node,
@@ -30,4 +33,7 @@ public record IndexerInfo(
 	)
 	String address
 ) {
+	/** The example node, as the JSON the engine answers with. */
+	public static final String EXAMPLE = """
+		{ "node": "node-a-7f21", "address": "http://node-a:8080" }""";
 }

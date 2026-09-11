@@ -120,9 +120,12 @@ public record SearchSettingsDefinition(
 	 *   {@code null} for the engine default
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		A synonym set applied to the search query at query time, rather than \
-		to document values during indexing.""")
+	@Schema(
+		description = """
+			A synonym set applied to the search query at query time, rather than \
+			to document values during indexing.""",
+		examples = QuerySynonyms.EXAMPLE
+	)
 	public record QuerySynonyms(
 		@Schema(description = """
 			The rules of the set, using the same shape as rules in an index \
@@ -149,6 +152,13 @@ public record SearchSettingsDefinition(
 		)
 		Float boost
 	) {
+		/** The example set, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "rules": [ { "equivalent": [ "laptop", "notebook" ] } ],
+			  "fields": [ "name" ],
+			  "boost": 0.8
+			}""";
 	}
 
 	/**
@@ -169,9 +179,12 @@ public record SearchSettingsDefinition(
 	 *   searched as text
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Words matched as they are spelled, regardless of the typo tolerance \
-		configured on the searched fields.""")
+	@Schema(
+		description = """
+			Words matched as they are spelled, regardless of the typo tolerance \
+			configured on the searched fields.""",
+		examples = TypoExclusions.EXAMPLE
+	)
 	public record TypoExclusions(
 		@Schema(description = """
 			The words, as typed. Words are read through the analysis chain of \
@@ -189,6 +202,9 @@ public record SearchSettingsDefinition(
 			definition.""")
 		List<String> fields
 	) {
+		/** The example list, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "words": [ "adidas", "X-15" ], "fields": [ "name" ] }""";
 	}
 
 	/**
@@ -209,9 +225,12 @@ public record SearchSettingsDefinition(
 	 *   is typed, or {@code null} when they are not
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		How searches read one field. Every capability is off unless its object \
-		is present; an empty object turns it on with the engine defaults.""")
+	@Schema(
+		description = """
+			How searches read one field. Every capability is off unless its object \
+			is present; an empty object turns it on with the engine defaults.""",
+		examples = FieldSettings.EXAMPLE
+	)
 	public record FieldSettings(
 		@Schema(description = """
 			Reads the values the field holds out of the query text of a search \
@@ -247,6 +266,15 @@ public record SearchSettingsDefinition(
 			for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).""")
 		Suggest suggest
 	) {
+		/** The example settings, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "interpret": {},
+			  "suggest": {},
+			  "values": [
+			    { "value": "S", "order": 1, "labels": { "en": "Small", "sv": "Liten" } }
+			  ]
+			}""";
 	}
 
 	/**
@@ -254,10 +282,15 @@ public record SearchSettingsDefinition(
 	 * options.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Suggests the values of the field while a search is typed. Carries no \
-		configuration options.""")
+	@Schema(
+		description = """
+			Suggests the values of the field while a search is typed. Carries no \
+			configuration options.""",
+		examples = Suggest.EXAMPLE
+	)
 	public record Suggest() {
+		/** The example usage, as the JSON a caller writes. */
+		public static final String EXAMPLE = "{}";
 	}
 
 	/**
@@ -273,9 +306,12 @@ public record SearchSettingsDefinition(
 	 *   {@code null} for none
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		One value of a field, as stored, with the order a facet sorts it by \
-		and the label a search answers it with per locale.""")
+	@Schema(
+		description = """
+			One value of a field, as stored, with the order a facet sorts it by \
+			and the label a search answers it with per locale.""",
+		examples = DeclaredValue.EXAMPLE
+	)
 	public record DeclaredValue(
 		@Schema(
 			description = """
@@ -306,6 +342,9 @@ public record SearchSettingsDefinition(
 			`index:settings:fields:values_invalid`.""")
 		Map<String, String> labels
 	) {
+		/** The example value, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "value": "S", "order": 1, "labels": { "en": "Small", "sv": "Liten" } }""";
 	}
 
 	/**
@@ -316,8 +355,11 @@ public record SearchSettingsDefinition(
 		name = "InterpretUsage",
 		description = """
 			Reads the values of the field out of the query text. Carries no \
-			configuration options."""
+			configuration options.""",
+		examples = Interpret.EXAMPLE
 	)
 	public record Interpret() {
+		/** The example usage, as the JSON a caller writes. */
+		public static final String EXAMPLE = "{}";
 	}
 }

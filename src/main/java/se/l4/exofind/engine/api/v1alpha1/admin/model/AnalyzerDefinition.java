@@ -27,13 +27,16 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * use the locale of the value being analyzed unless specified.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Specifies how the text of a usage is analyzed, with exactly one of \
-	`preset`, `custom`, or `named`. An analyzer chain describes the indexing \
-	process. The engine derives the query analyzer from the indexing chain. \
-	Components that select words by locale, such as stopwords and stemming, \
-	use the locale of the value being analyzed unless you specify a locale. \
-	See [Analysis](https://exofind.dev/reference/analysis/).""")
+@Schema(
+	description = """
+		Specifies how the text of a usage is analyzed, with exactly one of \
+		`preset`, `custom`, or `named`. An analyzer chain describes the indexing \
+		process. The engine derives the query analyzer from the indexing chain. \
+		Components that select words by locale, such as stopwords and stemming, \
+		use the locale of the value being analyzed unless you specify a locale. \
+		See [Analysis](https://exofind.dev/reference/analysis/).""",
+	examples = AnalyzerDefinition.EXAMPLE
+)
 public record AnalyzerDefinition(
 	/**
 	 * A predefined analyzer chain expanded before storing the index definition.
@@ -70,6 +73,10 @@ public record AnalyzerDefinition(
 	)
 	String named
 ) {
+	/** The example analyzer, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "preset": "full_text" }""";
+
 	@Schema(description = """
 		A predefined analyzer chain. `preserve_terms` tokenizes and normalizes \
 		text, but keeps each word whole, for names, codes, and SKUs. \
@@ -89,10 +96,13 @@ public record AnalyzerDefinition(
 	 * derives the query analyzer from it.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		A custom analyzer chain that defines character filters, a tokenizer, \
-		and token filters. Each component is an object with one key that \
-		specifies the component type, for example `{ "whitespace": {} }`.""")
+	@Schema(
+		description = """
+			A custom analyzer chain that defines character filters, a tokenizer, \
+			and token filters. Each component is an object with one key that \
+			specifies the component type, for example `{ "whitespace": {} }`.""",
+		examples = Custom.EXAMPLE
+	)
 	public record Custom(
 		/**
 		 * Character filters applied to the raw text before tokenization, in
@@ -122,6 +132,13 @@ public record AnalyzerDefinition(
 		@Schema(description = "An array of token filters applied to tokens, in order.")
 		List<TokenFilter> filters
 	) {
+		/** The example chain, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "charFilters": [ { "htmlStrip": {} } ],
+			  "tokenizer": { "icu": {} },
+			  "filters": [ { "normalize": {} }, { "stemming": { "locale": "sv" } } ]
+			}""";
 	}
 
 	/**
@@ -129,9 +146,12 @@ public record AnalyzerDefinition(
 	 * including its configuration: {@code { "whitespace": {} }}.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Specifies how text is split into tokens. Specify exactly one tokenizer \
-		by including its configuration, for example `{ "whitespace": {} }`.""")
+	@Schema(
+		description = """
+			Specifies how text is split into tokens. Specify exactly one tokenizer \
+			by including its configuration, for example `{ "whitespace": {} }`.""",
+		examples = Tokenizer.EXAMPLE
+	)
 	public record Tokenizer(
 		/**
 		 * Segments text based on Unicode rules. This is the default tokenizer.
@@ -159,36 +179,52 @@ public record AnalyzerDefinition(
 		@Schema(description = "Splits text on non-letter characters.")
 		Letter letter
 	) {
+		/** The example tokenizer, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "icu": {} }""";
+
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "IcuTokenizer",
-			description = "Unicode segmentation. Carries no options."
+			description = "Unicode segmentation. Carries no options.",
+			examples = Icu.EXAMPLE
 		)
 		public record Icu() {
+			/** The example tokenizer, as the JSON a caller writes. */
+			public static final String EXAMPLE = "{}";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "WhitespaceTokenizer",
-			description = "Whitespace segmentation. Carries no options."
+			description = "Whitespace segmentation. Carries no options.",
+			examples = Whitespace.EXAMPLE
 		)
 		public record Whitespace() {
+			/** The example tokenizer, as the JSON a caller writes. */
+			public static final String EXAMPLE = "{}";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "KeywordTokenizer",
-			description = "Retains the entire input value as a single token. Carries no options."
+			description = "Retains the entire input value as a single token. Carries no options.",
+			examples = Keyword.EXAMPLE
 		)
 		public record Keyword() {
+			/** The example tokenizer, as the JSON a caller writes. */
+			public static final String EXAMPLE = "{}";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "LetterTokenizer",
-			description = "Splits text on non-letter characters. Carries no options."
+			description = "Splits text on non-letter characters. Carries no options.",
+			examples = Letter.EXAMPLE
 		)
 		public record Letter() {
+			/** The example tokenizer, as the JSON a caller writes. */
+			public static final String EXAMPLE = "{}";
 		}
 	}
 
@@ -197,9 +233,12 @@ public record AnalyzerDefinition(
 	 * character filter by including its configuration.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		A transformation of the raw text before tokenization. Specify exactly \
-		one character filter by including its configuration.""")
+	@Schema(
+		description = """
+			A transformation of the raw text before tokenization. Specify exactly \
+			one character filter by including its configuration.""",
+		examples = CharFilter.EXAMPLE
+	)
 	public record CharFilter(
 		/**
 		 * Strips HTML and XML markup and keeps text between tags.
@@ -221,17 +260,27 @@ public record AnalyzerDefinition(
 			Replaces substrings that match a regular expression.""")
 		PatternReplace patternReplace
 	) {
+		/** The example filter, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "htmlStrip": {} }""";
+
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = """
-			Strips HTML and XML markup and keeps text between tags. Carries no \
-			options.""")
+		@Schema(
+			description = """
+				Strips HTML and XML markup and keeps text between tags. Carries no \
+				options.""",
+			examples = HtmlStrip.EXAMPLE
+		)
 		public record HtmlStrip() {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = "{}";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
 		@Schema(
 			name = "MappingCharFilter",
-			description = "Literal text replacements applied before tokenization."
+			description = "Literal text replacements applied before tokenization.",
+			examples = Mapping.EXAMPLE
 		)
 		public record Mapping(
 			@Schema(
@@ -240,10 +289,16 @@ public record AnalyzerDefinition(
 			)
 			Map<String, String> mappings
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "mappings": { "&": " and " } }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "Replaces substrings that match a regular expression.")
+		@Schema(
+			description = "Replaces substrings that match a regular expression.",
+			examples = PatternReplace.EXAMPLE
+		)
 		public record PatternReplace(
 			@Schema(
 				description = "The regular expression to match.",
@@ -257,6 +312,9 @@ public record AnalyzerDefinition(
 			)
 			String replacement
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "pattern": "\\\\s+", "replacement": " " }""";
 		}
 	}
 
@@ -265,9 +323,12 @@ public record AnalyzerDefinition(
 	 * selected by including its configuration.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		A transformation of the token stream. Exactly one kind is given, \
-		selected by including its configuration.""")
+	@Schema(
+		description = """
+			A transformation of the token stream. Exactly one kind is given, \
+			selected by including its configuration.""",
+		examples = TokenFilter.EXAMPLE
+	)
 	public record TokenFilter(
 		/**
 		 * Applies Unicode normalization and case folding to make analysis
@@ -337,8 +398,15 @@ public record AnalyzerDefinition(
 			Applied at index time.""")
 		Decompound decompound
 	) {
+		/** The example filter, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "normalize": {} }""";
+
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "Unicode normalization and case folding.")
+		@Schema(
+			description = "Unicode normalization and case folding.",
+			examples = Normalize.EXAMPLE
+		)
 		public record Normalize(
 			/**
 			 * Whether case folding is applied. Defaults to true.
@@ -349,6 +417,9 @@ public record AnalyzerDefinition(
 			)
 			Boolean caseFolding
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "caseFolding": true }""";
 		}
 
 		/**
@@ -363,7 +434,8 @@ public record AnalyzerDefinition(
 			description = """
 				Removes frequent words. At most one of `locale`, `words` and \
 				`named` is given; an empty object uses the stopwords of the \
-				locale of the value being analyzed."""
+				locale of the value being analyzed.""",
+			examples = Stopwords.EXAMPLE
 		)
 		public record Stopwords(
 			/**
@@ -393,10 +465,16 @@ public record AnalyzerDefinition(
 			)
 			String named
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "locale": "sv" }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "Reduces words to a shared root.")
+		@Schema(
+			description = "Reduces words to a shared root.",
+			examples = Stemming.EXAMPLE
+		)
 		public record Stemming(
 			/**
 			 * The BCP-47 locale whose rules to stem by. If omitted, uses the
@@ -410,10 +488,16 @@ public record AnalyzerDefinition(
 			)
 			String locale
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "locale": "sv" }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "Converts non-ASCII characters to ASCII equivalents.")
+		@Schema(
+			description = "Converts non-ASCII characters to ASCII equivalents.",
+			examples = AsciiFolding.EXAMPLE
+		)
 		public record AsciiFolding(
 			/**
 			 * Whether to preserve the original non-ASCII token alongside the
@@ -427,10 +511,16 @@ public record AnalyzerDefinition(
 			)
 			Boolean preserveOriginal
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "preserveOriginal": true }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = "Generates prefix n-grams for tokens.")
+		@Schema(
+			description = "Generates prefix n-grams for tokens.",
+			examples = EdgeNgram.EXAMPLE
+		)
 		public record EdgeNgram(
 			/**
 			 * The shortest prefix to index. Defaults to 1.
@@ -444,12 +534,18 @@ public record AnalyzerDefinition(
 			@Schema(description = "The longest prefix to index.", defaultValue = "20")
 			Integer maxGram
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "minGram": 1, "maxGram": 20 }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = """
-			Generates substring n-grams for tokens within the specified \
-			character lengths.""")
+		@Schema(
+			description = """
+				Generates substring n-grams for tokens within the specified \
+				character lengths.""",
+			examples = Ngram.EXAMPLE
+		)
 		public record Ngram(
 			@Schema(description = "The shortest substring to index.")
 			Integer minGram,
@@ -457,6 +553,9 @@ public record AnalyzerDefinition(
 			@Schema(description = "The longest substring to index.")
 			Integer maxGram
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "minGram": 3, "maxGram": 5 }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -466,7 +565,8 @@ public record AnalyzerDefinition(
 				Expands tokens with synonyms from a synonym set defined in \
 				`resources`. Applied when a value is indexed, not when the \
 				text of a search is analyzed. See [Applying a synonym set to a \
-				field](https://exofind.dev/reference/analysis/#applying-a-synonym-set-to-a-field)."""
+				field](https://exofind.dev/reference/analysis/#applying-a-synonym-set-to-a-field).""",
+			examples = Synonyms.EXAMPLE
 		)
 		public record Synonyms(
 			/**
@@ -482,6 +582,9 @@ public record AnalyzerDefinition(
 			)
 			String named
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "named": "cars" }""";
 		}
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -492,7 +595,8 @@ public record AnalyzerDefinition(
 				compound word. See [Compound \
 				words](https://exofind.dev/reference/analysis/#compound-words). \
 				If omitted, uses the dictionary for the locale of the value. \
-				Applied at index time."""
+				Applied at index time.""",
+			examples = Decompound.EXAMPLE
 		)
 		public record Decompound(
 			/**
@@ -511,6 +615,9 @@ public record AnalyzerDefinition(
 			)
 			String locale
 		) {
+			/** The example filter, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "locale": "sv" }""";
 		}
 	}
 }

@@ -43,6 +43,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 		score sorts default to descending and field sorts to ascending. \
 		Configured index tie-breaker sorts are appended after the requested \
 		sorts. See [Sorts](https://exofind.dev/reference/search-api/#sorts).""",
+	examples = Sort.EXAMPLE,
 	oneOf = { Sort.Field.class, Sort.Score.class, Sort.Distance.class },
 	discriminatorProperty = "type",
 	discriminatorMapping = {
@@ -57,6 +58,13 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	 * with the one value that selects it.
 	 */
 	String TYPE_DESCRIPTION = "Selects the sort type.";
+
+	/**
+	 * The example sort, as the JSON a caller writes. The OpenAPI schema of this
+	 * union shows this text, and each sort type shows one of its own.
+	 */
+	String EXAMPLE = """
+		{ "field": "name", "order": "asc" }""";
 
 	/**
 	 * Direction values are ordered in.
@@ -82,6 +90,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 			[object](https://exofind.dev/reference/field-types/#object) \
 			is named by its dotted path, and only the nested values that the \
 			query's `nested` clauses matched are considered.""",
+		examples = Field.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -104,6 +113,9 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		@Schema(description = "Direction to order in.", defaultValue = "asc")
 		Order order
 	) implements Sort {
+		/** The example sort, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "field": "name", "order": "asc" }""";
 	}
 
 	/**
@@ -113,6 +125,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	@Schema(
 		name = "ScoreSort",
 		description = "Sorts by document relevance score.",
+		examples = Score.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -125,6 +138,9 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		@Schema(description = "Direction to order in.", defaultValue = "desc")
 		Order order
 	) implements Sort {
+		/** The example sort, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "score" }""";
 	}
 
 	/**
@@ -139,6 +155,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 			nearest first. Accepts no `order` property. A distance sort on a \
 			nested object field returns \
 			`index:query:nested:sort_unsupported`.""",
+		examples = Distance.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -184,5 +201,8 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		)
 		Double lon
 	) implements Sort {
+		/** The example sort, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "type": "distance", "field": "location", "lat": 59.3, "lon": 18.1 }""";
 	}
 }

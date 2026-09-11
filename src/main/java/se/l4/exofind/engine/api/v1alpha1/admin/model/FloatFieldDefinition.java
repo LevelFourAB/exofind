@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		Represents a 32-bit floating point number. Numeric fields do not \
 		support text analysis and are searched by filtering, which supports \
 		exact matches and range queries.""",
+	examples = FloatFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -70,6 +71,10 @@ public record FloatFieldDefinition(
 	@Schema(description = FieldDefinition.UNIT_DESCRIPTION, examples = "kilogram")
 	String unit
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "float", "filter": {}, "sort": {} }""";
+
 	/**
 	 * The values the field accepts. Documents containing values outside these
 	 * bounds are rejected.
@@ -79,7 +84,8 @@ public record FloatFieldDefinition(
 		name = "FloatValidation",
 		description = """
 			Sets the allowed numeric bounds for a `float` field. Documents \
-			containing values outside these bounds are rejected."""
+			containing values outside these bounds are rejected.""",
+		examples = Validation.EXAMPLE
 	)
 	public record Validation(
 		@Schema(description = "Lowest value accepted.")
@@ -88,5 +94,8 @@ public record FloatFieldDefinition(
 		@Schema(description = "Highest value accepted.")
 		Float max
 	) {
+		/** The example bounds, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "min": 0, "max": 5 }""";
 	}
 }

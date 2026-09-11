@@ -71,7 +71,10 @@ public record IndexerListResponse(
 	 *   the timestamp when the candidacy expires unless renewed by the node
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "A node competing to write indexes.")
+	@Schema(
+		description = "A node competing to write indexes.",
+		examples = Candidate.EXAMPLE
+	)
 	public record Candidate(
 		@Schema(description = "The name the node competes under.", examples = "node-a-7f21")
 		String node,
@@ -92,6 +95,13 @@ public record IndexerListResponse(
 		)
 		String expiresAt
 	) {
+		/** The example node, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "node": "node-a-7f21",
+			  "address": "http://node-a:8080",
+			  "expiresAt": "2026-08-21T10:15:30Z"
+			}""";
 	}
 
 	/**
@@ -108,7 +118,10 @@ public record IndexerListResponse(
 	 *   the timestamp when the claim expires unless renewed by the node
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "An index and the node writing it.")
+	@Schema(
+		description = "An index and the node writing it.",
+		examples = Claim.EXAMPLE
+	)
 	public record Claim(
 		@Schema(description = "Name of the index.", examples = "products")
 		String index,
@@ -132,5 +145,13 @@ public record IndexerListResponse(
 		)
 		String expiresAt
 	) {
+		/** The example claim, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "index": "products",
+			  "node": "node-a-7f21",
+			  "address": "http://node-a:8080",
+			  "expiresAt": "2026-08-21T10:15:30Z"
+			}""";
 	}
 }

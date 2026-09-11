@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 	description = """
 		Represents boolean values (`true` or `false`). A boolean has nothing to \
 		analyze, so filtering is the only way to search it.""",
+	examples = BooleanFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -57,4 +58,7 @@ public record BooleanFieldDefinition(
 	@Schema(description = FieldDefinition.FACET_DESCRIPTION)
 	Facet facet
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "boolean", "filter": {} }""";
 }

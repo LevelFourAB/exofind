@@ -59,6 +59,7 @@ import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 		the clause type. The engine also accepts a clause that omits `type`, \
 		which it reads as a `field` clause containing `field` and `match`. See \
 		[Clauses](https://exofind.dev/reference/search-api/#clauses).""",
+	examples = Clause.EXAMPLE,
 	oneOf = {
 		Clause.Field.class, Clause.Text.class, Clause.Knn.class, Clause.Nested.class,
 		Clause.And.class, Clause.Or.class, Clause.Not.class, Clause.Boost.class,
@@ -87,6 +88,13 @@ public sealed interface Clause
 	String TYPE_DESCRIPTION = "Selects the clause type.";
 
 	/**
+	 * The example clause, as the JSON a caller writes. The OpenAPI schema of
+	 * this union shows this text, and each clause type shows one of its own.
+	 */
+	String EXAMPLE = """
+		{ "field": "category", "match": { "value": "fiction" } }""";
+
+	/**
 	 * Matches documents by the value of a single field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
@@ -97,6 +105,7 @@ public sealed interface Clause
 			field must be indexed for the requested matcher usage; if it is \
 			not configured for that usage, the request returns \
 			`index:query:usage_not_enabled`.""",
+		examples = Field.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -122,6 +131,9 @@ public sealed interface Clause
 		@Schema(description = "Criteria evaluated against the field's values.", required = true)
 		Matcher match
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "field": "category", "match": { "value": "fiction" } }""";
 	}
 
 	/**
@@ -138,6 +150,7 @@ public sealed interface Clause
 			regardless of field `typoTolerance`. Fields defined only for \
 			`autocomplete` do not support phrase matching. See \
 			[`text`](https://exofind.dev/reference/search-api/#text).""",
+		examples = Text.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -286,6 +299,14 @@ public sealed interface Clause
 		)
 		Interpret interpret
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "text",
+			  "text": "silent spr",
+			  "fields": { "name": 3, "description": null }
+			}""";
+
 		/**
 		 * Scope for multi-field term matching across multiple fields.
 		 */
@@ -359,7 +380,8 @@ public sealed interface Clause
 					number typed with a unit is read on every target declaring \
 					that unit; a number typed without one is read on every \
 					target holding a currency, when they all hold the same \
-					currency."""
+					currency.""",
+				examples = Targets.EXAMPLE
 			)
 			record Targets(
 				/**
@@ -373,6 +395,9 @@ public sealed interface Clause
 				)
 				List<Target> fields
 			) implements Interpret {
+				/** The example targets, as the JSON a caller writes. */
+				public static final String EXAMPLE = """
+					{ "fields": [ { "field": "prices.amount" } ] }""";
 			}
 
 			/**
@@ -415,7 +440,8 @@ public sealed interface Clause
 				`index:query:interpret:no_unit`. A field inside a `nested` \
 				[object field](https://exofind.dev/reference/field-types/#object) \
 				is named by its dotted path and read against one value at a \
-				time, with `when` saying which."""
+				time, with `when` saying which.""",
+			examples = Target.EXAMPLE
 		)
 		public record Target(
 			/**
@@ -452,6 +478,18 @@ public sealed interface Clause
 				`index:query:interpret:fallback_unit`.""")
 			List<Target> fallback
 		) {
+			/** The example target, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{
+				  "field": "prices.amount",
+				  "when": [ { "field": "prices.list", "match": { "value": "customer" } } ],
+				  "fallback": [
+				    {
+				      "field": "prices.amount",
+				      "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+				    }
+				  ]
+				}""";
 		}
 	}
 
@@ -466,6 +504,7 @@ public sealed interface Clause
 			Matches the `k` nearest documents by vector distance in a \
 			specified field, scored by proximity. Cannot be combined with \
 			`hits` (`search:hits:with_knn`).""",
+		examples = Knn.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -517,6 +556,15 @@ public sealed interface Clause
 			evaluation.""")
 		List<Clause> filter
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "knn",
+			  "field": "embedding",
+			  "vector": [ 0.1, 0.2 ],
+			  "k": 10,
+			  "filter": [ { "field": "published", "match": { "value": true } } ]
+			}""";
 	}
 
 	/**
@@ -535,6 +583,7 @@ public sealed interface Clause
 			object field returns `index:query:nested:flattened`; on a \
 			non-object field it returns an error. See \
 			[`nested`](https://exofind.dev/reference/search-api/#nested).""",
+		examples = Nested.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -579,6 +628,17 @@ public sealed interface Clause
 		)
 		Score score
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "nested",
+			  "path": "variants",
+			  "clauses": [
+			    { "field": "variants.color", "match": { "value": "red" } },
+			    { "field": "variants.price", "match": { "type": "range", "lt": 20 } }
+			  ]
+			}""";
+
 		/**
 		 * Scoring mode for aggregating matching nested values into a document
 		 * score.
@@ -623,6 +683,7 @@ public sealed interface Clause
 	@Schema(
 		name = "AndClause",
 		description = "Matches documents where all child clauses match.",
+		examples = And.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -635,6 +696,15 @@ public sealed interface Clause
 		@Schema(description = "Child clauses, all of which must match.", required = true)
 		List<Clause> clauses
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "and",
+			  "clauses": [
+			    { "field": "category", "match": { "value": "fiction" } },
+			    { "field": "published", "match": { "value": true } }
+			  ]
+			}""";
 	}
 
 	/**
@@ -644,6 +714,7 @@ public sealed interface Clause
 	@Schema(
 		name = "OrClause",
 		description = "Matches documents where at least one child clause matches.",
+		examples = Or.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -659,6 +730,15 @@ public sealed interface Clause
 		)
 		List<Clause> clauses
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "or",
+			  "clauses": [
+			    { "field": "category", "match": { "value": "fiction" } },
+			    { "field": "category", "match": { "value": "poetry" } }
+			  ]
+			}""";
 	}
 
 	/**
@@ -668,6 +748,7 @@ public sealed interface Clause
 	@Schema(
 		name = "NotClause",
 		description = "Matches documents where no child clause matches.",
+		examples = Not.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -680,6 +761,12 @@ public sealed interface Clause
 		@Schema(description = "Child clauses, none of which may match.", required = true)
 		List<Clause> clauses
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "not",
+			  "clauses": [ { "field": "discontinued", "match": { "value": true } } ]
+			}""";
 	}
 
 	/**
@@ -692,6 +779,7 @@ public sealed interface Clause
 		description = """
 			Increases the relevance score of documents that satisfy child \
 			clauses without excluding non-matching documents.""",
+		examples = Boost.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -719,6 +807,13 @@ public sealed interface Clause
 		)
 		List<Clause> clauses
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "boost",
+			  "weight": 2,
+			  "clauses": [ { "field": "featured", "match": { "value": true } } ]
+			}""";
 	}
 
 	/**
@@ -738,6 +833,7 @@ public sealed interface Clause
 			BM25 text relevance and vector similarity) combine without \
 			normalization. Matches at most `depth` results per ranking. See \
 			[`fuse`](https://exofind.dev/reference/search-api/#fuse).""",
+		examples = Fuse.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
 			type = SchemaType.STRING,
@@ -796,6 +892,37 @@ public sealed interface Clause
 			after each ranking is cut to `depth`.""")
 		List<Clause> filter
 	) implements Clause {
+		/** The example clause, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "type": "fuse",
+			  "depth": 200,
+			  "rankConstant": 60,
+			  "rankings": [
+			    {
+			      "clauses": [
+			        {
+			          "type": "text",
+			          "text": "waterproof jacket",
+			          "fields": { "name": null }
+			        }
+			      ]
+			    },
+			    {
+			      "clauses": [
+			        {
+			          "type": "knn",
+			          "field": "embedding",
+			          "vector": [ 0.1, 0.2 ],
+			          "k": 200
+			        }
+			      ],
+			      "weight": 0.5
+			    }
+			  ],
+			  "filter": [ { "field": "inStock", "match": { "value": true } } ]
+			}""";
+
 		/**
 		 * One ranking to run and merge.
 		 */
@@ -804,7 +931,8 @@ public sealed interface Clause
 			name = "FuseRanking",
 			description = """
 				One ranking of a fusion: search clauses to evaluate and the \
-				ranking's relative weight."""
+				ranking's relative weight.""",
+			examples = Ranking.EXAMPLE
 		)
 		public record Ranking(
 			/**
@@ -832,6 +960,18 @@ public sealed interface Clause
 			)
 			Float weight
 		) {
+			/** The example ranking, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{
+				  "clauses": [
+				    {
+				      "type": "text",
+				      "text": "waterproof jacket",
+				      "fields": { "name": null }
+				    }
+				  ],
+				  "weight": 0.5
+				}""";
 		}
 	}
 }

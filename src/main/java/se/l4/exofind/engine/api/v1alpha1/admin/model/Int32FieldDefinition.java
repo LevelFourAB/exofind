@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		Represents a 32-bit signed integer. Numeric fields do not support text \
 		analysis and are searched by filtering, which supports exact matches \
 		and range queries.""",
+	examples = Int32FieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -70,6 +71,10 @@ public record Int32FieldDefinition(
 	@Schema(description = FieldDefinition.UNIT_DESCRIPTION, examples = "SEK")
 	String unit
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "int32", "filter": {}, "validation": { "min": 0 } }""";
+
 	/**
 	 * The values the field accepts. Documents containing values outside these
 	 * bounds are rejected.
@@ -79,7 +84,8 @@ public record Int32FieldDefinition(
 		name = "Int32Validation",
 		description = """
 			Sets the allowed numeric bounds for an `int32` field. Documents \
-			containing values outside these bounds are rejected."""
+			containing values outside these bounds are rejected.""",
+		examples = Validation.EXAMPLE
 	)
 	public record Validation(
 		@Schema(description = "Lowest value accepted.", examples = "0")
@@ -88,5 +94,8 @@ public record Int32FieldDefinition(
 		@Schema(description = "Highest value accepted.")
 		Integer max
 	) {
+		/** The example bounds, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "min": 0, "max": 100 }""";
 	}
 }

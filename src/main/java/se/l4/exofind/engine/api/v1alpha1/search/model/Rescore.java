@@ -13,7 +13,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * <pre>
  * {
  *   "window": 200,
- *   "boost": [ { "field": "brand", "equals": "adidas" } ],
+ *   "boost": [ { "field": "brand", "match": { "value": "adidas" } } ],
  *   "signals": [ { "field": "purchases", "saturation": { "pivot": 50 } } ],
  *   "weight": 0.5
  * }
@@ -26,13 +26,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * first page.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Reorders the best results of a search in a second pass without changing \
-	which documents matched. Boosts and signals apply only inside the window, \
-	reordering relevant results without promoting non-matching documents. \
-	Applies only when results are ordered by relevance; providing an explicit \
-	`sort` overrides rescoring. See \
-	[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""")
+@Schema(
+	description = """
+		Reorders the best results of a search in a second pass without changing \
+		which documents matched. Boosts and signals apply only inside the window, \
+		reordering relevant results without promoting non-matching documents. \
+		Applies only when results are ordered by relevance; providing an explicit \
+		`sort` overrides rescoring. See \
+		[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""",
+	examples = Rescore.EXAMPLE
+)
 public record Rescore(
 	/**
 	 * Number of best results to score a second time.
@@ -82,4 +85,12 @@ public record Rescore(
 	)
 	Float weight
 ) {
+	/** The example rescoring, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{
+		  "window": 200,
+		  "boost": [ { "field": "brand", "match": { "value": "adidas" } } ],
+		  "signals": [ { "field": "purchases", "saturation": { "pivot": 50 } } ],
+		  "weight": 0.5
+		}""";
 }

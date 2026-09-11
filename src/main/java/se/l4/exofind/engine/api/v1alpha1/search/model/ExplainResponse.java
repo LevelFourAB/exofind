@@ -94,7 +94,11 @@ public record ExplainResponse(
 	 * One score step in the explanation tree.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(name = "ExplainDetail", description = "One score step in the explanation tree.")
+	@Schema(
+		name = "ExplainDetail",
+		description = "One score step in the explanation tree.",
+		examples = Detail.EXAMPLE
+	)
 	public record Detail(
 		/**
 		 * Whether this step was satisfied.
@@ -188,5 +192,16 @@ public record ExplainResponse(
 		@Schema(description = "Child score steps that compose this step. Empty for leaf steps.")
 		List<Detail> children
 	) {
+		/** The example step, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "matched": true,
+			  "score": 8.42,
+			  "description": "weight(name:spring) [BM25], result of:",
+			  "clause": "query[0]",
+			  "clauseType": "text",
+			  "field": "name",
+			  "usage": "matching"
+			}""";
 	}
 }

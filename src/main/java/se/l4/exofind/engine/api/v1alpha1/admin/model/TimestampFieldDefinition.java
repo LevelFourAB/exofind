@@ -34,6 +34,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		same instant are identical for filtering and sorting; search results \
 		return the original string format provided during ingestion. Documents \
 		containing timestamps without timezone offsets are rejected.""",
+	examples = TimestampFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -74,4 +75,7 @@ public record TimestampFieldDefinition(
 	@Schema(description = FieldDefinition.FACET_DESCRIPTION)
 	Facet facet
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "timestamp", "filter": {}, "sort": {} }""";
 }

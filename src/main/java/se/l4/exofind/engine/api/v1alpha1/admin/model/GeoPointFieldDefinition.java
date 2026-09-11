@@ -29,6 +29,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		coordinates. Locations are searched by distance rather than exact \
 		value: `filter` enables the `distance` matcher, and `sort` enables \
 		ordering by distance from an origin, nearest first.""",
+	examples = GeoPointFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -72,4 +73,7 @@ public record GeoPointFieldDefinition(
 	@Schema(description = FieldDefinition.FACET_DESCRIPTION)
 	Facet facet
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "geo_point", "filter": {}, "sort": {} }""";
 }

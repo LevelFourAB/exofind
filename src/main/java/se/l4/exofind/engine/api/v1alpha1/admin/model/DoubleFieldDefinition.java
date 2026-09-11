@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		Represents a 64-bit floating-point number. A number has nothing to \
 		analyze, so it is searched by filtering, which supports both exact \
 		matches and range queries.""",
+	examples = DoubleFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -70,6 +71,10 @@ public record DoubleFieldDefinition(
 	@Schema(description = FieldDefinition.UNIT_DESCRIPTION, examples = "EUR")
 	String unit
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "double", "filter": {}, "sort": {} }""";
+
 	/**
 	 * The allowed numeric bounds for the field. Documents containing values
 	 * outside these bounds are rejected when indexed.
@@ -77,7 +82,8 @@ public record DoubleFieldDefinition(
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "DoubleValidation",
-		description = "The allowed numeric bounds for a `double` field."
+		description = "The allowed numeric bounds for a `double` field.",
+		examples = Validation.EXAMPLE
 	)
 	public record Validation(
 		@Schema(description = "Lowest value accepted.")
@@ -86,5 +92,8 @@ public record DoubleFieldDefinition(
 		@Schema(description = "Highest value accepted.")
 		Double max
 	) {
+		/** The example bounds, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "min": 0, "max": 1000 }""";
 	}
 }

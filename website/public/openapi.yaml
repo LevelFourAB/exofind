@@ -21,6 +21,8 @@ components:
         \ Components that select words by locale, such as stopwords and stemming,\
         \ use the locale of the value being analyzed unless you specify a locale.\
         \ See [Analysis](https://exofind.dev/reference/analysis/)."
+      examples:
+      - preset: full_text
       type: object
       properties:
         preset:
@@ -45,6 +47,15 @@ components:
       - type
       - clauses
       description: Matches documents where all child clauses match.
+      examples:
+      - type: and
+        clauses:
+        - field: category
+          match:
+            value: fiction
+        - field: published
+          match:
+            value: true
       properties:
         type:
           description: Selects the clause type.
@@ -61,6 +72,8 @@ components:
       required:
       - type
       description: Matches any document that contains a value for the field.
+      examples:
+      - type: any
       properties:
         type:
           description: Selects the matcher type.
@@ -71,6 +84,8 @@ components:
     AsciiFolding:
       type: object
       description: Converts non-ASCII characters to ASCII equivalents.
+      examples:
+      - preserveOriginal: true
       properties:
         preserveOriginal:
           type: boolean
@@ -80,6 +95,10 @@ components:
     AuditedGeneration:
       type: object
       description: One generation as the registry and storage each describe it.
+      examples:
+      - name: "1"
+        registered: true
+        stored: SYNCED
       properties:
         name:
           type: string
@@ -108,6 +127,17 @@ components:
     AuditedIndex:
       type: object
       description: One index as the registry and storage each describe it.
+      examples:
+      - name: products
+        registered: true
+        live: "2"
+        generations:
+        - name: "1"
+          registered: true
+          stored: SYNCED
+        - name: "2"
+          registered: true
+          stored: SYNCED
       properties:
         name:
           type: string
@@ -149,6 +179,9 @@ components:
       - type
       description: "Represents boolean values (`true` or `false`). A boolean has nothing\
         \ to analyze, so filtering is the only way to search it."
+      examples:
+      - type: boolean
+        filter: {}
       properties:
         type:
           description: Selects the field type.
@@ -207,6 +240,13 @@ components:
       - clauses
       description: Increases the relevance score of documents that satisfy child clauses
         without excluding non-matching documents.
+      examples:
+      - type: boost
+        weight: 2
+        clauses:
+        - field: featured
+          match:
+            value: true
       properties:
         type:
           description: Selects the clause type.
@@ -229,6 +269,10 @@ components:
     Candidate:
       type: object
       description: A node competing to write indexes.
+      examples:
+      - node: node-a-7f21
+        address: http://node-a:8080
+        expiresAt: 2026-08-21T10:15:30Z
       properties:
         node:
           type: string
@@ -251,6 +295,8 @@ components:
       type: object
       description: A transformation of the raw text before tokenization. Specify exactly
         one character filter by including its configuration.
+      examples:
+      - htmlStrip: {}
       properties:
         htmlStrip:
           description: Strips HTML and XML markup and keeps text between tags.
@@ -267,6 +313,11 @@ components:
     Claim:
       type: object
       description: An index and the node writing it.
+      examples:
+      - index: products
+        node: node-a-7f21
+        address: http://node-a:8080
+        expiresAt: 2026-08-21T10:15:30Z
       properties:
         index:
           type: string
@@ -305,6 +356,10 @@ components:
       description: "A search condition, structured as a tagged union where `type`\
         \ selects the clause type. The engine also accepts a clause that omits `type`,\
         \ which it reads as a `field` clause containing `field` and `match`. See [Clauses](https://exofind.dev/reference/search-api/#clauses)."
+      examples:
+      - field: category
+        match:
+          value: fiction
       discriminator:
         propertyName: type
         mapping:
@@ -365,6 +420,15 @@ components:
       description: "A custom analyzer chain that defines character filters, a tokenizer,\
         \ and token filters. Each component is an object with one key that specifies\
         \ the component type, for example `{ \"whitespace\": {} }`."
+      examples:
+      - charFilters:
+        - htmlStrip: {}
+        tokenizer:
+          icu: {}
+        filters:
+        - normalize: {}
+        - stemming:
+            locale: sv
       properties:
         charFilters:
           type: array
@@ -387,6 +451,8 @@ components:
     Decay:
       type: object
       description: "Ranks a timestamp by how long ago it was, halving every half life."
+      examples:
+      - halfLife: 604800
       required:
       - halfLife
       properties:
@@ -402,6 +468,12 @@ components:
       type: object
       description: "One value of a field, as stored, with the order a facet sorts\
         \ it by and the label a search answers it with per locale."
+      examples:
+      - value: S
+        order: 1
+        labels:
+          en: Small
+          sv: Liten
       properties:
         value:
           type: string
@@ -440,6 +512,8 @@ components:
         \ word. See [Compound words](https://exofind.dev/reference/analysis/#compound-words).\
         \ If omitted, uses the dictionary for the locale of the value. Applied at\
         \ index time."
+      examples:
+      - locale: sv
       properties:
         locale:
           type: string
@@ -512,6 +586,11 @@ components:
       - radius
       description: Matches geopoint values within `radius` meters of the specified
         latitude and longitude coordinates.
+      examples:
+      - type: distance
+        lat: 59.3
+        lon: 18.1
+        radius: 5000
       properties:
         type:
           description: Selects the matcher type.
@@ -550,6 +629,11 @@ components:
       description: "Sorts by distance from the specified geographic coordinate, nearest\
         \ first. Accepts no `order` property. A distance sort on a nested object field\
         \ returns `index:query:nested:sort_unsupported`."
+      examples:
+      - type: distance
+        field: location
+        lat: 59.3
+        lon: 18.1
       properties:
         type:
           description: Selects the sort type.
@@ -626,6 +710,10 @@ components:
       description: "Represents a 64-bit floating-point number. A number has nothing\
         \ to analyze, so it is searched by filtering, which supports both exact matches\
         \ and range queries."
+      examples:
+      - type: double
+        filter: {}
+        sort: {}
       properties:
         type:
           description: Selects the field type.
@@ -705,6 +793,9 @@ components:
     DoubleValidation:
       type: object
       description: The allowed numeric bounds for a `double` field.
+      examples:
+      - min: 0
+        max: 1000
       properties:
         min:
           type: number
@@ -717,6 +808,9 @@ components:
     Dropped:
       type: object
       description: Details of a single dropped query word and the reason for its removal.
+      examples:
+      - word: waterproof
+        reason: unmatched
       properties:
         word:
           type: string
@@ -730,6 +824,9 @@ components:
     EdgeNgram:
       type: object
       description: Generates prefix n-grams for tokens.
+      examples:
+      - minGram: 1
+        maxGram: 20
       properties:
         minGram:
           type: integer
@@ -746,6 +843,8 @@ components:
       - type
       - value
       description: Matches field values equal to `value`.
+      examples:
+      - value: fiction
       properties:
         type:
           description: Selects the matcher type.
@@ -760,6 +859,11 @@ components:
     ErrorDetail:
       type: object
       description: One problem found in a request.
+      examples:
+      - code: index:field:invalid_primary_key_multiple
+        message: "Field `id` is marked as a primary key and multiple, primary keys\
+          \ can not have multiple values"
+        path: id
       properties:
         code:
           type: string
@@ -790,6 +894,14 @@ components:
         \ namespaces such as `index:field:invalid_name`, are stable across API versions,\
         \ and are never renamed or reused, so clients match on `code` rather than\
         \ on `message`. See [Errors](https://exofind.dev/reference/errors/)."
+      examples:
+      - code: validation
+        message: Request contains 1 error
+        errors:
+        - code: index:field:invalid_primary_key_multiple
+          message: "Field `id` is marked as a primary key and multiple, primary keys\
+            \ can not have multiple values"
+          path: id
       type: object
       properties:
         code:
@@ -818,6 +930,8 @@ components:
     Exact:
       type: object
       description: Configures score boosting for queries matching the full field value.
+      examples:
+      - boost: 2
       properties:
         boost:
           type: number
@@ -828,6 +942,14 @@ components:
     ExplainDetail:
       type: object
       description: One score step in the explanation tree.
+      examples:
+      - matched: true
+        score: 8.42
+        description: "weight(name:spring) [BM25], result of:"
+        clause: "query[0]"
+        clauseType: text
+        field: name
+        usage: matching
       properties:
         matched:
           type: boolean
@@ -929,6 +1051,10 @@ components:
     FacetBucket:
       type: object
       description: One range bucket of a faceted field with its match count.
+      examples:
+      - from: 100
+        to: 200
+        count: 17
       properties:
         from:
           description: "Inclusive lower bound of the range bucket, as specified in\
@@ -964,6 +1090,9 @@ components:
         \ and `to` must be greater than `from` (`index:query:facet_range_empty`).\
         \ At most 1000 buckets per facet (`search:facet:ranges_too_many`); using `ranges`\
         \ on an unsupported field type returns `index:invalid-query-type`."
+      examples:
+      - from: 100
+        to: 200
       properties:
         from:
           description: "The lowest value the bucket holds, itself included. Omit for\
@@ -980,6 +1109,10 @@ components:
       description: "Computes match counts for distinct values of a field. The target\
         \ field must have `facet` enabled in its field definition; otherwise, the\
         \ request returns `index:query:usage_not_enabled`."
+      examples:
+      - field: category
+        limit: 20
+        order: count
       properties:
         name:
           type: string
@@ -1039,6 +1172,13 @@ components:
         \ `values` with `totalValues`; counting into ranges returns `buckets`, omitting\
         \ the other representation. Facet counts exclude filter entries on the facet's\
         \ own field by default."
+      examples:
+      - values:
+        - value: fiction
+          count: 87
+        - value: poetry
+          count: 41
+        totalValues: 2
       properties:
         values:
           type: array
@@ -1061,11 +1201,17 @@ components:
       type: object
       description: Enables value count aggregations across search results. Carries
         no configuration options.
+      examples:
+      - {}
     FacetValue:
       type: object
       description: "One value of a faceted field with its match count. For hierarchical\
         \ fields, returns an entry per hierarchy level and nests child levels under\
         \ `values`. Other fields omit hierarchical properties."
+      examples:
+      - value: fiction
+        count: 87
+        label: Fiction
       properties:
         value:
           description: "The facet value in its stored format: a string, boolean, number,\
@@ -1217,6 +1363,10 @@ components:
       description: "Matches documents by the value of a single field. The targeted\
         \ field must be indexed for the requested matcher usage; if it is not configured\
         \ for that usage, the request returns `index:query:usage_not_enabled`."
+      examples:
+      - field: category
+        match:
+          value: fiction
       properties:
         type:
           description: Selects the clause type.
@@ -1251,6 +1401,12 @@ components:
         \ are opt-in: adding an empty configuration object enables a usage with engine\
         \ defaults, and only explicitly configured properties are stored, preserving\
         \ default values across engine updates. See [Field types](https://exofind.dev/reference/field-types/)."
+      examples:
+      - type: string
+        stored: true
+        filter: {}
+        matching:
+          highlight: {}
       discriminator:
         propertyName: type
         mapping:
@@ -1268,6 +1424,15 @@ components:
       type: object
       description: How searches read one field. Every capability is off unless its
         object is present; an empty object turns it on with the engine defaults.
+      examples:
+      - interpret: {}
+        suggest: {}
+        values:
+        - value: S
+          order: 1
+          labels:
+            en: Small
+            sv: Liten
       properties:
         interpret:
           description: "Reads the values the field holds out of the query text of\
@@ -1306,6 +1471,9 @@ components:
         \ A field inside a `nested` [object](https://exofind.dev/reference/field-types/#object)\
         \ is named by its dotted path, and only the nested values that the query's\
         \ `nested` clauses matched are considered."
+      examples:
+      - field: name
+        order: asc
       properties:
         type:
           description: Selects the sort type.
@@ -1326,6 +1494,14 @@ components:
     Filter:
       type: object
       description: One filter read out of the query text.
+      examples:
+      - field: price
+        match:
+          type: range
+          lt: 500
+        words:
+        - under
+        - "500"
       properties:
         field:
           type: string
@@ -1364,12 +1540,18 @@ components:
       description: Enables filtering search results by exact field value. Filtering
         is exact across all types; exact-match normalization for string fields is
         configured under `keyword`.
+      examples:
+      - {}
     FloatFieldDefinition:
       required:
       - type
       description: "Represents a 32-bit floating point number. Numeric fields do not\
         \ support text analysis and are searched by filtering, which supports exact\
         \ matches and range queries."
+      examples:
+      - type: float
+        filter: {}
+        sort: {}
       properties:
         type:
           description: Selects the field type.
@@ -1450,6 +1632,9 @@ components:
       type: object
       description: Sets the allowed numeric bounds for a `float` field. Documents
         containing values outside these bounds are rejected.
+      examples:
+      - min: 0
+        max: 5
       properties:
         min:
           type: number
@@ -1469,6 +1654,28 @@ components:
         \ positions, scores from different scales (such as BM25 text relevance and\
         \ vector similarity) combine without normalization. Matches at most `depth`\
         \ results per ranking. See [`fuse`](https://exofind.dev/reference/search-api/#fuse)."
+      examples:
+      - type: fuse
+        depth: 200
+        rankConstant: 60
+        rankings:
+        - clauses:
+          - type: text
+            text: waterproof jacket
+            fields:
+              name: null
+        - clauses:
+          - type: knn
+            field: embedding
+            vector:
+            - 0.1
+            - 0.2
+            k: 200
+          weight: 0.5
+        filter:
+        - field: inStock
+          match:
+            value: true
       properties:
         type:
           description: Selects the clause type.
@@ -1510,6 +1717,13 @@ components:
       type: object
       description: "One ranking of a fusion: search clauses to evaluate and the ranking's\
         \ relative weight."
+      examples:
+      - clauses:
+        - type: text
+          text: waterproof jacket
+          fields:
+            name: null
+        weight: 0.5
       required:
       - clauses
       properties:
@@ -1527,6 +1741,10 @@ components:
           default: 1
     GenerationSummary:
       description: One generation of an index.
+      examples:
+      - name: "2"
+        live: true
+        createdAt: 2026-08-16T11:02:07Z
       type: object
       properties:
         name:
@@ -1552,6 +1770,10 @@ components:
         \ coordinates. Locations are searched by distance rather than exact value:\
         \ `filter` enables the `distance` matcher, and `sort` enables ordering by\
         \ distance from an origin, nearest first."
+      examples:
+      - type: geo_point
+        filter: {}
+        sort: {}
       properties:
         type:
           description: Selects the field type.
@@ -1614,6 +1836,12 @@ components:
     Grant:
       type: object
       description: A stored grant combining permissions and index patterns.
+      examples:
+      - permissions:
+        - indexes.read
+        - search
+        indexes:
+        - products
       properties:
         permissions:
           type: array
@@ -1630,6 +1858,10 @@ components:
       description: "A set of permissions over a set of index patterns. Every permission\
         \ in the grant applies to every matching index. A grant specifies `role`,\
         \ `permissions`, or both."
+      examples:
+      - role: reader
+        indexes:
+        - products
       properties:
         role:
           type: string
@@ -1666,6 +1898,8 @@ components:
     Hierarchy:
       type: object
       description: Enables path hierarchy matching.
+      examples:
+      - separator: /
       properties:
         separator:
           type: string
@@ -1679,6 +1913,11 @@ components:
         \ scoring clauses, so non-scoring filter clauses produce no highlights. Highlighted\
         \ text is not HTML-escaped, and text beyond the first 10,000 characters of\
         \ a field value is not evaluated. See [Highlighting](https://exofind.dev/reference/search-api/#highlighting)."
+      examples:
+      - fields:
+          name: {}
+          description:
+            fragments: 2
       required:
       - fields
       properties:
@@ -1693,6 +1932,11 @@ components:
     HighlightField:
       type: object
       description: Configuration for highlighting text fragments in a single field.
+      examples:
+      - fragments: 2
+        length: 150
+        pre: <mark>
+        post: </mark>
       properties:
         fragments:
           type: integer
@@ -1720,11 +1964,22 @@ components:
       type: object
       description: Enables highlighted snippet extraction within matching text. Contains
         no configuration properties.
+      examples:
+      - {}
     Hit:
       type: object
       description: "One result: usually a document that matched, or - for a search\
         \ whose `hits` names an object field - one matched value of that field, with\
         \ `index` and `value` present and the document holding it under `document`."
+      examples:
+      - id: "9781234567890"
+        score: 8.42
+        document:
+          name: Silent Spring
+          price: 12.5
+        highlights:
+          name:
+          - Silent <em>Spring</em>
       properties:
         id:
           description: "Primary key of the document, omitted on an index that has\
@@ -1798,6 +2053,11 @@ components:
         \ `highlight` may only name fields inside `path` (`search:hits:with_highlight`),\
         \ and each hit returns fragments of its own value. See [What a hit stands\
         \ for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for)."
+      examples:
+      - path: variants
+        fields:
+        - variants.color
+        - variants.price
       required:
       - path
       properties:
@@ -1829,6 +2089,9 @@ components:
       type: object
       description: Hierarchical Navigable Small World index configuration. Parameters
         trade indexing time and space for recall; omitting them uses engine defaults.
+      examples:
+      - m: 16
+        efConstruction: 100
       properties:
         m:
           type: integer
@@ -1842,15 +2105,24 @@ components:
       type: object
       description: Strips HTML and XML markup and keeps text between tags. Carries
         no options.
+      examples:
+      - {}
     IcuTokenizer:
       type: object
       description: Unicode segmentation. Carries no options.
+      examples:
+      - {}
     InMatcher:
       required:
       - type
       - values
       description: Matches field values equal to any value in `values`. An empty array
         matches no documents.
+      examples:
+      - type: in
+        values:
+        - fiction
+        - poetry
       properties:
         type:
           description: Selects the matcher type.
@@ -2036,6 +2308,11 @@ components:
       description: "Declares the locales that localized fields in an index support,\
         \ defined once at the index level instead of on every field. The engine expands\
         \ these locales onto each field before storing the index definition."
+      examples:
+      - defaultLocale: en
+        supported:
+        - sv
+        - de
       required:
       - defaultLocale
       properties:
@@ -2132,6 +2409,14 @@ components:
     IndexSummary:
       type: object
       description: An index and the generations it holds.
+      examples:
+      - name: products
+        generation: "2"
+        generations:
+        - name: "1"
+          live: false
+        - name: "2"
+          live: true
       properties:
         name:
           type: string
@@ -2153,6 +2438,9 @@ components:
       type: object
       description: "The node currently writing an index, read from shared deployment\
         \ state. Reported by the engine and never accepted as input."
+      examples:
+      - node: node-a-7f21
+        address: http://node-a:8080
       properties:
         node:
           type: string
@@ -2201,6 +2489,11 @@ components:
       description: "Represents a 32-bit signed integer. Numeric fields do not support\
         \ text analysis and are searched by filtering, which supports exact matches\
         \ and range queries."
+      examples:
+      - type: int32
+        filter: {}
+        validation:
+          min: 0
       properties:
         type:
           description: Selects the field type.
@@ -2281,6 +2574,9 @@ components:
       type: object
       description: Sets the allowed numeric bounds for an `int32` field. Documents
         containing values outside these bounds are rejected.
+      examples:
+      - min: 0
+        max: 100
       properties:
         min:
           type: integer
@@ -2298,6 +2594,10 @@ components:
       description: "Represents a 64-bit signed integer. Numeric fields do not support\
         \ text analysis and are searched by filtering, which supports exact matches\
         \ and range queries."
+      examples:
+      - type: int64
+        filter: {}
+        sort: {}
       properties:
         type:
           description: Selects the field type.
@@ -2378,6 +2678,9 @@ components:
       type: object
       description: Sets the allowed numeric bounds for an `int64` field. Documents
         containing values outside these bounds are rejected.
+      examples:
+      - min: 0
+        max: 1099511627776
       properties:
         min:
           type: integer
@@ -2402,6 +2705,18 @@ components:
         \ A field inside a `nested` [object field](https://exofind.dev/reference/field-types/#object)\
         \ is named by its dotted path and read against one value at a time, with `when`\
         \ saying which."
+      examples:
+      - field: prices.amount
+        when:
+        - field: prices.list
+          match:
+            value: customer
+        fallback:
+        - field: prices.amount
+          when:
+          - field: prices.list
+            match:
+              value: store
       required:
       - field
       properties:
@@ -2432,6 +2747,9 @@ components:
         \ typed with a unit is read on every target declaring that unit; a number\
         \ typed without one is read on every target holding a currency, when they\
         \ all hold the same currency."
+      examples:
+      - fields:
+        - field: prices.amount
       type: object
       required:
       - fields
@@ -2445,6 +2763,8 @@ components:
       type: object
       description: Reads the values of the field out of the query text. Carries no
         configuration options.
+      examples:
+      - {}
     Interpreted:
       type: object
       description: "The filters a search read out of the query text, and the text\
@@ -2452,6 +2772,16 @@ components:
         \ was read. The words of a filter are still searched as text, so the results\
         \ hold what the filter finds as well as what the words find as text, with\
         \ the filter ranked first."
+      examples:
+      - filters:
+        - field: price
+          match:
+            type: range
+            lt: 500
+          words:
+          - under
+          - "500"
+        text: shoes
       properties:
         filters:
           type: array
@@ -2510,6 +2840,17 @@ components:
       type: object
       description: A key as stored by the deployment. Key secrets are stored only
         as hashes. A lost credential cannot be recovered and must be replaced.
+      examples:
+      - id: 4ff6b760264c1918
+        description: the search backend
+        grants:
+        - permissions:
+          - indexes.read
+          - search
+          indexes:
+          - products
+        createdAt: 2026-08-16T12:09:33.198275Z
+        expiresAt: 2027-01-01T00:00:00Z
       properties:
         id:
           type: string
@@ -2578,6 +2919,8 @@ components:
     Keyword:
       type: object
       description: Configures exact-match normalization for filtering.
+      examples:
+      - caseFolding: true
       properties:
         caseFolding:
           type: boolean
@@ -2587,6 +2930,8 @@ components:
     KeywordTokenizer:
       type: object
       description: Retains the entire input value as a single token. Carries no options.
+      examples:
+      - {}
     KnnClause:
       required:
       - type
@@ -2595,6 +2940,17 @@ components:
       - k
       description: "Matches the `k` nearest documents by vector distance in a specified\
         \ field, scored by proximity. Cannot be combined with `hits` (`search:hits:with_knn`)."
+      examples:
+      - type: knn
+        field: embedding
+        vector:
+        - 0.1
+        - 0.2
+        k: 10
+        filter:
+        - field: published
+          match:
+            value: true
       properties:
         type:
           description: Selects the clause type.
@@ -2636,10 +2992,14 @@ components:
     LetterTokenizer:
       type: object
       description: Splits text on non-letter characters. Carries no options.
+      examples:
+      - {}
     Linear:
       type: object
       description: "Ranks a value as `value / ceiling`, held between `0` and `1`.\
         \ The shape for a score computed elsewhere that already lies in a known range."
+      examples:
+      - ceiling: 1
       required:
       - ceiling
       properties:
@@ -2659,6 +3019,10 @@ components:
         \ provided. Applies to every locale-specific field except those setting `\"\
         locales\": { \"fallback\": \"disabled\" }`. Modifying fallback rules applies\
         \ only to documents indexed after the change."
+      examples:
+      - chain:
+        - da
+        - en
       properties:
         chain:
           type: array
@@ -2674,6 +3038,11 @@ components:
       description: "Configures locale-specific field values. On an index that declares\
         \ `locales`, configuring `{}` gives the field every declared locale, and `only`\
         \ narrows the field to a subset of those locales. See [Localize fields](https://exofind.dev/how-to/localize-fields/)."
+      examples:
+      - defaultLocale: sv
+        locales:
+        - en
+        - de
       properties:
         defaultLocale:
           type: string
@@ -2719,6 +3088,11 @@ components:
     Mapping:
       type: object
       description: The input and target terms of a one-way synonym mapping rule.
+      examples:
+      - from:
+        - ny
+        to:
+        - new york
       required:
       - from
       - to
@@ -2736,6 +3110,9 @@ components:
     MappingCharFilter:
       type: object
       description: Literal text replacements applied before tokenization.
+      examples:
+      - mappings:
+          '&': ' and '
       required:
       - mappings
       properties:
@@ -2759,6 +3136,10 @@ components:
       description: "Requests the matched values of `nested` object fields with each\
         \ hit. Cannot be combined with `hits` (`search:hits:with_matched`). See [Matched\
         \ values](https://exofind.dev/reference/search-api/#matched-values)."
+      examples:
+      - fields:
+          variants:
+            limit: 3
       required:
       - fields
       properties:
@@ -2772,6 +3153,10 @@ components:
     MatchedField:
       type: object
       description: Configuration for returning matched values of a nested object field.
+      examples:
+      - limit: 3
+        fields:
+        - variants.color
       properties:
         limit:
           type: integer
@@ -2793,6 +3178,13 @@ components:
     MatchedValues:
       type: object
       description: Matched values of a nested object field for a hit.
+      examples:
+      - values:
+        - color: red
+          price: 18.0
+        - color: blue
+          price: 19.5
+        totalValues: 5
       properties:
         values:
           description: "Array of matched nested values, each keyed by field name,\
@@ -2824,6 +3216,8 @@ components:
         \ accepts a matcher that omits `type`, which it reads as an `equals` matcher.\
         \ Specifying a matcher unsupported by the target field type returns an error.\
         \ See [Matchers](https://exofind.dev/reference/search-api/#matchers)."
+      examples:
+      - value: fiction
       discriminator:
         propertyName: type
         mapping:
@@ -2840,6 +3234,9 @@ components:
       type: object
       description: "One range of a `ranges` matcher, bounded on each side by an inclusive\
         \ or exclusive bound. At least one bound is required."
+      examples:
+      - gte: 10
+        lt: 20
       properties:
         gte:
           description: "Lower bound, the value itself included."
@@ -2878,6 +3275,17 @@ components:
         \ field](https://exofind.dev/reference/field-types/#object) satisfies all\
         \ child clauses. A `nested` clause on a flattened object field returns `index:query:nested:flattened`;\
         \ on a non-object field it returns an error. See [`nested`](https://exofind.dev/reference/search-api/#nested)."
+      examples:
+      - type: nested
+        path: variants
+        clauses:
+        - field: variants.color
+          match:
+            value: red
+        - field: variants.price
+          match:
+            type: range
+            lt: 20
       properties:
         type:
           description: Selects the clause type.
@@ -2909,6 +3317,9 @@ components:
       type: object
       description: Generates substring n-grams for tokens within the specified character
         lengths.
+      examples:
+      - minGram: 3
+        maxGram: 5
       properties:
         minGram:
           type: integer
@@ -2921,6 +3332,8 @@ components:
     Normalize:
       type: object
       description: Unicode normalization and case folding.
+      examples:
+      - caseFolding: true
       properties:
         caseFolding:
           type: boolean
@@ -2931,6 +3344,12 @@ components:
       - type
       - clauses
       description: Matches documents where no child clause matches.
+      examples:
+      - type: not
+        clauses:
+        - field: discontinued
+          match:
+            value: true
       properties:
         type:
           description: Selects the clause type.
@@ -2947,6 +3366,8 @@ components:
       type: object
       description: Enables typo tolerance for digit-only words. Contains no configuration
         properties.
+      examples:
+      - {}
     ObjectFieldDefinition:
       required:
       - type
@@ -2958,6 +3379,22 @@ components:
         \ object value. Object fields are returned in search results through the preserved\
         \ document source; a stored child field below single objects also answers\
         \ when the index keeps none. See [`object`](https://exofind.dev/reference/field-types/#object)."
+      examples:
+      - type: object
+        multiple: true
+        mode: nested
+        key: sku
+        fields:
+          sku:
+            type: string
+            required: true
+            filter: {}
+          color:
+            type: string
+            filter: {}
+          price:
+            type: double
+            filter: {}
       properties:
         type:
           description: Selects the field type.
@@ -3031,6 +3468,15 @@ components:
       - type
       - clauses
       description: Matches documents where at least one child clause matches.
+      examples:
+      - type: or
+        clauses:
+        - field: category
+          match:
+            value: fiction
+        - field: category
+          match:
+            value: poetry
       properties:
         type:
           description: Selects the clause type.
@@ -3046,6 +3492,10 @@ components:
     Page:
       type: object
       description: Pagination state and navigation cursors for the result window.
+      examples:
+      - limit: 20
+        offset: 0
+        next: c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0
       properties:
         limit:
           type: integer
@@ -3074,6 +3524,10 @@ components:
     PageRef:
       type: object
       description: Metadata for a single numbered page.
+      examples:
+      - number: 3
+        cursor: b2Zmc2V0OjQw
+        current: true
       properties:
         number:
           type: integer
@@ -3092,6 +3546,8 @@ components:
       description: "Requests numbered page metadata. Sending an empty object asks\
         \ for the defaults. Can be combined with `offset` or page cursors, but not\
         \ with `after` or `before`."
+      examples:
+      - max: 9
       properties:
         max:
           type: integer
@@ -3103,6 +3559,22 @@ components:
       description: "Numbered page metadata, divided into `start`, `middle`, and `end`\
         \ arrays to render `1 2 3 … 7` with ellipses at window boundaries. Page numbers\
         \ are 1-based. Cursors inside encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`."
+      examples:
+      - count: 7
+        next:
+          number: 4
+          cursor: b2Zmc2V0OjYw
+        start:
+        - number: 1
+          cursor: b2Zmc2V0OjA
+        - number: 2
+          cursor: b2Zmc2V0OjIw
+        - number: 3
+          cursor: b2Zmc2V0OjQw
+          current: true
+        end:
+        - number: 7
+          cursor: b2Zmc2V0OjEyMA
       properties:
         count:
           type: integer
@@ -3140,6 +3612,9 @@ components:
     PatternReplace:
       type: object
       description: Replaces substrings that match a regular expression.
+      examples:
+      - pattern: \s+
+        replacement: ' '
       required:
       - pattern
       - replacement
@@ -3163,6 +3638,9 @@ components:
       - value
       description: "Matches string field values starting with `value`, evaluated against\
         \ the entire field value."
+      examples:
+      - type: prefix
+        value: EX-
       properties:
         type:
           description: Selects the matcher type.
@@ -3195,6 +3673,14 @@ components:
       type: object
       description: "A synonym set applied to the search query at query time, rather\
         \ than to document values during indexing."
+      examples:
+      - rules:
+        - equivalent:
+          - laptop
+          - notebook
+        fields:
+        - name
+        boost: 0.8
       properties:
         rules:
           type: array
@@ -3226,6 +3712,10 @@ components:
       description: "Matches values within bounds. Accepts inclusive (`gte`, `lte`)\
         \ and exclusive (`gt`, `lt`) bounds; either side may be left open, and at\
         \ least one bound is required (`search:matcher:range_empty`)."
+      examples:
+      - type: range
+        gte: 10
+        lt: 20
       properties:
         type:
           description: Selects the matcher type.
@@ -3252,6 +3742,12 @@ components:
       description: "Matches values falling within any of the specified range objects.\
         \ An empty array matches no documents, matching the behavior of an empty `in`\
         \ matcher."
+      examples:
+      - type: ranges
+        values:
+        - gte: 10
+          lt: 20
+        - gte: 50
       properties:
         type:
           description: Selects the matcher type.
@@ -3269,6 +3765,15 @@ components:
     Ranking:
       type: object
       description: "Tie-breaking rules and signal score multipliers. See [Relevance](https://exofind.dev/explanation/relevance/)."
+      examples:
+      - tieBreakers:
+        - field: sales
+          direction: descending
+        signals:
+        - field: purchases
+          saturation:
+            pivot: 50
+          weight: 0.5
       properties:
         tieBreakers:
           type: array
@@ -3289,6 +3794,8 @@ components:
       type: object
       description: Halves the multiplier every `halfLife` seconds of age. Values dated
         at or after the current time evaluate to `1`.
+      examples:
+      - halfLife: 604800
       required:
       - halfLife
       properties:
@@ -3306,6 +3813,8 @@ components:
         \ `0` evaluate to `0` and values above the ceiling to `1`. The shape for a\
         \ score computed elsewhere that already lies in a known range, such as an\
         \ engagement score between `0` and `1`."
+      examples:
+      - ceiling: 1
       required:
       - ceiling
       properties:
@@ -3323,6 +3832,8 @@ components:
         \ and approaching but never reaching `1` above it. Values below `0` evaluate\
         \ to `0`. The shape for a count with no ceiling, such as how often something\
         \ was bought."
+      examples:
+      - pivot: 50
       required:
       - pivot
       properties:
@@ -3613,6 +4124,11 @@ components:
       description: Details of dropped query terms when query relaxation was applied.
         Present only when the initial query produced zero results. Total counts and
         facet counts reflect the relaxed search.
+      examples:
+      - dropped:
+        - word: waterproof
+          reason: unmatched
+        text: running shoes
       properties:
         dropped:
           type: array
@@ -3631,6 +4147,17 @@ components:
         \ window, reordering relevant results without promoting non-matching documents.\
         \ Applies only when results are ordered by relevance; providing an explicit\
         \ `sort` overrides rescoring. See [Rescoring](https://exofind.dev/reference/search-api/#rescoring)."
+      examples:
+      - window: 200
+        boost:
+        - field: brand
+          match:
+            value: adidas
+        signals:
+        - field: purchases
+          saturation:
+            pivot: 50
+        weight: 0.5
       type: object
       required:
       - window
@@ -3667,6 +4194,24 @@ components:
       type: object
       description: "Shared resources defined for an index, referenced by name from\
         \ individual fields."
+      examples:
+      - analyzers:
+          prose:
+            preset: full_text
+        stopwords:
+          brands:
+          - acme
+        synonyms:
+          cars:
+            rules:
+            - equivalent:
+              - car
+              - automobile
+            - mapping:
+                from:
+                - ny
+                to:
+                - new york
       properties:
         analyzers:
           type: object
@@ -3709,6 +4254,10 @@ components:
       type: object
       description: "A single synonym rule, configured as either equivalent terms or\
         \ a one-way mapping."
+      examples:
+      - equivalent:
+        - car
+        - automobile
       properties:
         equivalent:
           type: array
@@ -3725,6 +4274,8 @@ components:
       type: object
       description: "Ranks a value as `value / (value + pivot)` - half at the pivot,\
         \ approaching but never reaching one above it."
+      examples:
+      - pivot: 50
       required:
       - pivot
       properties:
@@ -3781,6 +4332,8 @@ components:
       required:
       - type
       description: Sorts by document relevance score.
+      examples:
+      - type: score
       properties:
         type:
           description: Selects the sort type.
@@ -4156,6 +4709,11 @@ components:
         \ targeting a field without sorting enabled returns `index:query:usage_not_enabled`;\
         \ a signal function unsupported by the field type returns `index:invalid-query-type`.\
         \ See [Signals](https://exofind.dev/reference/search-api/#signals)."
+      examples:
+      - field: purchases
+        saturation:
+          pivot: 50
+        weight: 0.5
       required:
       - field
       properties:
@@ -4193,6 +4751,11 @@ components:
         \ `1`, and applied to the score as `1 + weight * shape`. A document with no\
         \ value contributes `0`, ensuring a signal boosts a score by at most its configured\
         \ weight. Each signal must specify exactly one shape matching the field type."
+      examples:
+      - field: purchases
+        saturation:
+          pivot: 50
+        weight: 0.5
       required:
       - field
       properties:
@@ -4229,6 +4792,8 @@ components:
       type: object
       description: Makes a number field a ranking signal that is refreshed in place
         through the document update action. Carries no configuration options.
+      examples:
+      - {}
     SignalsMode:
       description: "How search request signals meet the ranking configured on the\
         \ index: `\"add\"` ranks by both; `\"replace\"` ranks by the request's signals\
@@ -4256,6 +4821,9 @@ components:
         \ that omits `type`, which it reads as a `field` sort. If `order` is omitted,\
         \ score sorts default to descending and field sorts to ascending. Configured\
         \ index tie-breaker sorts are appended after the requested sorts. See [Sorts](https://exofind.dev/reference/search-api/#sorts)."
+      examples:
+      - field: name
+        order: asc
       discriminator:
         propertyName: type
         mapping:
@@ -4272,6 +4840,9 @@ components:
       type: object
       description: Enables sorting search results by field value and configures value
         comparison.
+      examples:
+      - collation: locale
+        missing: last
       properties:
         collation:
           description: Collation order used when comparing values. Applies only to
@@ -4295,6 +4866,8 @@ components:
     Stemming:
       type: object
       description: Reduces words to a shared root.
+      examples:
+      - locale: sv
       properties:
         locale:
           type: string
@@ -4307,6 +4880,8 @@ components:
       description: "Removes frequent words. At most one of `locale`, `words` and `named`\
         \ is given; an empty object uses the stopwords of the locale of the value\
         \ being analyzed."
+      examples:
+      - locale: sv
       properties:
         locale:
           type: string
@@ -4335,6 +4910,12 @@ components:
       description: "Represents text data. Field usages are opt-in, each enabled by\
         \ including its configuration object. An empty object enables a usage with\
         \ engine defaults. See [`string`](https://exofind.dev/reference/field-types/#string)."
+      examples:
+      - type: string
+        stored: true
+        filter: {}
+        matching:
+          highlight: {}
       properties:
         type:
           description: Selects the field type.
@@ -4417,6 +4998,8 @@ components:
       type: object
       description: Suggests the values of the field while a search is typed. Carries
         no configuration options.
+      examples:
+      - {}
     SuggestRequest:
       description: "Asks what to search for, from the text typed so far. The suggestions\
         \ are the values of the fields the search settings of the index opt in with\
@@ -4519,6 +5102,13 @@ components:
       description: "One thing to search for: a value of a suggested field, shown by\
         \ its label where the search settings declare one, with how much of it was\
         \ typed and how many documents hold it."
+      examples:
+      - text: adidas
+        typed: 3
+        field: brand
+        value: adidas
+        label: Adidas
+        count: 87
       properties:
         text:
           type: string
@@ -4573,6 +5163,16 @@ components:
       type: object
       description: Synonym rules applied during indexing. Modifying a synonym set
         applies only to documents indexed after the change.
+      examples:
+      - rules:
+        - equivalent:
+          - car
+          - automobile
+        - mapping:
+            from:
+            - ny
+            to:
+            - new york
       required:
       - rules
       properties:
@@ -4586,6 +5186,8 @@ components:
       description: "Expands tokens with synonyms from a synonym set defined in `resources`.\
         \ Applied when a value is indexed, not when the text of a search is analyzed.\
         \ See [Applying a synonym set to a field](https://exofind.dev/reference/analysis/#applying-a-synonym-set-to-a-field)."
+      examples:
+      - named: cars
       required:
       - named
       properties:
@@ -4602,6 +5204,12 @@ components:
         \ within a single field and match terms exactly as typed, regardless of field\
         \ `typoTolerance`. Fields defined only for `autocomplete` do not support phrase\
         \ matching. See [`text`](https://exofind.dev/reference/search-api/#text)."
+      examples:
+      - type: text
+        text: silent spr
+        fields:
+          name: 3
+          description: null
       properties:
         type:
           description: Selects the clause type.
@@ -4688,6 +5296,10 @@ components:
       - type
       - text
       description: Matches text within a single field using field-level analysis.
+      examples:
+      - type: text
+        text: silent spring
+        match: phrase
       properties:
         type:
           description: Selects the matcher type.
@@ -4751,6 +5363,11 @@ components:
       description: Configuration properties shared by the `matching` and `autocomplete`
         usages. The usage type determines the default analyzer configuration generated
         by the engine when no analyzer is explicitly provided.
+      examples:
+      - weight: 3
+        highlight: {}
+        typoTolerance: {}
+        lengthNormalization: strong
       properties:
         analyzer:
           description: "Specifies how the text of this usage is analyzed. If omitted,\
@@ -4799,6 +5416,9 @@ components:
     TieBreaker:
       type: object
       description: A tie-breaking rule using a field defined for sorting.
+      examples:
+      - field: sales
+        direction: descending
       required:
       - field
       properties:
@@ -4821,6 +5441,10 @@ components:
         \ same instant are identical for filtering and sorting; search results return\
         \ the original string format provided during ingestion. Documents containing\
         \ timestamps without timezone offsets are rejected."
+      examples:
+      - type: timestamp
+        filter: {}
+        sort: {}
       properties:
         type:
           description: Selects the field type.
@@ -4884,6 +5508,8 @@ components:
       type: object
       description: "A transformation of the token stream. Exactly one kind is given,\
         \ selected by including its configuration."
+      examples:
+      - normalize: {}
       properties:
         normalize:
           description: Applies Unicode normalization and case folding to make analysis
@@ -4928,6 +5554,8 @@ components:
       type: object
       description: "Specifies how text is split into tokens. Specify exactly one tokenizer\
         \ by including its configuration, for example `{ \"whitespace\": {} }`."
+      examples:
+      - icu: {}
       properties:
         icu:
           description: Segments text based on Unicode rules. This is the default tokenizer.
@@ -4948,6 +5576,9 @@ components:
     Total:
       type: object
       description: "Total match count, measured in whatever unit the search returns."
+      examples:
+      - count: 128
+        exact: true
       properties:
         count:
           type: integer
@@ -4971,6 +5602,12 @@ components:
       type: object
       description: "Words matched as they are spelled, regardless of the typo tolerance\
         \ configured on the searched fields."
+      examples:
+      - words:
+        - adidas
+        - X-15
+        fields:
+        - name
       properties:
         words:
           type: array
@@ -4993,6 +5630,10 @@ components:
       type: object
       description: Enables typo tolerance. Mixed alphanumeric words follow standard
         length thresholds.
+      examples:
+      - minLengthOneTypo: 5
+        minLengthTwoTypos: 9
+        prefixLength: 1
       properties:
         minLengthOneTypo:
           type: integer
@@ -5030,6 +5671,9 @@ components:
         \ tree. Requires a field configured with [`hierarchy`](https://exofind.dev/reference/field-types/#string).\
         \ Path segments must match complete levels, so `Men/Sho` matches nothing where\
         \ a `prefix` matcher matches."
+      examples:
+      - type: under
+        path: Men/Shoes
       properties:
         type:
           description: Selects the matcher type.
@@ -5047,6 +5691,14 @@ components:
         \ to one document is applied and validated as a whole. If validation fails,\
         \ the request is rejected and the document remains unchanged. For more information,\
         \ see [Update behavior](https://exofind.dev/reference/documents-api/#update-behavior)."
+      examples:
+      - documents:
+        - id: "1"
+          price: 34.5
+          inStock: true
+        - id: "2"
+          price: 12.0
+          variants[sku=V-2].price: 29.0
       type: object
       required:
       - documents
@@ -5089,6 +5741,10 @@ components:
         \ using the `knn` search clause. Vector fields do not support `filter`, `sort`,\
         \ `facet`, or `locales`. Vectors must be supplied in document payloads. See\
         \ [Search by vector](https://exofind.dev/how-to/search-by-vector/)."
+      examples:
+      - type: vector
+        dimensions: 1536
+        similarity: cosine
       properties:
         type:
           description: Selects the field type.
@@ -5162,6 +5818,8 @@ components:
     WhitespaceTokenizer:
       type: object
       description: Whitespace segmentation. Carries no options.
+      examples:
+      - {}
   securitySchemes:
     apiKey:
       type: http
@@ -5258,8 +5916,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.read` permission.
@@ -5270,8 +5928,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
         "503":
           description: |-
             Indexer leadership assignments could not be read from shared storage. Retrying the request is expected to work once storage responds.
@@ -5282,9 +5940,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Leadership assignments could not be read from shared state storage.
+          - code: indexer:leadership_unreadable
+            when: Leadership assignments could not be read from shared state storage.
               Send the request again once storage answers.
-            code: indexer:leadership_unreadable
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -5336,8 +5994,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.read` permission.
@@ -5348,8 +6006,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -5527,8 +6185,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: '`reindex` was given on a request that creates no generation.'
-            code: index:reindex_needs_new_generation
+          - code: index:reindex_needs_new_generation
+            when: '`reindex` was given on a request that creates no generation.'
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -5539,8 +6197,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.write` permission.
@@ -5551,8 +6209,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.write` permission.
         "404":
           description: |-
             `If-Match` was sent for an index that does not exist, `books@2` named an index that does not exist, or the key has no grant covering the name.
@@ -5563,9 +6221,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The name belongs to no index, or the key holds no grant covering\
+          - code: index:not-found
+            when: "The name belongs to no index, or the key holds no grant covering\
               \ it."
-            code: index:not-found
         "409":
           description: |-
             The definition conflicts with documents stored in the generation (`index:definition:incompatible`), the stored definition contains settings this API version cannot represent (`index:definition:unrepresentable`), the index requires engine features this node does not have (`index:unsupported`), a reindex job is already running (`reindex:in_progress`), storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), no node is available to write the index (`indexer:unavailable`), or the registry write failed.
@@ -5576,24 +6234,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The definition conflicts with documents already stored in the generation.
+          - code: index:definition:incompatible
+            when: The definition conflicts with documents already stored in the generation.
               Write the change to a new generation.
-            code: index:definition:incompatible
-          - when: The stored definition holds settings this API version cannot describe.
-            code: index:definition:unrepresentable
-          - when: The index needs engine features this node does not have.
-            code: index:unsupported
-          - when: A reindex job is already running for the index.
-            code: reindex:in_progress
-          - when: "Storage holds a generation under the new name that nothing deleted.\
+          - code: index:definition:unrepresentable
+            when: The stored definition holds settings this API version cannot describe.
+          - code: index:unsupported
+            when: The index needs engine features this node does not have.
+          - code: reindex:in_progress
+            when: A reindex job is already running for the index.
+          - code: index:generation:storage_held
+            when: "Storage holds a generation under the new name that nothing deleted.\
               \ Repair the registry, or remove its objects."
-            code: index:generation:storage_held
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The registry kept being written by other nodes. Send the request
+          - code: index:registry:conflict
+            when: The registry kept being written by other nodes. Send the request
               again.
-            code: index:registry:conflict
         "412":
           description: |-
             The `If-Match` version does not match the stored definition. Re-read the index and rebuild the change against the new version.
@@ -5604,9 +6262,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The `If-Match` version is not the one the stored definition is at.
+          - code: index:version-mismatch
+            when: The `If-Match` version is not the one the stored definition is at.
               Read the index again and rebuild the change.
-            code: index:version-mismatch
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -5617,9 +6275,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The request raced the index being closed. Retrying the request reopens the index.
@@ -5630,9 +6288,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed. Sending it again reopens
+          - code: index:closed
+            when: The request raced the index being closed. Sending it again reopens
               the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.write
@@ -5710,8 +6368,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.read` permission.
@@ -5722,8 +6380,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
         "404":
           description: |-
             No index or generation has this name, or the key has no grant covering it.
@@ -5734,9 +6392,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "409":
           description: |-
             The node cannot describe the index. Send the request to a node running a version that supports it.
@@ -5747,10 +6405,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The stored definition holds settings this API version cannot describe.
-            code: index:definition:unrepresentable
-          - when: The index needs engine features this node does not have.
-            code: index:unsupported
+          - code: index:definition:unrepresentable
+            when: The stored definition holds settings this API version cannot describe.
+          - code: index:unsupported
+            when: The index needs engine features this node does not have.
         "503":
           description: |-
             The request raced the index being closed. Retrying the request reopens the index.
@@ -5761,9 +6419,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed. Sending it again reopens
+          - code: index:closed
+            when: The request raced the index being closed. Sending it again reopens
               the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -5808,8 +6466,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.delete` permission.
@@ -5820,8 +6478,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.delete` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.delete` permission.
         "404":
           description: |-
             No index or generation has this name, or the key has no grant covering it.
@@ -5832,9 +6490,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "409":
           description: |-
             The index or generation cannot be removed right now.
@@ -5845,14 +6503,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The generation is the live one. Promote another generation first.
-            code: index:generation:is_live
-          - when: No node is available to write the index. Send the request again
+          - code: index:generation:is_live
+            when: The generation is the live one. Promote another generation first.
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The registry kept being written by other nodes. Send the request
+          - code: index:registry:conflict
+            when: The registry kept being written by other nodes. Send the request
               again.
-            code: index:registry:conflict
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -5863,9 +6521,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.delete
@@ -5921,8 +6579,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.commit` permission.
@@ -5933,8 +6591,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.commit` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.commit` permission.
         "404":
           description: |-
             No index or generation has this name, or the key has no grant covering it.
@@ -5945,9 +6603,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "409":
           description: |-
             The index cannot be committed right now.
@@ -5958,12 +6616,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The node lost the writer role while the request ran. Send the request
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
               again to reach the new writer.
-            code: index:readonly
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -5974,9 +6632,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The request raced the index being closed. Retrying the request reopens the index.
@@ -5987,9 +6645,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed. Sending it again reopens
+          - code: index:closed
+            when: The request raced the index being closed. Sending it again reopens
               the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.commit
@@ -6066,8 +6724,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The path names an index without a generation. Name one as `index@generation`.
-            code: index:generation:name_required
+          - code: index:generation:name_required
+            when: The path names an index without a generation. Name one as `index@generation`.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -6078,8 +6736,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.promote` permission.
@@ -6090,8 +6748,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.promote` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.promote` permission.
         "404":
           description: |-
             No index or generation has this name, or the key has no grant covering it.
@@ -6102,9 +6760,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "409":
           description: |-
             The generation cannot be promoted right now.
@@ -6115,15 +6773,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: A reindex job is still filling this generation. Promote it once
+          - code: reindex:target_busy
+            when: A reindex job is still filling this generation. Promote it once
               the job is ready.
-            code: reindex:target_busy
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The registry kept being written by other nodes. Send the request
+          - code: index:registry:conflict
+            when: The registry kept being written by other nodes. Send the request
               again.
-            code: index:registry:conflict
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -6134,9 +6792,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.promote
@@ -6192,8 +6850,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.pull` permission.
@@ -6204,8 +6862,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.pull` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.pull` permission.
         "404":
           description: |-
             No index or generation has this name, or the key has no grant covering it.
@@ -6216,9 +6874,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "503":
           description: |-
             The request raced the index being closed. Retrying the request reopens the index.
@@ -6229,9 +6887,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed. Sending it again reopens
+          - code: index:closed
+            when: The request raced the index being closed. Sending it again reopens
               the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: indexes.pull
@@ -6289,8 +6947,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.read` permission.
@@ -6301,8 +6959,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
         "404":
           description: |-
             No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
@@ -6313,11 +6971,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no reindex job.
-            code: reindex:not_found
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: reindex:not_found
+            when: The index has no reindex job.
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -6391,19 +7049,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The target names an index without a generation. Name one as `index@generation`.
-            code: reindex:target_generation_required
-          - when: The target is the live generation. Fill another generation and promote
+          - code: reindex:target_generation_required
+            when: The target names an index without a generation. Name one as `index@generation`.
+          - code: reindex:target_is_live
+            when: The target is the live generation. Fill another generation and promote
               it.
-            code: reindex:target_is_live
-          - when: The target generation already holds documents.
-            code: reindex:target_not_empty
-          - when: The source and the target are the same generation.
-            code: reindex:source_is_target
-          - when: The source belongs to another index.
-            code: reindex:source_other_index
-          - when: The source and the target declare different primary keys.
-            code: reindex:primary_key_mismatch
+          - code: reindex:target_not_empty
+            when: The target generation already holds documents.
+          - code: reindex:source_is_target
+            when: The source and the target are the same generation.
+          - code: reindex:source_other_index
+            when: The source belongs to another index.
+          - code: reindex:primary_key_mismatch
+            when: The source and the target declare different primary keys.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -6414,8 +7072,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.reindex` permission.
@@ -6426,8 +7084,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.reindex` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.reindex` permission.
         "404":
           description: |-
             The specified index or generation does not exist, or the caller key lacks permissions on the index.
@@ -6438,9 +7096,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "409":
           description: |-
             The job could not be started.
@@ -6451,14 +7109,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "A reindex job is already running for the index. Wait for it, or\
+          - code: reindex:in_progress
+            when: "A reindex job is already running for the index. Wait for it, or\
               \ cancel it."
-            code: reindex:in_progress
-          - when: Another job holds the target generation.
-            code: reindex:target_busy
-          - when: No node is available to write the index. Send the request again
+          - code: reindex:target_busy
+            when: Another job holds the target generation.
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
         "502":
           description: |-
             The request was forwarded to the index writer and the writer did not respond.
@@ -6469,9 +7127,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.reindex
@@ -6528,8 +7186,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.reindex` permission.
@@ -6540,8 +7198,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.reindex` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.reindex` permission.
         "404":
           description: |-
             No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
@@ -6552,11 +7210,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no reindex job.
-            code: reindex:not_found
-          - when: "No index or generation has this name, or the key holds no grant\
+          - code: reindex:not_found
+            when: The index has no reindex job.
+          - code: index:not-found
+            when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
-            code: index:not-found
         "409":
           description: |-
             No node is available to write the index.
@@ -6567,9 +7225,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
         "502":
           description: |-
             The request was forwarded to the index writer and the writer did not respond.
@@ -6580,9 +7238,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: indexes.reindex
@@ -6703,18 +7361,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no body.
-            code: request:missing_body
-          - when: A synonym set names a field the generation does not have.
-            code: index:settings:synonyms:unknown_field
-          - when: A synonym set names a field that is not searched as text.
-            code: index:settings:synonyms:field_not_text
-          - when: A typo exclusion names a field the generation does not have.
-            code: index:settings:typo_exclusions:unknown_field
-          - when: The field settings name a field the generation does not have.
-            code: index:settings:fields:unknown_field
-          - when: A ranking signal names a field that is not sortable.
-            code: index:ranking:field_not_sortable
+          - code: request:missing_body
+            when: The request carries no body.
+          - code: index:settings:synonyms:unknown_field
+            when: A synonym set names a field the generation does not have.
+          - code: index:settings:synonyms:field_not_text
+            when: A synonym set names a field that is not searched as text.
+          - code: index:settings:typo_exclusions:unknown_field
+            when: A typo exclusion names a field the generation does not have.
+          - code: index:settings:fields:unknown_field
+            when: The field settings name a field the generation does not have.
+          - code: index:ranking:field_not_sortable
+            when: A ranking signal names a field that is not sortable.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -6725,8 +7383,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `settings.write` permission.
@@ -6737,8 +7395,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `settings.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `settings.write` permission.
         "404":
           description: |-
             No index has this name, or the API key lacks permissions covering it.
@@ -6749,8 +7407,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The settings could not be stored. The stored settings remain unchanged; send the request again.
@@ -6761,17 +7419,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Other writers kept changing the settings. The stored settings are
+          - code: index:settings:conflict
+            when: Other writers kept changing the settings. The stored settings are
               unchanged; send the request again.
-            code: index:settings:conflict
-          - when: Settings storage answered with an error. Send the request again.
-            code: index:settings:io_error
-          - when: Settings storage could not be reached. Send the request again once
+          - code: index:settings:io_error
+            when: Settings storage answered with an error. Send the request again.
+          - code: index:settings:unavailable
+            when: Settings storage could not be reached. Send the request again once
               it answers.
-            code: index:settings:unavailable
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
         "412":
           description: |-
             The `If-Match` version does not match the stored settings. Read them again and rebuild the change on the version that comes back.
@@ -6782,9 +7440,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The `If-Match` version is not the one the stored settings are at.
+          - code: index:settings:version_mismatch
+            when: The `If-Match` version is not the one the stored settings are at.
               Read them again and rebuild the change.
-            code: index:settings:version_mismatch
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -6795,9 +7453,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: settings.write
@@ -6887,17 +7545,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no body.
-            code: request:missing_body
-          - when: A key of the change could not be read as a path.
-            code: request:update:path_invalid
-          - when: A selector names nothing the settings hold. A selector never creates
+          - code: request:missing_body
+            when: The request carries no body.
+          - code: request:update:path_invalid
+            when: A key of the change could not be read as a path.
+          - code: request:update:no_match
+            when: A selector names nothing the settings hold. A selector never creates
               the value it names.
-            code: request:update:no_match
-          - when: A key names a field that cannot hold the given value.
-            code: request:update:value_invalid
-          - when: A ranking signal names a field that is not sortable.
-            code: index:ranking:field_not_sortable
+          - code: request:update:value_invalid
+            when: A key names a field that cannot hold the given value.
+          - code: index:ranking:field_not_sortable
+            when: A ranking signal names a field that is not sortable.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -6908,8 +7566,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `settings.write` permission.
@@ -6920,8 +7578,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `settings.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `settings.write` permission.
         "404":
           description: |-
             No index has this name, or the API key lacks permissions covering it.
@@ -6932,8 +7590,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The change could not be made. The stored settings are unchanged.
@@ -6944,21 +7602,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Other writers kept changing the settings. The stored settings are
+          - code: index:settings:conflict
+            when: Other writers kept changing the settings. The stored settings are
               unchanged; send the request again.
-            code: index:settings:conflict
-          - when: "The stored settings hold parts this node cannot describe. Send\
+          - code: index:settings:unrepresentable
+            when: "The stored settings hold parts this node cannot describe. Send\
               \ the request to a node that supports them, or replace the settings\
               \ with a `PUT`."
-            code: index:settings:unrepresentable
-          - when: Settings storage answered with an error. Send the request again.
-            code: index:settings:io_error
-          - when: Settings storage could not be reached. Send the request again once
+          - code: index:settings:io_error
+            when: Settings storage answered with an error. Send the request again.
+          - code: index:settings:unavailable
+            when: Settings storage could not be reached. Send the request again once
               it answers.
-            code: index:settings:unavailable
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
         "412":
           description: |-
             The `If-Match` version does not match the stored settings (`index:settings:version_mismatch`). Read them again and rebuild the change on the version that comes back.
@@ -6969,9 +7627,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The `If-Match` version is not the one the stored settings are at.
+          - code: index:settings:version_mismatch
+            when: The `If-Match` version is not the one the stored settings are at.
               Read them again and rebuild the change.
-            code: index:settings:version_mismatch
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -6982,9 +7640,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: settings.write
@@ -7044,8 +7702,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.read` permission.
@@ -7056,8 +7714,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
         "404":
           description: |-
             The index has no search settings (`index:settings:not_found`), the index does not exist, or the API key lacks permission on the index.
@@ -7068,10 +7726,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no search settings stored.
-            code: index:settings:not_found
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:settings:not_found
+            when: The index has no search settings stored.
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             Settings storage could not be reached.
@@ -7082,11 +7740,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Settings storage answered with an error. Send the request again.
-            code: index:settings:io_error
-          - when: Settings storage could not be reached. Send the request again once
+          - code: index:settings:io_error
+            when: Settings storage answered with an error. Send the request again.
+          - code: index:settings:unavailable
+            when: Settings storage could not be reached. Send the request again once
               it answers.
-            code: index:settings:unavailable
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -7131,8 +7789,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `settings.write` permission.
@@ -7143,8 +7801,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `settings.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `settings.write` permission.
         "404":
           description: |-
             No index has this name, or the API key lacks permissions covering it.
@@ -7155,8 +7813,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The change could not be stored. The stored settings are unchanged.
@@ -7167,17 +7825,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Other writers kept changing the settings. The stored settings are
+          - code: index:settings:conflict
+            when: Other writers kept changing the settings. The stored settings are
               unchanged; send the request again.
-            code: index:settings:conflict
-          - when: Settings storage answered with an error. Send the request again.
-            code: index:settings:io_error
-          - when: Settings storage could not be reached. Send the request again once
+          - code: index:settings:io_error
+            when: Settings storage answered with an error. Send the request again.
+          - code: index:settings:unavailable
+            when: Settings storage could not be reached. Send the request again once
               it answers.
-            code: index:settings:unavailable
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -7188,9 +7846,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
       security:
       - apiKey: []
       x-required-permission: settings.write
@@ -7243,8 +7901,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `keys.read` permission.
@@ -7255,8 +7913,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `keys.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `keys.read` permission.
         "409":
           description: |-
             Key storage is unavailable on this node, or could not be reached.
@@ -7267,10 +7925,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The node is not configured with key storage.
-            code: auth:keys:unavailable
-          - when: Key storage answered with an error. Send the request again.
-            code: auth:keys:io_error
+          - code: auth:keys:unavailable
+            when: The node is not configured with key storage.
+          - code: auth:keys:io_error
+            when: Key storage answered with an error. Send the request again.
       security:
       - apiKey: []
       x-required-permission: keys.read
@@ -7340,12 +7998,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no body.
-            code: request:missing_body
-          - when: The definition names a role this version does not have.
-            code: auth:key:unknown_role
-          - when: The definition names a permission this version does not have.
-            code: auth:key:unknown_permission
+          - code: request:missing_body
+            when: The request carries no body.
+          - code: auth:key:unknown_role
+            when: The definition names a role this version does not have.
+          - code: auth:key:unknown_permission
+            when: The definition names a permission this version does not have.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -7356,8 +8014,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `keys.write` permission.
@@ -7368,8 +8026,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `keys.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `keys.write` permission.
         "409":
           description: |-
             The key could not be stored. The stored keys are unchanged.
@@ -7380,13 +8038,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The node is not configured with key storage.
-            code: auth:keys:unavailable
-          - when: Key storage answered with an error. Send the request again.
-            code: auth:keys:io_error
-          - when: Other nodes kept changing the stored keys. The stored keys are unchanged;
+          - code: auth:keys:unavailable
+            when: The node is not configured with key storage.
+          - code: auth:keys:io_error
+            when: Key storage answered with an error. Send the request again.
+          - code: auth:keys:conflict
+            when: Other nodes kept changing the stored keys. The stored keys are unchanged;
               send the request again.
-            code: auth:keys:conflict
       security:
       - apiKey: []
       x-required-permission: keys.write
@@ -7429,8 +8087,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `keys.write` permission.
@@ -7441,8 +8099,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `keys.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `keys.write` permission.
         "404":
           description: |-
             No key has this ID.
@@ -7453,8 +8111,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No key is stored under this ID.
-            code: auth:key:not_found
+          - code: auth:key:not_found
+            when: No key is stored under this ID.
         "409":
           description: |-
             The key could not be revoked. The stored keys are unchanged.
@@ -7465,13 +8123,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The node is not configured with key storage.
-            code: auth:keys:unavailable
-          - when: Key storage answered with an error. Send the request again.
-            code: auth:keys:io_error
-          - when: Other nodes kept changing the stored keys. The stored keys are unchanged;
+          - code: auth:keys:unavailable
+            when: The node is not configured with key storage.
+          - code: auth:keys:io_error
+            when: Key storage answered with an error. Send the request again.
+          - code: auth:keys:conflict
+            when: Other nodes kept changing the stored keys. The stored keys are unchanged;
               send the request again.
-            code: auth:keys:conflict
       security:
       - apiKey: []
       x-required-permission: keys.write
@@ -7539,8 +8197,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `registry.repair` permission.
@@ -7551,8 +8209,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `registry.repair` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `registry.repair` permission.
         "409":
           description: |-
             The endpoint was called on a node configured with local storage, or writing the repaired registry failed. The registry remains unchanged.
@@ -7563,15 +8221,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node stores indexes on local disk, where there is no shared\
+          - code: index:registry:audit_unavailable
+            when: "The node stores indexes on local disk, where there is no shared\
               \ registry to repair."
-            code: index:registry:audit_unavailable
-          - when: The registry kept being written by other nodes. The registry is
+          - code: index:registry:conflict
+            when: The registry kept being written by other nodes. The registry is
               unchanged; send the request again.
-            code: index:registry:conflict
-          - when: Registry storage answered with an error. The registry is unchanged;
+          - code: index:registry:io_error
+            when: Registry storage answered with an error. The registry is unchanged;
               send the request again.
-            code: index:registry:io_error
       security:
       - apiKey: []
       x-required-permission: registry.repair
@@ -7633,8 +8291,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `registry.audit` permission.
@@ -7645,8 +8303,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `registry.audit` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `registry.audit` permission.
         "409":
           description: |-
             The endpoint was called on a node configured with local storage rather than shared storage.
@@ -7657,9 +8315,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node stores indexes on local disk, where there is no shared\
+          - code: index:registry:audit_unavailable
+            when: "The node stores indexes on local disk, where there is no shared\
               \ registry to audit."
-            code: index:registry:audit_unavailable
       security:
       - apiKey: []
       x-required-permission: registry.audit
@@ -7709,8 +8367,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `indexes.read` permission.
@@ -7721,8 +8379,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `indexes.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -7795,14 +8453,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The index definition declares no primary key, so documents cannot\
+          - code: index:no_primary_key
+            when: "The index definition declares no primary key, so documents cannot\
               \ be scanned in key order."
-            code: index:no_primary_key
-          - when: "The index does not store document copies, so a scan has nothing\
+          - code: index:source:not_kept
+            when: "The index does not store document copies, so a scan has nothing\
               \ to return."
-            code: index:source:not_kept
-          - when: The `limit` parameter is not a whole number from 1 to 10000.
-            code: request:scan:limit_invalid
+          - code: request:scan:limit_invalid
+            when: The `limit` parameter is not a whole number from 1 to 10000.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -7813,8 +8471,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `documents.read` permission.
@@ -7825,8 +8483,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `documents.read` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.read` permission.
         "404":
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
@@ -7837,8 +8495,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "503":
           description: |-
             The request raced the index being closed to free local resources. Repeating the request reopens the index.
@@ -7849,9 +8507,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
       security:
       - apiKey: []
       summary: Read documents
@@ -7928,8 +8586,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: A line of the body could not be read as JSON.
-            code: request:document:malformed
+          - code: request:document:malformed
+            when: A line of the body could not be read as JSON.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -7940,8 +8598,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `documents.write` permission.
@@ -7952,8 +8610,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `documents.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.write` permission.
         "404":
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
@@ -7964,8 +8622,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index cannot be written to right now.
@@ -7976,17 +8634,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The index is synchronizing. Send the request again.
-            code: index:out-of-date
-          - when: The node lost the writer role while the request ran. Send the request
+          - code: index:out-of-date
+            when: The index is synchronizing. Send the request again.
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
               again to reach the new writer.
-            code: index:readonly
-          - when: "An active reindex job holds the target generation. Wait for the\
+          - code: reindex:target_busy
+            when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
-            code: reindex:target_busy
         "502":
           description: |-
             The node holding the index did not answer.
@@ -7997,9 +8655,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The index is not open on the node right now.
@@ -8010,9 +8668,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
       security:
       - apiKey: []
       summary: Index documents
@@ -8095,14 +8753,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The body holds neither `keys` nor `query`.
-            code: request:delete:target_required
-          - when: The body holds both `keys` and `query`. Send one of them.
-            code: request:delete:target_conflicting
-          - when: The body states a `locale` without a `query`.
-            code: request:delete:locale_without_query
-          - when: A key cannot be read as the type of the primary key field.
-            code: index:query:invalid_value
+          - code: request:delete:target_required
+            when: The body holds neither `keys` nor `query`.
+          - code: request:delete:target_conflicting
+            when: The body holds both `keys` and `query`. Send one of them.
+          - code: request:delete:locale_without_query
+            when: The body states a `locale` without a `query`.
+          - code: index:query:invalid_value
+            when: A key cannot be read as the type of the primary key field.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8113,8 +8771,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `documents.delete` permission.
@@ -8125,8 +8783,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `documents.delete` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.delete` permission.
         "404":
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
@@ -8137,8 +8795,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
@@ -8149,14 +8807,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The index is synchronizing. Send the request again.
-            code: index:out-of-date
-          - when: "An active reindex job holds the target generation. Wait for the\
+          - code: index:out-of-date
+            when: The index is synchronizing. Send the request again.
+          - code: reindex:target_busy
+            when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
-            code: reindex:target_busy
         "502":
           description: |-
             The request was forwarded to the index writer and the writer did not respond.
@@ -8167,9 +8825,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The request raced the index being closed to free local resources. Repeating the request reopens the index.
@@ -8180,9 +8838,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: documents.delete
@@ -8257,32 +8915,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: A document the change names is not indexed and `missing` is `fail`.
-            code: request:update:not_found
-          - when: "The index definition declares no primary key, so a document cannot\
+          - code: request:update:not_found
+            when: A document the change names is not indexed and `missing` is `fail`.
+          - code: index:no_primary_key
+            when: "The index definition declares no primary key, so a document cannot\
               \ be named."
-            code: index:no_primary_key
-          - when: The index does not store document copies. Send the complete document
+          - code: index:source:not_kept
+            when: The index does not store document copies. Send the complete document
               instead.
-            code: index:source:not_kept
-          - when: A path in the change could not be read.
-            code: request:update:path_invalid
-          - when: A path reaches into a field the index does not have.
-            code: request:update:path_unknown_field
-          - when: A path names one value of a field that holds neither locale variants
+          - code: request:update:path_invalid
+            when: A path in the change could not be read.
+          - code: request:update:path_unknown_field
+            when: A path reaches into a field the index does not have.
+          - code: request:update:selector_not_supported
+            when: A path names one value of a field that holds neither locale variants
               nor objects.
-            code: request:update:selector_not_supported
-          - when: A path names a locale the field holds no variant for.
-            code: request:update:locale_unknown
-          - when: A change adds a value to a field that holds a single value.
-            code: request:update:add_not_multiple
-          - when: A path reaches inside a field whose values are not objects.
-            code: request:update:not_an_object
-          - when: A path reaches into a list of objects without saying which value.
-            code: request:update:value_required
-          - when: A selector names no value the document holds. A selector never creates
+          - code: request:update:locale_unknown
+            when: A path names a locale the field holds no variant for.
+          - code: request:update:add_not_multiple
+            when: A change adds a value to a field that holds a single value.
+          - code: request:update:not_an_object
+            when: A path reaches inside a field whose values are not objects.
+          - code: request:update:value_required
+            when: A path reaches into a list of objects without saying which value.
+          - code: request:update:no_match
+            when: A selector names no value the document holds. A selector never creates
               the value it names.
-            code: request:update:no_match
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8293,8 +8951,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `documents.write` permission.
@@ -8305,8 +8963,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `documents.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.write` permission.
         "404":
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
@@ -8317,8 +8975,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index cannot be written to right now.
@@ -8329,14 +8987,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The index is synchronizing. Send the request again.
-            code: index:out-of-date
-          - when: "An active reindex job holds the target generation. Wait for the\
+          - code: index:out-of-date
+            when: The index is synchronizing. Send the request again.
+          - code: reindex:target_busy
+            when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
-            code: reindex:target_busy
         "502":
           description: |-
             The node holding the index did not answer.
@@ -8347,9 +9005,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The index is not open on the node right now.
@@ -8360,9 +9018,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
       security:
       - apiKey: []
       summary: Update fields of existing documents
@@ -8445,23 +9103,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key in the path cannot be read as the type of the primary key
+          - code: index:query:invalid_value
+            when: The key in the path cannot be read as the type of the primary key
               field.
-            code: index:query:invalid_value
-          - when: The body gives the primary key field a value other than the key
+          - code: request:update:key_conflicting
+            when: The body gives the primary key field a value other than the key
               in the path.
-            code: request:update:key_conflicting
-          - when: "The index definition declares no primary key, so a document cannot\
+          - code: index:no_primary_key
+            when: "The index definition declares no primary key, so a document cannot\
               \ be named."
-            code: index:no_primary_key
-          - when: The index does not store document copies. Send the complete document
+          - code: index:source:not_kept
+            when: The index does not store document copies. Send the complete document
               instead.
-            code: index:source:not_kept
-          - when: A path in the change could not be read.
-            code: request:update:path_invalid
-          - when: A selector names no value the document holds. A selector never creates
+          - code: request:update:path_invalid
+            when: A path in the change could not be read.
+          - code: request:update:no_match
+            when: A selector names no value the document holds. A selector never creates
               the value it names.
-            code: request:update:no_match
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8472,8 +9130,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `documents.write` permission.
@@ -8484,8 +9142,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `documents.write` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.write` permission.
         "404":
           description: |-
             Nothing is indexed under the key, no index with the specified name exists on this node, or the caller key lacks permissions on the index.
@@ -8496,10 +9154,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Nothing is indexed under the key. Index the document whole first.
-            code: index:document:not_found
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:document:not_found
+            when: Nothing is indexed under the key. Index the document whole first.
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index cannot be written to right now.
@@ -8510,14 +9168,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The index is synchronizing. Send the request again.
-            code: index:out-of-date
-          - when: "An active reindex job holds the target generation. Wait for the\
+          - code: index:out-of-date
+            when: The index is synchronizing. Send the request again.
+          - code: reindex:target_busy
+            when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
-            code: reindex:target_busy
         "502":
           description: |-
             The node holding the index did not answer.
@@ -8528,9 +9186,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The index is not open on the node right now.
@@ -8541,9 +9199,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: documents.write
@@ -8594,12 +9252,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key in the path cannot be read as the type of the primary key
+          - code: index:query:invalid_value
+            when: The key in the path cannot be read as the type of the primary key
               field.
-            code: index:query:invalid_value
-          - when: "The index definition declares no primary key, so a document cannot\
+          - code: index:no_primary_key
+            when: "The index definition declares no primary key, so a document cannot\
               \ be named."
-            code: index:no_primary_key
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8610,8 +9268,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `documents.delete` permission.
@@ -8622,8 +9280,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `documents.delete` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.delete` permission.
         "404":
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
@@ -8634,8 +9292,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
@@ -8646,14 +9304,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: No node is available to write the index. Send the request again
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
               once one is.
-            code: indexer:unavailable
-          - when: The index is synchronizing. Send the request again.
-            code: index:out-of-date
-          - when: "An active reindex job holds the target generation. Wait for the\
+          - code: index:out-of-date
+            when: The index is synchronizing. Send the request again.
+          - code: reindex:target_busy
+            when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
-            code: reindex:target_busy
         "502":
           description: |-
             The request was forwarded to the index writer and the writer did not respond.
@@ -8664,9 +9322,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request was forwarded to the index writer and the writer did
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
               not answer. Send it again.
-            code: indexer:unreachable
         "503":
           description: |-
             The request raced the index being closed to free local resources. Repeating the request reopens the index.
@@ -8677,9 +9335,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
       security:
       - apiKey: []
       x-required-permission: documents.delete
@@ -8767,25 +9425,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request names a field the index does not have.
-            code: index:query:field_not_found
-          - when: The field is not defined for `facet` usage.
-            code: index:query:usage_not_enabled
-          - when: A prefix was given for a field whose values are paths through a
+          - code: index:query:field_not_found
+            when: The request names a field the index does not have.
+          - code: index:query:usage_not_enabled
+            when: The field is not defined for `facet` usage.
+          - code: index:query:facet_prefix_on_a_tree
+            when: A prefix was given for a field whose values are paths through a
               tree.
-            code: index:query:facet_prefix_on_a_tree
-          - when: '`limit` is outside 1 to 1000.'
-            code: search:facet:limit_invalid
-          - when: A clause under `filter` affects the score. Move it out of `filter`.
-            code: search:filter:scores
-          - when: The query holds more clauses than the node allows.
-            code: search:query:too_many_clauses
-          - when: The query nests deeper than the node allows.
-            code: search:query:too_deep
-          - when: A `knn` clause asks for more neighbours than the node allows.
-            code: search:clause:k_too_large
-          - when: A clause reaches deeper into objects than the node allows.
-            code: search:clause:depth_too_large
+          - code: search:facet:limit_invalid
+            when: '`limit` is outside 1 to 1000.'
+          - code: search:filter:scores
+            when: A clause under `filter` affects the score. Move it out of `filter`.
+          - code: search:query:too_many_clauses
+            when: The query holds more clauses than the node allows.
+          - code: search:query:too_deep
+            when: The query nests deeper than the node allows.
+          - code: search:clause:k_too_large
+            when: A `knn` clause asks for more neighbours than the node allows.
+          - code: search:clause:depth_too_large
+            when: A clause reaches deeper into objects than the node allows.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8796,8 +9454,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `search` permission.
@@ -8808,8 +9466,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `search` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `search` permission.
         "404":
           description: |-
             The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
@@ -8820,8 +9478,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index cannot be searched right now.
@@ -8832,9 +9490,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no live generation. Promote one and send the request
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
               again.
-            code: index:no_live_generation
         "503":
           description: |-
             The counting did not finish on the node.
@@ -8845,13 +9503,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
-          - when: "Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it\
+          - code: search:timeout
+            when: "Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it\
               \ collected is dropped, so narrow the search rather than sending it\
               \ again."
-            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search
@@ -8963,26 +9621,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: A clause under `filter` affects the score. Move it out of `filter`.
-            code: search:filter:scores
-          - when: A clause names a field the index does not have.
-            code: index:query:field_not_found
-          - when: A field is not defined for the usage the clause asks of it.
-            code: index:query:usage_not_enabled
-          - when: '`offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the
+          - code: search:filter:scores
+            when: A clause under `filter` affects the score. Move it out of `filter`.
+          - code: index:query:field_not_found
+            when: A clause names a field the index does not have.
+          - code: index:query:usage_not_enabled
+            when: A field is not defined for the usage the clause asks of it.
+          - code: search:page:too_deep
+            when: '`offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the
               `next` cursor instead.'
-            code: search:page:too_deep
-          - when: '`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller
+          - code: search:limit:too_large
+            when: '`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller
               page and follow `next`.'
-            code: search:limit:too_large
-          - when: The query holds more clauses than the node allows.
-            code: search:query:too_many_clauses
-          - when: The query nests deeper than the node allows.
-            code: search:query:too_deep
-          - when: A `knn` clause asks for more neighbours than the node allows.
-            code: search:clause:k_too_large
-          - when: A clause reaches deeper into objects than the node allows.
-            code: search:clause:depth_too_large
+          - code: search:query:too_many_clauses
+            when: The query holds more clauses than the node allows.
+          - code: search:query:too_deep
+            when: The query nests deeper than the node allows.
+          - code: search:clause:k_too_large
+            when: A `knn` clause asks for more neighbours than the node allows.
+          - code: search:clause:depth_too_large
+            when: A clause reaches deeper into objects than the node allows.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8993,8 +9651,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `search` permission.
@@ -9005,8 +9663,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `search` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `search` permission.
         "404":
           description: |-
             The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
@@ -9017,8 +9675,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index cannot be searched right now.
@@ -9029,9 +9687,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no live generation. Promote one and send the request
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
               again.
-            code: index:no_live_generation
         "503":
           description: |-
             The search did not finish on the node.
@@ -9042,13 +9700,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
-          - when: "The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`.\
+          - code: search:timeout
+            when: "The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`.\
               \ What it collected is dropped, so narrow the search rather than sending\
               \ it again."
-            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search
@@ -9167,8 +9825,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The index declares no primary key, so a hit cannot be named."
-            code: index:no_primary_key
+          - code: index:no_primary_key
+            when: "The index declares no primary key, so a hit cannot be named."
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -9179,8 +9837,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `search` permission.
@@ -9191,8 +9849,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `search` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `search` permission.
         "404":
           description: |-
             The index does not exist, the key has no permissions on it, or the explanation names something the index does not hold.
@@ -9203,12 +9861,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: Nothing is indexed under `key`.
-            code: index:explain:document_not_found
-          - when: The document holds no value along the `hits` path at `index`.
-            code: index:explain:value_not_found
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:explain:document_not_found
+            when: Nothing is indexed under `key`.
+          - code: index:explain:value_not_found
+            when: The document holds no value along the `hits` path at `index`.
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index cannot be searched right now.
@@ -9219,9 +9877,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no live generation. Promote one and send the request
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
               again.
-            code: index:no_live_generation
         "503":
           description: |-
             The explanation did not finish on the node.
@@ -9232,11 +9890,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
-          - when: The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`.
-            code: search:timeout
+          - code: search:timeout
+            when: The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`.
       security:
       - apiKey: []
       x-required-permission: search
@@ -9327,22 +9985,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: '`limit` is outside 1 to 100.'
-            code: search:suggest:limit_invalid
-          - when: The request names a locale the node has no rules for.
-            code: search:locale:unsupported
-          - when: A filter names a field the index does not have.
-            code: index:query:field_not_found
-          - when: A clause under `filter` affects the score. Move it out of `filter`.
-            code: search:filter:scores
-          - when: The filter holds more clauses than the node allows.
-            code: search:query:too_many_clauses
-          - when: The filter nests deeper than the node allows.
-            code: search:query:too_deep
-          - when: A `knn` clause asks for more neighbours than the node allows.
-            code: search:clause:k_too_large
-          - when: A clause reaches deeper into objects than the node allows.
-            code: search:clause:depth_too_large
+          - code: search:suggest:limit_invalid
+            when: '`limit` is outside 1 to 100.'
+          - code: search:locale:unsupported
+            when: The request names a locale the node has no rules for.
+          - code: index:query:field_not_found
+            when: A filter names a field the index does not have.
+          - code: search:filter:scores
+            when: A clause under `filter` affects the score. Move it out of `filter`.
+          - code: search:query:too_many_clauses
+            when: The filter holds more clauses than the node allows.
+          - code: search:query:too_deep
+            when: The filter nests deeper than the node allows.
+          - code: search:clause:k_too_large
+            when: A `knn` clause asks for more neighbours than the node allows.
+          - code: search:clause:depth_too_large
+            when: A clause reaches deeper into objects than the node allows.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -9353,8 +10011,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request carries no credential this node accepts.
-            code: auth:unauthenticated
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
         "403":
           description: |-
             The API key does not have the `search` permission.
@@ -9365,8 +10023,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The key is accepted but does not hold the `search` permission.
-            code: auth:forbidden
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `search` permission.
         "404":
           description: |-
             The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
@@ -9377,8 +10035,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: "The node holds no such index, or the key has no permission on it."
-            code: index:not-found
+          - code: index:not-found
+            when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
             The index currently has no live generation (`index:no_live_generation`). Promote a generation and send the request again.
@@ -9389,9 +10047,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The index has no live generation. Promote one and send the request
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
               again.
-            code: index:no_live_generation
         "503":
           description: |-
             The request raced the index being closed to free local resources (`index:closed`). Sending the same request again reopens it.
@@ -9404,13 +10062,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - when: The request raced the index being closed to free local resources.
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
-            code: index:closed
-          - when: "Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What\
+          - code: search:timeout
+            when: "Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What\
               \ it collected is dropped, so narrow the filters rather than sending\
               \ the request again."
-            code: search:timeout
       security:
       - apiKey: []
       x-required-permission: search

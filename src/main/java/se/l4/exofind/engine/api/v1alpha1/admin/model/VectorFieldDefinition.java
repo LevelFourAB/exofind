@@ -32,6 +32,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 		`sort`, `facet`, or `locales`. Vectors must be supplied in document \
 		payloads. See \
 		[Search by vector](https://exofind.dev/how-to/search-by-vector/).""",
+	examples = VectorFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",
 		type = SchemaType.STRING,
@@ -107,6 +108,10 @@ public record VectorFieldDefinition(
 	)
 	Quantization quantization
 ) implements FieldDefinition {
+	/** The example field, as the JSON a caller writes. */
+	public static final String EXAMPLE = """
+		{ "type": "vector", "dimensions": 1536, "similarity": "cosine" }""";
+
 	@Schema(description = """
 		Vector distance metric: `cosine`, `dot_product`, or `euclidean`. \
 		`dot_product` requires unit-length normalized vectors.""")
@@ -144,10 +149,13 @@ public record VectorFieldDefinition(
 	 * indexing time and space for recall; omitting them uses engine defaults.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Hierarchical Navigable Small World index configuration. Parameters \
-		trade indexing time and space for recall; omitting them uses engine \
-		defaults.""")
+	@Schema(
+		description = """
+			Hierarchical Navigable Small World index configuration. Parameters \
+			trade indexing time and space for recall; omitting them uses engine \
+			defaults.""",
+		examples = Hnsw.EXAMPLE
+	)
 	public record Hnsw(
 		/**
 		 * Number of bi-directional links per node.
@@ -163,5 +171,8 @@ public record VectorFieldDefinition(
 			construction.""")
 		Integer efConstruction
 	) {
+		/** The example configuration, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "m": 16, "efConstruction": 100 }""";
 	}
 }

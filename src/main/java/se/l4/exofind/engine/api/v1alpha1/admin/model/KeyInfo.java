@@ -21,9 +21,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   expiration timestamp as an ISO-8601 string, or absent if the key does not
  *   expire
  */
-@Schema(description = """
-	A key as stored by the deployment. Key secrets are stored only as hashes. \
-	A lost credential cannot be recovered and must be replaced.""")
+@Schema(
+	description = """
+		A key as stored by the deployment. Key secrets are stored only as hashes. \
+		A lost credential cannot be recovered and must be replaced.""",
+	examples = KeyInfo.EXAMPLE
+)
 public record KeyInfo(
 	@Schema(
 		description = """
@@ -55,13 +58,28 @@ public record KeyInfo(
 	)
 	String expiresAt
 ) {
+	/** The example key, as the JSON the engine answers with. */
+	public static final String EXAMPLE = """
+		{
+		  "id": "4ff6b760264c1918",
+		  "description": "the search backend",
+		  "grants": [
+		    { "permissions": [ "indexes.read", "search" ], "indexes": [ "products" ] }
+		  ],
+		  "createdAt": "2026-08-16T12:09:33.198275Z",
+		  "expiresAt": "2027-01-01T00:00:00Z"
+		}""";
+
 	/**
 	 * @param permissions
 	 *   ordered list of permission names
 	 * @param indexes
 	 *   index names and prefix patterns in the order specified
 	 */
-	@Schema(description = "A stored grant combining permissions and index patterns.")
+	@Schema(
+		description = "A stored grant combining permissions and index patterns.",
+		examples = Grant.EXAMPLE
+	)
 	public record Grant(
 		@Schema(description = "Permission names, in sorted order.")
 		List<String> permissions,
@@ -70,5 +88,8 @@ public record KeyInfo(
 			Index names and prefix patterns in the order specified.""")
 		List<String> indexes
 	) {
+		/** The example grant, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{ "permissions": [ "indexes.read", "search" ], "indexes": [ "products" ] }""";
 	}
 }

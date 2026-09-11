@@ -91,7 +91,10 @@ public record RegistryAuditResponse(
 	 *   a list of generations found for the index, ordered by name
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One index as the registry and storage each describe it.")
+	@Schema(
+		description = "One index as the registry and storage each describe it.",
+		examples = AuditedIndex.EXAMPLE
+	)
 	public record AuditedIndex(
 		@Schema(description = "Name of the index.", examples = "products")
 		String name,
@@ -131,6 +134,17 @@ public record RegistryAuditResponse(
 		@Schema(description = "A list of generations found for the index, ordered by name.")
 		List<AuditedGeneration> generations
 	) {
+		/** The example index, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{
+			  "name": "products",
+			  "registered": true,
+			  "live": "2",
+			  "generations": [
+			    { "name": "1", "registered": true, "stored": "SYNCED" },
+			    { "name": "2", "registered": true, "stored": "SYNCED" }
+			  ]
+			}""";
 	}
 
 	/**
@@ -145,7 +159,10 @@ public record RegistryAuditResponse(
 	 *   waits for the sweep; omitted otherwise
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "One generation as the registry and storage each describe it.")
+	@Schema(
+		description = "One generation as the registry and storage each describe it.",
+		examples = AuditedGeneration.EXAMPLE
+	)
 	public record AuditedGeneration(
 		@Schema(description = "The name of the generation.", examples = "1")
 		String name,
@@ -172,5 +189,8 @@ public record RegistryAuditResponse(
 		)
 		String removedAt
 	) {
+		/** The example generation, as the JSON the engine answers with. */
+		public static final String EXAMPLE = """
+			{ "name": "1", "registered": true, "stored": "SYNCED" }""";
 	}
 }

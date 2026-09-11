@@ -378,7 +378,8 @@ public record SearchRequest(
 		description = """
 			Computes match counts for distinct values of a field. The target \
 			field must have `facet` enabled in its field definition; \
-			otherwise, the request returns `index:query:usage_not_enabled`."""
+			otherwise, the request returns `index:query:usage_not_enabled`.""",
+		examples = Facet.EXAMPLE
 	)
 	public record Facet(
 		/**
@@ -477,6 +478,10 @@ public record SearchRequest(
 			`search:facet:exclude_filters_invalid`.""")
 		List<String> excludeFilters
 	) {
+		/** The example facet, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "field": "category", "limit": 20, "order": "count" }""";
+
 		/**
 		 * Sort order of facet values: descending by count, ascending by
 		 * value, or the order the search settings declare.
@@ -525,7 +530,8 @@ public record SearchRequest(
 				must be greater than `from` \
 				(`index:query:facet_range_empty`). At most 1000 buckets per \
 				facet (`search:facet:ranges_too_many`); using `ranges` on an \
-				unsupported field type returns `index:invalid-query-type`."""
+				unsupported field type returns `index:invalid-query-type`.""",
+			examples = Range.EXAMPLE
 		)
 		public record Range(
 			/**
@@ -552,6 +558,9 @@ public record SearchRequest(
 			)
 			Object to
 		) {
+			/** The example bucket, as the JSON a caller writes. */
+			public static final String EXAMPLE = """
+				{ "from": 100, "to": 200 }""";
 		}
 	}
 
@@ -564,7 +573,8 @@ public record SearchRequest(
 		description = """
 			Requests numbered page metadata. Sending an empty object asks for \
 			the defaults. Can be combined with `offset` or page cursors, but \
-			not with `after` or `before`."""
+			not with `after` or `before`.""",
+		examples = Pages.EXAMPLE
 	)
 	public record Pages(
 		/**
@@ -576,6 +586,9 @@ public record SearchRequest(
 		)
 		Integer max
 	) {
+		/** The example request, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "max": 9 }""";
 	}
 
 	/**
@@ -584,12 +597,15 @@ public record SearchRequest(
 	 * no highlights.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Requests highlighted snippets. Fragments are generated only from \
-		scoring clauses, so non-scoring filter clauses produce no highlights. \
-		Highlighted text is not HTML-escaped, and text beyond the first 10,000 \
-		characters of a field value is not evaluated. See \
-		[Highlighting](https://exofind.dev/reference/search-api/#highlighting).""")
+	@Schema(
+		description = """
+			Requests highlighted snippets. Fragments are generated only from \
+			scoring clauses, so non-scoring filter clauses produce no highlights. \
+			Highlighted text is not HTML-escaped, and text beyond the first 10,000 \
+			characters of a field value is not evaluated. See \
+			[Highlighting](https://exofind.dev/reference/search-api/#highlighting).""",
+		examples = Highlight.EXAMPLE
+	)
 	public record Highlight(
 		/**
 		 * Fields to return fragments for, keyed by field name in the index
@@ -607,6 +623,9 @@ public record SearchRequest(
 		)
 		Map<String, HighlightField> fields
 	) {
+		/** The example request, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "fields": { "name": {}, "description": { "fragments": 2 } } }""";
 	}
 
 	/**
@@ -614,11 +633,14 @@ public record SearchRequest(
 	 * the values that satisfied the query's `nested` clauses.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Requests the matched values of `nested` object fields with each hit. \
-		Cannot be combined with `hits` (`search:hits:with_matched`). See \
-		[Matched \
-		values](https://exofind.dev/reference/search-api/#matched-values).""")
+	@Schema(
+		description = """
+			Requests the matched values of `nested` object fields with each hit. \
+			Cannot be combined with `hits` (`search:hits:with_matched`). See \
+			[Matched \
+			values](https://exofind.dev/reference/search-api/#matched-values).""",
+		examples = Matched.EXAMPLE
+	)
 	public record Matched(
 		/**
 		 * Object fields to return matched values for, keyed by field name in
@@ -635,6 +657,9 @@ public record SearchRequest(
 		)
 		Map<String, MatchedField> fields
 	) {
+		/** The example request, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "fields": { "variants": { "limit": 3 } } }""";
 	}
 
 	/**
@@ -659,18 +684,21 @@ public record SearchRequest(
 	 * With `when` specified, results are ordered by score alone.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Makes each matched value of a `nested` object field a hit of its own \
-		instead of a document hit. Totals count matching nested values, facets \
-		count value hits, and pagination cursors step through values. With \
-		`when`, only the documents it matches expand and the rest stay \
-		document hits, totals count hits of both kinds and facets count \
-		documents. Cannot be combined with `matched` \
-		(`search:hits:with_matched`) or `knn` clauses \
-		(`search:hits:with_knn`); `highlight` may only name fields inside \
-		`path` (`search:hits:with_highlight`), and each hit returns fragments \
-		of its own value. See [What a hit stands \
-		for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""")
+	@Schema(
+		description = """
+			Makes each matched value of a `nested` object field a hit of its own \
+			instead of a document hit. Totals count matching nested values, facets \
+			count value hits, and pagination cursors step through values. With \
+			`when`, only the documents it matches expand and the rest stay \
+			document hits, totals count hits of both kinds and facets count \
+			documents. Cannot be combined with `matched` \
+			(`search:hits:with_matched`) or `knn` clauses \
+			(`search:hits:with_knn`); `highlight` may only name fields inside \
+			`path` (`search:hits:with_highlight`), and each hit returns fragments \
+			of its own value. See [What a hit stands \
+			for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""",
+		examples = Hits.EXAMPLE
+	)
 	public record Hits(
 		/**
 		 * Name of the object field whose matched values are the hits, as named
@@ -721,13 +749,22 @@ public record SearchRequest(
 			refused while this is set (`search:hits:when_field_sort`).""")
 		List<Clause> when
 	) {
+		/** The example request, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{
+			  "path": "variants",
+			  "fields": [ "variants.color", "variants.price" ]
+			}""";
 	}
 
 	/**
 	 * Configuration for returning matched values of a nested object field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Configuration for returning matched values of a nested object field.")
+	@Schema(
+		description = "Configuration for returning matched values of a nested object field.",
+		examples = MatchedField.EXAMPLE
+	)
 	public record MatchedField(
 		/**
 		 * Maximum number of matched values to return per hit, from 1 to 100.
@@ -760,13 +797,19 @@ public record SearchRequest(
 			(`index:query:usage_not_enabled`).""")
 		List<String> fields
 	) {
+		/** The example configuration, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "limit": 3, "fields": [ "variants.color" ] }""";
 	}
 
 	/**
 	 * Configuration for highlighting text fragments in a single field.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = "Configuration for highlighting text fragments in a single field.")
+	@Schema(
+		description = "Configuration for highlighting text fragments in a single field.",
+		examples = HighlightField.EXAMPLE
+	)
 	public record HighlightField(
 		/**
 		 * Maximum number of highlighted fragments to return. Defaults to 3.
@@ -815,5 +858,8 @@ public record SearchRequest(
 		)
 		String post
 	) {
+		/** The example configuration, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "fragments": 2, "length": 150, "pre": "<mark>", "post": "</mark>" }""";
 	}
 }

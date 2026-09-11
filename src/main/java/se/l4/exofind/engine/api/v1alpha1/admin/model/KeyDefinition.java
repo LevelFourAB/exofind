@@ -72,10 +72,13 @@ public record KeyDefinition(
 	 *   index names or prefix patterns ending in {@code *}. Required for
 	 *   index-scoped permissions and ignored for deployment-scoped permissions
 	 */
-	@Schema(description = """
-		A set of permissions over a set of index patterns. Every permission in \
-		the grant applies to every matching index. A grant specifies `role`, \
-		`permissions`, or both.""")
+	@Schema(
+		description = """
+			A set of permissions over a set of index patterns. Every permission in \
+			the grant applies to every matching index. A grant specifies `role`, \
+			`permissions`, or both.""",
+		examples = GrantDefinition.EXAMPLE
+	)
 	public record GrantDefinition(
 		@Schema(
 			description = """
@@ -108,5 +111,8 @@ public record KeyDefinition(
 			generation but not the index itself, and `products*` matches both.""")
 		List<String> indexes
 	) {
+		/** The example grant, as the JSON a caller writes. */
+		public static final String EXAMPLE = """
+			{ "role": "reader", "indexes": [ "products" ] }""";
 	}
 }
