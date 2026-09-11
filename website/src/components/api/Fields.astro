@@ -51,13 +51,6 @@ const { fields } = Astro.props;
 
 			{field.example !== undefined && <Example value={field.example} />}
 
-			{field.repeated && (
-				<p class="repeated">
-					Holds {field.name} in turn. Its properties are the ones
-					listed above.
-				</p>
-			)}
-
 			{field.variants.length > 0 && (
 				<details>
 					<summary>{field.variants.length} types</summary>
