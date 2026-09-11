@@ -1,6 +1,5 @@
 package se.l4.exofind.engine.api;
 
-import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -22,6 +21,11 @@ import jakarta.ws.rs.PUT;
  * rather than by a list somebody has to remember to add to. What the coverage
  * tests check every endpoint for is their own; that they see every endpoint
  * is this.
+ *
+ * <p>The walk reads the directory the classes were compiled to, so it answers
+ * while a build runs and not from inside a packaged application. Everything
+ * that calls it runs at build time: the coverage tests, and
+ * {@code RequiredPermissionFilter} while the OpenAPI document is written.
  */
 public final class ApiEndpoints {
 	private static final List<Class<? extends Annotation>> METHODS = List.of(
@@ -101,21 +105,31 @@ public final class ApiEndpoints {
 	}
 
 	/**
-	 * Where the main classes were compiled to, found from where the test
-	 * classes were.
+	 * Where these classes were compiled to.
+	 *
+	 * <p>Read from the class itself rather than from a configured path, so that
+	 * it answers the same whether a test or the OpenAPI filter asks. A packaged
+	 * application answers with the archive it was packaged into, which is not a
+	 * directory to walk, and nothing that runs there asks.
 	 */
-	private static Path classesDirectory() throws IOException {
-		var location = ApiEndpoints.class.getProtectionDomain()
-			.getCodeSource()
-			.getLocation();
+	private static Path classesDirectory() throws Exception {
+		var source = ApiEndpoints.class.getProtectionDomain().getCodeSource();
 
-		var testClasses = Path.of(location.getPath());
-		var classes = testClasses.resolveSibling("classes");
-
-		if(!Files.isDirectory(classes)) {
-			throw new IOException("No compiled classes next to " + testClasses);
+		if(source == null || source.getLocation() == null) {
+			throw new IllegalStateException(
+				"The API classes report no location, so the endpoints cannot be walked"
+			);
 		}
 
-		return classes;
+		var location = Path.of(source.getLocation().toURI());
+
+		if(!Files.isDirectory(location)) {
+			throw new IllegalStateException(
+				"The API classes are at " + location + " rather than in a directory,"
+					+ " so the endpoints cannot be walked"
+			);
+		}
+
+		return location;
 	}
 }

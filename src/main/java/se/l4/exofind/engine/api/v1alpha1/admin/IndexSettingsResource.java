@@ -176,8 +176,7 @@ public class IndexSettingsResource {
 			rather than an empty object, ensuring the `ETag` always represents \
 			an explicit stored version.
 
-			Served by whichever node receives the request. Requires the \
-			`indexes.read` permission."""
+			Served by whichever node receives the request."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -187,16 +186,6 @@ public class IndexSettingsResource {
 			schema = @Schema(implementation = SearchSettingsInfo.class),
 			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -275,10 +264,10 @@ public class IndexSettingsResource {
 			generations: a generation promoted later can lack a field the \
 			settings name, and searches then skip that entry rather than fail.
 
-			Runs on the node that writes the index. Requires the \
-			`settings.write` permission, which is separate from \
-			`indexes.write` so relevance tuning can be granted without \
-			permission to change what an index contains."""
+			Runs on the node that writes the index. The `settings.write` \
+			permission is separate from `indexes.write`, so relevance tuning \
+			can be granted without the power to change what an index \
+			contains."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -297,16 +286,6 @@ public class IndexSettingsResource {
 			against the generation the index answers from (`index:ranking:*`, \
 			`index:settings:synonyms:*`, `index:settings:typo_exclusions:*`, \
 			`index:settings:fields:*`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `settings.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -439,8 +418,7 @@ public class IndexSettingsResource {
 			Takes effect immediately on the answering node and on all other \
 			nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`.
 
-			Runs on the node that writes the index. Requires the \
-			`settings.write` permission."""
+			Runs on the node that writes the index."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -459,16 +437,6 @@ public class IndexSettingsResource {
 			the settings cannot be changed at (`request:update:*`), or the \
 			result failed validation against the generation the index answers \
 			from (`index:ranking:*`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `settings.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -983,24 +951,13 @@ public class IndexSettingsResource {
 			Deletion does not remove data held in remote storage, so an index \
 			created again under the same name picks its old settings back up.
 
-			Runs on the node that writes the index. Requires the \
-			`settings.write` permission."""
+			Runs on the node that writes the index."""
 	)
 	@APIResponse(
 		responseCode = "204",
 		description = """
 			The index has no search settings any more, whether or not it \
 			had any."""
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `settings.write` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",

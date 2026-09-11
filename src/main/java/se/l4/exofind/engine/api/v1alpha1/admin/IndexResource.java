@@ -145,9 +145,7 @@ public class IndexResource {
 			the live generation each answers for.
 
 			Index listings omit indexes on which the key has no permissions \
-			rather than refusing the listing.
-
-			Requires the `indexes.read` permission."""
+			rather than refusing the listing."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -156,16 +154,6 @@ public class IndexResource {
 			schema = @Schema(implementation = IndexListResponse.class),
 			examples = @ExampleObject(name = "indexes", value = IndexListResponse.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public IndexListResponse list() {
 		var principal = auth.principal();
@@ -200,9 +188,7 @@ public class IndexResource {
 
 			The definition version is returned in the `ETag` header. Pass this \
 			value in the `If-Match` header on `PUT` requests to prevent \
-			overwriting concurrent updates.
-
-			Requires the `indexes.read` permission."""
+			overwriting concurrent updates."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -214,16 +200,6 @@ public class IndexResource {
 			schema = @Schema(implementation = IndexInfo.class),
 			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -334,8 +310,7 @@ public class IndexResource {
 			`ranking`, or search-time settings are accepted.
 
 			Requests run on the node that writes the index; a request received \
-			by another node is forwarded there. Requires the `indexes.write` \
-			permission."""
+			by another node is forwarded there."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -363,16 +338,6 @@ public class IndexResource {
 			The definition failed validation - the response details each \
 			problem - or `reindex` was given on a request that creates no \
 			generation (`index:reindex_needs_new_generation`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -582,22 +547,11 @@ public class IndexResource {
 			starts empty, whether or not the sweep has run.
 
 			Served by the node writing the index and forwarded there when \
-			another node receives it. Requires the `indexes.delete` \
-			permission."""
+			another node receives it."""
 	)
 	@APIResponse(
 		responseCode = "204",
 		description = "The index or generation was removed."
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.delete` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -670,9 +624,7 @@ public class IndexResource {
 			without a generation returns `index:generation:name_required`. \
 			Promoting the target of a `ready` reindex job finishes the job, \
 			while promoting before the job is ready is refused with \
-			`reindex:target_busy`.
-
-			Requires the `indexes.promote` permission."""
+			`reindex:target_busy`."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -687,16 +639,6 @@ public class IndexResource {
 		description = """
 			The path names no generation \
 			(`index:generation:name_required`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.promote` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -754,8 +696,7 @@ public class IndexResource {
 			commit immediately, such as after loading a dataset.
 
 			Acts on the generation specified in the request path, or the live \
-			generation if omitted. Runs on the node that writes the index. \
-			Requires the `indexes.commit` permission."""
+			generation if omitted. Runs on the node that writes the index."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -764,16 +705,6 @@ public class IndexResource {
 			schema = @Schema(implementation = IndexStatus.class),
 			examples = @ExampleObject(name = "status", value = IndexStatus.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.commit` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -844,9 +775,7 @@ public class IndexResource {
 			status.
 
 			A pull updates the local copy on the receiving node and is never \
-			forwarded.
-
-			Requires the `indexes.pull` permission."""
+			forwarded."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -855,16 +784,6 @@ public class IndexResource {
 			schema = @Schema(implementation = IndexStatus.class),
 			examples = @ExampleObject(name = "status", value = IndexStatus.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `indexes.pull` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",

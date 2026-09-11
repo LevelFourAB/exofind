@@ -78,9 +78,7 @@ public class IndexerResource {
 
 			If a credential lacks permissions for an index, that index is \
 			omitted from the claims list. On nodes using local storage, both \
-			lists are empty.
-
-			Requires the `indexes.read` permission."""
+			lists are empty."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -89,16 +87,6 @@ public class IndexerResource {
 			schema = @Schema(implementation = IndexerListResponse.class),
 			examples = @ExampleObject(name = "indexers", value = IndexerListResponse.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `indexes.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "503",

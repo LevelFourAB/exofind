@@ -228,9 +228,7 @@ public class SearchResource {
 			Executes a search query against an index on the node that \
 			receives the request. A node that does not index the target \
 			answers from the generation it last pulled, so a recently \
-			indexed document may not appear yet.
-
-			Requires the `search` permission."""
+			indexed document may not appear yet."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -259,20 +257,6 @@ public class SearchResource {
 			`search:query:too_deep`, `search:clause:k_too_large`, or \
 			`search:clause:depth_too_large`. See \
 			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = """
-			The request carries no credential this node accepts. Absent, \
-			malformed, unknown, and lapsed keys all return this status, so a \
-			refusal cannot be used to find out which keys exist. The response \
-			carries `WWW-Authenticate: Bearer`.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `search` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -413,9 +397,7 @@ public class SearchResource {
 			or timestamp field compares the prefix with the value as a search \
 			response shows it, ignoring case. A field whose values are paths \
 			through a tree refuses a prefix. See [Searching the values of a \
-			facet](https://exofind.dev/reference/search-api/#searching-the-values-of-a-facet).
-
-			Requires the `search` permission."""
+			facet](https://exofind.dev/reference/search-api/#searching-the-values-of-a-facet)."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -445,20 +427,6 @@ public class SearchResource {
 			`search:query:too_deep`, `search:clause:k_too_large`, or \
 			`search:clause:depth_too_large`. See \
 			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = """
-			The request carries no credential this node accepts. Absent, \
-			malformed, unknown, and lapsed keys all return this status, so a \
-			refusal cannot be used to find out which keys exist. The response \
-			carries `WWW-Authenticate: Bearer`.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `search` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -606,9 +574,7 @@ public class SearchResource {
 			A filter panel that completes the values of one facet uses \
 			`POST /v1alpha1/indexes/{name}/facets/{field}/values` instead. \
 			See [Suggesting what to search \
-			for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).
-
-			Requires the `search` permission."""
+			for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for)."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -638,20 +604,6 @@ public class SearchResource {
 			`search:query:too_deep`, `search:clause:k_too_large`, or \
 			`search:clause:depth_too_large`. See \
 			[Search configuration](https://exofind.dev/reference/configuration/#search).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = """
-			The request carries no credential this node accepts. Absent, \
-			malformed, unknown, and lapsed keys all return this status, so a \
-			refusal cannot be used to find out which keys exist. The response \
-			carries `WWW-Authenticate: Bearer`.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `search` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -773,9 +725,7 @@ public class SearchResource {
 			The body is a search request; `limit`, `offset`, `after`, \
 			`before`, `sort`, `facets`, `highlight` and `matched` are ignored. \
 			A hit that the search does not match is reported with `matched` \
-			set to `false` rather than refused.
-
-			Requires the `search` permission."""
+			set to `false` rather than refused."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -790,18 +740,6 @@ public class SearchResource {
 		description = """
 			The request is not a valid search, or the index declares no primary \
 			key so a hit cannot be named (`index:no_primary_key`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = """
-			The request carries no credential this node accepts. The response \
-			carries `WWW-Authenticate: Bearer`.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `search` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(

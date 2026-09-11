@@ -16,8 +16,9 @@ import jakarta.ws.rs.core.Application;
  * <p>API requests authenticate using bearer tokens. Credentials are read only
  * from the Authorization header, never from cookies or query parameters. The
  * permission required by an endpoint is specified by its
- * {@code @RequiresPermission} annotation and documented in the endpoint
- * description.
+ * {@code @RequiresPermission} annotation, which
+ * {@code RequiredPermissionFilter} writes into the document as the extensions
+ * of the operation and the paragraph its description closes with.
  */
 @SecurityScheme(
 	securitySchemeName = ExofindApi.API_KEY,
@@ -27,7 +28,7 @@ import jakarta.ws.rs.core.Application;
 		An API key sent as a bearer token, such as \
 		`Authorization: Bearer exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH`. \
 		A key carries grants that pair permissions with index patterns; the \
-		permission each endpoint needs is named in its description. Nodes \
+		permission each endpoint needs is named beside it. Nodes \
 		running with `EXOFIND_AUTH_MODE=none` accept requests without a \
 		credential, and a node with `EXOFIND_AUTH_ANONYMOUS_KEY` set serves \
 		requests that carry none with the permissions of that key."""

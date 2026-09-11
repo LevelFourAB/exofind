@@ -18,6 +18,10 @@ import se.l4.exofind.engine.auth.Permission;
  * index the request names, which is read from the {@code name} path parameter.
  * An endpoint that is about the indexes without naming one says so with
  * {@link #anyIndex()}.
+ *
+ * <p>This is also what the OpenAPI document says an endpoint requires:
+ * {@code RequiredPermissionFilter} writes it there, along with the {@code 401}
+ * and {@code 403} answers, so an endpoint states none of that for itself.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)

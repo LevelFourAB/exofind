@@ -5168,8 +5168,8 @@ components:
       description: "An API key sent as a bearer token, such as `Authorization: Bearer\
         \ exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH`. A key carries grants\
         \ that pair permissions with index patterns; the permission each endpoint\
-        \ needs is named in its description. Nodes running with `EXOFIND_AUTH_MODE=none`\
-        \ accept requests without a credential, and a node with `EXOFIND_AUTH_ANONYMOUS_KEY`\
+        \ needs is named beside it. Nodes running with `EXOFIND_AUTH_MODE=none` accept\
+        \ requests without a credential, and a node with `EXOFIND_AUTH_ANONYMOUS_KEY`\
         \ set serves requests that carry none with the permissions of that key."
       scheme: bearer
 tags:
@@ -5225,7 +5225,7 @@ paths:
 
         If a credential lacks permissions for an index, that index is omitted from the claims list. On nodes using local storage, both lists are empty.
 
-        Requires the `indexes.read` permission.
+        Requires the `indexes.read` permission on at least one index. The `reader`, `writer` and `admin` roles include it.
       operationId: listIndexers
       tags:
       - Indexers
@@ -5249,13 +5249,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexerListResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `indexes.read` permission.
+          description: The API key does not have the `indexes.read` permission.
           content:
             application/json:
               schema:
@@ -5270,6 +5273,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: any-index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes:
     get:
       summary: List indexes
@@ -5278,7 +5288,7 @@ paths:
 
         Index listings omit indexes on which the key has no permissions rather than refusing the listing.
 
-        Requires the `indexes.read` permission.
+        Requires the `indexes.read` permission on at least one index. The `reader`, `writer` and `admin` roles include it.
       operationId: listIndexes
       tags:
       - Indexes
@@ -5303,7 +5313,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexListResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5316,6 +5329,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: any-index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}:
     put:
       summary: Create or replace an index definition
@@ -5326,7 +5346,9 @@ paths:
 
         When the target generation already holds documents, a request is refused with `409` and `index:definition:incompatible` if the new definition changes how documents are indexed, such as enabling a usage on an existing field, changing an analyzer chain, editing a synonym set, or changing `type`, `primaryKey`, or `multiple`. The response includes one detail item per difference, each with the `path` of the field that caused it. Adding or removing a field, disabling a usage, and changing `stored`, `source`, `metadata`, `ranking`, or search-time settings are accepted.
 
-        Requests run on the node that writes the index; a request received by another node is forwarded there. Requires the `indexes.write` permission.
+        Requests run on the node that writes the index; a request received by another node is forwarded there.
+
+        Requires the `indexes.write` permission on the index the path names. The `admin` role includes it.
       operationId: putIndex
       tags:
       - Indexes
@@ -5481,7 +5503,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5535,6 +5560,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.write
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
     get:
       summary: Get an index
       description: |-
@@ -5542,7 +5572,7 @@ paths:
 
         The definition version is returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates.
 
-        Requires the `indexes.read` permission.
+        Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
       operationId: getIndex
       tags:
       - Indexes
@@ -5596,7 +5626,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexInfo"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5632,6 +5665,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
     delete:
       summary: Delete an index or a generation
       description: |-
@@ -5639,7 +5679,9 @@ paths:
 
         Deleting an index or generation removes it from the shared registry across the deployment; other nodes remove their local copies during their next registry read. What remote storage holds - the generations and, for an index, its search settings - is marked as deleted and removed by a background sweep once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`. Until then a registry repair with `restore` brings the index or generation back. An index or generation created again under the same name starts empty, whether or not the sweep has run.
 
-        Served by the node writing the index and forwarded there when another node receives it. Requires the `indexes.delete` permission.
+        Served by the node writing the index and forwarded there when another node receives it.
+
+        Requires the `indexes.delete` permission on the index the path names. The `admin` role includes it.
       operationId: deleteIndex
       tags:
       - Indexes
@@ -5656,7 +5698,10 @@ paths:
         "204":
           description: The index or generation was removed.
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5689,13 +5734,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.delete
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/actions/commit:
     post:
       summary: Commit pending changes
       description: |-
         Pushes pending changes (documents and definition) to storage, making them searchable. The index writer commits automatically based on indexing volume or elapsed time. Use this endpoint to commit immediately, such as after loading a dataset.
 
-        Acts on the generation specified in the request path, or the live generation if omitted. Runs on the node that writes the index. Requires the `indexes.commit` permission.
+        Acts on the generation specified in the request path, or the live generation if omitted. Runs on the node that writes the index.
+
+        Requires the `indexes.commit` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: commitIndex
       tags:
       - Indexes
@@ -5726,7 +5778,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexStatus"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5766,6 +5821,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.commit
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/actions/promote:
     post:
       summary: Promote a generation
@@ -5774,7 +5835,7 @@ paths:
 
         The request path must specify a generation name; calling `promote` without a generation returns `index:generation:name_required`. Promoting the target of a `ready` reindex job finishes the job, while promoting before the job is ready is refused with `reindex:target_busy`.
 
-        Requires the `indexes.promote` permission.
+        Requires the `indexes.promote` permission on the index the path names. The `admin` role includes it.
       operationId: promoteGeneration
       tags:
       - Indexes
@@ -5831,7 +5892,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5864,6 +5928,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.promote
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/actions/pull:
     post:
       summary: Pull the latest state
@@ -5872,7 +5941,7 @@ paths:
 
         A pull updates the local copy on the receiving node and is never forwarded.
 
-        Requires the `indexes.pull` permission.
+        Requires the `indexes.pull` permission on the index the path names. The `admin` role includes it.
       operationId: pullIndex
       tags:
       - Indexes
@@ -5903,7 +5972,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/IndexStatus"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -5930,13 +6002,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.pull
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/actions/reindex:
     get:
       summary: Get reindex job status
       description: |-
         Returns the status of a reindex job on an index, including finished jobs. Served from the durable job record, so any node can serve the request and returns the same response.
 
-        If no job exists for the index, the server returns `404` with the error code `reindex:not_found`. Requires the `indexes.read` permission.
+        If no job exists for the index, the server returns `404` with the error code `reindex:not_found`.
+
+        Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
       operationId: getReindex
       tags:
       - Reindexes
@@ -5969,13 +6048,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `indexes.read` permission.
+          description: The API key does not have the `indexes.read` permission.
           content:
             application/json:
               schema:
@@ -5989,6 +6071,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
     post:
       summary: Start a reindex job
       description: |-
@@ -5998,7 +6087,9 @@ paths:
 
         The job automatically promotes the target generation once it catches up with changes, unless the request specifies `"promote": "manual"`. With manual promotion, the job pauses in the `ready` phase and keeps the target caught up until `actions/promote` on the target finishes the job.
 
-        An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it. Requires the `indexes.reindex` permission.
+        An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it.
+
+        Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
       operationId: startReindex
       tags:
       - Reindexes
@@ -6050,13 +6141,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `indexes.reindex` permission.
+          description: The API key does not have the `indexes.reindex` permission.
           content:
             application/json:
               schema:
@@ -6085,13 +6179,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.reindex
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/actions/reindex/cancel:
     post:
       summary: Cancel a reindex job
       description: |-
         Stops an in-progress job. Tracking on the source ends and the partially populated target generation is left in place, to be removed with `DELETE /v1alpha1/admin/indexes/{target}`. Cancelling a finished job changes nothing.
 
-        Runs on the node holding the index. Requires the `indexes.reindex` permission.
+        Runs on the node holding the index.
+
+        Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
       operationId: cancelReindex
       tags:
       - Reindexes
@@ -6123,13 +6224,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `indexes.reindex` permission.
+          description: The API key does not have the `indexes.reindex` permission.
           content:
             application/json:
               schema:
@@ -6156,6 +6260,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.reindex
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/settings:
     put:
       summary: Replace search settings
@@ -6166,7 +6275,9 @@ paths:
 
         A change takes effect for searches on the answering node immediately and on all other nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`. Until then, two nodes can rank the same query differently. Search settings outlive generations: a generation promoted later can lack a field the settings name, and searches then skip that entry rather than fail.
 
-        Runs on the node that writes the index. Requires the `settings.write` permission, which is separate from `indexes.write` so relevance tuning can be granted without permission to change what an index contains.
+        Runs on the node that writes the index. The `settings.write` permission is separate from `indexes.write`, so relevance tuning can be granted without the power to change what an index contains.
+
+        Requires the `settings.write` permission on the index the path names. The `admin` role includes it.
       operationId: putSearchSettings
       tags:
       - Search settings
@@ -6266,7 +6377,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6308,6 +6422,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: settings.write
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
     patch:
       summary: Change some of the search settings
       description: |-
@@ -6321,7 +6440,9 @@ paths:
 
         Takes effect immediately on the answering node and on all other nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`.
 
-        Runs on the node that writes the index. Requires the `settings.write` permission.
+        Runs on the node that writes the index.
+
+        Requires the `settings.write` permission on the index the path names. The `admin` role includes it.
       operationId: patchSearchSettings
       tags:
       - Search settings
@@ -6388,7 +6509,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6432,6 +6556,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: settings.write
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
     get:
       summary: Get search settings
       description: |-
@@ -6439,7 +6568,9 @@ paths:
 
         An index with no search settings - one searching with its definition alone - returns `404` with `index:settings:not_found` rather than an empty object, ensuring the `ETag` always represents an explicit stored version.
 
-        Served by whichever node receives the request. Requires the `indexes.read` permission.
+        Served by whichever node receives the request.
+
+        Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
       operationId: getSearchSettings
       tags:
       - Search settings
@@ -6473,7 +6604,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6500,6 +6634,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
     delete:
       summary: Remove search settings
       description: |-
@@ -6507,7 +6648,9 @@ paths:
 
         Deletion does not remove data held in remote storage, so an index created again under the same name picks its old settings back up.
 
-        Runs on the node that writes the index. Requires the `settings.write` permission.
+        Runs on the node that writes the index.
+
+        Requires the `settings.write` permission on the index the path names. The `admin` role includes it.
       operationId: deleteSearchSettings
       tags:
       - Search settings
@@ -6524,7 +6667,10 @@ paths:
           description: "The index has no search settings any more, whether or not\
             \ it had any."
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6558,6 +6704,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: settings.write
+      x-permission-scope: index
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/keys:
     get:
       summary: List API keys
@@ -6566,7 +6717,9 @@ paths:
 
         Key credentials are stored only as hashes and cannot be recovered from listings. A lost credential must be replaced.
 
-        Served by whichever node receives the request. Requires the `keys.read` permission.
+        Served by whichever node receives the request.
+
+        Requires the `keys.read` permission, which is not about one index. The `admin` role includes it.
       operationId: listKeys
       tags:
       - API keys
@@ -6592,7 +6745,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/KeyListResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6612,6 +6768,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: keys.read
+      x-permission-scope: deployment
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
     post:
       summary: Create an API key
       description: |-
@@ -6619,7 +6780,9 @@ paths:
 
         When a key is created, roles are expanded into their constituent permissions. Only the resulting permissions are stored in the key. Existing keys do not change permissions if role definitions change in later software versions.
 
-        A key created on one node works on all nodes immediately because nodes look up unseen keys without delay. Served by whichever node receives the request. Requires the `keys.write` permission.
+        A key created on one node works on all nodes immediately because nodes look up unseen keys without delay. Served by whichever node receives the request.
+
+        Requires the `keys.write` permission, which is not about one index. The `admin` role includes it.
       operationId: createKey
       tags:
       - API keys
@@ -6671,7 +6834,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6693,6 +6859,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: keys.write
+      x-permission-scope: deployment
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/keys/{id}:
     delete:
       summary: Revoke an API key
@@ -6701,7 +6872,9 @@ paths:
 
         Keys are immutable. To change permissions, create a replacement key, migrate clients to the new key, and revoke the old key. The root key is not stored in key storage and cannot be revoked through the API.
 
-        Served by whichever node receives the request. Requires the `keys.write` permission.
+        Served by whichever node receives the request.
+
+        Requires the `keys.write` permission, which is not about one index. The `admin` role includes it.
       operationId: revokeKey
       tags:
       - API keys
@@ -6717,7 +6890,10 @@ paths:
         "204":
           description: The key was revoked.
         "401":
-          description: The request carries no credential this node accepts.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -6744,6 +6920,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: keys.write
+      x-permission-scope: deployment
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/registry/actions/repair:
     post:
       summary: Repair the registry from storage
@@ -6756,7 +6937,9 @@ paths:
 
         The write is conditional and rebuilds on top of concurrent registry changes. The answering node applies the repaired registry immediately; other nodes pick it up within `EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
-        Served by whichever node receives the request and never forwarded. Answers only in object storage mode. Requires the `registry.repair` permission (deployment-scoped).
+        Served by whichever node receives the request and never forwarded. Answers only in object storage mode.
+
+        Requires the `registry.repair` permission, which is not about one index. The `admin` role includes it.
       operationId: repairRegistry
       tags:
       - Registry
@@ -6790,14 +6973,19 @@ paths:
                     - products
               schema:
                 $ref: "#/components/schemas/RegistryRepairResponse"
+        "400":
+          description: Bad Request
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `registry.repair` permission.
+          description: The API key does not have the `registry.repair` permission.
           content:
             application/json:
               schema:
@@ -6811,10 +6999,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "400":
-          description: Bad Request
       security:
       - apiKey: []
+      x-required-permission: registry.repair
+      x-permission-scope: deployment
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/registry/audit:
     get:
       summary: Audit the registry against storage
@@ -6823,7 +7014,9 @@ paths:
 
         Unregistered generations in storage indicate interrupted rollouts, or deleted indexes and generations whose storage waits for the sweep that removes it; those carry `removedAt`. Registered generations missing from storage have no data available to pull.
 
-        Served by whichever node receives the request and never forwarded. Answers only in object storage mode. Requires the `registry.audit` permission (deployment-scoped).
+        Served by whichever node receives the request and never forwarded. Answers only in object storage mode.
+
+        Requires the `registry.audit` permission, which is not about one index. The `admin` role includes it.
       operationId: auditRegistry
       tags:
       - Registry
@@ -6858,13 +7051,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegistryAuditResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `registry.audit` permission.
+          description: The API key does not have the `registry.audit` permission.
           content:
             application/json:
               schema:
@@ -6878,13 +7074,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: registry.audit
+      x-permission-scope: deployment
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/admin/reindexes:
     get:
       summary: List reindex jobs
       description: |-
         Lists every reindex job across the deployment, including finished jobs, ordered by index name. Served from durable job records, so any node can serve the request and returns the same response.
 
-        Jobs on indexes where the key lacks permissions are omitted rather than refused. Requires the `indexes.read` permission.
+        Jobs on indexes where the key lacks permissions are omitted rather than refused.
+
+        Requires the `indexes.read` permission on at least one index. The `reader`, `writer` and `admin` roles include it.
       operationId: listReindexes
       tags:
       - Reindexes
@@ -6909,19 +7112,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReindexListResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The credential does not have the `indexes.read` permission.
+          description: The API key does not have the `indexes.read` permission.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: any-index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/indexes/{name}/documents:
     get:
       tags:
@@ -6984,7 +7197,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -7019,8 +7235,16 @@ paths:
 
         Every response is bounded, so reading an entire index requires a sequence of requests, each passing the previous response's `next` key in the `after` parameter. A single request reads from a point-in-time snapshot of the index and sees committed data only. Across multiple requests, documents indexed under keys that the read has already passed are omitted from subsequent responses.
 
-        Read requests are served directly by whichever node receives them, using data that the node has pulled from storage, and are never forwarded to the writer. Reading documents requires the `documents.read` permission. The `writer` and `admin` roles include this permission; the `reader` role does not.
+        Read requests are served directly by whichever node receives them, using data that the node has pulled from storage, and are never forwarded to the writer.
+
+        Requires the `documents.read` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: readDocuments
+      x-required-permission: documents.read
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
     post:
       tags:
       - Documents
@@ -7077,13 +7301,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The API key lacks the `documents.write` permission.
+          description: The API key does not have the `documents.write` permission.
           content:
             application/json:
               schema:
@@ -7129,8 +7356,16 @@ paths:
 
         Changes become searchable and replicate to remote storage after the index commits. The writer commits automatically based on indexed document volume or elapsed time. To commit changes immediately, call `POST /v1alpha1/admin/indexes/{name}/actions/commit`.
 
-        The operation runs on the index writer node. A write request received by another node is forwarded automatically. Requires the `documents.write` permission.
+        The operation runs on the index writer node. A write request received by another node is forwarded automatically.
+
+        Requires the `documents.write` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: indexDocuments
+      x-required-permission: documents.write
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/indexes/{name}/documents/actions/delete:
     post:
       summary: Delete documents by keys or query
@@ -7139,7 +7374,7 @@ paths:
 
         When deleting by `keys`, all keys are validated before any documents are removed. If any key is invalid, no documents are removed. When deleting by `query`, the operation removes matching committed searchable documents along with any uncommitted documents indexed since the last commit.
 
-        Requires the `documents.delete` permission.
+        Requires the `documents.delete` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: deleteDocuments
       tags:
       - Documents
@@ -7194,7 +7429,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -7236,6 +7474,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: documents.delete
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/indexes/{name}/documents/actions/update:
     post:
       tags:
@@ -7302,13 +7546,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The API key lacks the `documents.write` permission.
+          description: The API key does not have the `documents.write` permission.
           content:
             application/json:
               schema:
@@ -7354,8 +7601,16 @@ paths:
 
         Unlike indexing, this endpoint describes modifications rather than desired state and requires existing documents. Multiple updates to the same document in a single batch apply in the order provided, and the updated document is validated as a whole.
 
-        Requires the `documents.write` permission, an index that declares a primary key, and an index that retains document source copies.
+        The index has to declare a primary key and retain document source copies.
+
+        Requires the `documents.write` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: updateDocuments
+      x-required-permission: documents.write
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/indexes/{name}/documents/{key}:
     patch:
       summary: Update fields of one document
@@ -7366,7 +7621,9 @@ paths:
 
         Unlike indexing, this endpoint describes modifications rather than desired state; requesting an update for an unindexed key returns `404` rather than creating a document. The updated document is validated as a whole.
 
-        Requires the `documents.write` permission, an index that declares a primary key, and an index that retains document source copies.
+        The index has to declare a primary key and retain document source copies.
+
+        Requires the `documents.write` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: updateDocument
       tags:
       - Documents
@@ -7414,13 +7671,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The API key lacks the `documents.write` permission.
+          description: The API key does not have the `documents.write` permission.
           content:
             application/json:
               schema:
@@ -7457,12 +7717,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: documents.write
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
     delete:
       summary: Delete a document by key
       description: |-
         Removes the document indexed under the specified primary key. Removing a document is a statement of desired state, so requesting the deletion of an unindexed key is not an error and returns status `204`.
 
-        Requires the `documents.delete` permission and an index definition that declares a primary key.
+        The index definition has to declare a primary key.
+
+        Requires the `documents.delete` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: deleteDocument
       tags:
       - Documents
@@ -7496,7 +7764,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: The request carries no credential accepted by this node.
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -7538,6 +7809,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: documents.delete
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
   /v1alpha1/indexes/{name}/facets/{field}/values:
     post:
       summary: Search the values of a facet
@@ -7546,7 +7823,7 @@ paths:
 
         The prefix and the values of a string field are compared folded, in case and Unicode form, so `rö` finds `Röd`. A number, boolean or timestamp field compares the prefix with the value as a search response shows it, ignoring case. A field whose values are paths through a tree refuses a prefix. See [Searching the values of a facet](https://exofind.dev/reference/search-api/#searching-the-values-of-a-facet).
 
-        Requires the `search` permission.
+        Requires the `search` permission on the index the path names. The `reader`, `writer` and `admin` roles include it. A node that sets an anonymous key serves this endpoint to requests that carry no credential.
       operationId: searchFacetValues
       tags:
       - Search
@@ -7618,7 +7895,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown, and lapsed keys all return this status, so a refusal\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
             \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
             \ Bearer`."
           content:
@@ -7657,13 +7934,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: search
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: true
   /v1alpha1/indexes/{name}/search:
     post:
       summary: Search an index
       description: |-
         Executes a search query against an index on the node that receives the request. A node that does not index the target answers from the generation it last pulled, so a recently indexed document may not appear yet.
 
-        Requires the `search` permission.
+        Requires the `search` permission on the index the path names. The `reader`, `writer` and `admin` roles include it. A node that sets an anonymous key serves this endpoint to requests that carry no credential.
       operationId: search
       tags:
       - Search
@@ -7760,7 +8044,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown, and lapsed keys all return this status, so a refusal\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
             \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
             \ Bearer`."
           content:
@@ -7799,6 +8083,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: search
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: true
   /v1alpha1/indexes/{name}/search/actions/explain:
     post:
       summary: Explain how one hit scores
@@ -7807,7 +8098,7 @@ paths:
 
         The body is a search request; `limit`, `offset`, `after`, `before`, `sort`, `facets`, `highlight` and `matched` are ignored. A hit that the search does not match is reported with `matched` set to `false` rather than refused.
 
-        Requires the `search` permission.
+        Requires the `search` permission on the index the path names. The `reader`, `writer` and `admin` roles include it. A node that sets an anonymous key serves this endpoint to requests that carry no credential.
       operationId: explainSearch
       tags:
       - Search
@@ -7906,8 +8197,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: "The request carries no credential this node accepts. The response\
-            \ carries `WWW-Authenticate: Bearer`."
+          description: "The request carries no credential this node accepts. Absent,\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
+            \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
+            \ Bearer`."
           content:
             application/json:
               schema:
@@ -7942,6 +8235,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: search
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: true
   /v1alpha1/indexes/{name}/suggest:
     post:
       summary: Suggest what to search for
@@ -7961,7 +8261,7 @@ paths:
 
         A filter panel that completes the values of one facet uses `POST /v1alpha1/indexes/{name}/facets/{field}/values` instead. See [Suggesting what to search for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).
 
-        Requires the `search` permission.
+        Requires the `search` permission on the index the path names. The `reader`, `writer` and `admin` roles include it. A node that sets an anonymous key serves this endpoint to requests that carry no credential.
       operationId: suggest
       tags:
       - Search
@@ -8024,7 +8324,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: "The request carries no credential this node accepts. Absent,\
-            \ malformed, unknown, and lapsed keys all return this status, so a refusal\
+            \ malformed, unknown and lapsed keys are all answered alike, so a refusal\
             \ cannot be used to find out which keys exist. The response carries `WWW-Authenticate:\
             \ Bearer`."
           content:
@@ -8063,6 +8363,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
       security:
       - apiKey: []
+      x-required-permission: search
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: true
 info:
   title: Exofind
   version: v1alpha1

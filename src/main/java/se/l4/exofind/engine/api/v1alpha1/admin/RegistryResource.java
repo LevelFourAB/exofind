@@ -96,8 +96,7 @@ public class RegistryResource {
 			generations missing from storage have no data available to pull.
 
 			Served by whichever node receives the request and never forwarded. \
-			Answers only in object storage mode. Requires the `registry.audit` \
-			permission (deployment-scoped)."""
+			Answers only in object storage mode."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -106,16 +105,6 @@ public class RegistryResource {
 			schema = @Schema(implementation = RegistryAuditResponse.class),
 			examples = @ExampleObject(name = "audit", value = RegistryAuditResponse.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `registry.audit` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
@@ -183,8 +172,7 @@ public class RegistryResource {
 			`EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
 			Served by whichever node receives the request and never forwarded. \
-			Answers only in object storage mode. Requires the \
-			`registry.repair` permission (deployment-scoped)."""
+			Answers only in object storage mode."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -193,16 +181,6 @@ public class RegistryResource {
 			schema = @Schema(implementation = RegistryRepairResponse.class),
 			examples = @ExampleObject(name = "repaired", value = RegistryRepairResponse.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `registry.repair` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",

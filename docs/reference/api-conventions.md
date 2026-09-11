@@ -91,6 +91,21 @@ Authentication and authorization responses hide the deployment contents from unp
 - An index on which a key has no permissions returns `404 Not Found` (code `index:not-found`) rather than `403 Forbidden`.
 - Index listings omit indexes on which the key has no permissions rather than refusing the listing.
 
+### The permission an endpoint requires
+
+Every operation in the OpenAPI document names what a caller has to be granted, in four extension fields:
+
+| Field | Value |
+| --- | --- |
+| `x-required-permission` | The permission name, as it is stored in a key. |
+| `x-permission-scope` | `index` when the permission is checked against the index the path names, `any-index` when the caller needs it on at least one index, and `deployment` when it is not about one index. |
+| `x-permission-roles` | The roles that include the permission. |
+| `x-permission-anonymous` | Whether a node that sets an anonymous key answers the endpoint to requests that carry no credential. |
+
+Every operation carries all four, so a client or a code generator can read the permission from the document. The description of an operation closes with the same fact as a sentence, which is what a generated client carries as a doc comment.
+
+For what each permission covers and how to grant one, see [Authentication](auth.md).
+
 ## Requests as desired state
 
 Most write endpoints operate as assertions of desired state:

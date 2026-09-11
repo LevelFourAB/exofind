@@ -112,8 +112,7 @@ public class ReindexResource {
 			the target finishes the job.
 
 			An index can run at most one reindex job at a time. A finished \
-			job's record remains readable until a new job replaces it. \
-			Requires the `indexes.reindex` permission."""
+			job's record remains readable until a new job replaces it."""
 	)
 	@APIResponse(
 		responseCode = "202",
@@ -129,16 +128,6 @@ public class ReindexResource {
 			The target does not specify a generation by name, does not exist, \
 			is not empty, is the live generation, or the source and target \
 			primary keys do not match.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `indexes.reindex` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -211,8 +200,7 @@ public class ReindexResource {
 			serve the request and returns the same response.
 
 			If no job exists for the index, the server returns `404` with the \
-			error code `reindex:not_found`. Requires the `indexes.read` \
-			permission."""
+			error code `reindex:not_found`."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -221,16 +209,6 @@ public class ReindexResource {
 			schema = @Schema(implementation = ReindexInfo.class),
 			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `indexes.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -278,8 +256,7 @@ public class ReindexResource {
 			removed with `DELETE /v1alpha1/admin/indexes/{target}`. Cancelling \
 			a finished job changes nothing.
 
-			Runs on the node holding the index. Requires the `indexes.reindex` \
-			permission."""
+			Runs on the node holding the index."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -288,16 +265,6 @@ public class ReindexResource {
 			schema = @Schema(implementation = ReindexInfo.class),
 			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `indexes.reindex` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -347,7 +314,7 @@ public class ReindexResource {
 			any node can serve the request and returns the same response.
 
 			Jobs on indexes where the key lacks permissions are omitted rather \
-			than refused. Requires the `indexes.read` permission."""
+			than refused."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -356,16 +323,6 @@ public class ReindexResource {
 			schema = @Schema(implementation = ReindexListResponse.class),
 			examples = @ExampleObject(name = "jobs", value = ReindexListResponse.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The credential does not have the `indexes.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	public ReindexListResponse list() {
 		var principal = auth.principal();

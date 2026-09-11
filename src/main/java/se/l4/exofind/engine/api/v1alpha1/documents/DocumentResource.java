@@ -327,8 +327,7 @@ public class DocumentResource {
 			/v1alpha1/admin/indexes/{name}/actions/commit`.
 
 			The operation runs on the index writer node. A write request \
-			received by another node is forwarded automatically. Requires the \
-			`documents.write` permission."""
+			received by another node is forwarded automatically."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -345,16 +344,6 @@ public class DocumentResource {
 			JSON (`request:document:malformed`), or the request body could not \
 			be parsed. The `path` of each error identifies the document and \
 			field location, such as `documents[1].nonexistent`.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key lacks the `documents.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -523,8 +512,8 @@ public class DocumentResource {
 			the same document in a single batch apply in the order provided, \
 			and the updated document is validated as a whole.
 
-			Requires the `documents.write` permission, an index that declares \
-			a primary key, and an index that retains document source copies."""
+			The index has to declare a primary key and retain document source \
+			copies."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -556,16 +545,6 @@ public class DocumentResource {
 			reaches into a list of objects without specifying which value \
 			(`request:update:value_required`). A selector that names no value \
 			the document holds is rejected with `request:update:no_match`.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key lacks the `documents.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -833,8 +812,8 @@ public class DocumentResource {
 			`404` rather than creating a document. The updated document is \
 			validated as a whole.
 
-			Requires the `documents.write` permission, an index that declares \
-			a primary key, and an index that retains document source copies."""
+			The index has to declare a primary key and retain document source \
+			copies."""
 	)
 	@APIResponse(
 		responseCode = "204",
@@ -854,16 +833,6 @@ public class DocumentResource {
 
 			A path is refused for the same reasons as in batch updates, \
 			reported by the same `request:update:*` codes.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key lacks the `documents.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1028,8 +997,7 @@ public class DocumentResource {
 			the deletion of an unindexed key is not an error and returns \
 			status `204`.
 
-			Requires the `documents.delete` permission and an index definition \
-			that declares a primary key."""
+			The index definition has to declare a primary key."""
 	)
 	@APIResponse(
 		responseCode = "204",
@@ -1043,16 +1011,6 @@ public class DocumentResource {
 			The key value cannot be parsed as the defined key field type \
 			(`index:query:invalid_value`), or the index definition declares no \
 			primary key (`index:no_primary_key`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `documents.delete` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1140,9 +1098,7 @@ public class DocumentResource {
 			documents are removed. If any key is invalid, no documents are \
 			removed. When deleting by `query`, the operation removes matching \
 			committed searchable documents along with any uncommitted \
-			documents indexed since the last commit.
-
-			Requires the `documents.delete` permission."""
+			documents indexed since the last commit."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -1161,16 +1117,6 @@ public class DocumentResource {
 			without a `query` (`request:delete:locale_without_query`), \
 			contains a key that cannot be parsed as the defined key field \
 			type, or contains a query the index cannot execute.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `documents.delete` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1330,9 +1276,7 @@ public class DocumentResource {
 
 			Read requests are served directly by whichever node receives them, \
 			using data that the node has pulled from storage, and are never \
-			forwarded to the writer. Reading documents requires the \
-			`documents.read` permission. The `writer` and `admin` roles \
-			include this permission; the `reader` role does not."""
+			forwarded to the writer."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -1349,16 +1293,6 @@ public class DocumentResource {
 			(`index:no_primary_key`), the index does not store document copies \
 			(`index:source:not_kept`), or the `limit` parameter is not a whole \
 			number from 1 to 10000 (`request:scan:limit_invalid`).""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential accepted by this node.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `documents.read` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(

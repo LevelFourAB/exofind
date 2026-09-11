@@ -88,8 +88,7 @@ public class KeyResource {
 			Key credentials are stored only as hashes and cannot be recovered \
 			from listings. A lost credential must be replaced.
 
-			Served by whichever node receives the request. Requires the \
-			`keys.read` permission."""
+			Served by whichever node receives the request."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -98,16 +97,6 @@ public class KeyResource {
 			schema = @Schema(implementation = KeyListResponse.class),
 			examples = @ExampleObject(name = "keys", value = KeyListResponse.EXAMPLE)
 		)
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `keys.read` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
 		responseCode = "409",
@@ -155,7 +144,7 @@ public class KeyResource {
 
 			A key created on one node works on all nodes immediately because \
 			nodes look up unseen keys without delay. Served by whichever node \
-			receives the request. Requires the `keys.write` permission."""
+			receives the request."""
 	)
 	@APIResponse(
 		responseCode = "201",
@@ -173,16 +162,6 @@ public class KeyResource {
 			The request body is missing, specifies an unknown role, \
 			permission, or index pattern, or contains an invalid `expiresAt` \
 			timestamp (`auth:key:*`). All validation errors are reported.""",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `keys.write` permission.",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -249,20 +228,9 @@ public class KeyResource {
 			root key is not stored in key storage and cannot be revoked \
 			through the API.
 
-			Served by whichever node receives the request. Requires the \
-			`keys.write` permission."""
+			Served by whichever node receives the request."""
 	)
 	@APIResponse(responseCode = "204", description = "The key was revoked.")
-	@APIResponse(
-		responseCode = "401",
-		description = "The request carries no credential this node accepts.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
-	@APIResponse(
-		responseCode = "403",
-		description = "The API key does not have the `keys.write` permission.",
-		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-	)
 	@APIResponse(
 		responseCode = "404",
 		description = "No key has this ID (`auth:key:not_found`).",
