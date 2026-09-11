@@ -130,7 +130,7 @@ Accepted changes on a generation that holds documents include:
 - Changing `stored`.
 - Changing the index `source` mode.
 - Changing `metadata`.
-- Changing `ranking` (tie breakers and signals).
+- Changing `ranking` (tie breakers and ranking signals).
 - Changing search-time settings: `weight`, `typoTolerance`, `lengthNormalization`, and sort `missing` placement.
 - Changing document validation rules: `required`, `min`, and `max`.
 - Setting an explicit default that matches the engine's default.
@@ -372,10 +372,10 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | Path | Description |
 |---|---|
 | `ranking` | The whole ranking object. |
-| `ranking.signals` | The whole list of signals. |
-| `ranking.signals[]` | A new signal added to the list. |
+| `ranking.signals` | The whole list of ranking signals. |
+| `ranking.signals[]` | A new ranking signal added to the list. |
 | `ranking.signals[field=sales]` | List entries whose `field` value equals `sales`. |
-| `ranking.signals[field=sales].weight` | The `weight` field inside those matching signal entries. |
+| `ranking.signals[field=sales].weight` | The `weight` field inside those matching ranking signal entries. |
 | `synonyms` | The whole synonyms object. |
 | `synonyms.<name>` | A synonym set by name. |
 | `synonyms.<name>.boost` | The boost value of a synonym set. |

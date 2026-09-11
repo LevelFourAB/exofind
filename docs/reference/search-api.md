@@ -38,7 +38,7 @@ All request properties are optional. An empty request matches all documents in t
 | `filters` | Array | `[]` | Refinement clauses, specified as `field` clauses or `nested` clauses. Filters narrow hits, but facets on the filtered field exclude their own filter entries from counts by default (see [Facets](#facets)). Unsupported clause types return `search:filter:clause_invalid`. Clauses that score results return `search:filter:scores`. |
 | `facets` | Array | `[]` | Fields to aggregate match counts for. See [Facets](#facets). If omitted, no facet counts are calculated. |
 | `sort` | Array | `[{"type": "score"}]` | Order in which results are returned. If omitted, results are sorted by relevance score in descending order. |
-| `signals` | Array | Index ranking signals | Document ranking signals used to adjust relevance scoring. Added to the signals configured on the index unless `signalsMode` says otherwise. See [Signals](#signals). If omitted, uses the ranking signals configured on the index. |
+| `signals` | Array | Index ranking signals | Document ranking signals used to adjust relevance scoring. Added to the ranking signals configured on the index unless `signalsMode` says otherwise. See [Signals](#signals). If omitted, uses the ranking signals configured on the index. |
 | `signalsMode` | String | `add` | How `signals` meets the ranking configured on the index: `add` ranks by both, `replace` ranks by `signals` alone. Supplying this without `signals` returns `search:signal:mode_without_signals`. See [Signals](#signals). |
 | `rescore` | Object | None | Reorders the best results of a search in a second pass without changing which documents matched. See [Rescoring](#rescoring). |
 | `locale` | String | Field defaults | BCP-47 locale tag used to read and return locale-specific fields. Matches the closest declared locale on each field (for example, `sv-SE` falls back to `sv`). If no matching variant exists, uses the field default. |
@@ -537,7 +537,7 @@ Specifying a `distance` sort on a nested object field returns `index:query:neste
 
 ## Signals
 
-Signals modify relevance scores by evaluating document field values:
+Ranking signals modify relevance scores by evaluating document field values:
 
 ```json
 "signals": [
@@ -547,16 +547,16 @@ Signals modify relevance scores by evaluating document field values:
 ]
 ```
 
-Each signal names exactly one shape. `saturation` and `linear` read number fields, and `decay` reads timestamp fields. The shapes and their parameters are described under [Signals](field-types.md#signals) in the field types reference. A signal reads a field defined for `sort`, or a [signal field](field-types.md#signal-fields) whose value is refreshed in place.
+Each ranking signal names exactly one shape. `saturation` and `linear` read number fields, and `decay` reads timestamp fields. The shapes and their parameters are described under [Signals](field-types.md#signals) in the field types reference. A ranking signal reads a field defined for `sort`, or a [signal field](field-types.md#signal-fields) whose value is refreshed in place.
 
-A search request adds its signals to the ranking configured on the index. The `signalsMode` property controls this:
+A search request adds its ranking signals to the ranking configured on the index. The `signalsMode` property controls this:
 
 | Value | Behavior |
 |---|---|
-| `add` (default) | Ranks by the index's signals and the request's signals together. A request signal that names the same field as an index signal replaces that index signal instead of compounding with it. |
-| `replace` | Ranks by the request's signals alone. An empty array then ranks results solely by text match score. |
+| `add` (default) | Ranks by the index's ranking signals and the request's ranking signals together. A ranking signal in the request that names the same field as one on the index replaces it instead of compounding with it. |
+| `replace` | Ranks by the request's ranking signals alone. An empty array then ranks results solely by text match score. |
 
-Use `add` to layer a per-request signal, such as user affinity, on top of ranking the index owns. A later change to the index's ranking then still reaches these searches. Use `replace` to try out a complete ranking before adopting it:
+Use `add` to layer a per-request ranking signal, such as user affinity, on top of ranking the index owns. A later change to the index's ranking then still reaches these searches. Use `replace` to try out a complete ranking before adopting it:
 
 ```json
 "signals": [ { "field": "brandAffinity", "saturation": { "pivot": 5 } } ],
@@ -565,15 +565,15 @@ Use `add` to layer a per-request signal, such as user affinity, on top of rankin
 
 Omitting `signals` leaves the search to the index's ranking, whatever `signalsMode` says. Supplying `signalsMode` without `signals` returns `search:signal:mode_without_signals`.
 
-Signals apply only when results are ordered by relevance. Providing an explicit `sort` overrides signal ordering.
+Ranking signals apply only when results are ordered by relevance. Providing an explicit `sort` overrides ranking signal ordering.
 
-Targeting an unknown field returns `index:query:field_not_found`. Targeting a field without sorting enabled returns `index:query:usage_not_enabled`. Specifying a signal function unsupported by the field type returns `index:invalid-query-type`.
+Targeting an unknown field returns `index:query:field_not_found`. Targeting a field without sorting enabled returns `index:query:usage_not_enabled`. Specifying a ranking signal function unsupported by the field type returns `index:invalid-query-type`.
 
 ## Rescoring
 
 Rescoring reorders the best results of a search in a second pass without changing which documents matched.
 
-The first pass ranks every match by relevance. The best `window` results of that pass are scored again by the boosts and signals in the `rescore` block. The final score is `first + weight * second`. Results below `window` keep their first-pass relevance score.
+The first pass ranks every match by relevance. The best `window` results of that pass are scored again by the boosts and ranking signals in the `rescore` block. The final score is `first + weight * second`. Results below `window` keep their first-pass relevance score.
 
 ```json
 "rescore": {
@@ -988,7 +988,7 @@ Hit response structure:
 
 The identity of a value hit is `id` combined with `key` where a key is declared, and `id` combined with `index` otherwise. The `key` survives a reindex, while `index` does not because reindexing can reorder values. Cursors over value hits still step by position.
 
-Value hit scoring combines the parent document score (including signals) with the nested value's clause score. `sort` can order by `score` or by fields within the nested object path. Specifying index root fields in `sort` returns `index:query:hits:sort_unsupported`; specifying distance sort returns `search:hits:distance_sort`. Index tie-breaker sorts are ignored.
+Value hit scoring combines the parent document score (including ranking signals) with the nested value's clause score. `sort` can order by `score` or by fields within the nested object path. Specifying index root fields in `sort` returns `index:query:hits:sort_unsupported`; specifying distance sort returns `search:hits:distance_sort`. Index tie-breaker sorts are ignored.
 
 Setting `hits` cannot be combined with:
 
@@ -1183,7 +1183,7 @@ Properties of a score step (`detail` and each entry in `children`):
 - **Field names**: Field names in the explanation tree correspond to schema names in the index definition rather than internal engine names.
 - **Query relaxation**: When zero results trigger query relaxation, `relaxed` is included and the explanation tree reflects the relaxed query that executed.
 - **Interpreted filters**: When quantities are read from the query text, the explanation tree reflects the search with the read filters in it.
-- **Ranking signals**: Signals appear under a dedicated step with one child per signal, specifying the field, function shape, weight, and value read from the document. A missing signal value contributes a factor of `1`.
+- **Ranking signals**: Ranking signals appear under a dedicated step with one child per ranking signal, specifying the field, function shape, weight, and value read from the document. A missing ranking signal value contributes a factor of `1`.
 - **Value hits**: When `hits.path` targets a nested object field, each value is explained individually by specifying its zero-based position in `index`. With `hits.when` set, `index` is read only for documents that `when` matches; a document that returns as itself is explained as a document, whatever `index` says. See [What a hit stands for](#what-a-hit-stands-for).
 - **Alternatives that did not match**: Within an `or` clause that matched, only the alternatives that matched appear as steps. An `or` that matched nothing is reported as one non-matching step for the clause itself.
 

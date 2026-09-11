@@ -132,7 +132,7 @@ Before you begin, ensure that you have:
    }
    ```
 
-   Each signal step reports the signal field name, its mathematical shape and weight, and the raw value read from the document. If a document has no value for a signal field, the signal reports a multiplier score of `1`.
+   Each ranking signal step reports the name of the field it reads, its mathematical shape and weight, and the raw value read from the document. If a document has no value in that field, the ranking signal reports a multiplier score of `1`.
 
 5. Explain a sub-document or value hit:
 

@@ -92,8 +92,8 @@ states what it needs, the requests to send, and what to do when one is refused.
   a hit's score back as the clauses and fields you wrote, and find out why a
   document is missing rather than only why it is low.
 - [Tuning ranking](how-to/tune-ranking.md): Lift documents with a boost, rank by
-  popularity or freshness with signals, break ties, and rescore the best
-  results, all without reindexing.
+  popularity or freshness with ranking signals, break ties, and rescore the
+  best results, all without reindexing.
 
 ### Changing an index
 
@@ -206,3 +206,6 @@ limits of object storage, and what that costs a deployment.
   outlive the code that can read it, and what the engine does about it.
 - [Relevance](explanation/relevance.md): The layers results are ordered by, what
   each one is for, and which of them a change reaches without reindexing.
+- [Signal fields](explanation/signal-fields.md): Why a number a ranking reads is
+  held apart from the document, what a refresh of it costs, and why refreshes
+  go in large batches.

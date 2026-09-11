@@ -190,6 +190,15 @@ conditionally updates the remote manifest, and deletes the obsolete objects
 that an earlier manifest stopped naming more than a grace period ago. See
 [Synchronization](../explanation/synchronization.md).
 
+## Ranking signal
+
+A query-time multiplier that adjusts a relevance score by a value the document
+already holds, such as a sales count or a publication date. It reads a field
+with `sort` enabled, converts the value to a number between 0 and 1 through a
+shape, and multiplies the score by `1 + weight * shape`. A ranking signal is a
+ranking rule and a signal field is a storage mode, and neither one requires the
+other. See [Relevance](../explanation/relevance.md).
+
 ## Refresh interval
 
 The configured interval at which nodes re-read shared storage objects to
@@ -216,6 +225,13 @@ upon deletion, staging the prefix for removal by a background sweep after a
 grace period. See [Generations](../explanation/generations.md) and
 [Storage layout](storage-layout.md).
 
+## Rescoring
+
+A second scoring pass that reorders the best results of the first pass inside a
+window. It changes neither which documents matched nor the facet counts and
+totals, which the first pass decides. See
+[Relevance](../explanation/relevance.md).
+
 ## Root key
 
 A per-node credential configured through `EXOFIND_AUTH_ROOT_KEY` with full
@@ -236,12 +252,36 @@ exclusions, and field interpretation. Search settings attach to the index name
 rather than a generation. See [Admin API](admin-api.md) and
 [Storage layout](storage-layout.md).
 
+## Shape
+
+The function a ranking signal applies to a field value to get a number between 0
+and 1. The three shapes are `saturation` for an unbounded count, `decay` for an
+age, and `linear` for a value already in a known range. See
+[Field types](field-types.md#signals).
+
+## Signal field
+
+A numeric field declared with a `signal` property. The engine stores its values
+only as doc values and leaves them out of the stored document source, so a
+change naming the primary key and signal fields alone refreshes the values in
+place without rewriting the document. A signal field sorts without `sort`
+enabled. See [Signal fields](../explanation/signal-fields.md) for why the
+values are held this way, and [Field types](field-types.md#signal-fields) for the
+rules.
+
 ## Sub-document
 
 An isolated document instance created for each object in an array when an
 `object` field is configured with `"mode": "nested"`. Sub-documents can be
 searched with nested queries and returned as individual hits. See
 [Field types](field-types.md).
+
+## Tie breaker
+
+A fallback ordering rule that orders two documents the primary sort ranked
+equally. The engine appends tie breakers after the sort order a search asks for
+and evaluates them in sequence until one resolves the tie. See
+[Relevance](../explanation/relevance.md).
 
 ## Writer
 

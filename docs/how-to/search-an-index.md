@@ -205,7 +205,7 @@ Inspect the JSON response from the search endpoint to verify the results:
 - [Search API](../reference/search-api.md) - Every clause, matcher, sort, and option.
 - [Architecture](../explanation/architecture.md) - Why a search runs on whichever node receives it and never has to reach a writer.
 - [Relevance](../explanation/relevance.md) - What decides the order when the search asks for none.
-- [Tuning ranking](tune-ranking.md) - Boosts, signals, tie breakers, and rescoring, without reindexing.
+- [Tuning ranking](tune-ranking.md) - Boosts, ranking signals, tie breakers, and rescoring, without reindexing.
 - [Searching from a search box](search-from-a-search-box.md) - Sending what a person typed, and choosing how many of their words a document must hold.
 - [Searching by vector](search-by-vector.md) - Finding documents by meaning rather than by words.
 - [Using sub-documents](use-sub-documents.md) - Asking several things of one value of an `object` field, and ordering and counting by it.

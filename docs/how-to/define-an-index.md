@@ -251,9 +251,9 @@ The score is multiplied by `1 + weight * shape`, where `shape` is a value betwee
 - `saturation`: Scales a numeric value based on its distance from the `pivot`. A document with a value equal to the pivot receives half of the maximum boost.
 - `decay`: Evaluates a timestamp by how much time has elapsed, halving the score every `halfLife` seconds.
 
-Documents with no value in the signal field retain their original match score.
+Documents with no value in the field a ranking signal reads retain their original match score.
 
-Choose a `pivot` value that represents a typical popular item in your catalog rather than the highest value. Fields used in signals must have sorting enabled. Signals do not rewrite stored documents, so you can add, modify, or remove them without reindexing.
+Choose a `pivot` value that represents a typical popular item in your catalog rather than the highest value. A field a ranking signal reads must have sorting enabled. Ranking signals do not rewrite stored documents, so you can add, modify, or remove them without reindexing.
 
 ## Related
 
@@ -264,5 +264,5 @@ Choose a `pivot` value that represents a typical popular item in your catalog ra
 - [Localizing fields](localize-fields.md) - Holding values in several languages.
 - [Using sub-documents](use-sub-documents.md) - Fields whose values are documents of their own.
 - [Rolling out a definition change](roll-out-a-definition-change.md) - Changing a definition for documents already indexed.
-- [Relevance](../explanation/relevance.md) - How boosts, tie breakers, and signals order results.
+- [Relevance](../explanation/relevance.md) - How boosts, tie breakers, and ranking signals order results.
 - [Tuning ranking](tune-ranking.md) - Changing the order for an index that already holds documents.

@@ -2,20 +2,21 @@
 
 Adjust how search results are ordered by relevance without reindexing your
 data. Use this guide when your index is populated and serving queries, but you
-want to alter result ordering by applying query boosts, document signals, tie
+want to alter result ordering by applying query boosts, ranking signals, tie
 breakers, or second-pass rescoring.
 
-Signals, boosts, tie breakers, and rescoring apply only when results are ordered
-by relevance. An explicit `sort` parameter overrides relevance ordering.
+Ranking signals, boosts, tie breakers, and rescoring apply only when results are
+ordered by relevance. An explicit `sort` parameter overrides relevance ordering.
 
 ## Prerequisites
 
 Before you begin, ensure you have:
 
 - An index that contains documents.
-- `sort` or `signal` enabled on all fields that carry a signal or tie breaker.
-  Enabling either on an existing field is a definition change that requires a
-  reindex. See [Rolling out a definition change](roll-out-a-definition-change.md).
+- `sort` or `signal` enabled on all fields that carry a ranking signal or tie
+  breaker. Enabling either on an existing field is a definition change that
+  requires a reindex. See
+  [Rolling out a definition change](roll-out-a-definition-change.md).
 - An API key with the `search` and `indexes.read` permissions.
 - The `settings.write` permission on your API key to store ranking
   configurations in search settings.
@@ -40,8 +41,8 @@ Before you begin, ensure you have:
      }'
    ```
 
-   Inspect the `detail` tree in the response to review match scores and signal
-   contributions for each clause.
+   Inspect the `detail` tree in the response to review match scores and ranking
+   signal contributions for each clause.
 
 2. Lift documents with a boost clause:
 
@@ -66,23 +67,26 @@ Before you begin, ensure you have:
    Set `weight` greater than `1` to increase the score of matching items, or
    between `0` and `1` to decrease their score.
 
-3. Rank by document values with signals:
+3. Rank by document values with ranking signals:
 
-   Use signals to adjust relevance scores based on document values. Configure
-   `saturation` on number fields (such as sales or purchases), `linear` on a
-   number field holding a score that already lies in a known range (such as
-   an engagement score between `0` and `1`), or `decay` on timestamp fields
-   (such as publication dates). You can set an optional `weight` multiplier
-   (default `1`). To refresh a score across the catalogue without indexing the
-   documents again, declare its field with `signal` enabled and send the new
-   values through the update action. See [Refresh a ranking signal across the
-   catalogue](update-parts-of-documents.md).
+   Use ranking signals to adjust relevance scores based on document values.
+   Configure `saturation` on number fields (such as sales or purchases),
+   `linear` on a number field holding a score that already lies in a known range
+   (such as an engagement score between `0` and `1`), or `decay` on timestamp
+   fields (such as publication dates). You can set an optional `weight`
+   multiplier (default `1`). To refresh a score across the catalogue without
+   indexing the documents again, declare its field as a signal field with
+   `signal` enabled. This is a storage mode and not a ranking rule. Send the new
+   values through the update action. See
+   [Signal fields](../explanation/signal-fields.md) and
+   [Refresh a ranking signal across the catalogue](update-parts-of-documents.md).
 
    Choose one of the following two options depending on your goal:
 
-   1. **Store signals in search settings**: Store ranking signals in search
-      settings so every caller receives them by default. Fetch the current
-      settings version, then send a `PUT` request with an `If-Match` header:
+   1. **Store ranking signals in search settings**: Store ranking signals in
+      search settings so every caller receives them by default. Fetch the
+      current settings version, then send a `PUT` request with an `If-Match`
+      header:
 
       ```shell
       curl -X PUT \
@@ -106,11 +110,11 @@ Before you begin, ensure you have:
       settings take effect immediately on the holding node and within
       `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds) on other nodes.
 
-   2. **Send signals in the search request**: Pass `signals` directly in a
-      search query using `signalsMode`. Set `"signalsMode": "replace"` to try a
-      complete ranking before storing it, or `"signalsMode": "add"` (default) to
-      layer per-request signals (such as user affinity) on top of the index's
-      stored ranking:
+   2. **Send ranking signals in the search request**: Pass `signals` directly in
+      a search query using `signalsMode`. Set `"signalsMode": "replace"` to try
+      a complete ranking before storing it, or `"signalsMode": "add"` (default)
+      to layer per-request ranking signals (such as user affinity) on top of the
+      index's stored ranking:
 
       ```json
       {
@@ -197,8 +201,8 @@ curl -X POST \
   }'
 ```
 
-Inspect the returned `hits` array to verify that boosted items and high-signal
-documents rank higher in the relevance order.
+Inspect the returned `hits` array to verify that boosted items and documents
+with high ranking signal values rank higher in the relevance order.
 
 ## Related
 
@@ -207,14 +211,14 @@ documents rank higher in the relevance order.
 - [Find out why a result ranked where it did](explain-a-result.md) - Reading a
   hit's score back as the clauses and fields you wrote.
 - [Searching an index](search-an-index.md) - The search request the boosts,
-  signals, and rescoring sit on.
+  ranking signals, and rescoring sit on.
 - [Changing synonyms without reindexing](change-synonyms-without-reindexing.md) -
   The other search setting that changes results without a new generation.
 - [Rolling out a definition change](roll-out-a-definition-change.md) - Enabling
-  `sort` on a field that a signal or a tie breaker needs.
+  `sort` on a field that a ranking signal or a tie breaker needs.
 - [Search API](../reference/search-api.md) - Reference for search query
-  clauses, signals, and rescoring parameters.
+  clauses, ranking signals, and rescoring parameters.
 - [Field types](../reference/field-types.md) - Schema options for sortable
-  fields, tie breakers, and signals.
+  fields, tie breakers, and ranking signals.
 - [Admin API](../reference/admin-api.md) - Managing index search settings and
   ranking configurations.

@@ -120,9 +120,9 @@ Represents numeric values of the specified width. Enabling `filter` supports bot
 
 ### Signal fields
 
-A field definition property named `signal`, configured as an empty object (`"signal": {}`), designates a numeric field (`int32`, `int64`, `float`, or `double`) as a signal field.
+A field definition property named `signal`, configured as an empty object (`"signal": {}`), designates a numeric field (`int32`, `int64`, `float`, or `double`) as a signal field. A signal field is a storage mode for the value. For the query-time multiplier that reads it, see [Signals](#signals).
 
-The engine stores signal field values only as doc values and omits them from the stored document source. Lucene can replace doc values per document without rewriting the rest of the segment.
+The engine stores signal field values only as doc values and omits them from the stored document source. Lucene can replace doc values per document without rewriting the rest of the segment. See [Signal fields](../explanation/signal-fields.md) for why the values are held as doc values and what a refresh costs.
 
 ```json
 "popularity": { "type": "double", "signal": {}, "validation": { "min": 0, "max": 1 } }
@@ -370,7 +370,7 @@ Tie breakers define secondary sort criteria when search scores are equal:
 
 ### Signals
 
-Signals multiply relevance scores using values from sortable fields:
+Ranking signals multiply relevance scores using values from sortable fields. A ranking signal reads any field with `sort` enabled, including a [signal field](#signal-fields), which is a different setting with a similar name:
 
 ```json
 "ranking": {
@@ -381,10 +381,10 @@ Signals multiply relevance scores using values from sortable fields:
 }
 ```
 
-A signal computes a value between `0` and `1` and multiplies the relevance score by `1 + weight * shape`:
+A ranking signal computes a value between `0` and `1` and multiplies the relevance score by `1 + weight * shape`:
 
 - Missing field values contribute `0` to the calculation.
-- A signal can increase a document score by at most `weight`.
+- A ranking signal can increase a document score by at most `weight`.
 - `weight`: number, default `1`.
 
 | Shape | Applicable types | Description |
@@ -393,7 +393,15 @@ A signal computes a value between `0` and `1` and multiplies the relevance score
 | `decay` | `timestamp` | Halves the multiplier every `halfLife` seconds of age. Values dated at or after the current time evaluate to `1`. `halfLife` is required and must be greater than `0`. |
 | `linear` | Numeric types (`int32`, `int64`, `float`, `double`) | Computes `value / ceiling`, held between `0` and `1`. Values below `0` evaluate to `0` and values above `ceiling` evaluate to `1`. `ceiling` is required and must be greater than `0`. Used for scores computed outside the engine that already lie in a known range (such as an engagement score between `0` and `1` or a margin in percent). |
 
-Signals are evaluated at search time without reindexing. Signals apply only when sorting by relevance. Query-level signals override index-level signals (see [Search API signals](search-api.md#signals)). To refresh the value a signal reads without indexing the document again, declare the field as a [signal field](#signal-fields).
+The following table describes how to choose a shape:
+
+| What the field holds | Shape | Parameter | What the parameter means |
+|---|---|---|---|
+| An unbounded count, such as sales or views | `saturation` | `pivot` | The value at which a document gets half the largest boost the ranking signal can give. Set it to a typical popular item in the catalogue, not to the highest value in it. |
+| A date, where a newer document is a better answer | `decay` | `halfLife` | The age at which a document keeps half the boost. |
+| A score that already lies in a known range, such as an engagement score between 0 and 1 or a margin in percent | `linear` | `ceiling` | The top of that range. |
+
+Ranking signals are evaluated at search time without reindexing. Ranking signals apply only when sorting by relevance. Query-level ranking signals override index-level ranking signals (see [Search API signals](search-api.md#signals)). To refresh the value a ranking signal reads without indexing the document again, declare the field as a [signal field](#signal-fields).
 
 ## Declared locales
 

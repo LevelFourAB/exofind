@@ -1,6 +1,6 @@
 # Relevance
 
-This document explains how Exofind calculates relevance scores and how its ranking layers interact when ordering search results. When a search query does not specify a sort order, Exofind orders results by relevance: how well each document matches the query. Ranking is calculated in separate layers that evaluate match quality, field location, intrinsic document signals, and tie breaking.
+This document explains how Exofind calculates relevance scores and how its ranking layers interact when ordering search results. When a search query does not specify a sort order, Exofind orders results by relevance: how well each document matches the query. Ranking is calculated in separate layers that evaluate match quality, field location, intrinsic document values, and tie breaking.
 
 For setting names and accepted values, see [Field types](../reference/field-types.md#ranking) and the [Search API](../reference/search-api.md#signals).
 
@@ -38,30 +38,30 @@ Boost clauses contribute to the relevance score of a match. For this reason, [hi
 
 ## What the document is worth on its own
 
-Text scoring evaluates only the search match. The `signals` configuration provides the other half of relevance: intrinsic document values, such as sales volume or publication date. Exofind transforms a signal value into a number between 0 and 1, and multiplies it into the score as `1 + weight * shape`.
+Text scoring evaluates only the search match. The `signals` configuration provides the other half of relevance: intrinsic document values, such as sales volume or publication date. Exofind transforms a ranking signal value into a number between 0 and 1, and multiplies it into the score as `1 + weight * shape`.
 
-The transformation shape prevents signals from distorting search quality:
+The transformation shape prevents ranking signals from distorting search quality:
 
-- A document with no value for a signal receives a shape value of 0. It is not penalized or multiplied away, so adding a signal does not bury existing documents that lack the value.
-- A signal can boost a document score by at most its `weight`, regardless of how large the underlying value is. A high-selling item cannot outrank a document with a significantly better text match.
+- A document with no value for a ranking signal receives a shape value of 0. It is not penalized or multiplied away, so adding a ranking signal does not bury existing documents that lack the value.
+- A ranking signal can boost a document score by at most its `weight`, regardless of how large the underlying value is. A high-selling item cannot outrank a document with a significantly better text match.
 
-The choice of shape depends on what the signal measures. An unbounded count saturates toward 1, while an age signal decays by halving over time. A score computed outside the engine that already lies in a known range, such as an engagement score between 0 and 1 or a margin in percent, uses a linear shape, because saturation would bend a score that is already bounded. Because Exofind evaluates signals at query time rather than storing them in index structures, you can adjust signal configurations in the index definition or pass custom signals in a search request without reindexing documents.
+The choice of shape depends on what the ranking signal measures. An unbounded count saturates toward 1, while an age decays by halving over time. A score computed outside the engine that already lies in a known range, such as an engagement score between 0 and 1 or a margin in percent, uses a linear shape, because saturation would bend a score that is already bounded. Because Exofind evaluates ranking signals at query time rather than storing them in index structures, you can adjust the ranking signals in the index definition or pass your own in a search request without reindexing documents.
 
-The value of a signal field is written only as sort doc values. Lucene can replace doc values per document without touching the rest of the segment. When an update names only the primary key and signal fields, the engine refreshes those fields in place without reading or rewriting the document. On object storage, a refresh reaches searching nodes as a few small files per segment rather than as new segments, which costs a fraction of a reindex. See [Signal fields](../reference/field-types.md#signal-fields).
+A ranking signal reads any field that has `sort` enabled. A field whose value changes more often than the document it belongs to can be declared a signal field, which refreshes the value without indexing the document again. See [Signal fields](signal-fields.md).
 
 ## What breaks the remaining ties
 
-Signals produce continuous scores, but ties can still occur. For example, a search that only applies filters matches all returned documents equally. The index's `tieBreakers` setting defines fallback ordering rules. Exofind appends these tie breakers after the requested sort order and evaluates them in sequence until one resolves the tie between two documents. Tie breakers resolve ordering within ties without changing the primary sort order.
+Ranking signals produce continuous scores, but ties can still occur. For example, a search that only applies filters matches all returned documents equally. The index's `tieBreakers` setting defines fallback ordering rules. Exofind appends these tie breakers after the requested sort order and evaluates them in sequence until one resolves the tie between two documents. Tie breakers resolve ordering within ties without changing the primary sort order.
 
 ## Updating ranking with search settings
 
-Signals and tie breakers are defined in the index definition. Because the definition travels with the index data, updating it requires the writer node, and other nodes receive changes only on their next pull. To update query-time settings faster, an index can use [search settings](../reference/admin-api.md#search-settings). A search settings request can be sent to any node - it runs on the index's holder - and all nodes re-read the settings on their own refresh interval.
+Ranking signals and tie breakers are defined in the index definition. Because the definition travels with the index data, updating it requires the writer node, and other nodes receive changes only on their next pull. To update query-time settings faster, an index can use [search settings](../reference/admin-api.md#search-settings). A search settings request can be sent to any node - it runs on the index's holder - and all nodes re-read the settings on their own refresh interval.
 
 When search settings define a `ranking` configuration, it completely replaces the `ranking` configuration from the index definition. The index definition provides the default ranking, and deleting search settings restores this default.
 
-The index and the search request own different layers of the same ranking. Whichever ranking is in force on the index is the base layer, and a search request adds its own `signals` on top of it. A request signal that names the same field as an index signal replaces that index signal, so a search moves one weight without resending the rest. Setting `signalsMode` to `replace` drops the index layer entirely, which is how you try out a complete ranking before adopting it.
+The index and the search request own different layers of the same ranking. Whichever ranking is in force on the index is the base layer, and a search request adds its own `signals` on top of it. A ranking signal in the request that names the same field as one on the index replaces it, so a search moves one weight without resending the rest. Setting `signalsMode` to `replace` drops the index layer entirely, which is how you try out a complete ranking before adopting it.
 
-Layering keeps the two parties separable. A per-request signal about the person searching does not take the merchant's configured ranking off the search, and a later change to that ranking still reaches personalized searches.
+Layering keeps the two parties separable. A per-request ranking signal about the person searching does not take the merchant's configured ranking off the search, and a later change to that ranking still reaches personalized searches.
 
 Tuning proceeds in small steps - one weight, one pivot - so search settings also accept a change that names only the part it moves, described the same way a change to part of a document is. See [Changing part of the search settings](../reference/admin-api.md#changing-part-of-the-search-settings).
 
@@ -76,7 +76,7 @@ Search settings attach to the index name rather than to a specific index generat
 
 ## Reordering the best results in a second pass
 
-Every other ranking control takes part in retrieval: a boost that lifts a document also decides whether the document is retrieved at all. That behavior is correct for a signal about the documents, but wrong for a signal about the person searching. For example, a shopper who looks at one brand should see that brand ranked higher among relevant results, but should never see a poor match promoted onto the first page.
+Every other ranking control takes part in retrieval: a boost that lifts a document also decides whether the document is retrieved at all. That behavior is correct for a ranking signal about the documents, but wrong for a ranking signal about the person searching. For example, a shopper who looks at one brand should see that brand ranked higher among relevant results, but should never see a poor match promoted onto the first page.
 
 The [`rescore`](../reference/search-api.md#rescoring) block draws that boundary. The first pass retrieves and ranks every match by relevance. The second pass scores only the best results within a specified window and adds the second score to the first-pass score. Results below the window keep the order relevance gave them. Because boosts inside the window apply only to documents that already matched, they reorder what is already relevant and reach nothing else.
 
@@ -91,7 +91,7 @@ Ranking a window instead of a complete result set leads to several specific beha
 
 ## When relevance is not the order
 
-When a search request specifies an explicit `sort` parameter, Exofind orders results by that sort. Exofind does not calculate relevance scores or evaluate signals for explicit sorts. If an application provides a "sort by price" option, it must provide a way to switch back to relevance ordering by requesting a `score` sort. Exofind still appends tie breakers to explicit sort orders to resolve ties.
+When a search request specifies an explicit `sort` parameter, Exofind orders results by that sort. Exofind does not calculate relevance scores or evaluate ranking signals for explicit sorts. If an application provides a "sort by price" option, it must provide a way to switch back to relevance ordering by requesting a `score` sort. Exofind still appends tie breakers to explicit sort orders to resolve ties.
 
 ## Vector scores are on their own scale
 
@@ -127,7 +127,7 @@ The following table summarizes where you configure each ranking component and wh
 | Boost clauses | Search request | Next search |
 | Rank fusion (`fuse`) | Search request | Next search |
 | Second-pass rescoring (`rescore`) | Search request | Next search |
-| Signals | Index definition, replaceable by search settings (a search adds its own on top) | Next search on the node serving it, within the settings refresh interval elsewhere |
+| Ranking signals | Index definition, replaceable by search settings (a search adds its own on top) | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Tie breakers | Index definition, replaceable by search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
 | Index-time synonyms | Index definition | Newly indexed documents |
 | Query-time synonyms | Search settings | Next search on the node serving it, within the settings refresh interval elsewhere |
@@ -139,5 +139,6 @@ Exofind evaluates most ranking components at query time, making ranking adjustme
 - [Field types](../reference/field-types.md#ranking) - Reference for `ranking`, `signals`, and field-level settings.
 - [Search API](../reference/search-api.md) - Reference for `text`, `boost`, `fuse`, `signals`, `rescore`, and `sort` parameters.
 - [Search an index](../how-to/search-an-index.md) - How-to guide for constructing search queries.
-- [Tuning ranking](../how-to/tune-ranking.md) - How-to guide for changing the order with boosts, signals, tie breakers, and rescoring.
+- [Tuning ranking](../how-to/tune-ranking.md) - How-to guide for changing the order with boosts, ranking signals, tie breakers, and rescoring.
 - [Searching from a search box](../how-to/search-from-a-search-box.md) - How-to guide for the `user` match mode, the join mode, and relaxation.
+- [Signal fields](signal-fields.md) - Explanation of how a value a ranking signal reads is refreshed without reindexing.
