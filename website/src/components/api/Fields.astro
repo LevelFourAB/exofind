@@ -19,6 +19,7 @@
  * fields and is marked as repeated, so a clause inside a clause is a line rather
  * than a loop.
  */
+import Example from "./Example.astro";
 import Prose from "./Prose.astro";
 
 const { fields } = Astro.props;
@@ -40,13 +41,15 @@ const { fields } = Astro.props;
 			{field.notes.length > 0 && (
 				<dl class="notes">
 					{field.notes.map((note) => (
-						<div class="note">
+						<>
 							<dt>{note.label}</dt>
 							<dd>{note.value}</dd>
-						</div>
+						</>
 					))}
 				</dl>
 			)}
+
+			{field.example !== undefined && <Example value={field.example} />}
 
 			{field.repeated && (
 				<p class="repeated">
@@ -76,6 +79,10 @@ const { fields } = Astro.props;
 									variant="inline"
 									class="says"
 								/>
+
+								{variant.example !== undefined && (
+									<Example value={variant.example} />
+								)}
 
 								{variant.fields.length > 0 && (
 									<Astro.self fields={variant.fields} />
@@ -159,12 +166,17 @@ const { fields } = Astro.props;
 		margin-block-start: 0.3125rem;
 	}
 
-	/* What the field accepts, as pairs on one line for as long as they fit. */
 	.notes {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
 		gap: 0.25rem 1.25rem;
 		margin: 0.4375rem 0 0;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	@media (min-width: 45rem) {
+		.notes {
+			grid-template-columns: 5rem minmax(0, 1fr);
+		}
 	}
 
 	.note {
@@ -172,7 +184,7 @@ const { fields } = Astro.props;
 		gap: 0.4375rem;
 	}
 
-	.note dt {
+	.notes dt {
 		color: var(--sl-color-gray-3);
 		font-family: var(--sl-font-mono);
 		font-size: 0.75rem;
@@ -182,7 +194,7 @@ const { fields } = Astro.props;
 		text-transform: uppercase;
 	}
 
-	.note dd {
+	.notes dd {
 		color: var(--sl-color-gray-2);
 		font-family: var(--sl-font-mono);
 		font-size: 0.75rem;

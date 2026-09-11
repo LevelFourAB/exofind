@@ -1,0 +1,115 @@
+---
+/*
+ * A value of a type, under the rows that say what the type is.
+ *
+ * It is written as the JSON a caller sends, so that a value copied off the page
+ * is a value the engine reads back, and it is highlighted by the same component
+ * the call and the answer beside the endpoint are - see `./Panels.astro`. A
+ * scalar keeps its quotes for the same reason: `"fiction"` is what goes on the
+ * wire and `fiction` is not.
+ *
+ * An example of more than one line is behind a disclosure, because most of these
+ * are objects and the rows they sit under are already a tree a reader opens a
+ * level at a time. A one-line value is not: the disclosure to open it would be
+ * taller than the value behind it, so it is set beside its label and read
+ * without a click.
+ */
+import { Code } from "@astrojs/starlight/components";
+
+const { value } = Astro.props;
+
+const written = JSON.stringify(value, null, 2);
+const inline = !written.includes("\n");
+---
+
+{inline ? (
+	<div class="example inline">
+		<span class="label">Example</span>
+		<Code code={written} lang="json" frame="none" />
+	</div>
+) : (
+	<details class="example">
+		<summary>Example</summary>
+		<Code code={written} lang="json" frame="none" wrap />
+	</details>
+)}
+
+<style>
+	.example {
+		margin-block-start: 0.5rem;
+	}
+
+	/* A one-line value reads as one line: the label, then the value. */
+	.inline {
+		align-items: baseline;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.4375rem;
+		--ec-codePadInl: 0;
+		--ec-codePadBlk: 0;
+	}
+
+	.inline :global(.expressive-code .copy) {
+		display: none;
+	}
+
+	.inline :global(.expressive-code) {
+		min-width: 0;
+	}
+
+	/*
+	 * The label of an example, and the disclosure that opens one, are the same
+	 * label - see the notes and the property counts in `./Fields.astro`.
+	 */
+	.label,
+	summary {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+	}
+
+	summary {
+		cursor: pointer;
+		display: inline-flex;
+		gap: 0.4375rem;
+		list-style: none;
+	}
+
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	/* A sign that turns, rather than the triangle a browser draws. */
+	summary::before {
+		content: "+";
+		font-variant-numeric: tabular-nums;
+	}
+
+	details[open] > summary::before {
+		content: "\2013";
+	}
+
+	summary:hover {
+		color: var(--sl-color-text-accent);
+	}
+
+	/*
+	 * The code is set at the size of the furniture around it rather than at the
+	 * size prose is, because a row four levels down is narrow and a wrapped line
+	 * costs more than the two points.
+	 */
+	.example :global(.expressive-code) {
+		font-size: 0.8125rem;
+	}
+
+	details > :global(.expressive-code) {
+		margin-block-start: 0.375rem;
+	}
+
+	.example :global(.expressive-code pre) {
+		border-radius: 0.25rem;
+	}
+</style>

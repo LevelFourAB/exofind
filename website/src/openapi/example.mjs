@@ -17,7 +17,7 @@
  * table.
  */
 
-import { resolve } from './schema.mjs';
+import { resolve, statedExample } from './schema.mjs';
 
 /** How deeply a built example nests before it stops. */
 const DEPTH = 4;
@@ -119,8 +119,9 @@ export function exampleOf(schema, seen = []) {
 
 /** The example, default or single value a schema states for itself. */
 function statedIn(schema) {
-	if(schema.example !== undefined) return schema.example;
-	if(Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
+	const example = statedExample(schema);
+	if(example !== undefined) return example;
+
 	if(schema.default !== undefined) return schema.default;
 	if(Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
 

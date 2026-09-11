@@ -46,6 +46,8 @@ const DEPTH = 6;
  * @property {string} description Markdown, which the component renders
  * @property {Note[]} notes what the type accepts: a default, the values of an
  *   enumeration, a format, a range
+ * @property {unknown} example a value of this type the document states, or
+ *   `undefined` where it states none
  * @property {Field[]} fields the properties of an object, or of the items of an
  *   array of objects
  * @property {Variant[]} variants the members of a tagged union, likewise
@@ -64,6 +66,8 @@ const DEPTH = 6;
  *   `type`
  * @property {string | null} value what that property holds for this member
  * @property {string} description Markdown, which the component renders
+ * @property {unknown} example a value of the member the document states, or
+ *   `undefined` where it states none
  * @property {Field[]} fields everything the member carries but the selector
  */
 
@@ -117,6 +121,7 @@ export function modelOf(schema, seen = []) {
 		? resolve(resolved.items ?? {})
 		: { schema: resolved, name };
 
+	const stated = statedExample(resolved);
 	const typeName = list ? itemName : name;
 	const repeated = typeName !== null && seen.includes(typeName);
 	const exhausted = seen.length >= DEPTH;
@@ -128,6 +133,7 @@ export function modelOf(schema, seen = []) {
 		repeated,
 		description: resolved.description ?? subject.description ?? '',
 		notes: notesOf(resolved, subject),
+		example: stated !== undefined ? stated : statedExample(subject),
 		fields: repeated || exhausted ? [] : fieldsOf(subject, chain),
 		variants: repeated || exhausted ? [] : variantsOf(subject, chain)
 	};
@@ -191,6 +197,7 @@ export function variantsOf(schema, seen = []) {
 			selector,
 			value: values.get(name) ?? valueOf(variant, selector),
 			description: variant.description ?? '',
+			example: statedExample(variant),
 			fields: fieldsOf(variant, chain).filter(field => field.key !== selector)
 		};
 	});
@@ -268,6 +275,28 @@ function notesOf(schema, subject) {
 	if(pattern) notes.push({ label: 'Pattern', value: pattern });
 
 	return notes;
+}
+
+/**
+ * The example a schema states for itself, whichever way it states one.
+ *
+ * Only a stated example is answered. A default, a single-valued enumeration and
+ * a format are read as examples where a whole body is built out of a schema -
+ * see `./example.mjs` - because a panel with a shape in it says more than an
+ * empty one. A row is not built the same way: the row already states the
+ * default and the values beside it, and an example repeating them is a line the
+ * reader gains nothing from.
+ *
+ * @param {object} schema
+ * @returns {unknown} the example, or `undefined` where the schema states none
+ */
+export function statedExample(schema) {
+	if(!schema || typeof schema !== 'object') return undefined;
+	if(schema.example !== undefined) return schema.example;
+
+	return Array.isArray(schema.examples) && schema.examples.length > 0
+		? schema.examples[0]
+		: undefined;
 }
 
 /** A bound written the way a reader states one, or nothing where there is none. */
