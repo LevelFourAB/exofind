@@ -1,6 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -24,13 +26,22 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents an instant in time formatted as an ISO 8601 date-time string \
-	with a timezone offset (for example, `Z` or `+02:00`). Timestamps are \
-	stored and compared at millisecond precision. Values representing the same \
-	instant are identical for filtering and sorting; search results return the \
-	original string format provided during ingestion. Documents containing \
-	timestamps without timezone offsets are rejected.""")
+@Schema(
+	description = """
+		Represents an instant in time formatted as an ISO 8601 date-time string \
+		with a timezone offset (for example, `Z` or `+02:00`). Timestamps are \
+		stored and compared at millisecond precision. Values representing the \
+		same instant are identical for filtering and sorting; search results \
+		return the original string format provided during ingestion. Documents \
+		containing timestamps without timezone offsets are rejected.""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "timestamp",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record TimestampFieldDefinition(
 	/**
 	 * What the field is for, expanded into the usages that serve it before the

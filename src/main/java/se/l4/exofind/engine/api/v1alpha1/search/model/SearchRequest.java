@@ -346,10 +346,13 @@ public record SearchRequest(
 	/**
 	 * Counting mode for the total matching document count.
 	 */
-	@Schema(description = """
-		Counting mode for the total matching document count: `"estimate"` \
-		counts until exceeding the returned window; `"exact"` counts every \
-		matching document.""")
+	@Schema(
+		name = "TotalMode",
+		description = """
+			Counting mode for the total matching document count: `"estimate"` \
+			counts until exceeding the returned window; `"exact"` counts every \
+			matching document."""
+	)
 	public enum Total {
 		/**
 		 * Stop counting once it is known there are more matches than the
@@ -370,10 +373,13 @@ public record SearchRequest(
 	 * buckets when {@code ranges} is specified.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Computes match counts for distinct values of a field. The target \
-		field must have `facet` enabled in its field definition; otherwise, \
-		the request returns `index:query:usage_not_enabled`.""")
+	@Schema(
+		name = "FacetRequest",
+		description = """
+			Computes match counts for distinct values of a field. The target \
+			field must have `facet` enabled in its field definition; \
+			otherwise, the request returns `index:query:usage_not_enabled`."""
+	)
 	public record Facet(
 		/**
 		 * Key used for the facet in the response. Defaults to the field name.
@@ -475,11 +481,14 @@ public record SearchRequest(
 		 * Sort order of facet values: descending by count, ascending by
 		 * value, or the order the search settings declare.
 		 */
-		@Schema(description = """
-			Sort order of facet values: `count` (descending by count), \
-			`value` (ascending by value), or `declared` (the order the \
-			search settings declare for the field's values, followed by \
-			every other value by count).""")
+		@Schema(
+			name = "FacetOrder",
+			description = """
+				Sort order of facet values: `count` (descending by count), \
+				`value` (ascending by value), or `declared` (the order the \
+				search settings declare for the field's values, followed by \
+				every other value by count)."""
+		)
 		public enum Order {
 			/**
 			 * The most common values first.
@@ -550,10 +559,13 @@ public record SearchRequest(
 	 * Requests numbered page metadata.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Requests numbered page metadata. Sending an empty object asks for the \
-		defaults. Can be combined with `offset` or page cursors, but not with \
-		`after` or `before`.""")
+	@Schema(
+		name = "PagesRequest",
+		description = """
+			Requests numbered page metadata. Sending an empty object asks for \
+			the defaults. Can be combined with `offset` or page cursors, but \
+			not with `after` or `before`."""
+	)
 	public record Pages(
 		/**
 		 * Maximum number of page entries to return. Defaults to 9.

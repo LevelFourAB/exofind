@@ -1,6 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -20,11 +22,20 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents text data. Field usages are opt-in, each enabled by including \
-	its configuration object. An empty object enables a usage with engine \
-	defaults. See \
-	[`string`](https://exofind.dev/reference/field-types/#string).""")
+@Schema(
+	description = """
+		Represents text data. Field usages are opt-in, each enabled by \
+		including its configuration object. An empty object enables a usage \
+		with engine defaults. See \
+		[`string`](https://exofind.dev/reference/field-types/#string).""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "string",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record StringFieldDefinition(
 	/**
 	 * What the field is for, expanded into the usages that serve it before the
@@ -227,9 +238,12 @@ public record StringFieldDefinition(
 		 * Enables highlighted snippet extraction within matching text.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = """
-			Enables highlighted snippet extraction within matching text. \
-			Contains no configuration properties.""")
+		@Schema(
+			name = "HighlightUsage",
+			description = """
+				Enables highlighted snippet extraction within matching text. \
+				Contains no configuration properties."""
+		)
 		public record Highlight() {
 		}
 

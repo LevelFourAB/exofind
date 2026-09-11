@@ -41,18 +41,32 @@ components:
           examples:
           - prose
     AndClause:
-      description: Matches documents where all child clauses match.
-      type: object
       required:
+      - type
       - clauses
+      description: Matches documents where all child clauses match.
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - and
         clauses:
           type: array
           items:
             $ref: "#/components/schemas/Clause"
           description: "Child clauses, all of which must match."
+      type: object
     AnyMatcher:
+      required:
+      - type
       description: Matches any document that contains a value for the field.
+      properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - any
       type: object
     AsciiFolding:
       type: object
@@ -131,10 +145,16 @@ components:
             $ref: "#/components/schemas/AuditedGeneration"
           description: "A list of generations found for the index, ordered by name."
     BooleanFieldDefinition:
+      required:
+      - type
       description: "Represents boolean values (`true` or `false`). A boolean has nothing\
         \ to analyze, so filtering is the only way to search it."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - boolean
         primaryKey:
           type: boolean
           description: "Marks the field as the unique document identifier. Documents\
@@ -170,21 +190,29 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
+      type: object
     BoostClause:
+      required:
+      - type
+      - clauses
       description: Increases the relevance score of documents that satisfy child clauses
         without excluding non-matching documents.
-      type: object
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - boost
         weight:
           type: number
           format: float
@@ -197,8 +225,7 @@ components:
           items:
             $ref: "#/components/schemas/Clause"
           description: Clauses required to apply the boost weight.
-      required:
-      - clauses
+      type: object
     Candidate:
       type: object
       description: A node competing to write indexes.
@@ -265,9 +292,31 @@ components:
           - 2026-08-21T10:15:30Z
     Clause:
       type: object
+      oneOf:
+      - $ref: "#/components/schemas/FieldClause"
+      - $ref: "#/components/schemas/TextClause"
+      - $ref: "#/components/schemas/KnnClause"
+      - $ref: "#/components/schemas/NestedClause"
+      - $ref: "#/components/schemas/AndClause"
+      - $ref: "#/components/schemas/OrClause"
+      - $ref: "#/components/schemas/NotClause"
+      - $ref: "#/components/schemas/BoostClause"
+      - $ref: "#/components/schemas/FuseClause"
       description: "A search condition, structured as a tagged union where `type`\
-        \ selects the clause type. If `type` is omitted, the clause defaults to a\
-        \ `field` clause containing `field` and `match`. See [Clauses](https://exofind.dev/reference/search-api/#clauses)."
+        \ selects the clause type. The engine also accepts a clause that omits `type`,\
+        \ which it reads as a `field` clause containing `field` and `match`. See [Clauses](https://exofind.dev/reference/search-api/#clauses)."
+      discriminator:
+        propertyName: type
+        mapping:
+          field: "#/components/schemas/FieldClause"
+          text: "#/components/schemas/TextClause"
+          knn: "#/components/schemas/KnnClause"
+          nested: "#/components/schemas/NestedClause"
+          and: "#/components/schemas/AndClause"
+          or: "#/components/schemas/OrClause"
+          not: "#/components/schemas/NotClause"
+          boost: "#/components/schemas/BoostClause"
+          fuse: "#/components/schemas/FuseClause"
     Collation:
       description: "Collation order for string comparisons: `locale` orders by the\
         \ rules of the locale so characters such as `å` sort in expected language\
@@ -456,14 +505,19 @@ components:
       - ascending
       - descending
     DistanceMatcher:
-      description: Matches geopoint values within `radius` meters of the specified
-        latitude and longitude coordinates.
-      type: object
       required:
+      - type
       - lat
       - lon
       - radius
+      description: Matches geopoint values within `radius` meters of the specified
+        latitude and longitude coordinates.
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - distance
         lat:
           type: number
           format: double
@@ -486,16 +540,22 @@ components:
           description: Maximum distance from the origin in meters.
           examples:
           - 5000
-    DistanceSort:
-      description: "Sorts by distance from the specified geographic coordinate, nearest\
-        \ first. Accepts no `order` property. A distance sort on a nested object field\
-        \ returns `index:query:nested:sort_unsupported`."
       type: object
+    DistanceSort:
       required:
+      - type
       - field
       - lat
       - lon
+      description: "Sorts by distance from the specified geographic coordinate, nearest\
+        \ first. Accepts no `order` property. A distance sort on a nested object field\
+        \ returns `index:query:nested:sort_unsupported`."
       properties:
+        type:
+          description: Selects the sort type.
+          type: string
+          enum:
+          - distance
         field:
           type: string
           description: "Target geopoint field, as named in the index definition."
@@ -517,6 +577,7 @@ components:
           description: "Longitude of the origin, in degrees."
           examples:
           - 18.1
+      type: object
     DocumentsRequest:
       description: "Documents to index. A document specifies its own primary key.\
         \ Indexing a document with an existing key replaces the document under that\
@@ -560,11 +621,17 @@ components:
           examples:
           - 2
     DoubleFieldDefinition:
+      required:
+      - type
       description: "Represents a 64-bit floating-point number. A number has nothing\
         \ to analyze, so it is searched by filtering, which supports both exact matches\
         \ and range queries."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - double
         primaryKey:
           type: boolean
           description: "Marks the field as the unique document identifier. Documents\
@@ -600,16 +667,16 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -625,6 +692,7 @@ components:
             \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           examples:
           - EUR
+      type: object
     DoubleValidation:
       type: object
       description: The allowed numeric bounds for a `double` field.
@@ -665,15 +733,21 @@ components:
           description: The longest prefix to index.
           default: 20
     EqualsMatcher:
-      description: Matches field values equal to `value`.
-      type: object
       required:
+      - type
       - value
+      description: Matches field values equal to `value`.
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - equals
         value:
           description: The value that the field value must equal.
           examples:
           - fiction
+      type: object
     ErrorDetail:
       type: object
       description: One problem found in a request.
@@ -843,11 +917,56 @@ components:
             \ tree reflects the search with the filters in it."
           type: object
           $ref: "#/components/schemas/Interpreted"
-    Facet:
+    FacetBucket:
       type: object
-      description: Enables value count aggregations across search results. Carries
-        no configuration options.
-    Facet1:
+      description: One range bucket of a faceted field with its match count.
+      properties:
+        from:
+          description: "Inclusive lower bound of the range bucket, as specified in\
+            \ the request. Omitted for open-ended ranges."
+          examples:
+          - 100
+        to:
+          description: "Exclusive upper bound of the range bucket, as specified in\
+            \ the request. Omitted for open-ended ranges."
+          examples:
+          - 200
+        count:
+          type: integer
+          format: int64
+          description: Number of matching documents with values falling within the
+            range bucket.
+          examples:
+          - 17
+    FacetOrder:
+      description: "Sort order of facet values: `count` (descending by count), `value`\
+        \ (ascending by value), or `declared` (the order the search settings declare\
+        \ for the field's values, followed by every other value by count)."
+      type: string
+      enum:
+      - count
+      - value
+      - declared
+    FacetRange:
+      type: object
+      description: "One range bucket, holding values from `from` (inclusive) up to\
+        \ `to` (exclusive), so adjacent buckets sharing a bound count no value twice.\
+        \ Either bound may be omitted for an open-ended range, but not both (`search:facet:range_empty`),\
+        \ and `to` must be greater than `from` (`index:query:facet_range_empty`).\
+        \ At most 1000 buckets per facet (`search:facet:ranges_too_many`); using `ranges`\
+        \ on an unsupported field type returns `index:invalid-query-type`."
+      properties:
+        from:
+          description: "The lowest value the bucket holds, itself included. Omit for\
+            \ no lower end."
+          examples:
+          - 100
+        to:
+          description: "Where the bucket ends, itself not included. Omit for no upper\
+            \ end."
+          examples:
+          - 200
+    FacetRequest:
       type: object
       description: "Computes match counts for distinct values of a field. The target\
         \ field must have `facet` enabled in its field definition; otherwise, the\
@@ -877,7 +996,7 @@ components:
             \ by count)."
           type: string
           default: count
-          $ref: "#/components/schemas/Order"
+          $ref: "#/components/schemas/FacetOrder"
         ranges:
           type: array
           items:
@@ -905,7 +1024,7 @@ components:
             \ empty array `[]` disables filter exclusion. A blank path returns `search:facet:exclude_filters_invalid`."
       required:
       - field
-    Facet2:
+    FacetResult:
       type: object
       description: "Match counts for one faceted field. Counting per value returns\
         \ `values` with `totalValues`; counting into ranges returns `buckets`, omitting\
@@ -929,46 +1048,10 @@ components:
             $ref: "#/components/schemas/FacetBucket"
           description: "Array of range bucket objects with match counts, in the requested\
             \ order."
-    FacetBucket:
+    FacetUsage:
       type: object
-      description: One range bucket of a faceted field with its match count.
-      properties:
-        from:
-          description: "Inclusive lower bound of the range bucket, as specified in\
-            \ the request. Omitted for open-ended ranges."
-          examples:
-          - 100
-        to:
-          description: "Exclusive upper bound of the range bucket, as specified in\
-            \ the request. Omitted for open-ended ranges."
-          examples:
-          - 200
-        count:
-          type: integer
-          format: int64
-          description: Number of matching documents with values falling within the
-            range bucket.
-          examples:
-          - 17
-    FacetRange:
-      type: object
-      description: "One range bucket, holding values from `from` (inclusive) up to\
-        \ `to` (exclusive), so adjacent buckets sharing a bound count no value twice.\
-        \ Either bound may be omitted for an open-ended range, but not both (`search:facet:range_empty`),\
-        \ and `to` must be greater than `from` (`index:query:facet_range_empty`).\
-        \ At most 1000 buckets per facet (`search:facet:ranges_too_many`); using `ranges`\
-        \ on an unsupported field type returns `index:invalid-query-type`."
-      properties:
-        from:
-          description: "The lowest value the bucket holds, itself included. Omit for\
-            \ no lower end."
-          examples:
-          - 100
-        to:
-          description: "Where the bucket ends, itself not included. Omit for no upper\
-            \ end."
-          examples:
-          - 200
+      description: Enables value count aggregations across search results. Carries
+        no configuration options.
     FacetValue:
       type: object
       description: "One value of a faceted field with its match count. For hierarchical\
@@ -1077,7 +1160,7 @@ components:
             \ by count)."
           type: string
           default: count
-          $ref: "#/components/schemas/Order"
+          $ref: "#/components/schemas/FacetOrder"
     FacetValuesResponse:
       description: "The values of one facet field that start with the prefix, each\
         \ with how many matching documents hold it."
@@ -1118,14 +1201,19 @@ components:
       - enabled
       - disabled
     FieldClause:
+      required:
+      - type
+      - field
+      - match
       description: "Matches documents by the value of a single field. The targeted\
         \ field must be indexed for the requested matcher usage; if it is not configured\
         \ for that usage, the request returns `index:query:usage_not_enabled`."
-      type: object
-      required:
-      - field
-      - match
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - field
         field:
           type: string
           description: "Target field, as named in the index definition."
@@ -1135,13 +1223,38 @@ components:
           description: Criteria evaluated against the field's values.
           type: object
           $ref: "#/components/schemas/Matcher"
+      type: object
     FieldDefinition:
+      type: object
+      oneOf:
+      - $ref: "#/components/schemas/StringFieldDefinition"
+      - $ref: "#/components/schemas/BooleanFieldDefinition"
+      - $ref: "#/components/schemas/VectorFieldDefinition"
+      - $ref: "#/components/schemas/Int32FieldDefinition"
+      - $ref: "#/components/schemas/Int64FieldDefinition"
+      - $ref: "#/components/schemas/FloatFieldDefinition"
+      - $ref: "#/components/schemas/DoubleFieldDefinition"
+      - $ref: "#/components/schemas/TimestampFieldDefinition"
+      - $ref: "#/components/schemas/GeoPointFieldDefinition"
+      - $ref: "#/components/schemas/ObjectFieldDefinition"
       description: "Definition of a field, structured as a tagged union where `type`\
         \ selects the field type and the properties available on it. Field usages\
         \ are opt-in: adding an empty configuration object enables a usage with engine\
         \ defaults, and only explicitly configured properties are stored, preserving\
         \ default values across engine updates. See [Field types](https://exofind.dev/reference/field-types/)."
-      type: object
+      discriminator:
+        propertyName: type
+        mapping:
+          string: "#/components/schemas/StringFieldDefinition"
+          boolean: "#/components/schemas/BooleanFieldDefinition"
+          vector: "#/components/schemas/VectorFieldDefinition"
+          int32: "#/components/schemas/Int32FieldDefinition"
+          int64: "#/components/schemas/Int64FieldDefinition"
+          float: "#/components/schemas/FloatFieldDefinition"
+          double: "#/components/schemas/DoubleFieldDefinition"
+          timestamp: "#/components/schemas/TimestampFieldDefinition"
+          geo_point: "#/components/schemas/GeoPointFieldDefinition"
+          object: "#/components/schemas/ObjectFieldDefinition"
     FieldSettings:
       type: object
       description: How searches read one field. Every capability is off unless its
@@ -1154,7 +1267,7 @@ components:
             \ otherwise the request returns `index:settings:fields:interpret_unsupported`.\
             \ Carries no options. See [Reading the values of a field](https://exofind.dev/reference/search-api/#reading-the-values-of-a-field)."
           type: object
-          $ref: "#/components/schemas/Interpret"
+          $ref: "#/components/schemas/InterpretUsage"
         values:
           type: array
           items:
@@ -1177,14 +1290,19 @@ components:
           type: object
           $ref: "#/components/schemas/Suggest"
     FieldSort:
+      required:
+      - type
+      - field
       description: "Sorts by field value. The target field must have sorting enabled.\
         \ A field inside a `nested` [object](https://exofind.dev/reference/field-types/#object)\
         \ is named by its dotted path, and only the nested values that the query's\
         \ `nested` clauses matched are considered."
-      type: object
-      required:
-      - field
       properties:
+        type:
+          description: Selects the sort type.
+          type: string
+          enum:
+          - field
         field:
           type: string
           description: "Target field, as named in the index definition."
@@ -1194,13 +1312,9 @@ components:
           description: Direction to order in.
           type: string
           default: asc
-          $ref: "#/components/schemas/Order1"
-    Filter:
+          $ref: "#/components/schemas/SortOrder"
       type: object
-      description: Enables filtering search results by exact field value. Filtering
-        is exact across all types; exact-match normalization for string fields is
-        configured under `keyword`.
-    Filter1:
+    Filter:
       type: object
       description: One filter read out of the query text.
       properties:
@@ -1236,12 +1350,23 @@ components:
           description: "The targets read instead where a document holds no value on\
             \ the field, in order, as the `fallback` of the target the request named.\
             \ Absent when there are none."
+    FilterUsage:
+      type: object
+      description: Enables filtering search results by exact field value. Filtering
+        is exact across all types; exact-match normalization for string fields is
+        configured under `keyword`.
     FloatFieldDefinition:
+      required:
+      - type
       description: "Represents a 32-bit floating point number. Numeric fields do not\
         \ support text analysis and are searched by filtering, which supports exact\
         \ matches and range queries."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - float
         primaryKey:
           type: boolean
           description: "Marks the field as the unique document identifier. Documents\
@@ -1277,16 +1402,16 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -1302,6 +1427,7 @@ components:
             \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           examples:
           - kilogram
+      type: object
     FloatValidation:
       type: object
       description: Sets the allowed numeric bounds for a `float` field. Documents
@@ -1316,16 +1442,21 @@ components:
           format: float
           description: Highest value accepted.
     FuseClause:
+      required:
+      - type
+      - rankings
       description: "Matches documents across several rankings, scored and merged by\
         \ rank. Documents are scored by the sum of `weight / (rankConstant + rank)`\
         \ across the rankings that reached them. Because the clause reads only result\
         \ positions, scores from different scales (such as BM25 text relevance and\
         \ vector similarity) combine without normalization. Matches at most `depth`\
         \ results per ranking. See [`fuse`](https://exofind.dev/reference/search-api/#fuse)."
-      type: object
-      required:
-      - rankings
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - fuse
         rankings:
           type: array
           items:
@@ -1356,6 +1487,7 @@ components:
             \ ensuring the vector ranking returns `k` results. Clauses placed beside\
             \ the `fuse` clause filter the merged list after each ranking is cut to\
             \ `depth`."
+      type: object
     FuseRanking:
       type: object
       description: "One ranking of a fusion: search clauses to evaluate and the ranking's\
@@ -1396,12 +1528,18 @@ components:
           examples:
           - 2026-08-16T11:02:07Z
     GeoPointFieldDefinition:
+      required:
+      - type
       description: "Represents a geographic location defined by WGS 84 `lat` and `lon`\
         \ coordinates. Locations are searched by distance rather than exact value:\
         \ `filter` enables the `distance` matcher, and `sort` enables ordering by\
         \ distance from an origin, nearest first."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - geo_point
         role:
           description: "Specifies a field role that applies a preset combination of\
             \ usages. The role expands into explicit field properties before the definition\
@@ -1443,17 +1581,18 @@ components:
         filter:
           description: Enables distance-based filtering with the `distance` matcher.
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: "Enables ordering documents by distance from a target origin,\
             \ nearest first."
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
+      type: object
     Grant:
       type: object
       description: A stored grant combining permissions and index patterns.
@@ -1518,10 +1657,6 @@ components:
           default: /
     Highlight:
       type: object
-      description: Enables highlighted snippet extraction within matching text. Contains
-        no configuration properties.
-    Highlight1:
-      type: object
       description: "Requests highlighted snippets. Fragments are generated only from\
         \ scoring clauses, so non-scoring filter clauses produce no highlights. Highlighted\
         \ text is not HTML-escaped, and text beyond the first 10,000 characters of\
@@ -1563,6 +1698,10 @@ components:
           type: string
           description: Postfix tag inserted after highlighted terms. May be empty.
           default: </em>
+    HighlightUsage:
+      type: object
+      description: Enables highlighted snippet extraction within matching text. Contains
+        no configuration properties.
     Hit:
       type: object
       description: "One result: usually a document that matched, or - for a search\
@@ -1689,16 +1828,22 @@ components:
       type: object
       description: Unicode segmentation. Carries no options.
     InMatcher:
+      required:
+      - type
+      - values
       description: Matches field values equal to any value in `values`. An empty array
         matches no documents.
-      type: object
-      required:
-      - values
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - in
         values:
           type: array
           items: {}
           description: The values that a field value may equal.
+      type: object
     IndexDefinition:
       description: "What an index contains and how it can be searched. A definition\
         \ is the state a caller wants: it is sent in full and anything left out is\
@@ -2033,11 +2178,17 @@ components:
             \ Indexes without an active claim are omitted until a write assigns a\
             \ writer. Claims on indexes where the key lacks permissions are also omitted."
     Int32FieldDefinition:
+      required:
+      - type
       description: "Represents a 32-bit signed integer. Numeric fields do not support\
         \ text analysis and are searched by filtering, which supports exact matches\
         \ and range queries."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - int32
         primaryKey:
           type: boolean
           description: "Marks the field as the unique document identifier. Documents\
@@ -2073,16 +2224,16 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -2098,6 +2249,7 @@ components:
             \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           examples:
           - SEK
+      type: object
     Int32Validation:
       type: object
       description: Sets the allowed numeric bounds for an `int32` field. Documents
@@ -2114,11 +2266,17 @@ components:
           format: int32
           description: Highest value accepted.
     Int64FieldDefinition:
+      required:
+      - type
       description: "Represents a 64-bit signed integer. Numeric fields do not support\
         \ text analysis and are searched by filtering, which supports exact matches\
         \ and range queries."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - int64
         primaryKey:
           type: boolean
           description: "Marks the field as the unique document identifier. Documents\
@@ -2154,16 +2312,16 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
@@ -2179,6 +2337,7 @@ components:
             \ a reindex. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           examples:
           - gigabyte
+      type: object
     Int64Validation:
       type: object
       description: Sets the allowed numeric bounds for an `int64` field. Documents
@@ -2192,11 +2351,7 @@ components:
           type: integer
           format: int64
           description: Highest value accepted.
-    Interpret:
-      type: object
-      description: Reads the values of the field out of the query text. Carries no
-        configuration options.
-    Interpret1:
+    InterpretMode:
       description: "Whether parts of `user` text are read as filters: `auto` reads\
         \ a number typed next to a unit or a comparative word as a filter on the field\
         \ declaring that unit, `off` takes every word as text."
@@ -2250,6 +2405,10 @@ components:
           items:
             $ref: "#/components/schemas/InterpretTarget"
           description: The targets a reading may be a filter on. At least one is required.
+    InterpretUsage:
+      type: object
+      description: Reads the values of the field out of the query text. Carries no
+        configuration options.
     Interpreted:
       type: object
       description: "The filters a search read out of the query text, and the text\
@@ -2261,7 +2420,7 @@ components:
         filters:
           type: array
           items:
-            $ref: "#/components/schemas/Filter1"
+            $ref: "#/components/schemas/Filter"
           description: "The filters that were read, in the order their words were\
             \ typed. Two fields declaring the same unit read the same words as two\
             \ filters, either of which a document may satisfy."
@@ -2393,14 +2552,19 @@ components:
       type: object
       description: Retains the entire input value as a single token. Carries no options.
     KnnClause:
-      description: "Matches the `k` nearest documents by vector distance in a specified\
-        \ field, scored by proximity. Cannot be combined with `hits` (`search:hits:with_knn`)."
-      type: object
       required:
+      - type
       - field
       - vector
       - k
+      description: "Matches the `k` nearest documents by vector distance in a specified\
+        \ field, scored by proximity. Cannot be combined with `hits` (`search:hits:with_knn`)."
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - knn
         field:
           type: string
           description: The vector field to search.
@@ -2423,6 +2587,7 @@ components:
             $ref: "#/components/schemas/Clause"
           description: Clauses that documents must satisfy before nearest-neighbor
             evaluation.
+      type: object
     LengthNormalization:
       description: "Controls the field length penalty in ranking: `none` applies no\
         \ penalty, `moderate` applies standard prose normalization, and `strong` applies\
@@ -2593,10 +2758,33 @@ components:
             Exceeds the number of entries under `values` when the limit is reached.
     Matcher:
       type: object
+      oneOf:
+      - $ref: "#/components/schemas/EqualsMatcher"
+      - $ref: "#/components/schemas/InMatcher"
+      - $ref: "#/components/schemas/AnyMatcher"
+      - $ref: "#/components/schemas/PrefixMatcher"
+      - $ref: "#/components/schemas/UnderMatcher"
+      - $ref: "#/components/schemas/RangeMatcher"
+      - $ref: "#/components/schemas/RangesMatcher"
+      - $ref: "#/components/schemas/TextMatcher"
+      - $ref: "#/components/schemas/DistanceMatcher"
       description: "Criteria evaluated against field values in a field clause, structured\
-        \ as a tagged union where `type` selects the matcher type. If `type` is omitted,\
-        \ the matcher defaults to `equals`. Specifying a matcher unsupported by the\
-        \ target field type returns an error. See [Matchers](https://exofind.dev/reference/search-api/#matchers)."
+        \ as a tagged union where `type` selects the matcher type. The engine also\
+        \ accepts a matcher that omits `type`, which it reads as an `equals` matcher.\
+        \ Specifying a matcher unsupported by the target field type returns an error.\
+        \ See [Matchers](https://exofind.dev/reference/search-api/#matchers)."
+      discriminator:
+        propertyName: type
+        mapping:
+          equals: "#/components/schemas/EqualsMatcher"
+          in: "#/components/schemas/InMatcher"
+          any: "#/components/schemas/AnyMatcher"
+          prefix: "#/components/schemas/PrefixMatcher"
+          under: "#/components/schemas/UnderMatcher"
+          range: "#/components/schemas/RangeMatcher"
+          ranges: "#/components/schemas/RangesMatcher"
+          text: "#/components/schemas/TextMatcher"
+          distance: "#/components/schemas/DistanceMatcher"
     MatcherRange:
       type: object
       description: "One range of a `ranges` matcher, bounded on each side by an inclusive\
@@ -2632,14 +2820,19 @@ components:
       - nested
       - flattened
     NestedClause:
+      required:
+      - type
+      - path
       description: "Matches documents where a single element of a `nested` [object\
         \ field](https://exofind.dev/reference/field-types/#object) satisfies all\
         \ child clauses. A `nested` clause on a flattened object field returns `index:query:nested:flattened`;\
         \ on a non-object field it returns an error. See [`nested`](https://exofind.dev/reference/search-api/#nested)."
-      type: object
-      required:
-      - path
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - nested
         path:
           type: string
           description: Name of the nested object field.
@@ -2660,6 +2853,7 @@ components:
           type: string
           default: max
           $ref: "#/components/schemas/Score"
+      type: object
     Ngram:
       type: object
       description: Generates substring n-grams for tokens within the specified character
@@ -2682,21 +2876,29 @@ components:
           description: Whether case folding is applied.
           default: true
     NotClause:
-      description: Matches documents where no child clause matches.
-      type: object
       required:
+      - type
       - clauses
+      description: Matches documents where no child clause matches.
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - not
         clauses:
           type: array
           items:
             $ref: "#/components/schemas/Clause"
           description: "Child clauses, none of which may match."
+      type: object
     Numbers:
       type: object
       description: Enables typo tolerance for digit-only words. Contains no configuration
         properties.
     ObjectFieldDefinition:
+      required:
+      - type
       description: "Represents structured object values containing nested field definitions,\
         \ referenced by dot notation (such as `variants.price`). An object field cannot\
         \ configure `filter`, `sort`, `facet`, `locales`, or `stored` on itself. Child\
@@ -2705,8 +2907,12 @@ components:
         \ object value. Object fields are returned in search results through the preserved\
         \ document source; a stored child field below single objects also answers\
         \ when the index keeps none. See [`object`](https://exofind.dev/reference/field-types/#object)."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - object
         primaryKey:
           type: boolean
           description: Not supported on an object field; setting it is rejected.
@@ -2731,15 +2937,15 @@ components:
         filter:
           description: Not supported on an object field; setting it is rejected.
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Not supported on an object field; setting it is rejected.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: Not supported on an object field; setting it is rejected.
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         mode:
           description: Storage mode for multiple objects. Required when `multiple`
             is `true` (`index:field:object:mode_required`) and rejected when it is
@@ -2768,32 +2974,24 @@ components:
             \ inside any object (`index:field:object:inner_usage_not_supported`).\
             \ Below a `nested` array `stored` and `highlight` work - highlighted fragments\
             \ come back on value hits. `locales` works everywhere."
-    OrClause:
-      description: Matches documents where at least one child clause matches.
       type: object
+    OrClause:
       required:
+      - type
       - clauses
+      description: Matches documents where at least one child clause matches.
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - or
         clauses:
           type: array
           items:
             $ref: "#/components/schemas/Clause"
           description: "Child clauses, at least one of which must match."
-    Order:
-      description: "Sort order of facet values: `count` (descending by count), `value`\
-        \ (ascending by value), or `declared` (the order the search settings declare\
-        \ for the field's values, followed by every other value by count)."
-      type: string
-      enum:
-      - count
-      - value
-      - declared
-    Order1:
-      description: "Direction values are ordered in: `asc` or `desc`."
-      type: string
-      enum:
-      - asc
-      - desc
+      type: object
     Page:
       type: object
       description: Pagination state and navigation cursors for the result window.
@@ -2821,7 +3019,7 @@ components:
         pages:
           description: "Numbered page metadata, present when requested."
           type: object
-          $ref: "#/components/schemas/Pages1"
+          $ref: "#/components/schemas/PagesResult"
     PageRef:
       type: object
       description: Metadata for a single numbered page.
@@ -2838,7 +3036,7 @@ components:
         current:
           type: boolean
           description: True for the current page; omitted on all other pages.
-    Pages:
+    PagesRequest:
       type: object
       description: "Requests numbered page metadata. Sending an empty object asks\
         \ for the defaults. Can be combined with `offset` or page cursors, but not\
@@ -2849,7 +3047,7 @@ components:
           format: int32
           description: Maximum number of page entries to return.
           default: 9
-    Pages1:
+    PagesResult:
       type: object
       description: "Numbered page metadata, divided into `start`, `middle`, and `end`\
         \ arrays to render `1 2 3 … 7` with ellipses at window boundaries. Page numbers\
@@ -2909,17 +3107,23 @@ components:
       - last_token
       - "off"
     PrefixMatcher:
+      required:
+      - type
+      - value
       description: "Matches string field values starting with `value`, evaluated against\
         \ the entire field value."
-      type: object
-      required:
-      - value
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - prefix
         value:
           type: string
           description: The prefix that a field value must start with.
           examples:
           - EX-
+      type: object
     Preset:
       description: "A predefined analyzer chain. `preserve_terms` tokenizes and normalizes\
         \ text, but keeps each word whole, for names, codes, and SKUs. `full_text`\
@@ -2966,11 +3170,17 @@ components:
           examples:
           - 0.8
     RangeMatcher:
+      required:
+      - type
       description: "Matches values within bounds. Accepts inclusive (`gte`, `lte`)\
         \ and exclusive (`gt`, `lt`) bounds; either side may be left open, and at\
         \ least one bound is required (`search:matcher:range_empty`)."
-      type: object
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - range
         gte:
           description: "Lower bound, the value itself included."
           examples:
@@ -2983,14 +3193,20 @@ components:
           description: "Upper bound, exclusive."
           examples:
           - 20
+      type: object
     RangesMatcher:
+      required:
+      - type
+      - values
       description: "Matches values falling within any of the specified range objects.\
         \ An empty array matches no documents, matching the behavior of an empty `in`\
         \ matcher."
-      type: object
-      required:
-      - values
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - ranges
         values:
           type: array
           items:
@@ -2998,6 +3214,7 @@ components:
           description: "The ranges to evaluate, each requiring at least one bound.\
             \ A bucket returned by a range facet sets `from` as `gte` and `to` as\
             \ `lt`."
+      type: object
     Ranking:
       type: object
       description: "Tie-breaking rules and signal score multipliers. See [Relevance](https://exofind.dev/explanation/relevance/)."
@@ -3012,7 +3229,7 @@ components:
         signals:
           type: array
           items:
-            $ref: "#/components/schemas/Signal"
+            $ref: "#/components/schemas/SignalDefinition"
           description: "Document values multiplied into relevance scores in sequence.\
             \ Evaluated at search time without reindexing, and applied only when results\
             \ are ordered by relevance. A search request that specifies `signals`\
@@ -3367,7 +3584,7 @@ components:
         signals:
           type: array
           items:
-            $ref: "#/components/schemas/Signal1"
+            $ref: "#/components/schemas/Signal"
           description: "Document values taken into the second score, written the same\
             \ way as top-level `signals`. Applied to every result in the window. The\
             \ ranking configured on the index belongs to the first pass and is not\
@@ -3493,14 +3710,21 @@ components:
       - avg
       - total
     ScoreSort:
+      required:
+      - type
       description: Sorts by document relevance score.
-      type: object
       properties:
+        type:
+          description: Selects the sort type.
+          type: string
+          enum:
+          - score
         order:
           description: Direction to order in.
           type: string
           default: desc
-          $ref: "#/components/schemas/Order1"
+          $ref: "#/components/schemas/SortOrder"
+      type: object
     SearchRequest:
       description: All request properties are optional. An empty request matches all
         documents in the index.
@@ -3551,13 +3775,13 @@ components:
         facets:
           type: array
           items:
-            $ref: "#/components/schemas/Facet1"
+            $ref: "#/components/schemas/FacetRequest"
           description: "Fields to aggregate match counts for. See [Facets](https://exofind.dev/reference/search-api/#facets).\
             \ If omitted, no facet counts are calculated."
         sort:
           type: array
           items:
-            $ref: "#/components/schemas/Sort1"
+            $ref: "#/components/schemas/Sort"
           description: "Order in which results are returned. If omitted, results are\
             \ sorted by relevance score in descending order."
         locale:
@@ -3580,7 +3804,7 @@ components:
         highlight:
           description: "Fields to return highlighted snippets for. See [Highlighting](https://exofind.dev/reference/search-api/#highlighting)."
           type: object
-          $ref: "#/components/schemas/Highlight1"
+          $ref: "#/components/schemas/Highlight"
         matched:
           description: "Nested object fields for which to return matched values with\
             \ each hit. See [Matched values](https://exofind.dev/reference/search-api/#matched-values)."
@@ -3616,15 +3840,15 @@ components:
             max\": n }` object to limit the number of page entries (default `9`).\
             \ Implies `\"total\": \"exact\"`."
           type: object
-          $ref: "#/components/schemas/Pages"
+          $ref: "#/components/schemas/PagesRequest"
         total:
           type: string
           default: estimate
-          $ref: "#/components/schemas/Total"
+          $ref: "#/components/schemas/TotalMode"
         signals:
           type: array
           items:
-            $ref: "#/components/schemas/Signal1"
+            $ref: "#/components/schemas/Signal"
           description: "Document ranking signals used to adjust relevance scoring.\
             \ Added to the signals configured on the index unless `signalsMode` says\
             \ otherwise. See [Signals](https://exofind.dev/reference/search-api/#signals).\
@@ -3683,7 +3907,7 @@ components:
           description: "How many hits matched in total, counted in whatever the search\
             \ answers with: a document that expanded into values counts once per value."
           type: object
-          $ref: "#/components/schemas/Total1"
+          $ref: "#/components/schemas/Total"
         documents:
           description: "How many documents matched, which is what the facets are counted\
             \ in. Present only for a search whose `hits` names a `when`, where some\
@@ -3692,11 +3916,11 @@ components:
             \ expands with no matching value under `path` counts here while answering\
             \ with no hit."
           type: object
-          $ref: "#/components/schemas/Total1"
+          $ref: "#/components/schemas/Total"
         facets:
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/Facet2"
+            $ref: "#/components/schemas/FacetResult"
           description: Facet results keyed by facet name. Omitted entirely when the
             request asked for no facets.
         page:
@@ -3858,38 +4082,6 @@ components:
             with the definition alone. Upgrade the node to put the settings in force.
     Signal:
       type: object
-      description: "A single document attribute value multiplied into relevance. The\
-        \ value is read from a sortable field, normalized to a value between `0` and\
-        \ `1`, and applied to the score as `1 + weight * shape`. A document with no\
-        \ value contributes `0`, ensuring a signal boosts a score by at most its configured\
-        \ weight. Each signal must specify exactly one shape matching the field type."
-      required:
-      - field
-      properties:
-        field:
-          type: string
-          description: The field to read the value from. Must be a number or timestamp
-            field with sorting enabled.
-          examples:
-          - purchases
-        saturation:
-          description: "Ranks by how far the value rises above a pivot. For `int32`,\
-            \ `int64`, `float` and `double` fields."
-          type: object
-          $ref: "#/components/schemas/RankingSaturation"
-        decay:
-          description: Ranks by how long ago the value was. For `timestamp` fields.
-          type: object
-          $ref: "#/components/schemas/RankingDecay"
-        weight:
-          type: number
-          format: float
-          description: "How much the signal can lift a document at most, as a share\
-            \ of its score. At `1`, a document at the top of the signal reaches twice\
-            \ the score of one holding no value at all."
-          default: 1
-    Signal1:
-      type: object
       description: "Document ranking signal used to adjust relevance scoring. Signals\
         \ apply only when results are ordered by relevance, so an explicit `sort`\
         \ overrides them. Targeting an unknown field returns `index:query:field_not_found`;\
@@ -3920,6 +4112,38 @@ components:
           description: "How much the signal can lift a document at most, as a share\
             \ of its score."
           default: 1
+    SignalDefinition:
+      type: object
+      description: "A single document attribute value multiplied into relevance. The\
+        \ value is read from a sortable field, normalized to a value between `0` and\
+        \ `1`, and applied to the score as `1 + weight * shape`. A document with no\
+        \ value contributes `0`, ensuring a signal boosts a score by at most its configured\
+        \ weight. Each signal must specify exactly one shape matching the field type."
+      required:
+      - field
+      properties:
+        field:
+          type: string
+          description: The field to read the value from. Must be a number or timestamp
+            field with sorting enabled.
+          examples:
+          - purchases
+        saturation:
+          description: "Ranks by how far the value rises above a pivot. For `int32`,\
+            \ `int64`, `float` and `double` fields."
+          type: object
+          $ref: "#/components/schemas/RankingSaturation"
+        decay:
+          description: Ranks by how long ago the value was. For `timestamp` fields.
+          type: object
+          $ref: "#/components/schemas/RankingDecay"
+        weight:
+          type: number
+          format: float
+          description: "How much the signal can lift a document at most, as a share\
+            \ of its score. At `1`, a document at the top of the signal reaches twice\
+            \ the score of one holding no value at all."
+          default: 1
     SignalsMode:
       description: "How search request signals meet the ranking configured on the\
         \ index: `\"add\"` ranks by both; `\"replace\"` ranks by the request's signals\
@@ -3938,6 +4162,29 @@ components:
       - euclidean
     Sort:
       type: object
+      oneOf:
+      - $ref: "#/components/schemas/FieldSort"
+      - $ref: "#/components/schemas/ScoreSort"
+      - $ref: "#/components/schemas/DistanceSort"
+      description: "One step of the ordering of returned hits, structured as a tagged\
+        \ union where `type` selects the sort type. The engine also accepts a sort\
+        \ that omits `type`, which it reads as a `field` sort. If `order` is omitted,\
+        \ score sorts default to descending and field sorts to ascending. Configured\
+        \ index tie-breaker sorts are appended after the requested sorts. See [Sorts](https://exofind.dev/reference/search-api/#sorts)."
+      discriminator:
+        propertyName: type
+        mapping:
+          field: "#/components/schemas/FieldSort"
+          score: "#/components/schemas/ScoreSort"
+          distance: "#/components/schemas/DistanceSort"
+    SortOrder:
+      description: "Direction values are ordered in: `asc` or `desc`."
+      type: string
+      enum:
+      - asc
+      - desc
+    SortUsage:
+      type: object
       description: Enables sorting search results by field value and configures value
         comparison.
       properties:
@@ -3953,13 +4200,6 @@ components:
           type: string
           default: last
           $ref: "#/components/schemas/Missing"
-    Sort1:
-      type: object
-      description: "One step of the ordering of returned hits, structured as a tagged\
-        \ union where `type` defaults to a `field` sort when omitted. If `order` is\
-        \ omitted, score sorts default to descending and field sorts to ascending.\
-        \ Configured index tie-breaker sorts are appended after the requested sorts.\
-        \ See [Sorts](https://exofind.dev/reference/search-api/#sorts)."
     Source:
       description: "How much of a document an index retains: `full` retains the document\
         \ in full, and `none` retains only the fields marked `stored`."
@@ -4005,11 +4245,17 @@ components:
       - INCOMPLETE
       - MISSING
     StringFieldDefinition:
+      required:
+      - type
       description: "Represents text data. Field usages are opt-in, each enabled by\
         \ including its configuration object. An empty object enables a usage with\
         \ engine defaults. See [`string`](https://exofind.dev/reference/field-types/#string)."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - string
         role:
           description: "Specifies a field role that applies a preset combination of\
             \ usages. The role expands into explicit field properties before the definition\
@@ -4052,16 +4298,16 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         keyword:
           description: Configures exact-match normalization for filtering.
           type: object
@@ -4081,6 +4327,7 @@ components:
             \ matcher filters to a level and all sub-levels."
           type: object
           $ref: "#/components/schemas/Hierarchy"
+      type: object
     Suggest:
       type: object
       description: Suggests the values of the field while a search is typed. Carries
@@ -4142,7 +4389,7 @@ components:
             \ `corrected: true` and `typed: 0`. `off` never suggests them."
           type: string
           default: auto
-          $ref: "#/components/schemas/Typos1"
+          $ref: "#/components/schemas/SuggestTypos"
     SuggestResponse:
       description: "The suggestions for the typed text, the most common first, with\
         \ every suggestion the text starts before the ones found a mistake away."
@@ -4174,6 +4421,14 @@ components:
             \ fractions of one."
           examples:
           - 0.412
+    SuggestTypos:
+      description: "Typo tolerance: `auto` suggests values one mistake away from a\
+        \ text of at least five characters when fewer values than the limit start\
+        \ with it, `off` never does."
+      type: string
+      enum:
+      - auto
+      - "off"
     Suggestion:
       type: object
       description: "One thing to search for: a value of a suggested field, shown by\
@@ -4255,14 +4510,19 @@ components:
           examples:
           - cars
     TextClause:
+      required:
+      - type
+      - text
       description: "Matches query text across one or more fields. Phrase queries operate\
         \ within a single field and match terms exactly as typed, regardless of field\
         \ `typoTolerance`. Fields defined only for `autocomplete` do not support phrase\
         \ matching. See [`text`](https://exofind.dev/reference/search-api/#text)."
-      type: object
-      required:
-      - text
       properties:
+        type:
+          description: Selects the clause type.
+          type: string
+          enum:
+          - text
         text:
           type: string
           description: The query text to match.
@@ -4302,7 +4562,7 @@ components:
             configuration; `off` disables typo tolerance for the clause.
           type: string
           default: auto
-          $ref: "#/components/schemas/Typos"
+          $ref: "#/components/schemas/TyposMode"
         slop:
           type: integer
           format: int32
@@ -4326,7 +4586,7 @@ components:
           $ref: "#/components/schemas/Combine"
         interpret:
           oneOf:
-          - $ref: "#/components/schemas/Interpret1"
+          - $ref: "#/components/schemas/InterpretMode"
           - $ref: "#/components/schemas/InterpretTargets"
           description: "Whether parts of `user` text are read as filters on the fields\
             \ of the index: `auto` reads a number typed next to the unit of a number\
@@ -4337,12 +4597,18 @@ components:
             \ meant. Whatever was read is reported as `interpreted` beside the results.\
             \ See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           default: auto
-    TextMatcher:
-      description: Matches text within a single field using field-level analysis.
       type: object
+    TextMatcher:
       required:
+      - type
       - text
+      description: Matches text within a single field using field-level analysis.
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - text
         text:
           type: string
           description: The query text to match.
@@ -4371,7 +4637,7 @@ components:
             configuration; `off` disables typo tolerance for the matcher.
           type: string
           default: auto
-          $ref: "#/components/schemas/Typos"
+          $ref: "#/components/schemas/TyposMode"
         slop:
           type: integer
           format: int32
@@ -4393,7 +4659,8 @@ components:
             \ as `interpreted` beside the results. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           type: string
           default: auto
-          $ref: "#/components/schemas/Interpret1"
+          $ref: "#/components/schemas/InterpretMode"
+      type: object
     TextUsage:
       type: object
       description: Configuration properties shared by the `matching` and `autocomplete`
@@ -4418,7 +4685,7 @@ components:
             targets `matching` when defined; `highlight` on `autocomplete` takes effect
             only when `matching` is omitted.
           type: object
-          $ref: "#/components/schemas/Highlight"
+          $ref: "#/components/schemas/HighlightUsage"
         typoTolerance:
           description: "Enables typo tolerance for matching search terms, including\
             \ prefixes currently being typed."
@@ -4461,14 +4728,20 @@ components:
           default: descending
           $ref: "#/components/schemas/Direction"
     TimestampFieldDefinition:
+      required:
+      - type
       description: "Represents an instant in time formatted as an ISO 8601 date-time\
         \ string with a timezone offset (for example, `Z` or `+02:00`). Timestamps\
         \ are stored and compared at millisecond precision. Values representing the\
         \ same instant are identical for filtering and sorting; search results return\
         \ the original string format provided during ingestion. Documents containing\
         \ timestamps without timezone offsets are rejected."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - timestamp
         role:
           description: "Specifies a field role that applies a preset combination of\
             \ usages. The role expands into explicit field properties before the definition\
@@ -4511,16 +4784,17 @@ components:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
+      type: object
     TokenFilter:
       type: object
       description: "A transformation of the token stream. Exactly one kind is given,\
@@ -4587,14 +4861,6 @@ components:
           type: object
           $ref: "#/components/schemas/LetterTokenizer"
     Total:
-      description: "Counting mode for the total matching document count: `\"estimate\"\
-        ` counts until exceeding the returned window; `\"exact\"` counts every matching\
-        \ document."
-      type: string
-      enum:
-      - estimate
-      - exact
-    Total1:
       type: object
       description: "Total match count, measured in whatever unit the search returns."
       properties:
@@ -4608,6 +4874,14 @@ components:
           type: boolean
           description: "Whether `count` is exact or a lower bound. Always true when\
             \ `\"total\": \"exact\"` is requested or when calculating facets."
+    TotalMode:
+      description: "Counting mode for the total matching document count: `\"estimate\"\
+        ` counts until exceeding the returned window; `\"exact\"` counts every matching\
+        \ document."
+      type: string
+      enum:
+      - estimate
+      - exact
     TypoExclusions:
       type: object
       description: "Words matched as they are spelled, regardless of the typo tolerance\
@@ -4656,35 +4930,33 @@ components:
             \ words require exact matches regardless of length."
           type: object
           $ref: "#/components/schemas/Numbers"
-    Typos:
+    TyposMode:
       description: "Typo tolerance handling: `auto` follows each field's `typoTolerance`\
         \ configuration, `off` disables it."
       type: string
       enum:
       - auto
       - "off"
-    Typos1:
-      description: "Typo tolerance: `auto` suggests values one mistake away from a\
-        \ text of at least five characters when fewer values than the limit start\
-        \ with it, `off` never does."
-      type: string
-      enum:
-      - auto
-      - "off"
     UnderMatcher:
+      required:
+      - type
+      - path
       description: "Matches values at or below the specified path in a hierarchical\
         \ tree. Requires a field configured with [`hierarchy`](https://exofind.dev/reference/field-types/#string).\
         \ Path segments must match complete levels, so `Men/Sho` matches nothing where\
         \ a `prefix` matcher matches."
-      type: object
-      required:
-      - path
       properties:
+        type:
+          description: Selects the matcher type.
+          type: string
+          enum:
+          - under
         path:
           type: string
           description: Path in the hierarchical tree to match at or below.
           examples:
           - Men/Shoes
+      type: object
     UpdateRequest:
       description: "Field-level changes to documents already in an index. Every change\
         \ to one document is applied and validated as a whole. If validation fails,\
@@ -4725,12 +4997,19 @@ components:
             \ Populated only when the request is sent with `?missing=skip`; a request\
             \ sent without it fails on the first missing key."
     VectorFieldDefinition:
+      required:
+      - type
+      - dimensions
       description: "Represents an array of floating-point numbers searched by similarity\
         \ using the `knn` search clause. Vector fields do not support `filter`, `sort`,\
         \ `facet`, or `locales`. Vectors must be supplied in document payloads. See\
         \ [Search by vector](https://exofind.dev/how-to/search-by-vector/)."
-      type: object
       properties:
+        type:
+          description: Selects the field type.
+          type: string
+          enum:
+          - vector
         primaryKey:
           type: boolean
           description: "Marks the field as the unique document identifier. Documents\
@@ -4763,15 +5042,15 @@ components:
           description: Not supported on a vector field. Vector fields are searched
             by similarity using the `knn` search clause; setting it is rejected.
           type: object
-          $ref: "#/components/schemas/Filter"
+          $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Not supported on a vector field; setting it is rejected.
           type: object
-          $ref: "#/components/schemas/Sort"
+          $ref: "#/components/schemas/SortUsage"
         facet:
           description: Not supported on a vector field; setting it is rejected.
           type: object
-          $ref: "#/components/schemas/Facet"
+          $ref: "#/components/schemas/FacetUsage"
         dimensions:
           type: integer
           format: int32
@@ -4794,8 +5073,7 @@ components:
           type: string
           default: none
           $ref: "#/components/schemas/Quantization"
-      required:
-      - dimensions
+      type: object
     WhitespaceTokenizer:
       type: object
       description: Whitespace segmentation. Carries no options.

@@ -102,10 +102,13 @@ public record SuggestRequest(
 	/**
 	 * Whether a value near the text may be suggested.
 	 */
-	@Schema(description = """
-		Typo tolerance: `auto` suggests values one mistake away from a text \
-		of at least five characters when fewer values than the limit start \
-		with it, `off` never does.""")
+	@Schema(
+		name = "SuggestTypos",
+		description = """
+			Typo tolerance: `auto` suggests values one mistake away from a text \
+			of at least five characters when fewer values than the limit start \
+			with it, `off` never does."""
+	)
 	public enum Typos {
 		@JsonProperty("auto")
 		AUTO,

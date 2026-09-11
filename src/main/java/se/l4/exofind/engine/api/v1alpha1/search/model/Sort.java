@@ -1,6 +1,9 @@
 package se.l4.exofind.engine.api.v1alpha1.search.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.media.DiscriminatorMapping;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -31,17 +34,34 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = Sort.Score.class, name = "score"),
 	@JsonSubTypes.Type(value = Sort.Distance.class, name = "distance")
 })
-@Schema(description = """
-	One step of the ordering of returned hits, structured as a tagged union \
-	where `type` defaults to a `field` sort when omitted. If `order` is \
-	omitted, score sorts default to descending and field sorts to ascending. \
-	Configured index tie-breaker sorts are appended after the requested sorts. \
-	See [Sorts](https://exofind.dev/reference/search-api/#sorts).""")
+@Schema(
+	name = "Sort",
+	description = """
+		One step of the ordering of returned hits, structured as a tagged union \
+		where `type` selects the sort type. The engine also accepts a sort that \
+		omits `type`, which it reads as a `field` sort. If `order` is omitted, \
+		score sorts default to descending and field sorts to ascending. \
+		Configured index tie-breaker sorts are appended after the requested \
+		sorts. See [Sorts](https://exofind.dev/reference/search-api/#sorts).""",
+	oneOf = { Sort.Field.class, Sort.Score.class, Sort.Distance.class },
+	discriminatorProperty = "type",
+	discriminatorMapping = {
+		@DiscriminatorMapping(value = "field", schema = Sort.Field.class),
+		@DiscriminatorMapping(value = "score", schema = Sort.Score.class),
+		@DiscriminatorMapping(value = "distance", schema = Sort.Distance.class)
+	}
+)
 public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
+	/**
+	 * Description of the {@code type} property, which each sort type declares
+	 * with the one value that selects it.
+	 */
+	String TYPE_DESCRIPTION = "Selects the sort type.";
+
 	/**
 	 * Direction values are ordered in.
 	 */
-	@Schema(description = "Direction values are ordered in: `asc` or `desc`.")
+	@Schema(name = "SortOrder", description = "Direction values are ordered in: `asc` or `desc`.")
 	enum Order {
 		@JsonProperty("asc")
 		ASC,
@@ -61,7 +81,14 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 			A field inside a `nested` \
 			[object](https://exofind.dev/reference/field-types/#object) \
 			is named by its dotted path, and only the nested values that the \
-			query's `nested` clauses matched are considered."""
+			query's `nested` clauses matched are considered.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "field",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Field(
 		/**
@@ -83,7 +110,17 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 	 * Sorts by document relevance score.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(name = "ScoreSort", description = "Sorts by document relevance score.")
+	@Schema(
+		name = "ScoreSort",
+		description = "Sorts by document relevance score.",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "score",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
+	)
 	record Score(
 		@Schema(description = "Direction to order in.", defaultValue = "desc")
 		Order order
@@ -101,7 +138,14 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 			Sorts by distance from the specified geographic coordinate, \
 			nearest first. Accepts no `order` property. A distance sort on a \
 			nested object field returns \
-			`index:query:nested:sort_unsupported`."""
+			`index:query:nested:sort_unsupported`.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "distance",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Distance(
 		/**

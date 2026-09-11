@@ -1,6 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -21,11 +23,20 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents a geographic location defined by WGS 84 `lat` and `lon` \
-	coordinates. Locations are searched by distance rather than exact value: \
-	`filter` enables the `distance` matcher, and `sort` enables ordering by \
-	distance from an origin, nearest first.""")
+@Schema(
+	description = """
+		Represents a geographic location defined by WGS 84 `lat` and `lon` \
+		coordinates. Locations are searched by distance rather than exact \
+		value: `filter` enables the `distance` matcher, and `sort` enables \
+		ordering by distance from an origin, nearest first.""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "geo_point",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record GeoPointFieldDefinition(
 	/**
 	 * What the field is for, expanded into the usages that serve it before the

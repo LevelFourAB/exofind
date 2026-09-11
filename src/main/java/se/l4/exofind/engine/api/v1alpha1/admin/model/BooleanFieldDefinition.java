@@ -1,6 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -18,9 +20,18 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents boolean values (`true` or `false`). A boolean has nothing to \
-	analyze, so filtering is the only way to search it.""")
+@Schema(
+	description = """
+		Represents boolean values (`true` or `false`). A boolean has nothing to \
+		analyze, so filtering is the only way to search it.""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "boolean",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record BooleanFieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,

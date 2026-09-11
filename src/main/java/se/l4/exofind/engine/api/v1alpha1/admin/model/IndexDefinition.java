@@ -420,13 +420,16 @@ public record IndexDefinition(
 		 * for timestamp fields.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		@Schema(description = """
-			A single document attribute value multiplied into relevance. The \
-			value is read from a sortable field, normalized to a value between \
-			`0` and `1`, and applied to the score as `1 + weight * shape`. A \
-			document with no value contributes `0`, ensuring a signal boosts a \
-			score by at most its configured weight. Each signal must specify \
-			exactly one shape matching the field type.""")
+		@Schema(
+			name = "SignalDefinition",
+			description = """
+				A single document attribute value multiplied into relevance. \
+				The value is read from a sortable field, normalized to a value \
+				between `0` and `1`, and applied to the score as `1 + weight * \
+				shape`. A document with no value contributes `0`, ensuring a \
+				signal boosts a score by at most its configured weight. Each \
+				signal must specify exactly one shape matching the field type."""
+		)
 		public record Signal(
 			/**
 			 * The field to read the value from. Must be a number or timestamp

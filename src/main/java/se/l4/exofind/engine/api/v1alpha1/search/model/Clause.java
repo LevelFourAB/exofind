@@ -4,7 +4,10 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.media.DiscriminatorMapping;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -49,14 +52,40 @@ import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 	@JsonSubTypes.Type(value = Clause.Boost.class, name = "boost"),
 	@JsonSubTypes.Type(value = Clause.Fuse.class, name = "fuse")
 })
-@Schema(description = """
-	A search condition, structured as a tagged union where `type` selects the \
-	clause type. If `type` is omitted, the clause defaults to a `field` clause \
-	containing `field` and `match`. See \
-	[Clauses](https://exofind.dev/reference/search-api/#clauses).""")
+@Schema(
+	name = "Clause",
+	description = """
+		A search condition, structured as a tagged union where `type` selects \
+		the clause type. The engine also accepts a clause that omits `type`, \
+		which it reads as a `field` clause containing `field` and `match`. See \
+		[Clauses](https://exofind.dev/reference/search-api/#clauses).""",
+	oneOf = {
+		Clause.Field.class, Clause.Text.class, Clause.Knn.class, Clause.Nested.class,
+		Clause.And.class, Clause.Or.class, Clause.Not.class, Clause.Boost.class,
+		Clause.Fuse.class
+	},
+	discriminatorProperty = "type",
+	discriminatorMapping = {
+		@DiscriminatorMapping(value = "field", schema = Clause.Field.class),
+		@DiscriminatorMapping(value = "text", schema = Clause.Text.class),
+		@DiscriminatorMapping(value = "knn", schema = Clause.Knn.class),
+		@DiscriminatorMapping(value = "nested", schema = Clause.Nested.class),
+		@DiscriminatorMapping(value = "and", schema = Clause.And.class),
+		@DiscriminatorMapping(value = "or", schema = Clause.Or.class),
+		@DiscriminatorMapping(value = "not", schema = Clause.Not.class),
+		@DiscriminatorMapping(value = "boost", schema = Clause.Boost.class),
+		@DiscriminatorMapping(value = "fuse", schema = Clause.Fuse.class)
+	}
+)
 public sealed interface Clause
 	permits Clause.Field, Clause.Text, Clause.Knn, Clause.Fuse, Clause.Nested, Clause.And,
 		Clause.Or, Clause.Not, Clause.Boost {
+	/**
+	 * Description of the {@code type} property, which each clause type declares
+	 * with the one value that selects it.
+	 */
+	String TYPE_DESCRIPTION = "Selects the clause type.";
+
 	/**
 	 * Matches documents by the value of a single field.
 	 */
@@ -67,7 +96,14 @@ public sealed interface Clause
 			Matches documents by the value of a single field. The targeted \
 			field must be indexed for the requested matcher usage; if it is \
 			not configured for that usage, the request returns \
-			`index:query:usage_not_enabled`."""
+			`index:query:usage_not_enabled`.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "field",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Field(
 		/**
@@ -101,7 +137,14 @@ public sealed interface Clause
 			operate within a single field and match terms exactly as typed, \
 			regardless of field `typoTolerance`. Fields defined only for \
 			`autocomplete` do not support phrase matching. See \
-			[`text`](https://exofind.dev/reference/search-api/#text)."""
+			[`text`](https://exofind.dev/reference/search-api/#text).""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "text",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Text(
 		/**
@@ -422,7 +465,14 @@ public sealed interface Clause
 		description = """
 			Matches the `k` nearest documents by vector distance in a \
 			specified field, scored by proximity. Cannot be combined with \
-			`hits` (`search:hits:with_knn`)."""
+			`hits` (`search:hits:with_knn`).""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "knn",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Knn(
 		/**
@@ -484,7 +534,14 @@ public sealed interface Clause
 			satisfies all child clauses. A `nested` clause on a flattened \
 			object field returns `index:query:nested:flattened`; on a \
 			non-object field it returns an error. See \
-			[`nested`](https://exofind.dev/reference/search-api/#nested)."""
+			[`nested`](https://exofind.dev/reference/search-api/#nested).""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "nested",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Nested(
 		/**
@@ -563,7 +620,17 @@ public sealed interface Clause
 	 * Matches documents where all child clauses match.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(name = "AndClause", description = "Matches documents where all child clauses match.")
+	@Schema(
+		name = "AndClause",
+		description = "Matches documents where all child clauses match.",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "and",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
+	)
 	record And(
 		@Schema(description = "Child clauses, all of which must match.", required = true)
 		List<Clause> clauses
@@ -576,7 +643,14 @@ public sealed interface Clause
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "OrClause",
-		description = "Matches documents where at least one child clause matches."
+		description = "Matches documents where at least one child clause matches.",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "or",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Or(
 		@Schema(
@@ -591,7 +665,17 @@ public sealed interface Clause
 	 * Matches documents where no child clause matches.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(name = "NotClause", description = "Matches documents where no child clause matches.")
+	@Schema(
+		name = "NotClause",
+		description = "Matches documents where no child clause matches.",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "not",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
+	)
 	record Not(
 		@Schema(description = "Child clauses, none of which may match.", required = true)
 		List<Clause> clauses
@@ -607,7 +691,14 @@ public sealed interface Clause
 		name = "BoostClause",
 		description = """
 			Increases the relevance score of documents that satisfy child \
-			clauses without excluding non-matching documents."""
+			clauses without excluding non-matching documents.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "boost",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Boost(
 		/**
@@ -646,7 +737,14 @@ public sealed interface Clause
 			reads only result positions, scores from different scales (such as \
 			BM25 text relevance and vector similarity) combine without \
 			normalization. Matches at most `depth` results per ranking. See \
-			[`fuse`](https://exofind.dev/reference/search-api/#fuse)."""
+			[`fuse`](https://exofind.dev/reference/search-api/#fuse).""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "fuse",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Fuse(
 		/**

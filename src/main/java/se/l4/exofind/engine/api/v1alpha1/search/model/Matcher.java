@@ -2,7 +2,10 @@ package se.l4.exofind.engine.api.v1alpha1.search.model;
 
 import java.util.List;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.media.DiscriminatorMapping;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -42,22 +45,56 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = Matcher.Text.class, name = "text"),
 	@JsonSubTypes.Type(value = Matcher.Distance.class, name = "distance")
 })
-@Schema(description = """
-	Criteria evaluated against field values in a field clause, structured as a \
-	tagged union where `type` selects the matcher type. If `type` is omitted, \
-	the matcher defaults to `equals`. Specifying a matcher unsupported by the \
-	target field type returns an error. See \
-	[Matchers](https://exofind.dev/reference/search-api/#matchers).""")
+@Schema(
+	name = "Matcher",
+	description = """
+		Criteria evaluated against field values in a field clause, structured \
+		as a tagged union where `type` selects the matcher type. The engine \
+		also accepts a matcher that omits `type`, which it reads as an \
+		`equals` matcher. Specifying a matcher unsupported by the target field \
+		type returns an error. See \
+		[Matchers](https://exofind.dev/reference/search-api/#matchers).""",
+	oneOf = {
+		Matcher.Equals.class, Matcher.In.class, Matcher.Any.class, Matcher.Prefix.class,
+		Matcher.Under.class, Matcher.Range.class, Matcher.Ranges.class, Matcher.Text.class,
+		Matcher.Distance.class
+	},
+	discriminatorProperty = "type",
+	discriminatorMapping = {
+		@DiscriminatorMapping(value = "equals", schema = Matcher.Equals.class),
+		@DiscriminatorMapping(value = "in", schema = Matcher.In.class),
+		@DiscriminatorMapping(value = "any", schema = Matcher.Any.class),
+		@DiscriminatorMapping(value = "prefix", schema = Matcher.Prefix.class),
+		@DiscriminatorMapping(value = "under", schema = Matcher.Under.class),
+		@DiscriminatorMapping(value = "range", schema = Matcher.Range.class),
+		@DiscriminatorMapping(value = "ranges", schema = Matcher.Ranges.class),
+		@DiscriminatorMapping(value = "text", schema = Matcher.Text.class),
+		@DiscriminatorMapping(value = "distance", schema = Matcher.Distance.class)
+	}
+)
 public sealed interface Matcher
 	permits Matcher.Equals, Matcher.In, Matcher.Any, Matcher.Prefix, Matcher.Under,
 		Matcher.Range, Matcher.Ranges, Matcher.Text, Matcher.Distance {
+	/**
+	 * Description of the {@code type} property, which each matcher type
+	 * declares with the one value that selects it.
+	 */
+	String TYPE_DESCRIPTION = "Selects the matcher type.";
+
 	/**
 	 * Matches field values equal to the specified value.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	@Schema(
 		name = "EqualsMatcher",
-		description = "Matches field values equal to `value`."
+		description = "Matches field values equal to `value`.",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "equals",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Equals(
 		@Schema(
@@ -78,7 +115,14 @@ public sealed interface Matcher
 		name = "InMatcher",
 		description = """
 			Matches field values equal to any value in `values`. An empty \
-			array matches no documents."""
+			array matches no documents.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "in",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record In(
 		@Schema(description = "The values that a field value may equal.", required = true)
@@ -91,7 +135,14 @@ public sealed interface Matcher
 	 */
 	@Schema(
 		name = "AnyMatcher",
-		description = "Matches any document that contains a value for the field."
+		description = "Matches any document that contains a value for the field.",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "any",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Any() implements Matcher {
 	}
@@ -105,7 +156,14 @@ public sealed interface Matcher
 		name = "PrefixMatcher",
 		description = """
 			Matches string field values starting with `value`, evaluated \
-			against the entire field value."""
+			against the entire field value.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "prefix",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Prefix(
 		@Schema(
@@ -131,7 +189,14 @@ public sealed interface Matcher
 			tree. Requires a field configured with \
 			[`hierarchy`](https://exofind.dev/reference/field-types/#string). \
 			Path segments must match complete levels, so `Men/Sho` matches \
-			nothing where a `prefix` matcher matches."""
+			nothing where a `prefix` matcher matches.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "under",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Under(
 		@Schema(
@@ -153,7 +218,14 @@ public sealed interface Matcher
 		description = """
 			Matches values within bounds. Accepts inclusive (`gte`, `lte`) and \
 			exclusive (`gt`, `lt`) bounds; either side may be left open, and \
-			at least one bound is required (`search:matcher:range_empty`)."""
+			at least one bound is required (`search:matcher:range_empty`).""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "range",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Range(
 		/**
@@ -192,7 +264,14 @@ public sealed interface Matcher
 		description = """
 			Matches values falling within any of the specified range objects. \
 			An empty array matches no documents, matching the behavior of an \
-			empty `in` matcher."""
+			empty `in` matcher.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "ranges",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Ranges(
 		/**
@@ -257,7 +336,14 @@ public sealed interface Matcher
 		name = "DistanceMatcher",
 		description = """
 			Matches geopoint values within `radius` meters of the specified \
-			latitude and longitude coordinates."""
+			latitude and longitude coordinates.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "distance",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Distance(
 		/**
@@ -305,7 +391,14 @@ public sealed interface Matcher
 	@Schema(
 		name = "TextMatcher",
 		description = """
-			Matches text within a single field using field-level analysis."""
+			Matches text within a single field using field-level analysis.""",
+		properties = @SchemaProperty(
+			name = "type",
+			type = SchemaType.STRING,
+			enumeration = "text",
+			description = TYPE_DESCRIPTION
+		),
+		requiredProperties = "type"
 	)
 	record Text(
 		/**
@@ -416,10 +509,14 @@ public sealed interface Matcher
 		 * Whether parts of the text are read as filters on the fields of the
 		 * index. Only applies to {@code user} mode.
 		 */
-		@Schema(description = """
-			Whether parts of `user` text are read as filters: `auto` reads a \
-			number typed next to a unit or a comparative word as a filter on \
-			the field declaring that unit, `off` takes every word as text.""")
+		@Schema(
+			name = "InterpretMode",
+			description = """
+				Whether parts of `user` text are read as filters: `auto` reads \
+				a number typed next to a unit or a comparative word as a \
+				filter on the field declaring that unit, `off` takes every \
+				word as text."""
+		)
 		public enum Interpret {
 			@JsonProperty("auto")
 			AUTO,
@@ -482,9 +579,12 @@ public sealed interface Matcher
 		/**
 		 * Typo tolerance handling for query terms.
 		 */
-		@Schema(description = """
-			Typo tolerance handling: `auto` follows each field's \
-			`typoTolerance` configuration, `off` disables it.""")
+		@Schema(
+			name = "TyposMode",
+			description = """
+				Typo tolerance handling: `auto` follows each field's \
+				`typoTolerance` configuration, `off` disables it."""
+		)
 		public enum Typos {
 			@JsonProperty("auto")
 			AUTO,

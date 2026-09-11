@@ -312,9 +312,12 @@ public record SearchSettingsDefinition(
 	 * Reads the values of a field out of the query text. Carries no options.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Reads the values of the field out of the query text. Carries no \
-		configuration options.""")
+	@Schema(
+		name = "InterpretUsage",
+		description = """
+			Reads the values of the field out of the query text. Carries no \
+			configuration options."""
+	)
 	public record Interpret() {
 	}
 }

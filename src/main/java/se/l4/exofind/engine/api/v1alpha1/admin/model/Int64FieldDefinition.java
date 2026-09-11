@@ -1,6 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -19,10 +21,19 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents a 64-bit signed integer. Numeric fields do not support text \
-	analysis and are searched by filtering, which supports exact matches and \
-	range queries.""")
+@Schema(
+	description = """
+		Represents a 64-bit signed integer. Numeric fields do not support text \
+		analysis and are searched by filtering, which supports exact matches \
+		and range queries.""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "int64",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record Int64FieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,

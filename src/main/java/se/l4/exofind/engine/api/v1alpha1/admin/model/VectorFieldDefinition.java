@@ -1,6 +1,8 @@
 package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -23,11 +25,21 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * <p>Vector fields do not support {@code filter}, sorting, or faceting.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents an array of floating-point numbers searched by similarity using \
-	the `knn` search clause. Vector fields do not support `filter`, `sort`, \
-	`facet`, or `locales`. Vectors must be supplied in document payloads. See \
-	[Search by vector](https://exofind.dev/how-to/search-by-vector/).""")
+@Schema(
+	description = """
+		Represents an array of floating-point numbers searched by similarity \
+		using the `knn` search clause. Vector fields do not support `filter`, \
+		`sort`, `facet`, or `locales`. Vectors must be supplied in document \
+		payloads. See \
+		[Search by vector](https://exofind.dev/how-to/search-by-vector/).""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "vector",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record VectorFieldDefinition(
 	@Schema(description = FieldDefinition.PRIMARY_KEY_DESCRIPTION, defaultValue = "false")
 	Boolean primaryKey,

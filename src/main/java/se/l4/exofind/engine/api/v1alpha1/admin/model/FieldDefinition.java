@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
 import java.util.List;
 
+import org.eclipse.microprofile.openapi.annotations.media.DiscriminatorMapping;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -53,13 +54,36 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 	@JsonSubTypes.Type(value = GeoPointFieldDefinition.class, name = "geo_point"),
 	@JsonSubTypes.Type(value = ObjectFieldDefinition.class, name = "object")
 })
-@Schema(description = """
-	Definition of a field, structured as a tagged union where `type` selects \
-	the field type and the properties available on it. Field usages are \
-	opt-in: adding an empty configuration object enables a usage with engine \
-	defaults, and only explicitly configured properties are stored, preserving \
-	default values across engine updates. See [Field \
-	types](https://exofind.dev/reference/field-types/).""")
+@Schema(
+	name = "FieldDefinition",
+	description = """
+		Definition of a field, structured as a tagged union where `type` \
+		selects the field type and the properties available on it. Field usages \
+		are opt-in: adding an empty configuration object enables a usage with \
+		engine defaults, and only explicitly configured properties are stored, \
+		preserving default values across engine updates. See [Field \
+		types](https://exofind.dev/reference/field-types/).""",
+	oneOf = {
+		StringFieldDefinition.class, BooleanFieldDefinition.class,
+		VectorFieldDefinition.class, Int32FieldDefinition.class,
+		Int64FieldDefinition.class, FloatFieldDefinition.class,
+		DoubleFieldDefinition.class, TimestampFieldDefinition.class,
+		GeoPointFieldDefinition.class, ObjectFieldDefinition.class
+	},
+	discriminatorProperty = "type",
+	discriminatorMapping = {
+		@DiscriminatorMapping(value = "string", schema = StringFieldDefinition.class),
+		@DiscriminatorMapping(value = "boolean", schema = BooleanFieldDefinition.class),
+		@DiscriminatorMapping(value = "vector", schema = VectorFieldDefinition.class),
+		@DiscriminatorMapping(value = "int32", schema = Int32FieldDefinition.class),
+		@DiscriminatorMapping(value = "int64", schema = Int64FieldDefinition.class),
+		@DiscriminatorMapping(value = "float", schema = FloatFieldDefinition.class),
+		@DiscriminatorMapping(value = "double", schema = DoubleFieldDefinition.class),
+		@DiscriminatorMapping(value = "timestamp", schema = TimestampFieldDefinition.class),
+		@DiscriminatorMapping(value = "geo_point", schema = GeoPointFieldDefinition.class),
+		@DiscriminatorMapping(value = "object", schema = ObjectFieldDefinition.class)
+	}
+)
 public sealed interface FieldDefinition
 	permits StringFieldDefinition, BooleanFieldDefinition, VectorFieldDefinition,
 		Int32FieldDefinition, Int64FieldDefinition, FloatFieldDefinition,
@@ -69,6 +93,12 @@ public sealed interface FieldDefinition
 	 * Descriptions of common field properties shared across all field type
 	 * definitions.
 	 */
+	/**
+	 * Description of the {@code type} property, which each field type declares
+	 * with the one value that selects it.
+	 */
+	String TYPE_DESCRIPTION = "Selects the field type.";
+
 	String ROLE_DESCRIPTION = """
 		Specifies a field role that applies a preset combination of usages. \
 		The role expands into explicit field properties before the definition \
@@ -372,10 +402,13 @@ public sealed interface FieldDefinition
 	 * configured under {@code keyword}.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Enables filtering search results by exact field value. Filtering is \
-		exact across all types; exact-match normalization for string fields is \
-		configured under `keyword`.""")
+	@Schema(
+		name = "FilterUsage",
+		description = """
+			Enables filtering search results by exact field value. Filtering is \
+			exact across all types; exact-match normalization for string fields \
+			is configured under `keyword`."""
+	)
 	record Filter() {
 	}
 
@@ -383,9 +416,12 @@ public sealed interface FieldDefinition
 	 * Enables sorting search results by field value.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Enables sorting search results by field value and configures value \
-		comparison.""")
+	@Schema(
+		name = "SortUsage",
+		description = """
+			Enables sorting search results by field value and configures value \
+			comparison."""
+	)
 	record Sort(
 		/**
 		 * Collation order used when comparing values. Applies only to string
@@ -448,9 +484,12 @@ public sealed interface FieldDefinition
 	 * Enables value count aggregations across search results.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Enables value count aggregations across search results. Carries no \
-		configuration options.""")
+	@Schema(
+		name = "FacetUsage",
+		description = """
+			Enables value count aggregations across search results. Carries no \
+			configuration options."""
+	)
 	record Facet() {
 	}
 }

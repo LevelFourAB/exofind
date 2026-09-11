@@ -325,11 +325,14 @@ public record SearchResponse(
 	 * representation.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Match counts for one faceted field. Counting per value returns \
-		`values` with `totalValues`; counting into ranges returns `buckets`, \
-		omitting the other representation. Facet counts exclude filter entries \
-		on the facet's own field by default.""")
+	@Schema(
+		name = "FacetResult",
+		description = """
+			Match counts for one faceted field. Counting per value returns \
+			`values` with `totalValues`; counting into ranges returns \
+			`buckets`, omitting the other representation. Facet counts exclude \
+			filter entries on the facet's own field by default."""
+	)
 	public record Facet(
 		/**
 		 * Facet value objects with counts, in the requested sort order and
@@ -757,11 +760,14 @@ public record SearchResponse(
 	 * it.
 	 */
 	@JsonInclude(JsonInclude.Include.NON_NULL)
-	@Schema(description = """
-		Numbered page metadata, divided into `start`, `middle`, and `end` \
-		arrays to render `1 2 3 … 7` with ellipses at window boundaries. Page \
-		numbers are 1-based. Cursors inside encode count offsets and remain \
-		subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.""")
+	@Schema(
+		name = "PagesResult",
+		description = """
+			Numbered page metadata, divided into `start`, `middle`, and `end` \
+			arrays to render `1 2 3 … 7` with ellipses at window boundaries. \
+			Page numbers are 1-based. Cursors inside encode count offsets and \
+			remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`."""
+	)
 	public record Pages(
 		/**
 		 * Total number of pages.

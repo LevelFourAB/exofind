@@ -2,7 +2,9 @@ package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
 import java.util.Map;
 
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.media.SchemaProperty;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -61,16 +63,26 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * value's own sub-document.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@Schema(description = """
-	Represents structured object values containing nested field definitions, \
-	referenced by dot notation (such as `variants.price`). An object field \
-	cannot configure `filter`, `sort`, `facet`, `locales`, or `stored` on \
-	itself. Child fields can be objects in turn, though a `nested` array \
-	cannot contain another `nested` array. An array of objects can specify a \
-	`key` to identify each object value. Object fields are returned in search \
-	results through the preserved document source; a stored child field below \
-	single objects also answers when the index keeps none. See \
-	[`object`](https://exofind.dev/reference/field-types/#object).""")
+@Schema(
+	description = """
+		Represents structured object values containing nested field \
+		definitions, referenced by dot notation (such as `variants.price`). An \
+		object field cannot configure `filter`, `sort`, `facet`, `locales`, or \
+		`stored` on itself. Child fields can be objects in turn, though a \
+		`nested` array cannot contain another `nested` array. An array of \
+		objects can specify a `key` to identify each object value. Object \
+		fields are returned in search results through the preserved document \
+		source; a stored child field below single objects also answers when the \
+		index keeps none. See \
+		[`object`](https://exofind.dev/reference/field-types/#object).""",
+	properties = @SchemaProperty(
+		name = "type",
+		type = SchemaType.STRING,
+		enumeration = "object",
+		description = FieldDefinition.TYPE_DESCRIPTION
+	),
+	requiredProperties = "type"
+)
 public record ObjectFieldDefinition(
 	@Schema(description = "Not supported on an object field; setting it is rejected.")
 	Boolean primaryKey,
