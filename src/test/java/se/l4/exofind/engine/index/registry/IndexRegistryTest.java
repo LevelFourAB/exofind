@@ -77,6 +77,45 @@ public class IndexRegistryTest {
 	}
 
 	/**
+	 * A read answers with the registry as it stood when the read started. One
+	 * that finishes after this node created an index must be dropped rather
+	 * than put in place, as it would take the node back to before the create -
+	 * and every part working from the registry would be told that the new
+	 * generation is one nothing registered.
+	 */
+	@Test
+	public void testReadFinishingAfterACreateKeepsTheCreate() {
+		registry.create("books", "1");
+
+		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+		other.create("movies", "1");
+
+		// Answered from before the create, which runs while the read is in flight
+		storage.afterNextRead = () -> registry.create("films", "1");
+
+		assertThat(registry.refresh(), is(true));
+		assertThat(registry.names(), containsInAnyOrder("books", "movies", "films"));
+	}
+
+	/**
+	 * A dropped read still counts as having read the registry, and leaves the
+	 * copy the node holds standing.
+	 */
+	@Test
+	public void testReadFinishingAfterAChangeIsStillARead() {
+		registry.create("books", "1");
+
+		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+		other.create("movies", "1");
+
+		storage.afterNextRead = () -> registry.promote("books", "1");
+
+		assertThat(registry.refresh(), is(true));
+		assertThat(registry.hasBeenRead(), is(true));
+		assertThat(registry.names(), containsInAnyOrder("books", "movies"));
+	}
+
+	/**
 	 * A change that keeps losing the race is given up on rather than retried
 	 * forever, and leaves the registry as it was.
 	 */

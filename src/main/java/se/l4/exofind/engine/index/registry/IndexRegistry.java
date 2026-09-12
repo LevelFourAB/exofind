@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -85,7 +86,13 @@ public class IndexRegistry {
 	 */
 	private final Object forcedReadLock = new Object();
 
-	private volatile Snapshot snapshot = Snapshot.empty();
+	/**
+	 * This node's copy. Replaced through {@link #install(Snapshot, Snapshot)},
+	 * never assigned.
+	 */
+	private final AtomicReference<Snapshot> snapshot =
+		new AtomicReference<>(Snapshot.empty());
+
 	private long lastForcedReadNanos;
 	private boolean forcedReadEver;
 
@@ -146,7 +153,7 @@ public class IndexRegistry {
 	 *   was
 	 */
 	public boolean refresh() {
-		var current = snapshot;
+		var current = snapshot.get();
 
 		try {
 			switch(storage.read(current.version())) {
@@ -173,10 +180,13 @@ public class IndexRegistry {
 						return false;
 					}
 				}
-				case RegistryStorage.Read.Loaded loaded -> snapshot = Snapshot.of(
-					RegistryCodec.fromStored(loaded.indexes()),
-					loaded.indexes(),
-					loaded.version()
+				case RegistryStorage.Read.Loaded loaded -> install(
+					current,
+					Snapshot.of(
+						RegistryCodec.fromStored(loaded.indexes()),
+						loaded.indexes(),
+						loaded.version()
+					)
 				);
 				case RegistryStorage.Read.Corrupt corrupt -> {
 					/*
@@ -228,14 +238,15 @@ public class IndexRegistry {
 	 * @return
 	 */
 	public String version() {
-		return snapshot.version();
+		return snapshot.get().version();
 	}
 
 	/**
 	 * The names of every index the deployment holds, as of this node's copy.
 	 */
 	public ImmutableSet<String> names() {
-		return snapshot.indexes().collect(RegisteredIndex::name, Sets.mutable.empty())
+		return snapshot.get().indexes()
+			.collect(RegisteredIndex::name, Sets.mutable.empty())
 			.toImmutable();
 	}
 
@@ -243,7 +254,7 @@ public class IndexRegistry {
 	 * Every index the deployment holds, ordered by name, as of this node's copy.
 	 */
 	public ListIterable<RegisteredIndex> list() {
-		return snapshot.indexes();
+		return snapshot.get().indexes();
 	}
 
 	/**
@@ -255,7 +266,7 @@ public class IndexRegistry {
 	 *   empty when the deployment holds no index by that name
 	 */
 	public Optional<RegisteredIndex> get(String index) {
-		var found = snapshot.byName().get(index);
+		var found = snapshot.get().byName().get(index);
 		if(found != null) {
 			return Optional.of(found);
 		}
@@ -265,7 +276,7 @@ public class IndexRegistry {
 		}
 
 		refresh();
-		return Optional.ofNullable(snapshot.byName().get(index));
+		return Optional.ofNullable(snapshot.get().byName().get(index));
 	}
 
 	private boolean forcedReadAllowed() {
@@ -582,7 +593,7 @@ public class IndexRegistry {
 				return false;
 			}
 
-			var current = snapshot;
+			var current = snapshot.get();
 			var merged = mergeHints(current.indexes(), hints);
 			if(merged == null) {
 				// Nothing the registry does not already say
@@ -603,10 +614,13 @@ public class IndexRegistry {
 			}
 
 			if(version != null) {
-				snapshot = Snapshot.of(
-					merged.toSortedListBy(RegisteredIndex::name).toImmutable(),
-					store,
-					version
+				install(
+					current,
+					Snapshot.of(
+						merged.toSortedListBy(RegisteredIndex::name).toImmutable(),
+						store,
+						version
+					)
 				);
 
 				return true;
@@ -719,6 +733,26 @@ public class IndexRegistry {
 	}
 
 	/**
+	 * Put a copy in place, unless another thread moved the copy on while this
+	 * one was being made.
+	 *
+	 * <p>Every copy is built on the one the read or the write started from: a
+	 * read asks what changed since that version, and a write is conditional on
+	 * it. A copy put in place over one another thread installed in the meantime
+	 * would take the node back to before that change, and every part that works
+	 * from the registry would be told that an index created a moment ago is
+	 * gone. Dropping it instead leaves the node one read behind at worst, which
+	 * the next read repairs.
+	 *
+	 * @param base
+	 *   the copy the new one was built from
+	 * @param updated
+	 */
+	private void install(Snapshot base, Snapshot updated) {
+		snapshot.compareAndSet(base, updated);
+	}
+
+	/**
 	 * Rewrite one index, leaving the rest of the registry as it is.
 	 */
 	private RegisteredIndex update(String index, UnaryOperator<RegisteredIndex> change) {
@@ -749,7 +783,7 @@ public class IndexRegistry {
 				throw RegistryException.ioError(null);
 			}
 
-			var current = snapshot;
+			var current = snapshot.get();
 			var updated = change.apply(current.indexes());
 			var store = RegistryCodec.toStored(current.store(), updated);
 
@@ -761,10 +795,13 @@ public class IndexRegistry {
 			}
 
 			if(version != null) {
-				snapshot = Snapshot.of(
-					updated.toSortedListBy(RegisteredIndex::name).toImmutable(),
-					store,
-					version
+				install(
+					current,
+					Snapshot.of(
+						updated.toSortedListBy(RegisteredIndex::name).toImmutable(),
+						store,
+						version
+					)
 				);
 
 				return;

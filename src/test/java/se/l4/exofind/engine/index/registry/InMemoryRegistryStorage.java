@@ -41,10 +41,30 @@ public class InMemoryRegistryStorage implements RegistryStorage {
 	 */
 	public boolean corrupt;
 
+	/**
+	 * When set, this runs once a read has worked out its answer but before the
+	 * answer is returned, and clears itself. Stands in for another node writing
+	 * while a read is in flight, so that the caller is handed contents from
+	 * before that write.
+	 */
+	public Runnable afterNextRead;
+
 	@Override
 	public Read read(String knownVersion) throws IOException {
 		reads++;
 
+		var answer = answer(knownVersion);
+
+		var after = afterNextRead;
+		if(after != null) {
+			afterNextRead = null;
+			after.run();
+		}
+
+		return answer;
+	}
+
+	private Read answer(String knownVersion) throws IOException {
 		if(unreachable) {
 			throw new IOException("Storage is unreachable");
 		}
