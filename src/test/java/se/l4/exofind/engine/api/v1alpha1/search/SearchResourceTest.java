@@ -21,6 +21,7 @@ import java.util.OptionalInt;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.io.TempDir;
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
@@ -42,6 +44,7 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestResponse;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
+import se.l4.exofind.engine.index.IndexInvalidCursorException;
 import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -1391,6 +1394,32 @@ public class SearchResourceTest {
 		);
 
 		assertThat(beforeTheFirst.hits(), is(empty()));
+	}
+
+	@Test
+	public void testACursorThatNamesNoPositionInTheSortIsRefused() throws IOException {
+		books();
+
+		/*
+		 * Readable, and taken under the sort of this search - and carrying a
+		 * value of a kind relevance never orders by, which is what a `sort`
+		 * field that changed type leaves an older cursor holding.
+		 */
+		var cursor = new SearchCursor.Keyset(
+			SearchCursor.fingerprintOf(Lists.immutable.empty()),
+			new SortKey(Lists.immutable.of((Object) 42L), 0)
+		).encode();
+
+		assertThrows(
+			IndexInvalidCursorException.class,
+			() -> resource.search(
+				"books",
+				new SearchRequest(
+					null, null, null, null, null, null, null, null, null, 10, null, cursor, null,
+					null, null, null
+				)
+			)
+		);
 	}
 
 	@Test

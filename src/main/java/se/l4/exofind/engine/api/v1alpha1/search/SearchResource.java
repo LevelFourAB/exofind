@@ -447,6 +447,11 @@ public class SearchResource {
 		when = "A cursor is used under a different `sort` than the one it was handed out under. Start the search again from the first page."
 	)
 	@ReturnsError(
+		value = "index:query:invalid_cursor",
+		status = 400,
+		when = "A cursor was taken under this `sort` but does not name a position in it, which a `sort` field that changed type in the index definition leaves behind. Start the search again from the first page."
+	)
+	@ReturnsError(
 		value = "search:pages:without_limit",
 		status = 400,
 		when = "`pages` is asked for without a `limit` above zero."
