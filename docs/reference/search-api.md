@@ -1043,7 +1043,7 @@ When `when` is configured:
 
 | Property | Type | Description |
 |---|---|---|
-| `hits` | Array | Array of hit objects matching the query. Each hit contains `id`, `score` (omitted if the search computed no scores), `document` fields, and optional `highlights`, `matched`, `index`, `key`, or `value` properties. |
+| `hits` | Array | Array of hit objects matching the query. Each hit contains `id`, `score` (omitted if the search computed no scores - a search of plain filters, with no ranking signal and no `rescore`), `document` fields, and optional `highlights`, `matched`, `index`, `key`, or `value` properties. |
 | `total` | Object | Match count object containing `count` (integer) and `exact` (boolean indicating whether `count` is exact or a lower bound). Counted in whatever the search returns, so a document expanded by `hits.when` counts once per value. |
 | `documents` | Object | Total count of matching documents, in the same shape as `total`. Present only when `hits.when` is set; omitted otherwise. |
 | `facets` | Object | Map of facet names to facet results. Omitted if `facets` was not requested. |

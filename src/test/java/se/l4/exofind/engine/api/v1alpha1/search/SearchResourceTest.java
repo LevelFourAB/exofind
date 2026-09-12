@@ -36,6 +36,7 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Signal;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestResponse;
@@ -205,6 +206,7 @@ public class SearchResourceTest {
 						)
 						.setFilter(FilterConfig.getDefaultInstance())
 						.setFacet(FacetConfig.getDefaultInstance())
+						.setSort(SortConfig.getDefaultInstance())
 						.build()
 				)
 				.build()
@@ -750,6 +752,48 @@ public class SearchResourceTest {
 
 		// Nothing asked for highlights, so no hit carries the key
 		assertThat(response.hits().get(0).highlights(), is(nullValue()));
+	}
+
+	@Test
+	public void testARankingSignalGivesTheHitsAScore() throws IOException {
+		books();
+
+		// Nothing in the query scores - the signal alone puts the page in order
+		var response = resource.search(
+			"books",
+			new SearchRequest(
+				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null,
+				List.of(new Signal("pages", new Signal.Saturation(100d), null, null, null))
+			)
+		);
+
+		assertThat(ids(response), contains("2", "1", "3"));
+		assertThat(response.hits().get(0).score(), is(notNullValue()));
+		assertThat(response.hits().get(0).score(), is(greaterThan(0f)));
+	}
+
+	@Test
+	public void testASecondPassGivesTheHitsAScore() throws IOException {
+		books();
+
+		var response = resource.search(
+			"books",
+			new SearchRequest(
+				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null,
+				new Rescore(
+					10,
+					List.of(new Clause.Field("category", new Matcher.Equals("poetry"))),
+					null,
+					null
+				)
+			)
+		);
+
+		assertThat(ids(response), contains("3", "1", "2"));
+		assertThat(response.hits().get(0).score(), is(notNullValue()));
+		assertThat(response.hits().get(0).score(), is(greaterThan(0f)));
 	}
 
 	@Test

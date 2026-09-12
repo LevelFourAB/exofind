@@ -5471,7 +5471,13 @@ public class Index {
 					faceted == null ? null : faceted.counts(),
 					relaxed,
 					interpreted == null ? null : interpreted.interpreted(),
-					window.end()
+					window.end(),
+					/*
+					 * What ranked the page is what says the score means
+					 * something: a clause that scores, a signal that multiplied
+					 * it, or a second pass that scored the window again.
+					 */
+					ranked.scores() || rescore != null
 				);
 			}
 		} finally {

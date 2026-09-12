@@ -2008,9 +2008,11 @@ components:
           type: number
           format: float
           description: "How well the hit matched. Omitted when the search computed\
-            \ no scores, rather than defaulted to something that looks like a value.\
-            \ A value hit scores what its document scored plus what the value itself\
-            \ scored under the `nested` clauses of its path."
+            \ no scores, rather than defaulted to something that looks like a value:\
+            \ a search of plain filters carrying no ranking signal and no `rescore`\
+            \ is ordered by nothing a score could say. A value hit scores what its\
+            \ document scored plus what the value itself scored under the `nested`\
+            \ clauses of its path."
           examples:
           - 8.42
         value:

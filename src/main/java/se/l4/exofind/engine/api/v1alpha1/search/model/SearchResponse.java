@@ -194,17 +194,19 @@ public record SearchResponse(
 
 		/**
 		 * Relevance score of the hit. Omitted when the search computes no
-		 * scores. A hit standing for a value scores what its document scored
-		 * plus what the value itself scored under the `nested` clauses of its
-		 * path.
+		 * scores, which a search of plain filters carrying no ranking signal
+		 * and no second pass does. A hit standing for a value scores what its
+		 * document scored plus what the value itself scored under the `nested`
+		 * clauses of its path.
 		 */
 		@Schema(
 			description = """
 				How well the hit matched. Omitted when the search computed no \
 				scores, rather than defaulted to something that looks like a \
-				value. A value hit scores what its document scored plus what \
-				the value itself scored under the `nested` clauses of its \
-				path.""",
+				value: a search of plain filters carrying no ranking signal \
+				and no `rescore` is ordered by nothing a score could say. A \
+				value hit scores what its document scored plus what the value \
+				itself scored under the `nested` clauses of its path.""",
 			examples = "8.42"
 		)
 		Float score,

@@ -39,6 +39,13 @@ import se.l4.exofind.engine.index.Document;
  *   nothing, or ran out of results inside the window. The hits of a rescored
  *   window sit in an order no key names, so this is the position a caller
  *   continues from to reach the results below it
+ * @param scored
+ *   whether the hits carry a score that means something. A clause that scores
+ *   is one way to get one, and not the only one: a ranking signal or a second
+ *   pass orders results by a score a search of plain filters would not have
+ *   had. Whatever ordered the hits is what says this, so a caller that shows
+ *   or sorts by the score reads it here rather than working it out from the
+ *   request
  */
 public record SearchResult(
 	ImmutableList<Hit> hits,
@@ -47,13 +54,19 @@ public record SearchResult(
 	ImmutableMap<String, Facet> facets,
 	Relaxed relaxed,
 	Interpreted interpreted,
-	SortKey windowEnd
+	SortKey windowEnd,
+	boolean scored
 ) {
 	public SearchResult {
 		if(facets == null) {
 			facets = Maps.immutable.empty();
 		}
 	}
+
+	/*
+	 * The shorter forms build a result nothing ranked - a count, a page of
+	 * plain filters - so each of them says the hits carry no score.
+	 */
 
 	public SearchResult(
 		ImmutableList<Hit> hits,
@@ -63,7 +76,7 @@ public record SearchResult(
 		Relaxed relaxed,
 		Interpreted interpreted
 	) {
-		this(hits, total, documents, facets, relaxed, interpreted, null);
+		this(hits, total, documents, facets, relaxed, interpreted, null, false);
 	}
 
 	public SearchResult(
@@ -73,7 +86,7 @@ public record SearchResult(
 		ImmutableMap<String, Facet> facets,
 		Relaxed relaxed
 	) {
-		this(hits, total, documents, facets, relaxed, null, null);
+		this(hits, total, documents, facets, relaxed, null, null, false);
 	}
 
 	public SearchResult(
@@ -82,7 +95,7 @@ public record SearchResult(
 		ImmutableMap<String, Facet> facets,
 		Relaxed relaxed
 	) {
-		this(hits, total, null, facets, relaxed, null, null);
+		this(hits, total, null, facets, relaxed, null, null, false);
 	}
 
 	public SearchResult(
@@ -90,11 +103,11 @@ public record SearchResult(
 		Total total,
 		ImmutableMap<String, Facet> facets
 	) {
-		this(hits, total, null, facets, null, null, null);
+		this(hits, total, null, facets, null, null, null, false);
 	}
 
 	public SearchResult(ImmutableList<Hit> hits, Total total) {
-		this(hits, total, null, null, null, null, null);
+		this(hits, total, null, null, null, null, null, false);
 	}
 
 	/**
@@ -121,8 +134,8 @@ public record SearchResult(
 	 *   an index that keeps no copy of its documents when the key's field is
 	 *   not stored - stored, it answers from the value's own document
 	 * @param score
-	 *   how well the hit matched. Only means something when the search held a
-	 *   clause that scores, see {@link Query#scores()}. A hit standing for a
+	 *   how well the hit matched. Only means something when the result says
+	 *   the search was {@link SearchResult#scored()}. A hit standing for a
 	 *   value scores what its document scored plus what the value itself
 	 *   scored under the {@code nested} clauses of its path - and what its
 	 *   document scored alone where only the documents the search's

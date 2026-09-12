@@ -46,7 +46,6 @@ import se.l4.exofind.engine.index.SearchTimeoutException;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.metrics.Meters;
 import se.l4.exofind.engine.metrics.RequestMetrics;
-import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchExplanation;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SuggestResult;
@@ -2142,9 +2141,11 @@ public class SearchResource {
 		/*
 		 * A search made only of filters computes no scores, and a score is
 		 * then left out of every hit rather than defaulted to something that
-		 * looks like a value.
+		 * looks like a value. Whether one was computed is the engine's to say:
+		 * a ranking signal and a second pass each order results by a score
+		 * that no clause of the request asked for.
 		 */
-		var scores = mapped.request().query().anySatisfy(Query::scores);
+		var scores = result.scored();
 		var highlighting = mapped.request().highlight().notEmpty();
 		var matching = mapped.request().matched().notEmpty();
 
