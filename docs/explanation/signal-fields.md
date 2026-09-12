@@ -24,6 +24,37 @@ An update qualifies as an in-place refresh when it names only the primary key an
 
 An update does not qualify as an in-place refresh when it names any other field, appends a value with `field[]`, or reaches inside a field with a selector or a dotted path. In those cases, the engine reads the stored document copy, merges the change, and reindexes the document. Signal fields named in such an update receive the supplied values, while omitted signal fields retain their existing values.
 
+What an update names decides which path it takes, and what a searching node pulls afterwards:
+
+```d2 title="The path an update takes, from the fields it names to the doc values it replaces or the document it reindexes, and what each path sends to a searching node"
+direction: down
+
+update: An update reaches the index
+
+fields: "Does the update name only the primary\nkey and signal fields?" {
+  shape: diamond
+}
+
+whole: "Does each change replace one signal\nfield whole, with at most one value?" {
+  shape: diamond
+}
+
+refresh: "In-place refresh: the engine replaces\nthe doc values at the next commit"
+rewrite: "The engine reads the stored document,\nmerges the change, and reindexes it"
+
+small: "Searching nodes pull a few small files\nfor each segment the update touched"
+segments: "Searching nodes pull\nnew segment files"
+
+update -> fields
+fields -> whole: Yes
+fields -> rewrite: "No: another field, a selector,\nor a dotted path"
+whole -> refresh: Yes
+whole -> rewrite: "No: a value appended\nwith field[]"
+
+refresh -> small
+rewrite -> segments
+```
+
 ## Value ownership and carry-over
 
 A signal field value belongs to whatever process refreshes it. When you index a complete document that carries no value for a signal field, the index retains the value it already holds. This carry-over rule ensures that a catalogue reload that omits signal fields does not wipe out values written by recent refreshes.

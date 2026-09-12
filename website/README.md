@@ -89,8 +89,9 @@ it draws, so nothing else has to be added to the page. The words after `d2`
 are the attributes of that one diagram: `title` is the alternative text and
 should say what the diagram shows, `width` sets the width in pixels,
 `sketch=true` draws it as if by hand, `layout` picks a different layout engine,
-and `src=./file.d2` takes the source from a file beside the document instead of
-from the block. The
+`animateInterval` draws a diagram written in several boards as one picture that
+runs through them, and `src=./file.d2` takes the source from a file beside the
+document instead of from the block. The
 [attributes page](https://astro-d2.vercel.app/configuration/attributes/) lists
 them all.
 
@@ -99,8 +100,20 @@ build fails where it is missing rather than publishing a page without its
 diagram. The options every diagram is drawn with are in
 [`astro.config.mjs`](astro.config.mjs).
 
-Five things about the section are worth knowing before changing it:
+Six things about the section are worth knowing before changing it:
 
+- **An animated diagram is laid out once per frame.** `animateInterval` draws
+  the boards of a `steps`, `scenarios` or `layers` block as one picture that
+  runs through them, and D2 lays each board out on its own. The frames stay
+  still only where every board holds the same shapes and the same connections,
+  and a board changes what a shape is drawn with - `opacity`, `stroke`,
+  `stroke-dash`, an arrowhead. A board that adds a shape, or that gives a label
+  a different length, moves everything around it, and the picture jumps from
+  frame to frame with nothing to report it. Give a caption that has to change a
+  `width` of its own, and carry the wording of a connection in that caption
+  rather than on the connection. The diagram in
+  [`docs/explanation/architecture.md`](../docs/explanation/architecture.md) is
+  written this way.
 - **A diagram is a file, written at build time.** Each one becomes
   `public/images/diagrams/<page>-<n>.svg`, where `<page>` is the path of the
   page and `<n>` counts the diagrams on it from zero. The directory is rebuilt

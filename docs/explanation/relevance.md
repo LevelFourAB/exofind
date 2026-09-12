@@ -2,6 +2,43 @@
 
 This document explains how Exofind calculates relevance scores and how its ranking layers interact when ordering search results. When a search query does not specify a sort order, Exofind orders results by relevance: how well each document matches the query. Ranking is calculated in separate layers that evaluate match quality, field location, intrinsic document values, and tie breaking.
 
+The layers run in a fixed order, and each one reads what the layer before it produced:
+
+```d2 title="The ranking layers of one search, from what a match is worth through ordering and a second pass to the results returned"
+direction: down
+
+first: The first pass, over every match {
+  grid-columns: 5
+  match: "What the\nmatch is worth"
+  weight: "The weight of the\nfield it was in"
+  exact: "The boost for\nthe whole value"
+  boost: "The boost clauses\nof the request"
+  signals: "The signals of\nthe document"
+
+  match -> weight -> exact -> boost -> signals
+}
+
+fuse: "Rank fusion, over the\nrankings in a fuse clause"
+
+order: Ordering {
+  grid-columns: 2
+  sort: "The score, or the sort\nthe request asked for"
+  ties: The tie breakers
+  sort -> ties
+}
+
+second: "The second pass, over the best\nresults inside the rescore window"
+
+results: The results returned
+
+first -> order: One ranking
+first -> fuse: Several rankings
+fuse -> order
+order -> second: A rescore block
+order -> results: No rescore block
+second -> results
+```
+
 For setting names and accepted values, see [Field types](../reference/field-types.md#ranking) and the [Search API](../reference/search-api.md#signals).
 
 ## What a match is worth

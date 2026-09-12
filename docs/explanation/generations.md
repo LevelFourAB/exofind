@@ -121,6 +121,50 @@ The change tracking design requires no changes to the registry format. A deploym
 
 The engine drives a rebuild when requested. Sending a `POST` request to `/v1alpha1/admin/indexes/products@2/actions/reindex` starts a job on the index writer node. The job enables change tracking, copies documents from the source generation, replays the change log in rounds, and completes during a write hold. The job stores its phase and copy cursor in a durable storage record. This record allows the job to resume after indexer failover and lets any node report the job status. For more information, see [Reindex into a new generation](../how-to/reindex-into-a-new-generation.md).
 
+The job moves through these phases, and ends in one of three places:
+
+```d2 title="The phases of a reindex job, with the branch a refused document takes, the branch a cancel takes, and the generation each ending leaves you to delete"
+direction: down
+
+create: Create the target generation
+
+filling: Filling the target {
+  direction: left
+  pending: "pending: waiting\nfor a slot"
+  copying: "copying: documents in\nprimary key order"
+  replaying: "replaying: what changed\nwhile the copy ran"
+  pending -> copying -> replaying
+}
+
+strategy: Which promotion strategy? {
+  shape: diamond
+}
+
+ready: "ready: caught up, and\nkept up to date"
+promoting: "promoting: writes pause\nfor the last catch-up"
+done: "done: the index answers\nfrom the target"
+failed: "failed: stopped before\nany promotion"
+cancelled: "cancelled: stopped by\na cancel request"
+
+previous: Delete the previous generation
+cleanup: Delete the target generation
+
+create -> filling
+filling -> strategy
+strategy -> promoting: auto
+strategy -> ready: manual
+ready -> promoting: You compare and promote
+promoting -> done
+done -> previous
+
+filling -> failed: A document the target refuses
+promoting -> failed: Another generation was promoted
+filling -> cancelled: A cancel request
+ready -> cancelled
+failed -> cleanup
+cancelled -> cleanup
+```
+
 Because the copy process reads the source generation while writes continue, it does not capture a single point in time. The change log records any changes made during the copy, and subsequent replay rounds apply those updates to the new generation.
 
 You can also drive a rebuild from outside the engine. Calling `GET /v1alpha1/indexes/{name}/documents` exports stored documents from a generation in primary key order (see the [Documents API reference](../reference/documents-api.md)). The indexing endpoint accepts this newline-delimited output, so you can populate a new generation without querying the upstream source system. Use this approach for an index that does not support change tracking or when documents must be refreshed directly from the system of record.

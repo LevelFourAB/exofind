@@ -20,6 +20,121 @@ replication between nodes, or a membership protocol. Two nodes never
 communicate directly with each other. Nodes coordinate all actions through the
 bucket.
 
+```d2 animateInterval=2500 title="Three nodes with local copies of the index files a bucket holds, and no connection between the nodes. One node is lost, the others keep answering, and a replacement pulls the files back from the bucket."
+direction: right
+
+# The picture runs through four frames. Every frame holds the same shapes and
+# the same connections, and a step changes only what a shape is drawn with,
+# because the layout is computed once per frame: an added shape, or a label of
+# a different length, moves everything around it and the picture jumps. This
+# is also why no connection carries a label and why the caption states a width
+# of its own.
+
+searches: Searches
+
+a: Node A {
+  copy: Local copies
+}
+
+b: Node B {
+  copy: Local copies
+}
+
+c: Node C {
+  copy: Local copies
+}
+
+bucket: Object storage {
+  registry: Registry
+  leadership: Leadership table
+  files: Index files
+}
+
+searches -> a
+searches -> b
+searches -> c
+
+a.copy <-> bucket.files
+b.copy <-> bucket.files
+c.copy <-> bucket.files
+
+caption: Each node holds local copies of the indexes it serves. {
+  near: bottom-center
+  width: 660
+  height: 46
+  style: {
+    fill: transparent
+    stroke: transparent
+    font-size: 17
+    # A shape carries a bold label, and this shape is a sentence rather than a
+    # part of the drawing.
+    bold: false
+  }
+}
+
+# The two colours are the ones the API pages spend: red says a thing was
+# removed and green says a thing was created. Each is stated as one value
+# rather than as the pair `website/src/styles/site.css` holds, because D2 is
+# handed a colour and reads no stylesheet, and the site's theme overrides
+# reach the greys alone. Each is a middle tone that clears 3:1 against the
+# paper of both themes, and each is spent on a stroke rather than on text: no
+# one colour clears 4.5:1 against both.
+
+steps: {
+  lost: {
+    b.style: {
+      stroke: "#c04f4f"
+      stroke-dash: 4
+      stroke-width: 2
+      opacity: 0.6
+    }
+    b.copy.style.opacity: 0.3
+    (searches -> b)[0].style: {
+      opacity: 0.15
+      stroke-dash: 4
+    }
+    (b.copy <-> bucket.files)[0].style: {
+      opacity: 0.15
+      stroke-dash: 4
+    }
+    caption: A node is lost. The others answer from their own copies.
+  }
+
+  pull: {
+    b.style: {
+      stroke: "#2f8f63"
+      stroke-dash: 0
+      stroke-width: 2
+      opacity: 1
+    }
+    b.copy.style.opacity: 1
+    (b.copy <-> bucket.files)[0]: {
+      # The arrowhead into the bucket is dropped for this frame alone, so a
+      # connection that is drawn in every frame points one way while the node
+      # reads the files back.
+      target-arrowhead.shape: none
+      style: {
+        opacity: 1
+        stroke-dash: 0
+        stroke: "#2f8f63"
+        stroke-width: 2
+      }
+    }
+    caption: A replacement starts with an empty disk and pulls the files back.
+  }
+
+  back: {
+    (searches -> b)[0].style: {
+      opacity: 1
+      stroke-dash: 0
+      stroke: "#2f8f63"
+    }
+    (b.copy <-> bucket.files)[0].target-arrowhead.shape: triangle
+    caption: It serves from local copies again. No node held the only copy.
+  }
+}
+```
+
 Local disk space functions as a cache budget rather than a permanent
 commitment. A node retains files for every index it has served because
 reopening an index from an existing directory has low overhead. When you
@@ -86,6 +201,35 @@ does not exist, the receiving node returns `404` directly instead of claiming a
 writer for the name. If no candidate node is available to handle or forward a
 write request, the node refuses the request with `409 Conflict`.
 
+The node that receives a request takes one of these paths:
+
+```d2 title="A search answered from the local copy, and a write applied locally, forwarded to the holder, or refused"
+direction: down
+
+request: A request reaches a node
+
+kind: Search or write? {
+  shape: diamond
+}
+
+search: Answer from the local copy
+
+holder: Which node holds the index? {
+  shape: diamond
+}
+
+here: Apply the write here
+forward: Forward to the holder and return its answer
+refuse: Refuse with 409 Conflict
+
+request -> kind
+kind -> search: Search
+kind -> holder: Write
+holder -> here: This node
+holder -> forward: Another node
+holder -> refuse: No candidate
+```
+
 ## The life of an index on a node
 
 An index on a node progresses through the lifecycle states listed in
@@ -103,6 +247,31 @@ Two states indicate errors rather than lifecycle steps:
   node build does not have. You resolve this by upgrading the node.
 - `incompatible`: The Lucene files are too old for the current build to open.
   Upgrading the node makes this issue worse rather than better.
+
+The index moves between these states as pulls, writes, and pushes finish:
+
+```d2 title="States of one index on one node, from the first pull through writes and pushes"
+direction: down
+
+needs_pull
+pulling
+usable
+modified
+pushing
+unsupported
+incompatible
+
+needs_pull -> pulling: Pull starts
+pulling -> needs_pull: Pull fails
+pulling -> usable: Pull finishes
+pulling -> unsupported: Needs a newer node
+pulling -> incompatible: Files too old to open
+usable -> modified: Write arrives
+modified -> pushing: Commit starts
+pushing -> usable: Push accepted
+pushing -> modified: More writes arrived
+pushing -> needs_pull: Push refused
+```
 
 For more details on index version differences, see
 [Lucene compatibility](lucene-compatibility.md).

@@ -21,6 +21,31 @@ To reduce polling requests, the registry includes version hints for each index. 
 
 The node that updates an object also reports its hint. A manifest push reports the manifest version, and updating settings reports the settings version. Because both document writes and settings updates execute on the designated index writer, the writer always reports its own updates. The writer buffers hints for several seconds and applies them to the registry in a single conditional write. This batching avoids contending for the registry on every push. For entries that predate hints, the index writer reads storage and populates hints over multiple passes, avoiding request bursts during upgrades.
 
+A version reaches a reading node through these steps:
+
+```d2 title="A version travels from a push through the registry to a reading node, which fetches the object only when the version differs"
+direction: down
+
+change: A push or a settings update
+buffer: The writer buffers the version for several seconds
+write: One conditional write puts the versions in the registry
+read: A node reads the registry once
+
+compare: Does the version match the local copy? {
+  shape: diamond
+}
+
+skip: Make no storage request
+fetch: Fetch the manifest or the settings object
+
+change -> buffer
+buffer -> write
+write -> read
+read -> compare
+compare -> skip: Matches
+compare -> fetch: Differs
+```
+
 A single read of the index registry serves the whole node. Two parts of a node work from the registry: open indexes (which pull manifests) and the search settings of the indexes the node serves. Each part receives the result of that one read. Each part states how often it wants the registry read, and the node reads at the shortest interval any part requests:
 
 - The open indexes request `EXOFIND_INDEXES_REFRESH_INTERVAL` (default 30 seconds).
@@ -44,6 +69,38 @@ Hints stay advisory rather than authoritative state. A node verifies every local
 Lucene names its files by sequential numbering. Two independent writer sessions can both produce a file named `_5.cfs`. If both sessions uploaded files using that name, a writer that fails the manifest race could overwrite a file referenced by the winning writer's manifest.
 
 To prevent collisions, object keys are scoped to epochs. A writer session claims an epoch by conditionally updating the manifest, and then uploads all files under `e<epoch>/`. If storage rejects the epoch claim, the session does not upload any files and does not open its writer. File names remain local, while object keys are remote.
+
+A session makes a conditional manifest write twice: once to claim its epoch, and once for every push:
+
+```d2 title="A session claims an epoch before it opens a writer, and every push uploads its files before it replaces the manifest"
+direction: down
+
+open: A writer session starts
+
+claim: Claim the epoch {
+  shape: diamond
+}
+
+stop: Upload nothing and open no writer
+writer: Open the writer and acknowledge writes
+upload: "Upload the files of the commit under e<epoch>/"
+
+push: Replace the manifest with If-Match {
+  shape: diamond
+}
+
+accepted: Record the objects the manifest drops, then sweep
+conflict: Mark the index needs_pull and pull
+
+open -> claim
+claim -> stop: Rejected
+claim -> writer: Accepted
+writer -> upload: A commit runs
+upload -> push
+push -> accepted: Accepted
+push -> conflict: Refused
+accepted -> writer: The session continues
+```
 
 When the remote holds no manifest, because the index is new or because the manifest was removed, the claim writes nothing. The first push then writes the manifest on the condition that there still is none, so of two sessions that both found the remote empty, only the first to push is accepted. A claim written as a manifest that names no files would make every reader remove its copy and answer with nothing until that push lands.
 
@@ -115,6 +172,32 @@ Index handovers follow a strict order to protect acknowledged writes. A holder r
 1. The index stops accepting writes. Incoming writes during this transition are rejected, and the caller retries them.
 2. The holder flushes and pushes pending data to storage.
 3. In a subsequent round, the holder transfers the claim to the taker, or drops the claim for an under-capacity candidate to acquire.
+
+A failed flush and a lapsed lease each end the handover in a different way:
+
+```d2 title="The steps of a handover, with the branch a failed flush takes and the branch a lapsed lease takes"
+direction: down
+
+decided: A round decides to hand the index over
+stop: The index stops accepting writes
+flush: The holder flushes and pushes pending data
+
+result: How did the flush end? {
+  shape: diamond
+}
+
+transfer: A later round moves the claim
+cancel: Writes are accepted here again
+lapsed: The claim lapses with no push
+
+decided -> stop
+stop -> flush
+flush -> result
+result -> transfer: Finished
+result -> cancel: Failed
+result -> lapsed: Outlasted the lease
+cancel -> decided: A later round starts again
+```
 
 Because of this order, a successor node always pulls a manifest that includes the flush, preserving acknowledged documents across rebalances. A shutting-down node follows the same order for all held indexes: it flushes first, then removes itself from the table. If a flush exceeds the lease duration, the claims lapse instead of being released mid-flush. When a node loses a claim because the lease lapsed, it pushes nothing, because a successor might already be writing. The expired node drops unpushed data, while conditional writes prevent storage corruption.
 

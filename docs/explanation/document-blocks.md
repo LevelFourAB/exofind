@@ -15,6 +15,27 @@ These sub-documents are written in a contiguous block alongside the parent docum
 
 Because the parent and its sub-documents form a single block, the entire group shares a physical lifecycle in the index.
 
+The engine writes the sub-documents first and the parent document last, and gives every sub-document the primary key of the parent. A join reads that order to find the parent of a match. Indexing the document again matches every part of the block by that key and replaces all of it:
+
+```d2 title="One block in a segment, with the sub-documents written before the parent document, and the join that maps a matching sub-document back to that parent"
+direction: right
+
+clause: "A nested clause runs against\nthe sub-documents"
+
+block: "One block, written and deleted as a unit" {
+  grid-columns: 1
+  variant1: "Sub-document: variant 1"
+  variant2: "Sub-document: variant 2"
+  variant3: "Sub-document: variant 3"
+  parent: "Parent document: the top-level fields"
+}
+
+hit: The search returns the parent document
+
+clause -> block: Matches a sub-document
+block -> hit: "The join maps the match\nup to its parent"
+```
+
 ## Empty text fields in every document
 
 Sub-documents carry the fields of their object type, while parent documents carry top-level fields. As a result, no single Lucene document in a block contains every field in the index. However, the engine writes every analyzed field into every Lucene document it indexes, leaving the entry empty when a document has no text for that field. The engine handles omitted optional fields the same way.

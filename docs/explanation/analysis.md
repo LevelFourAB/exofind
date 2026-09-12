@@ -16,6 +16,34 @@ Deriving the querying chain prevents a failure that nothing reports. Two chains 
 
 The derived query chain differs from the indexing chain in exactly the places where a component widens the value. Widening both sides matches far more than the search asked for, or counts the same widening twice.
 
+Both sides run the same kinds of component in the same order:
+
+```d2 title="The indexing chain beside the query chain derived from it, with the widening filters marked as the place the two differ"
+grid-columns: 2
+
+indexing: The indexing chain {
+  direction: down
+  chars: "Character\nfilters"
+  tokenizer: Tokenizer
+  narrow: "Token filters that\nkeep or replace\na token"
+  widen: "Token filters\nthat add tokens"
+  terms: "Terms written\nwith the document"
+  chars -> tokenizer -> narrow -> widen -> terms
+}
+
+querying: The derived query chain {
+  direction: down
+  chars: "The same\ncharacter filters"
+  tokenizer: "The same\ntokenizer"
+  narrow: "The same keeping\nand replacing\nfilters"
+  widen: "synonyms and\ndecompound left out,\nedgeNgram narrowed"
+  terms: "Terms the\nsearch looks up"
+  chars -> tokenizer -> narrow -> widen -> terms
+}
+```
+
+Three components make up the widening step, and each one differs on the query side:
+
 - `edgeNgram`, which autocomplete uses: indexing writes every prefix of a value as a term, so that what a person has typed so far is itself a term to look up. At query time, the typed text is cut to the longest prefix that was indexed instead of being cut into prefixes again.
 - `synonyms` inside a chain: indexing widens the value with the terms of the rules. The component drops away on the query side, because widening the query with the same set counts the same synonym twice.
 - `decompound`: indexing widens a value with the parts of its compound words and keeps the compound itself. It drops away on the query side for the same reason. A search for a part matches the document holding the compound, and a search for the whole compound matches only documents that hold it.
