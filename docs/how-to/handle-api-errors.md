@@ -54,7 +54,11 @@ Categorize the failure by HTTP status code to determine whether to fix the reque
   - `400 Bad Request`: The payload or query is invalid. Fix the payload or query parameters before sending again.
   - `401 Unauthorized`: The credential is missing, malformed, or invalid. Present a valid `Authorization: Bearer <key>` credential.
   - `403 Forbidden`: The credential lacks permission for the requested action.
-  - `404 Not Found`: The resource does not exist, or your credential has no access to the index. Do not retry without changing the target resource path.
+  - `404 Not Found`: The resource does not exist, your credential has no access to the index, or no endpoint answers the path. Do not retry without changing the target resource path.
+  - `405 Method Not Allowed`: The path is not answered for the method you sent. Check the method against the [REST API pages](https://exofind.dev/api/).
+  - `406 Not Acceptable`: Send an `Accept` header that allows `application/json`.
+  - `413 Content Too Large`: The body is larger than the node accepts. Split it into smaller requests. The node closes the connection, so open a new one for the next request.
+  - `415 Unsupported Media Type`: Send a `Content-Type` the endpoint reads, which is `application/json` on every endpoint and also `application/x-ndjson` on the documents endpoints.
 - **Wait and retry the same request (`409`, `502`, `503`)**:
   - `409 Conflict`: The request is well-formed, but the deployment state currently prevents execution (for example, another reindex is running, or an indexer node is synchronizing). Wait and retry the request once state changes.
   - `502 Bad Gateway`: The request was forwarded to the index writer node, but the writer did not respond. Retry the request.

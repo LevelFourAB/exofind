@@ -75,6 +75,40 @@ public record ErrorResponse(
 		}""";
 
 	/**
+	 * Build the body of a failure that has one problem, where the problem is
+	 * the whole failure.
+	 *
+	 * <p>The top level and the single entry of {@code errors} carry the same
+	 * code and message. The API states this shape for every failure that is not
+	 * a validation failure.
+	 *
+	 * @param code
+	 *   machine-readable code for the failure
+	 * @param message
+	 *   human-readable description of the failure
+	 * @param path
+	 *   where in the request the problem is, or {@code null} when it applies to
+	 *   the request as a whole
+	 * @param arguments
+	 *   the values the message was rendered with, or {@code null} when it was
+	 *   rendered with none
+	 * @return
+	 *   the body to answer with
+	 */
+	public static ErrorResponse of(
+		String code,
+		String message,
+		String path,
+		Map<String, String> arguments
+	) {
+		return new ErrorResponse(
+			code,
+			message,
+			List.of(new ErrorDetail(code, message, path, arguments))
+		);
+	}
+
+	/**
 	 * @param code
 	 *   machine-readable code for this problem
 	 * @param message

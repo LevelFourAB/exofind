@@ -48,7 +48,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 
 | Prefix | Scope | Examples |
 | --- | --- | --- |
-| `request:*` | Unreadable or malformed request body | `request:missing_body`, `request:unreadable`, `request:value_required`, `request:document:malformed`, `request:delete:target_required` |
+| `request:*` | A request the server could not read or does not serve | `request:missing_body`, `request:malformed`, `request:unknown_property`, `request:value_invalid`, `request:unreadable`, `request:value_required`, `request:too_large`, `request:not_found`, `request:method_not_allowed`, `request:not_acceptable`, `request:unsupported_media_type`, `request:refused`, `request:document:malformed`, `request:delete:target_required` |
 | `auth:*` | Caller identity and permissions | `auth:unauthenticated`, `auth:forbidden` |
 | `auth:key:*` | Key validation failure or unassigned key ID | `auth:key:unknown_role`, `auth:key:unknown_permission`, `auth:key:not_found` |
 | `auth:keys:*` | Key storage failure | `auth:keys:unavailable`, `auth:keys:conflict`, `auth:keys:io_error` |
@@ -74,6 +74,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `search:timeout` | Search abandoned after running longer than the node allows | `search:timeout` |
 | `reindex:*` | Reindex job lookup, state, or record storage failure | `reindex:not_found`, `reindex:in_progress`, `reindex:io_error` |
 | Other `index:*` | Index-level state and lifecycle errors | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
+| `node:*` | The node failed to serve a request that is not itself wrong | `node:error` |
 
 ## Error codes
 
@@ -133,5 +134,14 @@ The following error codes require specific handling in client applications:
 - `index:explain:value_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when that document holds no value of the search's `hits` path at the `index` query parameter.
 - `search:explain:key_required`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when the request carries no `key`. An explanation is of one hit, so `key` names the document it is of.
 - `search:explain:index_invalid`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when `index` is below zero. The values of the `hits` path are counted from zero.
+- `request:malformed`: Returned with HTTP `400` when the request body is not valid JSON. The `reason` argument says what the parser could not do, and `line` and `column` say where it stopped.
+- `request:unknown_property`: Returned with HTTP `400` when the body holds a property the endpoint does not have. The `path` is a JSON Pointer to the property, such as `/fields/title/sortable`, and the `property` argument names it. The server refuses a misspelled property instead of dropping it, so check the spelling against the request fields the endpoint documents.
+- `request:value_invalid`: Returned with HTTP `400` when a value does not fit the property it is written at, such as a string where a number belongs, or a `type` that names no member of a tagged union. The `path` is a JSON Pointer to the value, and the `reason` argument says what did not fit.
+- `request:too_large`: Returned with HTTP `413` when the request body is larger than the node accepts, set by `quarkus.http.limits.max-body-size`. The response closes the connection. Send the documents in smaller batches.
+- `request:not_found`: Returned with HTTP `404` when no endpoint answers the path. A path that an endpoint answers, naming an index that does not exist, returns `index:not-found` instead.
+- `request:method_not_allowed`: Returned with HTTP `405` when the path is not answered for the HTTP method of the request. For the methods a path is answered for, see the [REST API pages](https://exofind.dev/api/).
+- `request:not_acceptable`: Returned with HTTP `406` when the `Accept` header names no media type the endpoint answers in.
+- `request:unsupported_media_type`: Returned with HTTP `415` when the `Content-Type` header names a media type the endpoint does not read.
+- `node:error`: Returned with HTTP `500` when the node failed to serve a request that is not itself wrong. The node logs the cause. Retry the request, and read the node log if it keeps failing.
 - `request:unreadable`: Returned with HTTP `400` when the request body stopped arriving before it was read to the end, which a streamed request finds in the middle of its work. The documents read before that are indexed. Send the rest again.
 - `reindex:io_error`: Returned with HTTP `409` when the record of a reindex could not be read or written. The reindex is left as it was; retry the request once the storage responds.

@@ -156,10 +156,14 @@ The API returns the following HTTP status codes:
 | `400 Bad Request` | The request is invalid and must change before it can be served. |
 | `401 Unauthorized` | The request carries no credential accepted by this node. |
 | `403 Forbidden` | The credential is known, but the key lacks permission for the action. |
-| `404 Not Found` | The index, generation, key, reindex job, or search settings do not exist, or the caller key lacks permissions on the index. |
+| `404 Not Found` | The index, generation, key, reindex job, or search settings do not exist, the caller key lacks permissions on the index, or no endpoint answers the path. |
+| `405 Method Not Allowed` | The path is not answered for the HTTP method of the request. |
+| `406 Not Acceptable` | The `Accept` header names no media type the endpoint answers in. |
 | `409 Conflict` | The request is well formed, but the current state of the deployment prevents execution. |
 | `412 Precondition Failed` | The version specified in `If-Match` does not match the current stored version. |
-| `500 Internal Server Error` | An unmapped engine failure occurred. The node logs the error code and root cause. |
+| `413 Content Too Large` | The request body is larger than the node accepts. The response closes the connection. |
+| `415 Unsupported Media Type` | The `Content-Type` header names a media type the endpoint does not read. |
+| `500 Internal Server Error` | An unmapped engine failure occurred, or the node failed in a way no error code names (`node:error`). The node logs the error code and root cause. |
 | `502 Bad Gateway` | The request was forwarded to the index writer and the writer did not respond. |
 | `503 Service Unavailable` | The node cannot serve the request at this time; retrying the same request is expected to work. |
 
@@ -174,7 +178,7 @@ The status codes follow a consistent operational division:
 
 Status `400 Bad Request` covers:
 
-- Request body schema and validation failures.
+- Request body schema and validation failures, including a property no endpoint has (`request:unknown_property`) and a value that does not fit the property it is written at (`request:value_invalid`). A property the endpoint does not have is refused; the server never drops one and serves the rest of the request.
 - Queries requesting missing or invalid index features, such as unknown fields, fields used in ways not configured in the definition, document lookups by key on indexes without a primary key, cursors used with a different sort order than the query that created them, or stored field requests on indexes that do not retain document source copies.
 - Unreadable or malformed request payloads.
 
@@ -230,5 +234,9 @@ The error response fields are:
 For validation failures, the top-level `code` is `validation`. When only one validation error occurs, its message is used as the top-level `message`; when multiple errors occur, the top-level message is `Request contains N errors`.
 
 For errors other than validation failures, the `errors` array contains a single entry whose `code` matches the top-level `code`.
+
+A request refused before it reaches an endpoint returns the same body. This covers a body that is not JSON, a path no endpoint answers, a method or media type an endpoint does not accept, and a body larger than the node accepts. Their codes are listed under the `request:*` prefix in [Errors](errors.md).
+
+The `path` of a problem found while reading the body is a JSON Pointer, such as `/fields/title/sortable`. The `path` of a problem found while validating a search is also a JSON Pointer. Elsewhere it is a dotted field path, such as `fields.title`.
 
 Error codes use colon-separated namespaces (such as `index:field:invalid_name`). Error codes are stable across API versions and are never renamed or reused. For the complete error code list, see [Errors](errors.md).
