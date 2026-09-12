@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.4.0](https://github.com/LevelFourAB/exofind/compare/v0.3.0...v0.4.0) (2026-09-12)
+
+
+### Features
+
+* Allow keys to be rotated and protect against accidental removals of last key ([5a850df](https://github.com/LevelFourAB/exofind/commit/5a850df7ed77abd921728ac4cfa3025c6f2e6eda))
+* Answer every failed request with a  standard JSON error body ([96bb3f3](https://github.com/LevelFourAB/exofind/commit/96bb3f357aec42e15b3267d47459cdf418eadac9))
+* Generate real query and field types in OpenAPI clients ([6104987](https://github.com/LevelFourAB/exofind/commit/61049870bd266948656ffa32d6cc82d6457712d1))
+* Let a deployment cap how many facet values and suggestions a request may ask for ([012c483](https://github.com/LevelFourAB/exofind/commit/012c4834f330c98301600a477663d47f4c32fae2))
+* Measure facet value and explain requests ([dcedc22](https://github.com/LevelFourAB/exofind/commit/dcedc22cc7003fcb0a6bbed2cbf80f0a10781eeb))
+* Normalize error codes for numeric ranges ([7d9f1e7](https://github.com/LevelFourAB/exofind/commit/7d9f1e79b0fc787122262e06b4297aeecfc78722))
+* Read and cancel a reindex job under /admin/reindexes ([00ff93d](https://github.com/LevelFourAB/exofind/commit/00ff93d06de23f14104486bcd4f3e8d2d9687cae))
+* Rename index:not-found to index:not_found ([045382b](https://github.com/LevelFourAB/exofind/commit/045382b060b141f6217abec11eca320f96e3e1d9))
+* Rename some request:update errors to index:update ([67774a4](https://github.com/LevelFourAB/exofind/commit/67774a4d50b27393a48dd465709bb415ee1730fb))
+* Rename the live generation `liveGeneration` when listing indexes ([493d02f](https://github.com/LevelFourAB/exofind/commit/493d02ff058226e4a02a686f0225ee1d0851a097))
+* Report enums in the REST API as lowercase ([2c1ac3c](https://github.com/LevelFourAB/exofind/commit/2c1ac3c69752b3eeebe3a10f3aa7a1f98ddb81a3))
+* Report every error path in the REST API using dotted form ([4af6fd5](https://github.com/LevelFourAB/exofind/commit/4af6fd5cf54a338522a78df10d56cd7ac31bdc26))
+* Require all parameter to delete all documents ([21d1e36](https://github.com/LevelFourAB/exofind/commit/21d1e36406a0588922ee1ce34da31df8fad0e0a6))
+* Require indexes.promote permission when auto-promoting reindex ([eeb47ec](https://github.com/LevelFourAB/exofind/commit/eeb47ecac97e8b93f67d0c153362021f5c92c173))
+* Stronger If-Match application in the REST API ([3be9a94](https://github.com/LevelFourAB/exofind/commit/3be9a94dae4467fc56a71cec778aac8f2980dbb2))
+* Support for ranking signals with non-indexing updates ([402b301](https://github.com/LevelFourAB/exofind/commit/402b301a7492691b4dab4ae02e1512e4139b382f))
+
+
+### Bug fixes
+
+* Accept a document key written as another JSON type in a PATCH body ([4a6e2f4](https://github.com/LevelFourAB/exofind/commit/4a6e2f4f7a2775f18f4b7bbb624388c63be96941))
+* Avoid sending back empty tieBreakers for rankings ([53c6755](https://github.com/LevelFourAB/exofind/commit/53c6755fe22f835aadc77591858d1a65eddc26bf))
+* Count the clauses of interpret targets against the search clause caps ([a68d202](https://github.com/LevelFourAB/exofind/commit/a68d2020810272b3a633481659f2e717a1868543))
+* Ignore paging, sort and rescore in explain instead of validating them ([8c89ca4](https://github.com/LevelFourAB/exofind/commit/8c89ca4bb00a859d740d5d85e61fe5b02d42c065))
+* Index documents forwarded over HTTP/2 instead of reporting zero indexed ([6933dbc](https://github.com/LevelFourAB/exofind/commit/6933dbc7b990603d755700757c99b0f6c3db07fc))
+* Keep a registry repair from undoing a delete that lands while it runs ([993f066](https://github.com/LevelFourAB/exofind/commit/993f066693b76a683b1866c868bd22488f9cbe5f))
+* Keep a rescored search from paging into an empty page ([33328ae](https://github.com/LevelFourAB/exofind/commit/33328aee82d3be0f23ff1c714f7be9e588237546))
+* Refuse a boost weight of NaN or Infinity instead of scoring with it ([3204515](https://github.com/LevelFourAB/exofind/commit/320451547fb5012482e875ca424ad65dfb6e10e1))
+* Report NDJSON document errors without a `documents` prefix ([f314c49](https://github.com/LevelFourAB/exofind/commit/f314c497e17f282903c787162e9792d367610070))
+* REST API now answers more calls with 4xx instead of 500 ([2f9aad7](https://github.com/LevelFourAB/exofind/commit/2f9aad7c0a96901155aaafe9f8c6d28fbb1ca5be))
+* Return 400 for an invalid after parameter when reading documents ([b4edb2e](https://github.com/LevelFourAB/exofind/commit/b4edb2e3b1190bb946e2e04ceda7de41058bc0e5))
+* Stop a refused reindex from leaving an empty generation behind ([b2f2008](https://github.com/LevelFourAB/exofind/commit/b2f20083177364794615f0951fe49dcb2892506f))
+* Stop omitting score from a search ranked by signals or a second pass ([9812afd](https://github.com/LevelFourAB/exofind/commit/9812afd537f14f119065d421b6ca58bba746f316))
+
 ## [0.3.0](https://github.com/LevelFourAB/exofind/compare/v0.2.0...v0.3.0) (2026-09-10)
 
 
