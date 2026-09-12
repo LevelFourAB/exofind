@@ -168,7 +168,7 @@ public class IndexLocales {
 	) {
 		var expanded = new LinkedHashMap<String, FieldDefinition>();
 		for(var entry : fields.entrySet()) {
-			require(entry.getValue(), at.forField(entry.getKey()));
+			require(entry.getValue(), at.forKey(entry.getKey()));
 
 			expanded.put(
 				entry.getKey(),
@@ -176,7 +176,7 @@ public class IndexLocales {
 					prefix + entry.getKey(),
 					entry.getValue(),
 					declared,
-					at.forField(entry.getKey())
+					at.forKey(entry.getKey())
 				)
 			);
 		}
@@ -302,7 +302,7 @@ public class IndexLocales {
 		for(var entry : fields.entrySet()) {
 			var name = prefix + entry.getKey();
 			var field = entry.getValue();
-			var fieldAt = at.forField(entry.getKey());
+			var fieldAt = at.forKey(entry.getKey());
 
 			require(field, fieldAt);
 

@@ -1087,7 +1087,7 @@ public class IndexSettingsResource {
 		if(definition.synonyms() != null) {
 			var at = ObjectLocation.root().forField("synonyms");
 			for(var entry : definition.synonyms().entrySet()) {
-				require(entry.getValue(), at.forField(entry.getKey()));
+				require(entry.getValue(), at.forKey(entry.getKey()));
 				builder.putSynonyms(entry.getKey(), toStored(entry.getKey(), entry.getValue()));
 			}
 
@@ -1103,10 +1103,10 @@ public class IndexSettingsResource {
 		if(definition.typoExclusions() != null) {
 			var at = ObjectLocation.root().forField("typoExclusions");
 			for(var entry : definition.typoExclusions().entrySet()) {
-				require(entry.getValue(), at.forField(entry.getKey()));
+				require(entry.getValue(), at.forKey(entry.getKey()));
 				builder.putTypoExclusions(
 					entry.getKey(),
-					toStored(entry.getValue(), at.forField(entry.getKey()))
+					toStored(entry.getValue(), at.forKey(entry.getKey()))
 				);
 			}
 
@@ -1122,10 +1122,10 @@ public class IndexSettingsResource {
 		if(definition.fields() != null) {
 			var at = ObjectLocation.root().forField("fields");
 			for(var entry : definition.fields().entrySet()) {
-				require(entry.getValue(), at.forField(entry.getKey()));
+				require(entry.getValue(), at.forKey(entry.getKey()));
 				builder.putFields(
 					entry.getKey(),
-					toStored(entry.getValue(), at.forField(entry.getKey()))
+					toStored(entry.getValue(), at.forKey(entry.getKey()))
 				);
 			}
 
@@ -1181,7 +1181,7 @@ public class IndexSettingsResource {
 				if(value.labels() != null) {
 					var labelsAt = valueAt.forField("labels");
 					for(var label : value.labels().entrySet()) {
-						require(label.getValue(), labelsAt.forField(label.getKey()));
+						require(label.getValue(), labelsAt.forKey(label.getKey()));
 						declared.putLabels(label.getKey(), label.getValue());
 					}
 				}
@@ -1398,7 +1398,7 @@ public class IndexSettingsResource {
 				for(var entry : typoExclusions.entrySet()) {
 					builder.putTypoExclusions(
 						entry.getKey(),
-						toStored(entry.getValue(), at.forField(entry.getKey()))
+						toStored(entry.getValue(), at.forKey(entry.getKey()))
 					);
 				}
 			}
@@ -1407,7 +1407,7 @@ public class IndexSettingsResource {
 				for(var entry : fields.entrySet()) {
 					builder.putFields(
 						entry.getKey(),
-						toStored(entry.getValue(), at.forField(entry.getKey()))
+						toStored(entry.getValue(), at.forKey(entry.getKey()))
 					);
 				}
 			}

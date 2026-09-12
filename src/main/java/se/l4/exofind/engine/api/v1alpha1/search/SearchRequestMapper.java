@@ -61,7 +61,7 @@ import se.l4.exofind.engine.query.matchers.UnderMatcher;
  * of them moves.
  *
  * The whole tree is validated before anything runs, collecting every problem
- * with a JSON Pointer path into the request body rather than stopping at the
+ * with a path into the request body rather than stopping at the
  * first - a query with two bad clauses reports both. What the mapper checks
  * is the shape of the request; whether a field exists and can be used the way
  * the query asks is the index's to judge, when the request runs.
@@ -505,10 +505,10 @@ public class SearchRequestMapper {
 		var limit = se.l4.exofind.engine.query.SearchRequest.DEFAULT_LIMIT;
 		if(body.limit() != null) {
 			if(body.limit() < 0) {
-				errors.add(LIMIT_NEGATIVE.toMessage(Location.create("/limit")));
+				errors.add(LIMIT_NEGATIVE.toMessage(Location.create("limit")));
 			} else if(body.limit() > limits.maxLimit()) {
 				errors.add(
-					LIMIT_TOO_LARGE.toMessage(Location.create("/limit"), "max", limits.maxLimit())
+					LIMIT_TOO_LARGE.toMessage(Location.create("limit"), "max", limits.maxLimit())
 				);
 			} else {
 				limit = body.limit();
@@ -528,7 +528,7 @@ public class SearchRequestMapper {
 
 		var position = resolvePosition(body, fingerprint, errors);
 
-		var query = toClauses(body.query(), "/query", errors);
+		var query = toClauses(body.query(), "query", errors);
 		var signals = toRequestSignals(body, errors);
 		var filters = toFilters(body.filters(), errors);
 		var facets = toFacets(body.facets(), limits, errors);
@@ -537,24 +537,24 @@ public class SearchRequestMapper {
 
 		if(body.locale() != null && !Locales.isSupported(body.locale())) {
 			errors.add(
-				LOCALE_UNSUPPORTED.toMessage(Location.create("/locale"), "locale", body.locale())
+				LOCALE_UNSUPPORTED.toMessage(Location.create("locale"), "locale", body.locale())
 			);
 		}
 
 		Integer pagesMax = null;
 		if(body.pages() != null) {
 			if(limit == 0) {
-				errors.add(PAGES_WITHOUT_LIMIT.toMessage(Location.create("/pages")));
+				errors.add(PAGES_WITHOUT_LIMIT.toMessage(Location.create("pages")));
 			}
 
 			if(position.offset() == null) {
 				// A keyset position has no number to count pages from
-				errors.add(PAGES_WITHOUT_OFFSET.toMessage(Location.create("/pages")));
+				errors.add(PAGES_WITHOUT_OFFSET.toMessage(Location.create("pages")));
 			}
 
 			var max = body.pages().max() == null ? DEFAULT_PAGES_MAX : body.pages().max();
 			if(max <= 0) {
-				errors.add(PAGES_INVALID_MAX.toMessage(Location.create("/pages/max")));
+				errors.add(PAGES_INVALID_MAX.toMessage(Location.create("pages.max")));
 			} else if(position.offset() != null) {
 				pagesMax = max;
 			}
@@ -723,7 +723,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<Query>empty();
 		for(var i = 0; i < filters.size(); i++) {
-			var path = "/filters/" + i;
+			var path = "filters[" + i + "]";
 			var filter = filters.get(i);
 
 			if(filter == null) {
@@ -767,7 +767,7 @@ public class SearchRequestMapper {
 		var names = Sets.mutable.<String>empty();
 		var result = Lists.mutable.<Facet>empty();
 		for(var i = 0; i < facets.size(); i++) {
-			var path = "/facets/" + i;
+			var path = "facets[" + i + "]";
 			var facet = facets.get(i);
 
 			if(facet == null) {
@@ -777,12 +777,12 @@ public class SearchRequestMapper {
 
 			var valid = true;
 			if(facet.field() == null || facet.field().isBlank()) {
-				errors.add(FACET_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
+				errors.add(FACET_FIELD_REQUIRED.toMessage(Location.create(path + ".field")));
 				valid = false;
 			}
 
 			if(facet.name() != null && facet.name().isBlank()) {
-				errors.add(FACET_NAME_INVALID.toMessage(Location.create(path + "/name")));
+				errors.add(FACET_NAME_INVALID.toMessage(Location.create(path + ".name")));
 				valid = false;
 			}
 
@@ -790,7 +790,7 @@ public class SearchRequestMapper {
 			if(facet.limit() != null) {
 				if(facet.limit() < 1 || facet.limit() > limits.maxFacetValues()) {
 					errors.add(FACET_LIMIT_INVALID.toMessage(
-						Location.create(path + "/limit"),
+						Location.create(path + ".limit"),
 						"max", limits.maxFacetValues()
 					));
 					valid = false;
@@ -800,7 +800,7 @@ public class SearchRequestMapper {
 			}
 
 			if(facet.path() != null && facet.path().isBlank()) {
-				errors.add(FACET_PATH_INVALID.toMessage(Location.create(path + "/path")));
+				errors.add(FACET_PATH_INVALID.toMessage(Location.create(path + ".path")));
 				valid = false;
 			}
 
@@ -808,7 +808,7 @@ public class SearchRequestMapper {
 			if(facet.depth() != null) {
 				if(facet.depth() < 1 || facet.depth() > Facet.MAX_DEPTH) {
 					errors.add(FACET_DEPTH_INVALID.toMessage(
-						Location.create(path + "/depth"),
+						Location.create(path + ".depth"),
 						"max", Facet.MAX_DEPTH
 					));
 					valid = false;
@@ -830,11 +830,11 @@ public class SearchRequestMapper {
 				}
 
 				if(facet.ranges().isEmpty()) {
-					errors.add(FACET_RANGES_REQUIRED.toMessage(Location.create(path + "/ranges")));
+					errors.add(FACET_RANGES_REQUIRED.toMessage(Location.create(path + ".ranges")));
 					valid = false;
 				} else if(facet.ranges().size() > Facet.MAX_LIMIT) {
 					errors.add(FACET_RANGES_TOO_MANY.toMessage(
-						Location.create(path + "/ranges"),
+						Location.create(path + ".ranges"),
 						"max", Facet.MAX_LIMIT
 					));
 					valid = false;
@@ -843,7 +843,7 @@ public class SearchRequestMapper {
 						var range = facet.ranges().get(j);
 						if(range == null || range.from() == null && range.to() == null) {
 							errors.add(FACET_RANGE_EMPTY.toMessage(
-								Location.create(path + "/ranges/" + j)
+								Location.create(path + ".ranges[" + j + "]")
 							));
 							valid = false;
 							continue;
@@ -861,7 +861,7 @@ public class SearchRequestMapper {
 					var excludedPath = facet.excludeFilters().get(j);
 					if(excludedPath == null || excludedPath.isBlank()) {
 						errors.add(FACET_EXCLUDE_FILTERS_INVALID.toMessage(
-							Location.create(path + "/excludeFilters/" + j)
+							Location.create(path + ".excludeFilters[" + j + "]")
 						));
 						valid = false;
 						continue;
@@ -879,7 +879,7 @@ public class SearchRequestMapper {
 
 			var name = facet.name() == null ? facet.field() : facet.name();
 			if(!names.add(name)) {
-				errors.add(FACET_NAME_DUPLICATE.toMessage(Location.create(path + "/name")));
+				errors.add(FACET_NAME_DUPLICATE.toMessage(Location.create(path + ".name")));
 				continue;
 			}
 
@@ -928,7 +928,7 @@ public class SearchRequestMapper {
 		if(highlight.fields() == null || highlight.fields().isEmpty()) {
 			// Asking to highlight nothing is a mistake, not a quieter way of
 			// not asking
-			errors.add(HIGHLIGHT_FIELDS_REQUIRED.toMessage(Location.create("/highlight/fields")));
+			errors.add(HIGHLIGHT_FIELDS_REQUIRED.toMessage(Location.create("highlight.fields")));
 			return null;
 		}
 
@@ -936,11 +936,11 @@ public class SearchRequestMapper {
 		for(var entry : highlight.fields().entrySet()) {
 			var name = entry.getKey();
 			if(name == null || name.isBlank()) {
-				errors.add(HIGHLIGHT_FIELD_REQUIRED.toMessage(Location.create("/highlight/fields")));
+				errors.add(HIGHLIGHT_FIELD_REQUIRED.toMessage(Location.create("highlight.fields")));
 				continue;
 			}
 
-			var path = "/highlight/fields/" + name;
+			var path = "highlight.fields." + name;
 			var options = entry.getValue();
 			if(options == null) {
 				options = new SearchRequest.HighlightField(null, null, null, null);
@@ -949,14 +949,14 @@ public class SearchRequestMapper {
 			var valid = true;
 			if(options.fragments() != null && options.fragments() < 1) {
 				errors.add(
-					HIGHLIGHT_FRAGMENTS_INVALID.toMessage(Location.create(path + "/fragments"))
+					HIGHLIGHT_FRAGMENTS_INVALID.toMessage(Location.create(path + ".fragments"))
 				);
 				valid = false;
 			}
 
 			if(options.length() != null
 				&& (options.length() < 1 || options.length() > HIGHLIGHT_MAX_LENGTH)) {
-				errors.add(HIGHLIGHT_LENGTH_INVALID.toMessage(Location.create(path + "/length")));
+				errors.add(HIGHLIGHT_LENGTH_INVALID.toMessage(Location.create(path + ".length")));
 				valid = false;
 			}
 
@@ -995,7 +995,7 @@ public class SearchRequestMapper {
 
 		if(matched.fields() == null || matched.fields().isEmpty()) {
 			// Asking about no field is a mistake, not a quieter way of not asking
-			errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("/matched/fields")));
+			errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("matched.fields")));
 			return null;
 		}
 
@@ -1003,11 +1003,11 @@ public class SearchRequestMapper {
 		for(var entry : matched.fields().entrySet()) {
 			var name = entry.getKey();
 			if(name == null || name.isBlank()) {
-				errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("/matched/fields")));
+				errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("matched.fields")));
 				continue;
 			}
 
-			var path = "/matched/fields/" + name;
+			var path = "matched.fields." + name;
 			var options = entry.getValue();
 			if(options == null) {
 				options = new SearchRequest.MatchedField(null, null);
@@ -1018,7 +1018,7 @@ public class SearchRequestMapper {
 				&& (options.limit() < 1
 					|| options.limit() > se.l4.exofind.engine.query.SearchRequest.Matched.MAX_LIMIT)) {
 				errors.add(MATCHED_LIMIT_INVALID.toMessage(
-					Location.create(path + "/limit"),
+					Location.create(path + ".limit"),
 					"max", se.l4.exofind.engine.query.SearchRequest.Matched.MAX_LIMIT
 				));
 				valid = false;
@@ -1028,7 +1028,7 @@ public class SearchRequestMapper {
 			if(options.fields() != null) {
 				if(options.fields().isEmpty()) {
 					// Asking for values with nothing in them can not be meant
-					errors.add(MATCHED_FIELDS_EMPTY.toMessage(Location.create(path + "/fields")));
+					errors.add(MATCHED_FIELDS_EMPTY.toMessage(Location.create(path + ".fields")));
 					valid = false;
 				}
 
@@ -1043,7 +1043,7 @@ public class SearchRequestMapper {
 					if(field == null || !field.startsWith(name + ".")
 						|| field.length() == name.length() + 1) {
 						errors.add(MATCHED_FIELD_NOT_INSIDE.toMessage(
-							Location.create(path + "/fields/" + i),
+							Location.create(path + ".fields[" + i + "]"),
 							"field", field == null ? "" : field,
 							"path", name
 						));
@@ -1096,12 +1096,12 @@ public class SearchRequestMapper {
 
 		var path = body.hits().path();
 		if(path == null || path.isBlank()) {
-			errors.add(HITS_PATH_REQUIRED.toMessage(Location.create("/hits/path")));
+			errors.add(HITS_PATH_REQUIRED.toMessage(Location.create("hits.path")));
 			return null;
 		}
 
 		if(body.matched() != null) {
-			errors.add(HITS_WITH_MATCHED.toMessage(Location.create("/matched")));
+			errors.add(HITS_WITH_MATCHED.toMessage(Location.create("matched")));
 		}
 
 		/*
@@ -1114,7 +1114,7 @@ public class SearchRequestMapper {
 				if(name == null || !name.startsWith(path + ".")
 					|| name.length() == path.length() + 1) {
 					errors.add(HITS_WITH_HIGHLIGHT.toMessage(
-						Location.create("/highlight/fields"),
+						Location.create("highlight.fields"),
 						"field", name == null ? "" : name,
 						"path", path
 					));
@@ -1122,7 +1122,7 @@ public class SearchRequestMapper {
 			}
 		}
 
-		refuseKnn(body.query(), "/query", errors);
+		refuseKnn(body.query(), "query", errors);
 
 		var when = toWhen(body.hits().when(), errors);
 
@@ -1131,11 +1131,11 @@ public class SearchRequestMapper {
 				var step = body.sort().get(i);
 				if(step instanceof Sort.Distance) {
 					errors.add(
-						HITS_DISTANCE_SORT.toMessage(Location.create("/sort/" + i))
+						HITS_DISTANCE_SORT.toMessage(Location.create("sort[" + i + "]"))
 					);
 				} else if(step instanceof Sort.Field && when.notEmpty()) {
 					errors.add(
-						HITS_WHEN_FIELD_SORT.toMessage(Location.create("/sort/" + i))
+						HITS_WHEN_FIELD_SORT.toMessage(Location.create("sort[" + i + "]"))
 					);
 				}
 			}
@@ -1147,7 +1147,7 @@ public class SearchRequestMapper {
 		if(fields != null) {
 			if(fields.isEmpty()) {
 				// Asking for values with nothing in them can not be meant
-				errors.add(HITS_FIELDS_EMPTY.toMessage(Location.create("/hits/fields")));
+				errors.add(HITS_FIELDS_EMPTY.toMessage(Location.create("hits.fields")));
 				valid = false;
 			}
 
@@ -1162,7 +1162,7 @@ public class SearchRequestMapper {
 				if(field == null || !field.startsWith(path + ".")
 					|| field.length() == path.length() + 1) {
 					errors.add(HITS_FIELD_NOT_INSIDE.toMessage(
-						Location.create("/hits/fields/" + i),
+						Location.create("hits.fields[" + i + "]"),
 						"field", field == null ? "" : field,
 						"path", path
 					));
@@ -1201,7 +1201,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<Query>empty();
 		for(var i = 0; i < when.size(); i++) {
-			var path = "/hits/when/" + i;
+			var path = "hits.when[" + i + "]";
 			var clause = when.get(i);
 
 			if(clause == null) {
@@ -1245,14 +1245,14 @@ public class SearchRequestMapper {
 		}
 
 		for(var i = 0; i < clauses.size(); i++) {
-			var at = path + "/" + i;
+			var at = path + "[" + i + "]";
 			switch(clauses.get(i)) {
 				case Clause.Knn knn ->
 					errors.add(HITS_WITH_KNN.toMessage(Location.create(at)));
-				case Clause.And and -> refuseKnn(and.clauses(), at + "/clauses", errors);
-				case Clause.Or or -> refuseKnn(or.clauses(), at + "/clauses", errors);
-				case Clause.Not not -> refuseKnn(not.clauses(), at + "/clauses", errors);
-				case Clause.Boost boost -> refuseKnn(boost.clauses(), at + "/clauses", errors);
+				case Clause.And and -> refuseKnn(and.clauses(), at + ".clauses", errors);
+				case Clause.Or or -> refuseKnn(or.clauses(), at + ".clauses", errors);
+				case Clause.Not not -> refuseKnn(not.clauses(), at + ".clauses", errors);
+				case Clause.Boost boost -> refuseKnn(boost.clauses(), at + ".clauses", errors);
 				case Clause.Fuse fuse -> {
 					if(fuse.rankings() != null) {
 						for(var ranking = 0; ranking < fuse.rankings().size(); ranking++) {
@@ -1260,14 +1260,14 @@ public class SearchRequestMapper {
 							if(entry != null) {
 								refuseKnn(
 									entry.clauses(),
-									at + "/rankings/" + ranking + "/clauses",
+									at + ".rankings[" + ranking + "].clauses",
 									errors
 								);
 							}
 						}
 					}
 
-					refuseKnn(fuse.filter(), at + "/filter", errors);
+					refuseKnn(fuse.filter(), at + ".filter", errors);
 				}
 				case null, default -> {
 				}
@@ -1316,7 +1316,7 @@ public class SearchRequestMapper {
 
 		if(body.offset() != null) {
 			if(body.offset() < 0) {
-				errors.add(OFFSET_NEGATIVE.toMessage(Location.create("/offset")));
+				errors.add(OFFSET_NEGATIVE.toMessage(Location.create("offset")));
 				return Position.START;
 			}
 
@@ -1324,7 +1324,7 @@ public class SearchRequestMapper {
 		}
 
 		if(body.after() != null) {
-			var cursor = decodeCursor(body.after(), "/after", fingerprint, errors);
+			var cursor = decodeCursor(body.after(), "after", fingerprint, errors);
 
 			return switch(cursor) {
 				case null -> Position.START;
@@ -1334,7 +1334,7 @@ public class SearchRequestMapper {
 		}
 
 		if(body.before() != null) {
-			var cursor = decodeCursor(body.before(), "/before", fingerprint, errors);
+			var cursor = decodeCursor(body.before(), "before", fingerprint, errors);
 
 			return switch(cursor) {
 				case null -> Position.START;
@@ -1392,7 +1392,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<SortBy>empty();
 		for(var i = 0; i < sort.size(); i++) {
-			var path = "/sort/" + i;
+			var path = "sort[" + i + "]";
 
 			switch(sort.get(i)) {
 				case null -> errors.add(REQUIRED.toMessage(Location.create(path)));
@@ -1400,7 +1400,7 @@ public class SearchRequestMapper {
 				case Sort.Field field -> {
 					if(field.field() == null || field.field().isBlank()) {
 						errors.add(
-							SORT_FIELD_REQUIRED.toMessage(Location.create(path + "/field"))
+							SORT_FIELD_REQUIRED.toMessage(Location.create(path + ".field"))
 						);
 					} else {
 						result.add(new FieldSort(field.field(), toOrder(field.order())));
@@ -1411,7 +1411,7 @@ public class SearchRequestMapper {
 
 					if(distance.field() == null || distance.field().isBlank()) {
 						errors.add(
-							SORT_FIELD_REQUIRED.toMessage(Location.create(path + "/field"))
+							SORT_FIELD_REQUIRED.toMessage(Location.create(path + ".field"))
 						);
 						valid = false;
 					}
@@ -1455,7 +1455,7 @@ public class SearchRequestMapper {
 		if(body.signals() == null) {
 			if(body.signalsMode() != null) {
 				errors.add(
-					SIGNAL_MODE_WITHOUT_SIGNALS.toMessage(Location.create("/signalsMode"))
+					SIGNAL_MODE_WITHOUT_SIGNALS.toMessage(Location.create("signalsMode"))
 				);
 			}
 
@@ -1464,7 +1464,7 @@ public class SearchRequestMapper {
 
 		return new se.l4.exofind.engine.query.SearchRequest.Signals(
 			toSignalsMode(body.signalsMode()),
-			toSignals(body.signals(), "/signals", errors)
+			toSignals(body.signals(), "signals", errors)
 		);
 	}
 
@@ -1500,7 +1500,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<RankingSignal>empty();
 		for(var i = 0; i < signals.size(); i++) {
-			var path = at + "/" + i;
+			var path = at + "[" + i + "]";
 			var signal = signals.get(i);
 
 			if(signal == null) {
@@ -1510,13 +1510,13 @@ public class SearchRequestMapper {
 
 			var valid = true;
 			if(signal.field() == null || signal.field().isBlank()) {
-				errors.add(SIGNAL_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
+				errors.add(SIGNAL_FIELD_REQUIRED.toMessage(Location.create(path + ".field")));
 				valid = false;
 			}
 
 			if(signal.weight() != null
 				&& (!(signal.weight() >= 0) || !Float.isFinite(signal.weight()))) {
-				errors.add(SIGNAL_WEIGHT_INVALID.toMessage(Location.create(path + "/weight")));
+				errors.add(SIGNAL_WEIGHT_INVALID.toMessage(Location.create(path + ".weight")));
 				valid = false;
 			}
 
@@ -1535,7 +1535,7 @@ public class SearchRequestMapper {
 				if(pivot == null || !(pivot > 0) || !Double.isFinite(pivot)) {
 					errors.add(
 						SIGNAL_PIVOT_INVALID.toMessage(
-							Location.create(path + "/saturation/pivot")
+							Location.create(path + ".saturation.pivot")
 						)
 					);
 				} else if(valid) {
@@ -1546,7 +1546,7 @@ public class SearchRequestMapper {
 				if(ceiling == null || !(ceiling > 0) || !Double.isFinite(ceiling)) {
 					errors.add(
 						SIGNAL_CEILING_INVALID.toMessage(
-							Location.create(path + "/linear/ceiling")
+							Location.create(path + ".linear.ceiling")
 						)
 					);
 				} else if(valid) {
@@ -1557,7 +1557,7 @@ public class SearchRequestMapper {
 				if(halfLife == null || halfLife <= 0) {
 					errors.add(
 						SIGNAL_HALF_LIFE_INVALID.toMessage(
-							Location.create(path + "/decay/halfLife")
+							Location.create(path + ".decay.halfLife")
 						)
 					);
 				} else if(valid) {
@@ -1607,24 +1607,24 @@ public class SearchRequestMapper {
 		}
 
 		if(hits != null) {
-			errors.add(RESCORE_WITH_HITS.toMessage(Location.create("/rescore")));
+			errors.add(RESCORE_WITH_HITS.toMessage(Location.create("rescore")));
 			return null;
 		}
 
 		var valid = true;
 
 		if(rescore.window() == null) {
-			errors.add(RESCORE_WINDOW_REQUIRED.toMessage(Location.create("/rescore/window")));
+			errors.add(RESCORE_WINDOW_REQUIRED.toMessage(Location.create("rescore.window")));
 			valid = false;
 		} else if(rescore.window() < 1 || rescore.window() > max) {
 			errors.add(
-				RESCORE_WINDOW_INVALID.toMessage(Location.create("/rescore/window"), "max", max)
+				RESCORE_WINDOW_INVALID.toMessage(Location.create("rescore.window"), "max", max)
 			);
 			valid = false;
 		} else if(offset != null && (long) offset + limit > rescore.window()) {
 			errors.add(
 				RESCORE_WINDOW_TOO_SMALL.toMessage(
-					Location.create("/rescore/window"),
+					Location.create("rescore.window"),
 					"window", rescore.window()
 				)
 			);
@@ -1633,7 +1633,7 @@ public class SearchRequestMapper {
 
 		if(rescore.weight() != null
 			&& (!(rescore.weight() >= 0) || !Float.isFinite(rescore.weight()))) {
-			errors.add(RESCORE_WEIGHT_INVALID.toMessage(Location.create("/rescore/weight")));
+			errors.add(RESCORE_WEIGHT_INVALID.toMessage(Location.create("rescore.weight")));
 			valid = false;
 		}
 
@@ -1645,12 +1645,12 @@ public class SearchRequestMapper {
 		if((rescore.boost() == null || rescore.boost().isEmpty())
 			&& (rescore.signals() == null || rescore.signals().isEmpty()))
 		{
-			errors.add(RESCORE_EMPTY.toMessage(Location.create("/rescore")));
+			errors.add(RESCORE_EMPTY.toMessage(Location.create("rescore")));
 			valid = false;
 		}
 
-		var boost = toClauses(rescore.boost(), "/rescore/boost", errors);
-		var signals = toSignals(rescore.signals(), "/rescore/signals", errors);
+		var boost = toClauses(rescore.boost(), "rescore.boost", errors);
+		var signals = toSignals(rescore.signals(), "rescore.signals", errors);
 
 		if(!valid || errors.notEmpty()) {
 			return null;
@@ -1680,8 +1680,8 @@ public class SearchRequestMapper {
 	 * @param clauses
 	 *   the clauses as received, or {@code null} for none
 	 * @param path
-	 *   JSON Pointer of the list, which a problem found in an entry points
-	 *   below
+	 *   path of the list, which a problem found in an entry points below at
+	 *   its own index
 	 * @param errors
 	 *   where the problems are collected
 	 * @return
@@ -1698,7 +1698,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<Query>empty();
 		for(var i = 0; i < clauses.size(); i++) {
-			var query = toClause(clauses.get(i), path + "/" + i, errors);
+			var query = toClause(clauses.get(i), path + "[" + i + "]", errors);
 			if(query != null) {
 				result.add(query);
 			}
@@ -1726,16 +1726,16 @@ public class SearchRequestMapper {
 				var valid = true;
 
 				if(field.field() == null || field.field().isBlank()) {
-					errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
+					errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + ".field")));
 					valid = false;
 				}
 
 				if(field.match() == null) {
-					errors.add(CLAUSE_MATCH_REQUIRED.toMessage(Location.create(path + "/match")));
+					errors.add(CLAUSE_MATCH_REQUIRED.toMessage(Location.create(path + ".match")));
 					return null;
 				}
 
-				var matcher = toMatcher(field.match(), path + "/match", errors);
+				var matcher = toMatcher(field.match(), path + ".match", errors);
 				if(matcher == null || !valid) {
 					return null;
 				}
@@ -1745,7 +1745,7 @@ public class SearchRequestMapper {
 
 			case Clause.Text text -> {
 				if(text.text() == null) {
-					errors.add(CLAUSE_TEXT_REQUIRED.toMessage(Location.create(path + "/text")));
+					errors.add(CLAUSE_TEXT_REQUIRED.toMessage(Location.create(path + ".text")));
 					return null;
 				}
 
@@ -1770,7 +1770,7 @@ public class SearchRequestMapper {
 
 				if(text.interpret() instanceof Clause.Text.Interpret.Targets targets) {
 					query = query.withTargets(
-						toTargets(targets.fields(), path + "/interpret/fields", errors)
+						toTargets(targets.fields(), path + ".interpret.fields", errors)
 					);
 				}
 
@@ -1781,23 +1781,23 @@ public class SearchRequestMapper {
 				var valid = true;
 
 				if(knn.field() == null || knn.field().isBlank()) {
-					errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
+					errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + ".field")));
 					valid = false;
 				}
 
 				if(knn.vector() == null || knn.vector().length == 0) {
 					errors.add(
-						CLAUSE_VECTOR_REQUIRED.toMessage(Location.create(path + "/vector"))
+						CLAUSE_VECTOR_REQUIRED.toMessage(Location.create(path + ".vector"))
 					);
 					valid = false;
 				}
 
 				if(knn.k() == null || knn.k() <= 0) {
-					errors.add(CLAUSE_K_INVALID.toMessage(Location.create(path + "/k")));
+					errors.add(CLAUSE_K_INVALID.toMessage(Location.create(path + ".k")));
 					valid = false;
 				}
 
-				var filter = toClauses(knn.filter(), path + "/filter", errors);
+				var filter = toClauses(knn.filter(), path + ".filter", errors);
 				if(!valid) {
 					return null;
 				}
@@ -1811,14 +1811,14 @@ public class SearchRequestMapper {
 				var rankings = Lists.mutable.<FuseQuery.Ranking>empty();
 				if(fuse.rankings() == null || fuse.rankings().size() < 2) {
 					errors.add(
-						CLAUSE_RANKINGS_INVALID.toMessage(Location.create(path + "/rankings"))
+						CLAUSE_RANKINGS_INVALID.toMessage(Location.create(path + ".rankings"))
 					);
 					valid = false;
 				}
 
 				if(fuse.rankings() != null) {
 					for(var i = 0; i < fuse.rankings().size(); i++) {
-						var at = path + "/rankings/" + i;
+						var at = path + ".rankings[" + i + "]";
 						var ranking = fuse.rankings().get(i);
 
 						if(ranking == null) {
@@ -1827,10 +1827,10 @@ public class SearchRequestMapper {
 							continue;
 						}
 
-						var clauses = toClauses(ranking.clauses(), at + "/clauses", errors);
+						var clauses = toClauses(ranking.clauses(), at + ".clauses", errors);
 						if(clauses.isEmpty()) {
 							errors.add(
-								CLAUSE_RANKING_EMPTY.toMessage(Location.create(at + "/clauses"))
+								CLAUSE_RANKING_EMPTY.toMessage(Location.create(at + ".clauses"))
 							);
 							valid = false;
 							continue;
@@ -1839,7 +1839,7 @@ public class SearchRequestMapper {
 						var weight = ranking.weight();
 						if(weight != null && (!(weight >= 0) || !Float.isFinite(weight))) {
 							errors.add(
-								CLAUSE_WEIGHT_INVALID.toMessage(Location.create(at + "/weight"))
+								CLAUSE_WEIGHT_INVALID.toMessage(Location.create(at + ".weight"))
 							);
 							valid = false;
 							continue;
@@ -1856,7 +1856,7 @@ public class SearchRequestMapper {
 				if(fuse.depth() != null) {
 					if(fuse.depth() < 1) {
 						errors.add(
-							CLAUSE_DEPTH_INVALID.toMessage(Location.create(path + "/depth"))
+							CLAUSE_DEPTH_INVALID.toMessage(Location.create(path + ".depth"))
 						);
 						valid = false;
 					} else {
@@ -1869,7 +1869,7 @@ public class SearchRequestMapper {
 					if(!(fuse.rankConstant() > 0) || !Float.isFinite(fuse.rankConstant())) {
 						errors.add(
 							CLAUSE_RANK_CONSTANT_INVALID.toMessage(
-								Location.create(path + "/rankConstant")
+								Location.create(path + ".rankConstant")
 							)
 						);
 						valid = false;
@@ -1878,7 +1878,7 @@ public class SearchRequestMapper {
 					}
 				}
 
-				var filter = toClauses(fuse.filter(), path + "/filter", errors);
+				var filter = toClauses(fuse.filter(), path + ".filter", errors);
 				if(!valid) {
 					return null;
 				}
@@ -1887,11 +1887,11 @@ public class SearchRequestMapper {
 			}
 
 			case Clause.Nested nested -> {
-				var clauses = toClauses(nested.clauses(), path + "/clauses", errors);
+				var clauses = toClauses(nested.clauses(), path + ".clauses", errors);
 
 				if(nested.path() == null || nested.path().isBlank()) {
 					errors.add(
-						CLAUSE_PATH_REQUIRED.toMessage(Location.create(path + "/path"))
+						CLAUSE_PATH_REQUIRED.toMessage(Location.create(path + ".path"))
 					);
 					return null;
 				}
@@ -1901,19 +1901,19 @@ public class SearchRequestMapper {
 			}
 
 			case Clause.And and -> {
-				return AndQuery.of(toClauses(and.clauses(), path + "/clauses", errors));
+				return AndQuery.of(toClauses(and.clauses(), path + ".clauses", errors));
 			}
 
 			case Clause.Or or -> {
-				return OrQuery.of(toClauses(or.clauses(), path + "/clauses", errors));
+				return OrQuery.of(toClauses(or.clauses(), path + ".clauses", errors));
 			}
 
 			case Clause.Not not -> {
-				return NotQuery.of(toClauses(not.clauses(), path + "/clauses", errors));
+				return NotQuery.of(toClauses(not.clauses(), path + ".clauses", errors));
 			}
 
 			case Clause.Boost boost -> {
-				var clauses = toClauses(boost.clauses(), path + "/clauses", errors);
+				var clauses = toClauses(boost.clauses(), path + ".clauses", errors);
 
 				if(
 					boost.weight() == null
@@ -1921,7 +1921,7 @@ public class SearchRequestMapper {
 					|| !Float.isFinite(boost.weight())
 				) {
 					errors.add(
-						CLAUSE_WEIGHT_INVALID.toMessage(Location.create(path + "/weight"))
+						CLAUSE_WEIGHT_INVALID.toMessage(Location.create(path + ".weight"))
 					);
 					return null;
 				}
@@ -1944,7 +1944,7 @@ public class SearchRequestMapper {
 			case Matcher.Equals equals -> {
 				if(equals.value() == null) {
 					errors.add(
-						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + "/value"))
+						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + ".value"))
 					);
 					return null;
 				}
@@ -1955,7 +1955,7 @@ public class SearchRequestMapper {
 			case Matcher.In in -> {
 				if(in.values() == null) {
 					errors.add(
-						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + "/values"))
+						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + ".values"))
 					);
 					return null;
 				}
@@ -1970,7 +1970,7 @@ public class SearchRequestMapper {
 			case Matcher.Prefix prefix -> {
 				if(prefix.value() == null) {
 					errors.add(
-						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + "/value"))
+						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + ".value"))
 					);
 					return null;
 				}
@@ -1981,7 +1981,7 @@ public class SearchRequestMapper {
 			case Matcher.Under under -> {
 				if(under.path() == null) {
 					errors.add(
-						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + "/path"))
+						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + ".path"))
 					);
 					return null;
 				}
@@ -2017,7 +2017,7 @@ public class SearchRequestMapper {
 			case Matcher.Ranges ranges -> {
 				if(ranges.values() == null) {
 					errors.add(
-						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + "/values"))
+						MATCHER_VALUE_REQUIRED.toMessage(Location.create(path + ".values"))
 					);
 					return null;
 				}
@@ -2025,7 +2025,7 @@ public class SearchRequestMapper {
 				var valid = true;
 				var result = Lists.mutable.<RangeMatcher>empty();
 				for(var j = 0; j < ranges.values().size(); j++) {
-					var rangePath = path + "/values/" + j;
+					var rangePath = path + ".values[" + j + "]";
 					var range = ranges.values().get(j);
 
 					if(range == null) {
@@ -2069,7 +2069,7 @@ public class SearchRequestMapper {
 
 			case Matcher.Text text -> {
 				if(text.text() == null) {
-					errors.add(CLAUSE_TEXT_REQUIRED.toMessage(Location.create(path + "/text")));
+					errors.add(CLAUSE_TEXT_REQUIRED.toMessage(Location.create(path + ".text")));
 					return null;
 				}
 
@@ -2095,7 +2095,7 @@ public class SearchRequestMapper {
 
 				if(distance.radius() == null) {
 					errors.add(
-						MATCHER_RADIUS_REQUIRED.toMessage(Location.create(path + "/radius"))
+						MATCHER_RADIUS_REQUIRED.toMessage(Location.create(path + ".radius"))
 					);
 					valid = false;
 				}
@@ -2138,7 +2138,7 @@ public class SearchRequestMapper {
 		}
 
 		if(match != Matcher.Text.Match.USER) {
-			errors.add(CLAUSE_JOIN_NOT_APPLICABLE.toMessage(Location.create(path + "/join")));
+			errors.add(CLAUSE_JOIN_NOT_APPLICABLE.toMessage(Location.create(path + ".join")));
 			return null;
 		}
 
@@ -2165,14 +2165,14 @@ public class SearchRequestMapper {
 		}
 
 		if(slop < 0) {
-			errors.add(CLAUSE_SLOP_INVALID.toMessage(Location.create(path + "/slop")));
+			errors.add(CLAUSE_SLOP_INVALID.toMessage(Location.create(path + ".slop")));
 			return 0;
 		}
 
 		if(slop > 0
 			&& match != Matcher.Text.Match.PHRASE
 			&& match != Matcher.Text.Match.USER) {
-			errors.add(CLAUSE_SLOP_NOT_APPLICABLE.toMessage(Location.create(path + "/slop")));
+			errors.add(CLAUSE_SLOP_NOT_APPLICABLE.toMessage(Location.create(path + ".slop")));
 			return 0;
 		}
 
@@ -2254,7 +2254,7 @@ public class SearchRequestMapper {
 
 		var result = Lists.mutable.<TextQuery.Target>empty();
 		for(var i = 0; i < targets.size(); i++) {
-			var target = toTarget(targets.get(i), path + "/" + i, errors);
+			var target = toTarget(targets.get(i), path + "[" + i + "]", errors);
 			if(target != null) {
 				result.add(target);
 			}
@@ -2275,16 +2275,16 @@ public class SearchRequestMapper {
 
 		var valid = true;
 		if(target.field() == null || target.field().isBlank()) {
-			errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + "/field")));
+			errors.add(CLAUSE_FIELD_REQUIRED.toMessage(Location.create(path + ".field")));
 			valid = false;
 		}
 
-		var when = toClauses(target.when(), path + "/when", errors);
+		var when = toClauses(target.when(), path + ".when", errors);
 		for(var i = 0; i < when.size(); i++) {
 			if(!isValueClause(when.get(i))) {
 				errors.add(
 					INTERPRET_WHEN_UNSUPPORTED.toMessage(
-						Location.create(path + "/when/" + i),
+						Location.create(path + ".when[" + i + "]"),
 						"type", when.get(i).type()
 					)
 				);
@@ -2292,7 +2292,7 @@ public class SearchRequestMapper {
 			}
 		}
 
-		var fallback = toFallbacks(target.fallback(), path + "/fallback", errors);
+		var fallback = toFallbacks(target.fallback(), path + ".fallback", errors);
 
 		if(!valid) {
 			return null;

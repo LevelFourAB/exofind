@@ -95,15 +95,15 @@ final class QueryBudget {
 	) {
 		var budget = new QueryBudget(limits, errors);
 
-		budget.walk(body.query(), "/query", 1);
-		budget.walk(body.filters(), "/filters", 1);
+		budget.walk(body.query(), "query", 1);
+		budget.walk(body.filters(), "filters", 1);
 
 		if(body.hits() != null) {
-			budget.walk(body.hits().when(), "/hits/when", 1);
+			budget.walk(body.hits().when(), "hits.when", 1);
 		}
 
 		if(body.rescore() != null) {
-			budget.walk(body.rescore().boost(), "/rescore/boost", 1);
+			budget.walk(body.rescore().boost(), "rescore.boost", 1);
 		}
 
 		return !budget.oversized;
@@ -133,8 +133,8 @@ final class QueryBudget {
 	) {
 		var budget = new QueryBudget(limits, errors);
 
-		budget.walk(query, "/query", 1);
-		budget.walk(filters, "/filters", 1);
+		budget.walk(query, "query", 1);
+		budget.walk(filters, "filters", 1);
 
 		return !budget.oversized;
 	}
@@ -146,7 +146,7 @@ final class QueryBudget {
 	 * @param clauses
 	 *   the clauses to count, or {@code null} for a part the request left out
 	 * @param path
-	 *   JSON Pointer of the list itself; an entry reports at its own index
+	 *   path of the list itself; an entry reports at its own index
 	 * @param depth
 	 *   how deep the entries of this list sit, counting the clauses the
 	 *   request carries directly as depth one
@@ -171,13 +171,13 @@ final class QueryBudget {
 			this.clauses++;
 			if(this.clauses > limits.maxClauses()) {
 				refuse(TOO_MANY_CLAUSES.toMessage(
-					Location.create(path + "/" + i),
+					Location.create(path + "[" + i + "]"),
 					"max", limits.maxClauses()
 				));
 				return;
 			}
 
-			var at = path + "/" + i;
+			var at = path + "[" + i + "]";
 			switch(clause) {
 				case Clause.Field field -> {
 					// Matches on a value of its own rather than on clauses
@@ -193,7 +193,7 @@ final class QueryBudget {
 					if(text.interpret() instanceof Clause.Text.Interpret.Targets targets) {
 						walkTargets(
 							targets.fields(),
-							at + "/interpret/fields",
+							at + ".interpret.fields",
 							depth + 1
 						);
 					}
@@ -206,18 +206,18 @@ final class QueryBudget {
 					 */
 					if(knn.k() != null && knn.k() > limits.maxKnnK()) {
 						errors.add(K_TOO_LARGE.toMessage(
-							Location.create(at + "/k"),
+							Location.create(at + ".k"),
 							"max", limits.maxKnnK()
 						));
 					}
 
-					walk(knn.filter(), at + "/filter", depth + 1);
+					walk(knn.filter(), at + ".filter", depth + 1);
 				}
 
 				case Clause.Fuse fuse -> {
 					if(fuse.depth() != null && fuse.depth() > limits.maxFuseDepth()) {
 						errors.add(DEPTH_TOO_LARGE.toMessage(
-							Location.create(at + "/depth"),
+							Location.create(at + ".depth"),
 							"max", limits.maxFuseDepth()
 						));
 					}
@@ -228,25 +228,25 @@ final class QueryBudget {
 							if(ranking != null) {
 								walk(
 									ranking.clauses(),
-									at + "/rankings/" + r + "/clauses",
+									at + ".rankings[" + r + "].clauses",
 									depth + 1
 								);
 							}
 						}
 					}
 
-					walk(fuse.filter(), at + "/filter", depth + 1);
+					walk(fuse.filter(), at + ".filter", depth + 1);
 				}
 
-				case Clause.Nested nested -> walk(nested.clauses(), at + "/clauses", depth + 1);
+				case Clause.Nested nested -> walk(nested.clauses(), at + ".clauses", depth + 1);
 
-				case Clause.And and -> walk(and.clauses(), at + "/clauses", depth + 1);
+				case Clause.And and -> walk(and.clauses(), at + ".clauses", depth + 1);
 
-				case Clause.Or or -> walk(or.clauses(), at + "/clauses", depth + 1);
+				case Clause.Or or -> walk(or.clauses(), at + ".clauses", depth + 1);
 
-				case Clause.Not not -> walk(not.clauses(), at + "/clauses", depth + 1);
+				case Clause.Not not -> walk(not.clauses(), at + ".clauses", depth + 1);
 
-				case Clause.Boost boost -> walk(boost.clauses(), at + "/clauses", depth + 1);
+				case Clause.Boost boost -> walk(boost.clauses(), at + ".clauses", depth + 1);
 			}
 
 			if(oversized) {
@@ -267,7 +267,7 @@ final class QueryBudget {
 	 * @param targets
 	 *   the targets to walk, or {@code null} for a part the request left out
 	 * @param path
-	 *   JSON Pointer of the list itself; an entry reports at its own index
+	 *   path of the list itself; an entry reports at its own index
 	 * @param depth
 	 *   how deep the clauses of these targets sit
 	 */
@@ -288,9 +288,9 @@ final class QueryBudget {
 				continue;
 			}
 
-			var at = path + "/" + i;
-			walk(target.when(), at + "/when", depth);
-			walkTargets(target.fallback(), at + "/fallback", depth + 1);
+			var at = path + "[" + i + "]";
+			walk(target.when(), at + ".when", depth);
+			walkTargets(target.fallback(), at + ".fallback", depth + 1);
 
 			if(oversized) {
 				return;

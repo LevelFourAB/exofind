@@ -238,7 +238,7 @@ public class IndexDefinitionMapper {
 		if(definition.metadata() != null) {
 			var at = root.forField("metadata");
 			for(var entry : definition.metadata().entrySet()) {
-				require(entry.getValue(), at.forField(entry.getKey()));
+				require(entry.getValue(), at.forKey(entry.getKey()));
 				builder.putMetadata(entry.getKey(), entry.getValue());
 			}
 		}
@@ -246,10 +246,10 @@ public class IndexDefinitionMapper {
 		if(definition.fields() != null) {
 			var at = root.forField("fields");
 			for(var entry : definition.fields().entrySet()) {
-				require(entry.getValue(), at.forField(entry.getKey()));
+				require(entry.getValue(), at.forKey(entry.getKey()));
 				builder.putFields(
 					entry.getKey(),
-					toStored(entry.getKey(), entry.getValue(), at.forField(entry.getKey()))
+					toStored(entry.getKey(), entry.getValue(), at.forKey(entry.getKey()))
 				);
 			}
 		}
@@ -420,10 +420,10 @@ public class IndexDefinitionMapper {
 		if(field.fields() != null) {
 			var fieldsAt = at.forField("fields");
 			for(var entry : field.fields().entrySet()) {
-				require(entry.getValue(), fieldsAt.forField(entry.getKey()));
+				require(entry.getValue(), fieldsAt.forKey(entry.getKey()));
 				builder.putFields(
 					entry.getKey(),
-					toStored(entry.getKey(), entry.getValue(), fieldsAt.forField(entry.getKey()))
+					toStored(entry.getKey(), entry.getValue(), fieldsAt.forKey(entry.getKey()))
 				);
 			}
 		}
@@ -803,7 +803,7 @@ public class IndexDefinitionMapper {
 		if(resources.analyzers() != null) {
 			var analyzersAt = at.forField("analyzers");
 			for(var entry : resources.analyzers().entrySet()) {
-				var analyzerAt = analyzersAt.forField(entry.getKey());
+				var analyzerAt = analyzersAt.forKey(entry.getKey());
 				require(entry.getValue(), analyzerAt);
 
 				if(entry.getValue().named() != null) {
@@ -824,7 +824,7 @@ public class IndexDefinitionMapper {
 		if(resources.stopwords() != null) {
 			var stopwordsAt = at.forField("stopwords");
 			for(var entry : resources.stopwords().entrySet()) {
-				var wordsAt = stopwordsAt.forField(entry.getKey());
+				var wordsAt = stopwordsAt.forKey(entry.getKey());
 				require(entry.getValue(), wordsAt);
 
 				var words = entry.getValue();
@@ -841,7 +841,7 @@ public class IndexDefinitionMapper {
 		if(resources.synonyms() != null) {
 			var synonymsAt = at.forField("synonyms");
 			for(var entry : resources.synonyms().entrySet()) {
-				var setAt = synonymsAt.forField(entry.getKey());
+				var setAt = synonymsAt.forKey(entry.getKey());
 				require(entry.getValue(), setAt);
 
 				builder.putSynonyms(

@@ -142,8 +142,15 @@ public record ErrorResponse(
 		@Schema(
 			description = """
 				Location of the offending value in the request, such as \
-				`fields.title` or `documents[1].nonexistent`. Omitted when the \
-				problem applies to the request as a whole.""",
+				`fields.title` or `documents[1].nonexistent`. Names join with \
+				`.`, one element of a list reads `[n]` counted from zero, and \
+				a key of a free-form map such as `metadata` goes in brackets \
+				and double quotes when it holds a dot or a bracket, as \
+				`metadata["build.sha"]`. A field inside an `object` field \
+				carries its own dotted path, so a path here reaches a field \
+				the same way a query does. Omitted when the problem applies \
+				to the request as a whole. See \
+				[API conventions](https://exofind.dev/reference/api-conventions/).""",
 			examples = "id"
 		)
 		String path,

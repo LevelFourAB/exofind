@@ -14,7 +14,7 @@ import se.l4.exofind.engine.index.locales.Locales;
  *
  * <p>The filters are mapped the way {@link SearchRequestMapper} maps them,
  * and every problem found is collected and reported together, each with a
- * JSON Pointer into the request body.
+ * path into the request body.
  */
 final class SuggestRequestMapper {
 	static final ErrorType LIMIT_INVALID =
@@ -55,7 +55,7 @@ final class SuggestRequestMapper {
 		if(body.limit() != null) {
 			var max = limits.maxSuggestions();
 			if(body.limit() < 1 || body.limit() > max) {
-				errors.add(LIMIT_INVALID.toMessage(Location.create("/limit"), "max", max));
+				errors.add(LIMIT_INVALID.toMessage(Location.create("limit"), "max", max));
 			} else {
 				limit = body.limit();
 			}
@@ -65,7 +65,7 @@ final class SuggestRequestMapper {
 
 		if(body.locale() != null && !Locales.isSupported(body.locale())) {
 			errors.add(SearchRequestMapper.LOCALE_UNSUPPORTED.toMessage(
-				Location.create("/locale"),
+				Location.create("locale"),
 				"locale", body.locale()
 			));
 		}

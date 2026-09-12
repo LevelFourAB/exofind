@@ -2195,7 +2195,7 @@ public class SearchResourceTest {
 		);
 
 		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_invalid"));
-		assertThat(e.getErrors().getFirst().getLocation().describe(), is("/limit"));
+		assertThat(e.getErrors().getFirst().getLocation().describe(), is("limit"));
 	}
 
 	@Test

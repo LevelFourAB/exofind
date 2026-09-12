@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.Priority;
 import jakarta.ws.rs.Priorities;
@@ -27,8 +28,8 @@ import jakarta.ws.rs.ext.Provider;
  * framework answers them with a shape of its own, and the API states one body
  * for every failure.
  *
- * <p>The {@code path} of the problem is a JSON Pointer into the body, such as
- * {@code /fields/title/matching}. It names the place in the request as the
+ * <p>The {@code path} of the problem is a path into the body, such as
+ * {@code fields.title.matching}. It names the place in the request as the
  * caller wrote it, not the Java type the request was read into.
  *
  * <p>Jackson reports a value that does not fit as
@@ -93,7 +94,7 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 			 * with the setting the property named left at its default, so a
 			 * misspelled name is reported instead.
 			 */
-			var path = pointerOf(unknown);
+			var path = pathOf(unknown);
 
 			return body(
 				UNKNOWN_PROPERTY,
@@ -108,7 +109,7 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 			 * A value that does not fit where it sits: the wrong type, or a
 			 * tag naming no member of a union.
 			 */
-			var path = pointerOf(mapping);
+			var path = pathOf(mapping);
 			var reason = reasonOf(mapping);
 
 			return path == null
@@ -151,32 +152,28 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 	}
 
 	/**
-	 * Write where a mapping failure sits as a JSON Pointer, so the path points
-	 * into the request as it was sent.
+	 * Write where a mapping failure sits as a path, so it points into the
+	 * request as it was sent. Every name here is one the caller wrote, so it
+	 * goes in as a key rather than as a name the engine constrains.
 	 *
 	 * @return
-	 *   the pointer, or {@code null} when the failure is of the body as a whole
+	 *   the path, or {@code null} when the failure is of the body as a whole
 	 */
-	private static String pointerOf(JsonMappingException e) {
-		var pointer = new StringBuilder();
+	private static String pathOf(JsonMappingException e) {
+		var at = ObjectLocation.root();
+		var found = false;
 
 		for(var reference : e.getPath()) {
 			if(reference.getFieldName() != null) {
-				pointer.append('/').append(escape(reference.getFieldName()));
+				at = at.forKey(reference.getFieldName());
+				found = true;
 			} else if(reference.getIndex() >= 0) {
-				pointer.append('/').append(reference.getIndex());
+				at = at.forIndex(reference.getIndex());
+				found = true;
 			}
 		}
 
-		return pointer.isEmpty() ? null : pointer.toString();
-	}
-
-	/**
-	 * Escape one name for a JSON Pointer, where {@code ~} and {@code /} are the
-	 * two characters a segment cannot carry as itself.
-	 */
-	private static String escape(String name) {
-		return name.replace("~", "~0").replace("/", "~1");
+		return found ? at.describe() : null;
 	}
 
 	/**

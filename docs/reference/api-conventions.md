@@ -230,7 +230,7 @@ The error response fields are:
 - `code`: Machine-readable code describing the overall failure.
 - `message`: Human-readable summary for logging. Clients match on `code`, not `message`.
 - `errors`: List of specific issues encountered. For validation failures on multiple fields, all errors are included in this array.
-- `path`: Where in the request the issue was found, either as a JSON Pointer (such as `/fields/title/sortable`) or as a dotted field path (such as `fields.title`). Omitted when the error applies to the entire request.
+- `path`: Where in the request the issue was found, as a field path such as `fields.title.sortable`. Omitted when the error applies to the entire request.
 - `arguments`: Key-value map of string arguments used to render the message, allowing clients to format localized messages.
 
 For validation failures, the top-level `code` is `validation`. When only one validation error occurs, its message is used as the top-level `message`; when multiple errors occur, the top-level message is `Request contains N errors`.
@@ -239,6 +239,14 @@ For errors other than validation failures, the `errors` array contains a single 
 
 A request refused before it reaches an endpoint returns the same body. This covers a body that is not JSON, a path no endpoint answers, a method or media type an endpoint does not accept, and a body larger than the node accepts. Their codes are listed under the `request:*` prefix in [Errors](errors.md).
 
-The `path` of a problem found while reading the body is a JSON Pointer, such as `/fields/title/sortable`. The `path` of a problem found while validating a search is also a JSON Pointer. Elsewhere it is a dotted field path, such as `fields.title`.
+Every `path` uses the same form, wherever in the request the problem sits. A path is built from these parts:
+
+| Part of a path | Form | Example |
+| --- | --- | --- |
+| A name | The name, joined to what holds it with `.` | `fields.title.sortable` |
+| One element of a list | `[n]`, counted from zero | `documents[1].name` |
+| A key of a free-form map, such as `metadata` | The key in brackets and double quotes, with `\` and `"` escaped | `metadata["build.sha"]` |
+
+A field inside an `object` field is named by its own dotted path, so a `path` reaches it the same way a query does. You can paste the `path` of an error into a request that takes a field.
 
 Error codes use colon-separated namespaces (such as `index:field:invalid_name`). Error codes are stable across API versions and are never renamed or reused. For the complete error code list, see [Errors](errors.md).

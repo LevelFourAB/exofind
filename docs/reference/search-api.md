@@ -1013,11 +1013,11 @@ Specifying `when` restricts value expansion to documents that match the `when` c
 }
 ```
 
-The `when` array accepts `field` and `nested` clauses combined with an implicit `AND`. Scoring clauses are not permitted. Unsupported clause types return `search:hits:when_clause_invalid`; clauses that score return `search:hits:when_scores`. Both errors point to `/hits/when/<index>` in the request body. If `when` is omitted, every matching document expands.
+The `when` array accepts `field` and `nested` clauses combined with an implicit `AND`. Scoring clauses are not permitted. Unsupported clause types return `search:hits:when_clause_invalid`; clauses that score return `search:hits:when_scores`. Both errors point to `hits.when[<index>]` in the request body. If `when` is omitted, every matching document expands.
 
 When `when` is configured:
 
-- **Sorting**: Mixed result pages can only be sorted by `score`. Field sorts return `search:hits:when_field_sort` (pointing to `/sort/<index>`), or `index:query:hits:when_sort_unsupported` when calling the engine directly. Distance sorts return `search:hits:distance_sort`.
+- **Sorting**: Mixed result pages can only be sorted by `score`. Field sorts return `search:hits:when_field_sort` (pointing to `sort[<index>]`), or `index:query:hits:when_sort_unsupported` when calling the engine directly. Distance sorts return `search:hits:distance_sort`.
 - **Scoring**: Every hit receives its parent document relevance score. Nested value clause scores are not added.
 - **Facets**: Facet counts aggregate matching documents rather than hits.
 - **Totals**: The `total` property counts hits, counting expanded documents once per matching nested value. The response includes a `documents` object with `count` and `exact` fields reporting the total count of matching documents.

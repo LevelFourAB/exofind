@@ -599,7 +599,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getLocation().describe()).toList(),
-			contains("/keys/1")
+			contains("keys[1]")
 		);
 	}
 
@@ -617,7 +617,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getLocation().describe()).toList(),
-			contains("/query/0/match")
+			contains("query[0].match")
 		);
 	}
 }

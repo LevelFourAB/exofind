@@ -865,7 +865,7 @@ public class DocumentResource {
 		}
 
 		throw new ValidationException(
-			UPDATE_MISSING_UNKNOWN.toMessage(Location.create("/missing"), "value", missing)
+			UPDATE_MISSING_UNKNOWN.toMessage(Location.create("missing"), "value", missing)
 		);
 	}
 
@@ -1719,7 +1719,7 @@ public class DocumentResource {
 
 		if(body.locale() != null && body.query() == null) {
 			throw new ValidationException(
-				DELETE_LOCALE_WITHOUT_QUERY.toMessage(Location.create("/locale"))
+				DELETE_LOCALE_WITHOUT_QUERY.toMessage(Location.create("locale"))
 			);
 		}
 
@@ -1738,7 +1738,7 @@ public class DocumentResource {
 		return new DeleteResponse(measure("delete_by_query", () -> write(name, index -> {
 			try {
 				return index.deleteByQuery(
-					SearchRequestMapper.toQuery(body.query(), "/query"),
+					SearchRequestMapper.toQuery(body.query(), "query"),
 					body.locale()
 				);
 			} catch(IOException e) {
@@ -1755,7 +1755,7 @@ public class DocumentResource {
 		var errors = Lists.mutable.<ErrorMessage>empty();
 		for(var i = 0; i < keys.size(); i++) {
 			if(keys.get(i) == null) {
-				errors.add(DELETE_KEY_REQUIRED.toMessage(Location.create("/keys/" + i)));
+				errors.add(DELETE_KEY_REQUIRED.toMessage(Location.create("keys[" + i + "]")));
 			}
 		}
 
@@ -2003,7 +2003,7 @@ public class DocumentResource {
 		if(value < 1 || value > SCAN_MAX_LIMIT) {
 			throw new ValidationException(
 				SCAN_LIMIT_INVALID.toMessage(
-					Location.create("/limit"),
+					Location.create("limit"),
 					"value", limit,
 					"max", SCAN_MAX_LIMIT
 				)

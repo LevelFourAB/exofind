@@ -35,7 +35,7 @@ Each object in the `errors` array contains the following fields:
 | --- | --- | --- |
 | `code` | string | The error code identifying the specific validation failure. |
 | `message` | string | Human-readable description of the validation failure. |
-| `path` | string | Location of the invalid field in the request, as a JSON Pointer (`/fields/title/sortable`) or a dotted field path (`fields.title`). For which form an error carries, see [API conventions](api-conventions.md#error-body). |
+| `path` | string | Location of the invalid field in the request, as a field path (`fields.title.sortable`). For the form a path takes, see [API conventions](api-conventions.md#error-body). |
 | `arguments` | object | Key-value pairs containing the values used to build the error message. |
 
 For what each status code means, and for the conventions the whole API shares, see [API conventions](api-conventions.md). For the conditions that produce a status on a particular endpoint, see the status tables in the [admin API](admin-api.md#status-codes) reference. The `400 Bad Request` status code covers both invalid request bodies and queries that request data or features an index does not have.
@@ -151,8 +151,8 @@ The following error codes require specific handling in client applications. For 
 - `search:explain:key_required`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when the request carries no `key`. An explanation is of one hit, so `key` names the document it is of.
 - `search:explain:index_invalid`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when `index` is below zero. The values of the `hits` path are counted from zero.
 - `request:malformed`: Returned with HTTP `400` when the request body is not valid JSON. The `reason` argument says what the parser could not do, and `line` and `column` say where it stopped.
-- `request:unknown_property`: Returned with HTTP `400` when the body holds a property the endpoint does not have. The `path` is a JSON Pointer to the property, such as `/fields/title/sortable`, and the `property` argument names it. The server refuses a misspelled property instead of dropping it, so check the spelling against the request fields the endpoint documents.
-- `request:value_invalid`: Returned with HTTP `400` when a value does not fit the property it is written at, such as a string where a number belongs, or a `type` that names no member of a tagged union. The `path` is a JSON Pointer to the value, and the `reason` argument says what did not fit.
+- `request:unknown_property`: Returned with HTTP `400` when the body holds a property the endpoint does not have. The `path` is the path to the property, such as `fields.title.sortable`, and the `property` argument names it. The server refuses a misspelled property instead of dropping it, so check the spelling against the request fields the endpoint documents.
+- `request:value_invalid`: Returned with HTTP `400` when a value does not fit the property it is written at, such as a string where a number belongs, or a `type` that names no member of a tagged union. The `path` is the path to the value, and the `reason` argument says what did not fit.
 - `request:too_large`: Returned with HTTP `413` when the request body is larger than the node accepts, set by `quarkus.http.limits.max-body-size`. The response closes the connection. Send the documents in smaller batches.
 - `request:not_found`: Returned with HTTP `404` when no endpoint answers the path. A path that an endpoint answers, naming an index that does not exist, returns `index:not_found` instead.
 - `request:method_not_allowed`: Returned with HTTP `405` when the path is not answered for the HTTP method of the request. For the methods a path is answered for, see the [REST API pages](https://exofind.dev/api/).

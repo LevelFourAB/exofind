@@ -279,7 +279,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:join_not_applicable"));
-		assertThat(pathsOf(e), contains("/query/0/join"));
+		assertThat(pathsOf(e), contains("query[0].join"));
 	}
 
 	/**
@@ -310,7 +310,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:join_not_applicable"));
-		assertThat(pathsOf(e), contains("/query/0/join"));
+		assertThat(pathsOf(e), contains("query[0].join"));
 	}
 
 	@Test
@@ -436,7 +436,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:interpret_fields_required"));
-		assertThat(pathsOf(e), contains("/query/0/interpret/fields"));
+		assertThat(pathsOf(e), contains("query[0].interpret.fields"));
 	}
 
 	@Test
@@ -469,7 +469,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:interpret_when_unsupported"));
-		assertThat(pathsOf(e), contains("/query/0/interpret/fields/0/when/0"));
+		assertThat(pathsOf(e), contains("query[0].interpret.fields[0].when[0]"));
 	}
 
 	@Test
@@ -496,7 +496,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:slop_invalid"));
-		assertThat(pathsOf(e), contains("/query/0/slop"));
+		assertThat(pathsOf(e), contains("query[0].slop"));
 	}
 
 	/**
@@ -528,7 +528,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:slop_not_applicable"));
-		assertThat(pathsOf(e), contains("/query/0/slop"));
+		assertThat(pathsOf(e), contains("query[0].slop"));
 	}
 
 	@Test
@@ -621,7 +621,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:path_required"));
-		assertThat(pathsOf(e), contains("/query/0/path"));
+		assertThat(pathsOf(e), contains("query[0].path"));
 	}
 
 	@Test
@@ -713,7 +713,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:signal:mode_without_signals"));
-		assertThat(pathsOf(e), contains("/signalsMode"));
+		assertThat(pathsOf(e), contains("signalsMode"));
 	}
 
 	@Test
@@ -776,12 +776,12 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			contains(
-				"/signals/0/field",
-				"/signals/1",
-				"/signals/2",
-				"/signals/3/saturation/pivot",
-				"/signals/4/decay/halfLife",
-				"/signals/5/weight"
+				"signals[0].field",
+				"signals[1]",
+				"signals[2]",
+				"signals[3].saturation.pivot",
+				"signals[4].decay.halfLife",
+				"signals[5].weight"
 			)
 		);
 	}
@@ -881,7 +881,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:cursor:sort_mismatch"));
-		assertThat(pathsOf(e), contains("/after"));
+		assertThat(pathsOf(e), contains("after"));
 	}
 
 	@Test
@@ -937,7 +937,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:pages:without_offset"));
-		assertThat(pathsOf(e), contains("/pages"));
+		assertThat(pathsOf(e), contains("pages"));
 	}
 
 	@Test
@@ -954,7 +954,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:cursor:invalid"));
-		assertThat(pathsOf(e), contains("/before"));
+		assertThat(pathsOf(e), contains("before"));
 	}
 
 	@Test
@@ -1008,10 +1008,10 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			containsInAnyOrder(
-				"/query/0/match/value",
-				"/query/1/clauses/0/field",
-				"/query/2/match",
-				"/query/3/match"
+				"query[0].match.value",
+				"query[1].clauses[0].field",
+				"query[2].match",
+				"query[3].match"
 			)
 		);
 		assertThat(
@@ -1118,7 +1118,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:rankings_invalid"));
-		assertThat(pathsOf(e), contains("/query/0/rankings"));
+		assertThat(pathsOf(e), contains("query[0].rankings"));
 	}
 
 	@Test
@@ -1182,7 +1182,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:with_knn"));
-		assertThat(pathsOf(e), contains("/query/0/rankings/1/clauses/0"));
+		assertThat(pathsOf(e), contains("query[0].rankings[1].clauses[0]"));
 	}
 
 	@Test
@@ -1201,7 +1201,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
-		assertThat(pathsOf(e), contains("/query/0/weight"));
+		assertThat(pathsOf(e), contains("query[0].weight"));
 	}
 
 	@Test
@@ -1220,7 +1220,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
-		assertThat(pathsOf(e), contains("/query/0/weight"));
+		assertThat(pathsOf(e), contains("query[0].weight"));
 	}
 
 	@Test
@@ -1239,7 +1239,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
-		assertThat(pathsOf(e), contains("/query/0/weight"));
+		assertThat(pathsOf(e), contains("query[0].weight"));
 	}
 
 	@Test
@@ -1272,7 +1272,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:locale:unsupported"));
-		assertThat(pathsOf(e), contains("/locale"));
+		assertThat(pathsOf(e), contains("locale"));
 	}
 
 	@Test
@@ -1356,7 +1356,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:filter:clause_invalid"));
-		assertThat(pathsOf(e), contains("/filters/0"));
+		assertThat(pathsOf(e), contains("filters[0]"));
 	}
 
 	@Test
@@ -1380,7 +1380,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:filter:scores"));
-		assertThat(pathsOf(e), contains("/filters/0"));
+		assertThat(pathsOf(e), contains("filters[0]"));
 	}
 
 	@Test
@@ -1431,7 +1431,7 @@ public class SearchRequestMapperTest {
 		);
 		assertThat(
 			pathsOf(e),
-			contains("/query/0/match/values/0", "/query/0/match/values/1")
+			contains("query[0].match.values[0]", "query[0].match.values[1]")
 		);
 	}
 
@@ -1472,7 +1472,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:facet:exclude_filters_invalid"));
-		assertThat(pathsOf(e), contains("/facets/0/excludeFilters/0"));
+		assertThat(pathsOf(e), contains("facets[0].excludeFilters[0]"));
 	}
 
 	@Test
@@ -1603,9 +1603,9 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			contains(
-				"/facets/0/path",
-				"/facets/1/depth",
-				"/facets/2"
+				"facets[0].path",
+				"facets[1].depth",
+				"facets[2]"
 			)
 		);
 	}
@@ -1633,7 +1633,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(pathsOf(e), contains("/query/0/match/path"));
+		assertThat(pathsOf(e), contains("query[0].match.path"));
 	}
 
 	@Test
@@ -1704,10 +1704,10 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			contains(
-				"/facets/0/ranges",
-				"/facets/1",
-				"/facets/2",
-				"/facets/3/ranges/0"
+				"facets[0].ranges",
+				"facets[1]",
+				"facets[2]",
+				"facets[3].ranges[0]"
 			)
 		);
 	}
@@ -1746,12 +1746,12 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			contains(
-				"/filters/0/field",
-				"/filters/0/match",
-				"/facets/0/field",
-				"/facets/1/name",
-				"/facets/1/limit",
-				"/facets/3/name"
+				"filters[0].field",
+				"filters[0].match",
+				"facets[0].field",
+				"facets[1].name",
+				"facets[1].limit",
+				"facets[3].name"
 			)
 		);
 	}
@@ -1773,7 +1773,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:facet:limit_invalid"));
-		assertThat(pathsOf(e), contains("/facets/0/limit"));
+		assertThat(pathsOf(e), contains("facets[0].limit"));
 		assertThat(e.getErrors().get(0).getArguments().get("max"), is(50));
 	}
 
@@ -1830,7 +1830,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:highlight:fields_required"));
-		assertThat(pathsOf(e), contains("/highlight/fields"));
+		assertThat(pathsOf(e), contains("highlight.fields"));
 	}
 
 	@Test
@@ -1847,7 +1847,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:highlight:fragments_invalid"));
-		assertThat(pathsOf(e), contains("/highlight/fields/name/fragments"));
+		assertThat(pathsOf(e), contains("highlight.fields.name.fragments"));
 	}
 
 	@Test
@@ -1864,7 +1864,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:highlight:length_invalid"));
-		assertThat(pathsOf(e), contains("/highlight/fields/name/length"));
+		assertThat(pathsOf(e), contains("highlight.fields.name.length"));
 	}
 
 	@Test
@@ -1881,7 +1881,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:highlight:field_required"));
-		assertThat(pathsOf(e), contains("/highlight/fields"));
+		assertThat(pathsOf(e), contains("highlight.fields"));
 	}
 
 	private static SearchRequest withMatched(SearchRequest.Matched matched) {
@@ -1923,7 +1923,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:matched:field_required"));
-		assertThat(pathsOf(e), contains("/matched/fields"));
+		assertThat(pathsOf(e), contains("matched.fields"));
 	}
 
 	@Test
@@ -1940,7 +1940,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:matched:field_required"));
-		assertThat(pathsOf(e), contains("/matched/fields"));
+		assertThat(pathsOf(e), contains("matched.fields"));
 	}
 
 	@Test
@@ -1964,8 +1964,8 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			containsInAnyOrder(
-				"/matched/fields/variants/limit",
-				"/matched/fields/chunks/limit"
+				"matched.fields.variants.limit",
+				"matched.fields.chunks.limit"
 			)
 		);
 	}
@@ -2008,7 +2008,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:matched:fields_empty"));
-		assertThat(pathsOf(e), contains("/matched/fields/variants/fields"));
+		assertThat(pathsOf(e), contains("matched.fields.variants.fields"));
 	}
 
 	@Test
@@ -2037,8 +2037,8 @@ public class SearchRequestMapperTest {
 		assertThat(
 			pathsOf(e),
 			contains(
-				"/matched/fields/variants/fields/0",
-				"/matched/fields/variants/fields/1"
+				"matched.fields.variants.fields[0]",
+				"matched.fields.variants.fields[1]"
 			)
 		);
 	}
@@ -2110,7 +2110,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:fields_empty"));
-		assertThat(pathsOf(e), contains("/hits/fields"));
+		assertThat(pathsOf(e), contains("hits.fields"));
 	}
 
 	@Test
@@ -2139,7 +2139,7 @@ public class SearchRequestMapperTest {
 		);
 		assertThat(
 			pathsOf(e),
-			contains("/hits/fields/0", "/hits/fields/1")
+			contains("hits.fields[0]", "hits.fields[1]")
 		);
 	}
 
@@ -2154,7 +2154,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:path_required"));
-		assertThat(pathsOf(e), contains("/hits/path"));
+		assertThat(pathsOf(e), contains("hits.path"));
 	}
 
 	@Test
@@ -2175,7 +2175,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:with_matched"));
-		assertThat(pathsOf(e), contains("/matched"));
+		assertThat(pathsOf(e), contains("matched"));
 	}
 
 	@Test
@@ -2197,7 +2197,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:with_highlight"));
-		assertThat(pathsOf(e), contains("/highlight/fields"));
+		assertThat(pathsOf(e), contains("highlight.fields"));
 	}
 
 	@Test
@@ -2239,7 +2239,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:with_knn", "search:hits:with_knn"));
-		assertThat(pathsOf(e), contains("/query/0", "/query/1/clauses/1"));
+		assertThat(pathsOf(e), contains("query[0]", "query[1].clauses[1]"));
 	}
 
 	/**
@@ -2281,7 +2281,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:distance_sort"));
-		assertThat(pathsOf(e), contains("/sort/0"));
+		assertThat(pathsOf(e), contains("sort[0]"));
 	}
 
 	@Test
@@ -2339,7 +2339,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:when_clause_invalid"));
-		assertThat(pathsOf(e), contains("/hits/when/0"));
+		assertThat(pathsOf(e), contains("hits.when[0]"));
 	}
 
 	@Test
@@ -2366,7 +2366,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:when_scores"));
-		assertThat(pathsOf(e), contains("/hits/when/0"));
+		assertThat(pathsOf(e), contains("hits.when[0]"));
 	}
 
 	@Test
@@ -2389,7 +2389,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:when_field_sort"));
-		assertThat(pathsOf(e), contains("/sort/0"));
+		assertThat(pathsOf(e), contains("sort[0]"));
 	}
 
 	@Test
@@ -2474,7 +2474,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:rescore:window_required"));
-		assertThat(pathsOf(e), contains("/rescore/window"));
+		assertThat(pathsOf(e), contains("rescore.window"));
 	}
 
 	@Test
@@ -2496,7 +2496,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:rescore:window_invalid"));
-		assertThat(pathsOf(e), contains("/rescore/window"));
+		assertThat(pathsOf(e), contains("rescore.window"));
 	}
 
 	@Test
@@ -2518,7 +2518,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:rescore:window_too_small"));
-		assertThat(pathsOf(e), contains("/rescore/window"));
+		assertThat(pathsOf(e), contains("rescore.window"));
 	}
 
 	@Test
@@ -2532,7 +2532,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:rescore:empty"));
-		assertThat(pathsOf(e), contains("/rescore"));
+		assertThat(pathsOf(e), contains("rescore"));
 	}
 
 	@Test
@@ -2554,7 +2554,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:rescore:weight_invalid"));
-		assertThat(pathsOf(e), contains("/rescore/weight"));
+		assertThat(pathsOf(e), contains("rescore.weight"));
 	}
 
 	@Test
@@ -2576,7 +2576,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:signal:shape_invalid"));
-		assertThat(pathsOf(e), contains("/rescore/signals/0"));
+		assertThat(pathsOf(e), contains("rescore.signals[0]"));
 	}
 
 	@Test
@@ -2600,7 +2600,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:rescore:hits_unsupported"));
-		assertThat(pathsOf(e), contains("/rescore"));
+		assertThat(pathsOf(e), contains("rescore"));
 	}
 
 	@Test
@@ -2639,7 +2639,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:limit:too_large"));
-		assertThat(pathsOf(e), contains("/limit"));
+		assertThat(pathsOf(e), contains("limit"));
 	}
 
 	@Test
@@ -2659,7 +2659,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
-		assertThat(pathsOf(e), contains("/filters/1"));
+		assertThat(pathsOf(e), contains("filters[1]"));
 	}
 
 	@Test
@@ -2677,7 +2677,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
-		assertThat(pathsOf(e), contains("/query/0/clauses/1"));
+		assertThat(pathsOf(e), contains("query[0].clauses[1]"));
 	}
 
 	@Test
@@ -2717,7 +2717,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:query:too_deep"));
-		assertThat(pathsOf(e), contains("/query/0/clauses/0/clauses/0/clauses"));
+		assertThat(pathsOf(e), contains("query[0].clauses[0].clauses[0].clauses"));
 	}
 
 	@Test
@@ -2757,7 +2757,7 @@ public class SearchRequestMapperTest {
 		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
 		assertThat(
 			pathsOf(e),
-			contains("/query/0/interpret/fields/0/fallback/0/when/0")
+			contains("query[0].interpret.fields[0].fallback[0].when[0]")
 		);
 	}
 
@@ -2779,7 +2779,7 @@ public class SearchRequestMapperTest {
 		assertThat(codesOf(e), contains("search:query:too_deep"));
 		assertThat(
 			pathsOf(e),
-			contains("/query/0/interpret/fields/0/fallback/0/fallback")
+			contains("query[0].interpret.fields[0].fallback[0].fallback")
 		);
 	}
 
@@ -2828,7 +2828,7 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:k_too_large"));
-		assertThat(pathsOf(e), contains("/query/0/k"));
+		assertThat(pathsOf(e), contains("query[0].k"));
 	}
 
 	@Test
@@ -2854,6 +2854,6 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:clause:depth_too_large"));
-		assertThat(pathsOf(e), contains("/query/0/depth"));
+		assertThat(pathsOf(e), contains("query[0].depth"));
 	}
 }

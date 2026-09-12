@@ -2982,7 +2982,7 @@ public class Index {
 			if(entry.getValue().getRequired() && !fieldsFound.contains(entry.getKey())) {
 				errors.add(
 					ERROR_REQUIRED_FIELD_MISSING.toMessage(
-						location.forField(entry.getKey()),
+						location.forKey(entry.getKey()),
 						"name", entry.getKey()
 					)
 				);

@@ -17,7 +17,7 @@ import se.l4.exofind.engine.query.Facet;
  * request becomes a search that brings back no hits and counts one facet
  * carrying the prefix. The clauses are mapped the way
  * {@link SearchRequestMapper} maps them, and every problem found is collected
- * and reported together, each with a JSON Pointer into the request body.
+ * and reported together, each with a path into the request body.
  */
 final class FacetValuesRequestMapper {
 	private FacetValuesRequestMapper() {
@@ -56,7 +56,7 @@ final class FacetValuesRequestMapper {
 		if(body.limit() != null) {
 			if(body.limit() < 1 || body.limit() > limits.maxFacetValues()) {
 				errors.add(SearchRequestMapper.FACET_LIMIT_INVALID.toMessage(
-					Location.create("/limit"),
+					Location.create("limit"),
 					"max", limits.maxFacetValues()
 				));
 			} else {
@@ -64,12 +64,12 @@ final class FacetValuesRequestMapper {
 			}
 		}
 
-		var query = SearchRequestMapper.toClauses(body.query(), "/query", errors);
+		var query = SearchRequestMapper.toClauses(body.query(), "query", errors);
 		var filters = SearchRequestMapper.toFilters(body.filters(), errors);
 
 		if(body.locale() != null && !Locales.isSupported(body.locale())) {
 			errors.add(SearchRequestMapper.LOCALE_UNSUPPORTED.toMessage(
-				Location.create("/locale"),
+				Location.create("locale"),
 				"locale", body.locale()
 			));
 		}

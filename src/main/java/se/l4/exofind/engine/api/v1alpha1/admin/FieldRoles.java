@@ -162,7 +162,7 @@ public class FieldRoles {
 		for(var entry : fields.entrySet()) {
 			expanded.put(
 				entry.getKey(),
-				expand(entry.getKey(), entry.getValue(), context, at.forField(entry.getKey()))
+				expand(entry.getKey(), entry.getValue(), context, at.forKey(entry.getKey()))
 			);
 		}
 		return expanded;

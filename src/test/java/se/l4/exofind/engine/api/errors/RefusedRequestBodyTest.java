@@ -100,13 +100,13 @@ public class RefusedRequestBodyTest {
 			.statusCode(400)
 			.body("code", is("request:unknown_property"))
 			.body("errors[0].code", is("request:unknown_property"))
-			.body("errors[0].path", is("/localefallback"))
+			.body("errors[0].path", is("localefallback"))
 			.body("errors[0].arguments.property", is("localefallback"));
 	}
 
 	/**
-	 * A property nested inside the request. The path is a JSON Pointer, so it
-	 * names the place in the body as the caller wrote it.
+	 * A property nested inside the request. The path names the place in the body
+	 * as the caller wrote it.
 	 */
 	@Test
 	@Order(3)
@@ -123,7 +123,7 @@ public class RefusedRequestBodyTest {
 			.then()
 			.statusCode(400)
 			.body("code", is("request:unknown_property"))
-			.body("errors[0].path", is("/fields/id/sortable"));
+			.body("errors[0].path", is("fields.id.sortable"));
 	}
 
 	/**
@@ -157,7 +157,7 @@ public class RefusedRequestBodyTest {
 			.statusCode(400)
 			.body("code", is("request:value_invalid"))
 			.body("errors[0].code", is("request:value_invalid"))
-			.body("errors[0].path", is("/limit"));
+			.body("errors[0].path", is("limit"));
 	}
 
 	/**
@@ -177,7 +177,7 @@ public class RefusedRequestBodyTest {
 			.then()
 			.statusCode(400)
 			.body("code", is("request:value_invalid"))
-			.body("errors[0].path", startsWith("/fields"));
+			.body("errors[0].path", startsWith("fields"));
 	}
 
 	/**

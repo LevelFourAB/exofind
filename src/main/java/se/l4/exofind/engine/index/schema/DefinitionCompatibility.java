@@ -235,7 +235,7 @@ public class DefinitionCompatibility {
 			var name = prefix.isEmpty() ? entry.getKey() : prefix + '.' + entry.getKey();
 
 			checkField(
-				location.forField(entry.getKey()),
+				location.forKey(entry.getKey()),
 				name,
 				before,
 				currentResources,
