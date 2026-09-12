@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.store.FSDirectory;
@@ -203,6 +205,38 @@ public class IndexPullTest {
 	}
 
 	/**
+	 * A close waits for the pull that is running. A pull writes into the local
+	 * directory, and the next instance of the same generation starts pulling
+	 * into that directory as soon as the close returns. Two pulls of one
+	 * directory download into the same paths and write their own manifest over
+	 * each other.
+	 */
+	@Test
+	public void testCloseWaitsForThePullThatIsRunning() throws Exception {
+		var sync = new CopyingSync();
+		var path = indexRoot.resolve("reader");
+		Files.createDirectories(path);
+		sync.localPath = path;
+		sync.blockPull = new CountDownLatch(1);
+
+		// Read only, so that a pull of it runs whatever state it is in
+		var index = new Index(new NodeState(false), "reader", path, sync);
+		indexes.add(index);
+
+		var pull = new Thread(index::pull, "pull-reader");
+		pull.start();
+
+		assertThat(sync.pullEntered.await(5, TimeUnit.SECONDS), is(true));
+
+		index.close(false);
+
+		assertThat(sync.inPull, is(false));
+		assertThat(index.getState(), is(IndexState.CLOSED));
+
+		pull.join();
+	}
+
+	/**
 	 * Node state as it looks on a node that has been granted the indexer role.
 	 */
 	private static NodeState nodeState() {
@@ -274,39 +308,92 @@ public class IndexPullTest {
 		 */
 		Set<String> pushed;
 
+		/**
+		 * Latch a pull waits on before it copies anything, or {@code null} for
+		 * a pull that runs straight through. Counted down when the pull is
+		 * stopped, the way a real transfer ends when it is told to.
+		 */
+		CountDownLatch blockPull;
+
+		/**
+		 * Counted down by a pull that has reached the latch above.
+		 */
+		final CountDownLatch pullEntered = new CountDownLatch(1);
+
+		/**
+		 * Whether a pull is between being called and returning. A close may
+		 * not let the local directory go during that span.
+		 */
+		volatile boolean inPull;
+
+		/**
+		 * Whether pulling has been stopped.
+		 */
+		volatile boolean stopped;
+
+		@Override
+		public void stopPulling() {
+			stopped = true;
+
+			var block = blockPull;
+			if(block != null) {
+				block.countDown();
+			}
+		}
+
 		@Override
 		public boolean pull() throws IOException {
-			if(download == null || localPath == null) {
-				return false;
-			}
+			inPull = true;
+			try {
+				var block = blockPull;
+				if(block != null) {
+					pullEntered.countDown();
 
-			/*
-			 * Lock files are left alone, as a real pull does - everything else
-			 * is what the copied directory holds and nothing more.
-			 */
-			try(var files = Files.list(localPath)) {
-				for(var path : files.toList()) {
-					if(!isLock(path)) {
-						Files.delete(path);
+					/*
+					 * Given up after a while, so a close that does not wait for
+					 * the pull fails the test instead of hanging it.
+					 */
+					try {
+						block.await(5, TimeUnit.SECONDS);
+					} catch(InterruptedException e) {
+						Thread.currentThread().interrupt();
 					}
 				}
-			}
 
-			try(var files = Files.list(download)) {
-				for(var path : files.toList()) {
-					if(isLock(path)) {
-						continue;
-					}
-
-					Files.copy(
-						path,
-						localPath.resolve(path.getFileName().toString()),
-						StandardCopyOption.REPLACE_EXISTING
-					);
+				if(stopped || download == null || localPath == null) {
+					return false;
 				}
-			}
 
-			return true;
+				/*
+				 * Lock files are left alone, as a real pull does - everything
+				 * else is what the copied directory holds and nothing more.
+				 */
+				try(var files = Files.list(localPath)) {
+					for(var path : files.toList()) {
+						if(!isLock(path)) {
+							Files.delete(path);
+						}
+					}
+				}
+
+				try(var files = Files.list(download)) {
+					for(var path : files.toList()) {
+						if(isLock(path)) {
+							continue;
+						}
+
+						Files.copy(
+							path,
+							localPath.resolve(path.getFileName().toString()),
+							StandardCopyOption.REPLACE_EXISTING
+						);
+					}
+				}
+
+				return true;
+			} finally {
+				inPull = false;
+			}
 		}
 
 		private static boolean isLock(Path path) {

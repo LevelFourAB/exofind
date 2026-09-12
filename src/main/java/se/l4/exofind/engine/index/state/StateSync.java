@@ -85,6 +85,25 @@ public interface StateSync {
 	boolean pull() throws IOException;
 
 	/**
+	 * Stop the pull that is running and refuse later ones, for an index whose
+	 * local copy is about to be taken over by another instance. Returns at
+	 * once; the caller waits for {@link #pull()} to return.
+	 *
+	 * <p>A pull that is underway stops at a point a later pull can continue
+	 * from: it leaves the files it downloaded, records no synchronization and
+	 * removes no file. A pull that failed part way leaves the same, and the
+	 * next pull checks those files against the manifest it applies.
+	 *
+	 * <p>Final for the instance. Pushes still work, so a close can flush what
+	 * the index holds.
+	 *
+	 * <p>The default does nothing, for an implementation that keeps no record
+	 * of its own.
+	 */
+	default void stopPulling() {
+	}
+
+	/**
 	 * The version of the manifest this node last synchronized, whether it was
 	 * pulled or pushed. What it is compared against is the version another
 	 * writer reported, so a copy already at it need not ask the remote.

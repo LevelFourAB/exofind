@@ -171,6 +171,12 @@ public class ObjectStorageSync implements StateSync {
 	 */
 	private long lastSweepNanos;
 
+	/**
+	 * Set by {@link #stopPulling()} and never unset. Read without the lock, as
+	 * a pull that is running holds the lock for as long as it transfers.
+	 */
+	private volatile boolean pullsStopped;
+
 	public ObjectStorageSync(
 		S3Client client,
 		String index,
@@ -445,7 +451,21 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	@Override
+	public void stopPulling() {
+		this.pullsStopped = true;
+	}
+
+	@Override
 	public boolean pull() throws IOException {
+		if(pullsStopped) {
+			/*
+			 * Another instance is taking the local directory over. Checked
+			 * before the lock so a caller does not queue behind the pull that
+			 * is stopping.
+			 */
+			return false;
+		}
+
 		lock.lock();
 		try {
 			/*
@@ -518,6 +538,11 @@ public class ObjectStorageSync implements StateSync {
 
 			var renamedInto = new LinkedHashSet<Path>();
 			for(var file : manifest.getFilesList()) {
+				if(pullsStopped) {
+					// Checked between files, so the caller waits for one download at most
+					return stopped();
+				}
+
 				var localFile = resolveLocal(file.getName());
 
 				if(
@@ -548,6 +573,15 @@ public class ObjectStorageSync implements StateSync {
 
 				downloadFile(file, localFile);
 				renamedInto.add(localFile.getParent());
+			}
+
+			if(pullsStopped) {
+				/*
+				 * Last point where the manifest and the removals below can be
+				 * left undone. Both say the local directory holds this manifest,
+				 * and the instance taking the directory over establishes that.
+				 */
+				return stopped();
 			}
 
 			/*
@@ -585,6 +619,21 @@ public class ObjectStorageSync implements StateSync {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Report that a stopped pull brought no changes. The files it downloaded
+	 * stay on disk, the same as after a pull that failed part way.
+	 *
+	 * @return
+	 *   always {@code false}
+	 */
+	private boolean stopped() {
+		logger.atDebug()
+			.addKeyValue("index", index)
+			.log("Pull stopped, the local copy is being handed to another instance");
+
+		return false;
 	}
 
 	@Override

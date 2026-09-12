@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.function.Consumer;
 
 import org.apache.commons.lang3.RandomStringUtils;
@@ -999,6 +1000,69 @@ public class ObjectStorageSyncTest {
 				(GetObjectRequest request) -> request != null
 					&& (d1Key.equals(request.key()) || segmentKey.equals(request.key()))
 			));
+	}
+
+	/**
+	 * A stopped sync belongs to a local directory another instance is taking
+	 * over, so it pulls nothing at all.
+	 */
+	@Test
+	void testStoppedSyncPullsNothing() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var reader = newSync(s3Client, otherLocalPath);
+		reader.stopPulling();
+
+		assertThat(reader.pull(), is(false));
+		assertThat(reader.syncedVersion(), is(OptionalLong.empty()));
+		assertThat(Files.exists(otherLocalPath.resolve(segment.name)), is(false));
+	}
+
+	/**
+	 * A pull stopped part way records no synchronization and removes no file.
+	 * Both say the local directory holds the manifest being pulled, and the
+	 * instance taking the directory over establishes that. The downloaded
+	 * files stay behind, and the pull of that instance checks them against the
+	 * manifest it applies.
+	 */
+	@Test
+	void testStoppingAPullPartWayRecordsNothing() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 20);
+		push(segment, definition);
+
+		var leftover = createLocalFile(otherLocalPath, "data.download.tmp", 25);
+
+		var stoppingClient = Mockito.spy(s3Client);
+		var reader = newSync(stoppingClient, otherLocalPath);
+
+		// Stopped while the files of the index are being downloaded
+		Mockito.doAnswer(invocation -> {
+			reader.stopPulling();
+			return invocation.callRealMethod();
+		})
+			.when(stoppingClient)
+			.getObject(ArgumentMatchers.argThat(
+				(GetObjectRequest request) -> request != null
+					&& !request.key().endsWith(LocalCopy.MANIFEST_FILE)
+			));
+
+		assertThat(reader.pull(), is(false));
+
+		assertThat(reader.syncedVersion(), is(OptionalLong.empty()));
+		assertThat(
+			Files.exists(otherLocalPath.resolve(LocalCopy.MANIFEST_FILE)),
+			is(false)
+		);
+		verifyLocalFile(otherLocalPath, leftover);
+
+		// The instance that takes the directory over pulls the whole copy
+		var restarted = newSync(s3Client, otherLocalPath);
+		assertThat(restarted.pull(), is(true));
+
+		verifyLocalFile(otherLocalPath, segment);
+		verifyLocalFile(otherLocalPath, definition);
 	}
 
 	/**

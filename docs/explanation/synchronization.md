@@ -149,6 +149,12 @@ To prevent this corruption, the engine rolls the writer back before the pull sta
 
 Two checks protect a local copy that loses files for another reason. When the local manifest names a commit, the node opens the writer in Lucene append mode, so Lucene reports a missing commit as an error instead of creating an empty index. Local storage mode keeps no manifest and does not use append mode. In addition, a push fails if its files contain no Lucene commit while the last synchronized manifest names one, preventing a manifest with no segments from deleting remote segment objects and making the index unrecoverable.
 
+## A close waits for the pull that is running
+
+A node closes an open generation when the cache evicts it, when the node hands the index over, and when it shuts down. The next request opens a new instance over the same local directory, and that instance pulls into it. A close therefore stops further pulls of the instance it closes and waits for the pull that is running. Two pulls of one directory download into the same paths, write their own manifest over each other, and delete the files the other one brought.
+
+The close tells the synchronization to stop before it waits, so the pull returns after the file it is downloading instead of after the whole index. A stopped pull writes no manifest and deletes no local file. It leaves the local copy in the state a pull that failed part way leaves, and the pull of the next instance checks the downloaded files against the manifest it applies.
+
 ## Leadership is liveness, not safety
 
 The bucket maintains a single leadership table that tracks which node writes to each index. The table contains a claim entry for each index naming its holder, alongside an entry for each candidate node indicating that the candidate is alive. The table is updated as a whole, conditionally based on its version. If two candidates attempt concurrent updates, only one write succeeds.

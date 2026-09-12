@@ -24,6 +24,7 @@ import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -319,6 +320,13 @@ public class Index {
 	private final ReadWriteLock syncLock;
 
 	/**
+	 * Signalled when a pull ends, for a close waiting for the one that is
+	 * running. Uses the write side of {@link #syncLock}, which guards
+	 * {@link #pulling}.
+	 */
+	private final Condition pullDone;
+
+	/**
 	 * Gate every change to the contents passes through, separate from
 	 * {@link #syncLock} so that holding writes still does not hold searches.
 	 * Writes take the read side before the sync lock and a
@@ -350,6 +358,26 @@ public class Index {
 	 * indexing both run there and both move the index between states.
 	 */
 	private volatile IndexState state;
+
+	/**
+	 * Whether a close has begun. Guarded by the write lock of
+	 * {@link #syncLock} and read through {@link #isClosing()}. The state moves
+	 * to {@link IndexState#CLOSED} only after the close has waited for the
+	 * pull and flushed what the instance holds, so nothing may start pulling
+	 * or opening in between.
+	 */
+	private boolean closing;
+
+	/**
+	 * Whether a pull is running. Guarded by the write lock of
+	 * {@link #syncLock}, and {@link #pullDone} is signalled when it goes
+	 * false.
+	 *
+	 * <p>Separate from {@link IndexState#PULLING} because a pull sets the
+	 * state it ended with before it returns. A close waits for the pull
+	 * itself, which writes into the local directory.
+	 */
+	private boolean pulling;
 
 	/**
 	 * Guards the pair of {@link #state} and {@link #modifications} for the two
@@ -708,6 +736,7 @@ public class Index {
 		this.schema = new IndexSchema();
 		this.similarity = new IndexSimilarity(schema);
 		this.syncLock = new ReentrantReadWriteLock();
+		this.pullDone = syncLock.writeLock().newCondition();
 		this.writeGate = new ReentrantReadWriteLock();
 		this.stateLock = new Object();
 
@@ -811,9 +840,9 @@ public class Index {
 				return;
 			}
 
-			if(state == IndexState.CLOSED) {
+			if(isClosing()) {
 				/*
-				 * Pulling would reopen the Lucene directory on an instance that
+				 * Pulling would write into the directory of an instance that
 				 * has been retired, next to the instance that replaced it.
 				 */
 				return;
@@ -840,10 +869,47 @@ public class Index {
 			if(releasedWriter) {
 				releaseWriter();
 			}
+
+			/*
+			 * Set last, so a failure above does not leave a close waiting for a
+			 * pull that never ran.
+			 */
+			pulling = true;
 		} finally {
 			syncLock.writeLock().unlock();
 		}
 
+		try {
+			pullChanges(startState, releasedWriter);
+		} finally {
+			/*
+			 * Signalled once the pull has stopped writing into the local
+			 * directory. A close waits for this before it lets the directory go
+			 * to the next instance.
+			 */
+			syncLock.writeLock().lock();
+			try {
+				pulling = false;
+				pullDone.signalAll();
+			} finally {
+				syncLock.writeLock().unlock();
+			}
+		}
+	}
+
+	/**
+	 * Bring the local copy up to what the remote holds, and open what arrived.
+	 * Called by {@link #pull()} with the index in {@link IndexState#PULLING},
+	 * and decides the state the index is left in.
+	 *
+	 * @param startState
+	 *   state the index was in before the pull, which it goes back to when
+	 *   nothing was downloaded
+	 * @param releasedWriter
+	 *   whether a writer was released before the download, in which case only
+	 *   this call opens the next one
+	 */
+	private void pullChanges(IndexState startState, boolean releasedWriter) {
 		/*
 		 * Perform the pull outside the lock so normal operations can continue
 		 * while synchronization is in progress.
@@ -873,7 +939,7 @@ public class Index {
 			 */
 			syncLock.writeLock().lock();
 			try {
-				if(state == IndexState.CLOSED) {
+				if(isClosing()) {
 					return;
 				}
 
@@ -907,13 +973,13 @@ public class Index {
 			/*
 			 * A failed pull leaves the local copy as it was, so the index goes
 			 * back to the state it was in rather than staying halfway through a
-			 * pull that nothing will finish. Unless the index was closed while
-			 * the pull ran - a closed instance stays closed - or its writer was
-			 * let go above, as only another pull opens the next one.
+			 * pull that nothing will finish. Unless the index was closed or is
+			 * being closed, where the close decides the state, or its writer
+			 * was let go above, as only another pull opens the next one.
 			 */
 			syncLock.writeLock().lock();
 			try {
-				if(state != IndexState.CLOSED) {
+				if(!isClosing()) {
 					state = releasedWriter ? IndexState.NEEDS_PULL : startState;
 				}
 			} finally {
@@ -924,11 +990,11 @@ public class Index {
 
 		syncLock.writeLock().lock();
 		try {
-			if(state == IndexState.CLOSED) {
+			if(isClosing()) {
 				/*
-				 * Closed while the pull ran. The pulled files are on disk for
-				 * the instance that replaces this one, but nothing may be
-				 * opened here anymore.
+				 * Closed, or being closed, while the pull ran. The pulled files
+				 * are on disk for the instance that replaces this one, but
+				 * nothing may be opened here anymore.
 				 */
 				return;
 			}
@@ -1218,8 +1284,8 @@ public class Index {
 				return true;
 			}
 
-			if(state == IndexState.CLOSED) {
-				// A closed instance is not brought back
+			if(isClosing()) {
+				// An instance that is closed or closing is not brought back
 				return true;
 			}
 
@@ -1289,7 +1355,7 @@ public class Index {
 
 		syncLock.writeLock().lock();
 		try {
-			if(state == IndexState.PULLING || state == IndexState.CLOSED) {
+			if(state == IndexState.PULLING || isClosing()) {
 				return true;
 			}
 
@@ -1577,6 +1643,18 @@ public class Index {
 		} finally {
 			syncLock.readLock().unlock();
 		}
+	}
+
+	/**
+	 * Whether this instance is closed or being closed. Read where something is
+	 * about to be pulled or opened: the local directory belongs to the next
+	 * instance from the moment a close starts, and the state only says CLOSED
+	 * at the end of that close.
+	 *
+	 * <p>Call with a side of {@link #syncLock} held.
+	 */
+	private boolean isClosing() {
+		return closing || state == IndexState.CLOSED;
 	}
 
 	/**
@@ -8263,6 +8341,54 @@ public class Index {
 		}
 	}
 
+	/**
+	 * Stop pulling and wait for the pull that is running. A pull downloads
+	 * into the local directory, records the synchronization there and removes
+	 * the files the pulled manifest does not name. The next instance of the
+	 * same generation pulls into that directory as soon as the close returns,
+	 * and two pulls of one directory download into the same paths and write
+	 * their own manifest over each other.
+	 *
+	 * <p>The sync is told to stop before the wait, so the pull returns after
+	 * the file it is downloading instead of after the whole index. It leaves
+	 * downloaded files behind, and the next pull checks those against the
+	 * manifest it applies.
+	 */
+	private void awaitPull() {
+		syncLock.writeLock().lock();
+		try {
+			closing = true;
+		} finally {
+			syncLock.writeLock().unlock();
+		}
+
+		/*
+		 * Told outside the lock: a pull holds no lock of the index while it
+		 * transfers, and it has to see this before the wait below can end.
+		 */
+		sync.stopPulling();
+
+		syncLock.writeLock().lock();
+		try {
+			while(pulling) {
+				pullDone.await();
+			}
+		} catch(InterruptedException e) {
+			/*
+			 * The close continues, as it has to release the directory and the
+			 * Lucene lock on it. A pull that is still running has been told to
+			 * stop, so it writes no manifest and removes nothing.
+			 */
+			Thread.currentThread().interrupt();
+
+			logger.atWarn()
+				.addKeyValue("index", id)
+				.log("Interrupted while waiting for a pull to stop, closing the index anyway");
+		} finally {
+			syncLock.writeLock().unlock();
+		}
+	}
+
 	public void close() throws IOException {
 		close(true);
 	}
@@ -8290,6 +8416,13 @@ public class Index {
 		if(getState() == IndexState.CLOSED) {
 			return;
 		}
+
+		/*
+		 * Before the commit and the teardown: a pull writes into the local
+		 * directory, and the next instance starts pulling into that directory
+		 * as soon as this close returns.
+		 */
+		awaitPull();
 
 		/*
 		 * Stopped before the last commit rather than after it, so that a commit
@@ -8325,9 +8458,8 @@ public class Index {
 		try {
 			if(state != IndexState.CLOSED) {
 				/*
-				 * Marked before anything is torn down, so a pull that is holding
-				 * the remote right now knows not to reopen what is closed here
-				 * when it comes back for the lock.
+				 * Marked before anything is torn down, so operations that
+				 * arrive from here on see a closed instance.
 				 */
 				state = IndexState.CLOSED;
 
