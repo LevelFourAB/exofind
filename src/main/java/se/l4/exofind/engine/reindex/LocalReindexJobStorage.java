@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
@@ -13,6 +12,7 @@ import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
  * ReindexJobStorage for a node keeping everything on its own disk, held as
@@ -23,12 +23,6 @@ import se.l4.exofind.engine.index.IndexName;
  * contents of the file, the way the local registry takes its.
  */
 public class LocalReindexJobStorage implements ReindexJobStorage {
-	/**
-	 * Name a record is written under before being moved into place, so an
-	 * interrupted write can never leave a truncated record behind.
-	 */
-	private static final String TEMP_SUFFIX = ".tmp";
-
 	private final Path directory;
 	private final ReentrantLock lock;
 
@@ -76,11 +70,9 @@ public class LocalReindexJobStorage implements ReindexJobStorage {
 			}
 
 			var contents = record.toByteArray();
-			var temp = file.resolveSibling(file.getFileName() + TEMP_SUFFIX);
 
 			Files.createDirectories(directory);
-			Files.write(temp, contents);
-			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+			DurableFiles.replace(file, contents);
 
 			return versionOf(contents);
 		} finally {
@@ -110,7 +102,7 @@ public class LocalReindexJobStorage implements ReindexJobStorage {
 			try(var files = Files.list(directory)) {
 				for(var file : files.toList()) {
 					var name = file.getFileName().toString();
-					if(name.endsWith(TEMP_SUFFIX)) {
+					if(name.endsWith(DurableFiles.TEMP_SUFFIX)) {
 						continue;
 					}
 

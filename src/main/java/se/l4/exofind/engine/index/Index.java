@@ -146,6 +146,7 @@ import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.query.SuggestRequest;
 import se.l4.exofind.engine.query.SuggestResult;
+import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
  * Index represents a single index that can be searched or updated.

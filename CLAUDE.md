@@ -43,6 +43,7 @@ Stored formats and identifiers:
 - **Every setting that changes written data needs a branch in `DefinitionCompatibility`.** The class enumerates settings one by one. A setting without a branch lets the engine accept documents that lack it, and queries return incomplete results. Settings that only affect queries need no branch.
 - **One API definition maps to one stored definition.** `IndexDefinitionMapper` maps them, and `checkRepresentable` fails on a mapping that allows two stored forms of one API definition.
 - **A file the engine rewrites beside the segments ends in `.ef.bin`.** `ObjectStorageSync` keys such a file by its checksum, so a rewrite never replaces the object an earlier manifest names. Any other name is taken for a Lucene file and keyed by its epoch alone, so a rewrite of it in the same session silently overwrites the referenced object.
+- **A file the node replaces on its own disk is written with `DurableFiles`.** The registry, the keys, the search settings, the reindex records, the definition, the change log, the manifest and the usage record are all parsed as a whole. A `Files.write` of one leaves a truncated file where a process stops, and a truncated Protocol Buffers message parses and answers with the fields it still holds.
 - **A transducer in `locale-data/` reads under one Lucene version.** An `.fst` file another version wrote turns decompounding off with no error. `DecompounderTest` and `LemmatizerTest` check every shipped file, and `tools/locale-data/README.md` states how to rebuild them.
 
 Coordination between nodes:

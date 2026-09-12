@@ -4,9 +4,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
+
+import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
  * SearchSettingsStorage for a node keeping everything on its own disk, held as
@@ -21,12 +22,6 @@ import java.util.zip.CRC32C;
  * nothing secret - only how searches of an index are answered.
  */
 public class LocalSearchSettingsStorage implements SearchSettingsStorage {
-	/**
-	 * Name settings are written under before being moved into place, so an
-	 * interrupted write can never leave truncated settings behind.
-	 */
-	private static final String TEMP_SUFFIX = ".tmp";
-
 	private static final String FILE_SUFFIX = ".ef.bin";
 
 	private final Path directory;
@@ -88,11 +83,9 @@ public class LocalSearchSettingsStorage implements SearchSettingsStorage {
 			}
 
 			var contents = settings.toByteArray();
-			var temp = file.resolveSibling(file.getFileName() + TEMP_SUFFIX);
 
 			Files.createDirectories(directory);
-			Files.write(temp, contents);
-			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+			DurableFiles.replace(file, contents);
 
 			return versionOf(contents);
 		} finally {

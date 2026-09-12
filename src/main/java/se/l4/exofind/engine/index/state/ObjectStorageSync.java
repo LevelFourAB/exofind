@@ -31,9 +31,9 @@ import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.IOUtils;
 
-import se.l4.exofind.engine.index.DurableFiles;
 import se.l4.exofind.engine.index.LuceneCompatibility;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.storage.DurableFiles;
 import se.l4.exofind.engine.storage.ObjectStorage;
 
 import software.amazon.awssdk.awscore.exception.AwsServiceException;

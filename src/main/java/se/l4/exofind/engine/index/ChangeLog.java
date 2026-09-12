@@ -14,6 +14,7 @@ import org.eclipse.collections.api.list.ImmutableList;
 import com.google.protobuf.ByteString;
 
 import se.l4.exofind.engine.index.state.ChangeLogStore;
+import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
  * Which documents of an index have changed since tracking began, by primary

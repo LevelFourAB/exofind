@@ -4,13 +4,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
 
-import org.apache.lucene.util.IOUtils;
-
 import com.google.protobuf.InvalidProtocolBufferException;
+
+import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
  * RegistryStorage for a node keeping everything on its own disk, held as a file
@@ -23,12 +22,6 @@ import com.google.protobuf.InvalidProtocolBufferException;
  * still see each other's writes.
  */
 public class LocalRegistryStorage implements RegistryStorage {
-	/**
-	 * Name the registry is written under before being moved into place, so an
-	 * interrupted write can never leave a truncated registry behind.
-	 */
-	private static final String TEMP_SUFFIX = ".tmp";
-
 	private final Path file;
 	private final ReentrantLock lock;
 
@@ -79,21 +72,9 @@ public class LocalRegistryStorage implements RegistryStorage {
 			}
 
 			var contents = indexes.toByteArray();
-			var temp = file.resolveSibling(file.getFileName() + TEMP_SUFFIX);
 
 			Files.createDirectories(file.getParent());
-			Files.write(temp, contents);
-
-			/*
-			 * A rename makes the file visible under its final name, but it does
-			 * not put the contents on the disk. After a power loss the registry
-			 * file can exist and be empty while the Lucene commits beside it
-			 * survive, and an empty registry lists no indexes. Sync the contents
-			 * before the rename and the directory entry after it.
-			 */
-			IOUtils.fsync(temp, false);
-			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
-			IOUtils.fsync(file.getParent(), true);
+			DurableFiles.replace(file, contents);
 
 			return versionOf(contents);
 		} finally {

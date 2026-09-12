@@ -1,12 +1,12 @@
 package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
+
+import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
  * Reads and writes the {@link IndexUsage} record kept next to the local copy
@@ -21,12 +21,6 @@ public final class IndexUsageFile {
 	 * Name the record is stored under inside the index directory.
 	 */
 	public static final String NAME = "usage.ef.bin";
-
-	/**
-	 * Name the record is written under before being moved into place, so an
-	 * interrupted write can never leave a truncated record behind.
-	 */
-	private static final String TEMP_NAME = NAME + ".tmp";
 
 	private IndexUsageFile() {
 	}
@@ -60,21 +54,7 @@ public final class IndexUsageFile {
 	 *   longer existing
 	 */
 	public static void write(Path directory, IndexUsage usage) throws IOException {
-		var tempFile = directory.resolve(TEMP_NAME);
-		try(var out = Files.newOutputStream(tempFile)) {
-			usage.writeTo(out);
-		}
-
-		try {
-			Files.move(
-				tempFile,
-				directory.resolve(NAME),
-				StandardCopyOption.REPLACE_EXISTING,
-				StandardCopyOption.ATOMIC_MOVE
-			);
-		} catch(AtomicMoveNotSupportedException e) {
-			Files.move(tempFile, directory.resolve(NAME), StandardCopyOption.REPLACE_EXISTING);
-		}
+		DurableFiles.replace(directory.resolve(NAME), usage.toByteArray());
 	}
 
 	/**
