@@ -7197,108 +7197,6 @@ paths:
       - admin
       x-permission-anonymous: false
   /v1alpha1/admin/indexes/{name}/actions/reindex:
-    get:
-      summary: Get reindex job status
-      description: |-
-        Returns the status of a reindex job on an index, including finished jobs. Served from the durable job record, so any node can serve the request and returns the same response.
-
-        If no job exists for the index, the server returns `404` with the error code `reindex:not_found`.
-
-        Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
-      operationId: getReindex
-      tags:
-      - Reindexes
-      parameters:
-      - description: "The index, or one generation of it. The job belongs to the index\
-          \ in either case."
-        example: products
-        name: name
-        in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        "200":
-          description: The job record.
-          content:
-            application/json:
-              examples:
-                job:
-                  value:
-                    index: products
-                    target: products@2
-                    source: products@1
-                    phase: copying
-                    promote: auto
-                    documentsCopied: 125000
-                    sourceDocuments: 2400000
-                    backlog: 4100
-                    error: null
-                    startedAt: 2026-08-28T10:15:30Z
-                    updatedAt: 2026-08-28T10:16:02Z
-              schema:
-                $ref: "#/components/schemas/ReindexInfo"
-        "401":
-          description: |-
-            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
-
-            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: auth:unauthenticated
-            when: The request carries no credential this node accepts.
-        "403":
-          description: |-
-            The API key does not have the `indexes.read` permission.
-
-            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: auth:forbidden
-            when: The key is accepted but does not hold the `indexes.read` permission.
-        "404":
-          description: |-
-            No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
-
-            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: reindex:not_found
-            when: The index has no reindex job.
-          - code: index:not_found
-            when: "No index or generation has this name, or the key holds no grant\
-              \ covering it."
-        "409":
-          description: |-
-            The job record could not be read.
-
-            Error codes: `reindex:io_error` - The record of the reindex could not be read. Send the request again once the storage responds.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: reindex:io_error
-            when: The record of the reindex could not be read. Send the request again
-              once the storage responds.
-      security:
-      - apiKey: []
-      x-required-permission: indexes.read
-      x-permission-scope: index
-      x-permission-roles:
-      - reader
-      - writer
-      - admin
-      x-permission-anonymous: false
     post:
       summary: Start a reindex job
       description: |-
@@ -7310,7 +7208,7 @@ paths:
 
         Because promoting changes what the index answers for, a request that leaves promotion automatic also needs `indexes.promote` on the target and is refused with `403` without it. A request specifying `"promote": "manual"` needs only `indexes.reindex`.
 
-        An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it.
+        An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it. Read the record with `GET /v1alpha1/admin/reindexes/{name}`.
 
         Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
       operationId: startReindex
@@ -7452,125 +7350,6 @@ paths:
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
-        "502":
-          description: |-
-            The request was forwarded to the index writer and the writer did not respond.
-
-            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: indexer:unreachable
-            when: The request was forwarded to the index writer and the writer did
-              not answer. Send it again.
-      security:
-      - apiKey: []
-      x-required-permission: indexes.reindex
-      x-permission-scope: index
-      x-permission-roles:
-      - admin
-      x-permission-anonymous: false
-  /v1alpha1/admin/indexes/{name}/actions/reindex/cancel:
-    post:
-      summary: Cancel a reindex job
-      description: |-
-        Stops an in-progress job. Tracking on the source ends and the partially populated target generation is left in place, to be removed with `DELETE /v1alpha1/admin/indexes/{target}`. Cancelling a finished job changes nothing.
-
-        Runs on the node holding the index.
-
-        Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
-      operationId: cancelReindex
-      tags:
-      - Reindexes
-      parameters:
-      - description: "The index, or one generation of it."
-        example: products
-        name: name
-        in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        "200":
-          description: The job record as it stands after cancellation.
-          content:
-            application/json:
-              examples:
-                job:
-                  value:
-                    index: products
-                    target: products@2
-                    source: products@1
-                    phase: copying
-                    promote: auto
-                    documentsCopied: 125000
-                    sourceDocuments: 2400000
-                    backlog: 4100
-                    error: null
-                    startedAt: 2026-08-28T10:15:30Z
-                    updatedAt: 2026-08-28T10:16:02Z
-              schema:
-                $ref: "#/components/schemas/ReindexInfo"
-        "401":
-          description: |-
-            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
-
-            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: auth:unauthenticated
-            when: The request carries no credential this node accepts.
-        "403":
-          description: |-
-            The API key does not have the `indexes.reindex` permission.
-
-            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.reindex` permission.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: auth:forbidden
-            when: The key is accepted but does not hold the `indexes.reindex` permission.
-        "404":
-          description: |-
-            No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
-
-            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: reindex:not_found
-            when: The index has no reindex job.
-          - code: index:not_found
-            when: "No index or generation has this name, or the key holds no grant\
-              \ covering it."
-        "409":
-          description: |-
-            No node is available to write the index.
-
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-          x-error-codes:
-          - code: indexer:unavailable
-            when: No node is available to write the index. Send the request again
-              once one is.
-          - code: index:no_live_generation
-            when: The index has no live generation. Promote one and send the request
-              again.
-          - code: reindex:io_error
-            when: The record of the reindex could not be written. Send the request
-              again once the storage responds.
         "502":
           description: |-
             The request was forwarded to the index writer and the writer did not respond.
@@ -9083,6 +8862,228 @@ paths:
       x-permission-roles:
       - reader
       - writer
+      - admin
+      x-permission-anonymous: false
+  /v1alpha1/admin/reindexes/{name}:
+    get:
+      summary: Get reindex job status
+      description: |-
+        Returns the status of a reindex job on an index, including finished jobs. Served from the durable job record, so any node can serve the request and returns the same response.
+
+        The name is the index the job belongs to, or one generation of that index. If no job exists for the index, the server returns `404` with the error code `reindex:not_found`.
+
+        Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
+      operationId: getReindex
+      tags:
+      - Reindexes
+      parameters:
+      - description: "The index, or one generation of it. The job belongs to the index\
+          \ in either case."
+        example: products
+        name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The job record.
+          content:
+            application/json:
+              examples:
+                job:
+                  value:
+                    index: products
+                    target: products@2
+                    source: products@1
+                    phase: copying
+                    promote: auto
+                    documentsCopied: 125000
+                    sourceDocuments: 2400000
+                    backlog: 4100
+                    error: null
+                    startedAt: 2026-08-28T10:15:30Z
+                    updatedAt: 2026-08-28T10:16:02Z
+              schema:
+                $ref: "#/components/schemas/ReindexInfo"
+        "401":
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
+        "403":
+          description: |-
+            The API key does not have the `indexes.read` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.read` permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.read` permission.
+        "404":
+          description: |-
+            No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
+
+            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: reindex:not_found
+            when: The index has no reindex job.
+          - code: index:not_found
+            when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+        "409":
+          description: |-
+            The job record could not be read.
+
+            Error codes: `reindex:io_error` - The record of the reindex could not be read. Send the request again once the storage responds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: reindex:io_error
+            when: The record of the reindex could not be read. Send the request again
+              once the storage responds.
+      security:
+      - apiKey: []
+      x-required-permission: indexes.read
+      x-permission-scope: index
+      x-permission-roles:
+      - reader
+      - writer
+      - admin
+      x-permission-anonymous: false
+  /v1alpha1/admin/reindexes/{name}/actions/cancel:
+    post:
+      summary: Cancel a reindex job
+      description: |-
+        Stops an in-progress job. Tracking on the source ends and the partially populated target generation is left in place, to be removed with `DELETE /v1alpha1/admin/indexes/{target}`. The job record stays readable and reports the `cancelled` phase. Cancelling a finished job changes nothing.
+
+        Runs on the node holding the index.
+
+        Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
+      operationId: cancelReindex
+      tags:
+      - Reindexes
+      parameters:
+      - description: "The index, or one generation of it."
+        example: products
+        name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The job record as it stands after cancellation.
+          content:
+            application/json:
+              examples:
+                job:
+                  value:
+                    index: products
+                    target: products@2
+                    source: products@1
+                    phase: copying
+                    promote: auto
+                    documentsCopied: 125000
+                    sourceDocuments: 2400000
+                    backlog: 4100
+                    error: null
+                    startedAt: 2026-08-28T10:15:30Z
+                    updatedAt: 2026-08-28T10:16:02Z
+              schema:
+                $ref: "#/components/schemas/ReindexInfo"
+        "401":
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
+        "403":
+          description: |-
+            The API key does not have the `indexes.reindex` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `indexes.reindex` permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `indexes.reindex` permission.
+        "404":
+          description: |-
+            No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
+
+            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: reindex:not_found
+            when: The index has no reindex job.
+          - code: index:not_found
+            when: "No index or generation has this name, or the key holds no grant\
+              \ covering it."
+        "409":
+          description: |-
+            No node is available to write the index.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
+              once one is.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
+          - code: reindex:io_error
+            when: The record of the reindex could not be written. Send the request
+              again once the storage responds.
+        "502":
+          description: |-
+            The request was forwarded to the index writer and the writer did not respond.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+      security:
+      - apiKey: []
+      x-required-permission: indexes.reindex
+      x-permission-scope: index
+      x-permission-roles:
       - admin
       x-permission-anonymous: false
   /v1alpha1/indexes/{name}/documents:

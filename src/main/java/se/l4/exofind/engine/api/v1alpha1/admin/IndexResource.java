@@ -14,6 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.eclipse.microprofile.openapi.annotations.tags.Tags;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
@@ -29,6 +30,8 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexListResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexStatus;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexerInfo;
+import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexInfo;
+import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexRequest;
 import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -1530,6 +1533,235 @@ public class IndexResource {
 		var index = indexes.getOrThrow(name);
 		index.pull();
 		return toStatus(index);
+	}
+
+	/**
+	 * Starts a reindex job to populate a generation from another generation of
+	 * the same index.
+	 *
+	 * <p>The rest of the reindex endpoints are {@link ReindexResource}, which
+	 * answers for the job record. Starting is here because it is an action on
+	 * the generation the job fills, and a path under the one this class is
+	 * served at is answered by this class alone - a resource class matching the
+	 * start of a path is the one asked for the whole of it.
+	 *
+	 * <p>The target generation must be specified by name, must be empty, and
+	 * must not be live. The source generation defaults to the live generation.
+	 *
+	 * <p>The job promotes the target generation once caught up unless
+	 * configured with {@code "promote": "manual"}. When manual, the job pauses
+	 * in the ready phase until {@code actions/promote} on the target completes
+	 * it.
+	 *
+	 * <p>A job that promotes changes what the index answers for, so it needs
+	 * {@code indexes.promote} on the target as well as {@code indexes.reindex}.
+	 * A request asking for manual promotion needs only {@code indexes.reindex},
+	 * and the caller presents a key holding {@code indexes.promote} to
+	 * {@code actions/promote} when the job is ready.
+	 *
+	 * @param name
+	 *   the generation to fill, as {@code index@generation}
+	 * @param body
+	 *   configuration specifying the source generation and promotion mode, or
+	 *   omitted for defaults
+	 * @return
+	 */
+	@POST
+	@Path("/{name}/actions/reindex")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.INDEXES_REINDEX)
+	@ServedBy(ServedBy.Node.INDEXER)
+	@Tags(refs = "Reindexes")
+	@Operation(
+		operationId = "startReindex",
+		summary = "Start a reindex job",
+		description = """
+			Starts a reindex job that populates a new generation by copying \
+			documents from an existing generation of the same index inside the \
+			engine. The request returns immediately with the job record; the \
+			job runs in the background on the node holding the index.
+
+			The target must specify a generation by name, must already exist, \
+			must be empty, and must not be the live generation. The source \
+			generation must have a primary key and keep document sources, and \
+			the primary keys of source and target must share a field name and \
+			type. If the target does not meet these requirements, the server \
+			returns `400`.
+
+			The job automatically promotes the target generation once it \
+			catches up with changes, unless the request specifies `"promote": \
+			"manual"`. With manual promotion, the job pauses in the `ready` \
+			phase and keeps the target caught up until `actions/promote` on \
+			the target finishes the job.
+
+			Because promoting changes what the index answers for, a request \
+			that leaves promotion automatic also needs `indexes.promote` on \
+			the target and is refused with `403` without it. A request \
+			specifying `"promote": "manual"` needs only `indexes.reindex`.
+
+			An index can run at most one reindex job at a time. A finished \
+			job's record remains readable until a new job replaces it. Read \
+			the record with `GET /v1alpha1/admin/reindexes/{name}`."""
+	)
+	@APIResponse(
+		responseCode = "202",
+		description = "A reindex job was started and runs asynchronously.",
+		content = @Content(
+			schema = @Schema(implementation = ReindexInfo.class),
+			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE_STARTED)
+		)
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The target does not specify a generation by name, does not exist, \
+			is not empty, is the live generation, or the source and target \
+			primary keys do not match.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			The specified index or generation does not exist, or the caller \
+			key lacks permissions on the index.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = "The job could not be started.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "reindex:target_generation_required",
+		status = 400,
+		when = "The target names an index without a generation. Name one as `index@generation`."
+	)
+	@ReturnsError(
+		value = "reindex:target_is_live",
+		status = 400,
+		when = "The target is the live generation. Fill another generation and promote it."
+	)
+	@ReturnsError(
+		value = "reindex:target_not_empty",
+		status = 400,
+		when = "The target generation already holds documents."
+	)
+	@ReturnsError(
+		value = "reindex:source_is_target",
+		status = 400,
+		when = "The source and the target are the same generation."
+	)
+	@ReturnsError(
+		value = "reindex:source_other_index",
+		status = 400,
+		when = "The source belongs to another index."
+	)
+	@ReturnsError(
+		value = "reindex:primary_key_mismatch",
+		status = 400,
+		when = "The source and the target declare different primary keys."
+	)
+	@ReturnsError(
+		value = "reindex:promote_unknown",
+		status = 400,
+		when = "`promote` is neither `auto` nor `manual`."
+	)
+	@ReturnsError(
+		value = "index:invalid_name",
+		status = 400,
+		when = "The path or `from` holds a name that is not a valid index or generation name."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The source or the target declares no primary key, so documents cannot be matched up between them."
+	)
+	@ReturnsError(
+		value = "index:source:not_kept",
+		status = 400,
+		when = "The source generation keeps no copy of the documents to read them back from. A reindex reads the stored copies."
+	)
+	@ReturnsError(
+		value = "index:not_found",
+		status = 404,
+		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation to read from. Promote one, or name the source with `from`."
+	)
+	@ReturnsError(
+		value = "reindex:in_progress",
+		status = 409,
+		when = "A reindex job is already running for the index. Wait for it, or cancel it."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "Another job holds the target generation."
+	)
+	@ReturnsError(
+		value = "reindex:io_error",
+		status = 409,
+		when = "The record of the reindex could not be written. Send the request again once the storage responds."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@APIResponse(
+		responseCode = "502",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public Response reindex(
+		@Parameter(
+			description = """
+				The generation to fill, as `index@generation`. It must already \
+				exist, be empty, and not be the live generation.""",
+			example = "products@2"
+		)
+		@PathParam("name") String name,
+		@RequestBody(
+			required = false,
+			content = @Content(
+				schema = @Schema(implementation = ReindexRequest.class),
+				examples = @ExampleObject(name = "job", value = ReindexRequest.EXAMPLE)
+			)
+		)
+		ReindexRequest body
+	) {
+		var promote = body == null ? null : body.promote();
+
+		/*
+		 * A job left on automatic promotion calls the promote itself, so the
+		 * caller is reaching `indexes.promote` through `indexes.reindex`. The
+		 * filter checked the one the endpoint declares; the second is checked
+		 * here, against the same name, before anything is started. Parsed first
+		 * so that a value the job would refuse is still answered as a mistake in
+		 * the request rather than as a refusal.
+		 */
+		if(
+			!ReindexJobs.parsePromote(promote)
+				&& !auth.principal().allows(Permission.INDEXES_PROMOTE, name)
+		) {
+			throw new ForbiddenException(Permission.INDEXES_PROMOTE);
+		}
+
+		var job = reindexJobs.start(name, body == null ? null : body.from(), promote);
+
+		return Response.status(Response.Status.ACCEPTED)
+			.entity(ReindexInfo.of(job))
+			.build();
 	}
 
 	/**

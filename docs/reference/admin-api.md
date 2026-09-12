@@ -23,11 +23,11 @@ POST   /v1alpha1/admin/indexes/{name}/actions/promote   # answer for this genera
 POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
 POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state now
 POST   /v1alpha1/admin/indexes/{name}/actions/reindex   # start a job
-GET    /v1alpha1/admin/indexes/{name}/actions/reindex   # job status
-POST   /v1alpha1/admin/indexes/{name}/actions/reindex/cancel # stop a job
 
 GET    /v1alpha1/admin/indexers                         # which node writes which index
 GET    /v1alpha1/admin/reindexes                        # every job across the deployment
+GET    /v1alpha1/admin/reindexes/{name}                 # job status of one index
+POST   /v1alpha1/admin/reindexes/{name}/actions/cancel  # stop a job
 
 GET    /v1alpha1/admin/registry/audit                   # compare the registry with the storage
 POST   /v1alpha1/admin/registry/actions/repair          # register what the storage holds
@@ -571,7 +571,7 @@ A job progresses through the following phases:
 
 ### Job status and fleet-wide listing
 
-To check the status of a job on an index, send a `GET` request to `/v1alpha1/admin/indexes/{name}/actions/reindex`. If no job exists for the index, the server returns `404 Not Found` with the error code `reindex:not_found`.
+To check the status of a job on an index, send a `GET` request to `/v1alpha1/admin/reindexes/{name}`, where `{name}` is the index or one generation of it. The job belongs to the index in either case. If no job exists for the index, the server returns `404 Not Found` with the error code `reindex:not_found`.
 
 To list every reindex job across the deployment, send a `GET` request to `/v1alpha1/admin/reindexes`.
 
@@ -579,9 +579,11 @@ Both endpoints require the `indexes.read` permission. Status and fleet-wide list
 
 ### Cancelling a job
 
-To stop an in-progress job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex/cancel`. This requires the `indexes.reindex` permission.
+To stop an in-progress job, send a `POST` request to `/v1alpha1/admin/reindexes/{name}/actions/cancel`. This requires the `indexes.reindex` permission.
 
 Cancelling a job stops the background process and leaves the partially populated target generation in place. You can remove the target generation with `DELETE /v1alpha1/admin/indexes/{name}`. Cancelling a finished job changes nothing.
+
+Cancelling removes no record. The job record stays readable in the `cancelled` phase until a new job for that index replaces it, which is why cancelling is an action on the job rather than a `DELETE` of it.
 
 ### Target constraints and promotion
 

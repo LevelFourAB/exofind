@@ -15,7 +15,7 @@ The API contains the following endpoint groups:
 - `/v1alpha1/admin/keys`: API keys.
 - `/v1alpha1/admin/indexers`: indexer assignments across nodes.
 - `/v1alpha1/admin/registry`: audit and repair of the index registry.
-- `/v1alpha1/admin/reindexes`: reindex jobs across the deployment.
+- `/v1alpha1/admin/reindexes`: reindex job records, one per index, and the action `cancel` on one of them.
 - `/v1alpha1/indexes/{name}/documents`: index, read, and remove documents.
 - `/v1alpha1/indexes/{name}/search`: search an index.
 

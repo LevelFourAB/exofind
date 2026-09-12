@@ -202,7 +202,7 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		var response = resource.reindex("books@2", new ReindexRequest(null, "manual"));
+		var response = indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
 		assertThat(response.getStatus(), is(202));
 
 		var accepted = (ReindexInfo) response.getEntity();
@@ -229,7 +229,7 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		resource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var cancelled = resource.cancel("books");
@@ -241,7 +241,7 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		resource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var listed = resource.list();
@@ -372,7 +372,7 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		resource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var promoted = (IndexInfo) indexResource.promote("books@2").getEntity();
@@ -393,10 +393,10 @@ public class ReindexResourceTest {
 
 		answerAs(Permission.INDEXES_REINDEX);
 
-		assertThrows(ForbiddenException.class, () -> resource.reindex("books@2", null));
+		assertThrows(ForbiddenException.class, () -> indexResource.reindex("books@2", null));
 		assertThrows(
 			ForbiddenException.class,
-			() -> resource.reindex("books@2", new ReindexRequest(null, "auto"))
+			() -> indexResource.reindex("books@2", new ReindexRequest(null, "auto"))
 		);
 
 		// Nothing was started by either refusal
@@ -414,7 +414,7 @@ public class ReindexResourceTest {
 
 		answerAs(Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
 
-		var response = resource.reindex("books@2", new ReindexRequest(null, "manual"));
+		var response = indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
 		assertThat(response.getStatus(), is(202));
 
 		awaitPhase("books", "ready");

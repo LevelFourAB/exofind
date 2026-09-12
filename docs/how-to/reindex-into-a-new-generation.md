@@ -74,7 +74,7 @@ Content-Type: application/json
 1. Check the status of the reindex job:
 
    ```http
-   GET /v1alpha1/admin/indexes/products/actions/reindex
+   GET /v1alpha1/admin/reindexes/products
    ```
 
    The response displays the current phase and progress counts:
@@ -148,7 +148,7 @@ To cancel an active reindex job:
 1. Send a cancellation request:
 
    ```http
-   POST /v1alpha1/admin/indexes/products/actions/reindex/cancel
+   POST /v1alpha1/admin/reindexes/products/actions/cancel
    ```
 
 2. Delete the target generation to clean up partially copied data:
@@ -164,7 +164,7 @@ If a document violates the target schema (for example, missing a required field 
 1. Check the job status to identify the failure cause and document key:
 
    ```http
-   GET /v1alpha1/admin/indexes/products/actions/reindex
+   GET /v1alpha1/admin/reindexes/products
    ```
 
    Inspect the `error` field in the response:
