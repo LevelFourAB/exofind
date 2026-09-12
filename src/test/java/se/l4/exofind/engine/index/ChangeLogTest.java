@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -90,6 +91,25 @@ public class ChangeLogTest {
 
 		var loaded = ChangeLog.load(file);
 		assertThat(loaded.snapshot().keys(), containsInAnyOrder(new BytesRef("a"), new BytesRef("b")));
+	}
+
+	@Test
+	public void savingAgainLeavesNothingBesideTheLog() throws IOException {
+		var log = new ChangeLog();
+		log.record(new BytesRef("a"));
+
+		var file = dir.resolve("changes.ef.bin");
+		log.save(file);
+
+		log.record(new BytesRef("b"));
+		log.save(file);
+
+		try(var files = Files.list(dir)) {
+			assertThat(
+				files.map(f -> f.getFileName().toString()).toList(),
+				contains("changes.ef.bin")
+			);
+		}
 	}
 
 	@Test

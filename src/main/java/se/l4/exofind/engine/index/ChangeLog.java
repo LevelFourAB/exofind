@@ -107,7 +107,7 @@ public class ChangeLog {
 			builder.addKeys(ByteString.copyFrom(key.bytes, key.offset, key.length));
 		}
 
-		Files.write(file, builder.build().toByteArray());
+		DurableFiles.replace(file, builder.build().toByteArray());
 	}
 
 	/**

@@ -1893,7 +1893,11 @@ public class Index {
 
 			schema.setDefinition(described);
 
-			Files.write(localPath.resolve(DEFINITION_FILE), described.toByteArray());
+			DurableFiles.replace(
+				localPath.resolve(DEFINITION_FILE),
+				described.toByteArray()
+			);
+
 			this.definition = described;
 			this.definitionVersion = version(described);
 			sync(PushReason.HELD);

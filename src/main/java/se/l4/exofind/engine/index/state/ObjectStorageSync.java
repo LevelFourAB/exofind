@@ -31,6 +31,7 @@ import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.IOUtils;
 
+import se.l4.exofind.engine.index.DurableFiles;
 import se.l4.exofind.engine.index.LuceneCompatibility;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.ObjectStorage;
@@ -62,7 +63,7 @@ public class ObjectStorageSync implements StateSync {
 	 * neither a process that stops nor a machine that loses power can leave a
 	 * half written one under the name the local copy is read from.
 	 */
-	private static final String MANIFEST_TEMP_NAME = MANIFEST_NAME + ".tmp";
+	private static final String MANIFEST_TEMP_NAME = MANIFEST_NAME + DurableFiles.TEMP_SUFFIX;
 
 	/**
 	 * Suffix used while a file is being downloaded. The suffix is distinct
@@ -1617,34 +1618,10 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	/**
-	 * Write the manifest describing the current local state. The manifest is
-	 * written to a temporary file first so that a failure part way through
-	 * leaves the previous manifest intact.
+	 * Write the manifest describing the current local state.
 	 */
 	private void writeManifest(Manifest manifest) throws IOException {
-		var tempFile = localPath.resolve(MANIFEST_TEMP_NAME);
-		try(var out = Files.newOutputStream(tempFile)) {
-			manifest.writeTo(out);
-		}
-
-		/*
-		 * On the disk before the rename, so that what the rename publishes is
-		 * a manifest and never a file of the right name holding nothing. A
-		 * write that has only reached the page cache survives a process that
-		 * stops but not a machine that loses power, and the rename can reach
-		 * the disk first.
-		 */
-		IOUtils.fsync(tempFile, false);
-
-		moveIntoPlace(tempFile, localPath.resolve(MANIFEST_NAME));
-
-		/*
-		 * The rename itself lives in the directory rather than in the file, so
-		 * it takes a sync of its own to survive. Without it a machine that
-		 * loses power here comes back to the manifest it held before, which
-		 * describes files that have since been replaced.
-		 */
-		IOUtils.fsync(localPath, true);
+		DurableFiles.replace(localPath.resolve(MANIFEST_NAME), manifest.toByteArray());
 	}
 
 	/**
