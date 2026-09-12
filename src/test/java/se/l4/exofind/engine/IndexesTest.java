@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -418,6 +419,35 @@ public class IndexesTest {
 
 			assertThat(node.getIndexNames(), emptyIterable());
 		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * A delete that cannot remove a local copy marks the storage all the
+	 * same. The registry no longer names the index, so nothing asks for the
+	 * delete a second time, and an unmarked prefix stays in the storage for
+	 * good.
+	 */
+	@Test
+	public void testDeleteMarksTheStorageWhenALocalCopyStays() throws IOException {
+		var removals = new RecordingIndexRemovals();
+		var directory = storageDirectory.resolve("stuck");
+		var node = newNode(directory, registry(), OptionalInt.empty(), removals);
+
+		var copy = directory.resolve("indexes").resolve("books@1");
+		try {
+			node.create("books", IndexDef.getDefaultInstance());
+
+			// A copy nothing may take files out of fails the removal
+			Files.setPosixFilePermissions(copy, PosixFilePermissions.fromString("r-xr-xr-x"));
+
+			assertThrows(IOException.class, () -> node.delete("books"));
+
+			assertThat(removals.marks.keySet(), contains(IndexName.of("books")));
+			assertThat(node.getIndexNames(), emptyIterable());
+		} finally {
+			Files.setPosixFilePermissions(copy, PosixFilePermissions.fromString("rwxr-xr-x"));
 			node.close();
 		}
 	}

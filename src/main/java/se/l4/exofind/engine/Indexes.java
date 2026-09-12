@@ -2523,7 +2523,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 * it.
 	 *
 	 * <p>The mark is written after the registry, so that every mark stands
-	 * for a delete that went through. A mark that could not be written is
+	 * for a delete that went through, and whether or not the local copies
+	 * could be removed: the registry no longer names the index, so a caller
+	 * cannot ask for the delete again. A mark that could not be written is
 	 * logged and leaves the objects where they are; the registry audit
 	 * reports them as held but not registered.
 	 *
@@ -2534,6 +2536,8 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @throws ValidationException
 	 *   if the generation named is the one its index answers from
 	 * @throws IOException
+	 *   if a local copy could not be removed; the delete itself went through
+	 *   and the storage is marked, the files of the copy stay on this node
 	 */
 	public void delete(String name) throws IOException {
 		var parsed = IndexName.parse(name);
@@ -2542,8 +2546,13 @@ public class Indexes implements RegistryPoller.Listener {
 		try {
 			if(parsed.isPinned()) {
 				registry.removeGeneration(parsed.index(), parsed.generation());
-				removeLocalCopy(parsed.toString());
-				markRemoved(parsed);
+
+				try {
+					removeLocalCopy(parsed.toString());
+				} finally {
+					markRemoved(parsed);
+				}
+
 				return;
 			}
 
@@ -2552,11 +2561,27 @@ public class Indexes implements RegistryPoller.Listener {
 
 			registry.remove(parsed.index());
 
+			// Every copy is tried, and the mark left, before the first failure
+			// is thrown - the registry no longer names the index, so nothing
+			// asks for this delete a second time
+			IOException failure = null;
 			for(var generation : index.generations()) {
-				removeLocalCopy(parsed.withGeneration(generation.name()).toString());
+				try {
+					removeLocalCopy(parsed.withGeneration(generation.name()).toString());
+				} catch(IOException e) {
+					if(failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
 			}
 
 			markRemoved(parsed);
+
+			if(failure != null) {
+				throw failure;
+			}
 		} finally {
 			lifecycleLock.unlock();
 		}
@@ -2577,7 +2602,9 @@ public class Indexes implements RegistryPoller.Listener {
 				.setCause(e)
 				.log(
 					"Could not mark the index as removed in the storage, its objects stay"
-						+ " until it is deleted again; " + e.getMessage()
+						+ " and the registry audit reports them as held but not registered;"
+						+ " deleting the index again is not possible, the registry no longer"
+						+ " names it; " + e.getMessage()
 				);
 		}
 	}
