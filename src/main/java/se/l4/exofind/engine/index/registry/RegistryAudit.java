@@ -58,10 +58,11 @@ public interface RegistryAudit {
 	 *   what they answer for either way. {@code false} leaves a created index
 	 *   answering for nothing until a generation is promoted
 	 * @param restore
-	 *   indexes and generations to take the removal mark off before
-	 *   registering, so that what a delete marked comes back. A name without
-	 *   a mark changes nothing. The marks go first, so a restored index that
-	 *   holds no synced generation is unmarked and still not registered
+	 *   indexes and generations to register despite the removal mark a delete
+	 *   left on them, so that what was deleted comes back. A name without a
+	 *   mark changes nothing. The mark comes off once the registry names what
+	 *   it stood over, so a restored index that holds no synced generation
+	 *   keeps its mark and a sweep still removes its objects
 	 * @return
 	 *   what was changed, empty when the registry already named everything
 	 *   and nothing was restored

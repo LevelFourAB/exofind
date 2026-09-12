@@ -36,6 +36,12 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * <p>The repair replaces the registry conditionally on the version the audit
  * read - including the version of contents that could not be parsed - so it
  * can never overwrite a change made between reading and writing.
+ *
+ * <p>A delete takes its entry out of the registry before it marks the storage,
+ * so a mark can arrive while a repair runs. The repair reads the marks of
+ * everything it is about to register once more, right before it writes, and a
+ * mark the caller asked to take off comes off only once the registry names
+ * what it stood over.
  */
 public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private static final Log logger = Log.of(ObjectStorageRegistryAudit.class);
@@ -76,30 +82,41 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	@Override
 	public RegistryRepairResult repair(boolean promoteNewest, ListIterable<IndexName> restore) {
 		/*
-		 * The marks go before the storage is listed, so that what was
-		 * restored is listed the way unmarked storage is and registered
-		 * along with it.
-		 */
-		var restored = unmark(restore);
-
-		/*
 		 * Listed once rather than per attempt: an attempt is repeated because
 		 * the registry moved, and the registry moving says nothing about the
 		 * files.
 		 */
 		var held = listHeld();
 
+		/*
+		 * What the caller asked to restore is merged the way unmarked storage
+		 * is. The marks themselves stay on the storage until the registry names
+		 * what they stand over.
+		 */
+		var restoring = dropMarks(held, restore);
+
 		for(int attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
 			var read = readRegistry();
-			var merged = merge(read, held, promoteNewest, restored);
+
+			/*
+			 * A delete takes its entry out of the registry before it writes its
+			 * mark, so a mark can land on a prefix this listing read as
+			 * unmarked. Read the marks of what the write would register again
+			 * until none has landed, so an index on its way out is not
+			 * registered again moments before its mark arrives.
+			 */
+			var merged = merge(read, held, promoteNewest);
+			while(remark(held, merged, restoring)) {
+				merged = merge(read, held, promoteNewest);
+			}
 
 			if(
 				merged.result().createdIndexes().isEmpty()
 					&& merged.result().addedGenerations().isEmpty()
 					&& merged.result().promoted().isEmpty()
 			) {
-				// Nothing to write, whether or not a mark was taken away
-				return merged.result();
+				// Nothing to write; a mark still comes off what is registered already
+				return withRestored(merged.result(), unmark(restore, read.store()));
 			}
 
 			String version;
@@ -110,14 +127,16 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 			}
 
 			if(version != null) {
+				var restored = unmark(restore, merged.store());
+
 				logger.atInfo()
 					.addKeyValue("createdIndexes", merged.result().createdIndexes().makeString(", "))
 					.addKeyValue("addedGenerations", merged.result().addedGenerations().makeString(", "))
 					.addKeyValue("promoted", merged.result().promoted().makeString(", "))
-					.addKeyValue("restored", merged.result().restored().makeString(", "))
+					.addKeyValue("restored", restored.makeString(", "))
 					.log("Repaired the registry from what the storage holds");
 
-				return merged.result();
+				return withRestored(merged.result(), restored);
 			}
 		}
 
@@ -125,29 +144,182 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	}
 
 	/**
-	 * Take the removal marks off what the caller asked to restore.
+	 * Leave the removal mark of everything the caller asked to restore out of a
+	 * listing, so the merge treats it as storage nothing deleted.
 	 *
 	 * @return
-	 *   the names that had a mark to take off, as asked for
+	 *   the names as the merge and the mark re-reads spell them
 	 */
-	private ListIterable<String> unmark(ListIterable<IndexName> restore) {
+	private static TreeSet<String> dropMarks(
+		HeldIndexes held,
+		ListIterable<IndexName> restore
+	) {
+		var restoring = new TreeSet<String>();
+
+		for(var target : restore) {
+			restoring.add(target.toString());
+
+			var index = held.indexes().get(target.index());
+			if(index == null) {
+				continue;
+			}
+
+			if(!target.isPinned()) {
+				held.indexes().put(target.index(), new HeldIndex(null, index.generations()));
+				continue;
+			}
+
+			var generation = index.generations().get(target.generation());
+			if(generation != null) {
+				index.generations().put(
+					target.generation(),
+					new HeldGeneration(generation.stored(), null)
+				);
+			}
+		}
+
+		return restoring;
+	}
+
+	/**
+	 * Read the removal marks of everything a merge would register, and write
+	 * the ones that have arrived since the listing into it. A name the caller
+	 * asked to restore is left as it is.
+	 *
+	 * @return
+	 *   whether the listing changed, which asks for the merge to be built
+	 *   again from it
+	 */
+	private boolean remark(HeldIndexes held, Merge merged, TreeSet<String> restoring) {
+		var changed = false;
+
+		for(var name : merged.result().createdIndexes()) {
+			var index = held.indexes().get(name);
+			if(restoring.contains(name) || index == null || index.removedAt() != null) {
+				continue;
+			}
+
+			var markedAt = markedAt(IndexName.of(name));
+			if(markedAt != null) {
+				held.indexes().put(name, new HeldIndex(markedAt, index.generations()));
+				changed = true;
+			}
+		}
+
+		for(var name : merged.result().addedGenerations()) {
+			var target = IndexName.parse(name);
+			var index = held.indexes().get(target.index());
+			if(restoring.contains(name) || index == null) {
+				continue;
+			}
+
+			var generation = index.generations().get(target.generation());
+			if(generation == null || generation.removedAt() != null) {
+				continue;
+			}
+
+			var markedAt = markedAt(target);
+			if(markedAt != null) {
+				index.generations().put(
+					target.generation(),
+					new HeldGeneration(generation.stored(), markedAt)
+				);
+				changed = true;
+			}
+		}
+
+		return changed;
+	}
+
+	/**
+	 * Take the removal marks off what the caller asked to restore and a
+	 * registry names. A name the registry does not name keeps its mark: the
+	 * mark is the only thing saying its objects were deleted, and nothing
+	 * removes them once it is gone.
+	 *
+	 * <p>A mark that could not be taken off is logged and left out of the
+	 * answer. The registry names what it stands over, which makes it void, and
+	 * a sweep passes it over.
+	 *
+	 * @return
+	 *   the names a mark came off, as asked for
+	 */
+	private ListIterable<String> unmark(
+		ListIterable<IndexName> restore,
+		IndexRegistryStore store
+	) {
 		var restored = Lists.mutable.<String>empty();
 
 		for(var target : restore) {
+			if(!isRegistered(store, target)) {
+				continue;
+			}
+
 			try {
 				if(removals.unmark(target)) {
 					restored.add(target.toString());
 
 					logger.atInfo()
 						.addKeyValue("index", target.toString())
-						.log("Took the removal mark off a deleted index, so a repair can register it");
+						.log("Took the removal mark off a deleted index the registry names again");
 				}
 			} catch(IOException e) {
-				throw RegistryException.ioError(e);
+				logger.atWarn()
+					.addKeyValue("index", target.toString())
+					.setCause(e)
+					.log(
+						"Could not take the removal mark off a restored index; the registry"
+							+ " names it, so the mark stands for nothing; " + e.getMessage()
+					);
 			}
 		}
 
 		return restored.toImmutable();
+	}
+
+	/**
+	 * Whether a registry names an index, or the generation of it a name pins.
+	 * A registry that was never read names nothing.
+	 */
+	private static boolean isRegistered(IndexRegistryStore store, IndexName target) {
+		if(store == null) {
+			return false;
+		}
+
+		for(var entry : store.getIndexesList()) {
+			if(!entry.getName().equals(target.index())) {
+				continue;
+			}
+
+			if(!target.isPinned()) {
+				return true;
+			}
+
+			for(var generation : entry.getGenerationsList()) {
+				if(generation.getName().equals(target.generation())) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		return false;
+	}
+
+	/**
+	 * A merge result with the names a mark came off in it.
+	 */
+	private static RegistryRepairResult withRestored(
+		RegistryRepairResult result,
+		ListIterable<String> restored
+	) {
+		return new RegistryRepairResult(
+			result.createdIndexes(),
+			result.addedGenerations(),
+			result.promoted(),
+			restored
+		);
 	}
 
 	/**
@@ -396,7 +568,9 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	}
 
 	/**
-	 * The merged registry and what merging added to it.
+	 * The merged registry and what merging added to it. The result names
+	 * nothing as restored: a mark comes off after the write, so what was
+	 * restored is only known then.
 	 */
 	private record Merge(IndexRegistryStore store, RegistryRepairResult result) {
 	}
@@ -404,8 +578,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private static Merge merge(
 		RegistryRead read,
 		HeldIndexes held,
-		boolean promoteNewest,
-		ListIterable<String> restored
+		boolean promoteNewest
 	) {
 		/*
 		 * Built from the stored bytes rather than through RegistryCodec, so
@@ -495,7 +668,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 				createdIndexes.toImmutable(),
 				addedGenerations.toImmutable(),
 				promoted.toImmutable(),
-				restored
+				Lists.immutable.empty()
 			)
 		);
 	}

@@ -13,8 +13,8 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   generation; absent means {@code false}, so a created index answers for
  *   nothing until a generation is promoted
  * @param restore
- *   indexes and generations a delete marked that the repair takes the mark
- *   off and registers; absent means none
+ *   indexes and generations a delete marked that the repair registers and
+ *   takes the mark off; absent means none
  */
 @Schema(
 	description = """
@@ -39,10 +39,11 @@ public record RegistryRepairRequest(
 		description = """
 			Names of deleted indexes (`books`) or generations (`books@2`) \
 			whose storage the sweep has not removed yet, to bring back. The \
-			repair takes the removal mark off each one and registers what it \
-			holds like any other unregistered storage. A name without a mark \
-			changes nothing. Deleted storage is never registered without \
-			being named here.""",
+			repair registers what each one holds like any other unregistered \
+			storage, then takes the removal mark off it. A name whose storage \
+			holds no `synced` generation keeps its mark, so the sweep still \
+			removes it. A name without a mark changes nothing. Deleted storage \
+			is never registered without being named here.""",
 		examples = "[\"books\"]"
 	)
 	List<String> restore

@@ -3927,9 +3927,11 @@ components:
             type: string
           description: "Names of deleted indexes (`books`) or generations (`books@2`)\
             \ whose storage the sweep has not removed yet, to bring back. The repair\
-            \ takes the removal mark off each one and registers what it holds like\
-            \ any other unregistered storage. A name without a mark changes nothing.\
-            \ Deleted storage is never registered without being named here."
+            \ registers what each one holds like any other unregistered storage, then\
+            \ takes the removal mark off it. A name whose storage holds no `synced`\
+            \ generation keeps its mark, so the sweep still removes it. A name without\
+            \ a mark changes nothing. Deleted storage is never registered without\
+            \ being named here."
           examples:
           - - books
     RegistryRepairResponse:

@@ -136,8 +136,8 @@ public class RegistryResource {
 	 * index answers for nothing until a generation is promoted.
 	 *
 	 * <p><p>Storage of a deleted index or generation waits for a sweep and is
-	 * registered only when {@code "restore"} names it, which takes the removal
-	 * mark off first.
+	 * registered only when {@code "restore"} names it. The removal mark comes
+	 * off once the registry names what it stood over.
 	 *
 	 * @param body
 	 *   configuration for created indexes and what to restore, or omitted for

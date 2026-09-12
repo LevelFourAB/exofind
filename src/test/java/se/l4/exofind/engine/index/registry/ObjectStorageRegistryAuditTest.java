@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.emptyIterable;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -499,5 +500,115 @@ public class ObjectStorageRegistryAuditTest {
 
 		assertThat(result.restored(), emptyIterable());
 		assertThat(result.createdIndexes(), contains("books"));
+	}
+
+	/**
+	 * A delete takes its entry out of the registry before it marks the storage,
+	 * so a mark can arrive after a repair has listed the bucket. Registering
+	 * the index from that listing would undo the delete and leave its mark
+	 * standing over an index the registry names.
+	 */
+	@Test
+	public void testADeleteLandingDuringARepairIsNotRegisteredAgain() throws IOException {
+		putManifest("books", "1");
+
+		var racing = new ObjectStorageRegistryAudit(
+			storage,
+			new RegistryStorageWithRace(
+				registryStorage,
+				() -> removals.mark(IndexName.of("books")),
+				false
+			),
+			removals
+		);
+
+		var result = racing.repair(true, Lists.immutable.empty());
+
+		assertThat(result.isEmpty(), is(true));
+		assertThat(registryStorage.read(null) instanceof RegistryStorage.Read.Absent, is(true));
+		assertThat(removals.markedAt(IndexName.of("books")).isPresent(), is(true));
+	}
+
+	/**
+	 * A repair that never gets its write through keeps the marks it was asked
+	 * to take off, so the storage it could not register is still on its way out
+	 * of the bucket.
+	 */
+	@Test
+	public void testARepairThatCannotWriteKeepsTheMarks() throws IOException {
+		putManifest("books", "1");
+		removals.mark(IndexName.of("books"));
+
+		var refusing = new ObjectStorageRegistryAudit(
+			storage,
+			new RegistryStorageWithRace(registryStorage, null, true),
+			removals
+		);
+
+		assertThrows(
+			RegistryException.class,
+			() -> refusing.repair(true, Lists.immutable.of(IndexName.of("books")))
+		);
+
+		assertThat(removals.markedAt(IndexName.of("books")).isPresent(), is(true));
+	}
+
+	/**
+	 * Restoring an index whose storage holds no finished push registers
+	 * nothing, and its mark stays so that a sweep still removes what is there.
+	 */
+	@Test
+	public void testRestoringStorageThatHoldsNothingKeepsItsMark() throws IOException {
+		putIncomplete("books", "1");
+		removals.mark(IndexName.of("books"));
+
+		var result = audit.repair(true, Lists.immutable.of(IndexName.of("books")));
+
+		assertThat(result.isEmpty(), is(true));
+		assertThat(removals.markedAt(IndexName.of("books")).isPresent(), is(true));
+	}
+
+	/**
+	 * A registry storage that lets a test put a change into the storage while a
+	 * repair is running, and that can refuse every write the way a registry
+	 * someone else keeps changing does.
+	 */
+	private static class RegistryStorageWithRace implements RegistryStorage {
+		private final RegistryStorage delegate;
+		private final IORunnable beforeFirstRead;
+		private final boolean refuseWrites;
+
+		private boolean read;
+
+		RegistryStorageWithRace(
+			RegistryStorage delegate,
+			IORunnable beforeFirstRead,
+			boolean refuseWrites
+		) {
+			this.delegate = delegate;
+			this.beforeFirstRead = beforeFirstRead;
+			this.refuseWrites = refuseWrites;
+		}
+
+		@Override
+		public Read read(String knownVersion) throws IOException {
+			if(!read && beforeFirstRead != null) {
+				read = true;
+				beforeFirstRead.run();
+			}
+
+			return delegate.read(knownVersion);
+		}
+
+		@Override
+		public String write(IndexRegistryStore indexes, String expectedVersion)
+			throws IOException {
+			return refuseWrites ? null : delegate.write(indexes, expectedVersion);
+		}
+	}
+
+	@FunctionalInterface
+	private interface IORunnable {
+		void run() throws IOException;
 	}
 }

@@ -694,7 +694,7 @@ The request body accepts an optional JSON object:
 The request body contains the following fields:
 
 - `promoteNewest`: A boolean. When `true`, each index created by the repair answers for its highest-numbered generation. Hand-named generations are not selected. Indexes that are already registered keep what they answer for.
-- `restore`: A list of names of deleted indexes (`books`) or generations (`books@2`) whose storage the sweep has not removed yet. The repair removes the removal mark from each named entry and registers what it holds like any other unregistered storage. A name without a mark changes nothing.
+- `restore`: A list of names of deleted indexes (`books`) or generations (`books@2`) whose storage the sweep has not removed yet. The repair registers what each named entry holds like any other unregistered storage, then removes the removal mark from it. A name whose storage holds no `synced` generation keeps its mark, so the sweep still removes it. A name without a mark changes nothing.
 
 A successful repair returns a summary of the changes:
 
