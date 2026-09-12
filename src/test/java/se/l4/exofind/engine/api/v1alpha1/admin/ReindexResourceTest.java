@@ -4,7 +4,10 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
@@ -38,6 +41,7 @@ import se.l4.exofind.engine.auth.Key;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
@@ -45,6 +49,7 @@ import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.reindex.ReindexInProgressException;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
@@ -63,6 +68,7 @@ public class ReindexResourceTest {
 
 	Indexes indexes;
 	ReindexJobs reindexJobs;
+	SearchSettings searchSettings;
 	IndexResource indexResource;
 	ReindexResource resource;
 	AuthContext auth;
@@ -102,19 +108,21 @@ public class ReindexResourceTest {
 		auth.set(Principal.unchecked());
 
 		reindexJobs = TestReindexJobs.create(nodeState, indexes, registry, storageDirectory);
+		searchSettings = new SearchSettings(
+			new InMemorySearchSettingsStorage(),
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
+			Duration.ofSeconds(10),
+			Duration.ofMinutes(10)
+		);
+
 		resource = new ReindexResource(reindexJobs, auth);
 		indexResource = new IndexResource(
 			indexes,
 			auth,
 			new LocalIndexerOwnership(),
 			reindexJobs,
-			new SearchSettings(
-				new InMemorySearchSettingsStorage(),
-				registry,
-				new RegistryHints(registry, StorageMode.LOCAL),
-				Duration.ofSeconds(10),
-				Duration.ofMinutes(10)
-			)
+			searchSettings
 		);
 
 		uriInfo = mock(UriInfo.class);
@@ -128,11 +136,23 @@ public class ReindexResourceTest {
 	}
 
 	private IndexDefinition definition() {
+		return definition(null, "id");
+	}
+
+	/**
+	 * A definition of one field, which is the primary key.
+	 *
+	 * @param source
+	 *   how much of a document to keep, or {@code null} for the default
+	 * @param key
+	 *   name of the key field
+	 */
+	private IndexDefinition definition(IndexDefinition.Source source, String key) {
 		return new IndexDefinition(
-			null,
+			source,
 			null,
 			Map.of(
-				"id",
+				key,
 				new StringFieldDefinition(
 					null, true, null, null, null, null,
 					new FieldDefinition.Filter(),
@@ -269,6 +289,80 @@ public class ReindexResourceTest {
 		);
 
 		// The refused request left no generation behind
+		var info = (IndexInfo) indexResource.get("books").getEntity();
+		assertThat(info.generations().size(), is(1));
+	}
+
+	/**
+	 * A definition whose key the replay could not match is refused before the
+	 * generation exists. A generation left behind would be refused the flag on
+	 * every repeat, so the caller could not send the corrected request under
+	 * the same name.
+	 */
+	@Test
+	public void aReindexTheJobRefusesCreatesNoGeneration() {
+		create("books");
+
+		for(var attempt = 0; attempt < 2; attempt++) {
+			assertThrows(
+				ValidationException.class,
+				() -> indexResource.put(
+					"books@2", null, "manual", false, uriInfo, definition(null, "code")
+				)
+			);
+
+			var info = (IndexInfo) indexResource.get("books").getEntity();
+			assertThat(info.generations().size(), is(1));
+		}
+	}
+
+	/**
+	 * A live generation that keeps no copy of its documents has nothing to fill
+	 * a new generation from, and the flag is refused before anything is created.
+	 */
+	@Test
+	public void aReindexFromASourceThatKeepsNoDocumentsCreatesNoGeneration() {
+		indexResource.put(
+			"books", null, null, false, uriInfo, definition(IndexDefinition.Source.NONE, "id")
+		);
+
+		assertThrows(
+			IndexSourceNotKeptException.class,
+			() -> indexResource.put(
+				"books@2", null, "manual", false, uriInfo,
+				definition(IndexDefinition.Source.NONE, "id")
+			)
+		);
+
+		var info = (IndexInfo) indexResource.get("books").getEntity();
+		assertThat(info.generations().size(), is(1));
+	}
+
+	/**
+	 * A job refused after the generation was created takes the generation with
+	 * it, which is what a job refused by a race with another node looks like.
+	 */
+	@Test
+	public void aJobRefusedAfterTheCreateTakesTheGenerationWithIt() {
+		create("books");
+
+		var refusing = spy(reindexJobs);
+		doThrow(new ReindexInProgressException("books"))
+			.when(refusing).start(any(), any(), any());
+
+		var resource = new IndexResource(
+			indexes,
+			auth,
+			new LocalIndexerOwnership(),
+			refusing,
+			searchSettings
+		);
+
+		assertThrows(
+			ReindexInProgressException.class,
+			() -> resource.put("books@2", null, "manual", false, uriInfo, definition())
+		);
+
 		var info = (IndexInfo) indexResource.get("books").getEntity();
 		assertThat(info.generations().size(), is(1));
 	}

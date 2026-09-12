@@ -3,6 +3,7 @@ package se.l4.exofind.engine.reindex;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +39,8 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LiveGenerationMovedException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
+import se.l4.exofind.engine.index.schema.FieldDef;
+import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.logging.Log;
@@ -414,20 +417,7 @@ public class ReindexJobs {
 
 		startLock.lock();
 		try {
-			if(running.containsKey(index)) {
-				throw new ReindexInProgressException(index);
-			}
-
-			String expectedVersion = null;
-			var existing = storage.read(index);
-			if(existing.isPresent()) {
-				var previous = ReindexJob.fromStore(existing.get().record());
-				if(previous.isEmpty() || !previous.get().phase().isFinished()) {
-					throw new ReindexInProgressException(index);
-				}
-
-				expectedVersion = existing.get().version();
-			}
+			var expectedVersion = finishedRecordVersion(index);
 
 			var now = Instant.now();
 			var job = new ReindexJob(
@@ -484,6 +474,118 @@ public class ReindexJobs {
 		} finally {
 			startLock.unlock();
 		}
+	}
+
+	/**
+	 * Check what a reindex can be refused for before the generation it fills
+	 * exists, for a request that creates the generation and starts the job
+	 * together.
+	 *
+	 * <p>The source is the live generation, as it is for a {@link #start} given
+	 * none. What only an existing target answers is left to {@code start}: a
+	 * generation created a moment ago holds no documents and is not the live
+	 * one.
+	 *
+	 * @param targetName
+	 *   the generation the request creates, as {@code index@generation}
+	 * @param definition
+	 *   the definition the generation is created with
+	 * @throws ValidationException
+	 *   if the target is not a pinned generation, or the primary key of the
+	 *   definition is not comparable with the one the source is keyed by
+	 * @throws IndexNotFoundException
+	 *   if the deployment holds no such index, or the index answers from no
+	 *   generation
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the source or the definition declares no primary key
+	 * @throws IndexSourceNotKeptException
+	 *   if the source keeps no copy of its documents
+	 * @throws ReindexInProgressException
+	 *   if the index already has a job that is not finished
+	 */
+	public void checkStartable(String targetName, IndexDef definition) {
+		var target = IndexName.parse(targetName);
+		if(!target.isPinned()) {
+			throw new ValidationException(
+				TARGET_GENERATION_REQUIRED.toMessage(ObjectLocation.root(), "name", targetName)
+			);
+		}
+
+		var index = target.index();
+		var registered = indexes.getRegistered(index)
+			.orElseThrow(() -> new IndexNotFoundException(targetName));
+
+		var sourceGen = resolveSource(registered, null, target);
+		var sourceName = IndexName.of(index, sourceGen).toString();
+		var sourceIndex = indexes.getOrThrow(sourceName);
+
+		var sourceKey = sourceIndex.getPrimaryKey()
+			.orElseThrow(() -> new IndexNoPrimaryKeyException(sourceName));
+		if(!sourceIndex.isSourceStored()) {
+			throw new IndexSourceNotKeptException(sourceName);
+		}
+
+		var targetKey = primaryKeyOf(definition)
+			.orElseThrow(() -> new IndexNoPrimaryKeyException(targetName));
+
+		if(
+			!sourceKey.getName().equals(targetKey.getKey())
+				|| sourceKey.getDef().getType().getTypeCase()
+					!= targetKey.getValue().getType().getTypeCase()
+		) {
+			throw new ValidationException(
+				PRIMARY_KEY_MISMATCH.toMessage(
+					ObjectLocation.root(),
+					"source", sourceName,
+					"target", targetName
+				)
+			);
+		}
+
+		try {
+			finishedRecordVersion(index);
+		} catch(IOException e) {
+			throw new ReindexStorageException(e);
+		}
+	}
+
+	/**
+	 * The field a definition declares as its primary key, with the name it is
+	 * declared under.
+	 */
+	private static Optional<Map.Entry<String, FieldDef>> primaryKeyOf(IndexDef definition) {
+		for(var field : definition.getFieldsMap().entrySet()) {
+			if(field.getValue().getPrimaryKey()) {
+				return Optional.of(field);
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * The record version a new job of an index replaces, or {@code null} when
+	 * the storage holds no record of it.
+	 *
+	 * @throws ReindexInProgressException
+	 *   if a job of the index is not finished, in the record or on this node
+	 */
+	private String finishedRecordVersion(String index) throws IOException {
+		if(running.containsKey(index)) {
+			throw new ReindexInProgressException(index);
+		}
+
+		var existing = storage.read(index);
+		if(existing.isEmpty()) {
+			return null;
+		}
+
+		var previous = ReindexJob.fromStore(existing.get().record());
+		if(previous.isEmpty() || !previous.get().phase().isFinished()) {
+			throw new ReindexInProgressException(index);
+		}
+
+		return existing.get().version();
 	}
 
 	/**

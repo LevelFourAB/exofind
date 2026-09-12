@@ -43,6 +43,7 @@ import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
+import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -93,6 +94,8 @@ import jakarta.ws.rs.core.UriInfo;
 @Path("/v1alpha1/admin/indexes")
 @Produces(MediaType.APPLICATION_JSON)
 public class IndexResource {
+	private static final Log logger = Log.of(IndexResource.class);
+
 	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:missing_body")
 		.withMessage("A definition is required");
 
@@ -1037,6 +1040,15 @@ public class IndexResource {
 				);
 			}
 
+			if(reindex != null) {
+				/*
+				 * Asked before the generation exists: a generation left behind
+				 * by a refused job is refused the flag on every repeat of the
+				 * same request, so the caller could not send it again.
+				 */
+				reindexJobs.checkStartable(name, stored);
+			}
+
 			var created = requested.isPinned()
 				? indexes.createGeneration(name, stored)
 				: indexes.create(name, stored);
@@ -1048,7 +1060,12 @@ public class IndexResource {
 				 * live generation. A node dying between the create and here
 				 * loses the flag, and the client calls the action instead.
 				 */
-				reindexJobs.start(name, null, reindex);
+				try {
+					reindexJobs.start(name, null, reindex);
+				} catch(RuntimeException e) {
+					rollBack(name);
+					throw e;
+				}
 			}
 
 			return toResponse(Response.created(uriInfo.getAbsolutePath()), created).build();
@@ -1513,6 +1530,30 @@ public class IndexResource {
 		var index = indexes.getOrThrow(name);
 		index.pull();
 		return toStatus(index);
+	}
+
+	/**
+	 * Delete the generation a request created when the reindex it asked for
+	 * could not be started after all. The generation holds no documents and
+	 * nothing answers from it, so taking it away leaves the deployment as the
+	 * request found it and the caller can send the request again.
+	 *
+	 * <p>Failing to take it away is logged. The refusal the caller gets is the
+	 * one the reindex answered with either way.
+	 */
+	private void rollBack(String name) {
+		try {
+			indexes.delete(name);
+		} catch(IOException | RuntimeException e) {
+			logger.atWarn()
+				.addKeyValue("index", name)
+				.setCause(e)
+				.log(
+					"A reindex was refused and the generation created for it could not"
+						+ " be deleted, so the same request is refused as a repeat; "
+						+ e.getMessage()
+				);
+		}
 	}
 
 	/**
