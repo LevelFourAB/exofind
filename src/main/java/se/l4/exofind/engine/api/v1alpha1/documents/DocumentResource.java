@@ -52,8 +52,6 @@ import se.l4.exofind.engine.index.DocumentPatch;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexException;
-import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
-import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.inject.Inject;
@@ -1913,7 +1911,7 @@ public class DocumentResource {
 		 * starts, as an answer that has begun can no longer be turned into the
 		 * error that stopped it.
 		 */
-		checkReadable(index);
+		index.checkScannable(from);
 
 		StreamingOutput body = out -> {
 			try(var generator = mapper.getFactory().createGenerator(out)) {
@@ -1931,20 +1929,6 @@ public class DocumentResource {
 		};
 
 		return Response.ok(body).build();
-	}
-
-	/**
-	 * Refuse an index that cannot be read back out, for the reasons a scan
-	 * itself would refuse it.
-	 */
-	private static void checkReadable(Index index) {
-		if(index.getPrimaryKey().isEmpty()) {
-			throw new IndexNoPrimaryKeyException(index.getId());
-		}
-
-		if(!index.isSourceStored()) {
-			throw new IndexSourceNotKeptException(index.getId());
-		}
 	}
 
 	/**

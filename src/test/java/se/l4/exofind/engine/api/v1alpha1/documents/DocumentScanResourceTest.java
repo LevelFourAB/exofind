@@ -30,6 +30,7 @@ import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
 import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
@@ -39,6 +40,7 @@ import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.Int64FieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
@@ -209,6 +211,41 @@ public class DocumentScanResourceTest {
 		assertThrows(
 			IndexNoPrimaryKeyException.class,
 			() -> resource.scanStream("logs", null, null)
+		);
+	}
+
+	/**
+	 * A key the index cannot read is refused before the streamed answer starts.
+	 * An answer that has begun can no longer become the error that stopped it,
+	 * so the caller would read a body that ends early under a 200.
+	 */
+	@Test
+	public void aKeyToCarryOnAfterThatTheIndexCannotReadIsRefused() throws IOException {
+		indexes.create(
+			"orders",
+			IndexDef.newBuilder()
+				.putFields(
+					"id",
+					FieldDef.newBuilder()
+						.setPrimaryKey(true)
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setInt64(Int64FieldTypeDef.getDefaultInstance())
+						)
+						.build()
+				)
+				.build()
+		);
+
+		assertThrows(
+			IndexInvalidQueryValueException.class,
+			() -> resource.scanStream("orders", "not-a-number", null)
+		);
+
+		// The same request read as JSON is refused the same way
+		assertThrows(
+			IndexInvalidQueryValueException.class,
+			() -> resource.scan("orders", "not-a-number", null)
 		);
 	}
 

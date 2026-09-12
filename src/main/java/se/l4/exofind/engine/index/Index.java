@@ -4088,9 +4088,16 @@ public class Index {
 				throw new IndexSourceNotKeptException(id);
 			}
 
-			var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
-			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
-			encounter.updateValue(primaryKeyField.getName(), primaryKeyField.getDef());
+			var encounter = primaryKeyEncounter(primaryKeyField);
+
+			/*
+			 * Built before anything is read, so a key this index cannot hold is
+			 * refused whether or not the index holds a document to compare it
+			 * with.
+			 */
+			var from = after == null
+				? null
+				: primaryKeyField.getType().createPrimaryKeyTerm(encounter, after).bytes();
 
 			try(var handle = searcherManager.acquire()) {
 				var searcher = handle.getSearcher();
@@ -4107,7 +4114,7 @@ public class Index {
 				}
 
 				var keys = terms.iterator();
-				if(! seek(keys, after, primaryKeyField, encounter)) {
+				if(! seek(keys, from)) {
 					return 0;
 				}
 
@@ -4143,6 +4150,58 @@ public class Index {
 	}
 
 	/**
+	 * Check what a {@link #scanDocuments scan} refuses before it reads a
+	 * document, for a caller that cannot turn a refusal into its answer once
+	 * it has started writing one.
+	 *
+	 * @param after
+	 *   the key the scan carries on after, or {@code null} to start at the
+	 *   first document
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key
+	 * @throws IndexSourceNotKeptException
+	 *   if the index keeps no copy of its documents
+	 * @throws IndexInvalidQueryValueException
+	 *   if the key is not a value the primary key field holds
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 */
+	public void checkScannable(Object after) {
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				throw new IndexClosedException(id);
+			}
+
+			var primaryKeyField = primaryKeyField();
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceNotKeptException(id);
+			}
+
+			if(after != null) {
+				primaryKeyField.getType()
+					.createPrimaryKeyTerm(primaryKeyEncounter(primaryKeyField), after);
+			}
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * An encounter that reads and writes the primary key field of this index.
+	 */
+	private IndexEncounterImpl primaryKeyEncounter(Field primaryKeyField) {
+		var encounter = new IndexEncounterImpl(
+			schema.getResources(),
+			schema.isHighlightingInPostings()
+		);
+		encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
+		encounter.updateValue(primaryKeyField.getName(), primaryKeyField.getDef());
+
+		return encounter;
+	}
+
+	/**
 	 * Handed each document a {@link Index#scanDocuments scan} reads, as it is
 	 * read.
 	 */
@@ -4162,26 +4221,17 @@ public class Index {
 	 * Put a walk over the primary keys on the first key a scan is to read.
 	 *
 	 * @param keys
-	 * @param after
-	 *   the key the scan carries on after, or {@code null} to start at the
-	 *   first
+	 * @param from
+	 *   the key term the scan carries on after, or {@code null} to start at
+	 *   the first
 	 * @return
 	 *   whether there is a key to read, which is {@code false} for an empty
 	 *   index and for a scan that carried on past the last key
 	 */
-	private static boolean seek(
-		TermsEnum keys,
-		Object after,
-		Field primaryKeyField,
-		IndexEncounter encounter
-	) throws IOException {
-		if(after == null) {
+	private static boolean seek(TermsEnum keys, BytesRef from) throws IOException {
+		if(from == null) {
 			return keys.next() != null;
 		}
-
-		var from = primaryKeyField.getType()
-			.createPrimaryKeyTerm(encounter, after)
-			.bytes();
 
 		/*
 		 * A key that is there is stepped past, as it was read by the call that
