@@ -29,6 +29,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexListResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexStatus;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexerInfo;
+import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
@@ -295,7 +296,8 @@ public class IndexResource {
 	 * @param reindex
 	 *   promotion mode ({@code auto} or {@code manual}) to start a reindex job
 	 *   populating the new generation from the live generation. Only valid when
-	 *   creating a generation
+	 *   creating a generation, and {@code auto} needs {@code indexes.promote} as
+	 *   well because the job it starts promotes what it filled
 	 * @param allowStaleDocuments
 	 *   {@code true} to store a definition without reindexing existing
 	 *   documents. Existing documents continue to serve queries as indexed
@@ -963,7 +965,9 @@ public class IndexResource {
 				Starts a reindex job filling the generation being created from \
 				the live one, the way the reindex action would. One-shot: it \
 				is not stored in the definition, and it is refused on a \
-				request that creates no generation.""",
+				request that creates no generation. `auto` also needs \
+				`indexes.promote`, because the job it starts promotes the \
+				generation it filled; `manual` needs only `indexes.write`.""",
 			schema = @Schema(enumeration = {"auto", "manual"})
 		)
 		@QueryParam("reindex") String reindex,
@@ -996,7 +1000,18 @@ public class IndexResource {
 
 		// A value the job would refuse is refused before anything is created
 		if(reindex != null) {
-			ReindexJobs.parsePromote(reindex);
+			/*
+			 * A job left on automatic promotion promotes what it filled, which
+			 * is what `indexes.promote` is about. The filter checked
+			 * `indexes.write`, so the second permission is checked here, the
+			 * same way the reindex action checks it.
+			 */
+			if(
+				!ReindexJobs.parsePromote(reindex)
+					&& !auth.principal().allows(Permission.INDEXES_PROMOTE, name)
+			) {
+				throw new ForbiddenException(Permission.INDEXES_PROMOTE);
+			}
 		}
 
 		var existing = indexes.get(name);
