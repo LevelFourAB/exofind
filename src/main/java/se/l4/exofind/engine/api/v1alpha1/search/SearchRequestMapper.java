@@ -1863,7 +1863,11 @@ public class SearchRequestMapper {
 			case Clause.Boost boost -> {
 				var clauses = toClauses(boost.clauses(), path + "/clauses", errors);
 
-				if(boost.weight() == null || boost.weight() < 0) {
+				if(
+					boost.weight() == null
+					|| !(boost.weight() >= 0)
+					|| !Float.isFinite(boost.weight())
+				) {
 					errors.add(
 						CLAUSE_WEIGHT_INVALID.toMessage(Location.create(path + "/weight"))
 					);

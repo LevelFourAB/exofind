@@ -1205,6 +1205,44 @@ public class SearchRequestMapperTest {
 	}
 
 	@Test
+	public void testBoostWeightThatIsNotANumberIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Boost(
+						Float.NaN,
+						List.of(new Clause.Field("staffPick", new Matcher.Equals(true)))
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
+		assertThat(pathsOf(e), contains("/query/0/weight"));
+	}
+
+	@Test
+	public void testInfiniteBoostWeightIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withQuery(
+					new Clause.Boost(
+						Float.POSITIVE_INFINITY,
+						List.of(new Clause.Field("staffPick", new Matcher.Equals(true)))
+					)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
+		assertThat(pathsOf(e), contains("/query/0/weight"));
+	}
+
+	@Test
 	public void testValidClausesNextToABadOneAreStillMapped() {
 		var e = assertThrows(
 			ValidationException.class,

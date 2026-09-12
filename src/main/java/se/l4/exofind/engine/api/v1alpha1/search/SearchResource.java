@@ -323,7 +323,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
 		status = 400,
-		when = "The `weight` of a `boost` clause is missing or below zero."
+		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
 		value = "search:clause:slop_invalid",
@@ -934,7 +934,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
 		status = 400,
-		when = "The `weight` of a `boost` clause is missing or below zero."
+		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
 		value = "search:clause:slop_invalid",
@@ -1264,7 +1264,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
 		status = 400,
-		when = "The `weight` of a `boost` clause is missing or below zero."
+		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
 		value = "search:clause:slop_invalid",
@@ -1592,7 +1592,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
 		status = 400,
-		when = "The `weight` of a `boost` clause is missing or below zero."
+		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
 		value = "search:clause:slop_invalid",

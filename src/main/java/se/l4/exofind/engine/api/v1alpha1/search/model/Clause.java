@@ -796,7 +796,10 @@ public sealed interface Clause
 		@Schema(
 			description = """
 				Multiplier applied to matching documents. Values greater than \
-				`1` increase score; values between `0` and `1` decrease score.""",
+				`1` increase score; values between `0` and `1` decrease score. \
+				Leaving it out, or setting it below `0` or to a non-finite \
+				number, returns `search:clause:weight_invalid`.""",
+			required = true,
 			examples = "2"
 		)
 		Float weight,

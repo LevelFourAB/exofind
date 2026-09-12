@@ -488,6 +488,8 @@ Increases the relevance score of documents that satisfy child clauses without ex
 - `weight`: Multiplier applied to matching documents. Values greater than `1` increase score; values between `0` and `1` decrease score.
 - `clauses`: Array of clauses required to apply the boost weight.
 
+Leaving out `weight`, or setting it below `0` or to a non-finite number, returns `search:clause:weight_invalid`.
+
 ## Matchers
 
 Matchers define criteria evaluated against field values in a `field` clause. A matcher is structured as a tagged union where `type` selects the matcher type. If `type` is omitted, the matcher defaults to `equals`.
