@@ -35,7 +35,7 @@ Each object in the `errors` array contains the following fields:
 | --- | --- | --- |
 | `code` | string | The error code identifying the specific validation failure. |
 | `message` | string | Human-readable description of the validation failure. |
-| `path` | string | Location of the invalid field in the request. |
+| `path` | string | Location of the invalid field in the request, as a JSON Pointer (`/fields/title/sortable`) or a dotted field path (`fields.title`). For which form an error carries, see [API conventions](api-conventions.md#error-body). |
 | `arguments` | object | Key-value pairs containing the values used to build the error message. |
 
 For what each status code means, and for the conventions the whole API shares, see [API conventions](api-conventions.md). For the conditions that produce a status on a particular endpoint, see the status tables in the [admin API](admin-api.md#status-codes) reference. The `400 Bad Request` status code covers both invalid request bodies and queries that request data or features an index does not have.
@@ -44,7 +44,7 @@ For deciding what a client does with a failure, see [Handle errors in a client](
 
 ## Code prefixes
 
-Error codes use colon-separated namespaces. The prefix indicates which part of the request caused the error:
+Error codes use colon-separated namespaces. The prefix indicates which part of the request failed, and the table covers every prefix the engine returns:
 
 | Prefix | Scope | Examples |
 | --- | --- | --- |
@@ -67,18 +67,22 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:source:*` | Stored document source copy unavailable | `index:source:not_kept`, `index:source:unreadable` |
 | `index:query:*` | Query refers to unavailable index features or fields | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept`, `index:query:facet_prefix_on_a_tree`, `index:query:interpret:no_unit`, `index:query:interpret:fallback_unit` |
 | `index:explain:*` | Score explanation target lookup failure | `index:explain:document_not_found`, `index:explain:value_not_found` |
-| `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:suggest:*`, `search:signal:*`, `search:rescore:*` | Malformed search request component | `search:suggest:limit_invalid`, `search:clause:field_required`, `search:clause:rankings_invalid`, `search:clause:ranking_empty`, `search:clause:depth_invalid`, `search:clause:depth_too_large`, `search:clause:k_too_large`, `search:clause:rank_constant_invalid`, `search:clause:interpret_fields_required`, `search:clause:interpret_when_unsupported`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:hits:path_required`, `search:facet:duplicate_name`, `search:signal:shape_invalid`, `search:signal:mode_without_signals`, `search:rescore:window_required`, `search:rescore:window_invalid`, `search:rescore:window_too_small`, `search:rescore:empty`, `search:rescore:weight_invalid`, `search:rescore:hits_unsupported` |
+| `index:document:*` | A document named by its key that the index does not hold | `index:document:not_found` |
+| `search:clause:*`, `search:matcher:*`, `search:filter:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:suggest:*`, `search:signal:*`, `search:rescore:*`, `search:required` | Malformed search request component | `search:clause:field_required`, `search:matcher:range_empty`, `search:filter:clause_invalid`, `search:sort:field_required`, `search:highlight:fields_required`, `search:facet:duplicate_name`, `search:signal:weight_invalid`, `search:rescore:window_invalid` |
 | `search:explain:*` | Explanation naming no hit to explain | `search:explain:key_required`, `search:explain:index_invalid` |
-| `search:cursor:*`, `search:page:*` | Pagination error | `search:cursor:sort_mismatch`, `search:page:too_deep` |
-| `search:limit:*`, `search:query:*` | Search asking for more than the node allows | `search:limit:too_large`, `search:query:too_many_clauses`, `search:query:too_deep` |
+| `search:cursor:*`, `search:page:*`, `search:pages:*`, `search:offset:*` | Pagination error | `search:cursor:invalid`, `search:cursor:sort_mismatch`, `search:page:conflicting`, `search:page:too_deep`, `search:pages:without_limit`, `search:pages:without_offset`, `search:pages:invalid_max`, `search:offset:negative` |
+| `search:limit:*`, `search:query:*` | Search asking for more than the node allows, or for a negative page size | `search:limit:too_large`, `search:limit:negative`, `search:query:too_many_clauses`, `search:query:too_deep` |
+| `search:locale:*` | Search naming a locale the engine has no rules for | `search:locale:unsupported` |
 | `search:timeout` | Search abandoned after running longer than the node allows | `search:timeout` |
 | `reindex:*` | Reindex job lookup, state, or record storage failure | `reindex:not_found`, `reindex:in_progress`, `reindex:io_error` |
 | Other `index:*` | Index-level state and lifecycle errors | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
+| `indexer:*` | The node that writes an index could not be found or reached | `indexer:unavailable`, `indexer:unreachable`, `indexer:leadership_unreadable` |
 | `node:*` | The node failed to serve a request that is not itself wrong | `node:error` |
+| `validation` | The envelope of a refused request. Branch on the codes in its `errors` array | `validation` |
 
 ## Error codes
 
-The following error codes require specific handling in client applications:
+The following error codes require specific handling in client applications. For the complete list of codes one endpoint answers with, see that endpoint on the [REST API pages](https://exofind.dev/api/).
 
 - `auth:unauthenticated`: Returned with HTTP `401` and the `WWW-Authenticate: Bearer` header when the request contains no accepted credential. Absent, malformed, unknown, or lapsed credentials all return this code to prevent key enumeration.
 - `auth:forbidden`: Returned when an authenticated caller lacks the required permission. The `permission` argument identifies the missing permission. When the caller has no permissions on the target index, the server returns `index:not-found` instead.
@@ -86,8 +90,12 @@ The following error codes require specific handling in client applications:
 - `indexer:unreachable`: Returned with HTTP `502` when the request was forwarded to the index writer node, but the node did not respond. Retry the write operation.
 - `indexer:leadership_unreadable`: Returned with HTTP `503` when index leadership assignments cannot be read from shared state storage. Retry the request once storage responds.
 - `index:readonly`: Returned with HTTP `409` when modifying an index on a node that cannot accept writes, such as when a node loses index leadership while processing a request. Retry the request to forward it to the active writer node.
-- `search:page:too_deep`: Returned when the requested offset exceeds `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow `next` or `previous` cursors instead of offset paging.
+- `search:page:too_deep`: Returned when `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow `next` or `previous` cursors instead of offset paging.
 - `search:cursor:sort_mismatch`: Returned when a cursor is used with a different sort order than the sort order used to generate it, or with incompatible hit types between object field values and documents.
+- `search:cursor:invalid`: Returned when `after` or `before` carries a token the engine did not issue. A cursor is opaque; pass it back unchanged.
+- `index:query:invalid_cursor`: Returned when a cursor the engine did issue does not fit the sort. Start again from the first page.
+- `search:page:conflicting`: Returned when more than one of `offset`, `after` and `before` is given. Specify only one starting position.
+- `search:pages:without_offset`: Returned when `pages` is asked for from a `next` or `previous` cursor. Start numbered paging from `offset` or from a page's own cursor.
 - `search:rescore:window_too_small`: Returned when `offset` plus `limit` reaches past the `window` of a `rescore` block. Widen the window, or ask for an earlier page. A rescored search cannot page past its window by counting; follow `next` instead. See [Paging a rescored search](search-api.md#paging-a-rescored-search).
 - `search:rescore:window_invalid`: Returned when the `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`.
 - `search:limit:too_large`: Returned when `limit` exceeds `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next` for the rest.

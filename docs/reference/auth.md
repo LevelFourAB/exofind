@@ -197,7 +197,7 @@ To list keys, send a `GET` request to `/v1alpha1/admin/keys`:
 }
 ```
 
-The `keys` array contains deployment keys shared across all nodes. The `rootKeyConfigured` and `anonymousKey` fields reflect the local configuration of the node answering the request.
+The `keys` array contains deployment keys shared across all nodes. The `rootKeyConfigured` and `anonymousKey` fields reflect the local configuration of the node answering the request. The `anonymousKey` field is always present in the response and is `null` when the node rejects unauthenticated requests. A key's `expiresAt` is always present and is `null` when the key does not expire. The permissions of a grant are returned sorted by name, whatever order they were given in when the key was created.
 
 ### Status codes
 

@@ -611,9 +611,9 @@ public sealed interface Clause
 			Clauses evaluated within a single nested object value, naming \
 			fields by their dotted path. An empty array matches any document \
 			where the object field is present. May contain `field`, `text`, \
-			`and`, `or`, `not` and `boost`; a root-level clause such as \
-			another `nested` or a `knn` returns \
-			`index:query:nested:unsupported_clause`.""")
+			`knn`, `and`, `or`, `not` and `boost`; a clause that only means \
+			something for whole documents, such as another `nested` or a \
+			`fuse`, returns `index:query:nested:unsupported_clause`.""")
 		List<Clause> clauses,
 
 		/**

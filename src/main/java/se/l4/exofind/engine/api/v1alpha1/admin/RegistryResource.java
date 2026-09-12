@@ -189,12 +189,22 @@ public class RegistryResource {
 		)
 	)
 	@APIResponse(
+		responseCode = "400",
+		description = "An entry of `restore` is not a valid index or generation name.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
 		responseCode = "409",
 		description = """
 			The endpoint was called on a node configured with local storage, or \
 			writing the repaired registry failed. The registry remains \
 			unchanged.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:invalid_name",
+		status = 400,
+		when = "An entry of `restore` is not a valid index or generation name."
 	)
 	@ReturnsError(
 		value = "index:registry:audit_unavailable",
@@ -212,10 +222,13 @@ public class RegistryResource {
 		when = "Registry storage answered with an error. The registry is unchanged; send the request again."
 	)
 	public RegistryRepairResponse repair(
-		@RequestBody(content = @Content(
-			schema = @Schema(implementation = RegistryRepairRequest.class),
-			examples = @ExampleObject(name = "repair", value = RegistryRepairRequest.EXAMPLE)
-		))
+		@RequestBody(
+			required = false,
+			content = @Content(
+				schema = @Schema(implementation = RegistryRepairRequest.class),
+				examples = @ExampleObject(name = "repair", value = RegistryRepairRequest.EXAMPLE)
+			)
+		)
 		RegistryRepairRequest body
 	) {
 		var restore = Lists.mutable.<IndexName>empty();

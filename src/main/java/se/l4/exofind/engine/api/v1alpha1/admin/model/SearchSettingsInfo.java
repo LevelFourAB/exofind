@@ -63,8 +63,8 @@ public record SearchSettingsInfo(
 		description = """
 			An identifier for the stored settings version, also returned in \
 			the `ETag` header. Pass this value in the `If-Match` header on \
-			`PUT` requests to prevent overwriting concurrent updates; a \
-			mismatch returns `412`.""",
+			`PUT` and `PATCH` requests to prevent overwriting concurrent \
+			updates; a mismatch returns `412`.""",
 		examples = "9f2c1a0b3d4e5f60"
 	)
 	String version,

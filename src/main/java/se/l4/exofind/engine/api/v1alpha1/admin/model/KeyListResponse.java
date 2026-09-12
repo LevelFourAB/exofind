@@ -16,7 +16,7 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param rootKeyConfigured
  *   whether this node has a root key configured
  * @param anonymousKey
- *   ID of the key used for unauthenticated requests, or absent if
+ *   ID of the key used for unauthenticated requests, or {@code null} if
  *   unauthenticated requests are rejected
  */
 @Schema(
@@ -39,7 +39,7 @@ public record KeyListResponse(
 	@Schema(
 		description = """
 			ID of the key used for unauthenticated requests, configured with \
-			`EXOFIND_AUTH_ANONYMOUS_KEY`. Omitted when the node rejects \
+			`EXOFIND_AUTH_ANONYMOUS_KEY`. `null` when the node rejects \
 			unauthenticated requests. An anonymous key cannot contain any \
 			permission other than `search`.""",
 		examples = "fe3747c2761ef89d"
@@ -48,7 +48,8 @@ public record KeyListResponse(
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
-	 * schema of this record shows this text.
+	 * schema of this record shows this text. The permissions of a grant come
+	 * back sorted by name, and the example shows that order.
 	 */
 	public static final String EXAMPLE = """
 		{
@@ -56,10 +57,12 @@ public record KeyListResponse(
 		    {
 		      "id": "4ff6b760264c1918",
 		      "description": "the search backend",
-		      "grants": [ { "permissions": ["search", "indexes.read"], "indexes": ["products"] } ],
-		      "createdAt": "2026-08-16T12:09:33.198275Z"
+		      "grants": [ { "permissions": ["indexes.read", "search"], "indexes": ["products"] } ],
+		      "createdAt": "2026-08-16T12:09:33.198275Z",
+		      "expiresAt": null
 		    }
 		  ],
-		  "rootKeyConfigured": true
+		  "rootKeyConfigured": true,
+		  "anonymousKey": null
 		}""";
 }

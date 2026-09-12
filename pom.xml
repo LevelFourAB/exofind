@@ -31,6 +31,7 @@
 		<lucene.version>10.5.1</lucene.version>
 		<protobuf-maven-plugin.version>4.0.3</protobuf-maven-plugin.version>
 		<mockito.version>5.23.0</mockito.version>
+		<asm.version>9.10.1</asm.version>
 		<byte-buddy.version>1.18.11</byte-buddy.version>
 		<jmh.version>1.37</jmh.version>
 		<build-helper-plugin.version>3.6.0</build-helper-plugin.version>
@@ -142,6 +143,13 @@
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-junit-jupiter</artifactId>
 			<version>${mockito.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.ow2.asm</groupId>
+			<artifactId>asm</artifactId>
+			<version>${asm.version}</version>
 			<scope>test</scope>
 		</dependency>
 

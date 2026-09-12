@@ -120,7 +120,7 @@ public class ReindexResource {
 		description = "A reindex job was started and runs asynchronously.",
 		content = @Content(
 			schema = @Schema(implementation = ReindexInfo.class),
-			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE)
+			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE_STARTED)
 		)
 	)
 	@APIResponse(
@@ -174,9 +174,34 @@ public class ReindexResource {
 		when = "The source and the target declare different primary keys."
 	)
 	@ReturnsError(
+		value = "reindex:promote_unknown",
+		status = 400,
+		when = "`promote` is neither `auto` nor `manual`."
+	)
+	@ReturnsError(
+		value = "index:invalid_name",
+		status = 400,
+		when = "The path or `from` holds a name that is not a valid index or generation name."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The source or the target declares no primary key, so documents cannot be matched up between them."
+	)
+	@ReturnsError(
+		value = "index:source:not_kept",
+		status = 400,
+		when = "The source generation keeps no copy of the documents to read them back from. A reindex reads the stored copies."
+	)
+	@ReturnsError(
 		value = "index:not-found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation to read from. Promote one, or name the source with `from`."
 	)
 	@ReturnsError(
 		value = "reindex:in_progress",
@@ -218,10 +243,13 @@ public class ReindexResource {
 			example = "products@2"
 		)
 		@PathParam("name") String name,
-		@RequestBody(content = @Content(
-			schema = @Schema(implementation = ReindexRequest.class),
-			examples = @ExampleObject(name = "job", value = ReindexRequest.EXAMPLE)
-		))
+		@RequestBody(
+			required = false,
+			content = @Content(
+				schema = @Schema(implementation = ReindexRequest.class),
+				examples = @ExampleObject(name = "job", value = ReindexRequest.EXAMPLE)
+			)
+		)
 		ReindexRequest body
 	) {
 		var job = reindexes.start(
@@ -370,6 +398,11 @@ public class ReindexResource {
 		value = "indexer:unavailable",
 		status = 409,
 		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "reindex:io_error",

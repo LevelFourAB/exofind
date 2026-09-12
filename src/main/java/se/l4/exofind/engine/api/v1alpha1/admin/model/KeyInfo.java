@@ -18,8 +18,8 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param createdAt
  *   creation timestamp as an ISO-8601 string
  * @param expiresAt
- *   expiration timestamp as an ISO-8601 string, or absent if the key does not
- *   expire
+ *   expiration timestamp as an ISO-8601 string, or {@code null} if the key does
+ *   not expire
  */
 @Schema(
 	description = """
@@ -53,7 +53,7 @@ public record KeyInfo(
 	@Schema(
 		description = """
 			An ISO 8601 timestamp string defining when the key expires. \
-			Omitted for a key that does not expire.""",
+			`null` for a key that does not expire.""",
 		examples = "2027-01-01T00:00:00Z"
 	)
 	String expiresAt

@@ -35,7 +35,8 @@ public record CreatedKey(
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
-	 * schema of this record shows this text.
+	 * schema of this record shows this text. The permissions of a grant come
+	 * back sorted by name, and the example shows that order.
 	 */
 	public static final String EXAMPLE = """
 		{
@@ -43,7 +44,7 @@ public record CreatedKey(
 		  "key": {
 		    "id": "4ff6b760264c1918",
 		    "description": "the search backend",
-		    "grants": [ { "permissions": ["search", "indexes.read"], "indexes": ["products"] } ],
+		    "grants": [ { "permissions": ["indexes.read", "search"], "indexes": ["products"] } ],
 		    "createdAt": "2026-08-16T12:09:33.198275Z",
 		    "expiresAt": "2027-01-01T00:00:00Z"
 		  }

@@ -127,7 +127,7 @@ public record SearchResponse(
 		      "totalValues": 2
 		    }
 		  },
-		  "page": { "limit": 20, "offset": 0, "next": "c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0" },
+		  "page": { "limit": 20, "offset": 0, "next": "AWtaPJHiAAAS1QFmQErhSA" },
 		  "tookMs": 7.412
 		}""";
 
@@ -841,7 +841,8 @@ public record SearchResponse(
 		 */
 		@Schema(description = """
 			Cursor for the next window, passed in `after`. Omitted on the \
-			final window.""")
+			final window. A cursor is an opaque token. Pass it back as it \
+			arrived, and do not read anything out of it.""")
 		String next,
 
 		/**
@@ -855,7 +856,7 @@ public record SearchResponse(
 			{
 			  "limit": 20,
 			  "offset": 0,
-			  "next": "c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0"
+			  "next": "AWtaPJHiAAAS1QFmQErhSA"
 			}""";
 	}
 
@@ -928,13 +929,13 @@ public record SearchResponse(
 		public static final String EXAMPLE = """
 			{
 			  "count": 7,
-			  "next": { "number": 4, "cursor": "b2Zmc2V0OjYw" },
+			  "next": { "number": 4, "cursor": "AW9aPJHiAAAAPA" },
 			  "start": [
-			    { "number": 1, "cursor": "b2Zmc2V0OjA" },
-			    { "number": 2, "cursor": "b2Zmc2V0OjIw" },
-			    { "number": 3, "cursor": "b2Zmc2V0OjQw", "current": true }
+			    { "number": 1, "cursor": "AW9aPJHiAAAAAA" },
+			    { "number": 2, "cursor": "AW9aPJHiAAAAFA" },
+			    { "number": 3, "cursor": "AW9aPJHiAAAAKA", "current": true }
 			  ],
-			  "end": [ { "number": 7, "cursor": "b2Zmc2V0OjEyMA" } ]
+			  "end": [ { "number": 7, "cursor": "AW9aPJHiAAAAeA" } ]
 			}""";
 	}
 
@@ -968,6 +969,6 @@ public record SearchResponse(
 	) {
 		/** The example page, as the JSON the engine answers with. */
 		public static final String EXAMPLE = """
-			{ "number": 3, "cursor": "b2Zmc2V0OjQw", "current": true }""";
+			{ "number": 3, "cursor": "AW9aPJHiAAAAKA", "current": true }""";
 	}
 }

@@ -17,9 +17,13 @@ import java.lang.annotation.Target;
  *
  * <p>The {@link #status()} has to be an answer the endpoint declares with
  * {@code @APIResponse}, or the build fails. A code is stable for the life of an
- * API version; see {@code docs/reference/errors.md}, which explains every code
- * a client handles and which {@code ErrorCodeCoverageTest} holds these
- * annotations to.
+ * API version; {@code docs/reference/errors.md} explains every code a client
+ * handles.
+ *
+ * <p>Two tests keep the annotations and the engine in step.
+ * {@code ErrorCodeFilterTest} holds every code named here to one the engine
+ * declares, and {@code ErrorCodeCoverageTest} holds every endpoint to naming
+ * the codes its own resource and mappers can answer with.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)

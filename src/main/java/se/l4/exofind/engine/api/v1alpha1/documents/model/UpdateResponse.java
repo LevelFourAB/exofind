@@ -10,9 +10,9 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param updated
  *   number of documents updated
  * @param missing
- *   primary keys that were not found, in the order provided. Populated only
+ *   primary keys that were not found, in the order provided. Holds keys only
  *   when the request specifies skipping missing keys; otherwise, the request
- *   fails on the first missing key
+ *   fails on the first missing key and the list is empty
  */
 @Schema(
 	description = "The count of updated documents, and any keys that were skipped.",
@@ -23,16 +23,17 @@ public record UpdateResponse(
 	int updated,
 
 	@Schema(description = """
-		List of primary keys that were not found, in the order provided. \
-		Populated only when the request is sent with `?missing=skip`; a \
-		request sent without it fails on the first missing key.""")
+		List of primary keys that were not found, in the order provided. Holds \
+		keys only when the request is sent with `?missing=skip`; a request sent \
+		without it fails on the first missing key. Always present, and empty \
+		when nothing was skipped.""")
 	List<Object> missing
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
 	 * schema of this record shows this text. A request sent without
-	 * {@code ?missing=skip} carries no {@code missing}.
+	 * {@code ?missing=skip} answers with an empty {@code missing}.
 	 */
 	public static final String EXAMPLE = """
-		{ "updated": 1998 }""";
+		{ "updated": 1998, "missing": [] }""";
 }

@@ -230,7 +230,7 @@ The error response fields are:
 - `code`: Machine-readable code describing the overall failure.
 - `message`: Human-readable summary for logging. Clients match on `code`, not `message`.
 - `errors`: List of specific issues encountered. For validation failures on multiple fields, all errors are included in this array.
-- `path`: JSON path or field name in the request where the issue occurred (such as `fields.title`). Omitted when the error applies to the entire request.
+- `path`: Where in the request the issue was found, either as a JSON Pointer (such as `/fields/title/sortable`) or as a dotted field path (such as `fields.title`). Omitted when the error applies to the entire request.
 - `arguments`: Key-value map of string arguments used to render the message, allowing clients to format localized messages.
 
 For validation failures, the top-level `code` is `validation`. When only one validation error occurs, its message is used as the top-level `message`; when multiple errors occur, the top-level message is `Request contains N errors`.

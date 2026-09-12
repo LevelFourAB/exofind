@@ -235,9 +235,19 @@ public class IndexResource {
 		when = "The stored definition holds settings this API version cannot describe."
 	)
 	@ReturnsError(
+		value = "index:field:unrepresentable_type",
+		status = 409,
+		when = "The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field."
+	)
+	@ReturnsError(
 		value = "index:unsupported",
 		status = 409,
 		when = "The index needs engine features this node does not have."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "index:closed",
@@ -367,9 +377,474 @@ public class IndexResource {
 		when = "`reindex` was given on a request that creates no generation."
 	)
 	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no definition."
+	)
+	@ReturnsError(
+		value = "request:value_required",
+		status = 400,
+		when = "A property of the definition that needs a value is `null`."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:invalid",
+		status = 400,
+		when = "The analyzer of a field is not exactly one of a preset, a custom chain and a named chain."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:invalid_component",
+		status = 400,
+		when = "A component of a custom analysis chain is not exactly one kind."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:decompound_on_given_chain",
+		status = 400,
+		when = "A field sets `decompound` beside a custom or named chain. A given chain says itself whether it splits, through a `decompound` component."
+	)
+	@ReturnsError(
+		value = "index:field:locales:not_declared",
+		status = 400,
+		when = "A field names a locale the index does not declare in its `locales`."
+	)
+	@ReturnsError(
+		value = "index:field:locales:list_with_declaration",
+		status = 400,
+		when = "A field lists its own `locales` while the index declares them. Narrow with `only` instead."
+	)
+	@ReturnsError(
+		value = "index:field:locales:only_without_declaration",
+		status = 400,
+		when = "A field narrows with `only` while the index declares no `locales` to narrow."
+	)
+	@ReturnsError(
+		value = "index:field:locales:default_not_in_only",
+		status = 400,
+		when = "A field narrows to locales that leave out the locale it defaults to."
+	)
+	@ReturnsError(
+		value = "index:locales:default_locale_required",
+		status = 400,
+		when = "The `locales` of the index names no `defaultLocale`, which every field takes as its own."
+	)
+	@ReturnsError(
+		value = "index:field:role:not_valid_for_type",
+		status = 400,
+		when = "A field has a role that no field of its type can answer for."
+	)
+	@ReturnsError(
+		value = "index:field:role:not_valid_in_object",
+		status = 400,
+		when = "A field inside an object field has a role that cannot be used there."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_shape",
+		status = 400,
+		when = "A ranking signal is not exactly one of `saturation`, `decay` and `linear`."
+	)
+	@ReturnsError(
+		value = "index:resources:analyzers:named",
+		status = 400,
+		when = "An analysis chain in `resources` is itself `named`. The resources are where names are defined."
+	)
+	@ReturnsError(
+		value = "index:resources:synonyms:invalid_rule",
+		status = 400,
+		when = "A rule of a synonym set in `resources` is not exactly one kind - equivalent words, or a one-way mapping."
+	)
+	@ReturnsError(
+		value = "index:resources:synonyms:one_sided",
+		status = 400,
+		when = "A one-way synonym mapping carries no word on one of its sides."
+	)
+	@ReturnsError(
+		value = "index:resources:synonyms:too_few_words",
+		status = 400,
+		when = "A rule of equivalent synonyms carries fewer than two words."
+	)
+	@ReturnsError(
+		value = "index:resources:synonyms:blank_word",
+		status = 400,
+		when = "A synonym is blank."
+	)
+	@ReturnsError(
+		value = "index:field:invalid_name",
+		status = 400,
+		when = "A field name holds something other than letters, numbers, underscores and wildcards. To hold fields under a dotted path, declare an `object` field."
+	)
+	@ReturnsError(
+		value = "index:field:missing_type",
+		status = 400,
+		when = "A field declares no type."
+	)
+	@ReturnsError(
+		value = "index:field:unsupported_type",
+		status = 400,
+		when = "A field has a type this version of the engine cannot index."
+	)
+	@ReturnsError(
+		value = "index:field:invalid_name:primary_key_wildcard",
+		status = 400,
+		when = "A field name with a wildcard is marked as the primary key."
+	)
+	@ReturnsError(
+		value = "index:field:invalid_primary_key_multiple",
+		status = 400,
+		when = "The primary key field is also `multiple`."
+	)
+	@ReturnsError(
+		value = "index:field:invalid_primary_key_type",
+		status = 400,
+		when = "The primary key field has a type that cannot be a primary key."
+	)
+	@ReturnsError(
+		value = "index:schema:multiple_primary_keys",
+		status = 400,
+		when = "More than one field is marked as the primary key."
+	)
+	@ReturnsError(
+		value = "index:schema:primary_key_locale_specific",
+		status = 400,
+		when = "The primary key field is locale specific."
+	)
+	@ReturnsError(
+		value = "index:schema:primary_key_not_required",
+		status = 400,
+		when = "The primary key field is marked as not required."
+	)
+	@ReturnsError(
+		value = "index:schema:unsupported_features",
+		status = 400,
+		when = "The definition needs engine features this version does not have. The `features` argument names them."
+	)
+	@ReturnsError(
+		value = "index:field:invalid_required",
+		status = 400,
+		when = "A field name with a wildcard is marked as required."
+	)
+	@ReturnsError(
+		value = "index:field:invalid_sortable",
+		status = 400,
+		when = "A field is both `sortable` and `multiple`."
+	)
+	@ReturnsError(
+		value = "index:field:sorting_not_supported",
+		status = 400,
+		when = "A field is `sortable` and its type cannot be sorted on."
+	)
+	@ReturnsError(
+		value = "index:field:faceting_not_supported",
+		status = 400,
+		when = "A field is faceted and its type cannot be counted per value."
+	)
+	@ReturnsError(
+		value = "index:field:signal_not_supported",
+		status = 400,
+		when = "A field is a signal and its type cannot be refreshed in place."
+	)
+	@ReturnsError(
+		value = "index:field:signal:usage_conflict",
+		status = 400,
+		when = "A signal field is also declared for a usage that would go stale on every refresh."
+	)
+	@ReturnsError(
+		value = "index:field:signal:wildcard",
+		status = 400,
+		when = "A field name with a wildcard is a signal. A signal is refreshed by the name it was declared under."
+	)
+	@ReturnsError(
+		value = "index:field:locales:unsupported_locale",
+		status = 400,
+		when = "A field names a locale this version of the engine does not support."
+	)
+	@ReturnsError(
+		value = "index:field:locales:fallback_without_index",
+		status = 400,
+		when = "A field takes part in locale fallback and the index declares none."
+	)
+	@ReturnsError(
+		value = "index:locale_fallback:no_locale_fields",
+		status = 400,
+		when = "The index falls back between locales and no field of it is locale specific."
+	)
+	@ReturnsError(
+		value = "index:locale_fallback:duplicate_locale",
+		status = 400,
+		when = "A locale is fallen back to more than once."
+	)
+	@ReturnsError(
+		value = "index:locale_fallback:locale_not_held",
+		status = 400,
+		when = "A locale is fallen back to that no field of the index holds values in."
+	)
+	@ReturnsError(
+		value = "index:locale_fallback:unsupported_locale",
+		status = 400,
+		when = "A locale is fallen back to that this version of the engine does not support."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:ambiguous",
+		status = 400,
+		when = "A usage carries an analysis chain and also names one in `resources`. Give at most one of the two."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:unknown_ref",
+		status = 400,
+		when = "A usage names an analysis chain that `resources` does not define."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:unknown_stopwords",
+		status = 400,
+		when = "An analysis chain names a stopword list that `resources` does not define."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:unknown_synonyms",
+		status = 400,
+		when = "An analysis chain names a synonym set that `resources` does not define."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:unsupported_locale",
+		status = 400,
+		when = "An analysis chain names a locale this version of the engine does not support."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:unsupported_decompounding",
+		status = 400,
+		when = "An analysis chain splits compounds by a locale this version of the engine has no decompounding data for."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:invalid_grams",
+		status = 400,
+		when = "An n-gram component asks for sizes below one, or a shortest longer than its longest."
+	)
+	@ReturnsError(
+		value = "index:field:analyzer:invalid_pattern",
+		status = 400,
+		when = "A pattern replacement component carries something that is not a valid regular expression."
+	)
+	@ReturnsError(
+		value = "index:field:matching:invalid_weight",
+		status = 400,
+		when = "The weight of matching is not above zero."
+	)
+	@ReturnsError(
+		value = "index:field:matching:invalid_typo_min_length",
+		status = 400,
+		when = "The shortest word that may hold a typo is below one character."
+	)
+	@ReturnsError(
+		value = "index:field:matching:invalid_typo_order",
+		status = 400,
+		when = "A word is long enough for two typos before it is long enough for one."
+	)
+	@ReturnsError(
+		value = "index:field:matching:invalid_typo_prefix",
+		status = 400,
+		when = "The prefix matched exactly under typo tolerance is below zero."
+	)
+	@ReturnsError(
+		value = "index:field:autocomplete:invalid_weight",
+		status = 400,
+		when = "The weight of autocomplete is not above zero."
+	)
+	@ReturnsError(
+		value = "index:field:exact:invalid_boost",
+		status = 400,
+		when = "The boost of a whole-value match is not above zero."
+	)
+	@ReturnsError(
+		value = "index:field:hierarchy:invalid_separator",
+		status = 400,
+		when = "The separator between the levels of a path is empty. Leave it out for `/`."
+	)
+	@ReturnsError(
+		value = "index:field:sort:collation_not_supported",
+		status = 400,
+		when = "A timestamp field declares a collation, which means nothing when sorting one."
+	)
+	@ReturnsError(
+		value = "index:field:number:invalid_unit",
+		status = 400,
+		when = "The `unit` of a number field is not text."
+	)
+	@ReturnsError(
+		value = "index:field:number:invalid_bound",
+		status = 400,
+		when = "A validation bound of a number field is not a finite number."
+	)
+	@ReturnsError(
+		value = "index:field:number:invalid_bounds",
+		status = 400,
+		when = "The `min` of a number field is above its `max`."
+	)
+	@ReturnsError(
+		value = "index:field:vector:missing_dimensions",
+		status = 400,
+		when = "A vector field declares no dimensions."
+	)
+	@ReturnsError(
+		value = "index:field:vector:invalid_dimensions",
+		status = 400,
+		when = "The dimensions of a vector field are outside 1 to the maximum the engine indexes."
+	)
+	@ReturnsError(
+		value = "index:field:vector:invalid_hnsw_m",
+		status = 400,
+		when = "The HNSW neighbour count `m` is outside the range the engine builds."
+	)
+	@ReturnsError(
+		value = "index:field:vector:invalid_hnsw_ef_construction",
+		status = 400,
+		when = "The HNSW `ef_construction` is outside the range the engine builds."
+	)
+	@ReturnsError(
+		value = "index:field:vector:multiple_not_supported",
+		status = 400,
+		when = "A vector field is `multiple`. A vector field holds one vector per document."
+	)
+	@ReturnsError(
+		value = "index:field:vector:locales_not_supported",
+		status = 400,
+		when = "A vector field is locale specific."
+	)
+	@ReturnsError(
+		value = "index:field:vector:filter_not_supported",
+		status = 400,
+		when = "A vector field is declared for `filter`. Search a vector field with a `knn` clause."
+	)
+	@ReturnsError(
+		value = "index:field:object:no_fields",
+		status = 400,
+		when = "An object field declares no fields."
+	)
+	@ReturnsError(
+		value = "index:field:object:usage_not_supported",
+		status = 400,
+		when = "An object field is declared for a usage it holds no value of its own to answer."
+	)
+	@ReturnsError(
+		value = "index:field:object:inner_usage_not_supported",
+		status = 400,
+		when = "A field inside an object is declared for a usage that is not supported there."
+	)
+	@ReturnsError(
+		value = "index:field:object:mode_required",
+		status = 400,
+		when = "A list of objects declares no `mode`. Use `nested` when a search asks that conditions hold inside one value, `flattened` when the values are only structure."
+	)
+	@ReturnsError(
+		value = "index:field:object:mode_without_multiple",
+		status = 400,
+		when = "A single object declares a `mode`, which applies only together with `multiple`."
+	)
+	@ReturnsError(
+		value = "index:field:object:nested_in_nested",
+		status = 400,
+		when = "A nested list of objects sits below another nested list. Keep the inner list `flattened`, or lift it out."
+	)
+	@ReturnsError(
+		value = "index:field:object:flattened_sort",
+		status = 400,
+		when = "A field inside a flattened list of objects is declared for `sort`."
+	)
+	@ReturnsError(
+		value = "index:field:object:flattened_stored",
+		status = 400,
+		when = "A field inside a flattened list of objects is declared for `stored`."
+	)
+	@ReturnsError(
+		value = "index:field:object:key_without_multiple",
+		status = 400,
+		when = "A single object declares a `key`, which applies only together with `multiple`."
+	)
+	@ReturnsError(
+		value = "index:field:object:key_not_found",
+		status = 400,
+		when = "The `key` of an object field names a field the object does not hold."
+	)
+	@ReturnsError(
+		value = "index:field:object:key_not_valid",
+		status = 400,
+		when = "The `key` of an object field names a field that cannot say which value is which."
+	)
+	@ReturnsError(
+		value = "index:ranking:unknown_field",
+		status = 400,
+		when = "A tie-breaker names a field the definition does not declare."
+	)
+	@ReturnsError(
+		value = "index:ranking:wildcard_field",
+		status = 400,
+		when = "A tie-breaker names fields with a wildcard. A tie-breaker orders by one field."
+	)
+	@ReturnsError(
+		value = "index:ranking:field_not_sortable",
+		status = 400,
+		when = "A tie-breaker names a field that is not defined for sorting."
+	)
+	@ReturnsError(
+		value = "index:ranking:duplicate_field",
+		status = 400,
+		when = "Two tie-breakers name the same field."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:unknown_field",
+		status = 400,
+		when = "A ranking signal names a field the definition does not declare."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:wildcard_field",
+		status = 400,
+		when = "A ranking signal names fields with a wildcard. A signal reads one field."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:field_not_sortable",
+		status = 400,
+		when = "A ranking signal names a field that is not defined for sorting, so it holds no value to read."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:shape_not_set",
+		status = 400,
+		when = "A ranking signal does not say how the value it reads counts."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:shape_not_supported",
+		status = 400,
+		when = "A ranking signal reads its field with a shape the type of the field holds nothing for."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_pivot",
+		status = 400,
+		when = "The `pivot` of a saturation signal is not a number above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_half_life",
+		status = 400,
+		when = "The `halfLife` of a decay signal is not longer than nothing."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_ceiling",
+		status = 400,
+		when = "The `ceiling` of a linear signal is not a number above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_weight",
+		status = 400,
+		when = "The `weight` of a ranking signal is below zero."
+	)
+	@ReturnsError(
 		value = "index:not-found",
 		status = 404,
 		when = "The name belongs to no index, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:field:unrepresentable_type",
+		status = 409,
+		when = "The stored definition holds a field of a type this API version cannot describe, which a `PUT` would discard. The `name` argument names the field."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "index:definition:incompatible",
@@ -791,6 +1266,21 @@ public class IndexResource {
 		when = "A reindex job is still filling this generation. Promote it once the job is ready."
 	)
 	@ReturnsError(
+		value = "index:generation:live_moved",
+		status = 409,
+		when = "Another generation was promoted while the reindex job that filled this one was running. The job moves to `failed`; start a new job that reads from the generation the `live` argument names."
+	)
+	@ReturnsError(
+		value = "index:field:unrepresentable_type",
+		status = 409,
+		when = "The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
+	@ReturnsError(
 		value = "indexer:unavailable",
 		status = 409,
 		when = "No node is available to write the index. Send the request again once one is."
@@ -895,6 +1385,11 @@ public class IndexResource {
 		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
 	)
 	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
+	@ReturnsError(
 		value = "indexer:unreachable",
 		status = 502,
 		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
@@ -965,6 +1460,11 @@ public class IndexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
+		responseCode = "409",
+		description = "The index cannot be pulled right now.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
 		responseCode = "503",
 		description = """
 			The request raced the index being closed. Retrying the request \
@@ -975,6 +1475,11 @@ public class IndexResource {
 		value = "index:not-found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "index:closed",

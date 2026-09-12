@@ -125,7 +125,8 @@ public record ReindexInfo(
 ) {
 	/**
 	 * The example job, as the JSON the engine answers with. The OpenAPI schema
-	 * of this record shows this text.
+	 * of this record shows this text. A job part way through its copy, which is
+	 * what reading the job back usually answers with.
 	 */
 	public static final String EXAMPLE = """
 		{
@@ -136,8 +137,30 @@ public record ReindexInfo(
 		  "promote": "auto",
 		  "documentsCopied": 125000,
 		  "sourceDocuments": 2400000,
+		  "backlog": 4100,
+		  "error": null,
 		  "startedAt": "2026-08-28T10:15:30Z",
 		  "updatedAt": "2026-08-28T10:16:02Z"
+		}""";
+
+	/**
+	 * The example job as starting one answers with. A job is written in the
+	 * {@code pending} phase and takes a concurrency slot on the node before it
+	 * starts copying, so nothing has been copied yet.
+	 */
+	public static final String EXAMPLE_STARTED = """
+		{
+		  "index": "products",
+		  "target": "products@2",
+		  "source": "products@1",
+		  "phase": "pending",
+		  "promote": "auto",
+		  "documentsCopied": 0,
+		  "sourceDocuments": 2400000,
+		  "backlog": 0,
+		  "error": null,
+		  "startedAt": "2026-08-28T10:15:30Z",
+		  "updatedAt": "2026-08-28T10:15:30Z"
 		}""";
 
 	public static ReindexInfo of(ReindexJob job) {

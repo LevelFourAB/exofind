@@ -229,6 +229,11 @@ public class IndexSettingsResource {
 		status = 409,
 		when = "Settings storage could not be reached. Send the request again once it answers."
 	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
+	)
 	public Response get(
 		@Parameter(
 			description = """
@@ -357,6 +362,11 @@ public class IndexSettingsResource {
 		when = "The request carries no body."
 	)
 	@ReturnsError(
+		value = "request:value_required",
+		status = 400,
+		when = "A property of the settings that needs a value is `null`."
+	)
+	@ReturnsError(
 		value = "index:settings:synonyms:unknown_field",
 		status = 400,
 		when = "A synonym set names a field the generation does not have."
@@ -367,9 +377,24 @@ public class IndexSettingsResource {
 		when = "A synonym set names a field that is not searched as text."
 	)
 	@ReturnsError(
+		value = "index:settings:synonyms:invalid_boost",
+		status = 400,
+		when = "The boost of a synonym set is not a positive number."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:invalid_rule",
+		status = 400,
+		when = "A synonym rule is not exactly one kind - equivalent words, or a one-way mapping."
+	)
+	@ReturnsError(
 		value = "index:settings:typo_exclusions:unknown_field",
 		status = 400,
 		when = "A typo exclusion names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:settings:typo_exclusions:field_not_text",
+		status = 400,
+		when = "A typo exclusion names a field that is not searched as text."
 	)
 	@ReturnsError(
 		value = "index:settings:fields:unknown_field",
@@ -377,9 +402,94 @@ public class IndexSettingsResource {
 		when = "The field settings name a field the generation does not have."
 	)
 	@ReturnsError(
+		value = "index:settings:fields:interpret_unsupported",
+		status = 400,
+		when = "The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:values_unsupported",
+		status = 400,
+		when = "The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:values_invalid",
+		status = 400,
+		when = "A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:suggest_unsupported",
+		status = 400,
+		when = "The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`."
+	)
+	@ReturnsError(
 		value = "index:ranking:field_not_sortable",
 		status = 400,
 		when = "A ranking signal names a field that is not sortable."
+	)
+	@ReturnsError(
+		value = "index:ranking:unknown_field",
+		status = 400,
+		when = "A tie-breaker names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:ranking:wildcard_field",
+		status = 400,
+		when = "A tie-breaker names fields with a wildcard. A tie-breaker orders by one field."
+	)
+	@ReturnsError(
+		value = "index:ranking:duplicate_field",
+		status = 400,
+		when = "Two tie-breakers name the same field."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:unknown_field",
+		status = 400,
+		when = "A ranking signal names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:wildcard_field",
+		status = 400,
+		when = "A ranking signal names fields with a wildcard. A signal reads one field."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:field_not_sortable",
+		status = 400,
+		when = "A ranking signal names a field that holds no value to read."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:shape_not_set",
+		status = 400,
+		when = "A ranking signal says no shape to read its field with."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:shape_not_supported",
+		status = 400,
+		when = "A ranking signal reads its field with a shape that the type of the field has no meaning for."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_shape",
+		status = 400,
+		when = "A ranking signal is not exactly one of `saturation`, `decay` and `linear`."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_pivot",
+		status = 400,
+		when = "The `pivot` of a saturation signal is not a number above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_half_life",
+		status = 400,
+		when = "The `halfLife` of a decay signal is not a number of seconds above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_ceiling",
+		status = 400,
+		when = "The `ceiling` of a linear signal is not a number above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_weight",
+		status = 400,
+		when = "The `weight` of a ranking signal is below zero or is not a finite number."
 	)
 	@ReturnsError(
 		value = "index:not-found",
@@ -390,6 +500,11 @@ public class IndexSettingsResource {
 		value = "index:settings:not_found",
 		status = 404,
 		when = "An `If-Match` header was sent and the index has no settings for it to match."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "index:settings:conflict",
@@ -632,9 +747,159 @@ public class IndexSettingsResource {
 		when = "A key names a field that cannot hold the given value."
 	)
 	@ReturnsError(
+		value = "request:update:path_unknown_field",
+		status = 400,
+		when = "A key reaches into a field the search settings do not have."
+	)
+	@ReturnsError(
+		value = "request:update:not_an_object",
+		status = 400,
+		when = "A key reaches inside a field that holds no fields."
+	)
+	@ReturnsError(
+		value = "request:update:value_required",
+		status = 400,
+		when = "A key names a field that holds a list without saying which value, such as `ranking.signals[field=sales]`."
+	)
+	@ReturnsError(
+		value = "request:update:selector_not_supported",
+		status = 400,
+		when = "A key names one value of a field that holds no list."
+	)
+	@ReturnsError(
+		value = "request:update:add_reaches_inside",
+		status = 400,
+		when = "A key reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
+	)
+	@ReturnsError(
+		value = "request:value_required",
+		status = 400,
+		when = "A property of the settings that needs a value is `null`."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:unknown_field",
+		status = 400,
+		when = "A synonym set names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:field_not_text",
+		status = 400,
+		when = "A synonym set names a field that is not searched as text."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:invalid_boost",
+		status = 400,
+		when = "The boost of a synonym set is not a positive number."
+	)
+	@ReturnsError(
+		value = "index:settings:synonyms:invalid_rule",
+		status = 400,
+		when = "A synonym rule is not exactly one kind - equivalent words, or a one-way mapping."
+	)
+	@ReturnsError(
+		value = "index:settings:typo_exclusions:unknown_field",
+		status = 400,
+		when = "A typo exclusion names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:settings:typo_exclusions:field_not_text",
+		status = 400,
+		when = "A typo exclusion names a field that is not searched as text."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:unknown_field",
+		status = 400,
+		when = "The field settings name a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:interpret_unsupported",
+		status = 400,
+		when = "The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:values_unsupported",
+		status = 400,
+		when = "The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:values_invalid",
+		status = 400,
+		when = "A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values."
+	)
+	@ReturnsError(
+		value = "index:settings:fields:suggest_unsupported",
+		status = 400,
+		when = "The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`."
+	)
+	@ReturnsError(
 		value = "index:ranking:field_not_sortable",
 		status = 400,
 		when = "A ranking signal names a field that is not sortable."
+	)
+	@ReturnsError(
+		value = "index:ranking:unknown_field",
+		status = 400,
+		when = "A tie-breaker names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:ranking:wildcard_field",
+		status = 400,
+		when = "A tie-breaker names fields with a wildcard. A tie-breaker orders by one field."
+	)
+	@ReturnsError(
+		value = "index:ranking:duplicate_field",
+		status = 400,
+		when = "Two tie-breakers name the same field."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:unknown_field",
+		status = 400,
+		when = "A ranking signal names a field the generation does not have."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:wildcard_field",
+		status = 400,
+		when = "A ranking signal names fields with a wildcard. A signal reads one field."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:field_not_sortable",
+		status = 400,
+		when = "A ranking signal names a field that holds no value to read."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:shape_not_set",
+		status = 400,
+		when = "A ranking signal says no shape to read its field with."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:shape_not_supported",
+		status = 400,
+		when = "A ranking signal reads its field with a shape that the type of the field has no meaning for."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_shape",
+		status = 400,
+		when = "A ranking signal is not exactly one of `saturation`, `decay` and `linear`."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_pivot",
+		status = 400,
+		when = "The `pivot` of a saturation signal is not a number above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_half_life",
+		status = 400,
+		when = "The `halfLife` of a decay signal is not a number of seconds above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_ceiling",
+		status = 400,
+		when = "The `ceiling` of a linear signal is not a number above zero."
+	)
+	@ReturnsError(
+		value = "index:ranking:signal:invalid_weight",
+		status = 400,
+		when = "The `weight` of a ranking signal is below zero or is not a finite number."
 	)
 	@ReturnsError(
 		value = "index:not-found",
@@ -645,6 +910,11 @@ public class IndexSettingsResource {
 		value = "index:settings:not_found",
 		status = 404,
 		when = "An `If-Match` header was sent and the index has no settings for it to match."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "index:settings:conflict",
@@ -1265,8 +1535,9 @@ public class IndexSettingsResource {
 			Deleting settings that do not exist changes nothing and answers \
 			`204` all the same, so the request can be repeated.
 
-			Deletion does not remove data held in remote storage, so an index \
-			created again under the same name picks its old settings back up.
+			An index created again under the same name starts without \
+			settings: creating it clears everything stored under the name, \
+			the settings with it.
 
 			Runs on the node that writes the index."""
 	)
@@ -1312,6 +1583,11 @@ public class IndexSettingsResource {
 		value = "indexer:unavailable",
 		status = 409,
 		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:no_live_generation",
+		status = 409,
+		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
 		value = "indexer:unreachable",

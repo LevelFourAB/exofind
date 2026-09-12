@@ -193,6 +193,31 @@ public class KeyResource {
 		when = "The definition names a permission this version does not have."
 	)
 	@ReturnsError(
+		value = "auth:key:grants_required",
+		status = 400,
+		when = "The definition holds no grant, so the key could do nothing."
+	)
+	@ReturnsError(
+		value = "auth:key:permissions_required",
+		status = 400,
+		when = "A grant names neither a role nor a list of permissions."
+	)
+	@ReturnsError(
+		value = "auth:key:indexes_required",
+		status = 400,
+		when = "A grant holds a permission that is about one index and does not say which indexes it covers."
+	)
+	@ReturnsError(
+		value = "auth:key:invalid_index_pattern",
+		status = 400,
+		when = "An entry of `indexes` is neither an index name nor a prefix followed by `*`."
+	)
+	@ReturnsError(
+		value = "auth:key:invalid_expiry",
+		status = 400,
+		when = "`expiresAt` is not an ISO 8601 timestamp."
+	)
+	@ReturnsError(
 		value = "auth:keys:unavailable",
 		status = 409,
 		when = "The node is not configured with key storage."

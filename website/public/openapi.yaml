@@ -396,8 +396,8 @@ components:
           description: the search backend
           grants:
           - permissions:
-            - search
             - indexes.read
+            - search
             indexes:
             - products
           createdAt: 2026-08-16T12:09:33.198275Z
@@ -2877,7 +2877,7 @@ components:
         expiresAt:
           type: string
           description: An ISO 8601 timestamp string defining when the key expires.
-            Omitted for a key that does not expire.
+            `null` for a key that does not expire.
           examples:
           - 2027-01-01T00:00:00Z
     KeyListResponse:
@@ -2890,12 +2890,14 @@ components:
           description: the search backend
           grants:
           - permissions:
-            - search
             - indexes.read
+            - search
             indexes:
             - products
           createdAt: 2026-08-16T12:09:33.198275Z
+          expiresAt: null
         rootKeyConfigured: true
+        anonymousKey: null
       type: object
       properties:
         keys:
@@ -2911,7 +2913,7 @@ components:
         anonymousKey:
           type: string
           description: "ID of the key used for unauthenticated requests, configured\
-            \ with `EXOFIND_AUTH_ANONYMOUS_KEY`. Omitted when the node rejects unauthenticated\
+            \ with `EXOFIND_AUTH_ANONYMOUS_KEY`. `null` when the node rejects unauthenticated\
             \ requests. An anonymous key cannot contain any permission other than\
             \ `search`."
           examples:
@@ -3303,9 +3305,9 @@ components:
             $ref: "#/components/schemas/Clause"
           description: "Clauses evaluated within a single nested object value, naming\
             \ fields by their dotted path. An empty array matches any document where\
-            \ the object field is present. May contain `field`, `text`, `and`, `or`,\
-            \ `not` and `boost`; a root-level clause such as another `nested` or a\
-            \ `knn` returns `index:query:nested:unsupported_clause`."
+            \ the object field is present. May contain `field`, `text`, `knn`, `and`,\
+            \ `or`, `not` and `boost`; a clause that only means something for whole\
+            \ documents, such as another `nested` or a `fuse`, returns `index:query:nested:unsupported_clause`."
         score:
           description: Scoring mode for aggregating matching nested values. Only applies
             when scoring clauses exist within the nested clause.
@@ -3495,7 +3497,7 @@ components:
       examples:
       - limit: 20
         offset: 0
-        next: c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0
+        next: AWtaPJHiAAAS1QFmQErhSA
       properties:
         limit:
           type: integer
@@ -3516,7 +3518,8 @@ components:
         next:
           type: string
           description: "Cursor for the next window, passed in `after`. Omitted on\
-            \ the final window."
+            \ the final window. A cursor is an opaque token. Pass it back as it arrived,\
+            \ and do not read anything out of it."
         pages:
           description: "Numbered page metadata, present when requested."
           type: object
@@ -3526,7 +3529,7 @@ components:
       description: Metadata for a single numbered page.
       examples:
       - number: 3
-        cursor: b2Zmc2V0OjQw
+        cursor: AW9aPJHiAAAAKA
         current: true
       properties:
         number:
@@ -3563,18 +3566,18 @@ components:
       - count: 7
         next:
           number: 4
-          cursor: b2Zmc2V0OjYw
+          cursor: AW9aPJHiAAAAPA
         start:
         - number: 1
-          cursor: b2Zmc2V0OjA
+          cursor: AW9aPJHiAAAAAA
         - number: 2
-          cursor: b2Zmc2V0OjIw
+          cursor: AW9aPJHiAAAAFA
         - number: 3
-          cursor: b2Zmc2V0OjQw
+          cursor: AW9aPJHiAAAAKA
           current: true
         end:
         - number: 7
-          cursor: b2Zmc2V0OjEyMA
+          cursor: AW9aPJHiAAAAeA
       properties:
         count:
           type: integer
@@ -3978,6 +3981,8 @@ components:
         promote: auto
         documentsCopied: 125000
         sourceDocuments: 2400000
+        backlog: 4100
+        error: null
         startedAt: 2026-08-28T10:15:30Z
         updatedAt: 2026-08-28T10:16:02Z
       type: object
@@ -4515,7 +4520,7 @@ components:
         page:
           limit: 20
           offset: 0
-          next: c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0
+          next: AWtaPJHiAAAS1QFmQErhSA
         tookMs: 7.412
       type: object
       properties:
@@ -4690,8 +4695,8 @@ components:
           type: string
           description: "An identifier for the stored settings version, also returned\
             \ in the `ETag` header. Pass this value in the `If-Match` header on `PUT`\
-            \ requests to prevent overwriting concurrent updates; a mismatch returns\
-            \ `412`."
+            \ and `PATCH` requests to prevent overwriting concurrent updates; a mismatch\
+            \ returns `412`."
           examples:
           - 9f2c1a0b3d4e5f60
         unsupportedFeatures:
@@ -5719,6 +5724,7 @@ components:
       description: "The count of updated documents, and any keys that were skipped."
       examples:
       - updated: 1998
+        missing: []
       type: object
       properties:
         updated:
@@ -5731,8 +5737,9 @@ components:
           type: array
           items: {}
           description: "List of primary keys that were not found, in the order provided.\
-            \ Populated only when the request is sent with `?missing=skip`; a request\
-            \ sent without it fails on the first missing key."
+            \ Holds keys only when the request is sent with `?missing=skip`; a request\
+            \ sent without it fails on the first missing key. Always present, and\
+            \ empty when nothing was skipped."
     VectorFieldDefinition:
       required:
       - type
@@ -6183,7 +6190,7 @@ paths:
           description: |-
             The definition failed validation - the response details each problem - or the request asks for a reindex it cannot run.
 
-            Error codes: `index:reindex_needs_new_generation` - `reindex` was given on a request that creates no generation.
+            Error codes: `index:reindex_needs_new_generation` - `reindex` was given on a request that creates no generation. `request:missing_body` - The request carries no definition. `request:value_required` - A property of the definition that needs a value is `null`. `index:field:analyzer:invalid` - The analyzer of a field is not exactly one of a preset, a custom chain and a named chain. `index:field:analyzer:invalid_component` - A component of a custom analysis chain is not exactly one kind. `index:field:analyzer:decompound_on_given_chain` - A field sets `decompound` beside a custom or named chain. A given chain says itself whether it splits, through a `decompound` component. `index:field:locales:not_declared` - A field names a locale the index does not declare in its `locales`. `index:field:locales:list_with_declaration` - A field lists its own `locales` while the index declares them. Narrow with `only` instead. `index:field:locales:only_without_declaration` - A field narrows with `only` while the index declares no `locales` to narrow. `index:field:locales:default_not_in_only` - A field narrows to locales that leave out the locale it defaults to. `index:locales:default_locale_required` - The `locales` of the index names no `defaultLocale`, which every field takes as its own. `index:field:role:not_valid_for_type` - A field has a role that no field of its type can answer for. `index:field:role:not_valid_in_object` - A field inside an object field has a role that cannot be used there. `index:ranking:signal:invalid_shape` - A ranking signal is not exactly one of `saturation`, `decay` and `linear`. `index:resources:analyzers:named` - An analysis chain in `resources` is itself `named`. The resources are where names are defined. `index:resources:synonyms:invalid_rule` - A rule of a synonym set in `resources` is not exactly one kind - equivalent words, or a one-way mapping. `index:resources:synonyms:one_sided` - A one-way synonym mapping carries no word on one of its sides. `index:resources:synonyms:too_few_words` - A rule of equivalent synonyms carries fewer than two words. `index:resources:synonyms:blank_word` - A synonym is blank. `index:field:invalid_name` - A field name holds something other than letters, numbers, underscores and wildcards. To hold fields under a dotted path, declare an `object` field. `index:field:missing_type` - A field declares no type. `index:field:unsupported_type` - A field has a type this version of the engine cannot index. `index:field:invalid_name:primary_key_wildcard` - A field name with a wildcard is marked as the primary key. `index:field:invalid_primary_key_multiple` - The primary key field is also `multiple`. `index:field:invalid_primary_key_type` - The primary key field has a type that cannot be a primary key. `index:schema:multiple_primary_keys` - More than one field is marked as the primary key. `index:schema:primary_key_locale_specific` - The primary key field is locale specific. `index:schema:primary_key_not_required` - The primary key field is marked as not required. `index:schema:unsupported_features` - The definition needs engine features this version does not have. The `features` argument names them. `index:field:invalid_required` - A field name with a wildcard is marked as required. `index:field:invalid_sortable` - A field is both `sortable` and `multiple`. `index:field:sorting_not_supported` - A field is `sortable` and its type cannot be sorted on. `index:field:faceting_not_supported` - A field is faceted and its type cannot be counted per value. `index:field:signal_not_supported` - A field is a signal and its type cannot be refreshed in place. `index:field:signal:usage_conflict` - A signal field is also declared for a usage that would go stale on every refresh. `index:field:signal:wildcard` - A field name with a wildcard is a signal. A signal is refreshed by the name it was declared under. `index:field:locales:unsupported_locale` - A field names a locale this version of the engine does not support. `index:field:locales:fallback_without_index` - A field takes part in locale fallback and the index declares none. `index:locale_fallback:no_locale_fields` - The index falls back between locales and no field of it is locale specific. `index:locale_fallback:duplicate_locale` - A locale is fallen back to more than once. `index:locale_fallback:locale_not_held` - A locale is fallen back to that no field of the index holds values in. `index:locale_fallback:unsupported_locale` - A locale is fallen back to that this version of the engine does not support. `index:field:analyzer:ambiguous` - A usage carries an analysis chain and also names one in `resources`. Give at most one of the two. `index:field:analyzer:unknown_ref` - A usage names an analysis chain that `resources` does not define. `index:field:analyzer:unknown_stopwords` - An analysis chain names a stopword list that `resources` does not define. `index:field:analyzer:unknown_synonyms` - An analysis chain names a synonym set that `resources` does not define. `index:field:analyzer:unsupported_locale` - An analysis chain names a locale this version of the engine does not support. `index:field:analyzer:unsupported_decompounding` - An analysis chain splits compounds by a locale this version of the engine has no decompounding data for. `index:field:analyzer:invalid_grams` - An n-gram component asks for sizes below one, or a shortest longer than its longest. `index:field:analyzer:invalid_pattern` - A pattern replacement component carries something that is not a valid regular expression. `index:field:matching:invalid_weight` - The weight of matching is not above zero. `index:field:matching:invalid_typo_min_length` - The shortest word that may hold a typo is below one character. `index:field:matching:invalid_typo_order` - A word is long enough for two typos before it is long enough for one. `index:field:matching:invalid_typo_prefix` - The prefix matched exactly under typo tolerance is below zero. `index:field:autocomplete:invalid_weight` - The weight of autocomplete is not above zero. `index:field:exact:invalid_boost` - The boost of a whole-value match is not above zero. `index:field:hierarchy:invalid_separator` - The separator between the levels of a path is empty. Leave it out for `/`. `index:field:sort:collation_not_supported` - A timestamp field declares a collation, which means nothing when sorting one. `index:field:number:invalid_unit` - The `unit` of a number field is not text. `index:field:number:invalid_bound` - A validation bound of a number field is not a finite number. `index:field:number:invalid_bounds` - The `min` of a number field is above its `max`. `index:field:vector:missing_dimensions` - A vector field declares no dimensions. `index:field:vector:invalid_dimensions` - The dimensions of a vector field are outside 1 to the maximum the engine indexes. `index:field:vector:invalid_hnsw_m` - The HNSW neighbour count `m` is outside the range the engine builds. `index:field:vector:invalid_hnsw_ef_construction` - The HNSW `ef_construction` is outside the range the engine builds. `index:field:vector:multiple_not_supported` - A vector field is `multiple`. A vector field holds one vector per document. `index:field:vector:locales_not_supported` - A vector field is locale specific. `index:field:vector:filter_not_supported` - A vector field is declared for `filter`. Search a vector field with a `knn` clause. `index:field:object:no_fields` - An object field declares no fields. `index:field:object:usage_not_supported` - An object field is declared for a usage it holds no value of its own to answer. `index:field:object:inner_usage_not_supported` - A field inside an object is declared for a usage that is not supported there. `index:field:object:mode_required` - A list of objects declares no `mode`. Use `nested` when a search asks that conditions hold inside one value, `flattened` when the values are only structure. `index:field:object:mode_without_multiple` - A single object declares a `mode`, which applies only together with `multiple`. `index:field:object:nested_in_nested` - A nested list of objects sits below another nested list. Keep the inner list `flattened`, or lift it out. `index:field:object:flattened_sort` - A field inside a flattened list of objects is declared for `sort`. `index:field:object:flattened_stored` - A field inside a flattened list of objects is declared for `stored`. `index:field:object:key_without_multiple` - A single object declares a `key`, which applies only together with `multiple`. `index:field:object:key_not_found` - The `key` of an object field names a field the object does not hold. `index:field:object:key_not_valid` - The `key` of an object field names a field that cannot say which value is which. `index:ranking:unknown_field` - A tie-breaker names a field the definition does not declare. `index:ranking:wildcard_field` - A tie-breaker names fields with a wildcard. A tie-breaker orders by one field. `index:ranking:field_not_sortable` - A tie-breaker names a field that is not defined for sorting. `index:ranking:duplicate_field` - Two tie-breakers name the same field. `index:ranking:signal:unknown_field` - A ranking signal names a field the definition does not declare. `index:ranking:signal:wildcard_field` - A ranking signal names fields with a wildcard. A signal reads one field. `index:ranking:signal:field_not_sortable` - A ranking signal names a field that is not defined for sorting, so it holds no value to read. `index:ranking:signal:shape_not_set` - A ranking signal does not say how the value it reads counts. `index:ranking:signal:shape_not_supported` - A ranking signal reads its field with a shape the type of the field holds nothing for. `index:ranking:signal:invalid_pivot` - The `pivot` of a saturation signal is not a number above zero. `index:ranking:signal:invalid_half_life` - The `halfLife` of a decay signal is not longer than nothing. `index:ranking:signal:invalid_ceiling` - The `ceiling` of a linear signal is not a number above zero. `index:ranking:signal:invalid_weight` - The `weight` of a ranking signal is below zero.
           content:
             application/json:
               schema:
@@ -6191,6 +6198,230 @@ paths:
           x-error-codes:
           - code: index:reindex_needs_new_generation
             when: '`reindex` was given on a request that creates no generation.'
+          - code: request:missing_body
+            when: The request carries no definition.
+          - code: request:value_required
+            when: A property of the definition that needs a value is `null`.
+          - code: index:field:analyzer:invalid
+            when: "The analyzer of a field is not exactly one of a preset, a custom\
+              \ chain and a named chain."
+          - code: index:field:analyzer:invalid_component
+            when: A component of a custom analysis chain is not exactly one kind.
+          - code: index:field:analyzer:decompound_on_given_chain
+            when: "A field sets `decompound` beside a custom or named chain. A given\
+              \ chain says itself whether it splits, through a `decompound` component."
+          - code: index:field:locales:not_declared
+            when: A field names a locale the index does not declare in its `locales`.
+          - code: index:field:locales:list_with_declaration
+            when: A field lists its own `locales` while the index declares them. Narrow
+              with `only` instead.
+          - code: index:field:locales:only_without_declaration
+            when: A field narrows with `only` while the index declares no `locales`
+              to narrow.
+          - code: index:field:locales:default_not_in_only
+            when: A field narrows to locales that leave out the locale it defaults
+              to.
+          - code: index:locales:default_locale_required
+            when: "The `locales` of the index names no `defaultLocale`, which every\
+              \ field takes as its own."
+          - code: index:field:role:not_valid_for_type
+            when: A field has a role that no field of its type can answer for.
+          - code: index:field:role:not_valid_in_object
+            when: A field inside an object field has a role that cannot be used there.
+          - code: index:ranking:signal:invalid_shape
+            when: "A ranking signal is not exactly one of `saturation`, `decay` and\
+              \ `linear`."
+          - code: index:resources:analyzers:named
+            when: An analysis chain in `resources` is itself `named`. The resources
+              are where names are defined.
+          - code: index:resources:synonyms:invalid_rule
+            when: "A rule of a synonym set in `resources` is not exactly one kind\
+              \ - equivalent words, or a one-way mapping."
+          - code: index:resources:synonyms:one_sided
+            when: A one-way synonym mapping carries no word on one of its sides.
+          - code: index:resources:synonyms:too_few_words
+            when: A rule of equivalent synonyms carries fewer than two words.
+          - code: index:resources:synonyms:blank_word
+            when: A synonym is blank.
+          - code: index:field:invalid_name
+            when: "A field name holds something other than letters, numbers, underscores\
+              \ and wildcards. To hold fields under a dotted path, declare an `object`\
+              \ field."
+          - code: index:field:missing_type
+            when: A field declares no type.
+          - code: index:field:unsupported_type
+            when: A field has a type this version of the engine cannot index.
+          - code: index:field:invalid_name:primary_key_wildcard
+            when: A field name with a wildcard is marked as the primary key.
+          - code: index:field:invalid_primary_key_multiple
+            when: The primary key field is also `multiple`.
+          - code: index:field:invalid_primary_key_type
+            when: The primary key field has a type that cannot be a primary key.
+          - code: index:schema:multiple_primary_keys
+            when: More than one field is marked as the primary key.
+          - code: index:schema:primary_key_locale_specific
+            when: The primary key field is locale specific.
+          - code: index:schema:primary_key_not_required
+            when: The primary key field is marked as not required.
+          - code: index:schema:unsupported_features
+            when: The definition needs engine features this version does not have.
+              The `features` argument names them.
+          - code: index:field:invalid_required
+            when: A field name with a wildcard is marked as required.
+          - code: index:field:invalid_sortable
+            when: A field is both `sortable` and `multiple`.
+          - code: index:field:sorting_not_supported
+            when: A field is `sortable` and its type cannot be sorted on.
+          - code: index:field:faceting_not_supported
+            when: A field is faceted and its type cannot be counted per value.
+          - code: index:field:signal_not_supported
+            when: A field is a signal and its type cannot be refreshed in place.
+          - code: index:field:signal:usage_conflict
+            when: A signal field is also declared for a usage that would go stale
+              on every refresh.
+          - code: index:field:signal:wildcard
+            when: A field name with a wildcard is a signal. A signal is refreshed
+              by the name it was declared under.
+          - code: index:field:locales:unsupported_locale
+            when: A field names a locale this version of the engine does not support.
+          - code: index:field:locales:fallback_without_index
+            when: A field takes part in locale fallback and the index declares none.
+          - code: index:locale_fallback:no_locale_fields
+            when: The index falls back between locales and no field of it is locale
+              specific.
+          - code: index:locale_fallback:duplicate_locale
+            when: A locale is fallen back to more than once.
+          - code: index:locale_fallback:locale_not_held
+            when: A locale is fallen back to that no field of the index holds values
+              in.
+          - code: index:locale_fallback:unsupported_locale
+            when: A locale is fallen back to that this version of the engine does
+              not support.
+          - code: index:field:analyzer:ambiguous
+            when: A usage carries an analysis chain and also names one in `resources`.
+              Give at most one of the two.
+          - code: index:field:analyzer:unknown_ref
+            when: A usage names an analysis chain that `resources` does not define.
+          - code: index:field:analyzer:unknown_stopwords
+            when: An analysis chain names a stopword list that `resources` does not
+              define.
+          - code: index:field:analyzer:unknown_synonyms
+            when: An analysis chain names a synonym set that `resources` does not
+              define.
+          - code: index:field:analyzer:unsupported_locale
+            when: An analysis chain names a locale this version of the engine does
+              not support.
+          - code: index:field:analyzer:unsupported_decompounding
+            when: An analysis chain splits compounds by a locale this version of the
+              engine has no decompounding data for.
+          - code: index:field:analyzer:invalid_grams
+            when: "An n-gram component asks for sizes below one, or a shortest longer\
+              \ than its longest."
+          - code: index:field:analyzer:invalid_pattern
+            when: A pattern replacement component carries something that is not a
+              valid regular expression.
+          - code: index:field:matching:invalid_weight
+            when: The weight of matching is not above zero.
+          - code: index:field:matching:invalid_typo_min_length
+            when: The shortest word that may hold a typo is below one character.
+          - code: index:field:matching:invalid_typo_order
+            when: A word is long enough for two typos before it is long enough for
+              one.
+          - code: index:field:matching:invalid_typo_prefix
+            when: The prefix matched exactly under typo tolerance is below zero.
+          - code: index:field:autocomplete:invalid_weight
+            when: The weight of autocomplete is not above zero.
+          - code: index:field:exact:invalid_boost
+            when: The boost of a whole-value match is not above zero.
+          - code: index:field:hierarchy:invalid_separator
+            when: The separator between the levels of a path is empty. Leave it out
+              for `/`.
+          - code: index:field:sort:collation_not_supported
+            when: "A timestamp field declares a collation, which means nothing when\
+              \ sorting one."
+          - code: index:field:number:invalid_unit
+            when: The `unit` of a number field is not text.
+          - code: index:field:number:invalid_bound
+            when: A validation bound of a number field is not a finite number.
+          - code: index:field:number:invalid_bounds
+            when: The `min` of a number field is above its `max`.
+          - code: index:field:vector:missing_dimensions
+            when: A vector field declares no dimensions.
+          - code: index:field:vector:invalid_dimensions
+            when: The dimensions of a vector field are outside 1 to the maximum the
+              engine indexes.
+          - code: index:field:vector:invalid_hnsw_m
+            when: The HNSW neighbour count `m` is outside the range the engine builds.
+          - code: index:field:vector:invalid_hnsw_ef_construction
+            when: The HNSW `ef_construction` is outside the range the engine builds.
+          - code: index:field:vector:multiple_not_supported
+            when: A vector field is `multiple`. A vector field holds one vector per
+              document.
+          - code: index:field:vector:locales_not_supported
+            when: A vector field is locale specific.
+          - code: index:field:vector:filter_not_supported
+            when: A vector field is declared for `filter`. Search a vector field with
+              a `knn` clause.
+          - code: index:field:object:no_fields
+            when: An object field declares no fields.
+          - code: index:field:object:usage_not_supported
+            when: An object field is declared for a usage it holds no value of its
+              own to answer.
+          - code: index:field:object:inner_usage_not_supported
+            when: A field inside an object is declared for a usage that is not supported
+              there.
+          - code: index:field:object:mode_required
+            when: "A list of objects declares no `mode`. Use `nested` when a search\
+              \ asks that conditions hold inside one value, `flattened` when the values\
+              \ are only structure."
+          - code: index:field:object:mode_without_multiple
+            when: "A single object declares a `mode`, which applies only together\
+              \ with `multiple`."
+          - code: index:field:object:nested_in_nested
+            when: "A nested list of objects sits below another nested list. Keep the\
+              \ inner list `flattened`, or lift it out."
+          - code: index:field:object:flattened_sort
+            when: A field inside a flattened list of objects is declared for `sort`.
+          - code: index:field:object:flattened_stored
+            when: A field inside a flattened list of objects is declared for `stored`.
+          - code: index:field:object:key_without_multiple
+            when: "A single object declares a `key`, which applies only together with\
+              \ `multiple`."
+          - code: index:field:object:key_not_found
+            when: The `key` of an object field names a field the object does not hold.
+          - code: index:field:object:key_not_valid
+            when: The `key` of an object field names a field that cannot say which
+              value is which.
+          - code: index:ranking:unknown_field
+            when: A tie-breaker names a field the definition does not declare.
+          - code: index:ranking:wildcard_field
+            when: A tie-breaker names fields with a wildcard. A tie-breaker orders
+              by one field.
+          - code: index:ranking:field_not_sortable
+            when: A tie-breaker names a field that is not defined for sorting.
+          - code: index:ranking:duplicate_field
+            when: Two tie-breakers name the same field.
+          - code: index:ranking:signal:unknown_field
+            when: A ranking signal names a field the definition does not declare.
+          - code: index:ranking:signal:wildcard_field
+            when: A ranking signal names fields with a wildcard. A signal reads one
+              field.
+          - code: index:ranking:signal:field_not_sortable
+            when: "A ranking signal names a field that is not defined for sorting,\
+              \ so it holds no value to read."
+          - code: index:ranking:signal:shape_not_set
+            when: A ranking signal does not say how the value it reads counts.
+          - code: index:ranking:signal:shape_not_supported
+            when: A ranking signal reads its field with a shape the type of the field
+              holds nothing for.
+          - code: index:ranking:signal:invalid_pivot
+            when: The `pivot` of a saturation signal is not a number above zero.
+          - code: index:ranking:signal:invalid_half_life
+            when: The `halfLife` of a decay signal is not longer than nothing.
+          - code: index:ranking:signal:invalid_ceiling
+            when: The `ceiling` of a linear signal is not a number above zero.
+          - code: index:ranking:signal:invalid_weight
+            when: The `weight` of a ranking signal is below zero.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -6232,12 +6463,19 @@ paths:
           description: |-
             The definition conflicts with documents stored in the generation (`index:definition:incompatible`), the stored definition contains settings this API version cannot represent (`index:definition:unrepresentable`), the index requires engine features this node does not have (`index:unsupported`), a reindex job is already running (`reindex:in_progress`), storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), no node is available to write the index (`indexer:unavailable`), or the registry write failed.
 
-            Error codes: `index:definition:incompatible` - The definition conflicts with documents already stored in the generation. Write the change to a new generation. `index:definition:unrepresentable` - The stored definition holds settings this API version cannot describe. `index:unsupported` - The index needs engine features this node does not have. `reindex:in_progress` - A reindex job is already running for the index. `index:generation:storage_held` - Storage holds a generation under the new name that nothing deleted. Repair the registry, or remove its objects. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
+            Error codes: `index:field:unrepresentable_type` - The stored definition holds a field of a type this API version cannot describe, which a `PUT` would discard. The `name` argument names the field. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `index:definition:incompatible` - The definition conflicts with documents already stored in the generation. Write the change to a new generation. `index:definition:unrepresentable` - The stored definition holds settings this API version cannot describe. `index:unsupported` - The index needs engine features this node does not have. `reindex:in_progress` - A reindex job is already running for the index. `index:generation:storage_held` - Storage holds a generation under the new name that nothing deleted. Repair the registry, or remove its objects. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: index:field:unrepresentable_type
+            when: "The stored definition holds a field of a type this API version\
+              \ cannot describe, which a `PUT` would discard. The `name` argument\
+              \ names the field."
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
           - code: index:definition:incompatible
             when: The definition conflicts with documents already stored in the generation.
               Write the change to a new generation.
@@ -6403,7 +6641,7 @@ paths:
           description: |-
             The node cannot describe the index. Send the request to a node running a version that supports it.
 
-            Error codes: `index:definition:unrepresentable` - The stored definition holds settings this API version cannot describe. `index:unsupported` - The index needs engine features this node does not have.
+            Error codes: `index:definition:unrepresentable` - The stored definition holds settings this API version cannot describe. `index:field:unrepresentable_type` - The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field. `index:unsupported` - The index needs engine features this node does not have. `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
@@ -6411,8 +6649,14 @@ paths:
           x-error-codes:
           - code: index:definition:unrepresentable
             when: The stored definition holds settings this API version cannot describe.
+          - code: index:field:unrepresentable_type
+            when: The stored definition holds a field of a type this API version cannot
+              describe. The `name` argument names the field.
           - code: index:unsupported
             when: The index needs engine features this node does not have.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
         "503":
           description: |-
             The request raced the index being closed. Retrying the request reopens the index.
@@ -6614,7 +6858,7 @@ paths:
           description: |-
             The index cannot be committed right now.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
@@ -6626,6 +6870,9 @@ paths:
           - code: index:readonly
             when: The node lost the writer role while the request ran. Send the request
               again to reach the new writer.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -6771,7 +7018,7 @@ paths:
           description: |-
             The generation cannot be promoted right now.
 
-            Error codes: `reindex:target_busy` - A reindex job is still filling this generation. Promote it once the job is ready. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
+            Error codes: `reindex:target_busy` - A reindex job is still filling this generation. Promote it once the job is ready. `index:generation:live_moved` - Another generation was promoted while the reindex job that filled this one was running. The job moves to `failed`; start a new job that reads from the generation the `live` argument names. `index:field:unrepresentable_type` - The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:registry:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
@@ -6780,6 +7027,16 @@ paths:
           - code: reindex:target_busy
             when: A reindex job is still filling this generation. Promote it once
               the job is ready.
+          - code: index:generation:live_moved
+            when: Another generation was promoted while the reindex job that filled
+              this one was running. The job moves to `failed`; start a new job that
+              reads from the generation the `live` argument names.
+          - code: index:field:unrepresentable_type
+            when: The stored definition holds a field of a type this API version cannot
+              describe. The `name` argument names the field.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
@@ -6881,6 +7138,19 @@ paths:
           - code: index:not-found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
+        "409":
+          description: |-
+            The index cannot be pulled right now.
+
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
         "503":
           description: |-
             The request raced the index being closed. Retrying the request reopens the index.
@@ -6937,6 +7207,8 @@ paths:
                     promote: auto
                     documentsCopied: 125000
                     sourceDocuments: 2400000
+                    backlog: 4100
+                    error: null
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:16:02Z
               schema:
@@ -7036,7 +7308,7 @@ paths:
                   promote: manual
             schema:
               $ref: "#/components/schemas/ReindexRequest"
-        required: true
+        required: false
       responses:
         "202":
           description: A reindex job was started and runs asynchronously.
@@ -7048,19 +7320,21 @@ paths:
                     index: products
                     target: products@2
                     source: products@1
-                    phase: copying
+                    phase: pending
                     promote: auto
-                    documentsCopied: 125000
+                    documentsCopied: 0
                     sourceDocuments: 2400000
+                    backlog: 0
+                    error: null
                     startedAt: 2026-08-28T10:15:30Z
-                    updatedAt: 2026-08-28T10:16:02Z
+                    updatedAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "400":
           description: |-
             The target does not specify a generation by name, does not exist, is not empty, is the live generation, or the source and target primary keys do not match.
 
-            Error codes: `reindex:target_generation_required` - The target names an index without a generation. Name one as `index@generation`. `reindex:target_is_live` - The target is the live generation. Fill another generation and promote it. `reindex:target_not_empty` - The target generation already holds documents. `reindex:source_is_target` - The source and the target are the same generation. `reindex:source_other_index` - The source belongs to another index. `reindex:primary_key_mismatch` - The source and the target declare different primary keys.
+            Error codes: `reindex:target_generation_required` - The target names an index without a generation. Name one as `index@generation`. `reindex:target_is_live` - The target is the live generation. Fill another generation and promote it. `reindex:target_not_empty` - The target generation already holds documents. `reindex:source_is_target` - The source and the target are the same generation. `reindex:source_other_index` - The source belongs to another index. `reindex:primary_key_mismatch` - The source and the target declare different primary keys. `reindex:promote_unknown` - `promote` is neither `auto` nor `manual`. `index:invalid_name` - The path or `from` holds a name that is not a valid index or generation name. `index:no_primary_key` - The source or the target declares no primary key, so documents cannot be matched up between them. `index:source:not_kept` - The source generation keeps no copy of the documents to read them back from. A reindex reads the stored copies.
           content:
             application/json:
               schema:
@@ -7079,6 +7353,17 @@ paths:
             when: The source belongs to another index.
           - code: reindex:primary_key_mismatch
             when: The source and the target declare different primary keys.
+          - code: reindex:promote_unknown
+            when: '`promote` is neither `auto` nor `manual`.'
+          - code: index:invalid_name
+            when: The path or `from` holds a name that is not a valid index or generation
+              name.
+          - code: index:no_primary_key
+            when: "The source or the target declares no primary key, so documents\
+              \ cannot be matched up between them."
+          - code: index:source:not_kept
+            when: The source generation keeps no copy of the documents to read them
+              back from. A reindex reads the stored copies.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -7120,12 +7405,15 @@ paths:
           description: |-
             The job could not be started.
 
-            Error codes: `reindex:in_progress` - A reindex job is already running for the index. Wait for it, or cancel it. `reindex:target_busy` - Another job holds the target generation. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
+            Error codes: `index:no_live_generation` - The index has no live generation to read from. Promote one, or name the source with `from`. `reindex:in_progress` - A reindex job is already running for the index. Wait for it, or cancel it. `reindex:target_busy` - Another job holds the target generation. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: index:no_live_generation
+            when: "The index has no live generation to read from. Promote one, or\
+              \ name the source with `from`."
           - code: reindex:in_progress
             when: "A reindex job is already running for the index. Wait for it, or\
               \ cancel it."
@@ -7192,6 +7480,8 @@ paths:
                     promote: auto
                     documentsCopied: 125000
                     sourceDocuments: 2400000
+                    backlog: 4100
+                    error: null
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:16:02Z
               schema:
@@ -7239,7 +7529,7 @@ paths:
           description: |-
             No node is available to write the index.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds.
           content:
             application/json:
               schema:
@@ -7248,6 +7538,9 @@ paths:
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
           - code: reindex:io_error
             when: The record of the reindex could not be written. Send the request
               again once the storage responds.
@@ -7401,7 +7694,7 @@ paths:
           description: |-
             The request body is missing, or the settings failed validation against the generation the index answers from.
 
-            Error codes: `request:missing_body` - The request carries no body. `index:settings:synonyms:unknown_field` - A synonym set names a field the generation does not have. `index:settings:synonyms:field_not_text` - A synonym set names a field that is not searched as text. `index:settings:typo_exclusions:unknown_field` - A typo exclusion names a field the generation does not have. `index:settings:fields:unknown_field` - The field settings name a field the generation does not have. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable.
+            Error codes: `request:missing_body` - The request carries no body. `request:value_required` - A property of the settings that needs a value is `null`. `index:settings:synonyms:unknown_field` - A synonym set names a field the generation does not have. `index:settings:synonyms:field_not_text` - A synonym set names a field that is not searched as text. `index:settings:synonyms:invalid_boost` - The boost of a synonym set is not a positive number. `index:settings:synonyms:invalid_rule` - A synonym rule is not exactly one kind - equivalent words, or a one-way mapping. `index:settings:typo_exclusions:unknown_field` - A typo exclusion names a field the generation does not have. `index:settings:typo_exclusions:field_not_text` - A typo exclusion names a field that is not searched as text. `index:settings:fields:unknown_field` - The field settings name a field the generation does not have. `index:settings:fields:interpret_unsupported` - The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`. `index:settings:fields:values_unsupported` - The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:settings:fields:values_invalid` - A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values. `index:settings:fields:suggest_unsupported` - The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable. `index:ranking:unknown_field` - A tie-breaker names a field the generation does not have. `index:ranking:wildcard_field` - A tie-breaker names fields with a wildcard. A tie-breaker orders by one field. `index:ranking:duplicate_field` - Two tie-breakers name the same field. `index:ranking:signal:unknown_field` - A ranking signal names a field the generation does not have. `index:ranking:signal:wildcard_field` - A ranking signal names fields with a wildcard. A signal reads one field. `index:ranking:signal:field_not_sortable` - A ranking signal names a field that holds no value to read. `index:ranking:signal:shape_not_set` - A ranking signal says no shape to read its field with. `index:ranking:signal:shape_not_supported` - A ranking signal reads its field with a shape that the type of the field has no meaning for. `index:ranking:signal:invalid_shape` - A ranking signal is not exactly one of `saturation`, `decay` and `linear`. `index:ranking:signal:invalid_pivot` - The `pivot` of a saturation signal is not a number above zero. `index:ranking:signal:invalid_half_life` - The `halfLife` of a decay signal is not a number of seconds above zero. `index:ranking:signal:invalid_ceiling` - The `ceiling` of a linear signal is not a number above zero. `index:ranking:signal:invalid_weight` - The `weight` of a ranking signal is below zero or is not a finite number.
           content:
             application/json:
               schema:
@@ -7409,16 +7702,70 @@ paths:
           x-error-codes:
           - code: request:missing_body
             when: The request carries no body.
+          - code: request:value_required
+            when: A property of the settings that needs a value is `null`.
           - code: index:settings:synonyms:unknown_field
             when: A synonym set names a field the generation does not have.
           - code: index:settings:synonyms:field_not_text
             when: A synonym set names a field that is not searched as text.
+          - code: index:settings:synonyms:invalid_boost
+            when: The boost of a synonym set is not a positive number.
+          - code: index:settings:synonyms:invalid_rule
+            when: "A synonym rule is not exactly one kind - equivalent words, or a\
+              \ one-way mapping."
           - code: index:settings:typo_exclusions:unknown_field
             when: A typo exclusion names a field the generation does not have.
+          - code: index:settings:typo_exclusions:field_not_text
+            when: A typo exclusion names a field that is not searched as text.
           - code: index:settings:fields:unknown_field
             when: The field settings name a field the generation does not have.
+          - code: index:settings:fields:interpret_unsupported
+            when: The settings read the values of a field that is not a `string` field
+              with `filter` and `facet` and without `hierarchy`.
+          - code: index:settings:fields:values_unsupported
+            when: The settings declare values of a field that is not a `string` field
+              with `facet` and without `hierarchy`.
+          - code: index:settings:fields:values_invalid
+            when: "A declared value carries no `value`, repeats one, is labelled under\
+              \ a tag that is not canonical BCP 47, holds a blank label, or the field\
+              \ declares more than 10000 values."
+          - code: index:settings:fields:suggest_unsupported
+            when: The settings suggest the values of a field that is not a `string`
+              field with `facet` and without `hierarchy`.
           - code: index:ranking:field_not_sortable
             when: A ranking signal names a field that is not sortable.
+          - code: index:ranking:unknown_field
+            when: A tie-breaker names a field the generation does not have.
+          - code: index:ranking:wildcard_field
+            when: A tie-breaker names fields with a wildcard. A tie-breaker orders
+              by one field.
+          - code: index:ranking:duplicate_field
+            when: Two tie-breakers name the same field.
+          - code: index:ranking:signal:unknown_field
+            when: A ranking signal names a field the generation does not have.
+          - code: index:ranking:signal:wildcard_field
+            when: A ranking signal names fields with a wildcard. A signal reads one
+              field.
+          - code: index:ranking:signal:field_not_sortable
+            when: A ranking signal names a field that holds no value to read.
+          - code: index:ranking:signal:shape_not_set
+            when: A ranking signal says no shape to read its field with.
+          - code: index:ranking:signal:shape_not_supported
+            when: A ranking signal reads its field with a shape that the type of the
+              field has no meaning for.
+          - code: index:ranking:signal:invalid_shape
+            when: "A ranking signal is not exactly one of `saturation`, `decay` and\
+              \ `linear`."
+          - code: index:ranking:signal:invalid_pivot
+            when: The `pivot` of a saturation signal is not a number above zero.
+          - code: index:ranking:signal:invalid_half_life
+            when: The `halfLife` of a decay signal is not a number of seconds above
+              zero.
+          - code: index:ranking:signal:invalid_ceiling
+            when: The `ceiling` of a linear signal is not a number above zero.
+          - code: index:ranking:signal:invalid_weight
+            when: The `weight` of a ranking signal is below zero or is not a finite
+              number.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -7462,12 +7809,15 @@ paths:
           description: |-
             The settings could not be stored. The stored settings remain unchanged; send the request again.
 
-            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
           - code: index:settings:conflict
             when: Other writers kept changing the settings. The stored settings are
               unchanged; send the request again.
@@ -7613,7 +7963,7 @@ paths:
           description: |-
             The request body is missing, a key names a place the settings cannot be changed at, or the result failed validation against the generation the index answers from.
 
-            Error codes: `request:missing_body` - The request carries no body. `request:update:path_invalid` - A key of the change could not be read as a path. `request:update:no_match` - A selector names nothing the settings hold. A selector never creates the value it names. `request:update:value_invalid` - A key names a field that cannot hold the given value. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable.
+            Error codes: `request:missing_body` - The request carries no body. `request:update:path_invalid` - A key of the change could not be read as a path. `request:update:no_match` - A selector names nothing the settings hold. A selector never creates the value it names. `request:update:value_invalid` - A key names a field that cannot hold the given value. `request:update:path_unknown_field` - A key reaches into a field the search settings do not have. `request:update:not_an_object` - A key reaches inside a field that holds no fields. `request:update:value_required` - A key names a field that holds a list without saying which value, such as `ranking.signals[field=sales]`. `request:update:selector_not_supported` - A key names one value of a field that holds no list. `request:update:add_reaches_inside` - A key reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:value_required` - A property of the settings that needs a value is `null`. `index:settings:synonyms:unknown_field` - A synonym set names a field the generation does not have. `index:settings:synonyms:field_not_text` - A synonym set names a field that is not searched as text. `index:settings:synonyms:invalid_boost` - The boost of a synonym set is not a positive number. `index:settings:synonyms:invalid_rule` - A synonym rule is not exactly one kind - equivalent words, or a one-way mapping. `index:settings:typo_exclusions:unknown_field` - A typo exclusion names a field the generation does not have. `index:settings:typo_exclusions:field_not_text` - A typo exclusion names a field that is not searched as text. `index:settings:fields:unknown_field` - The field settings name a field the generation does not have. `index:settings:fields:interpret_unsupported` - The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`. `index:settings:fields:values_unsupported` - The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:settings:fields:values_invalid` - A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values. `index:settings:fields:suggest_unsupported` - The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable. `index:ranking:unknown_field` - A tie-breaker names a field the generation does not have. `index:ranking:wildcard_field` - A tie-breaker names fields with a wildcard. A tie-breaker orders by one field. `index:ranking:duplicate_field` - Two tie-breakers name the same field. `index:ranking:signal:unknown_field` - A ranking signal names a field the generation does not have. `index:ranking:signal:wildcard_field` - A ranking signal names fields with a wildcard. A signal reads one field. `index:ranking:signal:field_not_sortable` - A ranking signal names a field that holds no value to read. `index:ranking:signal:shape_not_set` - A ranking signal says no shape to read its field with. `index:ranking:signal:shape_not_supported` - A ranking signal reads its field with a shape that the type of the field has no meaning for. `index:ranking:signal:invalid_shape` - A ranking signal is not exactly one of `saturation`, `decay` and `linear`. `index:ranking:signal:invalid_pivot` - The `pivot` of a saturation signal is not a number above zero. `index:ranking:signal:invalid_half_life` - The `halfLife` of a decay signal is not a number of seconds above zero. `index:ranking:signal:invalid_ceiling` - The `ceiling` of a linear signal is not a number above zero. `index:ranking:signal:invalid_weight` - The `weight` of a ranking signal is below zero or is not a finite number.
           content:
             application/json:
               schema:
@@ -7628,8 +7978,82 @@ paths:
               the value it names.
           - code: request:update:value_invalid
             when: A key names a field that cannot hold the given value.
+          - code: request:update:path_unknown_field
+            when: A key reaches into a field the search settings do not have.
+          - code: request:update:not_an_object
+            when: A key reaches inside a field that holds no fields.
+          - code: request:update:value_required
+            when: "A key names a field that holds a list without saying which value,\
+              \ such as `ranking.signals[field=sales]`."
+          - code: request:update:selector_not_supported
+            when: A key names one value of a field that holds no list.
+          - code: request:update:add_reaches_inside
+            when: "A key reaches inside a value that the same change adds, which does\
+              \ not exist yet. Give the whole value instead."
+          - code: request:value_required
+            when: A property of the settings that needs a value is `null`.
+          - code: index:settings:synonyms:unknown_field
+            when: A synonym set names a field the generation does not have.
+          - code: index:settings:synonyms:field_not_text
+            when: A synonym set names a field that is not searched as text.
+          - code: index:settings:synonyms:invalid_boost
+            when: The boost of a synonym set is not a positive number.
+          - code: index:settings:synonyms:invalid_rule
+            when: "A synonym rule is not exactly one kind - equivalent words, or a\
+              \ one-way mapping."
+          - code: index:settings:typo_exclusions:unknown_field
+            when: A typo exclusion names a field the generation does not have.
+          - code: index:settings:typo_exclusions:field_not_text
+            when: A typo exclusion names a field that is not searched as text.
+          - code: index:settings:fields:unknown_field
+            when: The field settings name a field the generation does not have.
+          - code: index:settings:fields:interpret_unsupported
+            when: The settings read the values of a field that is not a `string` field
+              with `filter` and `facet` and without `hierarchy`.
+          - code: index:settings:fields:values_unsupported
+            when: The settings declare values of a field that is not a `string` field
+              with `facet` and without `hierarchy`.
+          - code: index:settings:fields:values_invalid
+            when: "A declared value carries no `value`, repeats one, is labelled under\
+              \ a tag that is not canonical BCP 47, holds a blank label, or the field\
+              \ declares more than 10000 values."
+          - code: index:settings:fields:suggest_unsupported
+            when: The settings suggest the values of a field that is not a `string`
+              field with `facet` and without `hierarchy`.
           - code: index:ranking:field_not_sortable
             when: A ranking signal names a field that is not sortable.
+          - code: index:ranking:unknown_field
+            when: A tie-breaker names a field the generation does not have.
+          - code: index:ranking:wildcard_field
+            when: A tie-breaker names fields with a wildcard. A tie-breaker orders
+              by one field.
+          - code: index:ranking:duplicate_field
+            when: Two tie-breakers name the same field.
+          - code: index:ranking:signal:unknown_field
+            when: A ranking signal names a field the generation does not have.
+          - code: index:ranking:signal:wildcard_field
+            when: A ranking signal names fields with a wildcard. A signal reads one
+              field.
+          - code: index:ranking:signal:field_not_sortable
+            when: A ranking signal names a field that holds no value to read.
+          - code: index:ranking:signal:shape_not_set
+            when: A ranking signal says no shape to read its field with.
+          - code: index:ranking:signal:shape_not_supported
+            when: A ranking signal reads its field with a shape that the type of the
+              field has no meaning for.
+          - code: index:ranking:signal:invalid_shape
+            when: "A ranking signal is not exactly one of `saturation`, `decay` and\
+              \ `linear`."
+          - code: index:ranking:signal:invalid_pivot
+            when: The `pivot` of a saturation signal is not a number above zero.
+          - code: index:ranking:signal:invalid_half_life
+            when: The `halfLife` of a decay signal is not a number of seconds above
+              zero.
+          - code: index:ranking:signal:invalid_ceiling
+            when: The `ceiling` of a linear signal is not a number above zero.
+          - code: index:ranking:signal:invalid_weight
+            when: The `weight` of a ranking signal is below zero or is not a finite
+              number.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -7673,12 +8097,15 @@ paths:
           description: |-
             The change could not be made. The stored settings are unchanged.
 
-            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:unrepresentable` - The stored settings hold parts this node cannot describe. Send the request to a node that supports them, or replace the settings with a `PUT`. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
+            Error codes: `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:unrepresentable` - The stored settings hold parts this node cannot describe. Send the request to a node that supports them, or replace the settings with a `PUT`. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
           - code: index:settings:conflict
             when: Other writers kept changing the settings. The stored settings are
               unchanged; send the request again.
@@ -7811,7 +8238,7 @@ paths:
           description: |-
             Settings storage could not be reached.
 
-            Error codes: `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers.
+            Error codes: `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
@@ -7822,6 +8249,9 @@ paths:
           - code: index:settings:unavailable
             when: Settings storage could not be reached. Send the request again once
               it answers.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -7836,7 +8266,7 @@ paths:
       description: |-
         Removes the settings, returning the index to the ranking in its definition. Takes effect immediately on the node that holds the index and on other nodes within the settings refresh interval. Deleting settings that do not exist changes nothing and answers `204` all the same, so the request can be repeated.
 
-        Deletion does not remove data held in remote storage, so an index created again under the same name picks its old settings back up.
+        An index created again under the same name starts without settings: creating it clears everything stored under the name, the settings with it.
 
         Runs on the node that writes the index.
 
@@ -7896,7 +8326,7 @@ paths:
           description: |-
             The change could not be stored. The stored settings are unchanged.
 
-            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
+            Error codes: `index:settings:conflict` - Other writers kept changing the settings. The stored settings are unchanged; send the request again. `index:settings:io_error` - Settings storage answered with an error. Send the request again. `index:settings:unavailable` - Settings storage could not be reached. Send the request again once it answers. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:no_live_generation` - The index has no live generation. Promote one and send the request again.
           content:
             application/json:
               schema:
@@ -7913,6 +8343,9 @@ paths:
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
+          - code: index:no_live_generation
+            when: The index has no live generation. Promote one and send the request
+              again.
         "502":
           description: |-
             The index writer did not respond to the forwarded request.
@@ -7960,12 +8393,14 @@ paths:
                       description: the search backend
                       grants:
                       - permissions:
-                        - search
                         - indexes.read
+                        - search
                         indexes:
                         - products
                       createdAt: 2026-08-16T12:09:33.198275Z
+                      expiresAt: null
                     rootKeyConfigured: true
+                    anonymousKey: null
               schema:
                 $ref: "#/components/schemas/KeyListResponse"
         "401":
@@ -8057,8 +8492,8 @@ paths:
                       description: the search backend
                       grants:
                       - permissions:
-                        - search
                         - indexes.read
+                        - search
                         indexes:
                         - products
                       createdAt: 2026-08-16T12:09:33.198275Z
@@ -8069,7 +8504,7 @@ paths:
           description: |-
             The request body is missing, or the key definition failed validation. All validation errors are reported.
 
-            Error codes: `request:missing_body` - The request carries no body. `auth:key:unknown_role` - The definition names a role this version does not have. `auth:key:unknown_permission` - The definition names a permission this version does not have.
+            Error codes: `request:missing_body` - The request carries no body. `auth:key:unknown_role` - The definition names a role this version does not have. `auth:key:unknown_permission` - The definition names a permission this version does not have. `auth:key:grants_required` - The definition holds no grant, so the key could do nothing. `auth:key:permissions_required` - A grant names neither a role nor a list of permissions. `auth:key:indexes_required` - A grant holds a permission that is about one index and does not say which indexes it covers. `auth:key:invalid_index_pattern` - An entry of `indexes` is neither an index name nor a prefix followed by `*`. `auth:key:invalid_expiry` - `expiresAt` is not an ISO 8601 timestamp.
           content:
             application/json:
               schema:
@@ -8081,6 +8516,18 @@ paths:
             when: The definition names a role this version does not have.
           - code: auth:key:unknown_permission
             when: The definition names a permission this version does not have.
+          - code: auth:key:grants_required
+            when: "The definition holds no grant, so the key could do nothing."
+          - code: auth:key:permissions_required
+            when: A grant names neither a role nor a list of permissions.
+          - code: auth:key:indexes_required
+            when: A grant holds a permission that is about one index and does not
+              say which indexes it covers.
+          - code: auth:key:invalid_index_pattern
+            when: An entry of `indexes` is neither an index name nor a prefix followed
+              by `*`.
+          - code: auth:key:invalid_expiry
+            when: '`expiresAt` is not an ISO 8601 timestamp.'
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8243,7 +8690,7 @@ paths:
                   - books
             schema:
               $ref: "#/components/schemas/RegistryRepairRequest"
-        required: true
+        required: false
       responses:
         "200":
           description: A summary of the changes made by the repair.
@@ -8263,7 +8710,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegistryRepairResponse"
         "400":
-          description: Bad Request
+          description: |-
+            An entry of `restore` is not a valid index or generation name.
+
+            Error codes: `index:invalid_name` - An entry of `restore` is not a valid index or generation name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: index:invalid_name
+            when: An entry of `restore` is not a valid index or generation name.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8537,7 +8994,7 @@ paths:
           description: |-
             The index cannot be scanned, or the `limit` parameter is out of range.
 
-            Error codes: `index:no_primary_key` - The index definition declares no primary key, so documents cannot be scanned in key order. `index:source:not_kept` - The index does not store document copies, so a scan has nothing to return. `request:scan:limit_invalid` - The `limit` parameter is not a whole number from 1 to 10000.
+            Error codes: `index:no_primary_key` - The index definition declares no primary key, so documents cannot be scanned in key order. `index:source:not_kept` - The index does not store document copies, so a scan has nothing to return. `request:scan:limit_invalid` - The `limit` parameter is not a whole number from 1 to 10000. `index:query:invalid_value` - The `after` parameter cannot be read as the type of the primary key field.
           content:
             application/json:
               schema:
@@ -8551,6 +9008,9 @@ paths:
               \ to return."
           - code: request:scan:limit_invalid
             when: The `limit` parameter is not a whole number from 1 to 10000.
+          - code: index:query:invalid_value
+            when: The `after` parameter cannot be read as the type of the primary
+              key field.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8670,7 +9130,7 @@ paths:
           description: |-
             A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location, such as `documents[1].nonexistent`.
 
-            Error codes: `request:document:malformed` - A line of the body could not be read as JSON. `request:unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again.
+            Error codes: `request:document:malformed` - A line of the body could not be read as JSON. `request:missing_body` - The request carries no documents. `request:document:not_an_object` - A document is not an object keyed by field name. `request:unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again.
           content:
             application/json:
               schema:
@@ -8678,6 +9138,10 @@ paths:
           x-error-codes:
           - code: request:document:malformed
             when: A line of the body could not be read as JSON.
+          - code: request:missing_body
+            when: The request carries no documents.
+          - code: request:document:not_an_object
+            when: A document is not an object keyed by field name.
           - code: request:unreadable
             when: The body stopped arriving part way through. The documents read before
               that are indexed; send the rest again.
@@ -8840,7 +9304,7 @@ paths:
           description: |-
             The body does not name what to delete, or it names a key or a query the index cannot use.
 
-            Error codes: `request:delete:target_required` - The body holds neither `keys` nor `query`. `request:delete:target_conflicting` - The body holds both `keys` and `query`. Send one of them. `request:delete:locale_without_query` - The body states a `locale` without a `query`. `index:query:invalid_value` - A key cannot be read as the type of the primary key field.
+            Error codes: `request:delete:target_required` - The body holds neither `keys` nor `query`. `request:delete:target_conflicting` - The body holds both `keys` and `query`. Send one of them. `request:delete:locale_without_query` - The body states a `locale` without a `query`. `index:query:invalid_value` - A key cannot be read as the type of the primary key field. `request:delete:key_required` - An entry of `keys` carries no key. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named by `keys`. `search:required` - A part of `query` that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause of `query` does not name the field to match. `search:clause:match_required` - A `field` clause of `query` does not say what to look for in the field. `search:clause:text_required` - A `text` clause of `query` carries no text to search for. `search:clause:path_required` - A `nested` clause of `query` does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause of `query` carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing or below zero. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be.
           content:
             application/json:
               schema:
@@ -8854,6 +9318,61 @@ paths:
             when: The body states a `locale` without a `query`.
           - code: index:query:invalid_value
             when: A key cannot be read as the type of the primary key field.
+          - code: request:delete:key_required
+            when: An entry of `keys` carries no key.
+          - code: index:no_primary_key
+            when: "The index definition declares no primary key, so a document cannot\
+              \ be named by `keys`."
+          - code: search:required
+            when: A part of `query` that needs a value carries none. The `path` names
+              it.
+          - code: search:clause:field_required
+            when: A `field` clause of `query` does not name the field to match.
+          - code: search:clause:match_required
+            when: A `field` clause of `query` does not say what to look for in the
+              field.
+          - code: search:clause:text_required
+            when: A `text` clause of `query` carries no text to search for.
+          - code: search:clause:path_required
+            when: A `nested` clause of `query` does not name the object field to match
+              inside.
+          - code: search:clause:vector_required
+            when: A `knn` clause of `query` carries no vector to find the neighbours
+              of.
+          - code: search:clause:k_invalid
+            when: The `k` of a `knn` clause is missing or not above zero.
+          - code: search:clause:weight_invalid
+            when: The `weight` of a `boost` clause is missing or below zero.
+          - code: search:clause:slop_invalid
+            when: The `slop` of a `text` clause is below zero.
+          - code: search:clause:slop_not_applicable
+            when: A `text` clause sets `slop` without matching as a phrase.
+          - code: search:clause:join_not_applicable
+            when: A `text` clause sets `join` without matching what somebody typed.
+          - code: search:clause:rankings_invalid
+            when: A `fuse` clause holds fewer than two rankings to fuse.
+          - code: search:clause:ranking_empty
+            when: A ranking of a `fuse` clause holds nothing to rank by.
+          - code: search:clause:rank_constant_invalid
+            when: The `rankConstant` of a `fuse` clause is not a number above zero.
+          - code: search:clause:depth_invalid
+            when: The `depth` of a `fuse` clause is below one result.
+          - code: search:clause:interpret_fields_required
+            when: The `interpret` of a `text` clause names no target field.
+          - code: search:clause:interpret_when_unsupported
+            when: "The `when` of an `interpret` target holds a `nested`, `knn` or\
+              \ `fuse` clause."
+          - code: search:matcher:value_required
+            when: A matcher carries no value to look for.
+          - code: search:matcher:range_empty
+            when: A range matcher carries no bound.
+          - code: search:matcher:range_conflicting
+            when: "A range matcher combines `gte` with `gt`, or `lte` with `lt`."
+          - code: search:matcher:origin_required
+            when: A distance matcher carries no `lat` and `lon` to measure from.
+          - code: search:matcher:radius_required
+            when: A distance matcher does not say how far from the origin values may
+              be.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8894,7 +9413,7 @@ paths:
           description: |-
             No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
@@ -8905,6 +9424,9 @@ paths:
               once one is.
           - code: index:out-of-date
             when: The index is synchronizing. Send the request again.
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
           - code: reindex:target_busy
             when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
@@ -8998,11 +9520,12 @@ paths:
                 updated:
                   value:
                     updated: 1998
+                    missing: []
         "400":
           description: |-
             A change failed validation, or a path in it names something the index or the document does not hold.
 
-            Error codes: `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names. `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
+            Error codes: `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names. `request:update:key_not_declared` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `request:update:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `request:update:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:update:missing_unknown` - `missing` is neither `fail` nor `skip`. `request:missing_body` - The request carries no changes. `request:document:malformed` - A line of the body could not be read as JSON. `request:document:not_an_object` - A change is not an object keyed by path. `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
           content:
             application/json:
               schema:
@@ -9034,6 +9557,22 @@ paths:
           - code: request:update:no_match
             when: A selector names no value the document holds. A selector never creates
               the value it names.
+          - code: request:update:key_not_declared
+            when: A path names one value of a list by a key that the field declares
+              none of. Match on a field inside the value instead.
+          - code: request:update:match_not_an_object
+            when: A path matches on a field inside a list whose values are not objects.
+          - code: request:update:add_reaches_inside
+            when: "A path reaches inside a value that the same change adds, which\
+              \ does not exist yet. Give the whole value instead."
+          - code: request:update:missing_unknown
+            when: '`missing` is neither `fail` nor `skip`.'
+          - code: request:missing_body
+            when: The request carries no changes.
+          - code: request:document:malformed
+            when: A line of the body could not be read as JSON.
+          - code: request:document:not_an_object
+            when: A change is not an object keyed by path.
           - code: request:unreadable
             when: The body stopped arriving part way through. The changes read before
               that are applied; send the rest again.
@@ -9077,7 +9616,7 @@ paths:
           description: |-
             The index cannot be written to right now.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
@@ -9088,6 +9627,9 @@ paths:
               once one is.
           - code: index:out-of-date
             when: The index is synchronizing. Send the request again.
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
           - code: reindex:target_busy
             when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
@@ -9193,7 +9735,7 @@ paths:
           description: |-
             The change was rejected by validation, or a path in it names something the index or the document does not hold. A path is refused for the same reasons as in a batch update.
 
-            Error codes: `index:query:invalid_value` - The key in the path cannot be read as the type of the primary key field. `request:update:key_conflicting` - The body gives the primary key field a value other than the key in the path. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names.
+            Error codes: `index:query:invalid_value` - The key in the path cannot be read as the type of the primary key field. `request:update:key_conflicting` - The body gives the primary key field a value other than the key in the path. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - The change adds a value to a field that holds a single value. Name the field on its own to replace it. `request:update:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:update:key_not_declared` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `request:update:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `request:missing_body` - The request carries no change.
           content:
             application/json:
               schema:
@@ -9216,6 +9758,30 @@ paths:
           - code: request:update:no_match
             when: A selector names no value the document holds. A selector never creates
               the value it names.
+          - code: request:update:path_unknown_field
+            when: A path reaches into a field the index does not have.
+          - code: request:update:not_an_object
+            when: A path reaches inside a field whose values are not objects.
+          - code: request:update:value_required
+            when: A path reaches into a list of objects without saying which value.
+          - code: request:update:selector_not_supported
+            when: A path names one value of a field that holds neither locale variants
+              nor objects.
+          - code: request:update:locale_unknown
+            when: A path names a locale the field holds no variant for.
+          - code: request:update:add_not_multiple
+            when: The change adds a value to a field that holds a single value. Name
+              the field on its own to replace it.
+          - code: request:update:add_reaches_inside
+            when: "A path reaches inside a value that the same change adds, which\
+              \ does not exist yet. Give the whole value instead."
+          - code: request:update:key_not_declared
+            when: A path names one value of a list by a key that the field declares
+              none of. Match on a field inside the value instead.
+          - code: request:update:match_not_an_object
+            when: A path matches on a field inside a list whose values are not objects.
+          - code: request:missing_body
+            when: The request carries no change.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -9258,7 +9824,7 @@ paths:
           description: |-
             The index cannot be written to right now.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
@@ -9269,6 +9835,9 @@ paths:
               once one is.
           - code: index:out-of-date
             when: The index is synchronizing. Send the request again.
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
           - code: reindex:target_busy
             when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
@@ -9394,7 +9963,7 @@ paths:
           description: |-
             No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out-of-date` - The index is synchronizing. Send the request again. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
           content:
             application/json:
               schema:
@@ -9405,6 +9974,9 @@ paths:
               once one is.
           - code: index:out-of-date
             when: The index is synchronizing. Send the request again.
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
           - code: reindex:target_busy
             when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
@@ -9515,12 +10087,67 @@ paths:
           description: |-
             The request is not one that can be counted, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            Error codes: `index:query:field_not_found` - The request names a field the index does not have. `index:query:usage_not_enabled` - The field is not defined for `facet` usage. `index:query:facet_prefix_on_a_tree` - A prefix was given for a field whose values are paths through a tree. `search:facet:limit_invalid` - `limit` is outside 1 to 1000. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
+            Error codes: `search:required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing or below zero. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_invalid` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:locale:unsupported` - The request names a locale this engine has no rules for. `index:query:field_not_found` - The request names a field the index does not have. `index:query:usage_not_enabled` - The field is not defined for `facet` usage. `index:query:facet_prefix_on_a_tree` - A prefix was given for a field whose values are paths through a tree. `search:facet:limit_invalid` - `limit` is outside 1 to 1000. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: search:required
+            when: A part of the request that needs a value carries none. The `path`
+              names it.
+          - code: search:clause:field_required
+            when: A `field` clause does not name the field to match.
+          - code: search:clause:match_required
+            when: A `field` clause does not say what to look for in the field.
+          - code: search:clause:text_required
+            when: A `text` clause carries no text to search for.
+          - code: search:clause:path_required
+            when: A `nested` clause does not name the object field to match inside.
+          - code: search:clause:vector_required
+            when: A `knn` clause carries no vector to find the neighbours of.
+          - code: search:clause:k_invalid
+            when: The `k` of a `knn` clause is missing or not above zero.
+          - code: search:clause:weight_invalid
+            when: The `weight` of a `boost` clause is missing or below zero.
+          - code: search:clause:slop_invalid
+            when: The `slop` of a `text` clause is below zero.
+          - code: search:clause:slop_not_applicable
+            when: "A `text` clause sets `slop` without matching as a phrase. Set `match`\
+              \ to `phrase`, or to `user`."
+          - code: search:clause:join_not_applicable
+            when: "A `text` clause sets `join` without matching what somebody typed.\
+              \ Set `match` to `user`, or say `all` or `any` in `match` itself."
+          - code: search:clause:rankings_invalid
+            when: A `fuse` clause holds fewer than two rankings to fuse.
+          - code: search:clause:ranking_empty
+            when: A ranking of a `fuse` clause holds nothing to rank by.
+          - code: search:clause:rank_constant_invalid
+            when: The `rankConstant` of a `fuse` clause is not a number above zero.
+          - code: search:clause:depth_invalid
+            when: The `depth` of a `fuse` clause is below one result.
+          - code: search:clause:interpret_fields_required
+            when: "The `interpret` of a `text` clause names no target field. Name\
+              \ at least one, or use `auto` or `off`."
+          - code: search:clause:interpret_when_unsupported
+            when: "The `when` of an `interpret` target holds a `nested`, `knn` or\
+              \ `fuse` clause."
+          - code: search:matcher:value_required
+            when: A matcher carries no value to look for.
+          - code: search:matcher:range_empty
+            when: A range matcher carries no bound.
+          - code: search:matcher:range_conflicting
+            when: "A range matcher combines `gte` with `gt`, or `lte` with `lt`."
+          - code: search:matcher:origin_required
+            when: A distance matcher carries no `lat` and `lon` to measure from.
+          - code: search:matcher:radius_required
+            when: A distance matcher does not say how far from the origin values may
+              be.
+          - code: search:filter:clause_invalid
+            when: A clause under `filters` is neither a `field` nor a `nested` clause.
+              A clause that scopes the whole search belongs in `query`.
+          - code: search:locale:unsupported
+            when: The request names a locale this engine has no rules for.
           - code: index:query:field_not_found
             when: The request names a field the index does not have.
           - code: index:query:usage_not_enabled
@@ -9703,7 +10330,7 @@ paths:
                     page:
                       limit: 20
                       offset: 0
-                      next: c2NvcmU6My4xN3w5NzgwMDA3NDU4NDI0
+                      next: AWtaPJHiAAAS1QFmQErhSA
                     tookMs: 7.412
               schema:
                 $ref: "#/components/schemas/SearchResponse"
@@ -9711,12 +10338,213 @@ paths:
           description: |-
             The request is not a valid search, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            Error codes: `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `index:query:field_not_found` - A clause names a field the index does not have. `index:query:usage_not_enabled` - A field is not defined for the usage the clause asks of it. `search:page:too_deep` - `offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead. `search:limit:too_large` - `limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next`. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
+            Error codes: `search:required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing or below zero. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_invalid` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:sort:field_required` - A `sort` entry does not name the field to sort by. `search:sort:origin_required` - A `sort` entry that orders by distance carries no `lat` and `lon` to measure from. `search:limit:negative` - `limit` is below zero. `search:offset:negative` - `offset` is below zero. `search:page:conflicting` - The request combines more than one of `offset`, `after` and `before`. `search:cursor:invalid` - `after` or `before` carries a cursor this engine did not hand out. `search:cursor:sort_mismatch` - A cursor is used under a different `sort` than the one it was handed out under. Start the search again from the first page. `search:pages:without_limit` - `pages` is asked for without a `limit` above zero. `search:pages:without_offset` - `pages` is asked for from a `next` or `previous` cursor, which carries no page number. Start from `offset` or from a page's own cursor. `search:pages:invalid_max` - The `max` of `pages` is not above zero. `search:facet:field_required` - A facet does not name the field to count. `search:facet:name_invalid` - A facet is keyed by a blank name. Leave `name` out to key the counts by the field. `search:facet:duplicate_name` - Two facets are keyed by the same name. `search:facet:limit_invalid` - The `limit` of a facet asks for more values than the node allows, or for none. The `max` argument carries the cap. `search:facet:depth_invalid` - The `depth` of a facet counts more levels of a tree than the node allows, or none. The `max` argument carries the cap. `search:facet:path_invalid` - The `path` of a facet is blank. Leave it out to count from the top of the tree. `search:facet:range_empty` - A bucket of a facet carries no bound. `search:facet:ranges_required` - A facet counts into buckets and lists none. Leave `ranges` out to count one value at a time. `search:facet:ranges_too_many` - A facet counts into more buckets than the node allows. The `max` argument carries the cap. `search:facet:ranges_conflicting` - A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given. `search:facet:ranges_on_a_tree` - A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets. `search:facet:exclude_filters_invalid` - An entry of `excludeFilters` is blank. Leave the list out for the facet's own field, or give it empty to leave nothing out. `search:highlight:fields_required` - `highlight` names no field to highlight. `search:highlight:field_required` - An entry of the fields to highlight is blank. `search:highlight:fragments_invalid` - The number of fragments to highlight is not above zero. `search:highlight:length_invalid` - The length a highlighted fragment aims for is outside 1 to 10000 characters. `search:matched:field_required` - A `matched` entry does not name the object field to answer matched values for. `search:matched:fields_empty` - A `matched` entry asks for only some fields of the values and names none. `search:matched:field_not_inside` - A `matched` entry names a field that is not inside its object field. Name the fields of the values by their dotted paths. `search:matched:limit_invalid` - A `matched` entry asks for more values per field than the node allows, or for none. The `max` argument carries the cap. `search:hits:path_required` - `hits` does not name the object field whose matched values are the hits. `search:hits:fields_empty` - `hits` asks for only some fields of the values and names none. `search:hits:field_not_inside` - `hits` names a field that is not inside the object field it stands for. Name the fields of the values by their dotted paths. `search:hits:when_clause_invalid` - A clause under `hits.when` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:hits:when_scores` - A clause under `hits.when` affects the score. Clauses that score belong in `query`. `search:hits:when_field_sort` - A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score. `search:hits:distance_sort` - A search whose hits are the values of an object field is ordered by distance. `search:hits:with_knn` - A search whose hits are the values of an object field holds a `knn` clause. `search:hits:with_matched` - A search whose hits are the values of an object field also asks for `matched`, which would ask a hit about itself. `search:hits:with_highlight` - A search whose hits are the values of an object field highlights a field that is not inside those values. `search:signal:field_required` - A signal does not name the field to read its value from. `search:signal:shape_invalid` - A signal is not exactly one of `saturation`, `decay` and `linear`. `search:signal:pivot_invalid` - The `pivot` of a saturation signal is not a number above zero. `search:signal:half_life_invalid` - The `halfLife` of a decay signal is not a number of seconds above zero. `search:signal:ceiling_invalid` - The `ceiling` of a linear signal is not a number above zero. `search:signal:weight_invalid` - The `weight` of a signal is below zero. `search:signal:mode_without_signals` - `signalsMode` is given without `signals`. Give the signals as well, or leave the mode out. `search:rescore:window_required` - A `rescore` block does not say how many of the best results the second pass reaches. `search:rescore:window_invalid` - The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. `search:rescore:window_too_small` - `offset` plus `limit` reaches past the `window` of a `rescore` block. Widen the window, or ask for an earlier page. `search:rescore:empty` - A `rescore` block holds neither a boost nor a signal to reorder by. `search:rescore:weight_invalid` - The `weight` of a `rescore` block is below zero. `search:rescore:hits_unsupported` - A search whose hits are the values of an object field also asks to `rescore`. A second pass scores documents, so it cannot reorder values. `search:locale:unsupported` - The request names a locale this engine has no rules for. `index:query:source_not_kept` - `fields` asks for something only the document copy can answer on an index whose `source` is `none`. `index:query:interpret:no_unit` - An `interpret` target names a field that is not a number field or that declares no `unit`. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `index:query:field_not_found` - A clause names a field the index does not have. `index:query:usage_not_enabled` - A field is not defined for the usage the clause asks of it. `search:page:too_deep` - `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead. `search:limit:too_large` - `limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next`. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: search:required
+            when: A part of the request that needs a value carries none. The `path`
+              names it.
+          - code: search:clause:field_required
+            when: A `field` clause does not name the field to match.
+          - code: search:clause:match_required
+            when: A `field` clause does not say what to look for in the field.
+          - code: search:clause:text_required
+            when: A `text` clause carries no text to search for.
+          - code: search:clause:path_required
+            when: A `nested` clause does not name the object field to match inside.
+          - code: search:clause:vector_required
+            when: A `knn` clause carries no vector to find the neighbours of.
+          - code: search:clause:k_invalid
+            when: The `k` of a `knn` clause is missing or not above zero.
+          - code: search:clause:weight_invalid
+            when: The `weight` of a `boost` clause is missing or below zero.
+          - code: search:clause:slop_invalid
+            when: The `slop` of a `text` clause is below zero.
+          - code: search:clause:slop_not_applicable
+            when: "A `text` clause sets `slop` without matching as a phrase. Set `match`\
+              \ to `phrase`, or to `user`."
+          - code: search:clause:join_not_applicable
+            when: "A `text` clause sets `join` without matching what somebody typed.\
+              \ Set `match` to `user`, or say `all` or `any` in `match` itself."
+          - code: search:clause:rankings_invalid
+            when: A `fuse` clause holds fewer than two rankings to fuse.
+          - code: search:clause:ranking_empty
+            when: A ranking of a `fuse` clause holds nothing to rank by.
+          - code: search:clause:rank_constant_invalid
+            when: The `rankConstant` of a `fuse` clause is not a number above zero.
+          - code: search:clause:depth_invalid
+            when: The `depth` of a `fuse` clause is below one result.
+          - code: search:clause:interpret_fields_required
+            when: "The `interpret` of a `text` clause names no target field. Name\
+              \ at least one, or use `auto` or `off`."
+          - code: search:clause:interpret_when_unsupported
+            when: "The `when` of an `interpret` target holds a `nested`, `knn` or\
+              \ `fuse` clause."
+          - code: search:matcher:value_required
+            when: A matcher carries no value to look for.
+          - code: search:matcher:range_empty
+            when: A range matcher carries no bound.
+          - code: search:matcher:range_conflicting
+            when: "A range matcher combines `gte` with `gt`, or `lte` with `lt`."
+          - code: search:matcher:origin_required
+            when: A distance matcher carries no `lat` and `lon` to measure from.
+          - code: search:matcher:radius_required
+            when: A distance matcher does not say how far from the origin values may
+              be.
+          - code: search:filter:clause_invalid
+            when: A clause under `filters` is neither a `field` nor a `nested` clause.
+              A clause that scopes the whole search belongs in `query`.
+          - code: search:sort:field_required
+            when: A `sort` entry does not name the field to sort by.
+          - code: search:sort:origin_required
+            when: A `sort` entry that orders by distance carries no `lat` and `lon`
+              to measure from.
+          - code: search:limit:negative
+            when: '`limit` is below zero.'
+          - code: search:offset:negative
+            when: '`offset` is below zero.'
+          - code: search:page:conflicting
+            when: "The request combines more than one of `offset`, `after` and `before`."
+          - code: search:cursor:invalid
+            when: '`after` or `before` carries a cursor this engine did not hand out.'
+          - code: search:cursor:sort_mismatch
+            when: A cursor is used under a different `sort` than the one it was handed
+              out under. Start the search again from the first page.
+          - code: search:pages:without_limit
+            when: '`pages` is asked for without a `limit` above zero.'
+          - code: search:pages:without_offset
+            when: "`pages` is asked for from a `next` or `previous` cursor, which\
+              \ carries no page number. Start from `offset` or from a page's own cursor."
+          - code: search:pages:invalid_max
+            when: The `max` of `pages` is not above zero.
+          - code: search:facet:field_required
+            when: A facet does not name the field to count.
+          - code: search:facet:name_invalid
+            when: A facet is keyed by a blank name. Leave `name` out to key the counts
+              by the field.
+          - code: search:facet:duplicate_name
+            when: Two facets are keyed by the same name.
+          - code: search:facet:limit_invalid
+            when: "The `limit` of a facet asks for more values than the node allows,\
+              \ or for none. The `max` argument carries the cap."
+          - code: search:facet:depth_invalid
+            when: "The `depth` of a facet counts more levels of a tree than the node\
+              \ allows, or none. The `max` argument carries the cap."
+          - code: search:facet:path_invalid
+            when: The `path` of a facet is blank. Leave it out to count from the top
+              of the tree.
+          - code: search:facet:range_empty
+            when: A bucket of a facet carries no bound.
+          - code: search:facet:ranges_required
+            when: A facet counts into buckets and lists none. Leave `ranges` out to
+              count one value at a time.
+          - code: search:facet:ranges_too_many
+            when: A facet counts into more buckets than the node allows. The `max`
+              argument carries the cap.
+          - code: search:facet:ranges_conflicting
+            when: "A facet combines `ranges` with `limit` or `order`. A facet with\
+              \ `ranges` answers one count per bucket, in the order the buckets are\
+              \ given."
+          - code: search:facet:ranges_on_a_tree
+            when: "A facet combines `ranges` with `path` or `depth`. Those count one\
+              \ level of a tree, and `ranges` counts buckets."
+          - code: search:facet:exclude_filters_invalid
+            when: "An entry of `excludeFilters` is blank. Leave the list out for the\
+              \ facet's own field, or give it empty to leave nothing out."
+          - code: search:highlight:fields_required
+            when: '`highlight` names no field to highlight.'
+          - code: search:highlight:field_required
+            when: An entry of the fields to highlight is blank.
+          - code: search:highlight:fragments_invalid
+            when: The number of fragments to highlight is not above zero.
+          - code: search:highlight:length_invalid
+            when: The length a highlighted fragment aims for is outside 1 to 10000
+              characters.
+          - code: search:matched:field_required
+            when: A `matched` entry does not name the object field to answer matched
+              values for.
+          - code: search:matched:fields_empty
+            when: A `matched` entry asks for only some fields of the values and names
+              none.
+          - code: search:matched:field_not_inside
+            when: A `matched` entry names a field that is not inside its object field.
+              Name the fields of the values by their dotted paths.
+          - code: search:matched:limit_invalid
+            when: "A `matched` entry asks for more values per field than the node\
+              \ allows, or for none. The `max` argument carries the cap."
+          - code: search:hits:path_required
+            when: '`hits` does not name the object field whose matched values are
+              the hits.'
+          - code: search:hits:fields_empty
+            when: '`hits` asks for only some fields of the values and names none.'
+          - code: search:hits:field_not_inside
+            when: '`hits` names a field that is not inside the object field it stands
+              for. Name the fields of the values by their dotted paths.'
+          - code: search:hits:when_clause_invalid
+            when: A clause under `hits.when` is neither a `field` nor a `nested` clause.
+              A clause that scopes the whole search belongs in `query`.
+          - code: search:hits:when_scores
+            when: A clause under `hits.when` affects the score. Clauses that score
+              belong in `query`.
+          - code: search:hits:when_field_sort
+            when: A search whose hits are chosen by `hits.when` is ordered by a field.
+              Order it by score.
+          - code: search:hits:distance_sort
+            when: A search whose hits are the values of an object field is ordered
+              by distance.
+          - code: search:hits:with_knn
+            when: A search whose hits are the values of an object field holds a `knn`
+              clause.
+          - code: search:hits:with_matched
+            when: "A search whose hits are the values of an object field also asks\
+              \ for `matched`, which would ask a hit about itself."
+          - code: search:hits:with_highlight
+            when: A search whose hits are the values of an object field highlights
+              a field that is not inside those values.
+          - code: search:signal:field_required
+            when: A signal does not name the field to read its value from.
+          - code: search:signal:shape_invalid
+            when: "A signal is not exactly one of `saturation`, `decay` and `linear`."
+          - code: search:signal:pivot_invalid
+            when: The `pivot` of a saturation signal is not a number above zero.
+          - code: search:signal:half_life_invalid
+            when: The `halfLife` of a decay signal is not a number of seconds above
+              zero.
+          - code: search:signal:ceiling_invalid
+            when: The `ceiling` of a linear signal is not a number above zero.
+          - code: search:signal:weight_invalid
+            when: The `weight` of a signal is below zero.
+          - code: search:signal:mode_without_signals
+            when: "`signalsMode` is given without `signals`. Give the signals as well,\
+              \ or leave the mode out."
+          - code: search:rescore:window_required
+            when: A `rescore` block does not say how many of the best results the
+              second pass reaches.
+          - code: search:rescore:window_invalid
+            when: The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`.
+          - code: search:rescore:window_too_small
+            when: "`offset` plus `limit` reaches past the `window` of a `rescore`\
+              \ block. Widen the window, or ask for an earlier page."
+          - code: search:rescore:empty
+            when: A `rescore` block holds neither a boost nor a signal to reorder
+              by.
+          - code: search:rescore:weight_invalid
+            when: The `weight` of a `rescore` block is below zero.
+          - code: search:rescore:hits_unsupported
+            when: "A search whose hits are the values of an object field also asks\
+              \ to `rescore`. A second pass scores documents, so it cannot reorder\
+              \ values."
+          - code: search:locale:unsupported
+            when: The request names a locale this engine has no rules for.
+          - code: index:query:source_not_kept
+            when: '`fields` asks for something only the document copy can answer on
+              an index whose `source` is `none`.'
+          - code: index:query:interpret:no_unit
+            when: An `interpret` target names a field that is not a number field or
+              that declares no `unit`.
           - code: search:filter:scores
             when: A clause under `filter` affects the score. Move it out of `filter`.
           - code: index:query:field_not_found
@@ -9724,8 +10552,8 @@ paths:
           - code: index:query:usage_not_enabled
             when: A field is not defined for the usage the clause asks of it.
           - code: search:page:too_deep
-            when: '`offset` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the
-              `next` cursor instead.'
+            when: '`offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
+              Follow the `next` cursor instead.'
           - code: search:limit:too_large
             when: '`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller
               page and follow `next`.'
@@ -9915,12 +10743,215 @@ paths:
           description: |-
             The request is not a valid search, or the index declares no primary key so a hit cannot be named.
 
-            Error codes: `index:no_primary_key` - The index declares no primary key, so a hit cannot be named. `search:explain:key_required` - The request carries no `key`, so it names no hit to explain. `search:explain:index_invalid` - `index` is below zero, so it names no value of the `hits` path.
+            Error codes: `search:required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing or below zero. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_invalid` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:filter:scores` - A clause under `filters` affects the score. Move it out of `filters`. `search:sort:field_required` - A `sort` entry does not name the field to sort by. `search:sort:origin_required` - A `sort` entry that orders by distance carries no `lat` and `lon` to measure from. `search:limit:negative` - `limit` is below zero. `search:limit:too_large` - `limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. `search:offset:negative` - `offset` is below zero. `search:page:conflicting` - The request combines more than one of `offset`, `after` and `before`. `search:page:too_deep` - `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. `search:cursor:invalid` - `after` or `before` carries a cursor this engine did not hand out. `search:cursor:sort_mismatch` - A cursor is used under a different `sort` than the one it was handed out under. `search:pages:without_limit` - `pages` is asked for without a `limit` above zero. `search:pages:without_offset` - `pages` is asked for from a `next` or `previous` cursor, which carries no page number. `search:pages:invalid_max` - The `max` of `pages` is not above zero. `search:query:too_many_clauses` - The query holds more clauses than the node allows. `search:query:too_deep` - The query nests deeper than the node allows. `search:facet:field_required` - A facet does not name the field to count. `search:facet:name_invalid` - A facet is keyed by a blank name. Leave `name` out to key the counts by the field. `search:facet:duplicate_name` - Two facets are keyed by the same name. `search:facet:limit_invalid` - The `limit` of a facet asks for more values than the node allows, or for none. `search:facet:depth_invalid` - The `depth` of a facet counts more levels of a tree than the node allows, or none. `search:facet:path_invalid` - The `path` of a facet is blank. Leave it out to count from the top of the tree. `search:facet:range_empty` - A bucket of a facet carries no bound. `search:facet:ranges_required` - A facet counts into buckets and lists none. Leave `ranges` out to count one value at a time. `search:facet:ranges_too_many` - A facet counts into more buckets than the node allows. `search:facet:ranges_conflicting` - A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given. `search:facet:ranges_on_a_tree` - A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets. `search:facet:exclude_filters_invalid` - An entry of `excludeFilters` is blank. `search:highlight:fields_required` - `highlight` names no field to highlight. `search:highlight:field_required` - An entry of the fields to highlight is blank. `search:highlight:fragments_invalid` - The number of fragments to highlight is not above zero. `search:highlight:length_invalid` - The length a highlighted fragment aims for is outside 1 to 10000 characters. `search:matched:field_required` - A `matched` entry does not name the object field to answer matched values for. `search:matched:fields_empty` - A `matched` entry asks for only some fields of the values and names none. `search:matched:field_not_inside` - A `matched` entry names a field that is not inside its object field. `search:matched:limit_invalid` - A `matched` entry asks for more values per field than the node allows, or for none. `search:hits:path_required` - `hits` does not name the object field whose matched values are the hits. `search:hits:fields_empty` - `hits` asks for only some fields of the values and names none. `search:hits:field_not_inside` - `hits` names a field that is not inside the object field it stands for. `search:hits:when_clause_invalid` - A clause under `hits.when` is neither a `field` nor a `nested` clause. `search:hits:when_scores` - A clause under `hits.when` affects the score. Clauses that score belong in `query`. `search:hits:when_field_sort` - A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score. `search:hits:distance_sort` - A search whose hits are the values of an object field is ordered by distance. `search:hits:with_knn` - A search whose hits are the values of an object field holds a `knn` clause. `search:hits:with_matched` - A search whose hits are the values of an object field also asks for `matched`. `search:hits:with_highlight` - A search whose hits are the values of an object field highlights a field that is not inside those values. `search:signal:field_required` - A signal does not name the field to read its value from. `search:signal:shape_invalid` - A signal is not exactly one of `saturation`, `decay` and `linear`. `search:signal:pivot_invalid` - The `pivot` of a saturation signal is not a number above zero. `search:signal:half_life_invalid` - The `halfLife` of a decay signal is not a number of seconds above zero. `search:signal:ceiling_invalid` - The `ceiling` of a linear signal is not a number above zero. `search:signal:weight_invalid` - The `weight` of a signal is below zero. `search:signal:mode_without_signals` - `signalsMode` is given without `signals`. `search:rescore:window_required` - A `rescore` block does not say how many of the best results the second pass reaches. `search:rescore:window_invalid` - The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. `search:rescore:window_too_small` - `offset` plus `limit` reaches past the `window` of a `rescore` block. `search:rescore:empty` - A `rescore` block holds neither a boost nor a signal to reorder by. `search:rescore:weight_invalid` - The `weight` of a `rescore` block is below zero. `search:rescore:hits_unsupported` - A search whose hits are the values of an object field also asks to `rescore`. `search:locale:unsupported` - The request names a locale this engine has no rules for. `index:no_primary_key` - The index declares no primary key, so a hit cannot be named. `search:explain:key_required` - The request carries no `key`, so it names no hit to explain. `search:explain:index_invalid` - `index` is below zero, so it names no value of the `hits` path.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: search:required
+            when: A part of the request that needs a value carries none. The `path`
+              names it.
+          - code: search:clause:field_required
+            when: A `field` clause does not name the field to match.
+          - code: search:clause:match_required
+            when: A `field` clause does not say what to look for in the field.
+          - code: search:clause:text_required
+            when: A `text` clause carries no text to search for.
+          - code: search:clause:path_required
+            when: A `nested` clause does not name the object field to match inside.
+          - code: search:clause:vector_required
+            when: A `knn` clause carries no vector to find the neighbours of.
+          - code: search:clause:k_invalid
+            when: The `k` of a `knn` clause is missing or not above zero.
+          - code: search:clause:k_too_large
+            when: A `knn` clause asks for more neighbours than the node allows.
+          - code: search:clause:weight_invalid
+            when: The `weight` of a `boost` clause is missing or below zero.
+          - code: search:clause:slop_invalid
+            when: The `slop` of a `text` clause is below zero.
+          - code: search:clause:slop_not_applicable
+            when: "A `text` clause sets `slop` without matching as a phrase. Set `match`\
+              \ to `phrase`, or to `user`."
+          - code: search:clause:join_not_applicable
+            when: "A `text` clause sets `join` without matching what somebody typed.\
+              \ Set `match` to `user`, or say `all` or `any` in `match` itself."
+          - code: search:clause:rankings_invalid
+            when: A `fuse` clause holds fewer than two rankings to fuse.
+          - code: search:clause:ranking_empty
+            when: A ranking of a `fuse` clause holds nothing to rank by.
+          - code: search:clause:rank_constant_invalid
+            when: The `rankConstant` of a `fuse` clause is not a number above zero.
+          - code: search:clause:depth_invalid
+            when: The `depth` of a `fuse` clause is below one result.
+          - code: search:clause:depth_too_large
+            when: A clause reaches deeper into objects than the node allows.
+          - code: search:clause:interpret_fields_required
+            when: "The `interpret` of a `text` clause names no target field. Name\
+              \ at least one, or use `auto` or `off`."
+          - code: search:clause:interpret_when_unsupported
+            when: "The `when` of an `interpret` target holds a `nested`, `knn` or\
+              \ `fuse` clause."
+          - code: search:matcher:value_required
+            when: A matcher carries no value to look for.
+          - code: search:matcher:range_empty
+            when: A range matcher carries no bound.
+          - code: search:matcher:range_conflicting
+            when: "A range matcher combines `gte` with `gt`, or `lte` with `lt`."
+          - code: search:matcher:origin_required
+            when: A distance matcher carries no `lat` and `lon` to measure from.
+          - code: search:matcher:radius_required
+            when: A distance matcher does not say how far from the origin values may
+              be.
+          - code: search:filter:clause_invalid
+            when: A clause under `filters` is neither a `field` nor a `nested` clause.
+              A clause that scopes the whole search belongs in `query`.
+          - code: search:filter:scores
+            when: A clause under `filters` affects the score. Move it out of `filters`.
+          - code: search:sort:field_required
+            when: A `sort` entry does not name the field to sort by.
+          - code: search:sort:origin_required
+            when: A `sort` entry that orders by distance carries no `lat` and `lon`
+              to measure from.
+          - code: search:limit:negative
+            when: '`limit` is below zero.'
+          - code: search:limit:too_large
+            when: '`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`.'
+          - code: search:offset:negative
+            when: '`offset` is below zero.'
+          - code: search:page:conflicting
+            when: "The request combines more than one of `offset`, `after` and `before`."
+          - code: search:page:too_deep
+            when: '`offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.'
+          - code: search:cursor:invalid
+            when: '`after` or `before` carries a cursor this engine did not hand out.'
+          - code: search:cursor:sort_mismatch
+            when: A cursor is used under a different `sort` than the one it was handed
+              out under.
+          - code: search:pages:without_limit
+            when: '`pages` is asked for without a `limit` above zero.'
+          - code: search:pages:without_offset
+            when: "`pages` is asked for from a `next` or `previous` cursor, which\
+              \ carries no page number."
+          - code: search:pages:invalid_max
+            when: The `max` of `pages` is not above zero.
+          - code: search:query:too_many_clauses
+            when: The query holds more clauses than the node allows.
+          - code: search:query:too_deep
+            when: The query nests deeper than the node allows.
+          - code: search:facet:field_required
+            when: A facet does not name the field to count.
+          - code: search:facet:name_invalid
+            when: A facet is keyed by a blank name. Leave `name` out to key the counts
+              by the field.
+          - code: search:facet:duplicate_name
+            when: Two facets are keyed by the same name.
+          - code: search:facet:limit_invalid
+            when: "The `limit` of a facet asks for more values than the node allows,\
+              \ or for none."
+          - code: search:facet:depth_invalid
+            when: "The `depth` of a facet counts more levels of a tree than the node\
+              \ allows, or none."
+          - code: search:facet:path_invalid
+            when: The `path` of a facet is blank. Leave it out to count from the top
+              of the tree.
+          - code: search:facet:range_empty
+            when: A bucket of a facet carries no bound.
+          - code: search:facet:ranges_required
+            when: A facet counts into buckets and lists none. Leave `ranges` out to
+              count one value at a time.
+          - code: search:facet:ranges_too_many
+            when: A facet counts into more buckets than the node allows.
+          - code: search:facet:ranges_conflicting
+            when: "A facet combines `ranges` with `limit` or `order`. A facet with\
+              \ `ranges` answers one count per bucket, in the order the buckets are\
+              \ given."
+          - code: search:facet:ranges_on_a_tree
+            when: "A facet combines `ranges` with `path` or `depth`. Those count one\
+              \ level of a tree, and `ranges` counts buckets."
+          - code: search:facet:exclude_filters_invalid
+            when: An entry of `excludeFilters` is blank.
+          - code: search:highlight:fields_required
+            when: '`highlight` names no field to highlight.'
+          - code: search:highlight:field_required
+            when: An entry of the fields to highlight is blank.
+          - code: search:highlight:fragments_invalid
+            when: The number of fragments to highlight is not above zero.
+          - code: search:highlight:length_invalid
+            when: The length a highlighted fragment aims for is outside 1 to 10000
+              characters.
+          - code: search:matched:field_required
+            when: A `matched` entry does not name the object field to answer matched
+              values for.
+          - code: search:matched:fields_empty
+            when: A `matched` entry asks for only some fields of the values and names
+              none.
+          - code: search:matched:field_not_inside
+            when: A `matched` entry names a field that is not inside its object field.
+          - code: search:matched:limit_invalid
+            when: "A `matched` entry asks for more values per field than the node\
+              \ allows, or for none."
+          - code: search:hits:path_required
+            when: '`hits` does not name the object field whose matched values are
+              the hits.'
+          - code: search:hits:fields_empty
+            when: '`hits` asks for only some fields of the values and names none.'
+          - code: search:hits:field_not_inside
+            when: '`hits` names a field that is not inside the object field it stands
+              for.'
+          - code: search:hits:when_clause_invalid
+            when: A clause under `hits.when` is neither a `field` nor a `nested` clause.
+          - code: search:hits:when_scores
+            when: A clause under `hits.when` affects the score. Clauses that score
+              belong in `query`.
+          - code: search:hits:when_field_sort
+            when: A search whose hits are chosen by `hits.when` is ordered by a field.
+              Order it by score.
+          - code: search:hits:distance_sort
+            when: A search whose hits are the values of an object field is ordered
+              by distance.
+          - code: search:hits:with_knn
+            when: A search whose hits are the values of an object field holds a `knn`
+              clause.
+          - code: search:hits:with_matched
+            when: A search whose hits are the values of an object field also asks
+              for `matched`.
+          - code: search:hits:with_highlight
+            when: A search whose hits are the values of an object field highlights
+              a field that is not inside those values.
+          - code: search:signal:field_required
+            when: A signal does not name the field to read its value from.
+          - code: search:signal:shape_invalid
+            when: "A signal is not exactly one of `saturation`, `decay` and `linear`."
+          - code: search:signal:pivot_invalid
+            when: The `pivot` of a saturation signal is not a number above zero.
+          - code: search:signal:half_life_invalid
+            when: The `halfLife` of a decay signal is not a number of seconds above
+              zero.
+          - code: search:signal:ceiling_invalid
+            when: The `ceiling` of a linear signal is not a number above zero.
+          - code: search:signal:weight_invalid
+            when: The `weight` of a signal is below zero.
+          - code: search:signal:mode_without_signals
+            when: '`signalsMode` is given without `signals`.'
+          - code: search:rescore:window_required
+            when: A `rescore` block does not say how many of the best results the
+              second pass reaches.
+          - code: search:rescore:window_invalid
+            when: The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`.
+          - code: search:rescore:window_too_small
+            when: '`offset` plus `limit` reaches past the `window` of a `rescore`
+              block.'
+          - code: search:rescore:empty
+            when: A `rescore` block holds neither a boost nor a signal to reorder
+              by.
+          - code: search:rescore:weight_invalid
+            when: The `weight` of a `rescore` block is below zero.
+          - code: search:rescore:hits_unsupported
+            when: A search whose hits are the values of an object field also asks
+              to `rescore`.
+          - code: search:locale:unsupported
+            when: The request names a locale this engine has no rules for.
           - code: index:no_primary_key
             when: "The index declares no primary key, so a hit cannot be named."
           - code: search:explain:key_required
@@ -10079,7 +11110,7 @@ paths:
           description: |-
             The request is not one that can be answered, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            Error codes: `search:suggest:limit_invalid` - `limit` is outside 1 to 100. `search:locale:unsupported` - The request names a locale the node has no rules for. `index:query:field_not_found` - A filter names a field the index does not have. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `search:query:too_many_clauses` - The filter holds more clauses than the node allows. `search:query:too_deep` - The filter nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
+            Error codes: `search:suggest:limit_invalid` - `limit` is outside 1 to 100. `search:required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing or below zero. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_invalid` - A clause under `filters` is neither a `field` nor a `nested` clause. `search:locale:unsupported` - The request names a locale the node has no rules for. `index:query:field_not_found` - A filter names a field the index does not have. `search:filter:scores` - A clause under `filter` affects the score. Move it out of `filter`. `search:query:too_many_clauses` - The filter holds more clauses than the node allows. `search:query:too_deep` - The filter nests deeper than the node allows. `search:clause:k_too_large` - A `knn` clause asks for more neighbours than the node allows. `search:clause:depth_too_large` - A clause reaches deeper into objects than the node allows.
           content:
             application/json:
               schema:
@@ -10087,6 +11118,58 @@ paths:
           x-error-codes:
           - code: search:suggest:limit_invalid
             when: '`limit` is outside 1 to 100.'
+          - code: search:required
+            when: A part of the request that needs a value carries none. The `path`
+              names it.
+          - code: search:clause:field_required
+            when: A `field` clause does not name the field to match.
+          - code: search:clause:match_required
+            when: A `field` clause does not say what to look for in the field.
+          - code: search:clause:text_required
+            when: A `text` clause carries no text to search for.
+          - code: search:clause:path_required
+            when: A `nested` clause does not name the object field to match inside.
+          - code: search:clause:vector_required
+            when: A `knn` clause carries no vector to find the neighbours of.
+          - code: search:clause:k_invalid
+            when: The `k` of a `knn` clause is missing or not above zero.
+          - code: search:clause:weight_invalid
+            when: The `weight` of a `boost` clause is missing or below zero.
+          - code: search:clause:slop_invalid
+            when: The `slop` of a `text` clause is below zero.
+          - code: search:clause:slop_not_applicable
+            when: "A `text` clause sets `slop` without matching as a phrase. Set `match`\
+              \ to `phrase`, or to `user`."
+          - code: search:clause:join_not_applicable
+            when: "A `text` clause sets `join` without matching what somebody typed.\
+              \ Set `match` to `user`, or say `all` or `any` in `match` itself."
+          - code: search:clause:rankings_invalid
+            when: A `fuse` clause holds fewer than two rankings to fuse.
+          - code: search:clause:ranking_empty
+            when: A ranking of a `fuse` clause holds nothing to rank by.
+          - code: search:clause:rank_constant_invalid
+            when: The `rankConstant` of a `fuse` clause is not a number above zero.
+          - code: search:clause:depth_invalid
+            when: The `depth` of a `fuse` clause is below one result.
+          - code: search:clause:interpret_fields_required
+            when: "The `interpret` of a `text` clause names no target field. Name\
+              \ at least one, or use `auto` or `off`."
+          - code: search:clause:interpret_when_unsupported
+            when: "The `when` of an `interpret` target holds a `nested`, `knn` or\
+              \ `fuse` clause."
+          - code: search:matcher:value_required
+            when: A matcher carries no value to look for.
+          - code: search:matcher:range_empty
+            when: A range matcher carries no bound.
+          - code: search:matcher:range_conflicting
+            when: "A range matcher combines `gte` with `gt`, or `lte` with `lt`."
+          - code: search:matcher:origin_required
+            when: A distance matcher carries no `lat` and `lon` to measure from.
+          - code: search:matcher:radius_required
+            when: A distance matcher does not say how far from the origin values may
+              be.
+          - code: search:filter:clause_invalid
+            when: A clause under `filters` is neither a `field` nor a `nested` clause.
           - code: search:locale:unsupported
             when: The request names a locale the node has no rules for.
           - code: index:query:field_not_found

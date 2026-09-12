@@ -170,9 +170,9 @@ Before you begin, ensure that you have:
 
    To paginate results, set `limit` and pass the cursor returned in `after`
    from the previous response. Cursor-based pagination with `after` has
-   consistent performance at any depth. If you use `offset`, results are
-   capped by `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. To request numbered pages, use
-   `pages`.
+   consistent performance at any depth. If you use `offset`, `offset` plus
+   `limit` is capped by `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. To request numbered
+   pages, use `pages`.
    For more information, see
    [Paginate search results](paginate-search-results.md).
 

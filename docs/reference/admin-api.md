@@ -22,7 +22,7 @@ DELETE /v1alpha1/admin/indexes/{name}/settings          # remove the search sett
 POST   /v1alpha1/admin/indexes/{name}/actions/promote   # answer for this generation
 POST   /v1alpha1/admin/indexes/{name}/actions/commit    # push pending changes
 POST   /v1alpha1/admin/indexes/{name}/actions/pull      # fetch the latest state now
-POST   /v1alpha1/admin/indexes/{target}/actions/reindex # start a job
+POST   /v1alpha1/admin/indexes/{name}/actions/reindex   # start a job
 GET    /v1alpha1/admin/indexes/{name}/actions/reindex   # job status
 POST   /v1alpha1/admin/indexes/{name}/actions/reindex/cancel # stop a job
 
@@ -409,7 +409,7 @@ A backslash (`\`) escapes the character after it, anywhere in a path. Escape a c
 
 In JSON, write each backslash twice, as `"fields.variants\\.colour.interpret"`.
 
-Objects along a path are created if they do not exist, but lists are not created.
+Objects along a path are created when they do not exist, and `name[]` with a value creates the list when the settings hold none. A selector such as `name[field=x]` never creates anything and returns `request:update:no_match` when nothing it names is stored.
 
 A successful request returns the search settings as stored and their new version in the `ETag` header. An index that had no settings answers `201 Created`, because the change stores its first ones; one that had some answers `200 OK`.
 
@@ -487,9 +487,9 @@ A reindex job populates a new generation by copying documents from an existing g
 
 ### Starting a job
 
-To start a reindex job, send a `POST` request to `/v1alpha1/admin/indexes/{target}/actions/reindex`. This request requires the `indexes.reindex` permission.
+To start a reindex job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex`, where `{name}` is the target generation the job fills. This request requires the `indexes.reindex` permission.
 
-The `{target}` must meet the following requirements:
+The target must meet the following requirements:
 
 - It must specify a generation by name (for example, `products@2`).
 - The generation must already exist and must be empty.
@@ -504,7 +504,7 @@ The request body accepts the following optional JSON fields:
 - `from`: The generation to read documents from. Defaults to the live generation. Must belong to the same index as the target.
 - `promote`: The promotion mode. `auto` (default) automatically promotes the target generation once it catches up with changes. `manual` pauses the job in the `ready` phase and keeps the target caught up until you manually promote it.
 
-A successful request returns `202 Accepted` with the job record. The job runs in the background on the node holding the index.
+A successful request returns `202 Accepted` with the job record in the `pending` phase. A job waits for a concurrency slot on the node before it starts copying. The job runs in the background on the node holding the index.
 
 An index can run at most one reindex job at a time. Starting a second job on an index returns `409 Conflict` with the error code `reindex:in_progress`. A finished job's record remains readable until a new job for that index replaces it.
 
@@ -579,13 +579,13 @@ Both endpoints require the `indexes.read` permission. Status and fleet-wide list
 
 To stop an in-progress job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex/cancel`. This requires the `indexes.reindex` permission.
 
-Cancelling a job stops the background process and leaves the partially populated target generation in place. You can remove the generation with `DELETE /v1alpha1/admin/indexes/{target}`. Cancelling a finished job changes nothing.
+Cancelling a job stops the background process and leaves the partially populated target generation in place. You can remove the target generation with `DELETE /v1alpha1/admin/indexes/{name}`. Cancelling a finished job changes nothing.
 
 ### Target constraints and promotion
 
 Direct document writes to a generation being filled by a reindex job return `409 Conflict` with the error code `reindex:target_busy`. Document writes to the live generation continue unaffected.
 
-When a job configured with `promote: manual` reaches the `ready` phase, calling `POST /v1alpha1/admin/indexes/{target}/actions/promote` finishes the job by draining remaining changes, promoting the generation, and transitioning the job to `done`. Promoting a target generation before the job reaches the `ready` phase is refused with `409 Conflict` and the error code `reindex:target_busy`.
+When a job configured with `promote: manual` reaches the `ready` phase, calling `POST /v1alpha1/admin/indexes/{name}/actions/promote` on the target generation finishes the job by draining remaining changes, promoting the generation, and transitioning the job to `done`. Promoting a target generation before the job reaches the `ready` phase is refused with `409 Conflict` and the error code `reindex:target_busy`.
 
 A reindex job promotes its target only while the index still serves from the generation the job read. If another generation was promoted while the job ran, promotion is refused with `409 Conflict` and the error code `index:generation:live_moved`, and the job transitions to `failed`. This applies to both `auto` and `manual` jobs.
 

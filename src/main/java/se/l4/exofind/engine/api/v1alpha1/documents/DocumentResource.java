@@ -376,6 +376,16 @@ public class DocumentResource {
 		when = "A line of the body could not be read as JSON."
 	)
 	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no documents."
+	)
+	@ReturnsError(
+		value = "request:document:not_an_object",
+		status = 400,
+		when = "A document is not an object keyed by field name."
+	)
+	@ReturnsError(
 		value = "index:not-found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
@@ -652,6 +662,41 @@ public class DocumentResource {
 		when = "A selector names no value the document holds. A selector never creates the value it names."
 	)
 	@ReturnsError(
+		value = "request:update:key_not_declared",
+		status = 400,
+		when = "A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead."
+	)
+	@ReturnsError(
+		value = "request:update:match_not_an_object",
+		status = 400,
+		when = "A path matches on a field inside a list whose values are not objects."
+	)
+	@ReturnsError(
+		value = "request:update:add_reaches_inside",
+		status = 400,
+		when = "A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
+	)
+	@ReturnsError(
+		value = "request:update:missing_unknown",
+		status = 400,
+		when = "`missing` is neither `fail` nor `skip`."
+	)
+	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no changes."
+	)
+	@ReturnsError(
+		value = "request:document:malformed",
+		status = 400,
+		when = "A line of the body could not be read as JSON."
+	)
+	@ReturnsError(
+		value = "request:document:not_an_object",
+		status = 400,
+		when = "A change is not an object keyed by path."
+	)
+	@ReturnsError(
 		value = "index:not-found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
@@ -665,6 +710,11 @@ public class DocumentResource {
 		value = "index:out-of-date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
 	)
 	@ReturnsError(
 		value = "reindex:target_busy",
@@ -993,6 +1043,56 @@ public class DocumentResource {
 		when = "A selector names no value the document holds. A selector never creates the value it names."
 	)
 	@ReturnsError(
+		value = "request:update:path_unknown_field",
+		status = 400,
+		when = "A path reaches into a field the index does not have."
+	)
+	@ReturnsError(
+		value = "request:update:not_an_object",
+		status = 400,
+		when = "A path reaches inside a field whose values are not objects."
+	)
+	@ReturnsError(
+		value = "request:update:value_required",
+		status = 400,
+		when = "A path reaches into a list of objects without saying which value."
+	)
+	@ReturnsError(
+		value = "request:update:selector_not_supported",
+		status = 400,
+		when = "A path names one value of a field that holds neither locale variants nor objects."
+	)
+	@ReturnsError(
+		value = "request:update:locale_unknown",
+		status = 400,
+		when = "A path names a locale the field holds no variant for."
+	)
+	@ReturnsError(
+		value = "request:update:add_not_multiple",
+		status = 400,
+		when = "The change adds a value to a field that holds a single value. Name the field on its own to replace it."
+	)
+	@ReturnsError(
+		value = "request:update:add_reaches_inside",
+		status = 400,
+		when = "A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
+	)
+	@ReturnsError(
+		value = "request:update:key_not_declared",
+		status = 400,
+		when = "A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead."
+	)
+	@ReturnsError(
+		value = "request:update:match_not_an_object",
+		status = 400,
+		when = "A path matches on a field inside a list whose values are not objects."
+	)
+	@ReturnsError(
+		value = "request:missing_body",
+		status = 400,
+		when = "The request carries no change."
+	)
+	@ReturnsError(
 		value = "index:document:not_found",
 		status = 404,
 		when = "Nothing is indexed under the key. Index the document whole first."
@@ -1011,6 +1111,11 @@ public class DocumentResource {
 		value = "index:out-of-date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
 	)
 	@ReturnsError(
 		value = "reindex:target_busy",
@@ -1200,6 +1305,11 @@ public class DocumentResource {
 		when = "The index is synchronizing. Send the request again."
 	)
 	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
+	)
+	@ReturnsError(
 		value = "reindex:target_busy",
 		status = 409,
 		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
@@ -1337,6 +1447,126 @@ public class DocumentResource {
 		when = "A key cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
+		value = "request:delete:key_required",
+		status = 400,
+		when = "An entry of `keys` carries no key."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so a document cannot be named by `keys`."
+	)
+	@ReturnsError(
+		value = "search:required",
+		status = 400,
+		when = "A part of `query` that needs a value carries none. The `path` names it."
+	)
+	@ReturnsError(
+		value = "search:clause:field_required",
+		status = 400,
+		when = "A `field` clause of `query` does not name the field to match."
+	)
+	@ReturnsError(
+		value = "search:clause:match_required",
+		status = 400,
+		when = "A `field` clause of `query` does not say what to look for in the field."
+	)
+	@ReturnsError(
+		value = "search:clause:text_required",
+		status = 400,
+		when = "A `text` clause of `query` carries no text to search for."
+	)
+	@ReturnsError(
+		value = "search:clause:path_required",
+		status = 400,
+		when = "A `nested` clause of `query` does not name the object field to match inside."
+	)
+	@ReturnsError(
+		value = "search:clause:vector_required",
+		status = 400,
+		when = "A `knn` clause of `query` carries no vector to find the neighbours of."
+	)
+	@ReturnsError(
+		value = "search:clause:k_invalid",
+		status = 400,
+		when = "The `k` of a `knn` clause is missing or not above zero."
+	)
+	@ReturnsError(
+		value = "search:clause:weight_invalid",
+		status = 400,
+		when = "The `weight` of a `boost` clause is missing or below zero."
+	)
+	@ReturnsError(
+		value = "search:clause:slop_invalid",
+		status = 400,
+		when = "The `slop` of a `text` clause is below zero."
+	)
+	@ReturnsError(
+		value = "search:clause:slop_not_applicable",
+		status = 400,
+		when = "A `text` clause sets `slop` without matching as a phrase."
+	)
+	@ReturnsError(
+		value = "search:clause:join_not_applicable",
+		status = 400,
+		when = "A `text` clause sets `join` without matching what somebody typed."
+	)
+	@ReturnsError(
+		value = "search:clause:rankings_invalid",
+		status = 400,
+		when = "A `fuse` clause holds fewer than two rankings to fuse."
+	)
+	@ReturnsError(
+		value = "search:clause:ranking_empty",
+		status = 400,
+		when = "A ranking of a `fuse` clause holds nothing to rank by."
+	)
+	@ReturnsError(
+		value = "search:clause:rank_constant_invalid",
+		status = 400,
+		when = "The `rankConstant` of a `fuse` clause is not a number above zero."
+	)
+	@ReturnsError(
+		value = "search:clause:depth_invalid",
+		status = 400,
+		when = "The `depth` of a `fuse` clause is below one result."
+	)
+	@ReturnsError(
+		value = "search:clause:interpret_fields_required",
+		status = 400,
+		when = "The `interpret` of a `text` clause names no target field."
+	)
+	@ReturnsError(
+		value = "search:clause:interpret_when_unsupported",
+		status = 400,
+		when = "The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause."
+	)
+	@ReturnsError(
+		value = "search:matcher:value_required",
+		status = 400,
+		when = "A matcher carries no value to look for."
+	)
+	@ReturnsError(
+		value = "search:matcher:range_empty",
+		status = 400,
+		when = "A range matcher carries no bound."
+	)
+	@ReturnsError(
+		value = "search:matcher:range_conflicting",
+		status = 400,
+		when = "A range matcher combines `gte` with `gt`, or `lte` with `lt`."
+	)
+	@ReturnsError(
+		value = "search:matcher:origin_required",
+		status = 400,
+		when = "A distance matcher carries no `lat` and `lon` to measure from."
+	)
+	@ReturnsError(
+		value = "search:matcher:radius_required",
+		status = 400,
+		when = "A distance matcher does not say how far from the origin values may be."
+	)
+	@ReturnsError(
 		value = "index:not-found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
@@ -1350,6 +1580,11 @@ public class DocumentResource {
 		value = "index:out-of-date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
 	)
 	@ReturnsError(
 		value = "reindex:target_busy",
@@ -1554,6 +1789,11 @@ public class DocumentResource {
 		value = "request:scan:limit_invalid",
 		status = 400,
 		when = "The `limit` parameter is not a whole number from 1 to 10000."
+	)
+	@ReturnsError(
+		value = "index:query:invalid_value",
+		status = 400,
+		when = "The `after` parameter cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
 		value = "index:not-found",
