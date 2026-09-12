@@ -831,20 +831,32 @@ public record SearchResponse(
 		Integer offset,
 
 		/**
-		 * Cursor for the preceding window. Omitted on the first window.
+		 * Cursor for the preceding window. Omitted on the first window of a
+		 * search paged by {@code offset}. On a window reached by a cursor it
+		 * is present whenever the window is full, which says there may be
+		 * results before it rather than that there are.
 		 */
 		@Schema(description = """
 			Cursor for the preceding window, passed in `before`. Omitted on \
-			the first window.""")
+			the first window of a search paged by `offset`. A window reached \
+			by a cursor carries it whenever the window is full, which says \
+			there may be results before it rather than that there are, so \
+			following it can answer an empty window.""")
 		String previous,
 
 		/**
-		 * Cursor for the next window. Omitted on the final window.
+		 * Cursor for the next window. Omitted on the final window of a search
+		 * paged by {@code offset}. On a window reached by a cursor it is
+		 * present whenever the window is full, which says there may be
+		 * results after it rather than that there are.
 		 */
 		@Schema(description = """
 			Cursor for the next window, passed in `after`. Omitted on the \
-			final window. A cursor is an opaque token. Pass it back as it \
-			arrived, and do not read anything out of it.""")
+			final window of a search paged by `offset`. A window reached by a \
+			cursor carries it whenever the window is full, which says there \
+			may be results after it rather than that there are, so following \
+			it can answer an empty window. A cursor is an opaque token. Pass \
+			it back as it arrived, and do not read anything out of it.""")
 		String next,
 
 		/**

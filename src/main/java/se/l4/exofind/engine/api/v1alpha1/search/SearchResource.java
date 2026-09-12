@@ -2365,7 +2365,11 @@ public class SearchResource {
 		 * known exactly when the offset is; a window continued from a keyset
 		 * cursor only knows a full window may have more, and a cursor that
 		 * turns out to point past the end answers an empty window rather
-		 * than being wrong to hand out.
+		 * than being wrong to hand out. Walking back to the first page is
+		 * the everyday way to meet one: a full window at the start of the
+		 * results reads the same here as a full window in the middle, and
+		 * counting what lies outside it is the work keyset paging exists to
+		 * avoid. The response schema says so, so a client can expect it.
 		 */
 		/*
 		 * A second pass reorders the window it covers, and no key names a

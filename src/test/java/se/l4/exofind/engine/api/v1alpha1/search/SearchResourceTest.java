@@ -1372,6 +1372,25 @@ public class SearchResourceTest {
 
 		assertThat(ids(backToFirst), is(ids(first)));
 		assertThat(backToFirst.page().next(), is(notNullValue()));
+
+		/*
+		 * A full window reached by a cursor carries `previous` wherever it
+		 * sits, the start of the results included - keyset paging does not
+		 * count what lies outside the window, so following it here answers
+		 * nothing rather than being left out.
+		 */
+		assertThat(backToFirst.page().previous(), is(notNullValue()));
+
+		var beforeTheFirst = resource.search(
+			"many",
+			new SearchRequest(
+				null, null, null, List.of(byCode()), null, null, null, null, null, 10, null, null,
+				backToFirst.page().previous(),
+				null, null, null
+			)
+		);
+
+		assertThat(beforeTheFirst.hits(), is(empty()));
 	}
 
 	@Test

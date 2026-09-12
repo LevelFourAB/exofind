@@ -1207,6 +1207,7 @@ Properties of a score step (`detail` and each entry in `children`):
 
 - `offset` plus `limit` cannot exceed `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, and a request whose page ends past the cap returns `search:page:too_deep` even when its `offset` is below it.
 - `next` and `previous` cursors encode result positions rather than count offsets. Cursor navigation is uncapped by depth. Cursors are bound to the sort configuration of the original query; using a cursor with a different sort returns `search:cursor:sort_mismatch`.
+- A cursor says there may be results that way, not that there are. A page reached by `after` or `before` is a window around a position, and the engine does not count what lies outside it, so a full window always carries both cursors. Following one can answer an empty window with no hits - walking back to the first page and asking for `previous` again is the common way to reach one. A page reached by `offset` is counted, and there both cursors are exact.
 - Cursors inside `pages` encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
 - `pages` can be combined with `offset` or page cursors, but cannot be combined with `after` or `before`.
 - A search carrying a `rescore` block pages by counting inside the window and by cursor below it. See [Paging a rescored search](#paging-a-rescored-search).
