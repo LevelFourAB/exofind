@@ -742,7 +742,7 @@ public class SearchResource {
 		when = "A clause reaches deeper into objects than the node allows."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1078,7 +1078,7 @@ public class SearchResource {
 		when = "A clause reaches deeper into objects than the node allows."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1400,7 +1400,7 @@ public class SearchResource {
 		when = "A clause reaches deeper into objects than the node allows."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -2021,7 +2021,7 @@ public class SearchResource {
 		when = "The document holds no value along the `hits` path at `index`."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)

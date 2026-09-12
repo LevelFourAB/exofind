@@ -75,7 +75,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `search:locale:*` | Search naming a locale the engine has no rules for | `search:locale:unsupported` |
 | `search:timeout` | Search abandoned after running longer than the node allows | `search:timeout` |
 | `reindex:*` | Reindex job lookup, state, or record storage failure | `reindex:not_found`, `reindex:in_progress`, `reindex:io_error` |
-| Other `index:*` | Index-level state and lifecycle errors | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
+| Other `index:*` | Index-level state and lifecycle errors | `index:not_found`, `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
 | `indexer:*` | The node that writes an index could not be found or reached | `indexer:unavailable`, `indexer:unreachable`, `indexer:leadership_unreadable` |
 | `node:*` | The node failed to serve a request that is not itself wrong | `node:error` |
 | `validation` | The envelope of a refused request. Branch on the codes in its `errors` array | `validation` |
@@ -85,7 +85,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 The following error codes require specific handling in client applications. For the complete list of codes one endpoint answers with, see that endpoint on the [REST API pages](https://exofind.dev/api/).
 
 - `auth:unauthenticated`: Returned with HTTP `401` and the `WWW-Authenticate: Bearer` header when the request contains no accepted credential. Absent, malformed, unknown, or lapsed credentials all return this code to prevent key enumeration.
-- `auth:forbidden`: Returned when an authenticated caller lacks the required permission. The `permission` argument identifies the missing permission. When the caller has no permissions on the target index, the server returns `index:not-found` instead.
+- `auth:forbidden`: Returned when an authenticated caller lacks the required permission. The `permission` argument identifies the missing permission. When the caller has no permissions on the target index, the server returns `index:not_found` instead.
 - `indexer:unavailable`: Returned with HTTP `409` when the request requires the index writer node, but no writer node is available. This occurs when no candidate node is running, no candidate sets `EXOFIND_NODE_ADDRESS`, or the request was forwarded and the index moved. Retry the request once a candidate node is available.
 - `indexer:unreachable`: Returned with HTTP `502` when the request was forwarded to the index writer node, but the node did not respond. Retry the write operation.
 - `indexer:leadership_unreadable`: Returned with HTTP `503` when index leadership assignments cannot be read from shared state storage. Retry the request once storage responds.
@@ -148,7 +148,7 @@ The following error codes require specific handling in client applications. For 
 - `request:unknown_property`: Returned with HTTP `400` when the body holds a property the endpoint does not have. The `path` is a JSON Pointer to the property, such as `/fields/title/sortable`, and the `property` argument names it. The server refuses a misspelled property instead of dropping it, so check the spelling against the request fields the endpoint documents.
 - `request:value_invalid`: Returned with HTTP `400` when a value does not fit the property it is written at, such as a string where a number belongs, or a `type` that names no member of a tagged union. The `path` is a JSON Pointer to the value, and the `reason` argument says what did not fit.
 - `request:too_large`: Returned with HTTP `413` when the request body is larger than the node accepts, set by `quarkus.http.limits.max-body-size`. The response closes the connection. Send the documents in smaller batches.
-- `request:not_found`: Returned with HTTP `404` when no endpoint answers the path. A path that an endpoint answers, naming an index that does not exist, returns `index:not-found` instead.
+- `request:not_found`: Returned with HTTP `404` when no endpoint answers the path. A path that an endpoint answers, naming an index that does not exist, returns `index:not_found` instead.
 - `request:method_not_allowed`: Returned with HTTP `405` when the path is not answered for the HTTP method of the request. For the methods a path is answered for, see the [REST API pages](https://exofind.dev/api/).
 - `request:not_acceptable`: Returned with HTTP `406` when the `Accept` header names no media type the endpoint answers in.
 - `request:unsupported_media_type`: Returned with HTTP `415` when the `Content-Type` header names a media type the endpoint does not read.

@@ -115,7 +115,7 @@ The server returns the following authentication and authorization HTTP status co
 |--------|------|-------------|
 | `401 Unauthorized` | `auth:unauthenticated` | The request contains no credential, or the credential is malformed, unknown, or expired. The response includes a `WWW-Authenticate: Bearer` header. |
 | `403 Forbidden` | `auth:forbidden` | The authenticated caller lacks the required permission for the requested action. |
-| `404 Not Found` | `index:not-found` | The requested index does not match any index pattern in the key. |
+| `404 Not Found` | `index:not_found` | The requested index does not match any index pattern in the key. |
 
 ## The root key
 

@@ -6470,13 +6470,13 @@ paths:
           description: |-
             `If-Match` was sent for an index that does not exist, `books@2` named an index that does not exist, or the key has no grant covering the name.
 
-            Error codes: `index:not-found` - The name belongs to no index, or the key holds no grant covering it.
+            Error codes: `index:not_found` - The name belongs to no index, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The name belongs to no index, or the key holds no grant covering\
               \ it."
         "409":
@@ -6648,13 +6648,13 @@ paths:
           description: |-
             No index or generation has this name, or the key has no grant covering it.
 
-            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -6752,13 +6752,13 @@ paths:
           description: |-
             No index or generation has this name, or the key has no grant covering it.
 
-            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -6865,13 +6865,13 @@ paths:
           description: |-
             No index or generation has this name, or the key has no grant covering it.
 
-            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -7025,13 +7025,13 @@ paths:
           description: |-
             No index or generation has this name, or the key has no grant covering it.
 
-            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -7149,13 +7149,13 @@ paths:
           description: |-
             No index or generation has this name, or the key has no grant covering it.
 
-            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -7261,7 +7261,7 @@ paths:
           description: |-
             No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
 
-            Error codes: `reindex:not_found` - The index has no reindex job. `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
@@ -7269,7 +7269,7 @@ paths:
           x-error-codes:
           - code: reindex:not_found
             when: The index has no reindex job.
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -7414,13 +7414,13 @@ paths:
           description: |-
             The specified index or generation does not exist, or the caller key lacks permissions on the index.
 
-            Error codes: `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -7536,7 +7536,7 @@ paths:
           description: |-
             No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
 
-            Error codes: `reindex:not_found` - The index has no reindex job. `index:not-found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
@@ -7544,7 +7544,7 @@ paths:
           x-error-codes:
           - code: reindex:not_found
             when: The index has no reindex job.
-          - code: index:not-found
+          - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
         "409":
@@ -7816,13 +7816,13 @@ paths:
           description: |-
             No index has this name, the API key lacks permissions covering it, or an `If-Match` header was sent for an index that has no settings (`index:settings:not_found`).
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it. `index:settings:not_found` - An `If-Match` header was sent and the index has no settings for it to match.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it. `index:settings:not_found` - An `If-Match` header was sent and the index has no settings for it to match.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
           - code: index:settings:not_found
             when: An `If-Match` header was sent and the index has no settings for
@@ -8104,13 +8104,13 @@ paths:
           description: |-
             No index has this name, the API key lacks permissions covering it, or an `If-Match` header was sent for an index that has no settings (`index:settings:not_found`).
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it. `index:settings:not_found` - An `If-Match` header was sent and the index has no settings for it to match.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it. `index:settings:not_found` - An `If-Match` header was sent and the index has no settings for it to match.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
           - code: index:settings:not_found
             when: An `If-Match` header was sent and the index has no settings for
@@ -8246,7 +8246,7 @@ paths:
           description: |-
             The index has no search settings (`index:settings:not_found`), the index does not exist, or the API key lacks permission on the index.
 
-            Error codes: `index:settings:not_found` - The index has no search settings stored. `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:settings:not_found` - The index has no search settings stored. `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
@@ -8254,7 +8254,7 @@ paths:
           x-error-codes:
           - code: index:settings:not_found
             when: The index has no search settings stored.
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -8336,13 +8336,13 @@ paths:
           description: |-
             No index has this name, or the API key lacks permissions covering it.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -9182,13 +9182,13 @@ paths:
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "503":
           description: |-
@@ -9316,13 +9316,13 @@ paths:
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -9545,13 +9545,13 @@ paths:
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -9748,13 +9748,13 @@ paths:
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -9954,7 +9954,7 @@ paths:
           description: |-
             Nothing is indexed under the key, no index with the specified name exists on this node, or the caller key lacks permissions on the index.
 
-            Error codes: `index:document:not_found` - Nothing is indexed under the key. Index the document whole first. `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:document:not_found` - Nothing is indexed under the key. Index the document whole first. `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
@@ -9962,7 +9962,7 @@ paths:
           x-error-codes:
           - code: index:document:not_found
             when: Nothing is indexed under the key. Index the document whole first.
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -10095,13 +10095,13 @@ paths:
           description: |-
             No index with the specified name exists on this node, or the API key lacks permissions on the index.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -10341,13 +10341,13 @@ paths:
           description: |-
             The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -10744,13 +10744,13 @@ paths:
           description: |-
             The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -11139,7 +11139,7 @@ paths:
           description: |-
             The index does not exist, the key has no permissions on it, or the explanation names something the index does not hold.
 
-            Error codes: `index:explain:document_not_found` - Nothing is indexed under `key`. `index:explain:value_not_found` - The document holds no value along the `hits` path at `index`. `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:explain:document_not_found` - Nothing is indexed under `key`. `index:explain:value_not_found` - The document holds no value along the `hits` path at `index`. `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
@@ -11149,7 +11149,7 @@ paths:
             when: Nothing is indexed under `key`.
           - code: index:explain:value_not_found
             when: The document holds no value along the `hits` path at `index`.
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-
@@ -11367,13 +11367,13 @@ paths:
           description: |-
             The index does not exist, or the key has no permissions on it. An index on which a key has no permissions returns this status as though it did not exist.
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: index:not-found
+          - code: index:not_found
             when: "The node holds no such index, or the key has no permission on it."
         "409":
           description: |-

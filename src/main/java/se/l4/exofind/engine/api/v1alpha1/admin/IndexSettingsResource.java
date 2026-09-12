@@ -215,7 +215,7 @@ public class IndexSettingsResource {
 		when = "The index has no search settings stored."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -492,7 +492,7 @@ public class IndexSettingsResource {
 		when = "The `weight` of a ranking signal is below zero or is not a finite number."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -902,7 +902,7 @@ public class IndexSettingsResource {
 		when = "The `weight` of a ranking signal is below zero or is not a finite number."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1560,7 +1560,7 @@ public class IndexSettingsResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)

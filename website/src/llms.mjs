@@ -59,7 +59,7 @@ Before you call a node:
   accept and return \`application/x-ndjson\`, one document per line.
 - A key is sent as \`Authorization: Bearer <key>\`. Absent, malformed, unknown,
   and lapsed keys all answer \`401\`. An index a key has no permission on
-  answers \`404\` with the code \`index:not-found\`.
+  answers \`404\` with the code \`index:not_found\`.
 - An index name in a path is either the name, such as \`books\`, which serves
   from the active generation, or one generation, such as \`books@2\`.
 - \`GET /q/health/ready\` reports whether a node is ready. It is outside the

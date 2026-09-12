@@ -229,7 +229,7 @@ public class IndexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
@@ -837,7 +837,7 @@ public class IndexResource {
 		when = "The `weight` of a ranking signal is below zero."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The name belongs to no index, or the key holds no grant covering it."
 	)
@@ -1180,7 +1180,7 @@ public class IndexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
@@ -1288,7 +1288,7 @@ public class IndexResource {
 		when = "The path names an index without a generation. Name one as `index@generation`."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
@@ -1402,7 +1402,7 @@ public class IndexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
@@ -1504,7 +1504,7 @@ public class IndexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)

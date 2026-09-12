@@ -385,7 +385,7 @@ public class DocumentResource {
 		when = "A document is not an object keyed by field name."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -696,7 +696,7 @@ public class DocumentResource {
 		when = "A change is not an object keyed by path."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1097,7 +1097,7 @@ public class DocumentResource {
 		when = "Nothing is indexed under the key. Index the document whole first."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1342,7 +1342,7 @@ public class DocumentResource {
 		when = "The index definition declares no primary key, so a document cannot be named."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1619,7 +1619,7 @@ public class DocumentResource {
 		when = "A distance matcher does not say how far from the origin values may be."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)
@@ -1848,7 +1848,7 @@ public class DocumentResource {
 		when = "The `after` parameter cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
 	)

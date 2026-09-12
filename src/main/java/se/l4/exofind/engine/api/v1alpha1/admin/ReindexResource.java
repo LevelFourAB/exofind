@@ -206,7 +206,7 @@ public class ReindexResource {
 		when = "The source generation keeps no copy of the documents to read them back from. A reindex reads the stored copies."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
@@ -339,7 +339,7 @@ public class ReindexResource {
 		when = "The index has no reindex job."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
@@ -415,7 +415,7 @@ public class ReindexResource {
 		when = "The index has no reindex job."
 	)
 	@ReturnsError(
-		value = "index:not-found",
+		value = "index:not_found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)

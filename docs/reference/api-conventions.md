@@ -88,7 +88,7 @@ A `401 Unauthorized` response includes the `WWW-Authenticate: Bearer` header.
 Authentication and authorization responses hide the deployment contents from unprivileged callers:
 
 - Absent, malformed, unknown, and lapsed credentials all return `401 Unauthorized`.
-- An index on which a key has no permissions returns `404 Not Found` (code `index:not-found`) rather than `403 Forbidden`.
+- An index on which a key has no permissions returns `404 Not Found` (code `index:not_found`) rather than `403 Forbidden`.
 - Index listings omit indexes on which the key has no permissions rather than refusing the listing.
 
 ### The permission an endpoint requires
