@@ -199,11 +199,21 @@ public class DocumentResource {
 
 	private static final ErrorType DELETE_TARGET_REQUIRED =
 		ErrorType.withCode("request:delete:target_required")
-			.withMessage("Documents are removed by `keys` or by `query`, and one is required");
+			.withMessage(
+				"Documents are removed by `keys`, by `query` or by `all`, and one of them is required"
+			);
 
 	private static final ErrorType DELETE_TARGET_CONFLICTING =
 		ErrorType.withCode("request:delete:target_conflicting")
-			.withMessage("Documents are removed by `keys` or by `query`, not by both");
+			.withMessage(
+				"Documents are removed by `keys`, by `query` or by `all`, and only one of them can be used"
+			);
+
+	private static final ErrorType DELETE_QUERY_EMPTY =
+		ErrorType.withCode("request:delete:query_empty")
+			.withMessage(
+				"A `query` requires at least one clause; use `all` to remove every document"
+			);
 
 	private static final ErrorType DELETE_LOCALE_WITHOUT_QUERY =
 		ErrorType.withCode("request:delete:locale_without_query")
@@ -1438,7 +1448,7 @@ public class DocumentResource {
 
 	/**
 	 * Deletes documents from an index matching a list of primary keys or a
-	 * search query.
+	 * search query, or every document in the index.
 	 *
 	 * @param name
 	 * @param body
@@ -1451,17 +1461,18 @@ public class DocumentResource {
 	@ServedBy(ServedBy.Node.INDEXER)
 	@Operation(
 		operationId = "deleteDocuments",
-		summary = "Delete documents by keys or query",
+		summary = "Delete documents by keys, query, or all",
 		description = """
 			Deletes multiple documents matching a list of primary keys or a \
-			search query. The request body must include either `keys` or \
-			`query`, but not both.
+			search query, or empties the index. The request body must name \
+			exactly one of `keys`, `query`, and `all`.
 
 			When deleting by `keys`, all keys are validated before any \
 			documents are removed. If any key is invalid, no documents are \
 			removed. When deleting by `query`, the operation removes matching \
 			committed searchable documents along with any uncommitted \
-			documents indexed since the last commit."""
+			documents indexed since the last commit. A `query` requires at \
+			least one clause. To empty the index, set `all` to `true`."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -1481,12 +1492,17 @@ public class DocumentResource {
 	@ReturnsError(
 		value = "request:delete:target_required",
 		status = 400,
-		when = "The body holds neither `keys` nor `query`."
+		when = "The body holds none of `keys`, `query`, and `all`."
 	)
 	@ReturnsError(
 		value = "request:delete:target_conflicting",
 		status = 400,
-		when = "The body holds both `keys` and `query`. Send one of them."
+		when = "The body holds more than one of `keys`, `query`, and `all`. Send one of them."
+	)
+	@ReturnsError(
+		value = "request:delete:query_empty",
+		status = 400,
+		when = "The body holds a `query` without clauses. Send `all` to empty the index."
 	)
 	@ReturnsError(
 		value = "request:delete:locale_without_query",
@@ -1702,19 +1718,34 @@ public class DocumentResource {
 					name = "query",
 					summary = "By query",
 					value = DeleteRequest.BY_QUERY
+				),
+				@ExampleObject(
+					name = "all",
+					summary = "Every document",
+					value = DeleteRequest.ALL
 				)
 			}
 		))
 		DeleteRequest body
 	) {
-		if(body == null || body.keys() == null && body.query() == null) {
+		var everything = body != null && body.removesEverything();
+
+		if(body == null || body.keys() == null && body.query() == null && !everything) {
 			throw new ValidationException(DELETE_TARGET_REQUIRED.toMessage(Location.create("")));
 		}
 
-		if(body.keys() != null && body.query() != null) {
+		var targets = (body.keys() != null ? 1 : 0)
+			+ (body.query() != null ? 1 : 0)
+			+ (everything ? 1 : 0);
+
+		if(targets > 1) {
 			throw new ValidationException(
 				DELETE_TARGET_CONFLICTING.toMessage(Location.create(""))
 			);
+		}
+
+		if(body.query() != null && body.query().isEmpty()) {
+			throw new ValidationException(DELETE_QUERY_EMPTY.toMessage(Location.create("query")));
 		}
 
 		if(body.locale() != null && body.query() == null) {
@@ -1724,6 +1755,16 @@ public class DocumentResource {
 		}
 
 		checkWritable(name);
+
+		if(everything) {
+			return new DeleteResponse(measure("delete_by_query", () -> write(name, index -> {
+				try {
+					return index.deleteByQuery(Lists.immutable.empty(), null);
+				} catch(IOException e) {
+					throw new IndexException(IO_ERROR, e, "index", name);
+				}
+			})));
+		}
 
 		if(body.keys() != null) {
 			return new DeleteResponse(measure("delete", () -> write(name, index -> {

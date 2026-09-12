@@ -393,13 +393,13 @@ The endpoint returns status `204 No Content` whether or not a document existed u
 DELETE /v1alpha1/indexes/foods/documents/1
 ```
 
-### Delete documents by keys or query
+### Delete documents by keys, query, or all
 
 ```
 POST /v1alpha1/indexes/{name}/documents/actions/delete
 ```
 
-Deletes multiple documents matching a list of primary keys or a search query. The request body must include either `keys` or `query`, but not both.
+Deletes multiple documents matching a list of primary keys or a search query, or empties the index. The request body must name exactly one of `keys`, `query`, and `all`.
 
 #### Request body
 
@@ -408,7 +408,8 @@ The request body supports the following fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `keys` | array of strings | List of primary keys to delete. An empty array deletes nothing. |
-| `query` | array of objects | Query clauses matching documents to delete. For clause syntax, see the [Search API](search-api.md). An empty array matches and deletes all documents. |
+| `query` | array of objects | Query clauses matching documents to delete. For clause syntax, see the [Search API](search-api.md). The array requires at least one clause. |
+| `all` | boolean | Set to `true` to delete every document and empty the index. |
 | `locale` | string | Optional. Specifies the locale variant to match for locale-specific fields. Valid only when `query` is provided. |
 
 The following example deletes documents by keys:
@@ -426,10 +427,24 @@ The following example deletes documents by query:
 }
 ```
 
+The following example deletes every document in the index:
+
+```json
+{ "all": true }
+```
+
+#### Errors
+
+- `request:delete:target_required`: The body names none of `keys`, `query`, and `all`.
+- `request:delete:target_conflicting`: The body names more than one of `keys`, `query`, and `all`.
+- `request:delete:query_empty`: The body names a `query` without clauses. Send `all` to empty the index.
+- `request:delete:locale_without_query`: The body states a `locale` without a `query`.
+
 #### Execution behavior
 
 - When deleting by `keys`, all keys are validated before any documents are removed. If any key is invalid, no documents are removed.
 - When deleting by `query`, the operation removes matching committed searchable documents and any uncommitted documents indexed since the last commit.
+- When deleting with `all`, the operation removes every document the same way a query does, including documents indexed since the last commit.
 
 #### Response
 
@@ -439,7 +454,7 @@ The endpoint returns status `200 OK` with the count of deleted documents:
 { "deleted": 3 }
 ```
 
-For requests using `keys`, `deleted` is the number of keys provided in the request. For requests using `query`, `deleted` is the number of matching committed searchable documents.
+For requests using `keys`, `deleted` is the number of keys provided in the request. For requests using `query` or `all`, `deleted` is the number of matching committed searchable documents.
 
 ## Failures
 

@@ -525,8 +525,8 @@ components:
           examples:
           - sv
     DeleteRequest:
-      description: "Which documents to remove. The request must carry either `keys`\
-        \ or `query`, but not both (`request:delete:target_required`, `request:delete:target_conflicting`)."
+      description: "Which documents to remove. The request must name exactly one of\
+        \ `keys`, `query`, and `all` (`request:delete:target_required`, `request:delete:target_conflicting`)."
       examples:
       - keys:
         - "1"
@@ -535,6 +535,7 @@ components:
         - field: category
           match:
             value: sylt
+      - all: true
       type: object
       properties:
         keys:
@@ -551,8 +552,13 @@ components:
             $ref: "#/components/schemas/Clause"
           description: "Query clauses matching documents to delete, using search query\
             \ clause syntax. Removes matching committed searchable documents and any\
-            \ uncommitted documents indexed since the last commit. An empty array\
-            \ matches and deletes all documents."
+            \ uncommitted documents indexed since the last commit. The array requires\
+            \ at least one clause (`request:delete:query_empty`). To empty the index,\
+            \ send `all` instead."
+        all:
+          type: boolean
+          description: Set to `true` to remove every document and empty the index.
+            Cannot be combined with `keys` or `query`.
         locale:
           type: string
           description: "BCP 47 locale tag used to match locale-specific fields, defaulting\
@@ -9399,11 +9405,11 @@ paths:
       x-permission-anonymous: false
   /v1alpha1/indexes/{name}/documents/actions/delete:
     post:
-      summary: Delete documents by keys or query
+      summary: "Delete documents by keys, query, or all"
       description: |-
-        Deletes multiple documents matching a list of primary keys or a search query. The request body must include either `keys` or `query`, but not both.
+        Deletes multiple documents matching a list of primary keys or a search query, or empties the index. The request body must name exactly one of `keys`, `query`, and `all`.
 
-        When deleting by `keys`, all keys are validated before any documents are removed. If any key is invalid, no documents are removed. When deleting by `query`, the operation removes matching committed searchable documents along with any uncommitted documents indexed since the last commit.
+        When deleting by `keys`, all keys are validated before any documents are removed. If any key is invalid, no documents are removed. When deleting by `query`, the operation removes matching committed searchable documents along with any uncommitted documents indexed since the last commit. A `query` requires at least one clause. To empty the index, set `all` to `true`.
 
         Requires the `documents.delete` permission on the index the path names. The `writer` and `admin` roles include it.
       operationId: deleteDocuments
@@ -9435,6 +9441,10 @@ paths:
                   - field: category
                     match:
                       value: sylt
+              all:
+                summary: Every document
+                value:
+                  all: true
             schema:
               $ref: "#/components/schemas/DeleteRequest"
         required: true
@@ -9453,16 +9463,20 @@ paths:
           description: |-
             The body does not name what to delete, or it names a key or a query the index cannot use.
 
-            Error codes: `request:delete:target_required` - The body holds neither `keys` nor `query`. `request:delete:target_conflicting` - The body holds both `keys` and `query`. Send one of them. `request:delete:locale_without_query` - The body states a `locale` without a `query`. `index:query:invalid_value` - A key cannot be read as the type of the primary key field. `request:delete:key_required` - An entry of `keys` carries no key. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named by `keys`. `search:required` - A part of `query` that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause of `query` does not name the field to match. `search:clause:match_required` - A `field` clause of `query` does not say what to look for in the field. `search:clause:text_required` - A `text` clause of `query` carries no text to search for. `search:clause:path_required` - A `nested` clause of `query` does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause of `query` carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be.
+            Error codes: `request:delete:target_required` - The body holds none of `keys`, `query`, and `all`. `request:delete:target_conflicting` - The body holds more than one of `keys`, `query`, and `all`. Send one of them. `request:delete:query_empty` - The body holds a `query` without clauses. Send `all` to empty the index. `request:delete:locale_without_query` - The body states a `locale` without a `query`. `index:query:invalid_value` - A key cannot be read as the type of the primary key field. `request:delete:key_required` - An entry of `keys` carries no key. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named by `keys`. `search:required` - A part of `query` that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause of `query` does not name the field to match. `search:clause:match_required` - A `field` clause of `query` does not say what to look for in the field. `search:clause:text_required` - A `text` clause of `query` carries no text to search for. `search:clause:path_required` - A `nested` clause of `query` does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause of `query` carries no vector to find the neighbours of. `search:clause:k_invalid` - The `k` of a `knn` clause is missing or not above zero. `search:clause:weight_invalid` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_invalid` - The `slop` of a `text` clause is below zero. `search:clause:slop_not_applicable` - A `text` clause sets `slop` without matching as a phrase. `search:clause:join_not_applicable` - A `text` clause sets `join` without matching what somebody typed. `search:clause:rankings_invalid` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_invalid` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_invalid` - The `depth` of a `fuse` clause is below one result. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
           - code: request:delete:target_required
-            when: The body holds neither `keys` nor `query`.
+            when: "The body holds none of `keys`, `query`, and `all`."
           - code: request:delete:target_conflicting
-            when: The body holds both `keys` and `query`. Send one of them.
+            when: "The body holds more than one of `keys`, `query`, and `all`. Send\
+              \ one of them."
+          - code: request:delete:query_empty
+            when: The body holds a `query` without clauses. Send `all` to empty the
+              index.
           - code: request:delete:locale_without_query
             when: The body states a `locale` without a `query`.
           - code: index:query:invalid_value

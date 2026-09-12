@@ -514,7 +514,7 @@ public class DocumentResourceTest {
 
 		var response = resource.delete(
 			"foods",
-			new DeleteRequest(List.of("1", "3"), null, null)
+			new DeleteRequest(List.of("1", "3"), null, null, null)
 		);
 		index.commit();
 
@@ -544,6 +544,7 @@ public class DocumentResourceTest {
 			new DeleteRequest(
 				null,
 				List.of(new Clause.Field("tags", new Matcher.Equals("sylt"))),
+				null,
 				null
 			)
 		);
@@ -555,12 +556,72 @@ public class DocumentResourceTest {
 	}
 
 	@Test
+	public void testAllRemovesEveryDocument() throws IOException {
+		var index = foods();
+
+		resource.add(
+			"foods",
+			new DocumentsRequest(List.of(document("id", "1"), document("id", "2")))
+		);
+		index.commit();
+
+		var response = resource.delete("foods", new DeleteRequest(null, null, true, null));
+		index.commit();
+
+		assertThat(response.deleted(), is(2));
+		assertThat(index.getDocument("1"), is(nullValue()));
+		assertThat(index.getDocument("2"), is(nullValue()));
+	}
+
+	/**
+	 * Emptying the index is asked for with {@code all}, so a query that names
+	 * no clauses is refused rather than taken for one.
+	 */
+	@Test
+	public void testAQueryWithoutClausesIsRefused() throws IOException {
+		var index = foods();
+
+		resource.add("foods", new DocumentsRequest(List.of(document("id", "1"))));
+		index.commit();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.delete("foods", new DeleteRequest(null, List.of(), null, null))
+		);
+
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("request:delete:query_empty")
+		);
+		assertThat(index.getDocument("1"), is(notNullValue()));
+	}
+
+	/**
+	 * Saying not to remove everything names nothing to remove, and is answered
+	 * the same way as leaving it out.
+	 */
+	@Test
+	public void testAllSetToFalseNamesNothingToRemove() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.delete("foods", new DeleteRequest(null, null, false, null))
+		);
+
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("request:delete:target_required")
+		);
+	}
+
+	@Test
 	public void testARequestNamingNothingToRemoveIsRefused() throws IOException {
 		foods();
 
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.delete("foods", new DeleteRequest(null, null, null))
+			() -> resource.delete("foods", new DeleteRequest(null, null, null, null))
 		);
 
 		assertThat(
@@ -575,7 +636,22 @@ public class DocumentResourceTest {
 
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.delete("foods", new DeleteRequest(List.of("1"), List.of(), null))
+			() -> resource.delete("foods", new DeleteRequest(List.of("1"), List.of(), null, null))
+		);
+
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("request:delete:target_conflicting")
+		);
+	}
+
+	@Test
+	public void testARequestNamingBothKeysAndAllIsRefused() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.delete("foods", new DeleteRequest(List.of("1"), null, true, null))
 		);
 
 		assertThat(
@@ -594,7 +670,7 @@ public class DocumentResourceTest {
 
 		var e = assertThrows(
 			ValidationException.class,
-			() -> resource.delete("foods", new DeleteRequest(keys, null, null))
+			() -> resource.delete("foods", new DeleteRequest(keys, null, null, null))
 		);
 
 		assertThat(
@@ -611,7 +687,7 @@ public class DocumentResourceTest {
 			ValidationException.class,
 			() -> resource.delete(
 				"foods",
-				new DeleteRequest(null, List.of(new Clause.Field("tags", null)), null)
+				new DeleteRequest(null, List.of(new Clause.Field("tags", null)), null, null)
 			)
 		);
 

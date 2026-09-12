@@ -32,7 +32,7 @@ The `operation` tag names the request rather than the endpoint, so the JSON and 
 - `add`: indexing documents, and counting every document the request carried.
 - `update`: changing fields of documents, by batch or by key, and counting the documents that changed. A key skipped with `?missing=skip` counts as none.
 - `delete`: removing documents by key, and counting the keys the request carried. A key nothing was indexed under counts all the same.
-- `delete_by_query`: removing documents by query, and counting the committed documents the query matched.
+- `delete_by_query`: removing documents by query or emptying the index with `all`, and counting the committed documents the removal matched.
 
 ### Synchronization and storage metrics
 

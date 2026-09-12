@@ -169,7 +169,7 @@ public class DocumentWriteMetricsTest {
 		var index = catalogue();
 		index.commit();
 
-		resource.delete("catalogue", new DeleteRequest(List.of("1", "2"), null, null));
+		resource.delete("catalogue", new DeleteRequest(List.of("1", "2"), null, null, null));
 
 		assertThat(writes("delete", Meters.OUTCOME_SUCCESS), is(1L));
 		assertThat(documents("delete"), is(2.0));
@@ -185,12 +185,27 @@ public class DocumentWriteMetricsTest {
 			new DeleteRequest(
 				null,
 				List.of(new Clause.Field("category", new Matcher.Equals("bread"))),
+				null,
 				null
 			)
 		);
 
 		assertThat(writes("delete_by_query", Meters.OUTCOME_SUCCESS), is(1L));
 		assertThat(documents("delete_by_query"), is(1.0));
+	}
+
+	/**
+	 * Emptying the index is a query removal of everything, so it is reported
+	 * under the same operation as one that names clauses.
+	 */
+	@Test
+	public void emptyingTheIndexReportsAsARemovalByQuery() throws IOException {
+		var index = catalogue();
+		index.commit();
+
+		resource.delete("catalogue", new DeleteRequest(null, null, true, null));
+
+		assertThat(writes("delete_by_query", Meters.OUTCOME_SUCCESS), is(1L));
 	}
 
 	@Test

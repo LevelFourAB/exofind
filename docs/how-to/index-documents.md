@@ -91,7 +91,13 @@ Before you index documents, ensure you have:
    { "query": [ { "field": "category", "match": { "value": "Hats" } } ] }
    ```
 
-   Query clauses use the same syntax as the [Search API](../reference/search-api.md). To remove all documents and empty the index, send an empty `query` array.
+   Query clauses use the same syntax as the [Search API](../reference/search-api.md). A `query` requires at least one clause. To remove all documents and empty the index, send `all` instead:
+
+   ```http
+   POST /v1alpha1/indexes/products/documents/actions/delete
+
+   { "all": true }
+   ```
 
 ## Confirming the result
 
