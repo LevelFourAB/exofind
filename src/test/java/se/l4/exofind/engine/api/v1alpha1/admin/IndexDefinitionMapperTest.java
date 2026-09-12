@@ -1476,8 +1476,35 @@ public class IndexDefinitionMapperTest {
 		assertThat(stored.getRanking().getSignals(1).getDecay().getHalfLifeSeconds(), is(604800L));
 		assertThat(stored.getRanking().getSignals(1).hasWeight(), is(false));
 
+		/*
+		 * The tie breakers were sent empty and read back left out, which is
+		 * what an empty list means everywhere else in a definition.
+		 */
 		var api = IndexDefinitionMapper.toApi(stored);
-		assertThat(api.ranking(), is(ranking));
+		assertThat(api.ranking(), is(new IndexDefinition.Ranking(null, ranking.signals())));
+	}
+
+	/**
+	 * A ranking that holds nothing reads back holding nothing, rather than
+	 * growing a list the caller never named.
+	 */
+	@Test
+	public void testEmptyRankingReadsBackEmpty() {
+		var stored = IndexDefinitionMapper.toStored(
+			new IndexDefinition(
+				null,
+				null,
+				null,
+				new IndexDefinition.Ranking(List.of(), List.of()),
+				null,
+				null,
+				null
+			)
+		);
+
+		var api = IndexDefinitionMapper.toApi(stored);
+		assertThat(api.ranking(), is(new IndexDefinition.Ranking(null, null)));
+		IndexDefinitionMapper.checkRepresentable(stored);
 	}
 
 	@Test

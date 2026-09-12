@@ -127,18 +127,20 @@ final class RankingMapper {
 	 * @return
 	 */
 	static IndexDefinition.Ranking toApi(RankingConfig ranking) {
-		var tieBreakers = ranking.getTieBreakersList().stream()
-			.map(tieBreaker -> new IndexDefinition.Ranking.TieBreaker(
-				tieBreaker.hasField() ? tieBreaker.getField() : null,
-				tieBreaker.hasDirection() ? toApi(tieBreaker.getDirection()) : null
-			))
-			.toList();
-
 		/*
-		 * Left out rather than rendered empty, so a definition that ranks
-		 * by nothing but how well documents match reads the way it did
-		 * before there were signals to declare.
+		 * Both lists are left out rather than rendered empty, so a ranking
+		 * that orders by nothing but how well documents match reads back the
+		 * way it was written instead of growing empty lists it never named.
 		 */
+		var tieBreakers = ranking.getTieBreakersList().isEmpty()
+			? null
+			: ranking.getTieBreakersList().stream()
+				.map(tieBreaker -> new IndexDefinition.Ranking.TieBreaker(
+					tieBreaker.hasField() ? tieBreaker.getField() : null,
+					tieBreaker.hasDirection() ? toApi(tieBreaker.getDirection()) : null
+				))
+				.toList();
+
 		var signals = ranking.getSignalsList().isEmpty()
 			? null
 			: ranking.getSignalsList().stream()
