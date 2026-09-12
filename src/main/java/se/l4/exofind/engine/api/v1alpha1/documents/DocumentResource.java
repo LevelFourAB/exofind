@@ -353,8 +353,9 @@ public class DocumentResource {
 		description = """
 			A document was rejected by validation, a line could not be read as \
 			JSON, or the request body could not be parsed. The `path` of each \
-			error identifies the document and field location, such as \
-			`documents[1].nonexistent`.""",
+			error identifies the document and field location as the body \
+			carries it, such as `documents[1].nonexistent` for a `documents` \
+			array and `[1].nonexistent` for a newline-delimited body.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -459,7 +460,7 @@ public class DocumentResource {
 			for(var i = 0; i < documents.size(); i++) {
 				var position = i;
 				write(name, index -> {
-					addDocument(index, name, documents.get(position), position);
+					addDocument(index, name, documents.get(position), atDocument(position));
 					return null;
 				});
 			}
@@ -515,7 +516,7 @@ public class DocumentResource {
 					var json = documents.nextValue();
 					var position = indexed;
 					write(name, index -> {
-						addDocument(index, name, json, position);
+						addDocument(index, name, json, atLine(position));
 						return null;
 					});
 
@@ -780,7 +781,8 @@ public class DocumentResource {
 			for(var i = 0; i < documents.size(); i++) {
 				var position = i;
 				var applied = write(name, index -> updateDocument(
-					index, name, documents.get(position), position, skipMissing, missingKeys
+					index, name, documents.get(position), atDocument(position),
+					skipMissing, missingKeys
 				));
 
 				if(applied) {
@@ -841,7 +843,7 @@ public class DocumentResource {
 					var json = documents.nextValue();
 					var position = read;
 					var applied = write(name, index -> updateDocument(
-						index, name, json, position, skipMissing, missingKeys
+						index, name, json, atLine(position), skipMissing, missingKeys
 					));
 
 					if(applied) {
@@ -883,7 +885,7 @@ public class DocumentResource {
 	 * Apply one change of a request, reporting what is wrong with it as
 	 * problems of the request rather than of the change on its own.
 	 *
-	 * @param position
+	 * @param document
 	 *   where in the request the change sits, which is what its errors are
 	 *   placed under
 	 * @param missingKeys
@@ -896,13 +898,13 @@ public class DocumentResource {
 		Index index,
 		String name,
 		Map<String, Object> json,
-		int position,
+		ObjectLocation document,
 		boolean skipMissing,
 		MutableList<Object> missingKeys
 	) {
 		if(json == null) {
 			throw new ValidationException(
-				NOT_AN_OBJECT.toMessage(at(position, ObjectLocation.root()))
+				NOT_AN_OBJECT.toMessage(document)
 			);
 		}
 
@@ -913,7 +915,7 @@ public class DocumentResource {
 			updated = index.updateDocument(patch);
 		} catch(ValidationException e) {
 			throw new ValidationException(
-				e.getErrors().collect(error -> error.at(at(position, error.getLocation())))
+				e.getErrors().collect(error -> error.at(at(document, error.getLocation())))
 			);
 		} catch(IOException e) {
 			throw new IndexException(IO_ERROR, e, "index", name);
@@ -932,7 +934,7 @@ public class DocumentResource {
 		if(!skipMissing) {
 			throw new ValidationException(
 				UPDATE_NOT_FOUND.toMessage(
-					at(position, ObjectLocation.root()),
+					document,
 					"key", String.valueOf(key)
 				)
 			);
@@ -2087,10 +2089,15 @@ public class DocumentResource {
 		}
 	}
 
+	/**
+	 * Say that a line of a newline delimited body could not be read as JSON.
+	 * Only such a body reads documents one at a time, so the line is placed as
+	 * one of a body with no wrapper.
+	 */
 	private static ValidationException malformed(JacksonException e, int position) {
 		return new ValidationException(
 			MALFORMED.toMessage(
-				at(position, ObjectLocation.root()),
+				atLine(position),
 				"reason",
 				e.getOriginalMessage()
 			)
@@ -2104,7 +2111,7 @@ public class DocumentResource {
 	 * @param index
 	 * @param name
 	 * @param json
-	 * @param position
+	 * @param document
 	 *   where in the request the document sits, which is what the errors of
 	 *   the document are placed under
 	 */
@@ -2112,11 +2119,11 @@ public class DocumentResource {
 		Index index,
 		String name,
 		Map<String, Object> json,
-		int position
+		ObjectLocation document
 	) {
 		if(json == null) {
 			throw new ValidationException(
-				NOT_AN_OBJECT.toMessage(at(position, ObjectLocation.root()))
+				NOT_AN_OBJECT.toMessage(document)
 			);
 		}
 
@@ -2124,7 +2131,7 @@ public class DocumentResource {
 			index.addDocument(DocumentMapper.toEngine(index, json));
 		} catch(ValidationException e) {
 			throw new ValidationException(
-				e.getErrors().collect(error -> error.at(at(position, error.getLocation())))
+				e.getErrors().collect(error -> error.at(at(document, error.getLocation())))
 			);
 		} catch(IOException e) {
 			throw new IndexException(IO_ERROR, e, "index", name);
@@ -2132,18 +2139,41 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Place something said about a document inside the request that carried
-	 * it, so {@code name} of the third document reads
-	 * {@code documents[2].name}.
+	 * Place one document of a body that carries the documents in a
+	 * {@code documents} array, so the third document reads
+	 * {@code documents[2]}.
 	 *
 	 * @param position
+	 * @return
+	 */
+	private static ObjectLocation atDocument(int position) {
+		return ObjectLocation.root().forField("documents").forIndex(position);
+	}
+
+	/**
+	 * Place one document of a newline delimited body, which carries the
+	 * documents one per line and has no wrapper to name, so the third document
+	 * reads {@code [2]}.
+	 *
+	 * @param position
+	 * @return
+	 */
+	private static ObjectLocation atLine(int position) {
+		return ObjectLocation.root().forIndex(position);
+	}
+
+	/**
+	 * Place something said about a document inside the request that carried
+	 * it, so {@code name} of the third document of a {@code documents} array
+	 * reads {@code documents[2].name}.
+	 *
+	 * @param document
 	 * @param within
 	 * @return
 	 */
-	private static ObjectLocation at(int position, Location within) {
-		var prefix = "documents[" + position + ']';
+	private static ObjectLocation at(ObjectLocation document, Location within) {
 		var inside = within.describe();
 
-		return () -> inside.isEmpty() ? prefix : prefix + '.' + inside;
+		return inside.isEmpty() ? document : document.forField(inside);
 	}
 }

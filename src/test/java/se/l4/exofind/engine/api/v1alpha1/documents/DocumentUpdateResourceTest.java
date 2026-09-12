@@ -241,6 +241,31 @@ public class DocumentUpdateResourceTest {
 		assertThat(e.getErrors().get(0).getLocation().describe(), is("documents[1].price"));
 	}
 
+	/**
+	 * A newline delimited body carries one change per line and no wrapper, so
+	 * the path of an error has no wrapper to name either.
+	 */
+	@Test
+	public void aChangeSentOnePerLineSaysWhichLineItSatOn() throws IOException {
+		catalogue();
+
+		var body = """
+			{"id": "1", "price": 1.5}
+			{"id": "2", "price": "not a number"}
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.updateStream(
+				"catalogue",
+				null,
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("[1].price"));
+	}
+
 	@Test
 	public void anIndexThatKeepsNoCopyOfItsDocumentsIsRefused() throws IOException {
 		indexes.create(

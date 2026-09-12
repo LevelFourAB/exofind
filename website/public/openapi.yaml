@@ -9283,7 +9283,7 @@ paths:
                     indexed: 2
         "400":
           description: |-
-            A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location, such as `documents[1].nonexistent`.
+            A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location as the body carries it, such as `documents[1].nonexistent` for a `documents` array and `[1].nonexistent` for a newline-delimited body.
 
             Error codes: `request:document:malformed` - A line of the body could not be read as JSON. `request:missing_body` - The request carries no documents. `request:document:not_an_object` - A document is not an object keyed by field name. `request:unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again.
           content:

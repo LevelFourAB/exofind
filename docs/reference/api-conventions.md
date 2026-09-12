@@ -247,6 +247,8 @@ Every `path` uses the same form, wherever in the request the problem sits. A pat
 | One element of a list | `[n]`, counted from zero | `documents[1].name` |
 | A key of a free-form map, such as `metadata` | The key in brackets and double quotes, with `\` and `"` escaped | `metadata["build.sha"]` |
 
+A path starts at the root of the request body. A newline-delimited body carries one object per line and no wrapper to name, so a path in it starts with the element, as `[1].name`.
+
 A field inside an `object` field is named by its own dotted path, so a `path` reaches it the same way a query does. You can paste the `path` of an error into a request that takes a field.
 
 Error codes use colon-separated namespaces (such as `index:field:invalid_name`). Error codes are stable across API versions and are never renamed or reused. For the complete error code list, see [Errors](errors.md).

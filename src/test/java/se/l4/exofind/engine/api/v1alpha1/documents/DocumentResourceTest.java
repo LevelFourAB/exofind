@@ -463,6 +463,58 @@ public class DocumentResourceTest {
 		);
 	}
 
+	/**
+	 * A newline delimited body carries one document per line and no wrapper, so
+	 * the path of an error has no wrapper to name either.
+	 */
+	@Test
+	public void testADocumentSentOnePerLineSaysWhichLineItSatOn() throws IOException {
+		foods();
+
+		var body = """
+			{"id": "1", "name": "blåbärssylt"}
+			{"id": "2", "nonexistent": "value"}
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.addStream(
+				"foods",
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		assertThat(
+			e.getErrors().collect(error -> error.getLocation().describe()).toList(),
+			contains("[1].nonexistent")
+		);
+	}
+
+	/**
+	 * A line that cannot be read as JSON is placed the way a document the index
+	 * refuses is.
+	 */
+	@Test
+	public void testALineThatIsNotJsonSaysWhichLineItWas() throws IOException {
+		foods();
+
+		var body = """
+			{"id": "1", "name": "blåbärssylt"}
+			not json
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.addStream(
+				"foods",
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("request:document:malformed"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("[1]"));
+	}
+
 	@Test
 	public void testARequestWithoutDocumentsIsRefused() {
 		assertThrows(

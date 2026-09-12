@@ -487,6 +487,8 @@ The following example shows an error response:
 }
 ```
 
+The `path` names the location in the body you sent. A body with a `documents` array names the array, as `documents[1].nonexistent`. A newline-delimited body has no wrapper, so the path starts at the document, as `[1].nonexistent`. Both count from zero.
+
 ### HTTP status codes
 
 The API uses the following HTTP status codes:

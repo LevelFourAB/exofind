@@ -131,6 +131,8 @@ If a request fails, use the following guidelines:
   }
   ```
 
+  A newline-delimited request carries no `documents` array, so the path starts at the document instead, as `[41].name`.
+
   Fix the invalid document and reissue the request. Because indexing replaces documents by primary key, previously indexed documents are overwritten safely.
 
 - **`409 Conflict`**: The index has no active writer or is synchronizing. Retry the request.
