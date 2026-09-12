@@ -1620,6 +1620,69 @@ public class SearchResourceTest {
 		assertThat(clause.matched(), is(false));
 	}
 
+	@Test
+	public void testExplainAnswersUnderAPageASearchWouldRefuse() throws IOException {
+		books();
+
+		/*
+		 * A page a search would refuse three times over: past the cap, larger
+		 * than allowed, and started from a cursor this engine never handed out
+		 * while also counting an offset.
+		 */
+		var response = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null,
+				SearchLimits.defaults().maxLimit() + 1,
+				SearchLimits.defaults().maxPageDepth() + 1,
+				"not-a-cursor",
+				null, null, null, null
+			)
+		);
+
+		assertThat(response.matched(), is(true));
+		assertThat(response.score(), is(greaterThan(0f)));
+	}
+
+	@Test
+	public void testExplainAnswersWithoutTheSecondPass() throws IOException {
+		books();
+
+		var plain = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null
+			)
+		);
+
+		// A window of zero is one a search refuses, and an explanation ignores
+		var rescored = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null,
+				new Rescore(
+					0,
+					List.of(new Clause.Field("category", new Matcher.Equals("fiction"))),
+					null,
+					null
+				)
+			)
+		);
+
+		assertThat(rescored.score(), is(plain.score()));
+	}
+
 	private static ExplainResponse.Detail stepAt(ExplainResponse.Detail detail, String clause) {
 		if(clause.equals(detail.clause())) {
 			return detail;

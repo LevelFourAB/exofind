@@ -10778,7 +10778,7 @@ paths:
       description: |-
         Reports how one hit scores under a search, as a tree of steps naming the clauses of the request they were compiled from and the fields of the index definition they read.
 
-        The body is a search request; `limit`, `offset`, `after`, `before`, `sort`, `facets`, `highlight` and `matched` are ignored. A hit that the search does not match is reported with `matched` set to `false` rather than refused.
+        The body is a search request; `limit`, `offset`, `after`, `before`, `pages`, `total`, `sort`, `facets`, `highlight`, `matched`, `fields` and `rescore` are ignored, and are not checked either, so a cursor taken under another sort or an offset past what the node allows still gets an answer. A hit that the search does not match is reported with `matched` set to `false` rather than refused.
 
         Requires the `search` permission on the index the path names. The `reader`, `writer` and `admin` roles include it. A node that sets an anonymous key serves this endpoint to requests that carry no credential.
       operationId: explainSearch

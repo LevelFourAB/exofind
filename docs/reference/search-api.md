@@ -1113,7 +1113,7 @@ The following request properties are read:
 - `signals`
 - `hits.path`
 
-The following request properties are ignored: `limit`, `offset`, `after`, `before`, `sort`, `facets`, `highlight`, `matched`, `fields`, `rescore`, and `total`. If the search request specifies a field sort, the endpoint still computes and explains the relevance score. Because `rescore` is ignored, the explained score is the one the first pass gave, without the second pass.
+The following request properties are ignored: `limit`, `offset`, `after`, `before`, `pages`, `sort`, `facets`, `highlight`, `matched`, `fields`, `rescore`, and `total`. They are dropped before the request is read, so what would refuse a search - a cursor taken under another sort, an `offset` past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, a `limit` above `EXOFIND_SEARCH_MAX_LIMIT`, a `rescore` window too small for the page - still gets an explanation. If the search request specifies a field sort, the endpoint still computes and explains the relevance score. Because `rescore` is ignored, the explained score is the one the first pass gave, without the second pass.
 
 ### Response
 

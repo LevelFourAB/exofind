@@ -1513,9 +1513,12 @@ public class SearchResource {
 			fields of the index definition they read.
 
 			The body is a search request; `limit`, `offset`, `after`, \
-			`before`, `sort`, `facets`, `highlight` and `matched` are ignored. \
-			A hit that the search does not match is reported with `matched` \
-			set to `false` rather than refused."""
+			`before`, `pages`, `total`, `sort`, `facets`, `highlight`, \
+			`matched`, `fields` and `rescore` are ignored, and are not \
+			checked either, so a cursor taken under another sort or an \
+			offset past what the node allows still gets an answer. A hit that \
+			the search does not match is reported with `matched` set to \
+			`false` rather than refused."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -2068,7 +2071,7 @@ public class SearchResource {
 		}
 
 		var index = indexes.getOrThrow(name);
-		var mapped = SearchRequestMapper.toEngine(body, limits);
+		var mapped = SearchRequestMapper.toExplained(body, limits);
 
 		// Settings belong to the index name, the way they do for a search
 		var settings = searchSettings.get(IndexName.parse(name).index()).orElse(null);

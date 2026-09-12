@@ -627,6 +627,57 @@ public class SearchRequestMapper {
 	}
 
 	/**
+	 * Convert a search received over the API into the request one hit is
+	 * scored under.
+	 *
+	 * <p>An explanation answers how one document scored, so the parts of a
+	 * search that pick and arrange a page of results say nothing about that
+	 * answer: {@code limit}, {@code offset}, {@code after}, {@code before},
+	 * {@code pages}, {@code total}, {@code sort}, {@code facets},
+	 * {@code highlight}, {@code matched}, {@code fields} and {@code rescore}.
+	 * They are dropped here rather than validated, so a cursor taken under
+	 * another sort, or an offset past the cap, does not refuse an explanation
+	 * that neither of them changes.
+	 *
+	 * @param body
+	 *   the request as received, or {@code null} for a request without a body
+	 * @param limits
+	 *   how much of the node one search may ask for
+	 * @throws ValidationException
+	 *   when what is left of the request is not one that can be run, carrying
+	 *   every problem found
+	 */
+	public static Mapped toExplained(SearchRequest body, SearchLimits limits) {
+		if(body == null) {
+			return toEngine(null, limits);
+		}
+
+		return toEngine(
+			new SearchRequest(
+				body.query(),
+				body.filters(),
+				null,
+				null,
+				body.locale(),
+				null,
+				null,
+				null,
+				body.hits(),
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+				body.signals(),
+				body.signalsMode(),
+				null
+			),
+			limits
+		);
+	}
+
+	/**
 	 * Convert the clauses of a request that names documents without searching
 	 * them into the query the engine runs.
 	 *
