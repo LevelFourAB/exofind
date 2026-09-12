@@ -306,7 +306,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "variants[V-404].price", 1.0))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:no_match"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:document:no_match"));
 	}
 
 	/**
@@ -334,7 +334,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "dimensions[W-1].width", 1.0))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:key_not_declared"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:key_not_declared"));
 	}
 
 	/**
@@ -366,7 +366,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "variants[sku=V-404].price", 1.0))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:no_match"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:document:no_match"));
 	}
 
 	@Test
@@ -391,7 +391,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "variants.price", 1.0))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:value_required"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:value_required"));
 	}
 
 	@Test
@@ -442,7 +442,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "title[de]", "Blaubeermarmelade"))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:locale_unknown"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_declared"));
 	}
 
 	@Test
@@ -454,7 +454,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "category[]", "jam"))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:add_not_multiple"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:add_not_multiple"));
 	}
 
 	@Test
@@ -467,7 +467,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "category[sv]", "jam"))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:selector_not_supported"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:selector_not_supported"));
 	}
 
 	@Test
@@ -491,7 +491,7 @@ public class DocumentPatchPathResourceTest {
 			() -> update(document("id", "1", "nonexistent[sku=V-2]", 1.0))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:path_unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:field_not_found"));
 	}
 
 	@Test

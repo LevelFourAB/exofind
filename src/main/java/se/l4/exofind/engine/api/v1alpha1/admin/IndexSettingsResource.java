@@ -737,7 +737,7 @@ public class IndexSettingsResource {
 		when = "A key of the change could not be read as a path."
 	)
 	@ReturnsError(
-		value = "request:update:no_match",
+		value = "index:settings:no_match",
 		status = 400,
 		when = "A selector names nothing the settings hold. A selector never creates the value it names."
 	)

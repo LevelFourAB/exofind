@@ -49,8 +49,13 @@ import se.l4.exofind.engine.errors.ValidationException;
  * change can name a place nothing has been stored under yet; a list is not,
  * because a selector picks entries rather than inventing one.
  *
- * <p>Paths are reported by the same {@code request:update:*} codes a change to
- * some of a document reports, so the two describe a change in one language.
+ * <p>A path is written the same way as a path into a document, and a path this
+ * object has no place for is reported by a {@code request:update:*} code: what
+ * an admin object holds is fixed by the API, so such a path is wrong about the
+ * request alone. A path into a document is read against the index definition
+ * instead, so the same mistake there is an {@code index:update:*} code. A
+ * selector naming nothing stored is {@code index:settings:no_match}, because
+ * only the stored settings can answer it.
  */
 final class ObjectPatch {
 	/**
@@ -66,7 +71,7 @@ final class ObjectPatch {
 		.withMessage("`{{path}}` does not name a place to change: {{reason}}");
 
 	private static final ErrorType NO_MATCH = ErrorType
-		.withCode("request:update:no_match")
+		.withCode("index:settings:no_match")
 		.withArguments("path")
 		.withMessage("`{{path}}` names no value that is stored");
 

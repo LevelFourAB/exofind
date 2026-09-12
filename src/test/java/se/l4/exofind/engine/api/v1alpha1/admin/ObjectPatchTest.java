@@ -215,7 +215,7 @@ public class ObjectPatchTest {
 	public void testASelectorMatchingNothingIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{\"signals\":[{\"field\":\"a\"}]}", "signals[field=b]", 1)),
-			is("request:update:no_match")
+			is("index:settings:no_match")
 		);
 	}
 
@@ -227,7 +227,7 @@ public class ObjectPatchTest {
 	public void testASelectorOnAMissingListIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{}", "signals[field=a]", 1)),
-			is("request:update:no_match")
+			is("index:settings:no_match")
 		);
 	}
 

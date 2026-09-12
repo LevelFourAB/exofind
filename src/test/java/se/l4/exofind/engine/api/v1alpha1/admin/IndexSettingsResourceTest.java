@@ -849,7 +849,7 @@ public class IndexSettingsResourceTest {
 			() -> patch("products", null, "ranking.signals[field=missing].weight", 2.0)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:no_match"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:settings:no_match"));
 	}
 
 	@Test

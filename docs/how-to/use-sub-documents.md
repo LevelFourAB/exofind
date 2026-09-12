@@ -211,7 +211,7 @@ Naming the field alone still replaces every value in the object field. To update
 - A path such as `variants[sku=V-2]` replaces a value whole. Mapping it to `null` removes that value from the list.
 - If the object field definition declares a `key`, the path takes the key on its own as `variants[V-2]`.
 
-A bare dotted inner path without a selector (such as `variants.color`) is refused with `request:update:value_required` on a list of objects. For details on updating sub-documents with selector paths, see [Update parts of documents](update-parts-of-documents.md).
+A bare dotted inner path without a selector (such as `variants.color`) is refused with `index:update:value_required` on a list of objects. For details on updating sub-documents with selector paths, see [Update parts of documents](update-parts-of-documents.md).
 
 When replacing the whole list, if you do not have the existing sub-documents, retrieve them before updating:
 

@@ -38,7 +38,7 @@ import se.l4.exofind.engine.errors.ValidationException;
  */
 public record DocumentPatch(ListIterable<Change> changes) {
 	private static final ErrorType NO_MATCH = ErrorType
-		.withCode("request:update:no_match")
+		.withCode("index:document:no_match")
 		.withArguments("path")
 		.withMessage("`{{path}}` names no value the document holds");
 

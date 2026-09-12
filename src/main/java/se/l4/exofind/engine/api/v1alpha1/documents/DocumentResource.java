@@ -180,7 +180,7 @@ public class DocumentResource {
 			);
 
 	private static final ErrorType UPDATE_NOT_FOUND =
-		ErrorType.withCode("request:update:not_found")
+		ErrorType.withCode("index:document:not_found")
 			.withArguments("key")
 			.withMessage(
 				"Nothing is indexed under the key `{{key}}`, so there is nothing to change"
@@ -191,7 +191,7 @@ public class DocumentResource {
 		.withMessage("A change is required");
 
 	private static final ErrorType UPDATE_KEY_CONFLICTING =
-		ErrorType.withCode("request:update:key_conflicting")
+		ErrorType.withCode("index:update:key_conflicting")
 			.withArguments("key", "name")
 			.withMessage(
 				"The document to change is the one the path names, `{{key}}`, so `{{name}}` in the body cannot name another"
@@ -606,7 +606,7 @@ public class DocumentResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:update:not_found",
+		value = "index:document:not_found",
 		status = 400,
 		when = "A document the change names is not indexed and `missing` is `fail`."
 	)
@@ -626,47 +626,47 @@ public class DocumentResource {
 		when = "A path in the change could not be read."
 	)
 	@ReturnsError(
-		value = "request:update:path_unknown_field",
+		value = "index:update:field_not_found",
 		status = 400,
 		when = "A path reaches into a field the index does not have."
 	)
 	@ReturnsError(
-		value = "request:update:selector_not_supported",
+		value = "index:update:selector_not_supported",
 		status = 400,
 		when = "A path names one value of a field that holds neither locale variants nor objects."
 	)
 	@ReturnsError(
-		value = "request:update:locale_unknown",
+		value = "index:update:locale_not_declared",
 		status = 400,
 		when = "A path names a locale the field holds no variant for."
 	)
 	@ReturnsError(
-		value = "request:update:add_not_multiple",
+		value = "index:update:add_not_multiple",
 		status = 400,
 		when = "A change adds a value to a field that holds a single value."
 	)
 	@ReturnsError(
-		value = "request:update:not_an_object",
+		value = "index:update:not_an_object",
 		status = 400,
 		when = "A path reaches inside a field whose values are not objects."
 	)
 	@ReturnsError(
-		value = "request:update:value_required",
+		value = "index:update:value_required",
 		status = 400,
 		when = "A path reaches into a list of objects without saying which value."
 	)
 	@ReturnsError(
-		value = "request:update:no_match",
+		value = "index:document:no_match",
 		status = 400,
 		when = "A selector names no value the document holds. A selector never creates the value it names."
 	)
 	@ReturnsError(
-		value = "request:update:key_not_declared",
+		value = "index:update:key_not_declared",
 		status = 400,
 		when = "A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead."
 	)
 	@ReturnsError(
-		value = "request:update:match_not_an_object",
+		value = "index:update:match_not_an_object",
 		status = 400,
 		when = "A path matches on a field inside a list whose values are not objects."
 	)
@@ -1017,7 +1017,7 @@ public class DocumentResource {
 		when = "The key in the path cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
-		value = "request:update:key_conflicting",
+		value = "index:update:key_conflicting",
 		status = 400,
 		when = "The body gives the primary key field a value other than the key in the path."
 	)
@@ -1037,37 +1037,37 @@ public class DocumentResource {
 		when = "A path in the change could not be read."
 	)
 	@ReturnsError(
-		value = "request:update:no_match",
+		value = "index:document:no_match",
 		status = 400,
 		when = "A selector names no value the document holds. A selector never creates the value it names."
 	)
 	@ReturnsError(
-		value = "request:update:path_unknown_field",
+		value = "index:update:field_not_found",
 		status = 400,
 		when = "A path reaches into a field the index does not have."
 	)
 	@ReturnsError(
-		value = "request:update:not_an_object",
+		value = "index:update:not_an_object",
 		status = 400,
 		when = "A path reaches inside a field whose values are not objects."
 	)
 	@ReturnsError(
-		value = "request:update:value_required",
+		value = "index:update:value_required",
 		status = 400,
 		when = "A path reaches into a list of objects without saying which value."
 	)
 	@ReturnsError(
-		value = "request:update:selector_not_supported",
+		value = "index:update:selector_not_supported",
 		status = 400,
 		when = "A path names one value of a field that holds neither locale variants nor objects."
 	)
 	@ReturnsError(
-		value = "request:update:locale_unknown",
+		value = "index:update:locale_not_declared",
 		status = 400,
 		when = "A path names a locale the field holds no variant for."
 	)
 	@ReturnsError(
-		value = "request:update:add_not_multiple",
+		value = "index:update:add_not_multiple",
 		status = 400,
 		when = "The change adds a value to a field that holds a single value. Name the field on its own to replace it."
 	)
@@ -1077,12 +1077,12 @@ public class DocumentResource {
 		when = "A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
 	)
 	@ReturnsError(
-		value = "request:update:key_not_declared",
+		value = "index:update:key_not_declared",
 		status = 400,
 		when = "A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead."
 	)
 	@ReturnsError(
-		value = "request:update:match_not_an_object",
+		value = "index:update:match_not_an_object",
 		status = 400,
 		when = "A path matches on a field inside a list whose values are not objects."
 	)

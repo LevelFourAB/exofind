@@ -409,7 +409,7 @@ A backslash (`\`) escapes the character after it, anywhere in a path. Escape a c
 
 In JSON, write each backslash twice, as `"fields.variants\\.colour.interpret"`.
 
-Objects along a path are created when they do not exist, and `name[]` with a value creates the list when the settings hold none. A selector such as `name[field=x]` never creates anything and returns `request:update:no_match` when nothing it names is stored.
+Objects along a path are created when they do not exist, and `name[]` with a value creates the list when the settings hold none. A selector such as `name[field=x]` never creates anything and returns `index:settings:no_match` when nothing it names is stored.
 
 A successful request returns the search settings as stored and their new version in the `ETag` header. An index that had no settings answers `201 Created`, because the change stores its first ones; one that had some answers `200 OK`.
 
@@ -422,18 +422,18 @@ The endpoint enforces the following rules:
 - With an `If-Match` header of any form, an index that has no settings returns `404 Not Found` with `index:settings:not_found`.
 - If the stored settings contain capabilities that the answering node cannot describe, the request returns `409 Conflict` with `index:settings:unrepresentable`.
 
-The endpoint returns `400 Bad Request` with one of the following `request:update:*` error codes if a path cannot be applied. These are the codes the [Documents API](documents-api.md#constraints-and-errors) reports for the same paths:
+The endpoint returns `400 Bad Request` with one of the following error codes if a path cannot be applied. A path here is written the same way as a path into a document, but the API fixes what the search settings hold, so most of these codes carry the `request:` prefix where the [Documents API](documents-api.md#constraints-and-errors) reports an `index:update:` one. Only a selector that names nothing stored needs the stored settings to answer it:
 
 | Code | Condition |
 |---|---|
 | `request:update:path_invalid` | The key is not a valid path. |
 | `request:update:path_unknown_field` | The path names a field that search settings do not have. |
-| `request:update:no_match` | The selector matches no stored entry in the list. |
 | `request:update:selector_not_supported` | The path specifies a selector on a field that is not a list. |
 | `request:update:value_required` | The path targets a list without specifying an entry selector. |
 | `request:update:not_an_object` | The path reaches inside a value that is not an object. |
 | `request:update:add_reaches_inside` | The path sets a field on an entry being added (for example, `ranking.signals[].weight`). |
 | `request:update:value_invalid` | The path specifies a value that the target field cannot hold. |
+| `index:settings:no_match` | The selector matches no stored entry in the list. |
 
 ## Index states
 
@@ -729,7 +729,7 @@ The Admin API returns the following status codes:
 
 | Status code | Condition |
 |-------------|-----------|
-| `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`request:update:*`). The response body details each validation error. See [Errors](errors.md). |
+| `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`request:update:*`, and `index:settings:no_match` for a selector naming nothing stored). The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
 | `404 Not Found` | The specified index or generation does not exist, a `PUT` or `PATCH` request with `If-Match` targeted a resource that does not exist, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |

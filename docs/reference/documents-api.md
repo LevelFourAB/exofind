@@ -159,11 +159,11 @@ A path is a field name, and may carry a selector in brackets and a field inside 
 
 Paths follow these rules:
 
-- A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `request:update:key_not_declared` on a field declaring no key.
+- A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `index:update:key_not_declared` on a field declaring no key.
 - Empty brackets add a value, which requires a field declared `multiple`. Nothing is matched, so no value is replaced.
 - `field=value` compares the text form of the value. Only the first unescaped `=` splits. A value held as the number `2` matches the selector `2`.
 - Inside brackets, a backslash escapes the character after it, so a selector can hold a `]` of its own. An `=` needs a backslash only in the key form.
-- A field inside a list of objects requires a selector saying which value. Without one, the request returns `request:update:value_required`.
+- A field inside a list of objects requires a selector saying which value. Without one, the request returns `index:update:value_required`.
 
 #### Update behavior
 
@@ -188,24 +188,26 @@ Updates follow these rules:
 
 - If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. A change that names only signal fields works when `source` is `none`. For more information, see the [Admin API](admin-api.md).
 - If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
-- If `missing` is set to `fail` (default) and a document key is not found, the request fails. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
-- A selector that names no value the document holds returns `request:update:no_match`. A key nothing matches is not created.
+- If `missing` is set to `fail` (default) and a document key is not found, the request fails with `index:document:not_found` for that entry. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
+- A selector that names no value the document holds returns `index:document:no_match`. A key nothing matches is not created.
 
 The following error codes report a path the endpoint cannot use:
 
 | Code | Meaning |
 | --- | --- |
 | `request:update:path_invalid` | The key cannot be read as a path. |
-| `request:update:path_unknown_field` | The path reaches into a field the index does not have. |
-| `request:update:selector_not_supported` | The path names one value of a field that holds neither locale variants nor objects. |
-| `request:update:match_not_an_object` | The path matches on an inner field of a field whose values are not objects. |
-| `request:update:locale_unknown` | The field holds no variant for the named locale. |
-| `request:update:add_not_multiple` | The path adds a value to a field that holds a single value. |
 | `request:update:add_reaches_inside` | The path reaches inside a value that is being added. |
-| `request:update:not_an_object` | The path reaches inside a field whose values are not objects. |
-| `request:update:value_required` | The path reaches into a list of objects without saying which value. |
-| `request:update:key_not_declared` | The path uses a key selector on a field that declares no key. |
-| `request:update:no_match` | The selector names no value the document holds. |
+| `index:update:field_not_found` | The path reaches into a field the index does not have. |
+| `index:update:selector_not_supported` | The path names one value of a field that holds neither locale variants nor objects. |
+| `index:update:match_not_an_object` | The path matches on an inner field of a field whose values are not objects. |
+| `index:update:locale_not_declared` | The field holds no variant for the named locale. |
+| `index:update:add_not_multiple` | The path adds a value to a field that holds a single value. |
+| `index:update:not_an_object` | The path reaches inside a field whose values are not objects. |
+| `index:update:value_required` | The path reaches into a list of objects without saying which value. |
+| `index:update:key_not_declared` | The path uses a key selector on a field that declares no key. |
+| `index:document:no_match` | The selector names no value the document holds. |
+
+The first two report a mistake in the path text alone. The rest report a path that disagrees with the index definition or with the stored document. For the rule behind the prefixes, see [Errors](errors.md#code-prefixes).
 
 #### Response
 
@@ -246,14 +248,14 @@ The body is a single change object, meaning what one entry of the batch means. T
 { "price": 34.50, "variants[sku=V-2].price": 29.0, "discount": null }
 ```
 
-Paths and update behavior are the same as in the batch. The body may repeat the primary key field as long as it gives the key the path already names; a different value returns `request:update:key_conflicting`.
+Paths and update behavior are the same as in the batch. The body may repeat the primary key field as long as it gives the key the path already names; a different value returns `index:update:key_conflicting`.
 
 #### Errors
 
 - `index:document:not_found`: Nothing is indexed under the key. The endpoint returns status `404` and creates nothing, because a change describes what to change about a document rather than what should be there.
-- `request:update:key_conflicting`: The body names the primary key field as another document than the path does.
+- `index:update:key_conflicting`: The body names the primary key field as another document than the path does.
 - `index:query:invalid_value`: The key cannot be parsed as the defined key field type.
-- The `request:update:*` path codes, `index:no_primary_key` and `index:source:not_kept` mean here what they mean in the batch.
+- The path codes listed for the batch, `index:no_primary_key` and `index:source:not_kept` mean here what they mean in the batch. A key nothing is indexed under is `index:document:not_found` here too, returned with `404` because the URL names the document.
 
 #### Response
 

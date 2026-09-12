@@ -176,7 +176,7 @@ public class DocumentUpdateResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:not_found"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:document:not_found"));
 	}
 
 	@Test
@@ -362,7 +362,7 @@ public class DocumentUpdateResourceTest {
 			() -> resource.patch("catalogue", "1", document("id", "2", "price", 9.5))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:key_conflicting"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:update:key_conflicting"));
 
 		index.commit();
 		assertThat(index.getDocument("1").get("price"), is(24.5));

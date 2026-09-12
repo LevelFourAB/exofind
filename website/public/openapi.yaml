@@ -7985,7 +7985,7 @@ paths:
           description: |-
             The request body is missing, a key names a place the settings cannot be changed at, or the result failed validation against the generation the index answers from.
 
-            Error codes: `request:missing_body` - The request carries no body. `request:update:path_invalid` - A key of the change could not be read as a path. `request:update:no_match` - A selector names nothing the settings hold. A selector never creates the value it names. `request:update:value_invalid` - A key names a field that cannot hold the given value. `request:update:path_unknown_field` - A key reaches into a field the search settings do not have. `request:update:not_an_object` - A key reaches inside a field that holds no fields. `request:update:value_required` - A key names a field that holds a list without saying which value, such as `ranking.signals[field=sales]`. `request:update:selector_not_supported` - A key names one value of a field that holds no list. `request:update:add_reaches_inside` - A key reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:value_required` - A property of the settings that needs a value is `null`. `index:settings:synonyms:unknown_field` - A synonym set names a field the generation does not have. `index:settings:synonyms:field_not_text` - A synonym set names a field that is not searched as text. `index:settings:synonyms:invalid_boost` - The boost of a synonym set is not a positive number. `index:settings:synonyms:invalid_rule` - A synonym rule is not exactly one kind - equivalent words, or a one-way mapping. `index:settings:typo_exclusions:unknown_field` - A typo exclusion names a field the generation does not have. `index:settings:typo_exclusions:field_not_text` - A typo exclusion names a field that is not searched as text. `index:settings:fields:unknown_field` - The field settings name a field the generation does not have. `index:settings:fields:interpret_unsupported` - The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`. `index:settings:fields:values_unsupported` - The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:settings:fields:values_invalid` - A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values. `index:settings:fields:suggest_unsupported` - The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable. `index:ranking:unknown_field` - A tie-breaker names a field the generation does not have. `index:ranking:wildcard_field` - A tie-breaker names fields with a wildcard. A tie-breaker orders by one field. `index:ranking:duplicate_field` - Two tie-breakers name the same field. `index:ranking:signal:unknown_field` - A ranking signal names a field the generation does not have. `index:ranking:signal:wildcard_field` - A ranking signal names fields with a wildcard. A signal reads one field. `index:ranking:signal:field_not_sortable` - A ranking signal names a field that holds no value to read. `index:ranking:signal:shape_not_set` - A ranking signal says no shape to read its field with. `index:ranking:signal:shape_not_supported` - A ranking signal reads its field with a shape that the type of the field has no meaning for. `index:ranking:signal:invalid_shape` - A ranking signal is not exactly one of `saturation`, `decay` and `linear`. `index:ranking:signal:invalid_pivot` - The `pivot` of a saturation signal is not a number above zero. `index:ranking:signal:invalid_half_life` - The `halfLife` of a decay signal is not a number of seconds above zero. `index:ranking:signal:invalid_ceiling` - The `ceiling` of a linear signal is not a number above zero. `index:ranking:signal:invalid_weight` - The `weight` of a ranking signal is below zero or is not a finite number.
+            Error codes: `request:missing_body` - The request carries no body. `request:update:path_invalid` - A key of the change could not be read as a path. `index:settings:no_match` - A selector names nothing the settings hold. A selector never creates the value it names. `request:update:value_invalid` - A key names a field that cannot hold the given value. `request:update:path_unknown_field` - A key reaches into a field the search settings do not have. `request:update:not_an_object` - A key reaches inside a field that holds no fields. `request:update:value_required` - A key names a field that holds a list without saying which value, such as `ranking.signals[field=sales]`. `request:update:selector_not_supported` - A key names one value of a field that holds no list. `request:update:add_reaches_inside` - A key reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:value_required` - A property of the settings that needs a value is `null`. `index:settings:synonyms:unknown_field` - A synonym set names a field the generation does not have. `index:settings:synonyms:field_not_text` - A synonym set names a field that is not searched as text. `index:settings:synonyms:invalid_boost` - The boost of a synonym set is not a positive number. `index:settings:synonyms:invalid_rule` - A synonym rule is not exactly one kind - equivalent words, or a one-way mapping. `index:settings:typo_exclusions:unknown_field` - A typo exclusion names a field the generation does not have. `index:settings:typo_exclusions:field_not_text` - A typo exclusion names a field that is not searched as text. `index:settings:fields:unknown_field` - The field settings name a field the generation does not have. `index:settings:fields:interpret_unsupported` - The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`. `index:settings:fields:values_unsupported` - The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:settings:fields:values_invalid` - A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values. `index:settings:fields:suggest_unsupported` - The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`. `index:ranking:field_not_sortable` - A ranking signal names a field that is not sortable. `index:ranking:unknown_field` - A tie-breaker names a field the generation does not have. `index:ranking:wildcard_field` - A tie-breaker names fields with a wildcard. A tie-breaker orders by one field. `index:ranking:duplicate_field` - Two tie-breakers name the same field. `index:ranking:signal:unknown_field` - A ranking signal names a field the generation does not have. `index:ranking:signal:wildcard_field` - A ranking signal names fields with a wildcard. A signal reads one field. `index:ranking:signal:field_not_sortable` - A ranking signal names a field that holds no value to read. `index:ranking:signal:shape_not_set` - A ranking signal says no shape to read its field with. `index:ranking:signal:shape_not_supported` - A ranking signal reads its field with a shape that the type of the field has no meaning for. `index:ranking:signal:invalid_shape` - A ranking signal is not exactly one of `saturation`, `decay` and `linear`. `index:ranking:signal:invalid_pivot` - The `pivot` of a saturation signal is not a number above zero. `index:ranking:signal:invalid_half_life` - The `halfLife` of a decay signal is not a number of seconds above zero. `index:ranking:signal:invalid_ceiling` - The `ceiling` of a linear signal is not a number above zero. `index:ranking:signal:invalid_weight` - The `weight` of a ranking signal is below zero or is not a finite number.
           content:
             application/json:
               schema:
@@ -7995,7 +7995,7 @@ paths:
             when: The request carries no body.
           - code: request:update:path_invalid
             when: A key of the change could not be read as a path.
-          - code: request:update:no_match
+          - code: index:settings:no_match
             when: A selector names nothing the settings hold. A selector never creates
               the value it names.
           - code: request:update:value_invalid
@@ -9669,13 +9669,13 @@ paths:
           description: |-
             A change failed validation, or a path in it names something the index or the document does not hold.
 
-            Error codes: `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names. `request:update:key_not_declared` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `request:update:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `request:update:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:update:missing_unknown` - `missing` is neither `fail` nor `skip`. `request:missing_body` - The request carries no changes. `request:document:malformed` - A line of the body could not be read as JSON. `request:document:not_an_object` - A change is not an object keyed by path. `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
+            Error codes: `index:document:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `index:update:field_not_found` - A path reaches into a field the index does not have. `index:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `index:update:locale_not_declared` - A path names a locale the field holds no variant for. `index:update:add_not_multiple` - A change adds a value to a field that holds a single value. `index:update:not_an_object` - A path reaches inside a field whose values are not objects. `index:update:value_required` - A path reaches into a list of objects without saying which value. `index:document:no_match` - A selector names no value the document holds. A selector never creates the value it names. `index:update:key_not_declared` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `index:update:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `request:update:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:update:missing_unknown` - `missing` is neither `fail` nor `skip`. `request:missing_body` - The request carries no changes. `request:document:malformed` - A line of the body could not be read as JSON. `request:document:not_an_object` - A change is not an object keyed by path. `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: request:update:not_found
+          - code: index:document:not_found
             when: A document the change names is not indexed and `missing` is `fail`.
           - code: index:no_primary_key
             when: "The index definition declares no primary key, so a document cannot\
@@ -9685,26 +9685,26 @@ paths:
               instead.
           - code: request:update:path_invalid
             when: A path in the change could not be read.
-          - code: request:update:path_unknown_field
+          - code: index:update:field_not_found
             when: A path reaches into a field the index does not have.
-          - code: request:update:selector_not_supported
+          - code: index:update:selector_not_supported
             when: A path names one value of a field that holds neither locale variants
               nor objects.
-          - code: request:update:locale_unknown
+          - code: index:update:locale_not_declared
             when: A path names a locale the field holds no variant for.
-          - code: request:update:add_not_multiple
+          - code: index:update:add_not_multiple
             when: A change adds a value to a field that holds a single value.
-          - code: request:update:not_an_object
+          - code: index:update:not_an_object
             when: A path reaches inside a field whose values are not objects.
-          - code: request:update:value_required
+          - code: index:update:value_required
             when: A path reaches into a list of objects without saying which value.
-          - code: request:update:no_match
+          - code: index:document:no_match
             when: A selector names no value the document holds. A selector never creates
               the value it names.
-          - code: request:update:key_not_declared
+          - code: index:update:key_not_declared
             when: A path names one value of a list by a key that the field declares
               none of. Match on a field inside the value instead.
-          - code: request:update:match_not_an_object
+          - code: index:update:match_not_an_object
             when: A path matches on a field inside a list whose values are not objects.
           - code: request:update:add_reaches_inside
             when: "A path reaches inside a value that the same change adds, which\
@@ -9879,7 +9879,7 @@ paths:
           description: |-
             The change was rejected by validation, or a path in it names something the index or the document does not hold. A path is refused for the same reasons as in a batch update.
 
-            Error codes: `index:query:invalid_value` - The key in the path cannot be read as the type of the primary key field. `request:update:key_conflicting` - The body gives the primary key field a value other than the key in the path. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - The change adds a value to a field that holds a single value. Name the field on its own to replace it. `request:update:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `request:update:key_not_declared` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `request:update:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `request:missing_body` - The request carries no change.
+            Error codes: `index:query:invalid_value` - The key in the path cannot be read as the type of the primary key field. `index:update:key_conflicting` - The body gives the primary key field a value other than the key in the path. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `index:document:no_match` - A selector names no value the document holds. A selector never creates the value it names. `index:update:field_not_found` - A path reaches into a field the index does not have. `index:update:not_an_object` - A path reaches inside a field whose values are not objects. `index:update:value_required` - A path reaches into a list of objects without saying which value. `index:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `index:update:locale_not_declared` - A path names a locale the field holds no variant for. `index:update:add_not_multiple` - The change adds a value to a field that holds a single value. Name the field on its own to replace it. `request:update:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `index:update:key_not_declared` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `index:update:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `request:missing_body` - The request carries no change.
           content:
             application/json:
               schema:
@@ -9888,7 +9888,7 @@ paths:
           - code: index:query:invalid_value
             when: The key in the path cannot be read as the type of the primary key
               field.
-          - code: request:update:key_conflicting
+          - code: index:update:key_conflicting
             when: The body gives the primary key field a value other than the key
               in the path.
           - code: index:no_primary_key
@@ -9899,30 +9899,30 @@ paths:
               instead.
           - code: request:update:path_invalid
             when: A path in the change could not be read.
-          - code: request:update:no_match
+          - code: index:document:no_match
             when: A selector names no value the document holds. A selector never creates
               the value it names.
-          - code: request:update:path_unknown_field
+          - code: index:update:field_not_found
             when: A path reaches into a field the index does not have.
-          - code: request:update:not_an_object
+          - code: index:update:not_an_object
             when: A path reaches inside a field whose values are not objects.
-          - code: request:update:value_required
+          - code: index:update:value_required
             when: A path reaches into a list of objects without saying which value.
-          - code: request:update:selector_not_supported
+          - code: index:update:selector_not_supported
             when: A path names one value of a field that holds neither locale variants
               nor objects.
-          - code: request:update:locale_unknown
+          - code: index:update:locale_not_declared
             when: A path names a locale the field holds no variant for.
-          - code: request:update:add_not_multiple
+          - code: index:update:add_not_multiple
             when: The change adds a value to a field that holds a single value. Name
               the field on its own to replace it.
           - code: request:update:add_reaches_inside
             when: "A path reaches inside a value that the same change adds, which\
               \ does not exist yet. Give the whole value instead."
-          - code: request:update:key_not_declared
+          - code: index:update:key_not_declared
             when: A path names one value of a list by a key that the field declares
               none of. Match on a field inside the value instead.
-          - code: request:update:match_not_an_object
+          - code: index:update:match_not_an_object
             when: A path matches on a field inside a list whose values are not objects.
           - code: request:missing_body
             when: The request carries no change.

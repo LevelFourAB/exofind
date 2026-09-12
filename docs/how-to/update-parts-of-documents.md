@@ -55,7 +55,7 @@ The examples below use a `products` index whose `variants` object field declares
 
    Paths use selectors instead of array positions so that updates do not depend on array order or break when items are added, removed, or reordered. A caller that sends only what changed does not know the positions in the first place.
 
-   Because keys are unique inside a document, a key path names at most one value. The `field=value` form can match several values and updates all of them. The `field=value` form keeps working on a keyed field and can name any child field, not only the key. Using a key path on a field that declares no `key` returns `request:update:key_not_declared`.
+   Because keys are unique inside a document, a key path names at most one value. The `field=value` form can match several values and updates all of them. The `field=value` form keeps working on a keyed field and can name any child field, not only the key. Using a key path on a field that declares no `key` returns `index:update:key_not_declared`.
 
    Selectors compare the text form of a value, so a value held as the number `2` matches the selector `2`. When a selector value contains special characters, escape them with a backslash:
    - A closing bracket `]` must be escaped in both forms, as in `variants[a\]b]` or `variants[sku=a\]b]`.
@@ -121,7 +121,7 @@ The examples below use a `products` index whose `variants` object field declares
    }
    ```
 
-   Locale tags resolve against the variants declared in the field definition, so `title[nb-NO]` changes a field that holds `no`. A tag the field holds no variant for returns `request:update:locale_unknown`.
+   Locale tags resolve against the variants declared in the field definition, so `title[nb-NO]` changes a field that holds `no`. A tag the field holds no variant for returns `index:update:locale_not_declared`.
 
 6. Update a field inside a single object:
 
@@ -240,7 +240,7 @@ The response returns the first document in full, with your changes applied:
 ## Limits
 
 - **Full document rewrites:** Partial updates save network payload size and client-side bookkeeping, but they do not reduce index write cost. The underlying index rewrites the entire Lucene document block when applying updates. For more information, see [How sub-documents are stored](../explanation/document-blocks.md).
-- **Selector matches:** A selector that matches no value returns the error `request:update:no_match` and does not create a new object. When a key path is refused, the error names the path the way it was written (for example, `variants[V-404].price`), not the resolved `field=value` form. A key path names at most one value, whereas the `field=value` form updates all matching objects if multiple objects match.
+- **Selector matches:** A selector that matches no value returns the error `index:document:no_match` and does not create a new object. When a key path is refused, the error names the path the way it was written (for example, `variants[V-404].price`), not the resolved `field=value` form. A key path names at most one value, whereas the `field=value` form updates all matching objects if multiple objects match.
 - **Document source requirement:** The index must store document sources. If `source` is set to `none`, update requests fail with `index:source:not_kept`.
 
 ## Troubleshooting
@@ -249,20 +249,20 @@ The update endpoint validates paths and returns specific error codes when a path
 
 | Error code | Cause | Action |
 | --- | --- | --- |
-| `request:update:no_match` | The selector matched no value in the document. | Ensure the document contains an object with the specified field and value before updating, or append a new item using `[]`. |
-| `request:update:key_not_declared` | A key path was used on a field that does not declare a `key`. | Declare a `key` in the object field definition, or use the `field=value` selector syntax (for example, `variants[sku=V-2].price`). |
-| `request:update:value_required` | A dot path reached into a list of objects without a selector. | Add a selector to identify which object in the list to update (for example, `variants[sku=V-2].price`). |
+| `index:document:no_match` | The selector matched no value in the document. | Ensure the document contains an object with the specified field and value before updating, or append a new item using `[]`. |
+| `index:update:key_not_declared` | A key path was used on a field that does not declare a `key`. | Declare a `key` in the object field definition, or use the `field=value` selector syntax (for example, `variants[sku=V-2].price`). |
+| `index:update:value_required` | A dot path reached into a list of objects without a selector. | Add a selector to identify which object in the list to update (for example, `variants[sku=V-2].price`). |
 | `request:update:path_invalid` | The path string is malformed or has unclosed brackets. | Check the syntax of brackets, dots, and backslash escape characters in the path. |
-| `request:update:path_unknown_field` | The top-level field name does not exist in the index definition. | Verify the field name against the index schema. |
-| `request:update:selector_not_supported` | A selector was used on a field that does not hold objects or locale variants. | Remove the selector and update the field value directly. |
-| `request:update:match_not_an_object` | A selector matched against inner fields of a non-object field. | Use selectors only on fields containing objects. |
-| `request:update:locale_unknown` | The locale tag in brackets is not defined for the field. | Check the allowed locales in the index schema definition. |
-| `request:update:add_not_multiple` | The `[]` syntax was used on a field not declared as `multiple`. | Remove `[]` to replace the single field value. |
+| `index:update:field_not_found` | The top-level field name does not exist in the index definition. | Verify the field name against the index schema. |
+| `index:update:selector_not_supported` | A selector was used on a field that does not hold objects or locale variants. | Remove the selector and update the field value directly. |
+| `index:update:match_not_an_object` | A selector matched against inner fields of a non-object field. | Use selectors only on fields containing objects. |
+| `index:update:locale_not_declared` | The locale tag in brackets is not defined for the field. | Check the allowed locales in the index schema definition. |
+| `index:update:add_not_multiple` | The `[]` syntax was used on a field not declared as `multiple`. | Remove `[]` to replace the single field value. |
 | `request:update:add_reaches_inside` | A path attempted to set a sub-field on an appended item (for example, `variants[].price`). | Provide the complete object when appending with `[]`. |
-| `request:update:not_an_object` | A dot path reached into a field that does not contain objects. | Check the field type definition in the index schema. |
+| `index:update:not_an_object` | A dot path reached into a field that does not contain objects. | Check the field type definition in the index schema. |
 | `index:source:not_kept` | The index does not store document sources (`source: none`). | Reindex with source storage enabled to use partial updates. |
-| `index:document:not_found` | A `PATCH` named a key nothing is indexed under. | Index the document whole first, or check the key in the URL. |
-| `request:update:key_conflicting` | The body of a `PATCH` gave the primary key field a value other than the key in the URL. | Remove the primary key from the body, or give it the key the URL names. |
+| `index:document:not_found` | A key nothing is indexed under. A `PATCH` returns it with `404`; a batch returns it with `400` in the `errors` array when `missing` is `fail`. | Index the document whole first, check the key, or set `missing` to `skip`. |
+| `index:update:key_conflicting` | The body of a `PATCH` gave the primary key field a value other than the key in the URL. | Remove the primary key from the body, or give it the key the URL names. |
 
 ## Related
 

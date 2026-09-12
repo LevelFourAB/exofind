@@ -40,14 +40,14 @@ import se.l4.exofind.engine.index.types.VectorFieldType;
  */
 public class DocumentMapper {
 	private static final ErrorType UNKNOWN_FIELD = ErrorType
-		.withCode("request:update:path_unknown_field")
-		.withArguments("path", "field")
+		.withCode("index:update:field_not_found")
+		.withArguments("path", "name")
 		.withMessage(
-			"`{{path}}` reaches into the field `{{field}}`, which the index does not have"
+			"`{{path}}` reaches into the field `{{name}}`, which the index does not have"
 		);
 
 	private static final ErrorType SELECTOR_NOT_SUPPORTED = ErrorType
-		.withCode("request:update:selector_not_supported")
+		.withCode("index:update:selector_not_supported")
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` names one value of `{{field}}`, which holds neither locale "
@@ -55,14 +55,14 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType MATCH_NOT_AN_OBJECT = ErrorType
-		.withCode("request:update:match_not_an_object")
+		.withCode("index:update:match_not_an_object")
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` matches on a field inside `{{field}}`, whose values are not objects"
 		);
 
 	private static final ErrorType KEY_NOT_DECLARED = ErrorType
-		.withCode("request:update:key_not_declared")
+		.withCode("index:update:key_not_declared")
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` names a value of `{{field}}` by a key, which the field declares "
@@ -70,12 +70,12 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType LOCALE_UNKNOWN = ErrorType
-		.withCode("request:update:locale_unknown")
-		.withArguments("path", "field", "locale")
-		.withMessage("Field `{{field}}` holds no variant for the locale `{{locale}}`");
+		.withCode("index:update:locale_not_declared")
+		.withArguments("path", "name", "locale")
+		.withMessage("Field `{{name}}` does not hold values in locale `{{locale}}`");
 
 	private static final ErrorType ADD_NOT_MULTIPLE = ErrorType
-		.withCode("request:update:add_not_multiple")
+		.withCode("index:update:add_not_multiple")
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` adds a value to `{{field}}`, which holds a single value - "
@@ -91,12 +91,12 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType NOT_AN_OBJECT = ErrorType
-		.withCode("request:update:not_an_object")
+		.withCode("index:update:not_an_object")
 		.withArguments("path", "field")
 		.withMessage("`{{path}}` reaches inside `{{field}}`, whose values are not objects");
 
 	private static final ErrorType VALUE_REQUIRED = ErrorType
-		.withCode("request:update:value_required")
+		.withCode("index:update:value_required")
 		.withArguments("path", "field", "how")
 		.withMessage(
 			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "
@@ -149,7 +149,7 @@ public class DocumentMapper {
 
 		var field = index.getField(path.field()).orElseThrow(
 			() -> new ValidationException(
-				UNKNOWN_FIELD.toMessage(at(text), "path", text, "field", path.field())
+				UNKNOWN_FIELD.toMessage(at(text), "path", text, "name", path.field())
 			)
 		);
 
@@ -322,7 +322,7 @@ public class DocumentMapper {
 				LOCALE_UNKNOWN.toMessage(
 					at(text),
 					"path", text,
-					"field", path.field(),
+					"name", path.field(),
 					"locale", path.selectorValue()
 				)
 			)
