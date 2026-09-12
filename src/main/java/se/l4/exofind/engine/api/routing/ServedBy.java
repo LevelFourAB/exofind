@@ -45,6 +45,10 @@ public @interface ServedBy {
 	 * where it lands when the index does not exist, so the answer is the
 	 * endpoint's own rather than a writer being appointed for a name that
 	 * does not exist.
+	 *
+	 * <p>A name pinned to a generation, such as {@code books@2}, is never
+	 * taken as one this creates: it creates a generation of an index that has
+	 * to exist already.
 	 */
 	boolean creates() default false;
 

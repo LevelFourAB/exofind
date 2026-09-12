@@ -53,7 +53,9 @@ import jakarta.ws.rs.ext.Provider;
  * deployment holds appoints a writer this way; a write naming one it does
  * not - unless the endpoint says it may create it - is served where it
  * lands, so the answer is the endpoint's 404 rather than a claim on a name
- * that does not exist.
+ * that does not exist. An endpoint that may create still cannot create a
+ * name pinned to a generation, such as {@code books@2}, because the index it
+ * belongs to has to exist first.
  *
  * <p>A forwarded request is marked, and one that arrives marked at a node
  * that still cannot serve it is refused instead of forwarded again. Answers
@@ -100,6 +102,17 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 		"via",
 		"proxy-authorization",
 		"proxy-connection"
+	);
+
+	/**
+	 * The methods whose requests carry a body when nothing framed one, for
+	 * deciding what to send on to the indexer. A body on any other method is
+	 * framed by a header or is not read by the endpoint serving it.
+	 */
+	private static final Set<String> METHODS_WITH_BODY = Set.of(
+		HttpMethod.POST,
+		HttpMethod.PUT,
+		HttpMethod.PATCH
 	);
 
 	/**
@@ -190,7 +203,8 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 		}
 
 		// Ownership is held by name; every generation of it is written together
-		var index = IndexName.parse(parameter).index();
+		var requested = IndexName.parse(parameter);
+		var index = requested.index();
 
 		if(nodeState.isIndexer(index)) {
 			return;
@@ -200,9 +214,13 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 		 * Only an index the deployment holds is worth appointing a writer
 		 * for. Without this, a retried write to a name that does not exist
 		 * would claim and drop the name over and over, contending with the
-		 * real coordination - the 404 the endpoint answers costs nothing.
+		 * real coordination - the 404 the endpoint answers costs nothing. A
+		 * request naming one generation creates a generation of an index that
+		 * has to exist already, so the endpoint creating what it names says
+		 * nothing about a pinned name.
 		 */
-		var exists = servedBy.creates() || indexes.getRegistered(index).isPresent();
+		var exists = (servedBy.creates() && !requested.isPinned())
+			|| indexes.getRegistered(index).isPresent();
 
 		if(exists && ownership.tryClaim(index)) {
 			/*
@@ -305,8 +323,9 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 	}
 
 	/**
-	 * Whether the request carries a body, read from how it was framed - the
-	 * stream itself answers only by being consumed.
+	 * Whether the request carries a body. The framing headers answer it when
+	 * they are there; without them the method does, because HTTP/2 frames a
+	 * body without either header and a stream answers only by being consumed.
 	 */
 	private static boolean hasBody(ContainerRequestContext request) {
 		var length = request.getHeaderString(HttpHeaders.CONTENT_LENGTH);
@@ -314,7 +333,11 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 			return !"0".equals(length.trim());
 		}
 
-		return request.getHeaderString("Transfer-Encoding") != null;
+		if(request.getHeaderString("Transfer-Encoding") != null) {
+			return true;
+		}
+
+		return METHODS_WITH_BODY.contains(request.getMethod().toUpperCase(Locale.ROOT));
 	}
 
 	/**
