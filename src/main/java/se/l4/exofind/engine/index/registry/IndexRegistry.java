@@ -98,23 +98,34 @@ public class IndexRegistry {
 	/**
 	 * The indexes as of one read of the registry, together with the version they
 	 * were read at.
+	 *
+	 * @param store
+	 *   the contents the indexes were read from, kept so that a change is
+	 *   written over them rather than built from the records alone - see
+	 *   {@link RegistryCodec}. {@code null} until the node has read a registry
+	 *   that exists.
 	 */
 	private record Snapshot(
 		ListIterable<RegisteredIndex> indexes,
 		MapIterable<String, RegisteredIndex> byName,
+		IndexRegistryStore store,
 		String version
 	) {
 		static Snapshot empty() {
-			return new Snapshot(Lists.immutable.empty(), Maps.immutable.empty(), null);
+			return new Snapshot(Lists.immutable.empty(), Maps.immutable.empty(), null, null);
 		}
 
-		static Snapshot of(ListIterable<RegisteredIndex> indexes, String version) {
+		static Snapshot of(
+			ListIterable<RegisteredIndex> indexes,
+			IndexRegistryStore store,
+			String version
+		) {
 			var byName = Maps.mutable.<String, RegisteredIndex>empty();
 			for(var index : indexes) {
 				byName.put(index.name(), index);
 			}
 
-			return new Snapshot(indexes, byName.toImmutable(), version);
+			return new Snapshot(indexes, byName.toImmutable(), store, version);
 		}
 	}
 
@@ -164,6 +175,7 @@ public class IndexRegistry {
 				}
 				case RegistryStorage.Read.Loaded loaded -> snapshot = Snapshot.of(
 					RegistryCodec.fromStored(loaded.indexes()),
+					loaded.indexes(),
 					loaded.version()
 				);
 				case RegistryStorage.Read.Corrupt corrupt -> {
@@ -577,9 +589,11 @@ public class IndexRegistry {
 				return true;
 			}
 
+			var store = RegistryCodec.toStored(current.store(), merged);
+
 			String version;
 			try {
-				version = storage.write(RegistryCodec.toStored(merged), current.version());
+				version = storage.write(store, current.version());
 			} catch(IOException e) {
 				logger.atWarn()
 					.setCause(e)
@@ -591,6 +605,7 @@ public class IndexRegistry {
 			if(version != null) {
 				snapshot = Snapshot.of(
 					merged.toSortedListBy(RegisteredIndex::name).toImmutable(),
+					store,
 					version
 				);
 
@@ -736,10 +751,11 @@ public class IndexRegistry {
 
 			var current = snapshot;
 			var updated = change.apply(current.indexes());
+			var store = RegistryCodec.toStored(current.store(), updated);
 
 			String version;
 			try {
-				version = storage.write(RegistryCodec.toStored(updated), current.version());
+				version = storage.write(store, current.version());
 			} catch(IOException e) {
 				throw RegistryException.ioError(e);
 			}
@@ -747,6 +763,7 @@ public class IndexRegistry {
 			if(version != null) {
 				snapshot = Snapshot.of(
 					updated.toSortedListBy(RegisteredIndex::name).toImmutable(),
+					store,
 					version
 				);
 

@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.registry;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
@@ -11,6 +12,8 @@ import java.util.OptionalLong;
 import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.google.protobuf.UnknownFieldSet;
 
 public class IndexRegistryHintsTest {
 	InMemoryRegistryStorage storage;
@@ -151,6 +154,49 @@ public class IndexRegistryHintsTest {
 
 		var entry = registry.get("books").orElseThrow();
 		assertThat(entry.settingsVersion(), is("\"v1\""));
+	}
+
+	/**
+	 * Folding a hint in rewrites the whole registry, so it has to leave what
+	 * this build cannot read as it found it - an entry named in a way this
+	 * build refuses, and a field a newer version added.
+	 */
+	@Test
+	public void testHintsLeaveWhatThisBuildCannotReadAlone() {
+		storage.set(
+			IndexRegistryStore.newBuilder()
+				.addIndexes(IndexEntry.newBuilder().setName("../escaped").setLive("1"))
+				.addIndexes(
+					IndexEntry.newBuilder()
+						.setName("books")
+						.addGenerations(GenerationEntry.newBuilder().setName("1"))
+						.setLive("1")
+						.setUnknownFields(
+							UnknownFieldSet.newBuilder()
+								.addField(
+									99,
+									UnknownFieldSet.Field.newBuilder().addVarint(7).build()
+								)
+								.build()
+						)
+				)
+				.build()
+		);
+
+		registry.refresh();
+		var updated = registry.updateHints(Lists.immutable.of(
+			new VersionHint.Manifest("books", "1", 4)
+		));
+
+		assertThat(updated, is(true));
+
+		var stored = storage.stored();
+		assertThat(stored.getIndexesCount(), is(2));
+		assertThat(stored.getIndexes(0).getName(), is("../escaped"));
+		assertThat(
+			stored.getIndexes(1).getUnknownFields().getField(99).getVarintList(),
+			contains(7L)
+		);
 	}
 
 	/**

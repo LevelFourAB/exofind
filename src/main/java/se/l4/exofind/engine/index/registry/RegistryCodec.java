@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
 
@@ -19,6 +20,14 @@ import se.l4.exofind.engine.logging.Log;
  * that could not be read at all - one naming no index, or naming one that
  * could not have been created here - is passed over, as there is nothing about
  * it that could be reported usefully.
+ *
+ * <p>Writing takes the contents the change was built on and rewrites them,
+ * rather than building the object from the records alone. Everything a read
+ * left behind is therefore carried on: fields a newer version added to the
+ * store, to an entry or to a generation, and the entries and generations that
+ * were passed over as unreadable. A node without those fields rewrites the
+ * registry for its own reasons - creating an index somewhere else in it, or
+ * folding in a version hint - and must leave the rest of it as it found it.
  */
 public final class RegistryCodec {
 	private static final Log logger = Log.of(RegistryCodec.class);
@@ -115,39 +124,105 @@ public final class RegistryCodec {
 	/**
 	 * Write the indexes as the registry stores them.
 	 *
+	 * <p>The unreadable entries come first and the rest follow ordered by name,
+	 * so the same contents and the same indexes always produce the same bytes.
+	 *
+	 * @param previous
+	 *   the contents the change was built on, or {@code null} when the registry
+	 *   is being written for the first time
 	 * @param indexes
+	 *   every index the registry is to name, which is what a caller can address
 	 * @return
 	 */
-	public static IndexRegistryStore toStored(ListIterable<RegisteredIndex> indexes) {
-		var store = IndexRegistryStore.newBuilder();
+	public static IndexRegistryStore toStored(
+		IndexRegistryStore previous,
+		ListIterable<RegisteredIndex> indexes
+	) {
+		var store = previous == null
+			? IndexRegistryStore.newBuilder()
+			: previous.toBuilder();
+
+		/*
+		 * An entry that was read is rewritten from the record the caller
+		 * changed, and one that was not is put back byte for byte. A caller
+		 * addresses an index by a name that parses, so an entry left out of the
+		 * records is one this build could not read rather than one a caller
+		 * asked to remove.
+		 */
+		var readable = Maps.mutable.<String, IndexEntry>empty();
+		var unreadable = Lists.mutable.<IndexEntry>empty();
+		for(var entry : store.getIndexesList()) {
+			if(IndexName.VALID_INDEX_PATTERN.matcher(entry.getName()).matches()) {
+				readable.put(entry.getName(), entry);
+			} else {
+				unreadable.add(entry);
+			}
+		}
+
+		store.clearIndexes();
+
+		for(var entry : unreadable) {
+			store.addIndexes(entry);
+		}
 
 		for(var index : indexes.toSortedListBy(RegisteredIndex::name)) {
-			store.addIndexes(toStored(index));
+			store.addIndexes(toStored(readable.get(index.name()), index));
 		}
 
 		return store.build();
 	}
 
 	/**
-	 * Write one index.
+	 * Write one index over the entry it was read from.
 	 *
+	 * @param previous
+	 *   the entry the index was read from, or {@code null} for one the registry
+	 *   does not hold yet
 	 * @param index
 	 * @return
 	 */
-	public static IndexEntry toStored(RegisteredIndex index) {
-		var entry = IndexEntry.newBuilder()
-			.setName(index.name());
+	private static IndexEntry toStored(IndexEntry previous, RegisteredIndex index) {
+		var entry = previous == null
+			? IndexEntry.newBuilder()
+			: previous.toBuilder();
+
+		entry.setName(index.name());
+
+		// Kept and put back the way the entries of the store are
+		var readable = Maps.mutable.<String, GenerationEntry>empty();
+		var unreadable = Lists.mutable.<GenerationEntry>empty();
+		for(var generation : entry.getGenerationsList()) {
+			if(IndexName.VALID_GENERATION_PATTERN.matcher(generation.getName()).matches()) {
+				readable.put(generation.getName(), generation);
+			} else {
+				unreadable.add(generation);
+			}
+		}
+
+		entry.clearGenerations();
+
+		for(var generation : unreadable) {
+			entry.addGenerations(generation);
+		}
 
 		for(var generation : index.generations().toSortedListBy(RegisteredIndex.Generation::name)) {
-			var stored = GenerationEntry.newBuilder()
-				.setName(generation.name());
+			var storedBefore = readable.get(generation.name());
+			var stored = storedBefore == null
+				? GenerationEntry.newBuilder()
+				: storedBefore.toBuilder();
+
+			stored.setName(generation.name());
 
 			if(generation.createdAt() != null) {
 				stored.setCreatedAt(generation.createdAt().toEpochMilli());
+			} else {
+				stored.clearCreatedAt();
 			}
 
 			if(generation.manifestVersion() != null) {
 				stored.setManifestVersion(generation.manifestVersion());
+			} else {
+				stored.clearManifestVersion();
 			}
 
 			entry.addGenerations(stored);
@@ -155,10 +230,14 @@ public final class RegistryCodec {
 
 		if(index.live() != null) {
 			entry.setLive(index.live());
+		} else {
+			entry.clearLive();
 		}
 
 		if(index.createdAt() != null) {
 			entry.setCreatedAt(index.createdAt().toEpochMilli());
+		} else {
+			entry.clearCreatedAt();
 		}
 
 		/*
@@ -167,12 +246,15 @@ public final class RegistryCodec {
 		 * to rewrite - which would leave the entry looking like one every node
 		 * can resolve.
 		 */
+		entry.clearRequiredFeatures();
 		for(var feature : index.requiredFeatures().toSortedList()) {
 			entry.addRequiredFeatures(feature);
 		}
 
 		if(index.settingsVersion() != null) {
 			entry.setSettingsVersion(index.settingsVersion());
+		} else {
+			entry.clearSettingsVersion();
 		}
 
 		return entry.build();

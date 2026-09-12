@@ -4,13 +4,18 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.emptyIterable;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Duration;
 
+import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.list.ListIterable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.google.protobuf.UnknownFieldSet;
 
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexName;
@@ -307,6 +312,91 @@ public class IndexRegistryTest {
 	}
 
 	/**
+	 * An entry a name could not be read out of is passed over, but a change
+	 * this node makes elsewhere in the registry writes it back as it found it.
+	 * Rebuilding the registry from what this build can read would delete an
+	 * index a newer node holds, with nothing reporting it.
+	 */
+	@Test
+	public void testEntryWithAnUnusableNameSurvivesAChange() {
+		storage.set(
+			IndexRegistryStore.newBuilder()
+				.addIndexes(IndexEntry.newBuilder().setName("../escaped").setLive("1"))
+				.addIndexes(
+					IndexEntry.newBuilder()
+						.setName("books")
+						.addGenerations(GenerationEntry.newBuilder().setName("1"))
+						.addGenerations(GenerationEntry.newBuilder().setName("../escaped"))
+						.setLive("1")
+				)
+				.build()
+		);
+
+		registry.refresh();
+		registry.create("movies", "1");
+
+		assertThat(
+			storedNames(storage.stored()),
+			containsInAnyOrder("../escaped", "books", "movies")
+		);
+		assertThat(
+			storedGenerationNames(storedEntry("books")),
+			containsInAnyOrder("1", "../escaped")
+		);
+	}
+
+	/**
+	 * A field a newer version added is carried through a change this node
+	 * makes, at every level it can be written at. Dropping one would leave an
+	 * entry saying less than the node that wrote it meant.
+	 */
+	@Test
+	public void testFieldsThisBuildDoesNotKnowSurviveAChange() {
+		storage.set(
+			IndexRegistryStore.newBuilder()
+				.addIndexes(
+					IndexEntry.newBuilder()
+						.setName("books")
+						.addGenerations(
+							GenerationEntry.newBuilder()
+								.setName("1")
+								.setUnknownFields(unknownField(99, 3))
+						)
+						.setLive("1")
+						.setUnknownFields(unknownField(99, 2))
+				)
+				.setUnknownFields(unknownField(99, 1))
+				.build()
+		);
+
+		registry.refresh();
+		registry.create("movies", "1");
+
+		var stored = storage.stored();
+		assertThat(unknownFieldOf(stored.getUnknownFields(), 99), is(1L));
+
+		var entry = storedEntry("books");
+		assertThat(unknownFieldOf(entry.getUnknownFields(), 99), is(2L));
+		assertThat(
+			unknownFieldOf(entry.getGenerations(0).getUnknownFields(), 99),
+			is(3L)
+		);
+	}
+
+	/**
+	 * Carrying an entry this build cannot read does not keep one it can: an
+	 * index taken out of the registry stays out.
+	 */
+	@Test
+	public void testRemovedIndexIsTakenOutOfWhatIsStored() {
+		registry.create("books", "1");
+		registry.create("movies", "1");
+		registry.remove("books");
+
+		assertThat(storedNames(storage.stored()), contains("movies"));
+	}
+
+	/**
 	 * A name this node has not seen is looked up right away, so an index
 	 * created a moment ago somewhere else can be used without waiting for the
 	 * next refresh - but a run of names that are not there costs one read
@@ -349,5 +439,41 @@ public class IndexRegistryTest {
 		registry.addGeneration("books", "blue");
 
 		assertThat(IndexRegistry.nextGeneration(registry.get("books").orElseThrow()), is("2"));
+	}
+
+	private IndexEntry storedEntry(String name) {
+		for(var entry : storage.stored().getIndexesList()) {
+			if(entry.getName().equals(name)) {
+				return entry;
+			}
+		}
+
+		throw new AssertionError("No entry named " + name + " is stored");
+	}
+
+	private static ListIterable<String> storedNames(IndexRegistryStore store) {
+		return Lists.immutable.withAll(store.getIndexesList())
+			.collect(IndexEntry::getName);
+	}
+
+	private static ListIterable<String> storedGenerationNames(IndexEntry entry) {
+		return Lists.immutable.withAll(entry.getGenerationsList())
+			.collect(GenerationEntry::getName);
+	}
+
+	/**
+	 * A message holding one field this build has no code for, standing in for
+	 * what a newer version writes.
+	 */
+	private static UnknownFieldSet unknownField(int number, long value) {
+		return UnknownFieldSet.newBuilder()
+			.addField(number, UnknownFieldSet.Field.newBuilder().addVarint(value).build())
+			.build();
+	}
+
+	private static long unknownFieldOf(UnknownFieldSet fields, int number) {
+		var values = fields.getField(number).getVarintList();
+		assertThat("the field is carried", values, hasSize(1));
+		return values.get(0);
 	}
 }

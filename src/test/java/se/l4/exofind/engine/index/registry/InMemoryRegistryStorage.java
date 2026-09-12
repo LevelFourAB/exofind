@@ -90,6 +90,17 @@ public class InMemoryRegistryStorage implements RegistryStorage {
 	}
 
 	/**
+	 * What is stored, for checking the contents a write left rather than what a
+	 * node made of them.
+	 *
+	 * @return
+	 *   the contents, or {@code null} when there is no registry
+	 */
+	public IndexRegistryStore stored() {
+		return indexes;
+	}
+
+	/**
 	 * Replace what is stored without going through a conditional write, for
 	 * setting a test up or standing in for another node having written.
 	 */
