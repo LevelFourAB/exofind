@@ -4,6 +4,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -205,10 +206,18 @@ public class RequiredPermissionFilter implements OASFilter {
 				OASFactory.createMediaType().schema(OASFactory.createSchema().ref(ERROR_RESPONSE))
 			));
 
-		response.addExtension(
-			ErrorCodeFilter.CODES,
-			List.of(Map.of(ErrorCodeFilter.CODE, code, ErrorCodeFilter.WHEN, when))
-		);
+		/*
+		 * Ordered rather than a Map.of, whose iteration order changes between
+		 * runs. The document is checked in under `website/public/`, so an
+		 * unordered entry would rewrite every refusal each time it is
+		 * refreshed. ErrorCodeFilter writes the codes an endpoint declares the
+		 * same way.
+		 */
+		var entry = new LinkedHashMap<String, String>();
+		entry.put(ErrorCodeFilter.CODE, code);
+		entry.put(ErrorCodeFilter.WHEN, when);
+
+		response.addExtension(ErrorCodeFilter.CODES, List.of(entry));
 
 		responses.addAPIResponse(status, response);
 	}

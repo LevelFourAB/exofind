@@ -162,7 +162,7 @@ Paths follow these rules:
 - A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `request:update:key_not_declared` on a field declaring no key.
 - Empty brackets add a value, which requires a field declared `multiple`. Nothing is matched, so no value is replaced.
 - `field=value` compares the text form of the value. Only the first unescaped `=` splits. A value held as the number `2` matches the selector `2`.
-- Inside brackets, a backslash stands for the character after it, which is how a selector holds a `]` of its own. An `=` needs a backslash only in the key form.
+- Inside brackets, a backslash escapes the character after it, so a selector can hold a `]` of its own. An `=` needs a backslash only in the key form.
 - A field inside a list of objects requires a selector saying which value. Without one, the request returns `request:update:value_required`.
 
 #### Update behavior

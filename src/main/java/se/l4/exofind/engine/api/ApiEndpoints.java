@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -44,7 +45,13 @@ public final class ApiEndpoints {
 	}
 
 	/**
-	 * Every resource method of the compiled API.
+	 * Every resource method of the compiled API, in a fixed order.
+	 *
+	 * <p>Sorted because the reflection the walk uses answers in no order of its
+	 * own, and two methods can be one operation of the OpenAPI document - the
+	 * order they are read in is the order their error codes are written in.
+	 * The document is checked in under {@code website/public/}, so an order
+	 * that changed between runs would rewrite it each time it is refreshed.
 	 */
 	public static List<Method> endpoints() throws Exception {
 		var endpoints = new ArrayList<Method>();
@@ -60,6 +67,8 @@ public final class ApiEndpoints {
 				}
 			}
 		}
+
+		endpoints.sort(Comparator.comparing(ApiEndpoints::describe));
 
 		return endpoints;
 	}

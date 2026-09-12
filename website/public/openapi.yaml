@@ -6061,8 +6061,12 @@ paths:
         name: reindex
         in: query
       - description: "The expected definition version, as returned in a previous `ETag`\
-          \ header. `*` matches any existing version. If the version no longer matches,\
-          \ the server returns `412` instead of overwriting intermediate changes."
+          \ header. `*` asks only that the index exists. Several versions may be given,\
+          \ separated by commas, and the header is satisfied while the stored version\
+          \ is one of them; versions are compared exactly, so a weak tag (`W/\"...\"\
+          `) matches none. An index that does not exist answers `404`, and a version\
+          \ that no longer matches answers `412` instead of overwriting intermediate\
+          \ changes."
         example: '"9f2c1a0b3d4e5f60"'
         name: If-Match
         in: header
@@ -7271,7 +7275,7 @@ paths:
     put:
       summary: Replace search settings
       description: |-
-        Replaces the settings completely and returns them as stored. While a `ranking` is present, it replaces the definition's ranking completely; an empty object turns ranking off.
+        Replaces the settings completely and returns them as stored, answering `201` while the index had none and `200` while it had. While a `ranking` is present, it replaces the definition's ranking completely; an empty object turns ranking off.
 
         The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
 
@@ -7294,9 +7298,12 @@ paths:
         schema:
           type: string
       - description: "Version the settings are expected to be at, as returned by a\
-          \ previous response's `ETag`. `*` matches any existing version. A version\
-          \ that no longer matches answers `412` instead of overwriting the change\
-          \ that moved it."
+          \ previous response's `ETag`. `*` asks only that the index has settings.\
+          \ Several versions may be given, separated by commas, and the header is\
+          \ satisfied while the stored version is one of them; versions are compared\
+          \ exactly, so a weak tag (`W/\"...\"`) matches none. An index with no settings\
+          \ answers `404`, and a version that no longer matches answers `412` instead\
+          \ of overwriting the change that moved it."
         example: '"9f2c1a0b3d4e5f60"'
         name: If-Match
         in: header
@@ -7351,8 +7358,28 @@ paths:
         required: true
       responses:
         "200":
-          description: "The settings as stored, with their new version in the `ETag`\
-            \ header."
+          description: Settings that were already stored were replaced. The new version
+            is in the `ETag` header.
+          content:
+            application/json:
+              examples:
+                settings:
+                  value:
+                    ranking:
+                      signals:
+                      - field: purchases
+                        saturation:
+                          pivot: 50
+                        weight: 0.5
+                      tieBreakers:
+                      - field: sales
+                        direction: descending
+                    version: 9f2c1a0b3d4e5f60
+              schema:
+                $ref: "#/components/schemas/SearchSettingsInfo"
+        "201":
+          description: "The index had no settings, so these are its first. The version\
+            \ is in the `ETag` header."
           content:
             application/json:
               examples:
@@ -7418,9 +7445,9 @@ paths:
             when: The key is accepted but does not hold the `settings.write` permission.
         "404":
           description: |-
-            No index has this name, or the API key lacks permissions covering it.
+            No index has this name, the API key lacks permissions covering it, or an `If-Match` header was sent for an index that has no settings (`index:settings:not_found`).
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it. `index:settings:not_found` - An `If-Match` header was sent and the index has no settings for it to match.
           content:
             application/json:
               schema:
@@ -7428,6 +7455,9 @@ paths:
           x-error-codes:
           - code: index:not-found
             when: "The node holds no such index, or the key has no permission on it."
+          - code: index:settings:not_found
+            when: An `If-Match` header was sent and the index has no settings for
+              it to match.
         "409":
           description: |-
             The settings could not be stored. The stored settings remain unchanged; send the request again.
@@ -7489,9 +7519,11 @@ paths:
 
         Paths use field names joined by `.`. A path element can include a bracket selector to select list entries by content rather than index: `ranking.signals[field=sales].weight` changes one weight, `ranking.signals[field=sales]` replaces one signal, `ranking.signals[]` adds a signal, and `ranking` replaces or clears the whole ranking. Selecting entries by content ensures changes apply even if the list order changes.
 
-        The merged settings are validated against the generation the index name answers from, using the same `index:ranking:*` error codes as a `PUT` request. An index with no stored settings is modified as if it had empty settings.
+        A backslash escapes the character after it, so a name can hold a `.`, a `[` or a backslash of its own: `fields.variants\.colour.interpret` names the field `variants.colour`. In JSON, write each backslash twice.
 
-        Without an `If-Match` header, a change that conflicts with a concurrent update rebuilds on the newer version up to three times before returning `index:settings:conflict`. With an `If-Match` header, a version mismatch returns `412` without retrying.
+        The merged settings are validated against the generation the index name answers from, using the same `index:ranking:*` error codes as a `PUT` request. An index with no stored settings is modified as if it had empty settings, and the answer is `201` rather than `200` because the change stores its first ones.
+
+        Without an `If-Match` header, a change that conflicts with a concurrent update rebuilds on the newer version up to three times before returning `index:settings:conflict`. With an `If-Match` header naming versions, a version mismatch returns `412` without retrying, and an index with no settings returns `404`.
 
         Takes effect immediately on the answering node and on all other nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`.
 
@@ -7512,9 +7544,12 @@ paths:
         schema:
           type: string
       - description: "Version the settings are expected to be at, as returned by a\
-          \ previous response's `ETag`. `*` matches any existing version. A version\
-          \ that no longer matches answers `412` instead of building the change on\
-          \ the one that replaced it."
+          \ previous response's `ETag`. `*` asks only that the index has settings.\
+          \ Several versions may be given, separated by commas, and the header is\
+          \ satisfied while the stored version is one of them; versions are compared\
+          \ exactly, so a weak tag (`W/\"...\"`) matches none. An index with no settings\
+          \ answers `404`, and a version that no longer matches answers `412` instead\
+          \ of building the change on the one that replaced it."
         example: '"9f2c1a0b3d4e5f60"'
         name: If-Match
         in: header
@@ -7537,6 +7572,26 @@ paths:
         "200":
           description: "The settings as stored, with their new version in the `ETag`\
             \ header."
+          content:
+            application/json:
+              examples:
+                settings:
+                  value:
+                    ranking:
+                      signals:
+                      - field: purchases
+                        saturation:
+                          pivot: 50
+                        weight: 0.5
+                      tieBreakers:
+                      - field: sales
+                        direction: descending
+                    version: 9f2c1a0b3d4e5f60
+              schema:
+                $ref: "#/components/schemas/SearchSettingsInfo"
+        "201":
+          description: "The index had no settings, so the change stored its first\
+            \ ones. The version is in the `ETag` header."
           content:
             application/json:
               examples:
@@ -7601,9 +7656,9 @@ paths:
             when: The key is accepted but does not hold the `settings.write` permission.
         "404":
           description: |-
-            No index has this name, or the API key lacks permissions covering it.
+            No index has this name, the API key lacks permissions covering it, or an `If-Match` header was sent for an index that has no settings (`index:settings:not_found`).
 
-            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it.
+            Error codes: `index:not-found` - The node holds no such index, or the key has no permission on it. `index:settings:not_found` - An `If-Match` header was sent and the index has no settings for it to match.
           content:
             application/json:
               schema:
@@ -7611,6 +7666,9 @@ paths:
           x-error-codes:
           - code: index:not-found
             when: "The node holds no such index, or the key has no permission on it."
+          - code: index:settings:not_found
+            when: An `If-Match` header was sent and the index has no settings for
+              it to match.
         "409":
           description: |-
             The change could not be made. The stored settings are unchanged.
@@ -8612,17 +8670,17 @@ paths:
           description: |-
             A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location, such as `documents[1].nonexistent`.
 
-            Error codes: `request:unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again. `request:document:malformed` - A line of the body could not be read as JSON.
+            Error codes: `request:document:malformed` - A line of the body could not be read as JSON. `request:unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: request:document:malformed
+            when: A line of the body could not be read as JSON.
           - code: request:unreadable
             when: The body stopped arriving part way through. The documents read before
               that are indexed; send the rest again.
-          - code: request:document:malformed
-            when: A line of the body could not be read as JSON.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8944,15 +9002,12 @@ paths:
           description: |-
             A change failed validation, or a path in it names something the index or the document does not hold.
 
-            Error codes: `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again. `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names.
+            Error codes: `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names. `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
-          - code: request:unreadable
-            when: The body stopped arriving part way through. The changes read before
-              that are applied; send the rest again.
           - code: request:update:not_found
             when: A document the change names is not indexed and `missing` is `fail`.
           - code: index:no_primary_key
@@ -8979,6 +9034,9 @@ paths:
           - code: request:update:no_match
             when: A selector names no value the document holds. A selector never creates
               the value it names.
+          - code: request:unreadable
+            when: The body stopped arriving part way through. The changes read before
+              that are applied; send the rest again.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.

@@ -168,7 +168,9 @@ The response contains the following fields:
 - `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
 
-A `PUT` request replaces the settings completely and returns them as stored. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
+A `PUT` request replaces the settings completely and returns them as stored. An index that had no settings answers `201 Created`, and one that had some answers `200 OK`. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
+
+A `PUT` or `PATCH` request carrying an `If-Match` header on an index that has no settings returns `404 Not Found` with the error code `index:settings:not_found`, including `If-Match: *`. See [Conditional requests](api-conventions.md#conditional-requests) for how the header is read.
 
 A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
 
@@ -397,16 +399,27 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `fields.<name>.values[value=S].order` | The `order` field inside those matching value entries. |
 | `fields.<name>.values[value=S].labels.sv` | The `sv` label inside those matching value entries. |
 
-Inside bracket selectors, a backslash (`\`) escapes characters, such as `\]`. Objects along a path are created if they do not exist, but lists are not created.
+A backslash (`\`) escapes the character after it, anywhere in a path. Escape a character that the path syntax uses: a `.`, a `[` or a `\` in a field name, and a `]` or a `\` in a selector value.
 
-A successful request returns `200 OK` with the search settings as stored and their new version in the `ETag` header.
+| Path | Description |
+|---|---|
+| `fields.variants\.colour.interpret` | The interpret configuration of the field named `variants.colour`. Without the backslash, the path names the field `colour` inside `variants`. |
+| `ranking.signals[field=a\]b]` | List entries whose `field` value equals `a]b`. |
+| `fields.<name>.values[value=S].labels.en-GB` | The `en-GB` label inside those matching value entries. The hyphen needs no backslash, because the path syntax does not use it. |
+
+In JSON, write each backslash twice, as `"fields.variants\\.colour.interpret"`.
+
+Objects along a path are created if they do not exist, but lists are not created.
+
+A successful request returns the search settings as stored and their new version in the `ETag` header. An index that had no settings answers `201 Created`, because the change stores its first ones; one that had some answers `200 OK`.
 
 The endpoint enforces the following rules:
 
 - The server validates the merged ranking against the generation the index name answers from, using the same `index:ranking:*` error codes as a `PUT` request.
 - An index with no stored settings is modified as if it had empty settings.
 - Without an `If-Match` header, a change that conflicts with a concurrent update rebuilds on the newer version up to three times before returning `409 Conflict` with `index:settings:conflict`.
-- With an `If-Match` header, a version mismatch returns `412 Precondition Failed` without retrying.
+- With an `If-Match` header naming versions, a version mismatch returns `412 Precondition Failed` without retrying.
+- With an `If-Match` header of any form, an index that has no settings returns `404 Not Found` with `index:settings:not_found`.
 - If the stored settings contain capabilities that the answering node cannot describe, the request returns `409 Conflict` with `index:settings:unrepresentable`.
 
 The endpoint returns `400 Bad Request` with one of the following `request:update:*` error codes if a path cannot be applied. These are the codes the [Documents API](documents-api.md#constraints-and-errors) reports for the same paths:
@@ -717,7 +730,7 @@ The Admin API returns the following status codes:
 | `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`request:update:*`). The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
-| `404 Not Found` | The specified index or generation does not exist, a `PUT` request with `If-Match` targeted a non-existent resource, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |
+| `404 Not Found` | The specified index or generation does not exist, a `PUT` or `PATCH` request with `If-Match` targeted a resource that does not exist, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |
 | `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, a `PATCH` targeted search settings the node cannot describe (`index:settings:unrepresentable`), the index requires unsupported engine features, storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), another generation was promoted while a reindex job ran (`index:generation:live_moved`), writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition or search settings version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |

@@ -105,9 +105,9 @@ public record DocumentPath(
 		var at = bracket + 1;
 		while(at < text.length() && text.charAt(at) != ']') {
 			/*
-			 * A backslash stands for the character after it, so that a value
-			 * holding a `]` can be told from the one that closes the selector,
-			 * and a single word holding an `=` from a name and a value.
+			 * A backslash escapes the character after it, so a value holding a
+			 * `]` can be told from the one that closes the selector, and a
+			 * single word holding an `=` from a name and a value.
 			 */
 			if(text.charAt(at) == '\\') {
 				at++;

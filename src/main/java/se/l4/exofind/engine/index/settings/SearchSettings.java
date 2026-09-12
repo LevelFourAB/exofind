@@ -340,6 +340,41 @@ public class SearchSettings implements RegistryPoller.Listener {
 		throw SearchSettingsException.conflict();
 	}
 
+	/**
+	 * Store the first settings of an index, refusing the write while it already
+	 * has some.
+	 *
+	 * <p>What separates this from {@link #put} with no expected version is what
+	 * happens to a change that lands first: a caller that built its settings on
+	 * an index having none has built them on the wrong thing once someone else
+	 * has stored some, so the write is refused and the caller builds again.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @param settings
+	 *   the object to store, its required features already described
+	 * @return
+	 *   the settings as stored
+	 * @throws SearchSettingsVersionMismatchException
+	 *   if the index already has settings
+	 * @throws SearchSettingsException
+	 *   if this node cannot keep settings, or the storage could not be reached
+	 */
+	public Snapshot create(String index, SearchSettingsStore settings) {
+		if(!storage.isAvailable()) {
+			throw SearchSettingsException.unavailable();
+		}
+
+		var entry = entryOf(index);
+
+		var version = write(index, settings, null);
+		if(version == null) {
+			throw new SearchSettingsVersionMismatchException(index);
+		}
+
+		return adopt(index, entry, settings, version);
+	}
+
 	private String write(String index, SearchSettingsStore settings, String expectedVersion) {
 		try {
 			return storage.write(index, settings, expectedVersion);

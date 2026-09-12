@@ -38,6 +38,7 @@ import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
+import se.l4.exofind.engine.index.IndexVersionMismatchException;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.state.IndexerOwnership;
@@ -278,7 +279,9 @@ public class IndexResource {
 	 * @param ifMatch
 	 *   expected version of the definition, as returned in the {@code ETag}
 	 *   header of a previous request. If the stored version does not match, the
-	 *   request fails instead of overwriting concurrent changes
+	 *   request fails instead of overwriting concurrent changes. {@code *} asks
+	 *   only that the index exists, and either form is refused with {@code 404}
+	 *   while it does not
 	 * @param reindex
 	 *   promotion mode ({@code auto} or {@code manual}) to start a reindex job
 	 *   populating the new generation from the live generation. Only valid when
@@ -470,9 +473,13 @@ public class IndexResource {
 		@Parameter(
 			description = """
 				The expected definition version, as returned in a previous \
-				`ETag` header. `*` matches any existing version. If the \
-				version no longer matches, the server returns `412` instead of \
-				overwriting intermediate changes.""",
+				`ETag` header. `*` asks only that the index exists. Several \
+				versions may be given, separated by commas, and the header is \
+				satisfied while the stored version is one of them; versions are \
+				compared exactly, so a weak tag (`W/"..."`) matches none. An \
+				index that does not exist answers `404`, and a version that no \
+				longer matches answers `412` instead of overwriting \
+				intermediate changes.""",
 			example = "\"9f2c1a0b3d4e5f60\""
 		)
 		@HeaderParam("If-Match") String ifMatch,
@@ -510,6 +517,7 @@ public class IndexResource {
 
 		var stored = IndexDefinitionMapper.toStored(definition);
 		var requested = IndexName.parse(name);
+		var expected = IfMatch.of(ifMatch);
 
 		// A value the job would refuse is refused before anything is created
 		if(reindex != null) {
@@ -520,10 +528,11 @@ public class IndexResource {
 
 		if(existing.isEmpty()) {
 			/*
-			 * There is nothing to be told about a conflict with, so an
-			 * expected version can not be satisfied.
+			 * There is nothing to be told about a conflict with, so no
+			 * precondition can be satisfied - `*` included, which asks that the
+			 * index exists rather than that it is at some version.
 			 */
-			if(expectedVersion(ifMatch) != null) {
+			if(expected.isConditional()) {
 				throw new IndexNotFoundException(name);
 			}
 
@@ -575,8 +584,23 @@ public class IndexResource {
 		 */
 		IndexDefinitionMapper.checkRepresentable(index.getDefinition());
 
+		/*
+		 * The tag that matched is what the update is made conditional on, so a
+		 * definition replaced between this read and the write is reported
+		 * rather than overwritten. `*` names no version, so it is satisfied by
+		 * the index being here at all.
+		 */
+		var version = index.getDefinitionVersion();
+		if(!expected.matches(version)) {
+			throw new IndexVersionMismatchException(name, expected.describe(), version);
+		}
+
 		try {
-			index.updateDefinition(stored, expectedVersion(ifMatch), allowStaleDocuments);
+			index.updateDefinition(
+				stored,
+				expected.namesVersions() ? version : null,
+				allowStaleDocuments
+			);
 		} catch(IOException e) {
 			throw new IndexException(IO_ERROR, e, "index", name);
 		}
@@ -969,36 +993,6 @@ public class IndexResource {
 		var index = indexes.getOrThrow(name);
 		index.pull();
 		return toStatus(index);
-	}
-
-	/**
-	 * Read the version an {@code If-Match} header asks for. {@code *} matches
-	 * any version, which is the same as not checking at all here as the index
-	 * is known to exist by the time the version is used.
-	 *
-	 * @param ifMatch
-	 * @return
-	 *   the version, or {@code null} when no particular version is expected
-	 */
-	private static String expectedVersion(String ifMatch) {
-		if(ifMatch == null) {
-			return null;
-		}
-
-		var value = ifMatch.trim();
-		if(value.isEmpty() || value.equals("*")) {
-			return null;
-		}
-
-		if(value.startsWith("W/")) {
-			value = value.substring(2);
-		}
-
-		if(value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-			value = value.substring(1, value.length() - 1);
-		}
-
-		return value;
 	}
 
 	/**

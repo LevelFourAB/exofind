@@ -245,7 +245,7 @@ public class IndexSettingsResource {
 		var snapshot = searchSettings.read(index)
 			.orElseThrow(() -> new SearchSettingsNotFoundException(index));
 
-		return answer(snapshot);
+		return answer(snapshot, false);
 	}
 
 	/**
@@ -255,6 +255,9 @@ public class IndexSettingsResource {
 	 * answers from. A change takes effect for searches on this node immediately
 	 * and on other nodes within the settings refresh interval.
 	 *
+	 * <p>An index that had no settings is answered with {@code 201}, the way
+	 * creating an index is; one that had some is answered with {@code 200}.
+	 *
 	 * @param name
 	 *   the index, or one generation of it; the settings belong to the index
 	 *   either way, and a generation specifies which generation to validate
@@ -262,7 +265,9 @@ public class IndexSettingsResource {
 	 * @param ifMatch
 	 *   version the settings are expected to have, as returned by the
 	 *   {@code ETag} header of a previous request; if the settings changed
-	 *   since, the request fails instead of overwriting that change
+	 *   since, the request fails instead of overwriting that change.
+	 *   {@code *} asks only that the index has settings, and either form is
+	 *   refused with {@code 404} while it has none
 	 * @param definition
 	 * @return
 	 */
@@ -274,8 +279,9 @@ public class IndexSettingsResource {
 		operationId = "putSearchSettings",
 		summary = "Replace search settings",
 		description = """
-			Replaces the settings completely and returns them as stored. While \
-			a `ranking` is present, it replaces the definition's ranking \
+			Replaces the settings completely and returns them as stored, \
+			answering `201` while the index had none and `200` while it had. \
+			While a `ranking` is present, it replaces the definition's ranking \
 			completely; an empty object turns ranking off.
 
 			The server validates the ranking against the generation the index \
@@ -299,8 +305,18 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "200",
 		description = """
-			The settings as stored, with their new version in the `ETag` \
-			header.""",
+			Settings that were already stored were replaced. The new version is \
+			in the `ETag` header.""",
+		content = @Content(
+			schema = @Schema(implementation = SearchSettingsInfo.class),
+			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
+		)
+	)
+	@APIResponse(
+		responseCode = "201",
+		description = """
+			The index had no settings, so these are its first. The version is in \
+			the `ETag` header.""",
 		content = @Content(
 			schema = @Schema(implementation = SearchSettingsInfo.class),
 			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
@@ -315,7 +331,10 @@ public class IndexSettingsResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the API key lacks permissions covering it.",
+		description = """
+			No index has this name, the API key lacks permissions covering it, \
+			or an `If-Match` header was sent for an index that has no settings \
+			(`index:settings:not_found`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -368,6 +387,11 @@ public class IndexSettingsResource {
 		when = "The node holds no such index, or the key has no permission on it."
 	)
 	@ReturnsError(
+		value = "index:settings:not_found",
+		status = 404,
+		when = "An `If-Match` header was sent and the index has no settings for it to match."
+	)
+	@ReturnsError(
 		value = "index:settings:conflict",
 		status = 409,
 		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
@@ -414,8 +438,12 @@ public class IndexSettingsResource {
 		@Parameter(
 			description = """
 				Version the settings are expected to be at, as returned by a \
-				previous response's `ETag`. `*` matches any existing version. \
-				A version that no longer matches answers `412` instead of \
+				previous response's `ETag`. `*` asks only that the index has \
+				settings. Several versions may be given, separated by commas, \
+				and the header is satisfied while the stored version is one of \
+				them; versions are compared exactly, so a weak tag (`W/"..."`) \
+				matches none. An index with no settings answers `404`, and a \
+				version that no longer matches answers `412` instead of \
 				overwriting the change that moved it.""",
 			example = "\"9f2c1a0b3d4e5f60\""
 		)
@@ -435,22 +463,49 @@ public class IndexSettingsResource {
 		}
 
 		var index = indexes.getOrThrow(name);
+		var stored = IndexName.parse(name).index();
+		var expected = IfMatch.of(ifMatch);
 
-		var expected = expectedVersion(ifMatch);
-		var snapshot = searchSettings.put(
-			IndexName.parse(name).index(),
-			toStored(index, definition),
-			expected == null ? null : "\"" + expected + "\""
-		);
+		/*
+		 * Read before writing, so the answer can say whether the settings were
+		 * created and a precondition is held against what is stored rather than
+		 * against what the write happens to meet.
+		 */
+		var current = searchSettings.read(stored).orElse(null);
 
-		return answer(snapshot);
+		if(current == null && expected.isConditional()) {
+			throw new SearchSettingsNotFoundException(stored);
+		}
+
+		if(current != null && !expected.matches(unquote(current.version()))) {
+			throw new SearchSettingsVersionMismatchException(stored);
+		}
+
+		var settings = toStored(index, definition);
+		var expectedVersion = expected.namesVersions() ? current.version() : null;
+
+		if(current == null) {
+			try {
+				return answer(searchSettings.create(stored, settings), true);
+			} catch(SearchSettingsVersionMismatchException e) {
+				/*
+				 * Settings were stored between the read and the write, so this
+				 * request replaces them instead of creating them - what a whole
+				 * one says the settings are to be does not depend on which.
+				 */
+			}
+		}
+
+		return answer(searchSettings.put(stored, settings, expectedVersion), false);
 	}
 
 	/**
 	 * Modifies named parts of the search settings of an index.
 	 *
 	 * <p>The change is applied to the stored settings, and the result is
-	 * validated against the generation the index answers from.
+	 * validated against the generation the index answers from. An index with no
+	 * settings is changed as if it had empty ones, and is answered with
+	 * {@code 201} because the change stores its first ones.
 	 *
 	 * @param name
 	 *   the index, or one generation of it; the settings belong to the index
@@ -460,7 +515,8 @@ public class IndexSettingsResource {
 	 *   version the settings are expected to have, as returned by the
 	 *   {@code ETag} header of a previous request; if the settings changed
 	 *   since, the request fails instead of building the change on the version
-	 *   that replaced them
+	 *   that replaced them. {@code *} asks only that the index has settings,
+	 *   and either form is refused with {@code 404} while it has none
 	 * @param body
 	 *   the places to change, keyed by path
 	 * @return
@@ -491,15 +547,22 @@ public class IndexSettingsResource {
 			clears the whole ranking. Selecting entries by content ensures \
 			changes apply even if the list order changes.
 
+			A backslash escapes the character after it, so a name can hold a \
+			`.`, a `[` or a backslash of its own: \
+			`fields.variants\\.colour.interpret` names the field \
+			`variants.colour`. In JSON, write each backslash twice.
+
 			The merged settings are validated against the generation the index \
 			name answers from, using the same `index:ranking:*` error codes as \
 			a `PUT` request. An index with no stored settings is modified as \
-			if it had empty settings.
+			if it had empty settings, and the answer is `201` rather than \
+			`200` because the change stores its first ones.
 
 			Without an `If-Match` header, a change that conflicts with a \
 			concurrent update rebuilds on the newer version up to three times \
 			before returning `index:settings:conflict`. With an `If-Match` \
-			header, a version mismatch returns `412` without retrying.
+			header naming versions, a version mismatch returns `412` without \
+			retrying, and an index with no settings returns `404`.
 
 			Takes effect immediately on the answering node and on all other \
 			nodes within `EXOFIND_SETTINGS_REFRESH_INTERVAL`.
@@ -517,6 +580,16 @@ public class IndexSettingsResource {
 		)
 	)
 	@APIResponse(
+		responseCode = "201",
+		description = """
+			The index had no settings, so the change stored its first ones. The \
+			version is in the `ETag` header.""",
+		content = @Content(
+			schema = @Schema(implementation = SearchSettingsInfo.class),
+			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
+		)
+	)
+	@APIResponse(
 		responseCode = "400",
 		description = """
 			The request body is missing, a key names a place the settings cannot \
@@ -526,7 +599,10 @@ public class IndexSettingsResource {
 	)
 	@APIResponse(
 		responseCode = "404",
-		description = "No index has this name, or the API key lacks permissions covering it.",
+		description = """
+			No index has this name, the API key lacks permissions covering it, \
+			or an `If-Match` header was sent for an index that has no settings \
+			(`index:settings:not_found`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -564,6 +640,11 @@ public class IndexSettingsResource {
 		value = "index:not-found",
 		status = 404,
 		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "index:settings:not_found",
+		status = 404,
+		when = "An `If-Match` header was sent and the index has no settings for it to match."
 	)
 	@ReturnsError(
 		value = "index:settings:conflict",
@@ -625,8 +706,12 @@ public class IndexSettingsResource {
 		@Parameter(
 			description = """
 				Version the settings are expected to be at, as returned by a \
-				previous response's `ETag`. `*` matches any existing version. \
-				A version that no longer matches answers `412` instead of \
+				previous response's `ETag`. `*` asks only that the index has \
+				settings. Several versions may be given, separated by commas, \
+				and the header is satisfied while the stored version is one of \
+				them; versions are compared exactly, so a weak tag (`W/"..."`) \
+				matches none. An index with no settings answers `404`, and a \
+				version that no longer matches answers `412` instead of \
 				building the change on the one that replaced it.""",
 			example = "\"9f2c1a0b3d4e5f60\""
 		)
@@ -654,25 +739,41 @@ public class IndexSettingsResource {
 
 		var index = indexes.getOrThrow(name);
 		var stored = IndexName.parse(name).index();
-		var expected = expectedVersion(ifMatch);
+		var expected = IfMatch.of(ifMatch);
 
 		for(var attempt = 0; attempt < PATCH_ATTEMPTS; attempt++) {
 			var snapshot = searchSettings.read(stored).orElse(null);
+
+			if(snapshot == null && expected.isConditional()) {
+				throw new SearchSettingsNotFoundException(stored);
+			}
+
+			if(snapshot != null && !expected.matches(unquote(snapshot.version()))) {
+				throw new SearchSettingsVersionMismatchException(stored);
+			}
 
 			var base = snapshot == null
 				? new SearchSettingsDefinition(null, null, null, null)
 				: describable(snapshot);
 
 			var changed = read(ObjectPatch.applyTo(mapper.valueToTree(base), body, mapper));
+			var settings = toStored(index, changed);
 
 			try {
-				return answer(searchSettings.put(
-					stored,
-					toStored(index, changed),
-					expected != null ? "\"" + expected + "\"" : version(snapshot)
-				));
+				/*
+				 * The write is conditional on what the change was built on: the
+				 * version it was read at, or there being nothing stored at all.
+				 * A whole one landing in between is then built on again rather
+				 * than replaced by a change that never saw it.
+				 */
+				return answer(
+					snapshot == null
+						? searchSettings.create(stored, settings)
+						: searchSettings.put(stored, settings, snapshot.version()),
+					snapshot == null
+				);
 			} catch(SearchSettingsVersionMismatchException e) {
-				if(expected != null) {
+				if(expected.namesVersions()) {
 					/*
 					 * The caller named the version to build on, so a mismatch
 					 * is theirs to resolve - building on a fresher one would
@@ -1125,15 +1226,16 @@ public class IndexSettingsResource {
 	}
 
 	/**
-	 * The version to build a change on, {@code null} when the index has no
-	 * settings and the change starts from empty ones.
+	 * Answer with the settings as stored, tagged with the version they are now
+	 * at.
+	 *
+	 * @param snapshot
+	 * @param created
+	 *   {@code true} when the index had no settings before the write, which is
+	 *   answered as {@code 201} the way creating an index is
 	 */
-	private static String version(SearchSettings.Snapshot snapshot) {
-		return snapshot == null ? null : snapshot.version();
-	}
-
-	private static Response answer(SearchSettings.Snapshot snapshot) {
-		return Response.ok()
+	private static Response answer(SearchSettings.Snapshot snapshot, boolean created) {
+		return (created ? Response.status(Response.Status.CREATED) : Response.ok())
 			.tag(new EntityTag(unquote(snapshot.version())))
 			.entity(toInfo(snapshot))
 			.build();
@@ -1248,36 +1350,6 @@ public class IndexSettingsResource {
 				? null
 				: snapshot.unsupportedFeatures().toList()
 		);
-	}
-
-	/**
-	 * Read the version an {@code If-Match} header asks for. {@code *} matches
-	 * any version, which is the same as not checking at all here as the index
-	 * is known to exist by the time the version is used.
-	 *
-	 * @param ifMatch
-	 * @return
-	 *   the version, or {@code null} when no particular version is expected
-	 */
-	private static String expectedVersion(String ifMatch) {
-		if(ifMatch == null) {
-			return null;
-		}
-
-		var value = ifMatch.trim();
-		if(value.isEmpty() || value.equals("*")) {
-			return null;
-		}
-
-		if(value.startsWith("W/")) {
-			value = value.substring(2);
-		}
-
-		if(value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-			value = value.substring(1, value.length() - 1);
-		}
-
-		return value;
 	}
 
 	/**

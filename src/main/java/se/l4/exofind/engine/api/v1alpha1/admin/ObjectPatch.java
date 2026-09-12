@@ -30,12 +30,16 @@ import se.l4.exofind.engine.errors.ValidationException;
  * ranking.signals[]                  a value added to the list
  * ranking.signals[field=sales]       the list entries whose `field` reads as `sales`
  * ranking.signals[field=sales].weight  one field inside those entries
+ * fields.variants\.colour.interpret  a field of the field named `variants.colour`
  * </pre>
  *
- * <p>Inside brackets, a backslash stands for the character after it, which is
- * how a selector holds a {@code ]} of its own. A selector picks entries by
- * what they hold rather than by where they sit, so a change written against
- * one read of an object still names the same entry after the list is reordered.
+ * <p>A backslash escapes the character after it, so a name can hold a character
+ * the path syntax uses: {@code variants\.colour} is one name, and a selector
+ * value holds a {@code ]} of its own the same way. Every other character is
+ * taken as it is written, so a locale tag such as {@code en-GB} and a synonym
+ * set named with a hyphen need no backslash. A selector picks entries by what
+ * they hold and not by where they sit, so a change written against one read of
+ * an object still names the same entry after the list is reordered.
  *
  * <p>A place is replaced whole, so what a change leaves alone is decided by how
  * deeply it reaches: {@code ranking.signals} replaces every entry,
@@ -50,11 +54,11 @@ import se.l4.exofind.engine.errors.ValidationException;
  */
 final class ObjectPatch {
 	/**
-	 * What one name of a path may be. Narrower than a field of an index: these
-	 * name the JSON the API is written in, where {@code .} separates names
-	 * rather than being part of one.
+	 * What the field of a selector may be. Narrower than a name of a path:
+	 * a selector reads a field of the API model rather than a key an object
+	 * holds, and every one of those is written as an identifier.
 	 */
-	private static final Pattern NAME = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
+	private static final Pattern SELECTOR_FIELD = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
 
 	private static final ErrorType MALFORMED = ErrorType
 		.withCode("request:update:path_invalid")
@@ -271,7 +275,7 @@ final class ObjectPatch {
 			throw malformed(path, "a selector names one value as `field=value`");
 		}
 
-		var field = name(step.selector().substring(0, equals), path);
+		var field = selectorField(step.selector().substring(0, equals), path);
 		var wanted = step.selector().substring(equals + 1);
 
 		if(child != null && !child.isNull() && !child.isArray()) {
@@ -334,6 +338,23 @@ final class ObjectPatch {
 		while(at < text.length()) {
 			var c = text.charAt(at);
 
+			/*
+			 * A backslash escapes the character after it, so a name holding a
+			 * `.`, a `[` or a backslash of its own can be told from the ones
+			 * the path syntax uses.
+			 */
+			if(c == '\\') {
+				at++;
+
+				if(at >= text.length()) {
+					throw malformed(text, "the path ends in a backslash");
+				}
+
+				name.append(text.charAt(at));
+				at++;
+				continue;
+			}
+
 			if(c == '.') {
 				steps.add(new Step(name(name.toString(), text), null));
 				name.setLength(0);
@@ -356,8 +377,8 @@ final class ObjectPatch {
 			at++;
 			while(at < text.length() && text.charAt(at) != ']') {
 				/*
-				 * A backslash stands for the character after it, so that a
-				 * value holding a `]` can be told from the one that closes the
+				 * A backslash escapes the character after it, so a value
+				 * holding a `]` can be told from the one that closes the
 				 * selector.
 				 */
 				if(text.charAt(at) == '\\') {
@@ -405,12 +426,31 @@ final class ObjectPatch {
 		return steps;
 	}
 
+	/**
+	 * Take one name of a path as it was written. Anything but nothing is a
+	 * name: a key an object holds is what it names, and objects the API reads
+	 * hold keys such as a dotted field path or a locale tag. A name that
+	 * reaches nothing is reported by the caller of {@link #applyTo} instead,
+	 * which knows which fields the object has.
+	 */
 	private static String name(String name, String text) {
 		if(name.isEmpty()) {
 			throw malformed(text, "a field name is required");
 		}
 
-		if(!NAME.matcher(name).matches()) {
+		return name;
+	}
+
+	/**
+	 * Take the field a selector reads, which names a field of the API model
+	 * rather than a key an object happens to hold.
+	 */
+	private static String selectorField(String name, String text) {
+		if(name.isEmpty()) {
+			throw malformed(text, "a field name is required");
+		}
+
+		if(!SELECTOR_FIELD.matcher(name).matches()) {
 			throw malformed(text, "`" + name + "` is not a field name");
 		}
 

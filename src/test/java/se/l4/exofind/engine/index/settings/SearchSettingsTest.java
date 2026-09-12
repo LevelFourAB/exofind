@@ -201,6 +201,34 @@ public class SearchSettingsTest {
 	}
 
 	@Test
+	void testCreateStoresTheFirstSettings() {
+		var created = settings.create("books", storeWith("sales"));
+
+		assertThat(created.ranking().getTieBreakers(0).getField(), is("sales"));
+		assertThat(settings.read("books").orElseThrow().version(), is(created.version()));
+	}
+
+	/**
+	 * A change built on an index having no settings was built on the wrong
+	 * thing once someone else has stored some, so it is refused rather than
+	 * replacing what they stored.
+	 */
+	@Test
+	void testCreateIsRefusedWhenSettingsAreAlreadyStored() {
+		settings.put("books", storeWith("sales"), null);
+
+		assertThrows(
+			SearchSettingsVersionMismatchException.class,
+			() -> settings.create("books", storeWith("rating"))
+		);
+
+		assertThat(
+			settings.read("books").orElseThrow().ranking().getTieBreakers(0).getField(),
+			is("sales")
+		);
+	}
+
+	@Test
 	void testPutWithoutAStoreIsRefused() {
 		var without = newSettings(new NoSearchSettingsStorage());
 

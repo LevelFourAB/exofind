@@ -444,6 +444,53 @@ public class IndexResourceTest {
 	}
 
 	/**
+	 * A header may hold more than one version, which is what a client that
+	 * accepts either of two reads it has sends.
+	 */
+	@Test
+	public void testUpdateWithOneOfSeveralVersionsIsAccepted() {
+		var created = create("books", definition());
+
+		var response = resource.put(
+			"books",
+			"\"0000000000000000\", \"" + created.version() + "\"",
+			null,
+			false,
+			uriInfo,
+			new IndexDefinition(
+				null, Map.of("owner", "search"), definition().fields(), null, null, null,
+				null
+			)
+		);
+
+		assertThat(response.getStatus(), is(200));
+	}
+
+	/**
+	 * Versions are compared exactly, and a weak tag says two definitions answer
+	 * the same rather than that they are the same - so it matches none.
+	 */
+	@Test
+	public void testUpdateWithAWeakVersionIsRejected() {
+		var created = create("books", definition());
+
+		assertThrows(
+			IndexVersionMismatchException.class,
+			() -> resource.put(
+				"books",
+				"W/\"" + created.version() + "\"",
+				null,
+				false,
+				uriInfo,
+				new IndexDefinition(
+					null, Map.of("owner", "search"), definition().fields(), null, null, null,
+					null
+				)
+			)
+		);
+	}
+
+	/**
 	 * The same definition as {@link #definition()} with the field also searched
 	 * as text, which writes terms nothing already indexed has.
 	 */
@@ -512,6 +559,21 @@ public class IndexResourceTest {
 			IndexNotFoundException.class,
 			() -> resource.put("books", "\"0000000000000000\"", null, false, uriInfo, definition())
 		);
+	}
+
+	/**
+	 * {@code *} asks that the index exists rather than that it is at some
+	 * version, so it is refused by an index that does not exist rather than
+	 * creating one.
+	 */
+	@Test
+	public void testCreateWithAnyVersionIsRejected() {
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> resource.put("books", "*", null, false, uriInfo, definition())
+		);
+
+		assertThat(resource.list().indexes().isEmpty(), is(true));
 	}
 
 	/**

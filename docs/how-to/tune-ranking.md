@@ -93,7 +93,7 @@ Before you begin, ensure you have:
         "$EXOFIND/v1alpha1/admin/indexes/products/settings" \
         -H "Authorization: Bearer $KEY" \
         -H "Content-Type: application/json" \
-        -H "If-Match: 9f2c1a0b3d4e5f60" \
+        -H 'If-Match: "9f2c1a0b3d4e5f60"' \
         -d '{
           "ranking": {
             "signals": [

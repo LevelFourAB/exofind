@@ -174,6 +174,43 @@ public class ObjectPatchTest {
 		);
 	}
 
+	/**
+	 * Field paths through an {@code object} field hold dots of their own, so a
+	 * backslash is what tells one name from two.
+	 */
+	@Test
+	public void testABackslashHoldsADotInAName() {
+		assertThat(
+			patch("{\"fields\":{\"variants.colour\":{}}}", "fields.variants\\.colour.suggest", Map.of()),
+			is(json("{\"fields\":{\"variants.colour\":{\"suggest\":{}}}}"))
+		);
+	}
+
+	@Test
+	public void testABackslashHoldsABracketInAName() {
+		assertThat(
+			patch("{}", "a\\[0\\].b", 1),
+			is(json("{\"a[0]\":{\"b\":1}}"))
+		);
+	}
+
+	/**
+	 * A name is a key an object holds rather than an identifier, so a locale tag
+	 * and a set named with a hyphen reach the place they name.
+	 */
+	@Test
+	public void testANameMayHoldCharactersAnIdentifierCannot() {
+		assertThat(
+			patch("{\"labels\":{}}", "labels.en-GB", "Red"),
+			is(json("{\"labels\":{\"en-GB\":\"Red\"}}"))
+		);
+
+		assertThat(
+			patch("{}", "synonyms.winter-sale.boost", 2),
+			is(json("{\"synonyms\":{\"winter-sale\":{\"boost\":2}}}"))
+		);
+	}
+
 	@Test
 	public void testASelectorMatchingNothingIsRefused() {
 		assertThat(
@@ -234,7 +271,8 @@ public class ObjectPatchTest {
 		assertThat(codeOf(() -> patch("{}", "a[field=b", 1)), is("request:update:path_invalid"));
 		assertThat(codeOf(() -> patch("{}", "a[field=b]c", 1)), is("request:update:path_invalid"));
 		assertThat(codeOf(() -> patch("{}", "a[b]", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a b", 1)), is("request:update:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a[b c=1]", 1)), is("request:update:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a\\", 1)), is("request:update:path_invalid"));
 	}
 
 	@Test

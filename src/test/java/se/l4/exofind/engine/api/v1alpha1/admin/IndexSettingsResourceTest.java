@@ -407,6 +407,134 @@ public class IndexSettingsResourceTest {
 		);
 	}
 
+	/**
+	 * The first settings of an index are a resource that was created, which is
+	 * what tells a client storing them apart from one replacing them.
+	 */
+	@Test
+	public void testPutCreatingSettingsAnswersCreated() {
+		products();
+
+		var created = resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		);
+		assertThat(created.getStatus(), is(201));
+
+		var replaced = resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		);
+		assertThat(replaced.getStatus(), is(200));
+	}
+
+	/**
+	 * A version can only be matched by settings that exist, so a caller naming
+	 * one is told the index has none rather than having its version ignored.
+	 */
+	@Test
+	public void testPutWithAVersionOnAnIndexWithoutSettingsIsNotFound() {
+		products();
+
+		assertThrows(
+			SearchSettingsNotFoundException.class,
+			() -> resource.put(
+				"products",
+				"\"0000000000000000\"",
+				rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+			)
+		);
+	}
+
+	/**
+	 * {@code *} asks that the settings exist rather than that they are at some
+	 * version, so it is refused by an index that has none rather than storing
+	 * the first ones.
+	 */
+	@Test
+	public void testPutWithAnyVersionOnAnIndexWithoutSettingsIsNotFound() {
+		products();
+
+		assertThrows(
+			SearchSettingsNotFoundException.class,
+			() -> resource.put(
+				"products",
+				"*",
+				rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+			)
+		);
+
+		assertThat(storage.get("products"), is(nullValue()));
+	}
+
+	@Test
+	public void testPutWithAnyVersionIsTakenWhenSettingsAreStored() {
+		products();
+
+		resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		);
+
+		var response = resource.put(
+			"products",
+			"*",
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		);
+
+		assertThat(response.getStatus(), is(200));
+	}
+
+	/**
+	 * A header may hold more than one version, which is what a client that
+	 * accepts either of two reads it has sends.
+	 */
+	@Test
+	public void testPutWithOneOfSeveralVersionsIsTaken() {
+		products();
+
+		var first = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		).getEntity();
+
+		var second = (SearchSettingsInfo) resource.put(
+			"products",
+			"\"0000000000000000\", \"" + first.version() + "\"",
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		).getEntity();
+
+		assertThat(second.version(), not(is(first.version())));
+	}
+
+	/**
+	 * Versions are compared exactly, and a weak tag says two settings answer
+	 * the same rather than that they are the same - so it matches none.
+	 */
+	@Test
+	public void testPutWithAWeakVersionIsRefused() {
+		products();
+
+		var first = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		).getEntity();
+
+		assertThrows(
+			SearchSettingsVersionMismatchException.class,
+			() -> resource.put(
+				"products",
+				"W/\"" + first.version() + "\"",
+				rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+			)
+		);
+	}
+
 	@Test
 	public void testPutWithTheCurrentVersionIsTaken() {
 		products();
@@ -756,6 +884,75 @@ public class IndexSettingsResourceTest {
 				"ranking.tieBreakers[field=sales].direction", "descending"
 			)
 		);
+	}
+
+	/**
+	 * A version can only be matched by settings that exist, so a caller naming
+	 * one - or {@code *} - is told the index has none rather than having its
+	 * change stored as the first settings.
+	 */
+	@Test
+	public void testPatchWithAVersionOnAnIndexWithoutSettingsIsNotFound() {
+		products();
+
+		assertThrows(
+			SearchSettingsNotFoundException.class,
+			() -> patch(
+				"products",
+				"\"0000000000000000\"",
+				"ranking.tieBreakers[]", Map.of("field", "sales")
+			)
+		);
+
+		assertThrows(
+			SearchSettingsNotFoundException.class,
+			() -> patch("products", "*", "ranking.tieBreakers[]", Map.of("field", "sales"))
+		);
+
+		assertThat(storage.get("products"), is(nullValue()));
+	}
+
+	@Test
+	public void testPatchWithAWeakVersionIsRefused() {
+		products();
+
+		var first = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		).getEntity();
+
+		assertThrows(
+			SearchSettingsVersionMismatchException.class,
+			() -> patch(
+				"products",
+				"W/\"" + first.version() + "\"",
+				"ranking.tieBreakers[field=sales].direction", "ascending"
+			)
+		);
+	}
+
+	/**
+	 * A change to an index that has no settings stores its first ones, which is
+	 * answered the way storing them whole is.
+	 */
+	@Test
+	public void testPatchCreatingSettingsAnswersCreated() {
+		products();
+
+		var created = resource.patch(
+			"products",
+			null,
+			change("ranking", Map.of("tieBreakers", List.of(Map.of("field", "sales"))))
+		);
+		assertThat(created.getStatus(), is(201));
+
+		var changed = resource.patch(
+			"products",
+			null,
+			change("ranking.tieBreakers[field=sales].direction", "ascending")
+		);
+		assertThat(changed.getStatus(), is(200));
 	}
 
 	@Test
@@ -1716,6 +1913,28 @@ public class IndexSettingsResourceTest {
 		assertThat(
 			info.fields().get("colour").values(),
 			contains(declared("Red", 1, Map.of("sv", "Röd")))
+		);
+	}
+
+	/**
+	 * A locale tag holds a hyphen, and a path names it as it is written rather
+	 * than refusing it for not reading as an identifier.
+	 */
+	@Test
+	public void testPatchChangesALabelKeyedByARegionalTag() {
+		boutique();
+
+		resource.put("boutique", null, declaring("colour", declared("Red", 1, null)));
+
+		var info = patch(
+			"boutique",
+			null,
+			"fields.colour.values[value=Red].labels.en-GB", "Red"
+		);
+
+		assertThat(
+			info.fields().get("colour").values(),
+			contains(declared("Red", 1, Map.of("en-GB", "Red")))
 		);
 	}
 
