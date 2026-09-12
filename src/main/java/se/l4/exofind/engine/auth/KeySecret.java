@@ -70,16 +70,32 @@ public final class KeySecret {
 	}
 
 	/**
-	 * Mint a credential.
+	 * Mint a credential for a key that does not exist yet.
 	 */
 	public static Generated generate() {
 		var idBytes = new byte[ID_BYTES];
-		var secretBytes = new byte[SECRET_BYTES];
-
 		RANDOM.nextBytes(idBytes);
+
+		return generateFor(HexFormat.of().formatHex(idBytes));
+	}
+
+	/**
+	 * Mint a credential for a key that already exists, replacing its secret
+	 * while leaving the id alone.
+	 *
+	 * <p>A log records the id and a listing shows it, so keeping it means a
+	 * rotated credential still names the key whose grants it carries. Only the
+	 * secret is new, and that is what stops the previous credential from
+	 * working.
+	 *
+	 * @param id
+	 *   the id of the key the credential is for
+	 * @return
+	 */
+	public static Generated generateFor(String id) {
+		var secretBytes = new byte[SECRET_BYTES];
 		RANDOM.nextBytes(secretBytes);
 
-		var id = HexFormat.of().formatHex(idBytes);
 		var secret = Base64.getUrlEncoder().withoutPadding().encodeToString(secretBytes);
 
 		return new Generated(id, PREFIX + id + "_" + secret, hash(secret));

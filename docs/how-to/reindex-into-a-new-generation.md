@@ -8,7 +8,7 @@ Use this engine-driven procedure when your documents are already indexed and the
 
 Before you begin, verify the following:
 
-- Your API key has the `indexes.reindex` permission (included in the `admin` role) and permissions for `products@*`. Checking job status requires `indexes.read`.
+- Your API key has the `indexes.reindex` permission (included in the `admin` role) and permissions for `products@*`. Checking job status requires `indexes.read`. Automatic promotion also requires `indexes.promote`, and creating the target generation in the same request requires `indexes.write`.
 - The source generation has a primary key and keeps document sources (`source` mode is not `none`).
 - The new generation definition uses the same primary key field name and type as the source generation.
 

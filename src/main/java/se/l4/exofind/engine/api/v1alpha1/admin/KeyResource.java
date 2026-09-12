@@ -45,8 +45,10 @@ import jakarta.ws.rs.core.Response;
  * <p>Key management does not depend on a specific node. Requests are handled
  * directly by the node that receives them and are not forwarded to the indexer.
  *
- * <p>Keys are immutable. To change permissions, create a replacement key,
- * migrate clients to the new key, and revoke the old key.
+ * <p>What a key allows cannot be changed. To change permissions, create a
+ * replacement key, migrate clients to the new key, and revoke the old key. The
+ * credential itself is replaceable on its own through {@code actions/rotate},
+ * which keeps the ID and the grants.
  */
 @Tag(
 	name = "API keys",
@@ -213,9 +215,19 @@ public class KeyResource {
 		when = "An entry of `indexes` is neither an index name nor a prefix followed by `*`."
 	)
 	@ReturnsError(
+		value = "auth:key:indexes_not_used",
+		status = 400,
+		when = "A grant names `indexes` and holds no permission that is about one index, so the patterns would narrow nothing."
+	)
+	@ReturnsError(
 		value = "auth:key:invalid_expiry",
 		status = 400,
 		when = "`expiresAt` is not an ISO 8601 timestamp."
+	)
+	@ReturnsError(
+		value = "auth:key:expiry_in_past",
+		status = 400,
+		when = "`expiresAt` has already passed, so the key would be lapsed from the moment it was created."
 	)
 	@ReturnsError(
 		value = "auth:keys:unavailable",
@@ -266,6 +278,11 @@ public class KeyResource {
 	 * <p>Revocation takes effect on this node immediately and on all other
 	 * nodes within their configured refresh interval.
 	 *
+	 * <p>Two keys are refused with {@code 409}, because the answering node would
+	 * not start again without them: the last key granted {@code keys.write} when
+	 * the node has no root key, and the key named by
+	 * {@code EXOFIND_AUTH_ANONYMOUS_KEY}.
+	 *
 	 * @param id
 	 * @return
 	 */
@@ -282,10 +299,17 @@ public class KeyResource {
 			`EXOFIND_AUTH_REFRESH_INTERVAL`, as nodes accept cached keys until \
 			their next storage read.
 
-			Keys are immutable. To change permissions, create a replacement \
-			key, migrate clients to the new key, and revoke the old key. The \
-			root key is not stored in key storage and cannot be revoked \
-			through the API.
+			What a key allows cannot be changed. To change permissions, create \
+			a replacement key, migrate clients to the new key, and revoke the \
+			old key. To replace only the credential, keeping everything the \
+			key allows, use `actions/rotate`. The root key is not stored in \
+			key storage and cannot be revoked through the API.
+
+			The answering node refuses to revoke two keys, because it would \
+			not start again without them: the last key granted `keys.write` \
+			when the node has no root key, and the key named by \
+			`EXOFIND_AUTH_ANONYMOUS_KEY`. Create a replacement, or point the \
+			configuration elsewhere, and send the request again.
 
 			Served by whichever node receives the request."""
 	)
@@ -305,6 +329,16 @@ public class KeyResource {
 		value = "auth:key:not_found",
 		status = 404,
 		when = "No key is stored under this ID."
+	)
+	@ReturnsError(
+		value = "auth:key:last_administrator",
+		status = 409,
+		when = "The key is the last one granted `keys.write` and the node has no root key, so revoking it would leave nobody able to create another."
+	)
+	@ReturnsError(
+		value = "auth:key:in_use_as_anonymous",
+		status = 409,
+		when = "`EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node, so revoking it would stop that node from starting."
 	)
 	@ReturnsError(
 		value = "auth:keys:unavailable",
@@ -330,5 +364,100 @@ public class KeyResource {
 	) {
 		keys.delete(id);
 		return Response.noContent().build();
+	}
+
+	/**
+	 * Replaces the credential of a key, keeping what the key allows.
+	 *
+	 * <p>The ID, description, grants, creation time and expiry are all kept, so
+	 * nothing that names the key has to be updated. Only the secret changes,
+	 * which is what stops the previous credential from working.
+	 *
+	 * @param id
+	 * @return
+	 */
+	@POST
+	@Path("/{id}/actions/rotate")
+	@RequiresPermission(Permission.KEYS_WRITE)
+	@ServedBy(ServedBy.Node.ANY_NODE)
+	@Operation(
+		operationId = "rotateKey",
+		summary = "Rotate the credential of an API key",
+		description = """
+			Replaces the credential of a key and returns the new one. The key \
+			ID, description, grants, `createdAt` and `expiresAt` are all kept, \
+			so a rotation is how a credential is replaced without rebuilding \
+			the grants and without anything that records the key ID going \
+			stale.
+
+			The previous credential stops working on the answering node \
+			immediately and across all other nodes within \
+			`EXOFIND_AUTH_REFRESH_INTERVAL`, as nodes accept cached keys until \
+			their next storage read. That interval is the window in which \
+			clients can move to the new credential.
+
+			As when a key is created, the full secret credential is returned \
+			only in this response because credentials are stored only as \
+			hashes. A lost credential cannot be recovered; rotate the key \
+			again. Server logs record the key `id`, never the credential \
+			value.
+
+			Served by whichever node receives the request."""
+	)
+	@APIResponse(
+		responseCode = "200",
+		description = """
+			The credential was replaced. The `credential` in this response is \
+			the only copy returned.""",
+		content = @Content(
+			schema = @Schema(implementation = CreatedKey.class),
+			examples = @ExampleObject(name = "rotated", value = CreatedKey.EXAMPLE)
+		)
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = "No key has this ID.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			The credential could not be replaced. The stored keys are \
+			unchanged and the previous credential still works.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "auth:key:not_found",
+		status = 404,
+		when = "No key is stored under this ID."
+	)
+	@ReturnsError(
+		value = "auth:keys:unavailable",
+		status = 409,
+		when = "The node is not configured with key storage."
+	)
+	@ReturnsError(
+		value = "auth:keys:io_error",
+		status = 409,
+		when = "Key storage answered with an error. Send the request again."
+	)
+	@ReturnsError(
+		value = "auth:keys:conflict",
+		status = 409,
+		when = "Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again."
+	)
+	public CreatedKey rotate(
+		@Parameter(
+			description = "ID of the key whose credential is replaced.",
+			example = "4ff6b760264c1918"
+		)
+		@PathParam("id") String id
+	) {
+		var rotated = keys.rotate(id);
+
+		return new CreatedKey(
+			rotated.credential(),
+			KeyDefinitionMapper.toApi(rotated.key())
+		);
 	}
 }

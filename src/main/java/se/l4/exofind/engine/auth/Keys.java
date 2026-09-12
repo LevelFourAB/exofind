@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -223,16 +224,27 @@ public class Keys {
 			return;
 		}
 
-		var administrable = snapshot.keys().anySatisfy(
-			key -> key.grants().anySatisfy(grant -> grant.allows(Permission.KEYS_WRITE))
-		);
-
-		if(!administrable) {
+		if(!canAdminister(snapshot.keys())) {
 			throw new IllegalStateException(
 				"No stored key is granted `keys.write` and this node has no root key, so"
 					+ " no credential could ever create one. Set EXOFIND_AUTH_ROOT_KEY"
 			);
 		}
+	}
+
+	/**
+	 * Whether any of a set of keys could create another one.
+	 *
+	 * <p>{@link #verifyAdministrable()} asks this of the stored keys at startup
+	 * and {@link #delete(String)} asks it of what a revocation would leave, so a
+	 * revocation refuses exactly the state the next start refuses. Expiry is not
+	 * read for the same reason: a lapsed key stops the node from starting too,
+	 * and a revocation cannot report that.
+	 */
+	private static boolean canAdminister(ListIterable<Key> keys) {
+		return keys.anySatisfy(
+			key -> key.grants().anySatisfy(grant -> grant.allows(Permission.KEYS_WRITE))
+		);
 	}
 
 	/**
@@ -442,9 +454,18 @@ public class Keys {
 	 *
 	 * @return
 	 * @throws KeyStorageException
-	 *   if the store could not be read
+	 *   if this node cannot keep keys, or the store could not be read
 	 */
 	public ListIterable<Key> list() {
+		/*
+		 * A node with nowhere to keep keys reads as though none had ever been
+		 * created, and an empty list looks the same as a deployment that holds no
+		 * key. Answered as unavailable so that an empty list means what it says.
+		 */
+		if(!storage.isAvailable()) {
+			throw KeyStorageException.unavailable();
+		}
+
 		if(!read()) {
 			throw KeyStorageException.ioError(null);
 		}
@@ -497,22 +518,96 @@ public class Keys {
 	 * @param id
 	 * @throws KeyNotFoundException
 	 *   if no key is stored under that id
+	 * @throws KeyInUseException
+	 *   if the key is the last one that could create another, or the one this
+	 *   node answers requests carrying no credential as
 	 * @throws KeyStorageException
 	 *   if this node cannot keep keys, the storage could not be reached, or the
 	 *   keys kept being changed by someone else
 	 */
 	public void delete(String id) {
+		/*
+		 * Read from configuration rather than from the store, so it does not
+		 * matter whether the store can be reached to know the answer.
+		 */
+		if(id.equals(anonymousKeyId)) {
+			throw KeyInUseException.anonymous(id);
+		}
+
 		change(keys -> {
 			if(keys.noneSatisfy(key -> key.id().equals(id))) {
 				throw new KeyNotFoundException(id);
 			}
 
-			return keys.reject(key -> key.id().equals(id));
+			var remaining = keys.reject(key -> key.id().equals(id));
+
+			/*
+			 * Checked against what the revocation would leave rather than
+			 * against what is stored now, and inside the change so that it sees
+			 * whatever another node wrote in the meantime.
+			 */
+			if(rootKeyHash == null && !canAdminister(remaining)) {
+				throw KeyInUseException.lastAdministrator(id);
+			}
+
+			return remaining;
 		});
 
 		logger.atInfo()
 			.addKeyValue("key", id)
 			.log("Revoked API key");
+	}
+
+	/**
+	 * Replace the credential of a key, leaving what it may do alone.
+	 *
+	 * <p>The id, the description, the grants and the expiry are all kept, so
+	 * anything that records the key id stays correct. Only the secret changes.
+	 *
+	 * <p>The previous credential stops working on this node at once and on every
+	 * other node within its refresh interval. Clients have that interval to move
+	 * to the new credential.
+	 *
+	 * <p>The new credential comes back once and is never stored, the same as for
+	 * a key that was just created.
+	 *
+	 * @param id
+	 * @return
+	 * @throws KeyNotFoundException
+	 *   if no key is stored under that id
+	 * @throws KeyStorageException
+	 *   if this node cannot keep keys, the storage could not be reached, or the
+	 *   keys kept being changed by someone else
+	 */
+	public Created rotate(String id) {
+		var generated = KeySecret.generateFor(id);
+		var rotated = new AtomicReference<Key>();
+
+		change(keys -> {
+			var existing = keys.detect(key -> key.id().equals(id));
+			if(existing == null) {
+				throw new KeyNotFoundException(id);
+			}
+
+			var replacement = new Key(
+				existing.id(),
+				generated.secretHash(),
+				existing.description(),
+				existing.grants(),
+				existing.createdAt(),
+				existing.expiresAt()
+			);
+
+			rotated.set(replacement);
+
+			return keys.collect(key -> key.id().equals(id) ? replacement : key);
+		});
+
+		logger.atInfo()
+			.addKeyValue("key", id)
+			.log("Rotated the credential of an API key");
+
+		return new Created(rotated.get(), generated.credential());
 	}
 
 	/**

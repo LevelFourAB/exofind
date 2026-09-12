@@ -40,9 +40,15 @@ public class ErrorCodeCoverageTest {
 	 *   codes a caller branches on are the ones inside its {@code errors}
 	 *   <li>{@code index:io_error} is answered with a 500, the same as any
 	 *   other failure of the node itself
+	 *   <li>{@code auth:forbidden} is the refusal every endpoint answers with,
+	 *   and {@code RequiredPermissionFilter} writes it into the document from
+	 *   the {@code @RequiresPermission} the endpoint already carries. An
+	 *   endpoint that checks a second permission for itself answers the same
+	 *   code, naming the permission it found missing in the error body
 	 * </ul>
 	 */
-	private static final Set<String> UNIVERSAL = Set.of("validation", "index:io_error");
+	private static final Set<String> UNIVERSAL =
+		Set.of("validation", "index:io_error", "auth:forbidden");
 
 	@Test
 	void everyEndpointNamesTheCodesItCanAnswerWith() throws Exception {

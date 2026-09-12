@@ -2,6 +2,7 @@ package se.l4.exofind.engine.auth;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Duration;
@@ -432,5 +433,138 @@ public class KeysTest {
 		storage.unreachable = true;
 
 		keys(ROOT_KEY, null).onStart(null);
+	}
+
+	/**
+	 * A node with nowhere to keep keys reads as though none had ever been
+	 * created, which would otherwise be listed as a deployment holding no key.
+	 */
+	@Test
+	void aNodeWithNowhereToKeepKeysSaysSoRatherThanListingNone() {
+		var instance = new Keys(
+			new NoKeyStorage(),
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofSeconds(30)
+		);
+		started.add(instance);
+
+		assertThrows(KeyStorageException.class, instance::list);
+	}
+
+	@Test
+	void revokingTheLastKeyThatCouldMakeAnotherIsRefusedWithoutARootKey() {
+		var credential = storeKey(
+			null,
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		);
+		var id = KeySecret.parse(credential).orElseThrow().id();
+
+		var instance = keys(null, null);
+		instance.onStart(null);
+
+		assertThrows(KeyInUseException.class, () -> instance.delete(id));
+
+		// The key is still there, so the node still has a way in
+		assertThat(instance.resolve("Bearer " + credential).id(), is(id));
+	}
+
+	@Test
+	void revokingAnAdministratorIsAllowedOnceAnotherOneExists() {
+		var credential = storeKey(
+			null,
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		);
+		var id = KeySecret.parse(credential).orElseThrow().id();
+
+		storeKey(
+			null,
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		);
+
+		var instance = keys(null, null);
+		instance.onStart(null);
+		instance.delete(id);
+
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + credential)
+		);
+	}
+
+	@Test
+	void revokingTheLastAdministratorIsAllowedWhereThereIsARootKey() {
+		var credential = storeKey(
+			null,
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		);
+		var id = KeySecret.parse(credential).orElseThrow().id();
+
+		var instance = keys(ROOT_KEY, null);
+		instance.onStart(null);
+		instance.delete(id);
+
+		assertThat(instance.resolve("Bearer " + ROOT_KEY).id(), is(Principal.ROOT));
+	}
+
+	@Test
+	void revokingTheKeyThatAnswersRequestsWithoutACredentialIsRefused() {
+		var credential = storeKey(null, grant("books", Permission.SEARCH));
+		var id = KeySecret.parse(credential).orElseThrow().id();
+
+		var instance = keys(ROOT_KEY, id);
+		instance.onStart(null);
+
+		assertThrows(KeyInUseException.class, () -> instance.delete(id));
+
+		// The node goes on answering requests that carry no credential
+		assertThat(instance.resolve(null).allows(Permission.SEARCH, "books"), is(true));
+	}
+
+	@Test
+	void rotatingAKeyReplacesTheCredentialAndKeepsWhatItAllows() {
+		var instance = keys();
+		var created = instance.create(
+			"the loader",
+			Lists.immutable.of(grant("books", Permission.DOCUMENTS_WRITE)),
+			null
+		);
+
+		// Read back rather than taken from the create, which is what the store holds
+		var stored = instance.list().detect(key -> key.id().equals(created.key().id()));
+
+		var rotated = instance.rotate(created.key().id());
+
+		assertThat(rotated.key().id(), is(created.key().id()));
+		assertThat(rotated.key().description(), is("the loader"));
+		assertThat(rotated.key().createdAt(), is(stored.createdAt()));
+		assertThat(rotated.credential(), is(not(created.credential())));
+
+		var principal = instance.resolve("Bearer " + rotated.credential());
+		assertThat(principal.id(), is(created.key().id()));
+		assertThat(principal.allows(Permission.DOCUMENTS_WRITE, "books"), is(true));
+	}
+
+	@Test
+	void theCredentialARotationReplacedStopsWorking() {
+		var instance = keys();
+		var created = instance.create(
+			"",
+			Lists.immutable.of(grant("books", Permission.SEARCH)),
+			null
+		);
+
+		instance.rotate(created.key().id());
+
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + created.credential())
+		);
+	}
+
+	@Test
+	void rotatingAKeyThatIsNotThereSaysSo() {
+		assertThrows(KeyNotFoundException.class, () -> keys().rotate("0123456789abcdef"));
 	}
 }

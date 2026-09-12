@@ -3,6 +3,7 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -137,7 +138,85 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure), contains("auth:key:indexes_required", "auth:key:indexes_required"));
+		/*
+		 * Reader stands for two index-scoped permissions and the grant is one
+		 * mistake, so it is reported once with both named.
+		 */
+		assertThat(codesOf(failure), contains("auth:key:indexes_required"));
+		assertThat(
+			failure.getErrors().getFirst().getMessage(),
+			containsString("`indexes.read`, `search`")
+		);
+	}
+
+	@Test
+	void indexPatternsOnAGrantThatReachesNoIndexAreRefused() {
+		/*
+		 * Stored, the patterns would come back in every listing and read as a
+		 * limit on a grant that has none.
+		 */
+		var failure = assertThrows(
+			ValidationException.class,
+			() -> KeyDefinitionMapper.toEngine(
+				definition(
+					new KeyDefinition.GrantDefinition(
+						null,
+						List.of("keys.read", "keys.write"),
+						List.of("books")
+					)
+				)
+			)
+		);
+
+		assertThat(codesOf(failure), contains("auth:key:indexes_not_used"));
+	}
+
+	@Test
+	void indexPatternsAreKeptOnAGrantThatMixesTheTwoScopes() {
+		var parsed = KeyDefinitionMapper.toEngine(
+			definition(
+				new KeyDefinition.GrantDefinition(
+					null,
+					List.of("keys.read", "indexes.read"),
+					List.of("books")
+				)
+			)
+		);
+
+		assertThat(parsed.grants().getFirst().indexes().toList(), contains("books"));
+	}
+
+	@Test
+	void aGrantWithAnEmptyListOfPermissionsIsRefused() {
+		/*
+		 * An empty list says as little about what the key may do as no list at
+		 * all, and a key that allows nothing refuses every request it is used
+		 * for.
+		 */
+		var failure = assertThrows(
+			ValidationException.class,
+			() -> KeyDefinitionMapper.toEngine(
+				definition(new KeyDefinition.GrantDefinition(null, List.of(), List.of("books")))
+			)
+		);
+
+		assertThat(codesOf(failure), contains("auth:key:permissions_required"));
+	}
+
+	@Test
+	void aRoleNamedInAnotherCaseIsRefused() {
+		/*
+		 * A role name is a value a client writes, matched the same way a
+		 * permission name is.
+		 */
+		var failure = assertThrows(
+			ValidationException.class,
+			() -> KeyDefinitionMapper.toEngine(
+				definition(new KeyDefinition.GrantDefinition("READER", null, List.of("books")))
+			)
+		);
+
+		assertThat(codesOf(failure), contains("auth:key:unknown_role"));
 	}
 
 	@Test
@@ -192,6 +271,26 @@ public class KeyDefinitionMapperTest {
 		);
 
 		assertThat(codesOf(failure), contains("auth:key:invalid_expiry"));
+	}
+
+	@Test
+	void anExpiryThatHasPassedIsRefused() {
+		/*
+		 * The credential handed back would be refused as lapsed by the very
+		 * next request that presented it.
+		 */
+		var failure = assertThrows(
+			ValidationException.class,
+			() -> KeyDefinitionMapper.toEngine(
+				new KeyDefinition(
+					"a key",
+					List.of(new KeyDefinition.GrantDefinition("reader", null, List.of("books"))),
+					"2020-01-01T00:00:00Z"
+				)
+			)
+		);
+
+		assertThat(codesOf(failure), contains("auth:key:expiry_in_past"));
 	}
 
 	@Test

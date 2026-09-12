@@ -92,9 +92,21 @@ To confirm your deployment security setup:
 - Verify that your components can authenticate and perform their allowed actions with their assigned keys.
 - Once a stored key holds `keys.write`, verify that additional nodes start without a root key configured. A node running in `keys` mode refuses to start only when it cannot find a root key or a stored key with `keys.write`.
 
-## Rotating a key
+## Rotating a credential
 
-Keys are created and revoked, never edited. To replace a key:
+To replace the credential of a key while keeping everything the key allows, rotate it:
+
+```http
+POST /v1alpha1/admin/keys/{id}/actions/rotate
+```
+
+The response carries the new credential. The key ID, description, grants, and expiry are all kept, so nothing that records the key ID has to change. Update the service that uses the key with the new credential.
+
+The previous credential keeps working on other nodes until their next storage read, within `EXOFIND_AUTH_REFRESH_INTERVAL` (10s by default). Rotate on a schedule, and after a credential has been exposed.
+
+## Replacing what a key allows
+
+What a key allows cannot be changed. To grant a service something else:
 
 1. Create the new key with the required grants.
 2. Update the service that uses the key and confirm that it works.
@@ -106,9 +118,11 @@ Keys are created and revoked, never edited. To replace a key:
 
 This order ensures that both keys work momentarily during the transition, preventing downtime.
 
-Revocation takes effect immediately on the node that served the request, and on every other node within its `EXOFIND_AUTH_REFRESH_INTERVAL` (10s by default). A key leaked into a public repository stops working in seconds.
+Revocation takes effect immediately on the node that served the request, and on every other node within its `EXOFIND_AUTH_REFRESH_INTERVAL`. A key leaked into a public repository stops working in seconds.
 
-Managing keys does not require reaching a specific node, so rotation works while no candidate is up to take writes.
+A node refuses to revoke two keys: the last key granted `keys.write` when the node has no root key, and the key named by `EXOFIND_AUTH_ANONYMOUS_KEY`. Create a replacement, or point the configuration elsewhere, and send the request again. For both, see [keys that cannot be revoked](../reference/auth.md#keys-that-cannot-be-revoked).
+
+Managing keys does not require reaching a specific node, so both procedures work while no candidate is up to take writes.
 
 To make short-lived credentials expire automatically, set `expiresAt` when creating the key. Use this for temporary access, such as for a contractor or a one-off migration.
 

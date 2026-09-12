@@ -73,6 +73,10 @@ public enum Role {
 	/**
 	 * Look a role up by the name it is written as.
 	 *
+	 * <p>The name is matched exactly, the same way {@link Permission#byId}
+	 * matches a permission name. Role names are lowercase, so a name in any
+	 * other case stands for no role.
+	 *
 	 * @param id
 	 * @return
 	 *   empty when there is no such role
@@ -80,7 +84,7 @@ public enum Role {
 	public static Optional<Role> byId(String id) {
 		return id == null
 			? Optional.empty()
-			: Optional.ofNullable(BY_ID.get(id.toLowerCase()));
+			: Optional.ofNullable(BY_ID.get(id));
 	}
 
 	private static MapIterable<String, Role> byId() {

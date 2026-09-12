@@ -11,10 +11,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 
+import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.Sets;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,10 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexRequest;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
+import se.l4.exofind.engine.auth.ForbiddenException;
+import se.l4.exofind.engine.auth.Grant;
+import se.l4.exofind.engine.auth.Key;
+import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
@@ -58,6 +65,7 @@ public class ReindexResourceTest {
 	ReindexJobs reindexJobs;
 	IndexResource indexResource;
 	ReindexResource resource;
+	AuthContext auth;
 	UriInfo uriInfo;
 
 	@BeforeEach
@@ -90,7 +98,7 @@ public class ReindexResourceTest {
 			Duration.ofHours(1)
 		);
 
-		var auth = new AuthContext();
+		auth = new AuthContext();
 		auth.set(Principal.unchecked());
 
 		reindexJobs = TestReindexJobs.create(nodeState, indexes, registry, storageDirectory);
@@ -146,6 +154,27 @@ public class ReindexResourceTest {
 	private void create(String name) {
 		var response = indexResource.put(name, null, null, false, uriInfo, definition());
 		assertThat(response.getStatus(), is(201));
+	}
+
+	/**
+	 * Answer the rest of the test as a key granted these permissions over every
+	 * index, in place of the unchecked principal the setup uses.
+	 */
+	private void answerAs(Permission... permissions) {
+		auth.set(
+			Principal.of(
+				new Key(
+					"test",
+					"",
+					"",
+					Lists.immutable.of(
+						new Grant(Sets.immutable.of(permissions), Lists.immutable.of("*"))
+					),
+					Instant.now(),
+					null
+				)
+			)
+		);
 	}
 
 	@Test
@@ -256,6 +285,61 @@ public class ReindexResourceTest {
 		assertThat(promoted.live(), is(true));
 
 		awaitPhase("books", "done");
+	}
+
+	/**
+	 * A job left on automatic promotion promotes the generation it filled, which
+	 * is what `indexes.promote` is about. Without it the reindex permission
+	 * alone would change what the index answers for.
+	 */
+	@Test
+	public void startingAJobThatPromotesNeedsThePromotePermission() {
+		create("books");
+		create("books@2");
+
+		answerAs(Permission.INDEXES_REINDEX);
+
+		assertThrows(ForbiddenException.class, () -> resource.reindex("books@2", null));
+		assertThrows(
+			ForbiddenException.class,
+			() -> resource.reindex("books@2", new ReindexRequest(null, "auto"))
+		);
+
+		// Nothing was started by either refusal
+		assertThrows(ReindexNotFoundException.class, () -> resource.status("books"));
+	}
+
+	/**
+	 * Manual promotion leaves the promote to a later request, which is checked
+	 * for `indexes.promote` of its own.
+	 */
+	@Test
+	public void startingAJobThatPromotesNothingNeedsOnlyTheReindexPermission() throws Exception {
+		create("books");
+		create("books@2");
+
+		answerAs(Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
+
+		var response = resource.reindex("books@2", new ReindexRequest(null, "manual"));
+		assertThat(response.getStatus(), is(202));
+
+		awaitPhase("books", "ready");
+	}
+
+	@Test
+	public void creatingAGenerationThatPromotesItselfNeedsThePromotePermission() {
+		create("books");
+
+		answerAs(Permission.INDEXES_WRITE, Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
+
+		assertThrows(
+			ForbiddenException.class,
+			() -> indexResource.put("books@2", null, "auto", false, uriInfo, definition())
+		);
+
+		// The refused request created no generation
+		var info = (IndexInfo) indexResource.get("books").getEntity();
+		assertThat(info.generations().size(), is(1));
 	}
 
 	private void awaitPhase(String index, String phase) throws Exception {

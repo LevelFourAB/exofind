@@ -6059,7 +6059,9 @@ paths:
         in: query
       - description: "Starts a reindex job filling the generation being created from\
           \ the live one, the way the reindex action would. One-shot: it is not stored\
-          \ in the definition, and it is refused on a request that creates no generation."
+          \ in the definition, and it is refused on a request that creates no generation.\
+          \ `auto` also needs `indexes.promote`, because the job it starts promotes\
+          \ the generation it filled; `manual` needs only `indexes.write`."
         schema:
           type: string
           enum:
@@ -7283,6 +7285,8 @@ paths:
 
         The job automatically promotes the target generation once it catches up with changes, unless the request specifies `"promote": "manual"`. With manual promotion, the job pauses in the `ready` phase and keeps the target caught up until `actions/promote` on the target finishes the job.
 
+        Because promoting changes what the index answers for, a request that leaves promotion automatic also needs `indexes.promote` on the target and is refused with `403` without it. A request specifying `"promote": "manual"` needs only `indexes.reindex`.
+
         An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it.
 
         Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
@@ -8504,7 +8508,7 @@ paths:
           description: |-
             The request body is missing, or the key definition failed validation. All validation errors are reported.
 
-            Error codes: `request:missing_body` - The request carries no body. `auth:key:unknown_role` - The definition names a role this version does not have. `auth:key:unknown_permission` - The definition names a permission this version does not have. `auth:key:grants_required` - The definition holds no grant, so the key could do nothing. `auth:key:permissions_required` - A grant names neither a role nor a list of permissions. `auth:key:indexes_required` - A grant holds a permission that is about one index and does not say which indexes it covers. `auth:key:invalid_index_pattern` - An entry of `indexes` is neither an index name nor a prefix followed by `*`. `auth:key:invalid_expiry` - `expiresAt` is not an ISO 8601 timestamp.
+            Error codes: `request:missing_body` - The request carries no body. `auth:key:unknown_role` - The definition names a role this version does not have. `auth:key:unknown_permission` - The definition names a permission this version does not have. `auth:key:grants_required` - The definition holds no grant, so the key could do nothing. `auth:key:permissions_required` - A grant names neither a role nor a list of permissions. `auth:key:indexes_required` - A grant holds a permission that is about one index and does not say which indexes it covers. `auth:key:invalid_index_pattern` - An entry of `indexes` is neither an index name nor a prefix followed by `*`. `auth:key:indexes_not_used` - A grant names `indexes` and holds no permission that is about one index, so the patterns would narrow nothing. `auth:key:invalid_expiry` - `expiresAt` is not an ISO 8601 timestamp. `auth:key:expiry_in_past` - `expiresAt` has already passed, so the key would be lapsed from the moment it was created.
           content:
             application/json:
               schema:
@@ -8526,8 +8530,14 @@ paths:
           - code: auth:key:invalid_index_pattern
             when: An entry of `indexes` is neither an index name nor a prefix followed
               by `*`.
+          - code: auth:key:indexes_not_used
+            when: "A grant names `indexes` and holds no permission that is about one\
+              \ index, so the patterns would narrow nothing."
           - code: auth:key:invalid_expiry
             when: '`expiresAt` is not an ISO 8601 timestamp.'
+          - code: auth:key:expiry_in_past
+            when: "`expiresAt` has already passed, so the key would be lapsed from\
+              \ the moment it was created."
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8582,7 +8592,9 @@ paths:
       description: |-
         Revokes an API key. Revocation takes effect on the answering node immediately and across all other nodes within `EXOFIND_AUTH_REFRESH_INTERVAL`, as nodes accept cached keys until their next storage read.
 
-        Keys are immutable. To change permissions, create a replacement key, migrate clients to the new key, and revoke the old key. The root key is not stored in key storage and cannot be revoked through the API.
+        What a key allows cannot be changed. To change permissions, create a replacement key, migrate clients to the new key, and revoke the old key. To replace only the credential, keeping everything the key allows, use `actions/rotate`. The root key is not stored in key storage and cannot be revoked through the API.
+
+        The answering node refuses to revoke two keys, because it would not start again without them: the last key granted `keys.write` when the node has no root key, and the key named by `EXOFIND_AUTH_ANONYMOUS_KEY`. Create a replacement, or point the configuration elsewhere, and send the request again.
 
         Served by whichever node receives the request.
 
@@ -8640,6 +8652,119 @@ paths:
         "409":
           description: |-
             The key could not be revoked. The stored keys are unchanged.
+
+            Error codes: `auth:key:last_administrator` - The key is the last one granted `keys.write` and the node has no root key, so revoking it would leave nobody able to create another. `auth:key:in_use_as_anonymous` - `EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node, so revoking it would stop that node from starting. `auth:keys:unavailable` - The node is not configured with key storage. `auth:keys:io_error` - Key storage answered with an error. Send the request again. `auth:keys:conflict` - Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:key:last_administrator
+            when: "The key is the last one granted `keys.write` and the node has no\
+              \ root key, so revoking it would leave nobody able to create another."
+          - code: auth:key:in_use_as_anonymous
+            when: "`EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node,\
+              \ so revoking it would stop that node from starting."
+          - code: auth:keys:unavailable
+            when: The node is not configured with key storage.
+          - code: auth:keys:io_error
+            when: Key storage answered with an error. Send the request again.
+          - code: auth:keys:conflict
+            when: Other nodes kept changing the stored keys. The stored keys are unchanged;
+              send the request again.
+      security:
+      - apiKey: []
+      x-required-permission: keys.write
+      x-permission-scope: deployment
+      x-permission-roles:
+      - admin
+      x-permission-anonymous: false
+  /v1alpha1/admin/keys/{id}/actions/rotate:
+    post:
+      summary: Rotate the credential of an API key
+      description: |-
+        Replaces the credential of a key and returns the new one. The key ID, description, grants, `createdAt` and `expiresAt` are all kept, so a rotation is how a credential is replaced without rebuilding the grants and without anything that records the key ID going stale.
+
+        The previous credential stops working on the answering node immediately and across all other nodes within `EXOFIND_AUTH_REFRESH_INTERVAL`, as nodes accept cached keys until their next storage read. That interval is the window in which clients can move to the new credential.
+
+        As when a key is created, the full secret credential is returned only in this response because credentials are stored only as hashes. A lost credential cannot be recovered; rotate the key again. Server logs record the key `id`, never the credential value.
+
+        Served by whichever node receives the request.
+
+        Requires the `keys.write` permission, which is not about one index. The `admin` role includes it.
+      operationId: rotateKey
+      tags:
+      - API keys
+      parameters:
+      - description: ID of the key whose credential is replaced.
+        example: 4ff6b760264c1918
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The credential was replaced. The `credential` in this response
+            is the only copy returned.
+          content:
+            application/json:
+              examples:
+                rotated:
+                  value:
+                    credential: exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH
+                    key:
+                      id: 4ff6b760264c1918
+                      description: the search backend
+                      grants:
+                      - permissions:
+                        - indexes.read
+                        - search
+                        indexes:
+                        - products
+                      createdAt: 2026-08-16T12:09:33.198275Z
+                      expiresAt: 2027-01-01T00:00:00Z
+              schema:
+                $ref: "#/components/schemas/CreatedKey"
+        "401":
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
+        "403":
+          description: |-
+            The API key does not have the `keys.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `keys.write` permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `keys.write` permission.
+        "404":
+          description: |-
+            No key has this ID.
+
+            Error codes: `auth:key:not_found` - No key is stored under this ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:key:not_found
+            when: No key is stored under this ID.
+        "409":
+          description: |-
+            The credential could not be replaced. The stored keys are unchanged and the previous credential still works.
 
             Error codes: `auth:keys:unavailable` - The node is not configured with key storage. `auth:keys:io_error` - Key storage answered with an error. Send the request again. `auth:keys:conflict` - Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again.
           content:

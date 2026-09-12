@@ -487,7 +487,7 @@ A reindex job populates a new generation by copying documents from an existing g
 
 ### Starting a job
 
-To start a reindex job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex`, where `{name}` is the target generation the job fills. This request requires the `indexes.reindex` permission.
+To start a reindex job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex`, where `{name}` is the target generation the job fills. This request requires the `indexes.reindex` permission on the target, and `indexes.promote` as well unless the body specifies `"promote": "manual"`, because a job left on automatic promotion promotes the generation it fills. A request missing `indexes.promote` returns `403 Forbidden`.
 
 The target must meet the following requirements:
 
@@ -519,6 +519,8 @@ PUT /v1alpha1/admin/indexes/products@2?reindex=auto
 This creates the target generation with the definition in the request body and starts a reindex job reading from the live generation.
 
 The `reindex` query parameter is one-shot and is not stored in the index definition. The server returns `400 Bad Request` if the request does not create a generation, such as on an initial index creation or on a `PUT` request that updates an existing generation's definition.
+
+`?reindex=auto` requires the `indexes.promote` permission in addition to the `indexes.write` permission the `PUT` request requires, because the job it starts promotes the generation it fills. A request missing `indexes.promote` returns `403 Forbidden` and creates no generation. `?reindex=manual` requires only `indexes.write`.
 
 ### Job record and phases
 

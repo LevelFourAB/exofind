@@ -20,6 +20,7 @@ import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexListResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexRequest;
+import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.reindex.ReindexJobs;
@@ -78,6 +79,12 @@ public class ReindexResource {
 	 * in the ready phase until {@code actions/promote} on the target completes
 	 * it.
 	 *
+	 * <p><p>A job that promotes changes what the index answers for, so it needs
+	 * {@code indexes.promote} on the target as well as {@code indexes.reindex}.
+	 * A request asking for manual promotion needs only
+	 * {@code indexes.reindex}, and the caller presents a key holding
+	 * {@code indexes.promote} to {@code actions/promote} when the job is ready.
+	 *
 	 * @param name
 	 *   the generation to fill, as {@code index@generation}
 	 * @param body
@@ -111,6 +118,11 @@ public class ReindexResource {
 			"manual"`. With manual promotion, the job pauses in the `ready` \
 			phase and keeps the target caught up until `actions/promote` on \
 			the target finishes the job.
+
+			Because promoting changes what the index answers for, a request \
+			that leaves promotion automatic also needs `indexes.promote` on \
+			the target and is refused with `403` without it. A request \
+			specifying `"promote": "manual"` needs only `indexes.reindex`.
 
 			An index can run at most one reindex job at a time. A finished \
 			job's record remains readable until a new job replaces it."""
@@ -252,11 +264,24 @@ public class ReindexResource {
 		)
 		ReindexRequest body
 	) {
-		var job = reindexes.start(
-			name,
-			body == null ? null : body.from(),
-			body == null ? null : body.promote()
-		);
+		var promote = body == null ? null : body.promote();
+
+		/*
+		 * A job left on automatic promotion calls the promote itself, so the
+		 * caller is reaching `indexes.promote` through `indexes.reindex`. The
+		 * filter checked the one the endpoint declares; the second is checked
+		 * here, against the same name, before anything is started. Parsed first
+		 * so that a value the job would refuse is still answered as a mistake in
+		 * the request rather than as a refusal.
+		 */
+		if(
+			!ReindexJobs.parsePromote(promote)
+				&& !auth.principal().allows(Permission.INDEXES_PROMOTE, name)
+		) {
+			throw new ForbiddenException(Permission.INDEXES_PROMOTE);
+		}
+
+		var job = reindexes.start(name, body == null ? null : body.from(), promote);
 
 		return Response.status(Response.Status.ACCEPTED)
 			.entity(ReindexInfo.of(job))

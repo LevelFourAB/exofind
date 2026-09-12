@@ -50,10 +50,17 @@ public final class KeyDefinitionMapper {
 
 	private static final ErrorType INDEXES_REQUIRED =
 		ErrorType.withCode("auth:key:indexes_required")
-			.withArguments("permission")
+			.withArguments("permissions")
 			.withMessage(
-				"`{{permission}}` is about one index, so the grant has to say which"
+				"{{permissions}} apply to one index each, so the grant has to say which"
 					+ " indexes it covers"
+			);
+
+	private static final ErrorType INDEXES_NOT_USED =
+		ErrorType.withCode("auth:key:indexes_not_used")
+			.withMessage(
+				"No permission of this grant applies to one index, so `indexes` would not"
+					+ " narrow anything the grant allows. Leave it out"
 			);
 
 	private static final ErrorType INVALID_INDEX_PATTERN =
@@ -66,6 +73,13 @@ public final class KeyDefinitionMapper {
 	private static final ErrorType INVALID_EXPIRY = ErrorType.withCode("auth:key:invalid_expiry")
 		.withArguments("value")
 		.withMessage("`{{value}}` is not an ISO-8601 timestamp");
+
+	private static final ErrorType EXPIRY_IN_PAST = ErrorType.withCode("auth:key:expiry_in_past")
+		.withArguments("value")
+		.withMessage(
+			"`{{value}}` has already passed, so the key would be refused as lapsed from"
+				+ " the moment it was created"
+		);
 
 	/**
 	 * A key definition that has been checked, ready to be created.
@@ -173,28 +187,52 @@ public final class KeyDefinitionMapper {
 				}
 			}
 
-			if(definition.role() == null && definition.permissions() == null) {
+			/*
+			 * An empty list of permissions says as little about what the key may
+			 * do as no list at all, so the two are refused alike rather than one
+			 * of them creating a key that allows nothing.
+			 */
+			if(
+				definition.role() == null
+					&& (definition.permissions() == null || definition.permissions().isEmpty())
+			) {
 				errors.add(PERMISSIONS_REQUIRED.toMessage(at));
 			}
 
 			var indexes = toIndexes(definition.indexes(), at.forField("indexes"), errors);
+			var perIndex = permissions.select(p -> p.scope() == Permission.Scope.INDEX);
 
-			/*
-			 * A grant of index-scoped permissions over no index allows nothing.
-			 * Refused rather than stored, because the key would look right in a
-			 * listing and answer every request with a refusal.
-			 */
-			if(indexes.isEmpty()) {
-				permissions.select(p -> p.scope() == Permission.Scope.INDEX)
-					.toSortedListBy(Permission::id)
-					.forEach(
-						permission -> errors.add(
-							INDEXES_REQUIRED.toMessage(
-								at.forField("indexes"),
-								"permission", permission.id()
-							)
-						)
-					);
+			if(perIndex.notEmpty() && indexes.isEmpty()) {
+				/*
+				 * A grant of index-scoped permissions over no index allows
+				 * nothing. Refused rather than stored, because the key would
+				 * look right in a listing and answer every request with a
+				 * refusal. Reported once for the grant, naming every permission
+				 * it is about - one error per permission at the same path says
+				 * the same thing several times over.
+				 */
+				errors.add(
+					INDEXES_REQUIRED.toMessage(
+						at.forField("indexes"),
+						"permissions", perIndex.toSortedListBy(Permission::id)
+							.collect(permission -> "`" + permission.id() + "`")
+							.makeString(", ")
+					)
+				);
+			} else if(
+				perIndex.isEmpty()
+					&& permissions.notEmpty()
+					&& definition.indexes() != null
+					&& !definition.indexes().isEmpty()
+			) {
+				/*
+				 * Patterns over a grant that holds nothing they could apply to.
+				 * Stored, they would come back in every listing and read as a
+				 * limit on a grant that has none. Read off the definition rather
+				 * than off what parsed, so a grant with an unusable pattern is
+				 * told both things at once.
+				 */
+				errors.add(INDEXES_NOT_USED.toMessage(at.forField("indexes")));
 			}
 
 			grants.add(new Grant(permissions, indexes.toImmutable()));
@@ -251,12 +289,25 @@ public final class KeyDefinitionMapper {
 			return null;
 		}
 
+		Instant expiresAt;
 		try {
-			return OffsetDateTime.parse(value).toInstant();
+			expiresAt = OffsetDateTime.parse(value).toInstant();
 		} catch(DateTimeParseException e) {
 			errors.add(INVALID_EXPIRY.toMessage(location, "value", value));
 			return null;
 		}
+
+		/*
+		 * A key is lapsed from the moment it is created once its expiry has
+		 * passed, so the credential handed back would never work. Compared the
+		 * way a request is checked, where an expiry exactly now has passed.
+		 */
+		if(!expiresAt.isAfter(Instant.now())) {
+			errors.add(EXPIRY_IN_PAST.toMessage(location, "value", value));
+			return null;
+		}
+
+		return expiresAt;
 	}
 
 	/**

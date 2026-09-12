@@ -50,7 +50,7 @@ Exofind supports the following permissions:
 | `indexes.promote` | index | Promotes an index to serve from a generation. |
 | `indexes.commit` | index | Commits and pushes pending changes. |
 | `indexes.pull` | index | Pulls the latest index state. |
-| `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. |
+| `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. A job that promotes the generation it fills also needs `indexes.promote`. |
 | `settings.write` | index | Replaces or removes the search settings of an index. Kept apart from `indexes.write` so relevance tuning can be granted without the power to change what an index contains. Reading settings needs `indexes.read`. |
 | `keys.read` | deployment | Lists API keys. |
 | `keys.write` | deployment | Creates and revokes API keys. |
@@ -62,6 +62,19 @@ Grants are evaluated as a union: a request is allowed if any grant permits it. T
 An index pattern is either the exact name of an index or a prefix followed by an asterisk (`*`). A single asterisk (`*`) matches all indexes. Deployment-scoped permissions apply regardless of specified index patterns.
 
 Permission names are stored inside keys and are immutable.
+
+Permission and role names are matched exactly. Both are lowercase, and a name in any other case returns `auth:key:unknown_permission` or `auth:key:unknown_role`.
+
+### Permissions that reach another permission
+
+Two requests do more than the permission on their path suggests. Both promote a generation, so both need `indexes.promote` in addition to the permission the endpoint requires:
+
+| Request | Requires |
+| --- | --- |
+| `POST /v1alpha1/admin/indexes/{name}/actions/reindex` with `"promote": "auto"`, which is the default | `indexes.reindex` and `indexes.promote` |
+| `PUT /v1alpha1/admin/indexes/{name}?reindex=auto` | `indexes.write` and `indexes.promote` |
+
+Passing `"promote": "manual"` or `reindex=manual` starts a job that stops in the `ready` phase without promoting anything, and needs only the permission the endpoint requires. Finishing such a job with `POST /v1alpha1/admin/indexes/{name}/actions/promote` needs `indexes.promote`.
 
 ### Patterns and generations
 
@@ -129,14 +142,15 @@ For more information on configuring demo environments, see [Run a public demo no
 
 ## Keys API
 
-The keys API manages deployment API keys under `/v1alpha1/admin/keys`. Keys are immutable: they can be created and revoked, but not modified.
+The keys API manages deployment API keys under `/v1alpha1/admin/keys`. What a key allows cannot be changed: to grant something else, create a replacement key and revoke the old one. The credential of a key can be replaced on its own.
 
 The API provides the following endpoints:
 
 ```http
-GET    /v1alpha1/admin/keys        # List all keys and node configuration
-POST   /v1alpha1/admin/keys        # Create a key
-DELETE /v1alpha1/admin/keys/{id}   # Revoke a key
+GET    /v1alpha1/admin/keys                       # List all keys and node configuration
+POST   /v1alpha1/admin/keys                       # Create a key
+DELETE /v1alpha1/admin/keys/{id}                  # Revoke a key
+POST   /v1alpha1/admin/keys/{id}/actions/rotate   # Replace the credential of a key
 ```
 
 Each endpoint also has a generated page stating every field it accepts and returns. See [API keys](https://exofind.dev/api/operations/tags/api-keys/).
@@ -162,8 +176,8 @@ Content-Type: application/json
 The request body supports the following fields:
 
 - `description` (optional): A string describing the key.
-- `grants` (required): An array of grant objects. Each grant specifies `role`, `permissions`, or both (evaluated as a union). The `indexes` array is required for grants containing index-scoped permissions.
-- `expiresAt` (optional): An ISO 8601 timestamp string defining when the key expires. If omitted, the key does not expire.
+- `grants` (required): An array of grant objects. Each grant specifies `role`, `permissions`, or both (evaluated as a union). An empty `permissions` array is refused, the same as a grant that specifies neither field. The `indexes` array is required for grants containing index-scoped permissions, and is refused on a grant that holds only deployment-scoped permissions, because those apply whatever the patterns say.
+- `expiresAt` (optional): An ISO 8601 timestamp string defining when the key expires. If omitted, the key does not expire. A timestamp that has already passed is refused, because the credential returned would be refused as lapsed by the next request that presented it.
 
 A successful request returns `201 Created` with the generated credential string and key metadata. The full secret credential is returned only once in this response:
 
@@ -199,14 +213,48 @@ To list keys, send a `GET` request to `/v1alpha1/admin/keys`:
 
 The `keys` array contains deployment keys shared across all nodes. The `rootKeyConfigured` and `anonymousKey` fields reflect the local configuration of the node answering the request. The `anonymousKey` field is always present in the response and is `null` when the node rejects unauthenticated requests. A key's `expiresAt` is always present and is `null` when the key does not expire. The permissions of a grant are returned sorted by name, whatever order they were given in when the key was created.
 
+A node that cannot store keys returns `409 Conflict` with the code `auth:keys:unavailable` instead of an empty list, so an empty `keys` array means the deployment holds no key.
+
+### Rotating a credential
+
+To replace the credential of a key without changing what the key allows, send a `POST` request to `/v1alpha1/admin/keys/{id}/actions/rotate`. The response has the same shape as key creation:
+
+```json
+{
+  "credential": "exok_4ff6b760264c1918_yLmc0Uo6BxfR2wPnEvKa7dHTqJ9sZgXV",
+  "key": {
+    "id": "4ff6b760264c1918",
+    "description": "the search backend",
+    "grants": [ { "permissions": ["indexes.read", "search"], "indexes": ["books"] } ],
+    "createdAt": "2026-08-16T12:09:33.198275Z",
+    "expiresAt": "2027-01-01T00:00:00Z"
+  }
+}
+```
+
+The ID, description, grants, `createdAt`, and `expiresAt` are all kept, so anything that records the key ID stays correct. Only the secret changes.
+
+The previous credential stops working on the answering node immediately and on every other node within `EXOFIND_AUTH_REFRESH_INTERVAL`. That interval is the window in which clients can move to the new credential.
+
+### Keys that cannot be revoked
+
+A node answers `409 Conflict` for two keys, because it would not start again without them:
+
+- The last key granted `keys.write`, on a node with no root key. Nothing would be able to create another key. Create a replacement key first, or set `EXOFIND_AUTH_ROOT_KEY`.
+- The key named by `EXOFIND_AUTH_ANONYMOUS_KEY` on the answering node. Point that variable at another key, or unset it, and send the request again.
+
+Both are read from the configuration of the node answering the request. On a deployment whose nodes are configured differently, a node that does not depend on the key revokes it.
+
 ### Status codes
 
 The keys API returns the following error status codes:
 
 | Status | Code | Description |
 |--------|------|-------------|
-| `400 Bad Request` | `auth:key:*` | The request specifies an unknown role, permission, or index pattern, or an invalid timestamp in `expiresAt`. All validation errors are reported. |
-| `404 Not Found` | `auth:key:not_found` | The specified key ID does not exist for revocation. |
+| `400 Bad Request` | `auth:key:*` | The request specifies an unknown role, permission, or index pattern, a grant that grants nothing, `indexes` on a grant that reaches no index, or a timestamp in `expiresAt` that is invalid or has passed. All validation errors are reported. |
+| `404 Not Found` | `auth:key:not_found` | The specified key ID does not exist for revocation or rotation. |
+| `409 Conflict` | `auth:key:last_administrator` | The key is the last one granted `keys.write` and the node has no root key. |
+| `409 Conflict` | `auth:key:in_use_as_anonymous` | `EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node. |
 | `409 Conflict` | `auth:keys:unavailable` | Key storage is unavailable because object storage cannot be used for keys on this node. |
 | `409 Conflict` | `auth:keys:io_error` | Key storage could not be reached. Stored keys are unchanged. |
 | `409 Conflict` | `auth:keys:conflict` | Concurrent updates from other nodes conflicted with this request. Stored keys are unchanged. |

@@ -7,6 +7,7 @@ import java.util.Map;
 import org.eclipse.collections.api.map.MapIterable;
 
 import se.l4.exofind.engine.auth.ForbiddenException;
+import se.l4.exofind.engine.auth.KeyInUseException;
 import se.l4.exofind.engine.auth.KeyNotFoundException;
 import se.l4.exofind.engine.auth.KeyStorageException;
 import se.l4.exofind.engine.auth.UnauthenticatedException;
@@ -122,6 +123,13 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			return Response.Status.FORBIDDEN;
 		} else if(e instanceof KeyNotFoundException) {
 			return Response.Status.NOT_FOUND;
+		} else if(e instanceof KeyInUseException) {
+			/*
+			 * The key exists and the request is well formed; what refuses it is
+			 * the state the node is in, which the caller changes by creating a
+			 * replacement or by pointing its configuration elsewhere.
+			 */
+			return Response.Status.CONFLICT;
 		} else if(e instanceof KeyStorageException) {
 			/*
 			 * The change to the keys is well formed but could not be stored,
