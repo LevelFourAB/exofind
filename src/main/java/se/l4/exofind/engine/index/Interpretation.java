@@ -273,7 +273,7 @@ final class Interpretation {
 	 *   what reads the words as values of fields, or {@code null} when no
 	 *   field is read that way
 	 * @return
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   if the search names a target that can not be read on - a field that
 	 *   does not exist, one without a unit, a fallback in another unit than
 	 *   the field it stands in for, or a field outside the path of the
@@ -717,7 +717,7 @@ final class Interpretation {
 	private static void requireHeld(Chain chain, Place place) {
 		for(var step : chain.steps()) {
 			if(!step.heldInside(place.nestedPath())) {
-				throw new IndexException(
+				throw new IndexQueryException(
 					QueryCompiler.FIELD_NOT_IN_PATH,
 					"name", step.field().name(),
 					"path", place.nestedPath()
@@ -736,7 +736,7 @@ final class Interpretation {
 		for(var fallback : fallbacks) {
 			var field = resolve(schema, locale, fallback.field());
 			if(!field.unit().equals(head.unit())) {
-				throw new IndexException(
+				throw new IndexQueryException(
 					FALLBACK_UNIT_DIFFERS,
 					"name", fallback.field(),
 					"unit", field.unit(),
@@ -758,7 +758,7 @@ final class Interpretation {
 	 *
 	 * @throws IndexFieldNotFoundException
 	 *   if nothing in the index has the name
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   if the field declares no unit
 	 */
 	private static UnitField resolve(IndexSchema schema, LocaleSupport locale, String name) {
@@ -775,7 +775,7 @@ final class Interpretation {
 
 		var unitField = unitField(field, name, nestedPath, locale);
 		if(unitField == null) {
-			throw new IndexException(TARGET_WITHOUT_UNIT, "name", name);
+			throw new IndexQueryException(TARGET_WITHOUT_UNIT, "name", name);
 		}
 
 		return unitField;

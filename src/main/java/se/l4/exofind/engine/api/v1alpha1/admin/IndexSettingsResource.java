@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -125,6 +126,13 @@ public class IndexSettingsResource {
 		.withCode("request:update:value_invalid")
 		.withArguments("path", "reason")
 		.withMessage("`{{path}}` cannot be given that value: {{reason}}");
+
+	/*
+	 * A `null` inside a list or a map of the body. Refused where it sits rather
+	 * than left to reach the builders, which name no place in the request.
+	 */
+	private static final ErrorType VALUE_REQUIRED = ErrorType.withCode("request:value_required")
+		.withMessage("A value is needed here, `null` says nothing");
 
 	/*
 	 * Distinct from `index:settings:unavailable`, which is about this node
@@ -706,7 +714,9 @@ public class IndexSettingsResource {
 		}
 
 		if(definition.synonyms() != null) {
+			var at = ObjectLocation.root().forField("synonyms");
 			for(var entry : definition.synonyms().entrySet()) {
+				require(entry.getValue(), at.forField(entry.getKey()));
 				builder.putSynonyms(entry.getKey(), toStored(entry.getKey(), entry.getValue()));
 			}
 
@@ -720,8 +730,13 @@ public class IndexSettingsResource {
 		}
 
 		if(definition.typoExclusions() != null) {
+			var at = ObjectLocation.root().forField("typoExclusions");
 			for(var entry : definition.typoExclusions().entrySet()) {
-				builder.putTypoExclusions(entry.getKey(), toStored(entry.getValue()));
+				require(entry.getValue(), at.forField(entry.getKey()));
+				builder.putTypoExclusions(
+					entry.getKey(),
+					toStored(entry.getValue(), at.forField(entry.getKey()))
+				);
 			}
 
 			var errors = index.validateTypoExclusions(
@@ -734,8 +749,13 @@ public class IndexSettingsResource {
 		}
 
 		if(definition.fields() != null) {
+			var at = ObjectLocation.root().forField("fields");
 			for(var entry : definition.fields().entrySet()) {
-				builder.putFields(entry.getKey(), toStored(entry.getValue()));
+				require(entry.getValue(), at.forField(entry.getKey()));
+				builder.putFields(
+					entry.getKey(),
+					toStored(entry.getValue(), at.forField(entry.getKey()))
+				);
 			}
 
 			var errors = index.validateFieldSettings(
@@ -750,7 +770,20 @@ public class IndexSettingsResource {
 		return SearchSettingsFeatures.describe(builder.build());
 	}
 
-	private static FieldSettings toStored(SearchSettingsDefinition.FieldSettings settings) {
+	/**
+	 * Refuse a {@code null} that was written inside a list or a map of the
+	 * body, saying where it sits.
+	 */
+	private static void require(Object value, ObjectLocation at) {
+		if(value == null) {
+			throw new ValidationException(VALUE_REQUIRED.toMessage(at));
+		}
+	}
+
+	private static FieldSettings toStored(
+		SearchSettingsDefinition.FieldSettings settings,
+		ObjectLocation at
+	) {
 		var builder = FieldSettings.newBuilder();
 
 		if(settings.interpret() != null) {
@@ -760,7 +793,13 @@ public class IndexSettingsResource {
 		}
 
 		if(settings.values() != null) {
-			for(var value : settings.values()) {
+			var values = settings.values();
+			var valuesAt = at.forField("values");
+			for(int i = 0; i < values.size(); i++) {
+				var valueAt = valuesAt.forIndex(i);
+				require(values.get(i), valueAt);
+
+				var value = values.get(i);
 				var declared = DeclaredValue.newBuilder();
 				if(value.value() != null) {
 					declared.setValue(value.value());
@@ -769,7 +808,11 @@ public class IndexSettingsResource {
 					declared.setOrder(value.order());
 				}
 				if(value.labels() != null) {
-					declared.putAllLabels(value.labels());
+					var labelsAt = valueAt.forField("labels");
+					for(var label : value.labels().entrySet()) {
+						require(label.getValue(), labelsAt.forField(label.getKey()));
+						declared.putLabels(label.getKey(), label.getValue());
+					}
 				}
 
 				builder.addValues(declared);
@@ -830,10 +873,21 @@ public class IndexSettingsResource {
 		SearchSettingsDefinition.QuerySynonyms synonyms
 	) {
 		var builder = QuerySynonyms.newBuilder()
-			.setSet(SynonymsMapper.toStored(name, synonyms.rules(), INVALID_SYNONYM_RULE));
+			.setSet(
+				SynonymsMapper.toStored(
+					name,
+					synonyms.rules(),
+					INVALID_SYNONYM_RULE,
+					ObjectLocation.root().forField("synonyms").forField(name)
+				)
+			);
 
 		if(synonyms.fields() != null) {
-			builder.addAllFields(synonyms.fields());
+			addAll(
+				synonyms.fields(),
+				ObjectLocation.root().forField("synonyms").forField(name).forField("fields"),
+				builder::addFields
+			);
 		}
 		if(synonyms.boost() != null) {
 			builder.setBoost(synonyms.boost());
@@ -851,18 +905,34 @@ public class IndexSettingsResource {
 	}
 
 	private static QueryTypoExclusions toStored(
-		SearchSettingsDefinition.TypoExclusions exclusions
+		SearchSettingsDefinition.TypoExclusions exclusions,
+		ObjectLocation at
 	) {
 		var builder = QueryTypoExclusions.newBuilder();
 
 		if(exclusions.words() != null) {
-			builder.addAllWords(exclusions.words());
+			addAll(exclusions.words(), at.forField("words"), builder::addWords);
 		}
 		if(exclusions.fields() != null) {
-			builder.addAllFields(exclusions.fields());
+			addAll(exclusions.fields(), at.forField("fields"), builder::addFields);
 		}
 
 		return builder.build();
+	}
+
+	/**
+	 * Store the entries of a list of names, refusing a {@code null} among them
+	 * by the position it sits at.
+	 */
+	private static void addAll(
+		List<String> values,
+		ObjectLocation at,
+		Consumer<String> into
+	) {
+		for(int i = 0; i < values.size(); i++) {
+			require(values.get(i), at.forIndex(i));
+			into.accept(values.get(i));
+		}
 	}
 
 	private static SearchSettingsDefinition.TypoExclusions toApi(QueryTypoExclusions exclusions) {
@@ -953,13 +1023,21 @@ public class IndexSettingsResource {
 				}
 			}
 			if(typoExclusions != null) {
+				var at = ObjectLocation.root().forField("typoExclusions");
 				for(var entry : typoExclusions.entrySet()) {
-					builder.putTypoExclusions(entry.getKey(), toStored(entry.getValue()));
+					builder.putTypoExclusions(
+						entry.getKey(),
+						toStored(entry.getValue(), at.forField(entry.getKey()))
+					);
 				}
 			}
 			if(fields != null) {
+				var at = ObjectLocation.root().forField("fields");
 				for(var entry : fields.entrySet()) {
-					builder.putFields(entry.getKey(), toStored(entry.getValue()));
+					builder.putFields(
+						entry.getKey(),
+						toStored(entry.getValue(), at.forField(entry.getKey()))
+					);
 				}
 			}
 

@@ -12,8 +12,9 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ObjectFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
-import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 
 /**
  * Expands the {@link Role} of a field into the usages it stands for.
@@ -126,7 +127,7 @@ public class FieldRoles {
 	 *   definition as it was received
 	 * @return
 	 *   the same definition with no field carrying a role
-	 * @throws EngineException
+	 * @throws ValidationException
 	 *   with {@code index:field:role:not_valid_for_type} if a field names a
 	 *   role its type can not answer for, or
 	 *   {@code index:field:role:not_valid_in_object} if a field inside an
@@ -140,7 +141,11 @@ public class FieldRoles {
 		return new IndexDefinition(
 			definition.source(),
 			definition.metadata(),
-			expandFields(definition.fields(), Context.ROOT),
+			expandFields(
+				definition.fields(),
+				Context.ROOT,
+				ObjectLocation.root().forField("fields")
+			),
 			definition.ranking(),
 			definition.resources(),
 			definition.locales(),
@@ -150,11 +155,15 @@ public class FieldRoles {
 
 	private static Map<String, FieldDefinition> expandFields(
 		Map<String, FieldDefinition> fields,
-		Context context
+		Context context,
+		ObjectLocation at
 	) {
 		var expanded = new LinkedHashMap<String, FieldDefinition>();
 		for(var entry : fields.entrySet()) {
-			expanded.put(entry.getKey(), expand(entry.getKey(), entry.getValue(), context));
+			expanded.put(
+				entry.getKey(),
+				expand(entry.getKey(), entry.getValue(), context, at.forField(entry.getKey()))
+			);
 		}
 		return expanded;
 	}
@@ -162,20 +171,22 @@ public class FieldRoles {
 	private static FieldDefinition expand(
 		String name,
 		FieldDefinition field,
-		Context context
+		Context context,
+		ObjectLocation at
 	) {
 		return switch(field) {
-			case StringFieldDefinition string -> expandString(name, string, context);
-			case TimestampFieldDefinition timestamp -> expandTimestamp(name, timestamp);
-			case GeoPointFieldDefinition geo -> expandGeoPoint(name, geo);
-			case ObjectFieldDefinition object -> expandObject(object, context);
+			case StringFieldDefinition string -> expandString(name, string, context, at);
+			case TimestampFieldDefinition timestamp -> expandTimestamp(name, timestamp, at);
+			case GeoPointFieldDefinition geo -> expandGeoPoint(name, geo, at);
+			case ObjectFieldDefinition object -> expandObject(object, context, at);
 			default -> field;
 		};
 	}
 
 	private static ObjectFieldDefinition expandObject(
 		ObjectFieldDefinition field,
-		Context outside
+		Context outside,
+		ObjectLocation at
 	) {
 		if(field.fields() == null) {
 			return field;
@@ -199,14 +210,15 @@ public class FieldRoles {
 			field.facet(),
 			field.mode(),
 			field.key(),
-			expandFields(field.fields(), context)
+			expandFields(field.fields(), context, at.forField("fields"))
 		);
 	}
 
 	private static StringFieldDefinition expandString(
 		String name,
 		StringFieldDefinition field,
-		Context context
+		Context context,
+		ObjectLocation at
 	) {
 		var role = field.role();
 		if(role == null) {
@@ -216,7 +228,7 @@ public class FieldRoles {
 		var template = switch(role) {
 			case ID -> {
 				if(context.inObject()) {
-					throw notValidInObject(name, role);
+					throw notValidInObject(name, role, at);
 				}
 
 				yield template(
@@ -323,7 +335,7 @@ public class FieldRoles {
 				DEFAULT_USAGE,
 				null
 			);
-			case TIMESTAMP, GEO -> throw notValidForType(name, role, "string");
+			case TIMESTAMP, GEO -> throw notValidForType(name, role, "string", at);
 		};
 
 		return merge(field, template);
@@ -331,7 +343,8 @@ public class FieldRoles {
 
 	private static TimestampFieldDefinition expandTimestamp(
 		String name,
-		TimestampFieldDefinition field
+		TimestampFieldDefinition field,
+		ObjectLocation at
 	) {
 		var role = field.role();
 		if(role == null) {
@@ -339,7 +352,7 @@ public class FieldRoles {
 		}
 
 		if(role != Role.TIMESTAMP) {
-			throw notValidForType(name, role, "timestamp");
+			throw notValidForType(name, role, "timestamp", at);
 		}
 
 		return new TimestampFieldDefinition(
@@ -357,7 +370,8 @@ public class FieldRoles {
 
 	private static GeoPointFieldDefinition expandGeoPoint(
 		String name,
-		GeoPointFieldDefinition field
+		GeoPointFieldDefinition field,
+		ObjectLocation at
 	) {
 		var role = field.role();
 		if(role == null) {
@@ -365,7 +379,7 @@ public class FieldRoles {
 		}
 
 		if(role != Role.GEO) {
-			throw notValidForType(name, role, "geo_point");
+			throw notValidForType(name, role, "geo_point", at);
 		}
 
 		return new GeoPointFieldDefinition(
@@ -487,20 +501,33 @@ public class FieldRoles {
 		return HIGHLIGHT;
 	}
 
-	private static EngineException notValidForType(String name, Role role, String type) {
-		return new EngineException(
-			NOT_VALID_FOR_TYPE,
-			"name", name,
-			"role", jsonName(role),
-			"type", type
+	private static ValidationException notValidForType(
+		String name,
+		Role role,
+		String type,
+		ObjectLocation at
+	) {
+		return new ValidationException(
+			NOT_VALID_FOR_TYPE.toMessage(
+				at.forField("role"),
+				"name", name,
+				"role", jsonName(role),
+				"type", type
+			)
 		);
 	}
 
-	private static EngineException notValidInObject(String name, Role role) {
-		return new EngineException(
-			NOT_VALID_IN_OBJECT,
-			"name", name,
-			"role", jsonName(role)
+	private static ValidationException notValidInObject(
+		String name,
+		Role role,
+		ObjectLocation at
+	) {
+		return new ValidationException(
+			NOT_VALID_IN_OBJECT.toMessage(
+				at.forField("role"),
+				"name", name,
+				"role", jsonName(role)
+			)
 		);
 	}
 

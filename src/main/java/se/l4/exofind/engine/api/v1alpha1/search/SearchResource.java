@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
@@ -34,7 +35,10 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestResponse;
 import se.l4.exofind.engine.auth.Permission;
+import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.Location;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.SearchDeadline;
@@ -90,6 +94,17 @@ public class SearchResource {
 	private static final ErrorType IO_ERROR = ErrorType.withCode("index:io_error")
 		.withArguments("index")
 		.withMessage("The index `{{index}}` could not be searched");
+
+	private static final ErrorType EXPLAIN_KEY_REQUIRED =
+		ErrorType.withCode("search:explain:key_required")
+			.withMessage("An explanation is of one hit, so `key` names the document it is of");
+
+	private static final ErrorType EXPLAIN_INDEX_INVALID =
+		ErrorType.withCode("search:explain:index_invalid")
+			.withArguments("index")
+			.withMessage(
+				"`index` counts the values of the `hits` path from zero, so `{{index}}` names none"
+			);
 
 	private final Indexes indexes;
 	private final SearchSettings searchSettings;
@@ -910,6 +925,16 @@ public class SearchResource {
 		when = "The index declares no primary key, so a hit cannot be named."
 	)
 	@ReturnsError(
+		value = "search:explain:key_required",
+		status = 400,
+		when = "The request carries no `key`, so it names no hit to explain."
+	)
+	@ReturnsError(
+		value = "search:explain:index_invalid",
+		status = 400,
+		when = "`index` is below zero, so it names no value of the `hits` path."
+	)
+	@ReturnsError(
 		value = "index:explain:document_not_found",
 		status = 404,
 		when = "Nothing is indexed under `key`."
@@ -976,6 +1001,22 @@ public class SearchResource {
 		))
 		SearchRequest body
 	) {
+		var errors = Lists.mutable.<ErrorMessage>empty();
+
+		if(key == null || key.isEmpty()) {
+			errors.add(EXPLAIN_KEY_REQUIRED.toMessage(Location.create("key")));
+		}
+
+		if(valueIndex < 0) {
+			errors.add(
+				EXPLAIN_INDEX_INVALID.toMessage(Location.create("index"), "index", valueIndex)
+			);
+		}
+
+		if(errors.notEmpty()) {
+			throw new ValidationException(errors);
+		}
+
 		var index = indexes.getOrThrow(name);
 		var mapped = SearchRequestMapper.toEngine(body, limits);
 

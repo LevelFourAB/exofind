@@ -16,6 +16,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexClosedException;
 import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
+import se.l4.exofind.engine.index.IndexExplainTargetNotFoundException;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.IndexInvalidCursorException;
@@ -26,6 +27,7 @@ import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.IndexNoPrimaryKeyException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexOutOfDateException;
+import se.l4.exofind.engine.index.IndexQueryException;
 import se.l4.exofind.engine.index.IndexReadonlyException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.IndexSourceRequiredException;
@@ -45,6 +47,7 @@ import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.reindex.ReindexInProgressException;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
+import se.l4.exofind.engine.reindex.ReindexStorageException;
 import se.l4.exofind.engine.reindex.ReindexTargetBusyException;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
@@ -146,13 +149,20 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			return Response.Status.CONFLICT;
 		} else if(e instanceof ValidationException) {
 			return Response.Status.BAD_REQUEST;
+		} else if(e instanceof RequestBodyUnreadableException) {
+			/*
+			 * The body stopped arriving part way through. The node has nothing
+			 * wrong with it, so the request is what is reported as incomplete.
+			 */
+			return Response.Status.BAD_REQUEST;
 		} else if(e instanceof IndexFieldNotFoundException
 			|| e instanceof IndexFieldUsageException
 			|| e instanceof IndexSourceRequiredException
 			|| e instanceof IndexSourceNotKeptException
 			|| e instanceof IndexInvalidQueryTypeException
 			|| e instanceof IndexInvalidQueryValueException
-			|| e instanceof IndexInvalidCursorException) {
+			|| e instanceof IndexInvalidCursorException
+			|| e instanceof IndexQueryException) {
 			/*
 			 * The query asks the index for something it does not have, which
 			 * is the caller's to fix - the arguments the exception carries say
@@ -173,6 +183,14 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			 * A request that named one document by its key and the index holds
 			 * none - the key in the path names nothing, the same as a name no
 			 * index answers to.
+			 */
+			return Response.Status.NOT_FOUND;
+		} else if(e instanceof IndexExplainTargetNotFoundException) {
+			/*
+			 * The explanation names one document, and one value of it where the
+			 * hits are values, and the index holds nothing there. Naming a
+			 * target rather than searching for one, so it is answered the same
+			 * way as a document read by its key.
 			 */
 			return Response.Status.NOT_FOUND;
 		} else if(e instanceof IndexVersionMismatchException) {
@@ -254,6 +272,12 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			return Response.Status.CONFLICT;
 		} else if(e instanceof ReindexNotFoundException) {
 			return Response.Status.NOT_FOUND;
+		} else if(e instanceof ReindexStorageException) {
+			/*
+			 * The request is well formed and the record of the reindex could not
+			 * be read or written, which leaves the reindex exactly as it was.
+			 */
+			return Response.Status.CONFLICT;
 		} else if(e instanceof ReindexInProgressException
 			|| e instanceof ReindexTargetBusyException) {
 			/*

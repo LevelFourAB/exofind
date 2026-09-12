@@ -17,8 +17,9 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.ObjectFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.VectorFieldDefinition;
-import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.locales.Locales;
 
 /**
@@ -75,6 +76,14 @@ public class IndexLocales {
 				"Field `{{name}}` lists its own `locales` while the index declares them - narrow with `only` instead"
 			);
 
+	/*
+	 * A `null` written in a list of locales. Refused where it sits rather than
+	 * left to fail where a locale is canonicalized, which names no place in the
+	 * request.
+	 */
+	private static final ErrorType VALUE_REQUIRED = ErrorType.withCode("request:value_required")
+		.withMessage("A value is needed here, `null` says nothing");
+
 	private IndexLocales() {
 	}
 
@@ -87,7 +96,7 @@ public class IndexLocales {
 	 * @return
 	 *   the same definition with no locale declaration and no field carrying
 	 *   {@code only}
-	 * @throws EngineException
+	 * @throws ValidationException
 	 *   with {@code index:locales:default_locale_required} if the declaration
 	 *   names no default locale,
 	 *   {@code index:field:locales:not_declared} if a field names a locale the
@@ -101,17 +110,22 @@ public class IndexLocales {
 	 */
 	public static IndexDefinition expand(IndexDefinition definition) {
 		var declaration = definition.locales();
+		var fieldsAt = ObjectLocation.root().forField("fields");
 
 		if(declaration == null) {
 			if(definition.fields() != null) {
-				refuseOnly(definition.fields(), "");
+				refuseOnly(definition.fields(), "", fieldsAt);
 			}
 
 			return definition;
 		}
 
+		var localesAt = ObjectLocation.root().forField("locales");
+
 		if(declaration.defaultLocale() == null || declaration.defaultLocale().isEmpty()) {
-			throw new EngineException(DEFAULT_LOCALE_REQUIRED);
+			throw new ValidationException(
+				DEFAULT_LOCALE_REQUIRED.toMessage(localesAt.forField("defaultLocale"))
+			);
 		}
 
 		/*
@@ -121,8 +135,12 @@ public class IndexLocales {
 		var declared = new ArrayList<String>();
 		declared.add(Locales.canonical(declaration.defaultLocale()));
 		if(declaration.supported() != null) {
-			for(var locale : declaration.supported()) {
-				var canonical = Locales.canonical(locale);
+			var supported = declaration.supported();
+			var supportedAt = localesAt.forField("supported");
+			for(int i = 0; i < supported.size(); i++) {
+				require(supported.get(i), supportedAt.forIndex(i));
+
+				var canonical = Locales.canonical(supported.get(i));
 				if(!declared.contains(canonical)) {
 					declared.add(canonical);
 				}
@@ -134,7 +152,7 @@ public class IndexLocales {
 			definition.metadata(),
 			definition.fields() == null
 				? null
-				: expandFields(definition.fields(), "", declared),
+				: expandFields(definition.fields(), "", declared, fieldsAt),
 			definition.ranking(),
 			definition.resources(),
 			null,
@@ -145,13 +163,21 @@ public class IndexLocales {
 	private static Map<String, FieldDefinition> expandFields(
 		Map<String, FieldDefinition> fields,
 		String prefix,
-		List<String> declared
+		List<String> declared,
+		ObjectLocation at
 	) {
 		var expanded = new LinkedHashMap<String, FieldDefinition>();
 		for(var entry : fields.entrySet()) {
+			require(entry.getValue(), at.forField(entry.getKey()));
+
 			expanded.put(
 				entry.getKey(),
-				expand(prefix + entry.getKey(), entry.getValue(), declared)
+				expand(
+					prefix + entry.getKey(),
+					entry.getValue(),
+					declared,
+					at.forField(entry.getKey())
+				)
 			);
 		}
 		return expanded;
@@ -160,18 +186,29 @@ public class IndexLocales {
 	private static FieldDefinition expand(
 		String name,
 		FieldDefinition field,
-		List<String> declared
+		List<String> declared,
+		ObjectLocation at
 	) {
 		var locales = field.locales() == null
 			? null
-			: resolve(name, field.locales(), declared);
+			: resolve(name, field.locales(), declared, at.forField("locales"));
 
 		Map<String, FieldDefinition> fields = null;
 		if(field instanceof ObjectFieldDefinition object && object.fields() != null) {
-			fields = expandFields(object.fields(), name + ".", declared);
+			fields = expandFields(object.fields(), name + ".", declared, at.forField("fields"));
 		}
 
 		return rebuild(field, locales, fields);
+	}
+
+	/**
+	 * Refuse a {@code null} written where a locale or a field goes, saying
+	 * where it sits.
+	 */
+	private static void require(Object value, ObjectLocation at) {
+		if(value == null) {
+			throw new ValidationException(VALUE_REQUIRED.toMessage(at));
+		}
 	}
 
 	/**
@@ -181,10 +218,13 @@ public class IndexLocales {
 	private static FieldDefinition.Locales resolve(
 		String name,
 		FieldDefinition.Locales locales,
-		List<String> declared
+		List<String> declared,
+		ObjectLocation at
 	) {
 		if(locales.locales() != null) {
-			throw new EngineException(LIST_WITH_DECLARATION, "name", name);
+			throw new ValidationException(
+				LIST_WITH_DECLARATION.toMessage(at.forField("locales"), "name", name)
+			);
 		}
 
 		var defaultLocale = locales.defaultLocale() != null
@@ -192,23 +232,31 @@ public class IndexLocales {
 			: declared.get(0);
 
 		if(!declared.contains(defaultLocale)) {
-			throw new EngineException(
-				NOT_DECLARED,
-				"name", name,
-				"locale", defaultLocale
+			throw new ValidationException(
+				NOT_DECLARED.toMessage(
+					at.forField("defaultLocale"),
+					"name", name,
+					"locale", defaultLocale
+				)
 			);
 		}
 
 		var held = declared;
 		if(locales.only() != null) {
+			var only = locales.only();
+			var onlyAt = at.forField("only");
 			held = new ArrayList<>();
-			for(var locale : locales.only()) {
-				var canonical = Locales.canonical(locale);
+			for(int i = 0; i < only.size(); i++) {
+				require(only.get(i), onlyAt.forIndex(i));
+
+				var canonical = Locales.canonical(only.get(i));
 				if(!declared.contains(canonical)) {
-					throw new EngineException(
-						NOT_DECLARED,
-						"name", name,
-						"locale", canonical
+					throw new ValidationException(
+						NOT_DECLARED.toMessage(
+							onlyAt.forIndex(i),
+							"name", name,
+							"locale", canonical
+						)
 					);
 				}
 				if(!held.contains(canonical)) {
@@ -217,10 +265,12 @@ public class IndexLocales {
 			}
 
 			if(!held.contains(defaultLocale)) {
-				throw new EngineException(
-					DEFAULT_NOT_IN_ONLY,
-					"name", name,
-					"locale", defaultLocale
+				throw new ValidationException(
+					DEFAULT_NOT_IN_ONLY.toMessage(
+						onlyAt,
+						"name", name,
+						"locale", defaultLocale
+					)
 				);
 			}
 		}
@@ -244,17 +294,29 @@ public class IndexLocales {
 	 * Reject {@code only} where there is no declaration to narrow. Ignoring it
 	 * would leave the field holding one locale and say nothing.
 	 */
-	private static void refuseOnly(Map<String, FieldDefinition> fields, String prefix) {
+	private static void refuseOnly(
+		Map<String, FieldDefinition> fields,
+		String prefix,
+		ObjectLocation at
+	) {
 		for(var entry : fields.entrySet()) {
 			var name = prefix + entry.getKey();
 			var field = entry.getValue();
+			var fieldAt = at.forField(entry.getKey());
+
+			require(field, fieldAt);
 
 			if(field.locales() != null && field.locales().only() != null) {
-				throw new EngineException(ONLY_WITHOUT_DECLARATION, "name", name);
+				throw new ValidationException(
+					ONLY_WITHOUT_DECLARATION.toMessage(
+						fieldAt.forField("locales").forField("only"),
+						"name", name
+					)
+				);
 			}
 
 			if(field instanceof ObjectFieldDefinition object && object.fields() != null) {
-				refuseOnly(object.fields(), name + ".");
+				refuseOnly(object.fields(), name + ".", fieldAt.forField("fields"));
 			}
 		}
 	}

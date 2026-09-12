@@ -169,9 +169,6 @@ public class ReindexJobs {
 				"The target refused the document with key `{{key}}`: {{reason}}"
 			);
 
-	private static final ErrorType IO_ERROR = ErrorType.withCode("reindex:io_error")
-		.withMessage("The reindex record could not be read or written");
-
 	private final NodeState nodeState;
 	private final Indexes indexes;
 	private final IndexRegistry registry;
@@ -412,7 +409,7 @@ public class ReindexJobs {
 
 			sourceCount = sourceIndex.getDocumentCount();
 		} catch(IOException e) {
-			throw new EngineException(IO_ERROR, e);
+			throw new ReindexStorageException(e);
 		}
 
 		startLock.lock();
@@ -483,7 +480,7 @@ public class ReindexJobs {
 
 			return job;
 		} catch(IOException e) {
-			throw new EngineException(IO_ERROR, e);
+			throw new ReindexStorageException(e);
 		} finally {
 			startLock.unlock();
 		}
@@ -502,7 +499,7 @@ public class ReindexJobs {
 			return storage.read(index)
 				.flatMap(stored -> ReindexJob.fromStore(stored.record()));
 		} catch(IOException e) {
-			throw new EngineException(IO_ERROR, e);
+			throw new ReindexStorageException(e);
 		}
 	}
 
@@ -520,7 +517,7 @@ public class ReindexJobs {
 
 			return jobs;
 		} catch(IOException e) {
-			throw new EngineException(IO_ERROR, e);
+			throw new ReindexStorageException(e);
 		}
 	}
 
@@ -598,7 +595,7 @@ public class ReindexJobs {
 
 			return cancelled;
 		} catch(IOException e) {
-			throw new EngineException(IO_ERROR, e);
+			throw new ReindexStorageException(e);
 		}
 	}
 
@@ -719,7 +716,7 @@ public class ReindexJobs {
 			abandon(current);
 			return false;
 		} catch(IOException e) {
-			throw new EngineException(IO_ERROR, e);
+			throw new ReindexStorageException(e);
 		} finally {
 			current.lock.unlock();
 		}

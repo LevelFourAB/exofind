@@ -1,8 +1,9 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
-import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.schema.RankingConfig;
 
 /**
@@ -28,10 +29,16 @@ final class RankingMapper {
 	/**
 	 * Convert a ranking received over the API into one that can be stored.
 	 *
+	 * <p>A ranking sits under {@code ranking} both in a definition and in the
+	 * search settings, so an error reads the same way wherever it is raised.
+	 *
 	 * @param ranking
 	 * @return
+	 * @throws ValidationException
+	 *   if a signal is not exactly one shape
 	 */
 	static RankingConfig toStored(IndexDefinition.Ranking ranking) {
+		var location = ObjectLocation.root().forField("ranking");
 		var builder = RankingConfig.newBuilder();
 
 		if(ranking.tieBreakers() != null) {
@@ -55,20 +62,25 @@ final class RankingMapper {
 		}
 
 		if(ranking.signals() != null) {
-			for(var signal : ranking.signals()) {
-				builder.addSignals(toStored(signal));
+			var signals = ranking.signals();
+			var at = location.forField("signals");
+			for(int i = 0; i < signals.size(); i++) {
+				builder.addSignals(toStored(signals.get(i), at.forIndex(i)));
 			}
 		}
 
 		return builder.build();
 	}
 
-	private static RankingConfig.Signal toStored(IndexDefinition.Ranking.Signal signal) {
+	private static RankingConfig.Signal toStored(
+		IndexDefinition.Ranking.Signal signal,
+		ObjectLocation location
+	) {
 		var shapes = (signal.saturation() == null ? 0 : 1)
 			+ (signal.decay() == null ? 0 : 1)
 			+ (signal.linear() == null ? 0 : 1);
 		if(shapes != 1) {
-			throw new EngineException(INVALID_SIGNAL_SHAPE);
+			throw new ValidationException(INVALID_SIGNAL_SHAPE.toMessage(location));
 		}
 
 		var builder = RankingConfig.Signal.newBuilder();

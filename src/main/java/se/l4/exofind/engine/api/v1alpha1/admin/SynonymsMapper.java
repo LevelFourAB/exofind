@@ -4,8 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
-import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
 
 /**
@@ -35,19 +36,29 @@ final class SynonymsMapper {
 	 * @param invalidRule
 	 *   what to refuse a rule that is not exactly one kind with, taking the
 	 *   name of the set as its {@code name} argument
+	 * @param location
+	 *   where the set sits in the request, which the rule that is refused is
+	 *   reported under
 	 * @return
+	 * @throws ValidationException
+	 *   if a rule is not exactly one kind
 	 */
 	static ResourcesDef.SynonymsResource toStored(
 		String name,
 		List<IndexDefinition.Resources.Synonyms.Rule> rules,
-		ErrorType invalidRule
+		ErrorType invalidRule,
+		ObjectLocation location
 	) {
 		var builder = ResourcesDef.SynonymsResource.newBuilder();
 
 		if(rules != null) {
-			for(var rule : rules) {
-				if((rule.equivalent() == null) == (rule.mapping() == null)) {
-					throw new EngineException(invalidRule, "name", name);
+			var at = location.forField("rules");
+			for(int i = 0; i < rules.size(); i++) {
+				var rule = rules.get(i);
+				if(rule == null || (rule.equivalent() == null) == (rule.mapping() == null)) {
+					throw new ValidationException(
+						invalidRule.toMessage(at.forIndex(i), "name", name)
+					);
 				}
 
 				var stored = ResourcesDef.SynonymsResource.Rule.newBuilder();

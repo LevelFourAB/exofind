@@ -498,7 +498,7 @@ public class QueryCompiler {
 	 * @return
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by the name
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   with {@code index:query:nested:not_in_path} if the field is not
 	 *   inside the objects of the path
 	 * @throws IndexFieldUsageException
@@ -508,14 +508,14 @@ public class QueryCompiler {
 		var nested = schema.getNestedField(name);
 		if(nested.isEmpty()) {
 			if(schema.getField(name).isPresent()) {
-				throw new IndexException(FIELD_NOT_IN_PATH, "name", name, "path", path);
+				throw new IndexQueryException(FIELD_NOT_IN_PATH, "name", name, "path", path);
 			}
 
 			throw new IndexFieldNotFoundException(name);
 		}
 
 		if(!nested.get().path().equals(path)) {
-			throw new IndexException(FIELD_NOT_IN_PATH, "name", name, "path", path);
+			throw new IndexQueryException(FIELD_NOT_IN_PATH, "name", name, "path", path);
 		}
 
 		var field = nested.get().field();
@@ -1030,7 +1030,7 @@ public class QueryCompiler {
 		}
 
 		if(!field.isNestedObject()) {
-			throw new IndexException(NESTED_ON_FLATTENED, "path", clause.path());
+			throw new IndexQueryException(NESTED_ON_FLATTENED, "path", clause.path());
 		}
 
 		requireNestedSupported(clause.clauses());
@@ -1202,7 +1202,7 @@ public class QueryCompiler {
 				case OrQuery q -> requireNestedSupported(q.clauses());
 				case NotQuery q -> requireNestedSupported(q.clauses());
 				case BoostQuery q -> requireNestedSupported(q.clauses());
-				default -> throw new IndexException(
+				default -> throw new IndexQueryException(
 					NESTED_UNSUPPORTED_CLAUSE,
 					"type", clause.type()
 				);
@@ -1369,7 +1369,7 @@ public class QueryCompiler {
 	 * @return
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by the name
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   with {@code index:query:matched:not_object} if the field is not an
 	 *   object in {@code nested} mode
 	 */
@@ -1386,7 +1386,7 @@ public class QueryCompiler {
 	 * @return
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by the name
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   with {@code index:query:hits:not_object} if the field is not an
 	 *   object in {@code nested} mode
 	 */
@@ -1402,13 +1402,13 @@ public class QueryCompiler {
 		 * whatever the name is of.
 		 */
 		if(schema.getNestedField(name).isPresent()) {
-			throw new IndexException(notAnObject, "path", name);
+			throw new IndexQueryException(notAnObject, "path", name);
 		}
 
 		var field = schema.getField(name)
 			.orElseThrow(() -> new IndexFieldNotFoundException(name));
 		if(!field.isObject() || !field.isNestedObject()) {
-			throw new IndexException(notAnObject, "path", name);
+			throw new IndexQueryException(notAnObject, "path", name);
 		}
 
 		return field;
@@ -1773,7 +1773,7 @@ public class QueryCompiler {
 			: clause.fields();
 
 		if(fields.isEmpty()) {
-			throw new IndexException(NO_SEARCHABLE_FIELDS);
+			throw new IndexQueryException(NO_SEARCHABLE_FIELDS);
 		}
 
 		var weighted = fields.keyValuesView().toList();
@@ -2204,7 +2204,7 @@ public class QueryCompiler {
 		ListIterable<Query> clauses
 	) {
 		if(!NESTED_SORT_TYPES.contains(ordering.getType())) {
-			throw new IndexException(NESTED_SORT_UNSUPPORTED, "name", name);
+			throw new IndexQueryException(NESTED_SORT_UNSUPPORTED, "name", name);
 		}
 
 		var sort = new NestedSortField(
@@ -2246,7 +2246,7 @@ public class QueryCompiler {
 	 *   name of the object field the hits are values of
 	 * @return
 	 *   the order, or {@code null} to leave the best matches first
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   with {@code index:query:hits:sort_unsupported} for a step no value of
 	 *   the path can answer
 	 */
@@ -2266,7 +2266,7 @@ public class QueryCompiler {
 	 *   of
 	 * @return
 	 *   the order, or {@code null} to leave the best matches first
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   with {@code index:query:hits:when_sort_unsupported} for any step that
 	 *   is not the score
 	 */
@@ -2278,7 +2278,7 @@ public class QueryCompiler {
 		var fields = Lists.mutable.<SortField>empty();
 		for(var entry : sort) {
 			if(!(entry instanceof ScoreSort score)) {
-				throw new IndexException(HITS_WHEN_SORT_UNSUPPORTED, "path", path);
+				throw new IndexQueryException(HITS_WHEN_SORT_UNSUPPORTED, "path", path);
 			}
 
 			fields.add(new SortField(
@@ -2319,7 +2319,7 @@ public class QueryCompiler {
 						throw new IndexFieldNotFoundException(s.field());
 					}
 
-					throw new IndexException(
+					throw new IndexQueryException(
 						HITS_SORT_UNSUPPORTED,
 						"name", s.field(),
 						"path", path
@@ -2327,7 +2327,7 @@ public class QueryCompiler {
 				}
 
 				if(!nested.get().path().equals(path)) {
-					throw new IndexException(
+					throw new IndexQueryException(
 						FIELD_NOT_IN_PATH,
 						"name", s.field(),
 						"path", path
@@ -2349,13 +2349,13 @@ public class QueryCompiler {
 				 * was built to read the document rather than the value.
 				 */
 				if(!NESTED_SORT_TYPES.contains(ordering.getType())) {
-					throw new IndexException(NESTED_SORT_UNSUPPORTED, "name", s.field());
+					throw new IndexQueryException(NESTED_SORT_UNSUPPORTED, "name", s.field());
 				}
 
 				yield ordering;
 			}
 
-			case GeoDistanceSort s -> throw new IndexException(
+			case GeoDistanceSort s -> throw new IndexQueryException(
 				HITS_SORT_UNSUPPORTED,
 				"name", s.field(),
 				"path", path
@@ -2404,7 +2404,7 @@ public class QueryCompiler {
 		if(nestedPath != null) {
 			if(nested.isPresent()) {
 				if(!nested.get().path().equals(nestedPath)) {
-					throw new IndexException(
+					throw new IndexQueryException(
 						FIELD_NOT_IN_PATH,
 						"name", name,
 						"path", nestedPath
@@ -2415,14 +2415,14 @@ public class QueryCompiler {
 			}
 
 			if(schema.getField(name).isPresent()) {
-				throw new IndexException(FIELD_NOT_IN_PATH, "name", name, "path", nestedPath);
+				throw new IndexQueryException(FIELD_NOT_IN_PATH, "name", name, "path", nestedPath);
 			}
 
 			throw new IndexFieldNotFoundException(name);
 		}
 
 		if(nested.isPresent()) {
-			throw new IndexException(
+			throw new IndexQueryException(
 				NESTED_FIELD_OUTSIDE,
 				"name", name,
 				"path", nested.get().path()

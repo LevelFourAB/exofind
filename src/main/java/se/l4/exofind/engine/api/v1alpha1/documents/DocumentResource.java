@@ -30,6 +30,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.RequestBodyUnreadableException;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
@@ -462,12 +463,19 @@ public class DocumentResource {
 	@RequiresPermission(Permission.DOCUMENTS_WRITE)
 	@ServedBy(ServedBy.Node.INDEXER)
 	/*
-	 * Carries no OpenAPI annotations of its own. It shares a path and method
-	 * with the endpoint above, so the two are one operation in the document -
-	 * what this one contributes is the media type it consumes, which comes
-	 * from @Consumes. Describing it separately here would be dropped in the
-	 * merge, so what it does is said in that operation's description instead.
+	 * Carries no OpenAPI annotations of its own beyond the code only a streamed
+	 * body answers with, which is read onto the shared operation. It shares a
+	 * path and method with the endpoint above, so the two are one operation in
+	 * the document - what this one contributes is the media type it consumes,
+	 * which comes from @Consumes. Describing it separately here would be
+	 * dropped in the merge, so what it does is said in that operation's
+	 * description instead.
 	 */
+	@ReturnsError(
+		value = "request:unreadable",
+		status = 400,
+		when = "The body stopped arriving part way through. The documents read before that are indexed; send the rest again."
+	)
 	public DocumentsResponse addStream(@PathParam("name") String name, InputStream body) {
 		if(body == null) {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
@@ -480,7 +488,12 @@ public class DocumentResource {
 
 			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
 				while(hasNext(documents, indexed)) {
-					var json = documents.next();
+					/*
+					 * nextValue rather than next: next rewraps what it reads,
+					 * turning a document that is not JSON into an exception
+					 * neither catch below sees and answering with no position.
+					 */
+					var json = documents.nextValue();
 					var position = indexed;
 					write(name, index -> {
 						addDocument(index, name, json, position);
@@ -492,7 +505,7 @@ public class DocumentResource {
 			} catch(JacksonException e) {
 				throw malformed(e, indexed);
 			} catch(IOException e) {
-				throw new IndexException(IO_ERROR, e, "index", name);
+				throw new RequestBodyUnreadableException(e);
 			}
 
 			return indexed;
@@ -737,9 +750,15 @@ public class DocumentResource {
 	@RequiresPermission(Permission.DOCUMENTS_WRITE)
 	@ServedBy(ServedBy.Node.INDEXER)
 	/*
-	 * Carries no OpenAPI annotations, for the reason the newline delimited
-	 * indexing endpoint above does not.
+	 * Carries no OpenAPI annotations beyond the code only a streamed body
+	 * answers with, for the reason the newline delimited indexing endpoint
+	 * above does not.
 	 */
+	@ReturnsError(
+		value = "request:unreadable",
+		status = 400,
+		when = "The body stopped arriving part way through. The changes read before that are applied; send the rest again."
+	)
 	public UpdateResponse updateStream(
 		@PathParam("name") String name,
 		@QueryParam("missing") String missing,
@@ -759,7 +778,8 @@ public class DocumentResource {
 
 			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
 				while(hasNext(documents, read)) {
-					var json = documents.next();
+					// nextValue rather than next, see addStream
+					var json = documents.nextValue();
 					var position = read;
 					var applied = write(name, index -> updateDocument(
 						index, name, json, position, skipMissing, missingKeys
@@ -774,7 +794,7 @@ public class DocumentResource {
 			} catch(JacksonException e) {
 				throw malformed(e, read);
 			} catch(IOException e) {
-				throw new IndexException(IO_ERROR, e, "index", name);
+				throw new RequestBodyUnreadableException(e);
 			}
 
 			return changed;
@@ -1744,7 +1764,7 @@ public class DocumentResource {
 		} catch(JacksonException e) {
 			throw malformed(e, position);
 		} catch(IOException e) {
-			throw new IllegalStateException("Unable to read the documents of the request", e);
+			throw new RequestBodyUnreadableException(e);
 		}
 	}
 

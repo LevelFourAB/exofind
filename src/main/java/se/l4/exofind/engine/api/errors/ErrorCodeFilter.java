@@ -101,7 +101,17 @@ public class ErrorCodeFilter implements OASFilter {
 
 			var listed = new ArrayList<Map<String, String>>();
 			for(var code : status.getValue()) {
-				listed.add(Map.of(CODE, code.value(), WHEN, code.when()));
+				/*
+				 * Ordered rather than a Map.of, whose iteration order changes
+				 * between runs. The document is checked in under
+				 * `website/public/`, so an unordered entry would rewrite every
+				 * code each time it is refreshed.
+				 */
+				var entry = new LinkedHashMap<String, String>();
+				entry.put(CODE, code.value());
+				entry.put(WHEN, code.when());
+
+				listed.add(entry);
 			}
 
 			response.addExtension(CODES, listed);

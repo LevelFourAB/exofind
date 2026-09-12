@@ -14,7 +14,8 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.FieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ObjectFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
-import se.l4.exofind.engine.errors.EngineException;
+import se.l4.exofind.engine.errors.ErrorMessage;
+import se.l4.exofind.engine.errors.ValidationException;
 
 public class IndexLocalesTest {
 	private static final IndexDefinition.Locales DECLARED =
@@ -59,14 +60,21 @@ public class IndexLocalesTest {
 			.locales();
 	}
 
-	private static EngineException refused(
+	/**
+	 * Expand a definition that is refused, and answer the one error it is
+	 * refused with.
+	 */
+	private static ErrorMessage refused(
 		IndexDefinition.Locales declared,
 		Map<String, FieldDefinition> fields
 	) {
-		return assertThrows(
-			EngineException.class,
+		var exception = assertThrows(
+			ValidationException.class,
 			() -> IndexLocales.expand(definition(declared, fields))
 		);
+
+		assertThat(exception.getErrors().size(), is(1));
+		return exception.getErrors().getFirst();
 	}
 
 	@Test

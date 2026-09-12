@@ -189,6 +189,11 @@ public class ReindexResource {
 		when = "Another job holds the target generation."
 	)
 	@ReturnsError(
+		value = "reindex:io_error",
+		status = 409,
+		when = "The record of the reindex could not be written. Send the request again once the storage responds."
+	)
+	@ReturnsError(
 		value = "indexer:unavailable",
 		status = 409,
 		when = "No node is available to write the index. Send the request again once one is."
@@ -270,6 +275,11 @@ public class ReindexResource {
 			caller key lacks permissions on the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
+	@APIResponse(
+		responseCode = "409",
+		description = "The job record could not be read.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
 	@ReturnsError(
 		value = "reindex:not_found",
 		status = 404,
@@ -279,6 +289,11 @@ public class ReindexResource {
 		value = "index:not-found",
 		status = 404,
 		when = "No index or generation has this name, or the key holds no grant covering it."
+	)
+	@ReturnsError(
+		value = "reindex:io_error",
+		status = 409,
+		when = "The record of the reindex could not be read. Send the request again once the storage responds."
 	)
 	public ReindexInfo status(
 		@Parameter(
@@ -357,6 +372,11 @@ public class ReindexResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
+		value = "reindex:io_error",
+		status = 409,
+		when = "The record of the reindex could not be written. Send the request again once the storage responds."
+	)
+	@ReturnsError(
 		value = "indexer:unreachable",
 		status = 502,
 		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
@@ -406,6 +426,16 @@ public class ReindexResource {
 			schema = @Schema(implementation = ReindexListResponse.class),
 			examples = @ExampleObject(name = "jobs", value = ReindexListResponse.EXAMPLE)
 		)
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = "The job records could not be read.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "reindex:io_error",
+		status = 409,
+		when = "The records of the reindexes could not be read. Send the request again once the storage responds."
 	)
 	public ReindexListResponse list() {
 		var principal = auth.principal();

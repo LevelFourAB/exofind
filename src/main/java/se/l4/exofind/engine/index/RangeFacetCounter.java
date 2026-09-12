@@ -53,7 +53,7 @@ public interface RangeFacetCounter {
 	 * @param encode
 	 *   how a bound reads as an encoded value
 	 * @return
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   if a bucket holds nothing because its bounds are inverted or touch
 	 */
 	static RangeFacetCounter overLongs(
@@ -73,7 +73,7 @@ public interface RangeFacetCounter {
 			var to = openEnded ? Long.MAX_VALUE : encode.applyAsLong(range.to());
 
 			if(!openEnded && from >= to) {
-				throw new IndexException(EMPTY_RANGE);
+				throw new IndexQueryException(EMPTY_RANGE);
 			}
 
 			// Counts are read back by position, so the label only has to be unique

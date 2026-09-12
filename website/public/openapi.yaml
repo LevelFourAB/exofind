@@ -6976,6 +6976,19 @@ paths:
           - code: index:not-found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
+        "409":
+          description: |-
+            The job record could not be read.
+
+            Error codes: `reindex:io_error` - The record of the reindex could not be read. Send the request again once the storage responds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: reindex:io_error
+            when: The record of the reindex could not be read. Send the request again
+              once the storage responds.
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -7103,7 +7116,7 @@ paths:
           description: |-
             The job could not be started.
 
-            Error codes: `reindex:in_progress` - A reindex job is already running for the index. Wait for it, or cancel it. `reindex:target_busy` - Another job holds the target generation. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
+            Error codes: `reindex:in_progress` - A reindex job is already running for the index. Wait for it, or cancel it. `reindex:target_busy` - Another job holds the target generation. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds. `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
           content:
             application/json:
               schema:
@@ -7114,6 +7127,9 @@ paths:
               \ cancel it."
           - code: reindex:target_busy
             when: Another job holds the target generation.
+          - code: reindex:io_error
+            when: The record of the reindex could not be written. Send the request
+              again once the storage responds.
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
@@ -7219,7 +7235,7 @@ paths:
           description: |-
             No node is available to write the index.
 
-            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is.
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `reindex:io_error` - The record of the reindex could not be written. Send the request again once the storage responds.
           content:
             application/json:
               schema:
@@ -7228,6 +7244,9 @@ paths:
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
+          - code: reindex:io_error
+            when: The record of the reindex could not be written. Send the request
+              again once the storage responds.
         "502":
           description: |-
             The request was forwarded to the index writer and the writer did not respond.
@@ -8381,6 +8400,19 @@ paths:
           x-error-codes:
           - code: auth:forbidden
             when: The key is accepted but does not hold the `indexes.read` permission.
+        "409":
+          description: |-
+            The job records could not be read.
+
+            Error codes: `reindex:io_error` - The records of the reindexes could not be read. Send the request again once the storage responds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: reindex:io_error
+            when: The records of the reindexes could not be read. Send the request
+              again once the storage responds.
       security:
       - apiKey: []
       x-required-permission: indexes.read
@@ -8580,12 +8612,15 @@ paths:
           description: |-
             A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location, such as `documents[1].nonexistent`.
 
-            Error codes: `request:document:malformed` - A line of the body could not be read as JSON.
+            Error codes: `request:unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again. `request:document:malformed` - A line of the body could not be read as JSON.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: request:unreadable
+            when: The body stopped arriving part way through. The documents read before
+              that are indexed; send the rest again.
           - code: request:document:malformed
             when: A line of the body could not be read as JSON.
         "401":
@@ -8909,12 +8944,15 @@ paths:
           description: |-
             A change failed validation, or a path in it names something the index or the document does not hold.
 
-            Error codes: `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names.
+            Error codes: `request:unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again. `request:update:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `index:source:not_kept` - The index does not store document copies. Send the complete document instead. `request:update:path_invalid` - A path in the change could not be read. `request:update:path_unknown_field` - A path reaches into a field the index does not have. `request:update:selector_not_supported` - A path names one value of a field that holds neither locale variants nor objects. `request:update:locale_unknown` - A path names a locale the field holds no variant for. `request:update:add_not_multiple` - A change adds a value to a field that holds a single value. `request:update:not_an_object` - A path reaches inside a field whose values are not objects. `request:update:value_required` - A path reaches into a list of objects without saying which value. `request:update:no_match` - A selector names no value the document holds. A selector never creates the value it names.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
+          - code: request:unreadable
+            when: The body stopped arriving part way through. The changes read before
+              that are applied; send the rest again.
           - code: request:update:not_found
             when: A document the change names is not indexed and `missing` is `fail`.
           - code: index:no_primary_key
@@ -9819,7 +9857,7 @@ paths:
           description: |-
             The request is not a valid search, or the index declares no primary key so a hit cannot be named.
 
-            Error codes: `index:no_primary_key` - The index declares no primary key, so a hit cannot be named.
+            Error codes: `index:no_primary_key` - The index declares no primary key, so a hit cannot be named. `search:explain:key_required` - The request carries no `key`, so it names no hit to explain. `search:explain:index_invalid` - `index` is below zero, so it names no value of the `hits` path.
           content:
             application/json:
               schema:
@@ -9827,6 +9865,10 @@ paths:
           x-error-codes:
           - code: index:no_primary_key
             when: "The index declares no primary key, so a hit cannot be named."
+          - code: search:explain:key_required
+            when: "The request carries no `key`, so it names no hit to explain."
+          - code: search:explain:index_invalid
+            when: "`index` is below zero, so it names no value of the `hits` path."
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.

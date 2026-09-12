@@ -18,7 +18,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ObjectFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
-import se.l4.exofind.engine.errors.EngineException;
+import se.l4.exofind.engine.errors.ValidationException;
 
 public class FieldRolesTest {
 	private static StringFieldDefinition string(Role role) {
@@ -209,17 +209,19 @@ public class FieldRolesTest {
 	@Test
 	public void testRoleTheTypeCanNotAnswerForIsRefused() {
 		var exception = assertThrows(
-			EngineException.class,
+			ValidationException.class,
 			() -> expand(string(Role.TIMESTAMP))
 		);
 
-		assertThat(exception.getCode(), is("index:field:role:not_valid_for_type"));
+		var error = exception.getErrors().getFirst();
+		assertThat(error.getCode(), is("index:field:role:not_valid_for_type"));
+		assertThat(error.getLocation().describe(), is("fields.field.role"));
 	}
 
 	@Test
 	public void testRoleOfAnotherTypeOnATimestampIsRefused() {
 		var exception = assertThrows(
-			EngineException.class,
+			ValidationException.class,
 			() -> expand(new TimestampFieldDefinition(
 				Role.TITLE,
 				null, null, null, null, null,
@@ -227,7 +229,9 @@ public class FieldRolesTest {
 			))
 		);
 
-		assertThat(exception.getCode(), is("index:field:role:not_valid_for_type"));
+		var error = exception.getErrors().getFirst();
+		assertThat(error.getCode(), is("index:field:role:not_valid_for_type"));
+		assertThat(error.getLocation().describe(), is("fields.field.role"));
 	}
 
 	/**
@@ -237,11 +241,13 @@ public class FieldRolesTest {
 	@Test
 	public void testIdInsideAnObjectIsRefused() {
 		var exception = assertThrows(
-			EngineException.class,
+			ValidationException.class,
 			() -> expand(object(ObjectFieldDefinition.Mode.NESTED, string(Role.ID)))
 		);
 
-		assertThat(exception.getCode(), is("index:field:role:not_valid_in_object"));
+		var error = exception.getErrors().getFirst();
+		assertThat(error.getCode(), is("index:field:role:not_valid_in_object"));
+		assertThat(error.getLocation().describe(), is("fields.field.fields.inner.role"));
 	}
 
 	/**

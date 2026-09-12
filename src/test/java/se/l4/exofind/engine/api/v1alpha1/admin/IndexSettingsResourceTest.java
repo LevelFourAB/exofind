@@ -50,7 +50,6 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Signal;
 import se.l4.exofind.engine.auth.Principal;
-import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -1023,7 +1022,7 @@ public class IndexSettingsResourceTest {
 		shoes();
 
 		var e = assertThrows(
-			EngineException.class,
+			ValidationException.class,
 			() -> resource.put(
 				"shoes",
 				null,
@@ -1043,7 +1042,9 @@ public class IndexSettingsResourceTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:settings:synonyms:invalid_rule"));
+		var error = e.getErrors().getFirst();
+		assertThat(error.getCode(), is("index:settings:synonyms:invalid_rule"));
+		assertThat(error.getLocation().describe(), is("synonyms.merch.rules[0]"));
 	}
 
 	/**

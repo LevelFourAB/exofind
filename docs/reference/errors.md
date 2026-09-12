@@ -48,7 +48,7 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 
 | Prefix | Scope | Examples |
 | --- | --- | --- |
-| `request:*` | Unreadable or malformed request body | `request:missing_body`, `request:document:malformed`, `request:delete:target_required` |
+| `request:*` | Unreadable or malformed request body | `request:missing_body`, `request:unreadable`, `request:value_required`, `request:document:malformed`, `request:delete:target_required` |
 | `auth:*` | Caller identity and permissions | `auth:unauthenticated`, `auth:forbidden` |
 | `auth:key:*` | Key validation failure or unassigned key ID | `auth:key:unknown_role`, `auth:key:unknown_permission`, `auth:key:not_found` |
 | `auth:keys:*` | Key storage failure | `auth:keys:unavailable`, `auth:keys:conflict`, `auth:keys:io_error` |
@@ -68,9 +68,11 @@ Error codes use colon-separated namespaces. The prefix indicates which part of t
 | `index:query:*` | Query refers to unavailable index features or fields | `index:query:field_not_found`, `index:query:usage_not_enabled`, `index:query:source_not_kept`, `index:query:facet_prefix_on_a_tree`, `index:query:interpret:no_unit`, `index:query:interpret:fallback_unit` |
 | `index:explain:*` | Score explanation target lookup failure | `index:explain:document_not_found`, `index:explain:value_not_found` |
 | `search:clause:*`, `search:matcher:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:suggest:*`, `search:signal:*`, `search:rescore:*` | Malformed search request component | `search:suggest:limit_invalid`, `search:clause:field_required`, `search:clause:rankings_invalid`, `search:clause:ranking_empty`, `search:clause:depth_invalid`, `search:clause:depth_too_large`, `search:clause:k_too_large`, `search:clause:rank_constant_invalid`, `search:clause:interpret_fields_required`, `search:clause:interpret_when_unsupported`, `search:matcher:range_empty`, `search:sort:origin_required`, `search:highlight:fields_required`, `search:matched:limit_invalid`, `search:hits:path_required`, `search:facet:duplicate_name`, `search:signal:shape_invalid`, `search:signal:mode_without_signals`, `search:rescore:window_required`, `search:rescore:window_invalid`, `search:rescore:window_too_small`, `search:rescore:empty`, `search:rescore:weight_invalid`, `search:rescore:hits_unsupported` |
+| `search:explain:*` | Explanation naming no hit to explain | `search:explain:key_required`, `search:explain:index_invalid` |
 | `search:cursor:*`, `search:page:*` | Pagination error | `search:cursor:sort_mismatch`, `search:page:too_deep` |
 | `search:limit:*`, `search:query:*` | Search asking for more than the node allows | `search:limit:too_large`, `search:query:too_many_clauses`, `search:query:too_deep` |
 | `search:timeout` | Search abandoned after running longer than the node allows | `search:timeout` |
+| `reindex:*` | Reindex job lookup, state, or record storage failure | `reindex:not_found`, `reindex:in_progress`, `reindex:io_error` |
 | Other `index:*` | Index-level state and lifecycle errors | `index:already_exists`, `index:readonly`, `index:no_primary_key`, `index:closed`, `index:io_error`, `index:unsupported`, `index:no_live_generation` |
 
 ## Error codes
@@ -129,3 +131,7 @@ The following error codes require specific handling in client applications:
 - `index:settings:fields:suggest_unsupported`: Returned with HTTP `400` when storing search settings that suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`, in the generation the index name answers from. See [Suggesting what to search for](search-api.md#suggesting-what-to-search-for).
 - `index:explain:document_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when no document is indexed under the `key` query parameter.
 - `index:explain:value_not_found`: Returned with HTTP `404` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when that document holds no value of the search's `hits` path at the `index` query parameter.
+- `search:explain:key_required`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when the request carries no `key`. An explanation is of one hit, so `key` names the document it is of.
+- `search:explain:index_invalid`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/search/actions/explain` when `index` is below zero. The values of the `hits` path are counted from zero.
+- `request:unreadable`: Returned with HTTP `400` when the request body stopped arriving before it was read to the end, which a streamed request finds in the middle of its work. The documents read before that are indexed. Send the rest again.
+- `reindex:io_error`: Returned with HTTP `409` when the record of a reindex could not be read or written. The reindex is left as it was; retry the request once the storage responds.

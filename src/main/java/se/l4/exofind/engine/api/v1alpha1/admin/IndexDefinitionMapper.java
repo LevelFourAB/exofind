@@ -22,6 +22,8 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.VectorFieldDefinition;
 import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.AnalyzerDef;
 import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
@@ -140,6 +142,14 @@ public class IndexDefinitionMapper {
 				"Field `{{name}}` sets `decompound` alongside a custom or named chain - a given chain says itself whether it splits, through a `decompound` component"
 			);
 
+	/*
+	 * A `null` inside a list or a map of the body. Read as a value that is
+	 * there and says nothing, rather than reaching the builders, which refuse
+	 * it with a message that names no place in the request.
+	 */
+	private static final ErrorType VALUE_REQUIRED = ErrorType.withCode("request:value_required")
+		.withMessage("A value is needed here, `null` says nothing");
+
 	private IndexDefinitionMapper() {
 	}
 
@@ -213,6 +223,7 @@ public class IndexDefinitionMapper {
 		definition = FieldRoles.expand(definition);
 		definition = IndexLocales.expand(definition);
 
+		var root = ObjectLocation.root();
 		var builder = IndexDef.newBuilder();
 
 		if(definition.source() != null) {
@@ -225,12 +236,21 @@ public class IndexDefinitionMapper {
 		}
 
 		if(definition.metadata() != null) {
-			builder.putAllMetadata(definition.metadata());
+			var at = root.forField("metadata");
+			for(var entry : definition.metadata().entrySet()) {
+				require(entry.getValue(), at.forField(entry.getKey()));
+				builder.putMetadata(entry.getKey(), entry.getValue());
+			}
 		}
 
 		if(definition.fields() != null) {
+			var at = root.forField("fields");
 			for(var entry : definition.fields().entrySet()) {
-				builder.putFields(entry.getKey(), toStored(entry.getKey(), entry.getValue()));
+				require(entry.getValue(), at.forField(entry.getKey()));
+				builder.putFields(
+					entry.getKey(),
+					toStored(entry.getKey(), entry.getValue(), at.forField(entry.getKey()))
+				);
 			}
 		}
 
@@ -240,7 +260,7 @@ public class IndexDefinitionMapper {
 			 * because that is how they read back - the two would otherwise be
 			 * the same index stored two ways.
 			 */
-			var resources = toStored(definition.resources());
+			var resources = toStored(definition.resources(), root.forField("resources"));
 			if(!resources.equals(ResourcesDef.getDefaultInstance())) {
 				builder.setResources(resources);
 			}
@@ -249,8 +269,11 @@ public class IndexDefinitionMapper {
 		if(definition.localeFallback() != null) {
 			var fallback = IndexDef.LocaleFallbackConfig.newBuilder();
 			if(definition.localeFallback().chain() != null) {
-				for(var locale : definition.localeFallback().chain()) {
-					fallback.addChain(Locales.canonical(locale));
+				var chain = definition.localeFallback().chain();
+				var at = root.forField("localeFallback").forField("chain");
+				for(int i = 0; i < chain.size(); i++) {
+					require(chain.get(i), at.forIndex(i));
+					fallback.addChain(Locales.canonical(chain.get(i)));
 				}
 			}
 			builder.setLocaleFallback(fallback);
@@ -263,7 +286,21 @@ public class IndexDefinitionMapper {
 		return builder.build();
 	}
 
-	private static FieldDef toStored(String name, FieldDefinition field) {
+	/**
+	 * Refuse a {@code null} that was written inside a list or a map of the
+	 * body, saying where it sits.
+	 *
+	 * <p>JSON allows one anywhere a value goes, and the stored format has no
+	 * way to hold it, so it is caught here rather than where a builder rejects
+	 * it without a path.
+	 */
+	private static void require(Object value, ObjectLocation at) {
+		if(value == null) {
+			throw new ValidationException(VALUE_REQUIRED.toMessage(at));
+		}
+	}
+
+	private static FieldDef toStored(String name, FieldDefinition field, ObjectLocation at) {
 		var builder = FieldDef.newBuilder();
 
 		if(field.primaryKey() != null) {
@@ -288,8 +325,11 @@ public class IndexDefinitionMapper {
 				locales.setDefaultLocale(Locales.canonical(field.locales().defaultLocale()));
 			}
 			if(field.locales().locales() != null) {
-				for(var locale : field.locales().locales()) {
-					locales.addLocales(Locales.canonical(locale));
+				var declared = field.locales().locales();
+				var localesAt = at.forField("locales").forField("locales");
+				for(int i = 0; i < declared.size(); i++) {
+					require(declared.get(i), localesAt.forIndex(i));
+					locales.addLocales(Locales.canonical(declared.get(i)));
 				}
 			}
 			if(field.locales().fallback() != null) {
@@ -339,7 +379,7 @@ public class IndexDefinitionMapper {
 		builder.setType(
 			switch(field) {
 				case StringFieldDefinition string -> FieldTypeDef.newBuilder()
-					.setString(toStored(name, string))
+					.setString(toStored(name, string, at))
 					.build();
 				case BooleanFieldDefinition ignored -> FieldTypeDef.newBuilder()
 					.setBoolean(BooleanFieldTypeDef.getDefaultInstance())
@@ -366,7 +406,7 @@ public class IndexDefinitionMapper {
 					.setGeoPoint(GeoPointFieldTypeDef.getDefaultInstance())
 					.build();
 				case ObjectFieldDefinition object -> FieldTypeDef.newBuilder()
-					.setObject(toStored(object))
+					.setObject(toStored(object, at))
 					.build();
 			}
 		);
@@ -374,12 +414,17 @@ public class IndexDefinitionMapper {
 		return builder.build();
 	}
 
-	private static ObjectFieldTypeDef toStored(ObjectFieldDefinition field) {
+	private static ObjectFieldTypeDef toStored(ObjectFieldDefinition field, ObjectLocation at) {
 		var builder = ObjectFieldTypeDef.newBuilder();
 
 		if(field.fields() != null) {
+			var fieldsAt = at.forField("fields");
 			for(var entry : field.fields().entrySet()) {
-				builder.putFields(entry.getKey(), toStored(entry.getKey(), entry.getValue()));
+				require(entry.getValue(), fieldsAt.forField(entry.getKey()));
+				builder.putFields(
+					entry.getKey(),
+					toStored(entry.getKey(), entry.getValue(), fieldsAt.forField(entry.getKey()))
+				);
 			}
 		}
 
@@ -526,7 +571,11 @@ public class IndexDefinitionMapper {
 		return builder.build();
 	}
 
-	private static StringFieldTypeDef toStored(String name, StringFieldDefinition field) {
+	private static StringFieldTypeDef toStored(
+		String name,
+		StringFieldDefinition field,
+		ObjectLocation at
+	) {
 		var builder = StringFieldTypeDef.newBuilder();
 
 		if(field.keyword() != null) {
@@ -538,11 +587,13 @@ public class IndexDefinitionMapper {
 		}
 
 		if(field.matching() != null) {
-			builder.setMatching(toStored(name, field.matching()));
+			builder.setMatching(toStored(name, field.matching(), at.forField("matching")));
 		}
 
 		if(field.autocomplete() != null) {
-			builder.setAutocomplete(toStored(name, field.autocomplete()));
+			builder.setAutocomplete(
+				toStored(name, field.autocomplete(), at.forField("autocomplete"))
+			);
 		}
 
 		if(field.hierarchy() != null) {
@@ -558,15 +609,20 @@ public class IndexDefinitionMapper {
 
 	private static StringFieldTypeDef.TextUsageConfig toStored(
 		String name,
-		StringFieldDefinition.TextUsage usage
+		StringFieldDefinition.TextUsage usage,
+		ObjectLocation at
 	) {
 		var builder = StringFieldTypeDef.TextUsageConfig.newBuilder();
 
 		var decompound = usage.decompound() != StringFieldDefinition.TextUsage.Decompound.NONE;
 
 		if(usage.analyzer() != null) {
+			var analyzerAt = at.forField("analyzer");
+
 			if(usage.decompound() != null && usage.analyzer().preset() == null) {
-				throw new EngineException(DECOMPOUND_ON_GIVEN_CHAIN, "name", name);
+				throw new ValidationException(
+					DECOMPOUND_ON_GIVEN_CHAIN.toMessage(at.forField("decompound"), "name", name)
+				);
 			}
 
 			/*
@@ -575,7 +631,9 @@ public class IndexDefinitionMapper {
 			 */
 			if(usage.analyzer().named() != null) {
 				if(usage.analyzer().preset() != null || usage.analyzer().custom() != null) {
-					throw new EngineException(INVALID_ANALYZER, "name", name);
+					throw new ValidationException(
+						INVALID_ANALYZER.toMessage(analyzerAt, "name", name)
+					);
 				}
 				builder.setAnalyzerRef(usage.analyzer().named());
 			} else {
@@ -583,7 +641,7 @@ public class IndexDefinitionMapper {
 				 * A preset expands honouring the setting, so it is folded into
 				 * the stored chain rather than stored beside it.
 				 */
-				builder.setAnalyzer(toStored(name, usage.analyzer(), decompound));
+				builder.setAnalyzer(toStored(name, usage.analyzer(), decompound, analyzerAt));
 			}
 		} else if(!decompound) {
 			builder.setDecompound(
@@ -655,10 +713,11 @@ public class IndexDefinitionMapper {
 	private static AnalyzerDef toStored(
 		String name,
 		AnalyzerDefinition analyzer,
-		boolean decompound
+		boolean decompound,
+		ObjectLocation at
 	) {
 		if((analyzer.preset() != null) == (analyzer.custom() != null)) {
-			throw new EngineException(INVALID_ANALYZER, "name", name);
+			throw new ValidationException(INVALID_ANALYZER.toMessage(at, "name", name));
 		}
 
 		if(analyzer.preset() != null) {
@@ -703,21 +762,30 @@ public class IndexDefinitionMapper {
 		}
 
 		var custom = analyzer.custom();
+		var customAt = at.forField("custom");
 		var builder = AnalyzerDef.newBuilder();
 
 		if(custom.charFilters() != null) {
-			for(var filter : custom.charFilters()) {
-				builder.addCharFilters(toStored(name, filter));
+			var filters = custom.charFilters();
+			var filtersAt = customAt.forField("charFilters");
+			for(int i = 0; i < filters.size(); i++) {
+				require(filters.get(i), filtersAt.forIndex(i));
+				builder.addCharFilters(toStored(name, filters.get(i), filtersAt.forIndex(i)));
 			}
 		}
 
 		if(custom.tokenizer() != null) {
-			builder.setTokenizer(toStored(name, custom.tokenizer()));
+			builder.setTokenizer(
+				toStored(name, custom.tokenizer(), customAt.forField("tokenizer"))
+			);
 		}
 
 		if(custom.filters() != null) {
-			for(var filter : custom.filters()) {
-				builder.addFilters(toStored(name, filter));
+			var filters = custom.filters();
+			var filtersAt = customAt.forField("filters");
+			for(int i = 0; i < filters.size(); i++) {
+				require(filters.get(i), filtersAt.forIndex(i));
+				builder.addFilters(toStored(name, filters.get(i), filtersAt.forIndex(i)));
 			}
 		}
 
@@ -729,40 +797,60 @@ public class IndexDefinitionMapper {
 	 * defined, so a chain can not itself be {@code named}; presets expand the
 	 * same way they do on a field.
 	 */
-	private static ResourcesDef toStored(IndexDefinition.Resources resources) {
+	private static ResourcesDef toStored(IndexDefinition.Resources resources, ObjectLocation at) {
 		var builder = ResourcesDef.newBuilder();
 
 		if(resources.analyzers() != null) {
+			var analyzersAt = at.forField("analyzers");
 			for(var entry : resources.analyzers().entrySet()) {
+				var analyzerAt = analyzersAt.forField(entry.getKey());
+				require(entry.getValue(), analyzerAt);
+
 				if(entry.getValue().named() != null) {
-					throw new EngineException(NAMED_CHAIN_IN_RESOURCES, "name", entry.getKey());
+					throw new ValidationException(
+						NAMED_CHAIN_IN_RESOURCES.toMessage(
+							analyzerAt.forField("named"),
+							"name", entry.getKey()
+						)
+					);
 				}
 				builder.putAnalyzers(
 					entry.getKey(),
-					toStored(entry.getKey(), entry.getValue(), true)
+					toStored(entry.getKey(), entry.getValue(), true, analyzerAt)
 				);
 			}
 		}
 
 		if(resources.stopwords() != null) {
+			var stopwordsAt = at.forField("stopwords");
 			for(var entry : resources.stopwords().entrySet()) {
-				builder.putStopwords(
-					entry.getKey(),
-					ResourcesDef.StopwordsResource.newBuilder()
-						.addAllWords(entry.getValue())
-						.build()
-				);
+				var wordsAt = stopwordsAt.forField(entry.getKey());
+				require(entry.getValue(), wordsAt);
+
+				var words = entry.getValue();
+				var stored = ResourcesDef.StopwordsResource.newBuilder();
+				for(int i = 0; i < words.size(); i++) {
+					require(words.get(i), wordsAt.forIndex(i));
+					stored.addWords(words.get(i));
+				}
+
+				builder.putStopwords(entry.getKey(), stored.build());
 			}
 		}
 
 		if(resources.synonyms() != null) {
+			var synonymsAt = at.forField("synonyms");
 			for(var entry : resources.synonyms().entrySet()) {
+				var setAt = synonymsAt.forField(entry.getKey());
+				require(entry.getValue(), setAt);
+
 				builder.putSynonyms(
 					entry.getKey(),
 					SynonymsMapper.toStored(
 						entry.getKey(),
 						entry.getValue().rules(),
-						INVALID_SYNONYM_RULE
+						INVALID_SYNONYM_RULE,
+						setAt
 					)
 				);
 			}
@@ -771,7 +859,11 @@ public class IndexDefinitionMapper {
 		return builder.build();
 	}
 
-	private static TokenizerDef toStored(String name, AnalyzerDefinition.Tokenizer tokenizer) {
+	private static TokenizerDef toStored(
+		String name,
+		AnalyzerDefinition.Tokenizer tokenizer,
+		ObjectLocation at
+	) {
 		var builder = TokenizerDef.newBuilder();
 
 		if(tokenizer.icu() != null) {
@@ -788,15 +880,23 @@ public class IndexDefinitionMapper {
 		}
 
 		if(countGiven(tokenizer.icu(), tokenizer.whitespace(), tokenizer.keyword(), tokenizer.letter()) != 1) {
-			throw new EngineException(INVALID_ANALYZER_COMPONENT, "name", name);
+			throw new ValidationException(
+				INVALID_ANALYZER_COMPONENT.toMessage(at, "name", name)
+			);
 		}
 
 		return builder.build();
 	}
 
-	private static CharFilterDef toStored(String name, AnalyzerDefinition.CharFilter filter) {
+	private static CharFilterDef toStored(
+		String name,
+		AnalyzerDefinition.CharFilter filter,
+		ObjectLocation at
+	) {
 		if(countGiven(filter.htmlStrip(), filter.mapping(), filter.patternReplace()) != 1) {
-			throw new EngineException(INVALID_ANALYZER_COMPONENT, "name", name);
+			throw new ValidationException(
+				INVALID_ANALYZER_COMPONENT.toMessage(at, "name", name)
+			);
 		}
 
 		var builder = CharFilterDef.newBuilder();
@@ -827,7 +927,11 @@ public class IndexDefinitionMapper {
 		return builder.build();
 	}
 
-	private static TokenFilterDef toStored(String name, AnalyzerDefinition.TokenFilter filter) {
+	private static TokenFilterDef toStored(
+		String name,
+		AnalyzerDefinition.TokenFilter filter,
+		ObjectLocation at
+	) {
 		if(countGiven(
 			filter.normalize(),
 			filter.stopwords(),
@@ -838,7 +942,9 @@ public class IndexDefinitionMapper {
 			filter.synonyms(),
 			filter.decompound()
 		) != 1) {
-			throw new EngineException(INVALID_ANALYZER_COMPONENT, "name", name);
+			throw new ValidationException(
+				INVALID_ANALYZER_COMPONENT.toMessage(at, "name", name)
+			);
 		}
 
 		var builder = TokenFilterDef.newBuilder();
@@ -852,7 +958,7 @@ public class IndexDefinitionMapper {
 		}
 
 		if(filter.stopwords() != null) {
-			builder.setStopwords(toStored(name, filter.stopwords()));
+			builder.setStopwords(toStored(name, filter.stopwords(), at.forField("stopwords")));
 		}
 
 		if(filter.stemming() != null) {
@@ -914,10 +1020,13 @@ public class IndexDefinitionMapper {
 
 	private static TokenFilterDef.Stopwords toStored(
 		String name,
-		AnalyzerDefinition.TokenFilter.Stopwords stopwords
+		AnalyzerDefinition.TokenFilter.Stopwords stopwords,
+		ObjectLocation at
 	) {
 		if(countGiven(stopwords.locale(), stopwords.words(), stopwords.named()) > 1) {
-			throw new EngineException(INVALID_ANALYZER_COMPONENT, "name", name);
+			throw new ValidationException(
+				INVALID_ANALYZER_COMPONENT.toMessage(at, "name", name)
+			);
 		}
 
 		var builder = TokenFilterDef.Stopwords.newBuilder();
@@ -930,10 +1039,14 @@ public class IndexDefinitionMapper {
 		}
 
 		if(stopwords.words() != null) {
-			builder.setCustom(
-				TokenFilterDef.Stopwords.CustomWords.newBuilder()
-					.addAllWords(stopwords.words())
-			);
+			var words = stopwords.words();
+			var wordsAt = at.forField("words");
+			var custom = TokenFilterDef.Stopwords.CustomWords.newBuilder();
+			for(int i = 0; i < words.size(); i++) {
+				require(words.get(i), wordsAt.forIndex(i));
+				custom.addWords(words.get(i));
+			}
+			builder.setCustom(custom);
 		}
 
 		if(stopwords.named() != null) {

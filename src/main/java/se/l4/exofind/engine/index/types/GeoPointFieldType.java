@@ -20,10 +20,10 @@ import se.l4.exofind.engine.index.DistanceSortField;
 import se.l4.exofind.engine.index.FieldNames;
 import se.l4.exofind.engine.index.GeoPoint;
 import se.l4.exofind.engine.index.IndexEncounter;
-import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.IndexInvalidQueryTypeException;
 import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
+import se.l4.exofind.engine.index.IndexQueryException;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.ResourcesDef;
 import se.l4.exofind.engine.query.matchers.AnyMatcher;
@@ -191,7 +191,7 @@ public class GeoPointFieldType implements FieldType {
 		 * measure from. Refused with directions rather than answered with an
 		 * order that means nothing.
 		 */
-		throw new IndexException(
+		throw new IndexQueryException(
 			SORT_NEEDS_ORIGIN,
 			"name", encounter.getFieldName()
 		);

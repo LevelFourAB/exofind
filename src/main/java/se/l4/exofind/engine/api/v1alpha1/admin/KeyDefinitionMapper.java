@@ -124,6 +124,17 @@ public final class KeyDefinitionMapper {
 		for(int i = 0; i < definitions.size(); i++) {
 			var at = location.forIndex(i);
 			var definition = definitions.get(i);
+
+			/*
+			 * A `null` written where a grant goes says nothing about what the
+			 * key may do, which is the same as a grant naming neither a role
+			 * nor permissions.
+			 */
+			if(definition == null) {
+				errors.add(PERMISSIONS_REQUIRED.toMessage(at));
+				continue;
+			}
+
 			var permissions = Sets.mutable.<Permission>empty();
 
 			if(definition.role() != null) {

@@ -257,20 +257,6 @@ public class Index {
 				"The values of `{{field}}` are paths through a tree, which a prefix can not pick from"
 			);
 
-	private static final ErrorType ERROR_EXPLAIN_DOCUMENT_NOT_FOUND =
-		ErrorType.withCode("index:explain:document_not_found")
-			.withArguments("key")
-			.withMessage(
-				"No document is indexed under the key `{{key}}`, so there is nothing to explain"
-			);
-
-	private static final ErrorType ERROR_EXPLAIN_VALUE_NOT_FOUND =
-		ErrorType.withCode("index:explain:value_not_found")
-			.withArguments("key", "path", "index")
-			.withMessage(
-				"The document `{{key}}` has no value of `{{path}}` at position {{index}}"
-			);
-
 	private static final Log logger = Log.of(Index.class);
 
 	private static final LocaleSupport DEFAULT_LOCALE_SUPPORT = Locales.getDefault();
@@ -3766,7 +3752,7 @@ public class Index {
 			checkModifiable();
 
 			if(locale != null && Locales.resolve(locale).isEmpty()) {
-				throw new IndexException(ERROR_UNSUPPORTED_SEARCH_LOCALE, "locale", locale);
+				throw new IndexQueryException(ERROR_UNSUPPORTED_SEARCH_LOCALE, "locale", locale);
 			}
 
 			var compiler = new QueryCompiler(schema, locale, nestedParents);
@@ -4550,7 +4536,7 @@ public class Index {
 	 * @throws IOException
 	 * @throws IndexClosedException
 	 *   if the index was closed
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   if the locale of the request is one this build has no rules for
 	 */
 	public SuggestResult suggest(SuggestRequest request, SearchSettings.Snapshot settings)
@@ -4743,7 +4729,7 @@ public class Index {
 				 * from the wrong variant.
 				 */
 				if(request.locale() != null && Locales.resolve(request.locale()).isEmpty()) {
-					throw new IndexException(
+					throw new IndexQueryException(
 						ERROR_UNSUPPORTED_SEARCH_LOCALE,
 						"locale", request.locale()
 					);
@@ -5479,12 +5465,12 @@ public class Index {
 	 *   if this instance has been closed
 	 * @throws IndexNoPrimaryKeyException
 	 *   if the definition of the index declares no primary key
-	 * @throws IndexException
-	 *   with {@code index:explain:document_not_found} if no document is indexed
-	 *   under the key, {@code index:explain:value_not_found} if it holds no
-	 *   value of the path at the position, or
-	 *   {@code index:query:unsupported_locale} if the search asks for a locale
-	 *   this build has no rules for
+	 * @throws IndexExplainTargetNotFoundException
+	 *   if no document is indexed under the key, or the document holds no value
+	 *   of the path at the position
+	 * @throws IndexQueryException
+	 *   with {@code index:query:unsupported_locale} if the search asks for a
+	 *   locale this build has no rules for
 	 * @throws IOException
 	 */
 	public SearchExplanation explain(
@@ -5511,7 +5497,7 @@ public class Index {
 				searcher.setQueryCache(null);
 
 				if(request.locale() != null && Locales.resolve(request.locale()).isEmpty()) {
-					throw new IndexException(
+					throw new IndexQueryException(
 						ERROR_UNSUPPORTED_SEARCH_LOCALE,
 						"locale", request.locale()
 					);
@@ -5641,10 +5627,7 @@ public class Index {
 		 */
 		var found = searcher.search(parentsOnly(new TermQuery(term)), 1);
 		if(found.totalHits.value() == 0) {
-			throw new IndexException(
-				ERROR_EXPLAIN_DOCUMENT_NOT_FOUND,
-				"key", String.valueOf(primaryKey)
-			);
+			throw IndexExplainTargetNotFoundException.document(String.valueOf(primaryKey));
 		}
 
 		var document = found.scoreDocs[0].doc;
@@ -5665,11 +5648,10 @@ public class Index {
 		);
 
 		if(value < 0) {
-			throw new IndexException(
-				ERROR_EXPLAIN_VALUE_NOT_FOUND,
-				"key", String.valueOf(primaryKey),
-				"path", hitsPath,
-				"index", String.valueOf(valueIndex)
+			throw IndexExplainTargetNotFoundException.value(
+				String.valueOf(primaryKey),
+				hitsPath,
+				valueIndex
 			);
 		}
 
@@ -6457,7 +6439,7 @@ public class Index {
 		for(var facet : request.facets()) {
 			var nested = schema.getNestedField(facet.field());
 			if(nested.isPresent() && !nested.get().path().equals(path)) {
-				throw new IndexException(
+				throw new IndexQueryException(
 					ERROR_HITS_FACET_UNSUPPORTED,
 					"field", facet.field(),
 					"path", path
@@ -6716,7 +6698,7 @@ public class Index {
 	 *   the order and labels the search settings declare for the values of
 	 *   the field, in the locale of the search, or {@code null} where they
 	 *   declare none
-	 * @throws IndexException
+	 * @throws IndexQueryException
 	 *   if the facet asks for the values starting with a prefix from a field
 	 *   whose values are paths through a tree
 	 */
@@ -6728,7 +6710,7 @@ public class Index {
 	) {
 		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
 			if(facet.prefix() != null) {
-				throw new IndexException(ERROR_FACET_PREFIX_ON_A_TREE, "field", facet.field());
+				throw new IndexQueryException(ERROR_FACET_PREFIX_ON_A_TREE, "field", facet.field());
 			}
 
 			return compiler.hierarchyFacetCounter(facet.field())
