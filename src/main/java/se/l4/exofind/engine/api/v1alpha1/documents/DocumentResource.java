@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.v1alpha1.documents;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
@@ -1173,7 +1174,7 @@ public class DocumentResource {
 			var primaryKey = index.parsePrimaryKey(key);
 			var keyField = index.getPrimaryKey().orElseThrow().getName();
 
-			var patch = withKey(DocumentMapper.toPatch(index, body), keyField, primaryKey);
+			var patch = withKey(index, DocumentMapper.toPatch(index, body), keyField, primaryKey);
 
 			try {
 				if(!index.updateDocument(patch)) {
@@ -1191,7 +1192,9 @@ public class DocumentResource {
 
 	/**
 	 * Give a patch the primary key the path named, so that the document to
-	 * change is the one the path names.
+	 * change is the one the path names. A change naming the key field is
+	 * replaced by that key, so the key the write carries has the type the key
+	 * field holds even when the body wrote it as another JSON type.
 	 *
 	 * @throws ValidationException
 	 *   if the body names the key field as another document, which would leave
@@ -1199,40 +1202,91 @@ public class DocumentResource {
 	 *   and the write goes where the merged document says
 	 */
 	private static DocumentPatch withKey(
+		Index index,
 		DocumentPatch patch,
 		String keyField,
 		Object primaryKey
 	) {
+		var changes = Lists.mutable.<DocumentPatch.Change>empty();
+		var named = false;
+
 		for(var change : patch.changes()) {
 			if(!change.field().equals(keyField)) {
+				changes.add(change);
 				continue;
 			}
 
-			var given = change.values().notEmpty() ? change.values().getFirst().value() : null;
-			if(change.inner() != null
-				|| !(change.selector() instanceof DocumentPatch.Selector.All)
-				|| !String.valueOf(primaryKey).equals(String.valueOf(given))) {
-				throw new ValidationException(
-					UPDATE_KEY_CONFLICTING.toMessage(
-						ObjectLocation.root().forField(keyField),
-						"key", String.valueOf(primaryKey),
-						"name", keyField
-					)
-				);
-			}
-
-			return patch;
+			checkNamesTheSameDocument(index, change, keyField, primaryKey);
+			changes.add(keyChange(keyField, primaryKey));
+			named = true;
 		}
 
-		return new DocumentPatch(
-			patch.changes().toList().with(
-				new DocumentPatch.Change(
-					keyField,
-					DocumentPatch.Selector.ALL,
-					null,
-					Lists.immutable.of(new Document.Value(keyField, primaryKey))
-				)
-			).toImmutable()
+		if(!named) {
+			changes.add(keyChange(keyField, primaryKey));
+		}
+
+		return new DocumentPatch(changes.toImmutable());
+	}
+
+	/**
+	 * Refuse a change to the primary key field that names a document other than
+	 * the one the path names. The value is read as the key field holds it, the
+	 * way the key in the path is read, so a key and the same key written as
+	 * another JSON type name one document.
+	 */
+	private static void checkNamesTheSameDocument(
+		Index index,
+		DocumentPatch.Change change,
+		String keyField,
+		Object primaryKey
+	) {
+		var given = change.values().notEmpty() ? change.values().getFirst().value() : null;
+
+		if(
+			change.inner() == null
+				&& change.selector() instanceof DocumentPatch.Selector.All
+				&& given != null
+				&& primaryKey.equals(index.parsePrimaryKey(keyText(given)))
+		) {
+			return;
+		}
+
+		throw new ValidationException(
+			UPDATE_KEY_CONFLICTING.toMessage(
+				ObjectLocation.root().forField(keyField),
+				"key", String.valueOf(primaryKey),
+				"name", keyField
+			)
+		);
+	}
+
+	/**
+	 * A value from a body as the text the same key arrives as in a path. A
+	 * whole number written as a decimal, such as {@code 1.0}, is written
+	 * without the fraction.
+	 */
+	private static String keyText(Object given) {
+		if(given instanceof Number number) {
+			try {
+				return new BigDecimal(number.toString()).toBigIntegerExact().toString();
+			} catch(ArithmeticException | NumberFormatException e) {
+				// Not a whole number, so it is compared as it was written
+			}
+		}
+
+		return String.valueOf(given);
+	}
+
+	/**
+	 * The change that gives the primary key field one key, replacing whatever
+	 * the document holds under it.
+	 */
+	private static DocumentPatch.Change keyChange(String keyField, Object primaryKey) {
+		return new DocumentPatch.Change(
+			keyField,
+			DocumentPatch.Selector.ALL,
+			null,
+			Lists.immutable.of(new Document.Value(keyField, primaryKey))
 		);
 	}
 

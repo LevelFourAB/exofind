@@ -41,6 +41,7 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.Int64FieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
@@ -322,6 +323,36 @@ public class DocumentUpdateResourceTest {
 		assertThat(index.getDocument("1").get("price"), is(9.5));
 	}
 
+	/**
+	 * A text key written as a JSON number is the key the path carries, so the
+	 * change goes through and the document keeps a text key.
+	 */
+	@Test
+	public void aBodyRepeatingATextKeyAsANumberIsTaken() throws IOException {
+		var index = catalogue();
+
+		resource.patch("catalogue", "1", document("id", 1, "price", 9.5));
+
+		index.commit();
+		assertThat(index.getDocument("1").get("id"), is("1"));
+		assertThat(index.getDocument("1").get("price"), is(9.5));
+	}
+
+	/**
+	 * A whole-number key written as a decimal names the document the same
+	 * number names, so the change is not read as naming a second document.
+	 */
+	@Test
+	public void aBodyRepeatingAWholeNumberKeyAsADecimalIsTaken() throws IOException {
+		var index = orders();
+
+		resource.patch("orders", "1", document("id", 1.0, "price", 9.5));
+
+		index.commit();
+		assertThat(index.getDocument(1L).get("id"), is(1L));
+		assertThat(index.getDocument(1L).get("price"), is(9.5));
+	}
+
 	@Test
 	public void aBodyNamingAnotherDocumentThanThePathIsRefused() throws IOException {
 		var index = catalogue();
@@ -411,6 +442,43 @@ public class DocumentUpdateResourceTest {
 					document("id", "2", "name", "Rye bread", "category", "bread", "price", 12.0)
 				)
 			)
+		);
+
+		return index;
+	}
+
+	/**
+	 * An index keyed by a whole number, holding one document.
+	 */
+	private Index orders() throws IOException {
+		var index = indexes.create(
+			"orders",
+			IndexDef.newBuilder()
+				.putFields(
+					"id",
+					FieldDef.newBuilder()
+						.setPrimaryKey(true)
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setInt64(Int64FieldTypeDef.getDefaultInstance())
+						)
+						.build()
+				)
+				.putFields(
+					"price",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setDouble(DoubleFieldTypeDef.getDefaultInstance())
+						)
+						.build()
+				)
+				.build()
+		);
+
+		resource.add(
+			"orders",
+			new DocumentsRequest(List.of(document("id", 1, "price", 24.5)))
 		);
 
 		return index;
