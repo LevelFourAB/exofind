@@ -66,9 +66,10 @@ export function remarkRewriteLinks({ docsRoot }) {
  * The path of the source file relative to `docs/`, as the loader recorded it.
  *
  * Markdown rendered outside the docs collection has none, and is left alone
- * by both plugins.
+ * by both plugins here and by `remarkDiagramPaths` in `./remark-diagrams.mjs`,
+ * which reads it as well.
  */
-function docsPathOf(file) {
+export function docsPathOf(file) {
 	return file.data?.astro?.frontmatter?.docsPath;
 }
 

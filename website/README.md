@@ -70,6 +70,72 @@ These pages are not in the sidebar, and the site's own search does not find
 them: [`search/documents.mjs`](search/documents.mjs) reads Markdown, and this
 page is markup around what `docs/README.md` already says.
 
+## Diagrams
+
+A document draws a diagram by writing it as a `d2` code block, in the
+[D2](https://d2lang.com) language:
+
+````markdown
+```d2 title="A node claims an index"
+direction: right
+
+leadership table -> node: grants the claim
+node -> manifest: writes under its epoch
+```
+````
+
+[`astro-d2`](https://astro-d2.vercel.app) replaces the block with the picture
+it draws, so nothing else has to be added to the page. The words after `d2`
+are the attributes of that one diagram: `title` is the alternative text and
+should say what the diagram shows, `width` sets the width in pixels,
+`sketch=true` draws it as if by hand, `layout` picks a different layout engine,
+and `src=./file.d2` takes the source from a file beside the document instead of
+from the block. The
+[attributes page](https://astro-d2.vercel.app/configuration/attributes/) lists
+them all.
+
+D2 draws the pictures, and `mise.toml` installs it with Node and pnpm. The
+build fails where it is missing rather than publishing a page without its
+diagram. The options every diagram is drawn with are in
+[`astro.config.mjs`](astro.config.mjs).
+
+Five things about the section are worth knowing before changing it:
+
+- **A diagram is a file, written at build time.** Each one becomes
+  `public/images/diagrams/<page>-<n>.svg`, where `<page>` is the path of the
+  page and `<n>` counts the diagrams on it from zero. The directory is rebuilt
+  by every build and is not checked in.
+- **A diagram is drawn in the grey the prose is, on no paper of its own.** Both
+  are put in front of every block by `remarkDiagramStyle` in
+  [`src/plugins/remark-diagrams.mjs`](src/plugins/remark-diagrams.mjs), which
+  is where the palette is. It is the grey ramp of
+  [`src/styles/site.css`](src/styles/site.css) copied out, because D2 is handed
+  colours as text and reads no stylesheet - a change to the palette is made in
+  both files. Both are deliberate. A page spends its one accent on the links,
+  so a picture that argues in blue argues with them. And the ramp starts at the
+  grey a paragraph is set in rather than at the grey a heading is set in, so a
+  drawing carries no more weight on the page than the sentence that introduces
+  it. A block that
+  states a colour of its own still wins, because the preamble goes in front of
+  what the block says. A diagram taken from a file with `src=` is read by D2
+  itself and gets none of this, so state the colours in that file where one is
+  used.
+- **The paths are decided by `remarkDiagramPaths`** in the same file, because a
+  file in `docs/` is outside this project and `astro-d2` would otherwise write
+  the picture outside `public/`. Both plugins have to stay ahead of `astro-d2`
+  in the list of remark plugins, which is what the comment in
+  `astro.config.mjs` guards.
+- **A diagram follows the reader's system setting rather than the site's
+  theme.** D2 writes both a light and a dark version into the one file and
+  chooses between them with `prefers-color-scheme`, and the picture is loaded
+  as an image, where the theme the reader picked in the header does not reach
+  it. A reader on Auto sees the theme they expect; one who picked Light on a
+  dark desktop gets a dark diagram in a light page.
+- **The source of a diagram is not indexed.** `d2` is the one fenced block
+  [`search/documents.mjs`](search/documents.mjs) drops rather than keeps, the
+  way it drops the alternative text of an image. Say in the prose what the
+  diagram shows, or the site cannot find the page by it.
+
 ## The pages written for the site alone
 
 `src/content/pages/` is a second root the same loader reads. It holds prose

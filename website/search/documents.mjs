@@ -403,6 +403,12 @@ function plain(markdown) {
 		// Comments and directive markers say nothing to a reader
 		.replace(/<!--[\s\S]*?-->/g, ' ')
 		.replace(/^\s*:::[a-z]*(\[[^\]]*\])?\s*$/gm, ' ')
+		/*
+		 * A `d2` fence is the exception: it is the source of a diagram rather
+		 * than anything a reader reads, so the whole block goes the way an
+		 * image does. What the diagram shows is said in the prose around it.
+		 */
+		.replace(/^[ \t]*(`{3,}|~{3,})d2[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/gm, ' ')
 		// A fence keeps what is inside it and loses the fence and its language
 		.replace(/^\s*(?:`{3,}|~{3,}).*$/gm, ' ')
 		// An image is a file; its alt text describes a picture nobody searched for

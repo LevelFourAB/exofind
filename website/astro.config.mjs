@@ -5,6 +5,7 @@ import { defineConfig } from 'astro/config';
 import { unified } from '@astrojs/markdown-remark';
 import sitemap from '@astrojs/sitemap';
 import starlight from '@astrojs/starlight';
+import astroD2 from 'astro-d2';
 import openGraphImages from 'astro-opengraph-images';
 
 import { comparisons } from './src/compare.mjs';
@@ -12,6 +13,7 @@ import { DEMOS } from './src/examples/demos.mjs';
 import { apiSidebarGroup } from './src/openapi/sidebar.mjs';
 import { FONTS, isPage, render } from './src/opengraph.mjs';
 import { CATALOGUE, DOCS_INDEX, PARTS } from './src/parts.mjs';
+import { remarkDiagramPaths, remarkDiagramStyle } from './src/plugins/remark-diagrams.mjs';
 import { remarkRewriteLinks, remarkStripTitle } from './src/plugins/remark-docs.mjs';
 import { sidebarFrom } from './src/sidebar.mjs';
 import { BASE, PREVIEW_HEIGHT, PREVIEW_WIDTH, REPO, SITE } from './src/site.mjs';
@@ -61,7 +63,14 @@ export default defineConfig({
 		processor: unified({
 			remarkPlugins: [
 				remarkStripTitle,
-				[remarkRewriteLinks, { docsRoot: fileURLToPath(docsRoot) }]
+				[remarkRewriteLinks, { docsRoot: fileURLToPath(docsRoot) }],
+				/*
+				 * Before `astro-d2`, which adds itself to this same list when
+				 * the integration below is set up, and reads what these two
+				 * write.
+				 */
+				remarkDiagramPaths,
+				remarkDiagramStyle
 			]
 		})
 	},
@@ -167,6 +176,34 @@ export default defineConfig({
 					]
 				}
 			]
+		}),
+
+		/*
+		 * Diagrams, written as ```d2 code blocks in the Markdown under
+		 * `docs/` and drawn by the D2 binary that `mise.toml` names. The SVG
+		 * is written under `public/images/diagrams/` and the block is
+		 * replaced by an `<img>` pointing at it; `remarkDiagramPaths` above
+		 * is what decides the rest of that path for a file outside this
+		 * project.
+		 *
+		 * A diagram arrives as a picture rather than as markup, so it follows
+		 * the reader's system setting for dark mode rather than the theme
+		 * they picked on the site. `website/README.md` says what that costs.
+		 *
+		 * The padding is well under the default of 100, because a diagram is
+		 * drawn into the same column the prose is set in and the default
+		 * spends a fifth of that column on margin.
+		 *
+		 * The themes named here are the ones `remarkDiagramStyle` paints over
+		 * rather than the ones a reader sees. They are named all the same, so
+		 * that anything a later release of D2 draws with a colour this site
+		 * does not state yet arrives in grey rather than in the blue and pink
+		 * of D2's own defaults.
+		 */
+		astroD2({
+			output: 'images/diagrams',
+			pad: 20,
+			theme: { default: '1', dark: '200' }
 		}),
 
 		/*

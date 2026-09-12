@@ -31,12 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # mise.toml decides the Node and pnpm releases, the same as it decides
-      # the JDK the engine is built with. Only those two are installed;
-      # nothing here builds Java.
+      # mise.toml decides the Node, pnpm and D2 releases, the same as it
+      # decides the JDK the engine is built with. Only those three are
+      # installed; nothing here builds Java. D2 draws the diagrams in the
+      # documentation, and the build fails without it.
       - uses: jdx/mise-action@v2
         with:
-          install_args: node pnpm
+          install_args: node pnpm d2
 
       - uses: actions/configure-pages@v5
         id: pages
