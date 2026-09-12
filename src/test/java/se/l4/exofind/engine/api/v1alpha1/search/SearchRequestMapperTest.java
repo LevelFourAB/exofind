@@ -2676,6 +2676,87 @@ public class SearchRequestMapperTest {
 	}
 
 	@Test
+	public void testClausesInsideInterpretTargetsAreCounted() {
+		var limits = LIMITS.withMaxClauses(2);
+
+		var clause = new Clause.Field("prices.list", new Matcher.Equals("store"));
+		var request = withQuery(
+			textReading(
+				new Clause.Text.Target(
+					"prices.amount",
+					List.of(clause),
+					List.of(new Clause.Text.Target("prices.amount", List.of(clause), null))
+				)
+			)
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(request, limits)
+		);
+
+		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(
+			pathsOf(e),
+			contains("/query/0/interpret/fields/0/fallback/0/when/0")
+		);
+	}
+
+	@Test
+	public void testInterpretTargetsChainedPastTheCapAreRefused() {
+		var limits = LIMITS.withMaxClauseDepth(3);
+
+		var target = new Clause.Text.Target("prices.amount", null, null);
+		for(var i = 0; i < 2; i++) {
+			target = new Clause.Text.Target("prices.amount", null, List.of(target));
+		}
+
+		var request = withQuery(textReading(target));
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(request, limits)
+		);
+
+		assertThat(codesOf(e), contains("search:query:too_deep"));
+		assertThat(
+			pathsOf(e),
+			contains("/query/0/interpret/fields/0/fallback/0/fallback")
+		);
+	}
+
+	@Test
+	public void testInterpretTargetsChainedToTheCapAreKept() {
+		var limits = LIMITS.withMaxClauseDepth(3);
+
+		var target = new Clause.Text.Target("prices.amount", null, null);
+		target = new Clause.Text.Target("prices.amount", null, List.of(target));
+
+		var mapped = SearchRequestMapper.toEngine(withQuery(textReading(target)), limits);
+
+		var query = (TextQuery) mapped.request().query().get(0);
+		assertThat(query.targets().size(), is(1));
+	}
+
+	/**
+	 * A {@code text} clause that reads its text as filters on the given
+	 * targets.
+	 */
+	private static Clause.Text textReading(Clause.Text.Target... targets) {
+		return new Clause.Text(
+			"rain under 100",
+			null,
+			Matcher.Text.Match.USER,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			new Clause.Text.Interpret.Targets(Arrays.asList(targets))
+		);
+	}
+
+	@Test
 	public void testNeighboursPastTheCapAreRefused() {
 		var e = assertThrows(
 			ValidationException.class,

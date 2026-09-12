@@ -27,9 +27,11 @@ import se.l4.exofind.engine.errors.Location;
  * the work these caps exist to avoid. What one clause asks for is reported the
  * way the mapper reports problems, alongside everything else found.
  *
- * <p>Every clause that can hold clauses is walked here. The walk switches over
- * {@link Clause} without a default branch, so a clause type added to the API
- * without being counted here fails to compile.
+ * <p>Every clause that can hold clauses is walked here, including a
+ * {@code text} clause, which holds none of its own but carries a chain of
+ * interpret targets that do. The walk switches over {@link Clause} without a
+ * default branch, so a clause type added to the API without being counted here
+ * fails to compile.
  */
 final class QueryBudget {
 	private static final ErrorType TOO_MANY_CLAUSES =
@@ -182,7 +184,19 @@ final class QueryBudget {
 				}
 
 				case Clause.Text text -> {
-					// Matches on text of its own rather than on clauses
+					/*
+					 * The text is matched on its own, but naming the targets a
+					 * reading may be a filter on carries clauses: each target
+					 * says when it is read, and names the targets read instead
+					 * where the document holds no value on it.
+					 */
+					if(text.interpret() instanceof Clause.Text.Interpret.Targets targets) {
+						walkTargets(
+							targets.fields(),
+							at + "/interpret/fields",
+							depth + 1
+						);
+					}
 				}
 
 				case Clause.Knn knn -> {
@@ -234,6 +248,49 @@ final class QueryBudget {
 
 				case Clause.Boost boost -> walk(boost.clauses(), at + "/clauses", depth + 1);
 			}
+
+			if(oversized) {
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Walk the targets a reading of text may be a filter on, counting the
+	 * clauses each says it is read under and descending into the targets read
+	 * instead of it.
+	 *
+	 * <p>A chain of targets is walked by recursion here and in
+	 * {@link SearchRequestMapper}, the same as nested clauses, so each link of
+	 * the chain costs a level of depth whether or not it names clauses.
+	 *
+	 * @param targets
+	 *   the targets to walk, or {@code null} for a part the request left out
+	 * @param path
+	 *   JSON Pointer of the list itself; an entry reports at its own index
+	 * @param depth
+	 *   how deep the clauses of these targets sit
+	 */
+	private void walkTargets(List<Clause.Text.Target> targets, String path, int depth) {
+		if(targets == null || oversized) {
+			return;
+		}
+
+		if(depth > limits.maxClauseDepth()) {
+			refuse(TOO_DEEP.toMessage(Location.create(path), "max", limits.maxClauseDepth()));
+			return;
+		}
+
+		for(var i = 0; i < targets.size(); i++) {
+			var target = targets.get(i);
+			if(target == null) {
+				// The mapper reports what is missing; an absent target costs nothing
+				continue;
+			}
+
+			var at = path + "/" + i;
+			walk(target.when(), at + "/when", depth);
+			walkTargets(target.fallback(), at + "/fallback", depth + 1);
 
 			if(oversized) {
 				return;
