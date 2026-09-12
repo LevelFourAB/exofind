@@ -1020,6 +1020,7 @@ components:
             clauseType: text
             field: name
             usage: matching
+        tookMs: 1.208
       type: object
       properties:
         matched:
@@ -1050,6 +1051,14 @@ components:
             \ tree reflects the search with the filters in it."
           type: object
           $ref: "#/components/schemas/Interpreted"
+        tookMs:
+          type: number
+          format: double
+          description: "Execution time for the explanation in milliseconds, including\
+            \ fractions of one. An explanation compiles and runs the search the way\
+            \ a search does, so it costs what a search costs."
+          examples:
+          - 1.208
     FacetBucket:
       type: object
       description: One range bucket of a faceted field with its match count.
@@ -10879,6 +10888,7 @@ paths:
                         clauseType: text
                         field: name
                         usage: matching
+                    tookMs: 1.208
               schema:
                 $ref: "#/components/schemas/ExplainResponse"
         "400":

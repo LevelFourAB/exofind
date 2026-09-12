@@ -78,6 +78,36 @@ public class RequestMetrics {
 	}
 
 	/**
+	 * Record a request for the values of one facet that was answered.
+	 *
+	 * @param name
+	 *   the index as the request named it, with or without a generation
+	 * @param nanos
+	 *   how long the request took
+	 * @param ok
+	 *   whether the request answered rather than failing
+	 */
+	public void recordFacetValues(String name, long nanos, boolean ok) {
+		registry.timer(Meters.FACET_VALUES, searchTags(name, ok))
+			.record(nanos, TimeUnit.NANOSECONDS);
+	}
+
+	/**
+	 * Record an explanation of one hit that was answered.
+	 *
+	 * @param name
+	 *   the index as the request named it, with or without a generation
+	 * @param nanos
+	 *   how long the explanation took
+	 * @param ok
+	 *   whether it answered rather than failing
+	 */
+	public void recordExplain(String name, long nanos, boolean ok) {
+		registry.timer(Meters.EXPLAIN, searchTags(name, ok))
+			.record(nanos, TimeUnit.NANOSECONDS);
+	}
+
+	/**
 	 * Record a word a search let go of before it matched.
 	 *
 	 * @param reason

@@ -821,6 +821,7 @@ Matching rules:
 - **Hierarchical fields**: A field configured with `hierarchy` returns `index:query:facet_prefix_on_a_tree`.
 - **Counts**: The counts are the ones a facet of the same search answers. The query and the filters on other fields narrow them, and the filter entries on the facet's own field are left out. A search that relaxes its query counts under the relaxed query.
 - **Limits**: The `query` and `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, `limit` against `EXOFIND_SEARCH_MAX_FACET_VALUES`, and counting stops at `EXOFIND_SEARCH_TIMEOUT`, as for a search.
+- **Metrics**: The duration of these requests is measured by the `exofind.facet.values` timer, apart from searches. See [Metrics](metrics.md).
 
 ### Suggesting what to search for
 
@@ -1151,7 +1152,8 @@ The following request properties are ignored: `limit`, `offset`, `after`, `befor
         ]
       }
     ]
-  }
+  },
+  "tookMs": 1.208
 }
 ```
 
@@ -1164,6 +1166,7 @@ Top-level response properties:
 | `detail` | Object | Root score step explaining how the score was calculated. |
 | `relaxed` | Object | Relaxation details containing `dropped` words and the effective query `text`. Omitted if query relaxation did not run. |
 | `interpreted` | Object | The filters read out of the query text, and the remaining query text. Omitted when nothing was read. |
+| `tookMs` | Number | Execution time for the explanation in milliseconds, including fractions of one. An explanation compiles and runs the search the way a search does, so it costs what a search costs. |
 
 Properties of a score step (`detail` and each entry in `children`):
 
@@ -1188,6 +1191,8 @@ Properties of a score step (`detail` and each entry in `children`):
 - **Ranking signals**: Ranking signals appear under a dedicated step with one child per ranking signal, specifying the field, function shape, weight, and value read from the document. A missing ranking signal value contributes a factor of `1`.
 - **Value hits**: When `hits.path` targets a nested object field, each value is explained individually by specifying its zero-based position in `index`. With `hits.when` set, `index` is read only for documents that `when` matches; a document that returns as itself is explained as a document, whatever `index` says. See [What a hit stands for](#what-a-hit-stands-for).
 - **Alternatives that did not match**: Within an `or` clause that matched, only the alternatives that matched appear as steps. An `or` that matched nothing is reported as one non-matching step for the clause itself.
+
+The duration of explanations is measured by the `exofind.explain` timer. See [Metrics](metrics.md).
 
 ### Errors
 

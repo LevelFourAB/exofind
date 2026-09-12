@@ -60,6 +60,26 @@ public final class Meters {
 	public static final String SUGGEST = "exofind.suggest";
 
 	/**
+	 * Time a request for the values of one facet took end to end, as the
+	 * endpoint measures it. Tagged with {@link #TAG_OUTCOME}, and with
+	 * {@link #TAG_INDEX} when {@code EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM}
+	 * is on, the way {@link #SEARCH} is.
+	 *
+	 * <p>Kept apart from {@link #SEARCH} because a filter panel completing a
+	 * value asks on every keystroke, which would otherwise be read as the
+	 * search traffic of the node.
+	 */
+	public static final String FACET_VALUES = "exofind.facet.values";
+
+	/**
+	 * Time an explanation of one hit took end to end, as the endpoint measures
+	 * it. Tagged with {@link #TAG_OUTCOME}, and with {@link #TAG_INDEX} when
+	 * {@code EXOFIND_METRICS_INDEX_SEARCH_HISTOGRAM} is on, the way
+	 * {@link #SEARCH} is.
+	 */
+	public static final String EXPLAIN = "exofind.explain";
+
+	/**
 	 * Time a write request took on the node that served it. Tagged with
 	 * {@link #TAG_OPERATION} and {@link #TAG_OUTCOME}.
 	 */

@@ -62,7 +62,20 @@ public record ExplainResponse(
 		What the search read out of the query text as filters, and the text \
 		that was left. Omitted when nothing was read. The explanation tree \
 		reflects the search with the filters in it.""")
-	SearchResponse.Interpreted interpreted
+	SearchResponse.Interpreted interpreted,
+
+	/**
+	 * Total execution time for the explanation in milliseconds, including
+	 * fractional milliseconds.
+	 */
+	@Schema(
+		description = """
+			Execution time for the explanation in milliseconds, including \
+			fractions of one. An explanation compiles and runs the search the \
+			way a search does, so it costs what a search costs.""",
+		examples = "1.208"
+	)
+	double tookMs
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. It explains
@@ -87,7 +100,8 @@ public record ExplainResponse(
 		        "usage": "matching"
 		      }
 		    ]
-		  }
+		  },
+		  "tookMs": 1.208
 		}""";
 
 	/**

@@ -66,6 +66,7 @@ import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.metrics.Meters;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.storage.StorageMode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -86,6 +87,7 @@ public class SearchResourceTest {
 	@TempDir
 	Path storageDirectory;
 
+	SimpleMeterRegistry meters;
 	Indexes indexes;
 	SearchSettings searchSettings;
 	SearchResource resource;
@@ -127,14 +129,30 @@ public class SearchResourceTest {
 			Duration.ofSeconds(10),
 			Duration.ofMinutes(10)
 		);
+		meters = new SimpleMeterRegistry();
 		resource = new SearchResource(
-			indexes, searchSettings, metrics(), SearchLimits.defaults(), Duration.ZERO
+			indexes,
+			searchSettings,
+			new RequestMetrics(meters, false),
+			SearchLimits.defaults(),
+			Duration.ZERO
 		);
 	}
 
 	@AfterEach
 	void cleanup() {
 		indexes.close();
+		meters.close();
+	}
+
+	/**
+	 * How many requests one of the endpoints reported under an outcome.
+	 */
+	private long requests(String meter, String outcome) {
+		return meters.get(meter)
+			.tag(Meters.TAG_OUTCOME, outcome)
+			.timer()
+			.count();
 	}
 
 	private static FieldDef.Builder string() {
@@ -1710,6 +1728,46 @@ public class SearchResourceTest {
 		var clause = stepAt(response.detail(), "query[0]");
 		assertThat(clause, is(notNullValue()));
 		assertThat(clause.matched(), is(false));
+	}
+
+	@Test
+	public void testFacetValuesAndExplainAreTimedLikeASearch() throws IOException {
+		books();
+
+		resource.facetValues(
+			"books",
+			"category",
+			new FacetValuesRequest(null, null, null, null, null, null)
+		);
+
+		var explanation = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null
+			)
+		);
+
+		assertThat(requests(Meters.FACET_VALUES, Meters.OUTCOME_SUCCESS), is(1L));
+		assertThat(requests(Meters.EXPLAIN, Meters.OUTCOME_SUCCESS), is(1L));
+
+		// What the timer measured is what the response reports
+		assertThat(explanation.tookMs(), is(greaterThan(0d)));
+	}
+
+	@Test
+	public void testAFailedFacetValuesRequestIsTimedToo() throws IOException {
+		books();
+
+		assertThrows(
+			IndexFieldNotFoundException.class,
+			() -> resource.facetValues("books", "missing", null)
+		);
+
+		assertThat(requests(Meters.FACET_VALUES, Meters.OUTCOME_ERROR), is(1L));
 	}
 
 	@Test

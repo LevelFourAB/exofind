@@ -73,6 +73,9 @@ public class MetricsHistograms {
 
 	private static final Set<String> REQUEST_METERS = Set.of(
 		Meters.SEARCH,
+		Meters.SUGGEST,
+		Meters.FACET_VALUES,
+		Meters.EXPLAIN,
 		Meters.WRITE
 	);
 

@@ -1136,15 +1136,22 @@ public class SearchResource {
 			result = index.search(request, settings);
 			timedOut = budget.exceeded();
 		} catch(IOException e) {
+			metrics.recordFacetValues(name, System.nanoTime() - started, false);
 			throw new IndexException(IO_ERROR, e, "index", name);
+		} catch(RuntimeException e) {
+			metrics.recordFacetValues(name, System.nanoTime() - started, false);
+			throw e;
 		}
 
 		// Counts collected over a spent budget describe part of the index, see search
 		if(timedOut) {
+			metrics.recordFacetValues(name, System.nanoTime() - started, false);
 			throw new SearchTimeoutException(name, timeout);
 		}
 
 		var took = System.nanoTime() - started;
+		metrics.recordFacetValues(name, took, true);
+
 		var counts = result.facets().get(field);
 
 		return new FacetValuesResponse(
@@ -2070,6 +2077,8 @@ public class SearchResource {
 		))
 		SearchRequest body
 	) {
+		var started = System.nanoTime();
+
 		var errors = Lists.mutable.<ErrorMessage>empty();
 
 		if(key == null || key.isEmpty()) {
@@ -2103,19 +2112,28 @@ public class SearchResource {
 			);
 			timedOut = budget.exceeded();
 		} catch(IOException e) {
+			metrics.recordExplain(name, System.nanoTime() - started, false);
 			throw new IndexException(IO_ERROR, e, "index", name);
+		} catch(RuntimeException e) {
+			metrics.recordExplain(name, System.nanoTime() - started, false);
+			throw e;
 		}
 
 		if(timedOut) {
+			metrics.recordExplain(name, System.nanoTime() - started, false);
 			throw new SearchTimeoutException(name, timeout);
 		}
+
+		var took = System.nanoTime() - started;
+		metrics.recordExplain(name, took, true);
 
 		return new ExplainResponse(
 			explanation.matched(),
 			explanation.score(),
 			toDetailJson(explanation.detail()),
 			toRelaxedJson(explanation.relaxed()),
-			toInterpretedJson(explanation.interpreted())
+			toInterpretedJson(explanation.interpreted()),
+			Math.round(took / 1_000d) / 1_000d
 		);
 	}
 
