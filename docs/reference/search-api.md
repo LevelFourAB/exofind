@@ -633,7 +633,7 @@ Facets compute match counts for distinct values of specified fields. The target 
 |---|---|---|---|
 | `name` | String | Field name | Key used for the facet in the response. Required when faceting on the same field multiple times. Duplicate facet names return `search:facet:duplicate_name`. |
 | `field` | String | Required | Target field to aggregate. |
-| `limit` | Integer | `10` | Maximum number of facet values to return (1 to 1000). |
+| `limit` | Integer | `10` | Maximum number of facet values to return, from 1 to `EXOFIND_SEARCH_MAX_FACET_VALUES` (default `1000`). Other values return `search:facet:limit_invalid`. |
 | `order` | String | `"count"` | Sort order of facet values: `"count"` (descending by count), `"value"` (ascending by value), or `"declared"` (the order configured in search settings, followed by undeclared values sorted by count). See [Declared values](admin-api.md#declared-values). |
 | `ranges` | Array | None | Array of range bucket definitions. See [Range buckets](#range-buckets). Cannot be combined with `limit` or `order` (`search:facet:ranges_conflicting`). |
 | `path` | String | Root | Starting path level for hierarchical fields. See [Counting down a tree](#counting-down-a-tree). |
@@ -768,7 +768,7 @@ Filter exclusions identify entries by the most specific path covering all clause
 
 ### Searching the values of a facet
 
-A facet returns at most 1000 values, so a field with more values than that cannot be reached from the values a search answers with. A separate endpoint answers the values of one facet field that start with a typed prefix, counted under the query and filters of a search:
+A facet returns at most `EXOFIND_SEARCH_MAX_FACET_VALUES` values (default `1000`), so a field with more values than that cannot be reached from the values a search answers with. A separate endpoint answers the values of one facet field that start with a typed prefix, counted under the query and filters of a search:
 
 ```
 POST /v1alpha1/indexes/{name}/facets/{field}/values
@@ -793,7 +793,7 @@ The field must have `facet` enabled in its field definition; otherwise, the requ
 | `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. Filter entries on the facet's own field are left out of the counts. |
 | `prefix` | String | None | Prefix that returned values, or their labels in the request locale, must start with. If omitted or blank, returns all values. |
 | `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields and select labels for declared values, matching search request behavior. |
-| `limit` | Integer | `10` | Maximum number of values to return (1 to 1000). Other values return `search:facet:limit_invalid`. |
+| `limit` | Integer | `10` | Maximum number of values to return, from 1 to `EXOFIND_SEARCH_MAX_FACET_VALUES` (default `1000`). Other values return `search:facet:limit_invalid`. |
 | `order` | String | `"count"` | Sort order of the values: `"count"` (descending by count), `"value"` (ascending by value), or `"declared"` (the order configured in search settings, followed by undeclared values sorted by count). |
 
 The response returns the values in the same shape as the `values` of a facet:
@@ -820,7 +820,7 @@ Matching rules:
 - **Number, boolean, and timestamp fields**: The prefix is compared with the value as a search response shows it, ignoring case. `19` finds every year of the nineties, and `2024-06` finds a month of timestamps.
 - **Hierarchical fields**: A field configured with `hierarchy` returns `index:query:facet_prefix_on_a_tree`.
 - **Counts**: The counts are the ones a facet of the same search answers. The query and the filters on other fields narrow them, and the filter entries on the facet's own field are left out. A search that relaxes its query counts under the relaxed query.
-- **Limits**: The `query` and `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, and counting stops at `EXOFIND_SEARCH_TIMEOUT`, as for a search.
+- **Limits**: The `query` and `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, `limit` against `EXOFIND_SEARCH_MAX_FACET_VALUES`, and counting stops at `EXOFIND_SEARCH_TIMEOUT`, as for a search.
 
 ### Suggesting what to search for
 
@@ -845,7 +845,7 @@ Suggestions come only from the fields the search settings opt in with `suggest` 
 | `text` | String | None | What has been typed so far. If omitted or blank, returns the most common values. |
 | `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields and to pick the labels of declared values, matching search request behavior. |
 | `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. A filter on a suggested field is left out of that field's own counts. |
-| `limit` | Integer | `5` | Maximum number of suggestions to return (1 to 100). Other values return `search:suggest:limit_invalid`. |
+| `limit` | Integer | `5` | Maximum number of suggestions to return, from 1 to `EXOFIND_SUGGEST_MAX_LIMIT` (default `100`). Other values return `search:suggest:limit_invalid`. |
 | `typos` | String | `"auto"` | Whether values one mistake away from the text may be suggested: `"auto"` or `"off"`. |
 
 The response returns the suggestions:
@@ -877,7 +877,7 @@ Matching rules:
 - **Ordering**: Suggestions are ordered by count descending; ties are broken by field name then by value, so the order is stable.
 - **Typo tolerance**: When fewer values than `limit` start with the text, `typos` is `auto`, and the text is at least 5 characters long, values within one edit (insertion, deletion, substitution, or transposition of adjacent characters) of the text are suggested after the ones the text starts. The first character of the text is never read as a mistake. Corrected suggestions come after exact suggestions and carry `corrected: true` and `typed: 0`.
 - **Counts and sideways filters**: Counts are calculated under the request `filters`. A filter on a suggested field is left out of that field's own counts, so a filter already selected keeps other values of the field suggestable.
-- **Limits**: The `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`. A suggest request that runs longer than `EXOFIND_SUGGEST_TIMEOUT` (default `2s`) returns HTTP 503 `search:timeout` and drops collected counts.
+- **Limits**: The `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, and `limit` against `EXOFIND_SUGGEST_MAX_LIMIT`. A suggest request that runs longer than `EXOFIND_SUGGEST_TIMEOUT` (default `2s`) returns HTTP 503 `search:timeout` and drops collected counts.
 
 A filter panel that completes the values of one facet uses the facet values endpoint (`POST /v1alpha1/indexes/{name}/facets/{field}/values`) instead. The suggest endpoint spans every opted-in field and marks the typed part of each suggestion.
 
@@ -1224,6 +1224,8 @@ A node caps what one request may ask it to do. Each cap is a configuration varia
 | `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_too_large` |
 | `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of an interpret target, counted together | `search:query:too_many_clauses` |
 | `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Nesting of clauses inside clauses, and of an interpret target inside a `fallback` | `search:query:too_deep` |
+| `EXOFIND_SEARCH_MAX_FACET_VALUES` | `limit` of a facet, counted beside a search or asked for on its own | `search:facet:limit_invalid` |
+| `EXOFIND_SUGGEST_MAX_LIMIT` | `limit` of a suggest request | `search:suggest:limit_invalid` |
 
 Each of these returns `400`, and the `path` of the error names where in the body the request went over. A request over `EXOFIND_SEARCH_MAX_CLAUSES` or `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` is answered with that error alone; the rest of the body is not read.
 

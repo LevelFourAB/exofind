@@ -2038,6 +2038,61 @@ public class SearchResourceTest {
 	}
 
 	@Test
+	public void testFacetValuesRefuseALimitPastWhatTheNodeAllows() throws IOException {
+		books();
+
+		var capped = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults().withMaxFacetValues(5),
+			Duration.ZERO
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> capped.facetValues(
+				"books",
+				"category",
+				new FacetValuesRequest(null, null, null, null, 6, null)
+			)
+		);
+
+		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_invalid"));
+		assertThat(e.getErrors().getFirst().getArguments().get("max"), is(5));
+
+		// The cap itself is still asked for
+		var response = capped.facetValues(
+			"books",
+			"category",
+			new FacetValuesRequest(null, null, null, null, 5, null)
+		);
+
+		assertThat(response.values(), is(notNullValue()));
+	}
+
+	@Test
+	public void testSuggestRefusesALimitPastWhatTheNodeAllows() throws IOException {
+		books();
+
+		var capped = new SearchResource(
+			indexes,
+			searchSettings,
+			metrics(),
+			SearchLimits.defaults().withMaxSuggestions(2),
+			Duration.ZERO
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> capped.suggest("books", new SuggestRequest("f", null, null, 3, null))
+		);
+
+		assertThat(e.getErrors().getFirst().getCode(), is("search:suggest:limit_invalid"));
+		assertThat(e.getErrors().getFirst().getArguments().get("max"), is(2));
+	}
+
+	@Test
 	public void testFacetValuesRefuseAScoringFilter() throws IOException {
 		books();
 

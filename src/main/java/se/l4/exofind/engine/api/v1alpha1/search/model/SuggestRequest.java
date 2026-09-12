@@ -72,13 +72,15 @@ public record SuggestRequest(
 	List<Clause> filters,
 
 	/**
-	 * Maximum number of suggestions to return (1 to 100). Defaults to 5.
+	 * Maximum number of suggestions to return, from 1 to what the node
+	 * allows. Defaults to 5.
 	 */
 	@Schema(
-		description = "Maximum number of suggestions to return.",
+		description = """
+			Maximum number of suggestions to return, at most \
+			`EXOFIND_SUGGEST_MAX_LIMIT`.""",
 		defaultValue = "5",
-		minimum = "1",
-		maximum = "100"
+		minimum = "1"
 	)
 	Integer limit,
 

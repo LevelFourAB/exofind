@@ -153,6 +153,16 @@ public class SearchResource {
 			defaultValue = SearchLimits.DEFAULT_MAX_CLAUSE_DEPTH
 		)
 		int maxClauseDepth,
+		@ConfigProperty(
+			name = "exofind.search.max-facet-values",
+			defaultValue = SearchLimits.DEFAULT_MAX_FACET_VALUES
+		)
+		int maxFacetValues,
+		@ConfigProperty(
+			name = "exofind.suggest.max-limit",
+			defaultValue = SearchLimits.DEFAULT_MAX_SUGGESTIONS
+		)
+		int maxSuggestions,
 		@ConfigProperty(name = "exofind.search.timeout", defaultValue = "30s")
 		Duration timeout,
 		@ConfigProperty(name = "exofind.suggest.timeout", defaultValue = "2s")
@@ -169,7 +179,9 @@ public class SearchResource {
 				maxKnnK,
 				maxFuseDepth,
 				maxClauses,
-				maxClauseDepth
+				maxClauseDepth,
+				maxFacetValues,
+				maxSuggestions
 			),
 			timeout,
 			suggestTimeout
@@ -1034,7 +1046,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:facet:limit_invalid",
 		status = 400,
-		when = "`limit` is outside 1 to 1000."
+		when = "`limit` is below 1 or above `EXOFIND_SEARCH_MAX_FACET_VALUES`. The `max` argument carries the cap."
 	)
 	@ReturnsError(
 		value = "search:filter:scores",
@@ -1224,7 +1236,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:suggest:limit_invalid",
 		status = 400,
-		when = "`limit` is outside 1 to 100."
+		when = "`limit` is below 1 or above `EXOFIND_SUGGEST_MAX_LIMIT`. The `max` argument carries the cap."
 	)
 	@ReturnsError(
 		value = "search:required",

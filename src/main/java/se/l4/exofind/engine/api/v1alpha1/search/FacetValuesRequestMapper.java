@@ -54,10 +54,10 @@ final class FacetValuesRequestMapper {
 
 		var limit = Facet.DEFAULT_LIMIT;
 		if(body.limit() != null) {
-			if(body.limit() < 1 || body.limit() > Facet.MAX_LIMIT) {
+			if(body.limit() < 1 || body.limit() > limits.maxFacetValues()) {
 				errors.add(SearchRequestMapper.FACET_LIMIT_INVALID.toMessage(
 					Location.create("/limit"),
-					"max", Facet.MAX_LIMIT
+					"max", limits.maxFacetValues()
 				));
 			} else {
 				limit = body.limit();

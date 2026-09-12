@@ -53,7 +53,7 @@ final class SuggestRequestMapper {
 
 		var limit = se.l4.exofind.engine.query.SuggestRequest.DEFAULT_LIMIT;
 		if(body.limit() != null) {
-			var max = se.l4.exofind.engine.query.SuggestRequest.MAX_LIMIT;
+			var max = limits.maxSuggestions();
 			if(body.limit() < 1 || body.limit() > max) {
 				errors.add(LIMIT_INVALID.toMessage(Location.create("/limit"), "max", max));
 			} else {

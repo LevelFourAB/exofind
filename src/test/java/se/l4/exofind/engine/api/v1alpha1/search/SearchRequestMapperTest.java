@@ -1756,6 +1756,27 @@ public class SearchRequestMapperTest {
 		);
 	}
 
+	@Test
+	public void testAFacetCountingMoreValuesThanAllowedIsRefused() {
+		var limits = LIMITS.withMaxFacetValues(50);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null, null,
+					List.of(new SearchRequest.Facet(null, "category", 51, null, null, null, null, null)),
+					null, null, null, null, null, null, null, null, null, null, null, null, null
+				),
+				limits
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:facet:limit_invalid"));
+		assertThat(pathsOf(e), contains("/facets/0/limit"));
+		assertThat(e.getErrors().get(0).getArguments().get("max"), is(50));
+	}
+
 	private static SearchRequest withHighlight(SearchRequest.Highlight highlight) {
 		return new SearchRequest(
 			null, null, null, null, null, null, highlight, null, null, null, null, null, null, null, null, null

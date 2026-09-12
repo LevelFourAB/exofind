@@ -531,7 +531,7 @@ public class SearchRequestMapper {
 		var query = toClauses(body.query(), "/query", errors);
 		var signals = toRequestSignals(body, errors);
 		var filters = toFilters(body.filters(), errors);
-		var facets = toFacets(body.facets(), errors);
+		var facets = toFacets(body.facets(), limits, errors);
 		var highlight = toHighlight(body.highlight(), errors);
 		var matched = toMatched(body.matched(), errors);
 
@@ -757,6 +757,7 @@ public class SearchRequestMapper {
 	 */
 	private static ImmutableList<Facet> toFacets(
 		List<SearchRequest.Facet> facets,
+		SearchLimits limits,
 		MutableList<ErrorMessage> errors
 	) {
 		if(facets == null) {
@@ -787,10 +788,10 @@ public class SearchRequestMapper {
 
 			var limit = Facet.DEFAULT_LIMIT;
 			if(facet.limit() != null) {
-				if(facet.limit() < 1 || facet.limit() > Facet.MAX_LIMIT) {
+				if(facet.limit() < 1 || facet.limit() > limits.maxFacetValues()) {
 					errors.add(FACET_LIMIT_INVALID.toMessage(
 						Location.create(path + "/limit"),
-						"max", Facet.MAX_LIMIT
+						"max", limits.maxFacetValues()
 					));
 					valid = false;
 				} else {

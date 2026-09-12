@@ -1,12 +1,23 @@
 package se.l4.exofind.engine.api.v1alpha1.search;
 
+import se.l4.exofind.engine.query.Facet;
+import se.l4.exofind.engine.query.SuggestRequest;
+
 /**
  * How much one search may ask a node to do.
  *
  * <p>Every number here bounds work that a single request decides the size of:
- * how many results are ranked, how far a neighbour or fusion search reads, and
- * how large the tree of clauses may grow. A deployment configures each one
- * under {@code exofind.search}.
+ * how many results are ranked, how many values or suggestions are counted, how
+ * far a neighbour or fusion search reads, and how large the tree of clauses may
+ * grow. A deployment configures each one under {@code exofind.search}, apart
+ * from the suggestions, which belong to {@code exofind.suggest} with the rest
+ * of what a suggest request is bounded by.
+ *
+ * <p>Two of the caps have a ceiling the configuration cannot raise:
+ * {@link Facet#MAX_LIMIT} and {@link SuggestRequest#MAX_LIMIT} are the sizes of
+ * the candidate sets the engine keeps while counting, so a node configured
+ * above one of them refuses to start rather than fail every request that asks
+ * for more.
  *
  * <p>These caps apply to the request as it arrives. The time budget in
  * {@link se.l4.exofind.engine.index.SearchDeadline} bounds what a search costs
@@ -26,6 +37,11 @@ package se.l4.exofind.engine.api.v1alpha1.search;
  *   how many clauses one request may hold, counted across the whole body
  * @param maxClauseDepth
  *   how deeply clauses may be nested inside each other
+ * @param maxFacetValues
+ *   how many values one facet may bring back, whether it is counted beside a
+ *   search or asked for on its own
+ * @param maxSuggestions
+ *   how many suggestions one suggest request may bring back
  */
 public record SearchLimits(
 	int maxLimit,
@@ -34,7 +50,9 @@ public record SearchLimits(
 	int maxKnnK,
 	int maxFuseDepth,
 	int maxClauses,
-	int maxClauseDepth
+	int maxClauseDepth,
+	int maxFacetValues,
+	int maxSuggestions
 ) {
 	/*
 	 * The defaults are text because the configuration annotations carry them
@@ -64,6 +82,12 @@ public record SearchLimits(
 	/** Default for {@link #maxClauseDepth()}. */
 	public static final String DEFAULT_MAX_CLAUSE_DEPTH = "20";
 
+	/** Default for {@link #maxFacetValues()}. */
+	public static final String DEFAULT_MAX_FACET_VALUES = "1000";
+
+	/** Default for {@link #maxSuggestions()}. */
+	public static final String DEFAULT_MAX_SUGGESTIONS = "100";
+
 	public SearchLimits {
 		require("exofind.search.max-limit", maxLimit);
 		require("exofind.search.max-page-depth", maxPageDepth);
@@ -72,12 +96,27 @@ public record SearchLimits(
 		require("exofind.search.max-fuse-depth", maxFuseDepth);
 		require("exofind.search.max-clauses", maxClauses);
 		require("exofind.search.max-clause-depth", maxClauseDepth);
+
+		require("exofind.search.max-facet-values", maxFacetValues);
+		atMost("exofind.search.max-facet-values", maxFacetValues, Facet.MAX_LIMIT);
+
+		require("exofind.suggest.max-limit", maxSuggestions);
+		atMost("exofind.suggest.max-limit", maxSuggestions, SuggestRequest.MAX_LIMIT);
 	}
 
 	private static void require(String setting, int value) {
 		if(value < 1) {
 			throw new IllegalArgumentException(
 				setting + " has to be at least 1, a node that answers no search serves nothing"
+			);
+		}
+	}
+
+	private static void atMost(String setting, int value, int ceiling) {
+		if(value > ceiling) {
+			throw new IllegalArgumentException(
+				setting + " has to be at most " + ceiling
+					+ ", which is as much as the engine counts in one request"
 			);
 		}
 	}
@@ -93,56 +132,72 @@ public record SearchLimits(
 			Integer.parseInt(DEFAULT_MAX_KNN_K),
 			Integer.parseInt(DEFAULT_MAX_FUSE_DEPTH),
 			Integer.parseInt(DEFAULT_MAX_CLAUSES),
-			Integer.parseInt(DEFAULT_MAX_CLAUSE_DEPTH)
+			Integer.parseInt(DEFAULT_MAX_CLAUSE_DEPTH),
+			Integer.parseInt(DEFAULT_MAX_FACET_VALUES),
+			Integer.parseInt(DEFAULT_MAX_SUGGESTIONS)
 		);
 	}
 
 	public SearchLimits withMaxLimit(int maxLimit) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 
 	public SearchLimits withMaxPageDepth(int maxPageDepth) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 
 	public SearchLimits withMaxRescoreWindow(int maxRescoreWindow) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 
 	public SearchLimits withMaxKnnK(int maxKnnK) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 
 	public SearchLimits withMaxFuseDepth(int maxFuseDepth) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 
 	public SearchLimits withMaxClauses(int maxClauses) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 
 	public SearchLimits withMaxClauseDepth(int maxClauseDepth) {
 		return new SearchLimits(
 			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
-			maxClauseDepth
+			maxClauseDepth, maxFacetValues, maxSuggestions
+		);
+	}
+
+	public SearchLimits withMaxFacetValues(int maxFacetValues) {
+		return new SearchLimits(
+			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
+			maxClauseDepth, maxFacetValues, maxSuggestions
+		);
+	}
+
+	public SearchLimits withMaxSuggestions(int maxSuggestions) {
+		return new SearchLimits(
+			maxLimit, maxPageDepth, maxRescoreWindow, maxKnnK, maxFuseDepth, maxClauses,
+			maxClauseDepth, maxFacetValues, maxSuggestions
 		);
 	}
 }

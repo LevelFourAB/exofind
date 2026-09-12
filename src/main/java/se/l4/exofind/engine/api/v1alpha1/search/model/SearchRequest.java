@@ -404,14 +404,15 @@ public record SearchRequest(
 		String field,
 
 		/**
-		 * Maximum number of facet values to return (1 to 1000). Defaults to 10.
-		 * Cannot be combined with {@code ranges}.
+		 * Maximum number of facet values to return, from 1 to what the node
+		 * allows. Defaults to 10. Cannot be combined with {@code ranges}.
 		 */
 		@Schema(
-			description = "Maximum number of facet values to return.",
+			description = """
+				Maximum number of facet values to return, at most \
+				`EXOFIND_SEARCH_MAX_FACET_VALUES`.""",
 			defaultValue = "10",
-			minimum = "1",
-			maximum = "1000"
+			minimum = "1"
 		)
 		Integer limit,
 
