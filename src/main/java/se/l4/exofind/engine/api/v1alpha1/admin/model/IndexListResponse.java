@@ -34,7 +34,7 @@ public record IndexListResponse(
 		  "indexes": [
 		    {
 		      "name": "products",
-		      "generation": "2",
+		      "liveGeneration": "2",
 		      "generations": [
 		        { "name": "1", "live": false, "createdAt": "2026-08-16T11:02:07Z" },
 		        { "name": "2", "live": true, "createdAt": "2026-08-28T10:15:30Z" }
@@ -48,8 +48,8 @@ public record IndexListResponse(
 	 *
 	 * @param name
 	 *   name of the index
-	 * @param generation
-	 *   live generation of the index, or omitted if none is live
+	 * @param liveGeneration
+	 *   generation the index answers from, or omitted if none is live
 	 * @param generations
 	 *   all generations of the index, ordered by name
 	 */
@@ -68,7 +68,7 @@ public record IndexListResponse(
 				generation is live.""",
 			examples = "2"
 		)
-		String generation,
+		String liveGeneration,
 
 		@Schema(description = "Every generation of the index, ordered by name.")
 		List<GenerationSummary> generations
@@ -77,7 +77,7 @@ public record IndexListResponse(
 		public static final String EXAMPLE = """
 			{
 			  "name": "products",
-			  "generation": "2",
+			  "liveGeneration": "2",
 			  "generations": [
 			    { "name": "1", "live": false },
 			    { "name": "2", "live": true }

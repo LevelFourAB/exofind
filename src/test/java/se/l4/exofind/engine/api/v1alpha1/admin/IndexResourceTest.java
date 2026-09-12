@@ -358,7 +358,7 @@ public class IndexResourceTest {
 		);
 
 		assertThat(
-			listed.stream().map(IndexListResponse.IndexSummary::generation).toList(),
+			listed.stream().map(IndexListResponse.IndexSummary::liveGeneration).toList(),
 			contains("1", "1")
 		);
 	}

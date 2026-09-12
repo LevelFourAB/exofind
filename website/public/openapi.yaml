@@ -2304,7 +2304,7 @@ components:
       examples:
       - indexes:
         - name: products
-          generation: "2"
+          liveGeneration: "2"
           generations:
           - name: "1"
             live: false
@@ -2427,7 +2427,7 @@ components:
       description: An index and the generations it holds.
       examples:
       - name: products
-        generation: "2"
+        liveGeneration: "2"
         generations:
         - name: "1"
           live: false
@@ -2439,7 +2439,7 @@ components:
           description: The name of the index.
           examples:
           - products
-        generation:
+        liveGeneration:
           type: string
           description: The generation the index answers from. Omitted when no generation
             is live.
@@ -6004,7 +6004,7 @@ paths:
                   value:
                     indexes:
                     - name: products
-                      generation: "2"
+                      liveGeneration: "2"
                       generations:
                       - name: "1"
                         live: false
