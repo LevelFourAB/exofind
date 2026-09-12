@@ -1799,6 +1799,17 @@ public class SearchResourceTest {
 	}
 
 	@Test
+	public void testAWindowHoldingEveryResultOffersNoNextPage() throws IOException {
+		many(10);
+
+		// The window covers all ten results, and this page ends on the last of them
+		var second = resource.search("many", paged(5, 5, null, boostingCode(10, "C-0007")));
+
+		assertThat(ids(second).size(), is(5));
+		assertThat(second.page().next(), is(nullValue()));
+	}
+
+	@Test
 	public void testNumberedPagesStopAtTheWindow() throws IOException {
 		many(25);
 

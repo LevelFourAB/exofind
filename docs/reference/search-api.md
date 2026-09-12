@@ -610,7 +610,7 @@ Rescoring rules and error conditions:
 The window is ranked from the first result on every request. Paging works differently inside and below the window:
 
 - Inside the window, the `next` and `previous` cursors count results rather than encoding positions. The response reports an `offset` for these pages.
-- The `next` cursor from the last page in the window continues below the window. Results there keep the order relevance gave them and receive no second-pass scoring.
+- The `next` cursor from the last page in the window continues below the window. Results there keep the order relevance gave them and receive no second-pass scoring. A search with nothing below the window returns no `next`, the same as any other last page.
 - Send the same `rescore` block with each pagination request. Cursors carry positions, not the search that produced them.
 - Numbered `pages` stop at the window.
 - A request whose `offset` plus `limit` reaches past the window returns `search:rescore:window_too_small`.

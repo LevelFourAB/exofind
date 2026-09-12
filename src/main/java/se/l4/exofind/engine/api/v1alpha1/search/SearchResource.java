@@ -2401,13 +2401,20 @@ public class SearchResource {
 						).encode();
 					}
 
+					/*
+					 * Nothing follows a page that ends where the results do,
+					 * inside the window or past it - the same thing the plain
+					 * branch below asks before it hands out a `next`.
+					 */
 					var nextOffset = (long) request.offset() + limit;
-					if(nextOffset >= rescore.window()) {
-						next = result.windowEnd() == null
-							? null
-							: new SearchCursor.Keyset(fingerprint, result.windowEnd()).encode();
-					} else if(nextOffset < result.total().count()) {
-						next = new SearchCursor.Offset(fingerprint, (int) nextOffset).encode();
+					if(nextOffset < result.total().count()) {
+						if(nextOffset >= rescore.window()) {
+							next = result.windowEnd() == null
+								? null
+								: new SearchCursor.Keyset(fingerprint, result.windowEnd()).encode();
+						} else {
+							next = new SearchCursor.Offset(fingerprint, (int) nextOffset).encode();
+						}
 					}
 				} else {
 					if(request.offset() > 0) {
