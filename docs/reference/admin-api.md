@@ -445,7 +445,7 @@ The `status.state` field indicates the remote synchronization state as observed 
 | `pulling` | The node is fetching remote state. The state becomes `usable` when complete. |
 | `usable` | The index is serving searches. On a read-only node, data is as current as the last pull. |
 | `modified` | The index has local changes that are not yet pushed. Only writer nodes reach this state. |
-| `pushing` | The node is pushing local changes. The state becomes `usable` when complete. |
+| `pushing` | The node is pushing local changes. The state becomes `usable` when complete, or `modified` if the push does not reach the remote. |
 | `unsupported` | The definition requires engine features not present on this node version. Upgrade the node to resolve. |
 | `incompatible` | The Lucene files are too old for this build to open. Reindexing into a new generation is required. |
 | `closed` | The index is closed on this node. A new request opens a fresh instance. |

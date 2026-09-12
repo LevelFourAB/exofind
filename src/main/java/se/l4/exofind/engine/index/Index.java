@@ -1447,6 +1447,12 @@ public class Index {
 		var started = System.nanoTime();
 		var pushed = false;
 
+		/*
+		 * Whether the state was moved to PUSHING, which every way out of this
+		 * method has to move it away from again.
+		 */
+		var tracked = false;
+
 		syncLock.readLock().lock();
 		try {
 			if(state == IndexState.CLOSED) {
@@ -1503,7 +1509,7 @@ public class Index {
 			 * state a push says anything about, so that a pull it is waiting
 			 * for is not forgotten.
 			 */
-			var tracked = state.canModifyContents();
+			tracked = state.canModifyContents();
 			if(tracked) {
 				state = IndexState.PUSHING;
 			}
@@ -1565,6 +1571,28 @@ public class Index {
 			 */
 			synchronized(stateLock) {
 				state = IndexState.NEEDS_PULL;
+			}
+
+			throw e;
+		} catch(IOException | RuntimeException e) {
+			/*
+			 * The push did not land, so the index holds changes the remote does
+			 * not have - which is what MODIFIED says, whether or not anything
+			 * was indexed while the push ran. Left at PUSHING the index would
+			 * say a push is running for as long as it is open: the caller
+			 * retries the push, but nothing else reads the state as an index
+			 * with something to push.
+			 *
+			 * Stored under the lock and only while the state is still the one
+			 * this push set, so that a write recording a change, or a pull
+			 * being asked for, is not written over.
+			 */
+			if(tracked) {
+				synchronized(stateLock) {
+					if(state == IndexState.PUSHING) {
+						state = IndexState.MODIFIED;
+					}
+				}
 			}
 
 			throw e;

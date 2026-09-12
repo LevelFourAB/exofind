@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -237,6 +239,46 @@ public class IndexAutoCommitTest {
 		}
 	}
 
+	/**
+	 * A push that could not reach the remote leaves the commit it carried on
+	 * this disk alone. The index has to say it holds changes for it, or nothing
+	 * that reads the state knows there is anything left to push.
+	 */
+	@Test
+	public void aPushThatCouldNotReachTheRemoteLeavesTheIndexHoldingChanges()
+		throws Exception
+	{
+		var sync = new BlockingSync();
+		var index = create("test", sync, CommitPolicy.disabled());
+
+		index.addDocument(new Document(new Document.Value("id", "1")));
+
+		sync.failingPushes.set(1);
+		assertThrows(IOException.class, () -> index.commit());
+
+		assertThat(index.getState(), is(IndexState.MODIFIED));
+	}
+
+	/**
+	 * A remote that is briefly unreachable costs nothing but time: the commit
+	 * is made again, waiting longer before each attempt, until the push lands
+	 * and the index is in step with the remote.
+	 */
+	@Test
+	public void aPushThatCouldNotReachTheRemoteIsMadeAgainUntilItLands() throws Exception {
+		var sync = new BlockingSync();
+		var index = create("test", sync, new CommitPolicy(1, Duration.ofHours(1)));
+
+		// Opening the index pushed the definition it was given
+		sync.pushes.set(0);
+		sync.failingPushes.set(2);
+
+		index.addDocument(new Document(new Document.Value("id", "1")));
+
+		awaitState(index, IndexState.USABLE);
+		assertThat(sync.pushes.get(), is(1));
+	}
+
 	@Test
 	public void anIndexWithNothingIndexedSinceItsCommitIsInStepOnceItIsPushed()
 		throws Exception {
@@ -321,6 +363,17 @@ public class IndexAutoCommitTest {
 		);
 	}
 
+	private void awaitState(Index index, IndexState state) throws Exception {
+		var deadline = System.nanoTime() + WAIT.toNanos();
+		while(index.getState() != state) {
+			if(System.nanoTime() > deadline) {
+				fail("The index is " + index.getState() + ", waited for " + state);
+			}
+
+			Thread.sleep(10);
+		}
+	}
+
 	private void awaitNothingUncommitted(Index index) throws Exception {
 		var deadline = System.nanoTime() + WAIT.toNanos();
 		while(index.hasUncommittedLuceneChanges() || index.hasPendingMerges()) {
@@ -399,6 +452,17 @@ public class IndexAutoCommitTest {
 		volatile boolean refuseNextPush;
 
 		/**
+		 * How many pushes still fail the way a remote that can not be reached
+		 * fails one, counted down as they do.
+		 */
+		final AtomicInteger failingPushes = new AtomicInteger();
+
+		/**
+		 * How many pushes have landed.
+		 */
+		final AtomicInteger pushes = new AtomicInteger();
+
+		/**
 		 * Hold the next push open until {@link #release} is counted down, with
 		 * latches of its own so one round can follow another.
 		 */
@@ -436,6 +500,12 @@ public class IndexAutoCommitTest {
 				refuseNextPush = false;
 				throw new SyncConflictException("simulated conflict");
 			}
+
+			if(failingPushes.getAndUpdate(left -> Math.max(0, left - 1)) > 0) {
+				throw new IOException("simulated unreachable remote");
+			}
+
+			pushes.incrementAndGet();
 		}
 
 		@Override

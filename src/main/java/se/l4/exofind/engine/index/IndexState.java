@@ -37,7 +37,8 @@ public enum IndexState {
 	PULLING,
 	/**
 	 * The index is being pushed to the remote. This state is a temporary
-	 * state and will be changed to USABLE when the push is complete.
+	 * state and will be changed to USABLE when the push is complete, or to
+	 * MODIFIED when the push fails and what it carried is still only here.
 	 */
 	@JsonProperty("pushing")
 	PUSHING,
