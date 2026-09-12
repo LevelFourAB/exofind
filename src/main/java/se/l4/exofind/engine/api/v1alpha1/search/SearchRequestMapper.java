@@ -73,16 +73,13 @@ public class SearchRequestMapper {
 	 */
 	public static final int DEFAULT_PAGES_MAX = 9;
 
-	private static final ErrorType LIMIT_NEGATIVE = ErrorType.withCode("search:limit:negative")
-		.withMessage("A search can not return fewer than no results");
-
-	private static final ErrorType LIMIT_TOO_LARGE = ErrorType.withCode("search:limit:too_large")
+	private static final ErrorType LIMIT_INVALID = ErrorType.withCode("search:limit:invalid")
 		.withArguments("max")
 		.withMessage(
-			"A page holds at most {{max}} results - ask for fewer and follow `next` for the rest"
+			"A page holds between no results and {{max}} - ask for fewer and follow `next` for the rest"
 		);
 
-	private static final ErrorType OFFSET_NEGATIVE = ErrorType.withCode("search:offset:negative")
+	private static final ErrorType OFFSET_INVALID = ErrorType.withCode("search:offset:invalid")
 		.withMessage("A search can not skip fewer than no results");
 
 	private static final ErrorType PAGE_CONFLICTING = ErrorType.withCode("search:page:conflicting")
@@ -115,8 +112,8 @@ public class SearchRequestMapper {
 				"Numbered pages need a position with a number - start from `offset` or a page's cursor rather than `next`/`previous`"
 			);
 
-	private static final ErrorType PAGES_INVALID_MAX =
-		ErrorType.withCode("search:pages:invalid_max")
+	private static final ErrorType PAGES_MAX_INVALID =
+		ErrorType.withCode("search:pages:max_invalid")
 			.withMessage("The number of page entries has to be above zero");
 
 	private static final ErrorType SIGNAL_FIELD_REQUIRED =
@@ -157,9 +154,8 @@ public class SearchRequestMapper {
 
 	private static final ErrorType RESCORE_WINDOW_INVALID =
 		ErrorType.withCode("search:rescore:window_invalid")
-			.withMessage(
-				"The `window` of a rescore has to be at least one result and at most the configured maximum"
-			);
+			.withArguments("max")
+			.withMessage("A second pass reaches between 1 and {{max}} results");
 
 	private static final ErrorType RESCORE_WINDOW_TOO_SMALL =
 		ErrorType.withCode("search:rescore:window_too_small")
@@ -231,6 +227,12 @@ public class SearchRequestMapper {
 		ErrorType.withCode("search:clause:vector_required")
 			.withMessage("The vector to find the neighbours of is required");
 
+	/*
+	 * The cap a node puts on `k` is checked by QueryBudget, which reports the
+	 * same code with the cap as an argument. This is the same value being
+	 * wrong where no cap is known, such as a query that names documents to
+	 * delete.
+	 */
 	private static final ErrorType CLAUSE_K_INVALID =
 		ErrorType.withCode("search:clause:k_invalid")
 			.withMessage("How many neighbours to return is required, above zero");
@@ -249,6 +251,10 @@ public class SearchRequestMapper {
 		ErrorType.withCode("search:clause:ranking_empty")
 			.withMessage("A ranking needs something to rank by");
 
+	/*
+	 * As with `k`, the cap a node puts on the depth is checked by QueryBudget
+	 * under the same code.
+	 */
 	private static final ErrorType CLAUSE_DEPTH_INVALID =
 		ErrorType.withCode("search:clause:depth_invalid")
 			.withMessage("How far down each ranking is read has to be at least one result");
@@ -375,7 +381,8 @@ public class SearchRequestMapper {
 
 	private static final ErrorType HIGHLIGHT_LENGTH_INVALID =
 		ErrorType.withCode("search:highlight:length_invalid")
-			.withMessage("How long a fragment aims to be has to be between 1 and 10000 characters");
+			.withArguments("max")
+			.withMessage("A fragment aims to be between 1 and {{max}} characters long");
 
 	private static final ErrorType MATCHED_FIELD_REQUIRED =
 		ErrorType.withCode("search:matched:field_required")
@@ -504,11 +511,9 @@ public class SearchRequestMapper {
 
 		var limit = se.l4.exofind.engine.query.SearchRequest.DEFAULT_LIMIT;
 		if(body.limit() != null) {
-			if(body.limit() < 0) {
-				errors.add(LIMIT_NEGATIVE.toMessage(Location.create("limit")));
-			} else if(body.limit() > limits.maxLimit()) {
+			if(body.limit() < 0 || body.limit() > limits.maxLimit()) {
 				errors.add(
-					LIMIT_TOO_LARGE.toMessage(Location.create("limit"), "max", limits.maxLimit())
+					LIMIT_INVALID.toMessage(Location.create("limit"), "max", limits.maxLimit())
 				);
 			} else {
 				limit = body.limit();
@@ -554,7 +559,7 @@ public class SearchRequestMapper {
 
 			var max = body.pages().max() == null ? DEFAULT_PAGES_MAX : body.pages().max();
 			if(max <= 0) {
-				errors.add(PAGES_INVALID_MAX.toMessage(Location.create("pages.max")));
+				errors.add(PAGES_MAX_INVALID.toMessage(Location.create("pages.max")));
 			} else if(position.offset() != null) {
 				pagesMax = max;
 			}
@@ -956,7 +961,10 @@ public class SearchRequestMapper {
 
 			if(options.length() != null
 				&& (options.length() < 1 || options.length() > HIGHLIGHT_MAX_LENGTH)) {
-				errors.add(HIGHLIGHT_LENGTH_INVALID.toMessage(Location.create(path + ".length")));
+				errors.add(HIGHLIGHT_LENGTH_INVALID.toMessage(
+					Location.create(path + ".length"),
+					"max", HIGHLIGHT_MAX_LENGTH
+				));
 				valid = false;
 			}
 
@@ -1316,7 +1324,7 @@ public class SearchRequestMapper {
 
 		if(body.offset() != null) {
 			if(body.offset() < 0) {
-				errors.add(OFFSET_NEGATIVE.toMessage(Location.create("offset")));
+				errors.add(OFFSET_INVALID.toMessage(Location.create("offset")));
 				return Position.START;
 			}
 

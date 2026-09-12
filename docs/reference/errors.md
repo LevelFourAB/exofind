@@ -75,8 +75,8 @@ A change to some of a document therefore reports a path under `index:update:*`, 
 | `index:document:*` | A change naming a document, or a value inside one, that the index does not hold | `index:document:not_found`, `index:document:no_match` |
 | `search:clause:*`, `search:matcher:*`, `search:filter:*`, `search:sort:*`, `search:highlight:*`, `search:matched:*`, `search:hits:*`, `search:facet:*`, `search:suggest:*`, `search:signal:*`, `search:rescore:*`, `search:required` | Malformed search request component | `search:clause:field_required`, `search:matcher:range_empty`, `search:filter:clause_invalid`, `search:sort:field_required`, `search:highlight:fields_required`, `search:facet:duplicate_name`, `search:signal:weight_invalid`, `search:rescore:window_invalid` |
 | `search:explain:*` | Explanation naming no hit to explain | `search:explain:key_required`, `search:explain:index_invalid` |
-| `search:cursor:*`, `search:page:*`, `search:pages:*`, `search:offset:*` | Pagination error | `search:cursor:invalid`, `search:cursor:sort_mismatch`, `search:page:conflicting`, `search:page:too_deep`, `search:pages:without_limit`, `search:pages:without_offset`, `search:pages:invalid_max`, `search:offset:negative` |
-| `search:limit:*`, `search:query:*` | Search asking for more than the node allows, or for a negative page size | `search:limit:too_large`, `search:limit:negative`, `search:query:too_many_clauses`, `search:query:too_deep` |
+| `search:cursor:*`, `search:page:*`, `search:pages:*`, `search:offset:*` | Pagination error | `search:cursor:invalid`, `search:cursor:sort_mismatch`, `search:page:conflicting`, `search:page:too_deep`, `search:pages:without_limit`, `search:pages:without_offset`, `search:pages:max_invalid`, `search:offset:invalid` |
+| `search:limit:*`, `search:query:*` | Search asking for a page size outside what the node allows, or for more of the node than it allows | `search:limit:invalid`, `search:query:too_many_clauses`, `search:query:too_deep` |
 | `search:locale:*` | Search naming a locale the engine has no rules for | `search:locale:unsupported` |
 | `search:timeout` | Search abandoned after running longer than the node allows | `search:timeout` |
 | `reindex:*` | Reindex job lookup, state, or record storage failure | `reindex:not_found`, `reindex:in_progress`, `reindex:io_error` |
@@ -84,6 +84,39 @@ A change to some of a document therefore reports a path under `index:update:*`, 
 | `indexer:*` | The node that writes an index could not be found or reached | `indexer:unavailable`, `indexer:unreachable`, `indexer:leadership_unreadable` |
 | `node:*` | The node failed to serve a request that is not itself wrong | `node:error` |
 | `validation` | The envelope of a refused request. Branch on the codes in its `errors` array | `validation` |
+
+## Codes for a value outside its range
+
+A request field that holds a number has one error code for a value outside the accepted range: `<field>_invalid`, under the part of the request that holds the field. One code covers both ends of the range.
+
+When the top of the range is a node setting, the error carries a `max` argument holding that setting's value. Read `max` instead of knowing the setting name.
+
+The following table lists the fields and their error codes:
+
+| Field | Code | Lowest accepted | Highest accepted |
+| --- | --- | --- | --- |
+| `limit` of a search | `search:limit:invalid` | 0 | `EXOFIND_SEARCH_MAX_LIMIT` (default 1000) |
+| `offset` | `search:offset:invalid` | 0 | no cap |
+| `pages.max` | `search:pages:max_invalid` | 1 | no cap |
+| `limit` of a facet | `search:facet:limit_invalid` | 1 | `EXOFIND_SEARCH_MAX_FACET_VALUES` (default 1000) |
+| `depth` of a facet | `search:facet:depth_invalid` | 1 | 10, fixed |
+| `limit` of a suggest request | `search:suggest:limit_invalid` | 1 | `EXOFIND_SUGGEST_MAX_LIMIT` (default 100) |
+| `limit` of a `matched` field | `search:matched:limit_invalid` | 1 | 100, fixed |
+| `k` of a `knn` clause | `search:clause:k_invalid` | 1 | `EXOFIND_SEARCH_MAX_KNN_K` (default 1000) |
+| `depth` of a `fuse` clause | `search:clause:depth_invalid` | 1 | `EXOFIND_SEARCH_MAX_FUSE_DEPTH` (default 1000) |
+| `slop` of a text clause | `search:clause:slop_invalid` | 0 | no cap |
+| `window` of a `rescore` block | `search:rescore:window_invalid` | 1 | `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` (default 1000) |
+| `fragments` of a highlight | `search:highlight:fragments_invalid` | 1 | no cap |
+| `length` of a highlight | `search:highlight:length_invalid` | 1 | 10000, fixed |
+| `index` of an explanation | `search:explain:index_invalid` | 0 | no cap |
+| `limit` of a document scan | `request:scan:limit_invalid` | 1 | 10000, fixed |
+
+A cap on the request as a whole, rather than on one field, keeps a code of its own, because there is no single field to point a caller at:
+
+- `search:page:too_deep`: how far `offset` plus `limit` reaches.
+- `search:query:too_many_clauses`: clauses in the request, counted together.
+- `search:query:too_deep`: how deeply clauses nest.
+- `search:facet:ranges_too_many`: how many buckets one facet counts into.
 
 ## Error codes
 
@@ -102,12 +135,12 @@ The following error codes require specific handling in client applications. For 
 - `search:page:conflicting`: Returned when more than one of `offset`, `after` and `before` is given. Specify only one starting position.
 - `search:pages:without_offset`: Returned when `pages` is asked for from a `next` or `previous` cursor. Start numbered paging from `offset` or from a page's own cursor.
 - `search:rescore:window_too_small`: Returned when `offset` plus `limit` reaches past the `window` of a `rescore` block. Widen the window, or ask for an earlier page. A rescored search cannot page past its window by counting; follow `next` instead. See [Paging a rescored search](search-api.md#paging-a-rescored-search).
-- `search:rescore:window_invalid`: Returned when the `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`.
-- `search:limit:too_large`: Returned when `limit` exceeds `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next` for the rest.
+- `search:rescore:window_invalid`: Returned when the `window` of a `rescore` block is below 1 or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. The `max` argument carries the cap.
+- `search:limit:invalid`: Returned when `limit` is below 0 or above `EXOFIND_SEARCH_MAX_LIMIT`. The `max` argument carries the cap. Ask for a smaller page and follow `next` for the rest.
 - `search:query:too_many_clauses`: Returned when a request holds more clauses than `EXOFIND_SEARCH_MAX_CLAUSES`, counted across `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of every interpret target of a `text` clause. The `path` names the clause the count ran past. The rest of the request is not validated, so a client that also has other errors to fix sees them only after this one.
 - `search:query:too_deep`: Returned when clauses nest deeper than `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`. Flatten the query: `and` inside `and` narrows the same way as one `and` holding both clauses. Each `fallback` of an interpret target counts as one level, as does the `when` of a target.
-- `search:clause:k_too_large`: Returned when the `k` of a `knn` clause exceeds `EXOFIND_SEARCH_MAX_KNN_K`.
-- `search:clause:depth_too_large`: Returned when the `depth` of a `fuse` clause exceeds `EXOFIND_SEARCH_MAX_FUSE_DEPTH`.
+- `search:clause:k_invalid`: Returned when the `k` of a `knn` clause is missing, below 1, or above `EXOFIND_SEARCH_MAX_KNN_K`. A search measures the value against the node cap and carries `max`. A query that names documents to delete is not measured against the cap, so it returns this code only for a value that is missing or below 1, and carries no `max`.
+- `search:clause:depth_invalid`: Returned when the `depth` of a `fuse` clause is below 1 or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. Leaving `depth` out is not a failure; each ranking is then read to the default depth. A search measures the value against the node cap and carries `max`. A query that names documents to delete is not measured against the cap, so it returns this code only for a `depth` below 1, and carries no `max`.
 - `search:timeout`: Returned with HTTP `503` when a search collects for longer than `EXOFIND_SEARCH_TIMEOUT`, or a suggest request counts for longer than `EXOFIND_SUGGEST_TIMEOUT`. The results collected before the node stopped are dropped. Repeating the same request costs the same again, so narrow the search instead. The `timeout` argument carries the budget the search ran past.
 - `search:suggest:limit_invalid`: Returned with HTTP `400` by `POST /v1alpha1/indexes/{name}/suggest` when `limit` is below 1 or above `EXOFIND_SUGGEST_MAX_LIMIT`. The `max` argument carries the largest limit allowed.
 - `search:facet:limit_invalid`: Returned when the `limit` of a facet is below 1 or above `EXOFIND_SEARCH_MAX_FACET_VALUES`, whether the facet is counted beside a search or asked for on its own. The `max` argument carries the largest limit allowed.

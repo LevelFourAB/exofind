@@ -1224,11 +1224,11 @@ A node caps what one request may ask it to do. Each cap is a configuration varia
 
 | Setting | Applies to | Error code |
 |---|---|---|
-| `EXOFIND_SEARCH_MAX_LIMIT` | `limit` | `search:limit:too_large` |
+| `EXOFIND_SEARCH_MAX_LIMIT` | `limit` | `search:limit:invalid` |
 | `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | `offset` plus `limit` | `search:page:too_deep` |
 | `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | `rescore.window` | `search:rescore:window_invalid` |
-| `EXOFIND_SEARCH_MAX_KNN_K` | `k` of a `knn` clause | `search:clause:k_too_large` |
-| `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_too_large` |
+| `EXOFIND_SEARCH_MAX_KNN_K` | `k` of a `knn` clause | `search:clause:k_invalid` |
+| `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_invalid` |
 | `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of an interpret target, counted together | `search:query:too_many_clauses` |
 | `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Nesting of clauses inside clauses, and of an interpret target inside a `fallback` | `search:query:too_deep` |
 | `EXOFIND_SEARCH_MAX_FACET_VALUES` | `limit` of a facet, counted beside a search or asked for on its own | `search:facet:limit_invalid` |

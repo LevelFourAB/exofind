@@ -44,13 +44,20 @@ final class QueryBudget {
 			.withArguments("max")
 			.withMessage("Clauses nest at most {{max}} deep");
 
-	private static final ErrorType K_TOO_LARGE =
-		ErrorType.withCode("search:clause:k_too_large")
+	/*
+	 * One code covers a `k` outside its range, whichever end it ran past. The
+	 * cap is a node setting, so it is named here as the `max` argument;
+	 * SearchRequestMapper reports the same code where the value is wrong on its
+	 * own and no cap is known.
+	 */
+	private static final ErrorType K_INVALID =
+		ErrorType.withCode("search:clause:k_invalid")
 			.withArguments("max")
 			.withMessage("A `knn` clause brings back at most {{max}} neighbours");
 
-	private static final ErrorType DEPTH_TOO_LARGE =
-		ErrorType.withCode("search:clause:depth_too_large")
+	/** As {@link #K_INVALID}, for the depth each ranking of a `fuse` is read to. */
+	private static final ErrorType DEPTH_INVALID =
+		ErrorType.withCode("search:clause:depth_invalid")
 			.withArguments("max")
 			.withMessage("Each ranking of a `fuse` clause is read at most {{max}} results down");
 
@@ -205,7 +212,7 @@ final class QueryBudget {
 					 * clause could otherwise be run with is measured here.
 					 */
 					if(knn.k() != null && knn.k() > limits.maxKnnK()) {
-						errors.add(K_TOO_LARGE.toMessage(
+						errors.add(K_INVALID.toMessage(
 							Location.create(at + ".k"),
 							"max", limits.maxKnnK()
 						));
@@ -216,7 +223,7 @@ final class QueryBudget {
 
 				case Clause.Fuse fuse -> {
 					if(fuse.depth() != null && fuse.depth() > limits.maxFuseDepth()) {
-						errors.add(DEPTH_TOO_LARGE.toMessage(
+						errors.add(DEPTH_INVALID.toMessage(
 							Location.create(at + ".depth"),
 							"max", limits.maxFuseDepth()
 						));

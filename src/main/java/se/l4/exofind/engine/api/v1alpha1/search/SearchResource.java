@@ -329,7 +329,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:k_invalid",
 		status = 400,
-		when = "The `k` of a `knn` clause is missing or not above zero."
+		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
@@ -369,7 +369,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:depth_invalid",
 		status = 400,
-		when = "The `depth` of a `fuse` clause is below one result."
+		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
 	@ReturnsError(
 		value = "search:clause:interpret_fields_required",
@@ -422,12 +422,12 @@ public class SearchResource {
 		when = "A `sort` entry that orders by distance carries no `lat` and `lon` to measure from."
 	)
 	@ReturnsError(
-		value = "search:limit:negative",
+		value = "search:limit:invalid",
 		status = 400,
-		when = "`limit` is below zero."
+		when = "`limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`."
 	)
 	@ReturnsError(
-		value = "search:offset:negative",
+		value = "search:offset:invalid",
 		status = 400,
 		when = "`offset` is below zero."
 	)
@@ -462,7 +462,7 @@ public class SearchResource {
 		when = "`pages` is asked for from a `next` or `previous` cursor, which carries no page number. Start from `offset` or from a page's own cursor."
 	)
 	@ReturnsError(
-		value = "search:pages:invalid_max",
+		value = "search:pages:max_invalid",
 		status = 400,
 		when = "The `max` of `pages` is not above zero."
 	)
@@ -717,11 +717,6 @@ public class SearchResource {
 		when = "`offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead."
 	)
 	@ReturnsError(
-		value = "search:limit:too_large",
-		status = 400,
-		when = "`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`. Ask for a smaller page and follow `next`."
-	)
-	@ReturnsError(
 		value = "search:query:too_many_clauses",
 		status = 400,
 		when = "The query holds more clauses than the node allows."
@@ -730,16 +725,6 @@ public class SearchResource {
 		value = "search:query:too_deep",
 		status = 400,
 		when = "The query nests deeper than the node allows."
-	)
-	@ReturnsError(
-		value = "search:clause:k_too_large",
-		status = 400,
-		when = "A `knn` clause asks for more neighbours than the node allows."
-	)
-	@ReturnsError(
-		value = "search:clause:depth_too_large",
-		status = 400,
-		when = "A clause reaches deeper into objects than the node allows."
 	)
 	@ReturnsError(
 		value = "index:not_found",
@@ -945,7 +930,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:k_invalid",
 		status = 400,
-		when = "The `k` of a `knn` clause is missing or not above zero."
+		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
@@ -985,7 +970,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:depth_invalid",
 		status = 400,
-		when = "The `depth` of a `fuse` clause is below one result."
+		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
 	@ReturnsError(
 		value = "search:clause:interpret_fields_required",
@@ -1066,16 +1051,6 @@ public class SearchResource {
 		value = "search:query:too_deep",
 		status = 400,
 		when = "The query nests deeper than the node allows."
-	)
-	@ReturnsError(
-		value = "search:clause:k_too_large",
-		status = 400,
-		when = "A `knn` clause asks for more neighbours than the node allows."
-	)
-	@ReturnsError(
-		value = "search:clause:depth_too_large",
-		status = 400,
-		when = "A clause reaches deeper into objects than the node allows."
 	)
 	@ReturnsError(
 		value = "index:not_found",
@@ -1282,7 +1257,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:k_invalid",
 		status = 400,
-		when = "The `k` of a `knn` clause is missing or not above zero."
+		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
@@ -1322,7 +1297,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:depth_invalid",
 		status = 400,
-		when = "The `depth` of a `fuse` clause is below one result."
+		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
 	@ReturnsError(
 		value = "search:clause:interpret_fields_required",
@@ -1388,16 +1363,6 @@ public class SearchResource {
 		value = "search:query:too_deep",
 		status = 400,
 		when = "The filter nests deeper than the node allows."
-	)
-	@ReturnsError(
-		value = "search:clause:k_too_large",
-		status = 400,
-		when = "A `knn` clause asks for more neighbours than the node allows."
-	)
-	@ReturnsError(
-		value = "search:clause:depth_too_large",
-		status = 400,
-		when = "A clause reaches deeper into objects than the node allows."
 	)
 	@ReturnsError(
 		value = "index:not_found",
@@ -1608,12 +1573,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:k_invalid",
 		status = 400,
-		when = "The `k` of a `knn` clause is missing or not above zero."
-	)
-	@ReturnsError(
-		value = "search:clause:k_too_large",
-		status = 400,
-		when = "A `knn` clause asks for more neighbours than the node allows."
+		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
 		value = "search:clause:weight_invalid",
@@ -1653,12 +1613,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:clause:depth_invalid",
 		status = 400,
-		when = "The `depth` of a `fuse` clause is below one result."
-	)
-	@ReturnsError(
-		value = "search:clause:depth_too_large",
-		status = 400,
-		when = "A clause reaches deeper into objects than the node allows."
+		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
 	@ReturnsError(
 		value = "search:clause:interpret_fields_required",
@@ -1716,17 +1671,12 @@ public class SearchResource {
 		when = "A `sort` entry that orders by distance carries no `lat` and `lon` to measure from."
 	)
 	@ReturnsError(
-		value = "search:limit:negative",
+		value = "search:limit:invalid",
 		status = 400,
-		when = "`limit` is below zero."
+		when = "`limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`."
 	)
 	@ReturnsError(
-		value = "search:limit:too_large",
-		status = 400,
-		when = "`limit` is above `EXOFIND_SEARCH_MAX_LIMIT`."
-	)
-	@ReturnsError(
-		value = "search:offset:negative",
+		value = "search:offset:invalid",
 		status = 400,
 		when = "`offset` is below zero."
 	)
@@ -1761,7 +1711,7 @@ public class SearchResource {
 		when = "`pages` is asked for from a `next` or `previous` cursor, which carries no page number."
 	)
 	@ReturnsError(
-		value = "search:pages:invalid_max",
+		value = "search:pages:max_invalid",
 		status = 400,
 		when = "The `max` of `pages` is not above zero."
 	)

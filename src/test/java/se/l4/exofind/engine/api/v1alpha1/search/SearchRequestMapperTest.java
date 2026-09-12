@@ -2638,7 +2638,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(withLimit(LIMITS.maxLimit() + 1), LIMITS)
 		);
 
-		assertThat(codesOf(e), contains("search:limit:too_large"));
+		assertThat(codesOf(e), contains("search:limit:invalid"));
 		assertThat(pathsOf(e), contains("limit"));
 	}
 
@@ -2827,7 +2827,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:k_too_large"));
+		assertThat(codesOf(e), contains("search:clause:k_invalid"));
 		assertThat(pathsOf(e), contains("query[0].k"));
 	}
 
@@ -2853,7 +2853,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:depth_too_large"));
+		assertThat(codesOf(e), contains("search:clause:depth_invalid"));
 		assertThat(pathsOf(e), contains("query[0].depth"));
 	}
 }
