@@ -1265,14 +1265,16 @@ public class Index {
 	/**
 	 * Open a searcher over a reader: it scores with the similarity of this
 	 * index, it ranks its slices on the search threads of the node, it caches
-	 * what a cacheable clause matches in {@link #QUERY_CACHE}, and it stops
-	 * collecting when the thread searching has run out of time.
+	 * what a cacheable clause matches in {@link #QUERY_CACHE}, it keeps where
+	 * a term sits in the reader for the queries that name it again, and it
+	 * stops collecting when the thread searching has run out of time.
 	 *
 	 * @see SearchDeadline
 	 * @see SearchThreads
+	 * @see TermStatesSearcher
 	 */
 	private IndexSearcher newSearcher(IndexReader reader) {
-		var searcher = new IndexSearcher(reader, searchThreads.executor());
+		var searcher = new TermStatesSearcher(reader, searchThreads.executor());
 		searcher.setSimilarity(similarity);
 		searcher.setQueryCache(QUERY_CACHE);
 
