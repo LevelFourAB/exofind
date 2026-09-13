@@ -47,6 +47,7 @@ import se.l4.exofind.engine.auth.Key;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -123,7 +124,7 @@ public class ReindexResourceTest {
 			Duration.ofMinutes(10)
 		);
 
-		resource = new ReindexResource(reindexJobs, auth);
+		resource = new ReindexResource(reindexJobs, auth, indexes);
 		indexResource = new IndexResource(
 			indexes,
 			auth,
@@ -242,6 +243,29 @@ public class ReindexResourceTest {
 		assertThrows(
 			ReindexNotFoundException.class,
 			() -> resource.status("books")
+		);
+	}
+
+	@Test
+	public void anIndexThatDoesNotExistAnswersIndexNotFound() {
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> resource.status("books")
+		);
+
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> resource.cancel("books")
+		);
+	}
+
+	@Test
+	public void aGenerationThatDoesNotExistAnswersIndexNotFound() {
+		create("books");
+
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> resource.status("books@7")
 		);
 	}
 

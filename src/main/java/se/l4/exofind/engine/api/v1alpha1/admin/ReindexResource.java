@@ -17,6 +17,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
+import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.AuthContext;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
@@ -30,6 +31,7 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
 import se.l4.exofind.engine.reindex.ReindexPhase;
@@ -85,10 +87,12 @@ public class ReindexResource {
 
 	private final ReindexJobs reindexes;
 	private final AuthContext auth;
+	private final Indexes indexes;
 
-	public ReindexResource(ReindexJobs reindexes, AuthContext auth) {
+	public ReindexResource(ReindexJobs reindexes, AuthContext auth, Indexes indexes) {
 		this.reindexes = reindexes;
 		this.auth = auth;
+		this.indexes = indexes;
 	}
 
 	/**
@@ -321,7 +325,7 @@ public class ReindexResource {
 		)
 		@PathParam("name") String name
 	) {
-		var index = IndexName.parse(name).index();
+		var index = requireIndex(name);
 
 		return reindexes.get(index)
 			.map(ReindexInfo::of)
@@ -419,6 +423,30 @@ public class ReindexResource {
 		)
 		@PathParam("name") String name
 	) {
-		return ReindexInfo.of(reindexes.cancel(IndexName.parse(name).index()));
+		return ReindexInfo.of(reindexes.cancel(requireIndex(name)));
+	}
+
+	/**
+	 * Read the index a job belongs to from a name, once the registry says the
+	 * deployment holds it. A name no index answers for is reported as the
+	 * missing index it is, rather than as an index without a job.
+	 *
+	 * @param name
+	 *   the index, or one generation of it
+	 * @return
+	 *   name of the index, without a generation
+	 * @throws IndexNotFoundException
+	 *   if there is no such index, or it has no such generation
+	 */
+	private String requireIndex(String name) {
+		var parsed = IndexName.parse(name);
+		var registered = indexes.getRegistered(parsed.index())
+			.orElseThrow(() -> new IndexNotFoundException(name));
+
+		if(parsed.isPinned() && !registered.hasGeneration(parsed.generation())) {
+			throw new IndexNotFoundException(name);
+		}
+
+		return parsed.index();
 	}
 }
