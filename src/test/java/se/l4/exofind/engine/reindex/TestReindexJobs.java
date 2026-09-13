@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 
 import se.l4.exofind.engine.Indexes;
+import se.l4.exofind.engine.NodeIdentity;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
@@ -11,7 +12,8 @@ import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 /**
  * ReindexJobs the way a test node stands one up: local record storage under
  * the node's directory, uncontested ownership, and sweep and catch-up
- * intervals long enough that a test drives the job itself.
+ * intervals long enough that a test drives the job itself. The node is named
+ * {@code test-node}.
  */
 public final class TestReindexJobs {
 	private TestReindexJobs() {
@@ -29,6 +31,7 @@ public final class TestReindexJobs {
 
 		return new ReindexJobs(
 			nodeState,
+			new NodeIdentity("test-node"),
 			indexes,
 			registry,
 			new LocalReindexJobStorage(

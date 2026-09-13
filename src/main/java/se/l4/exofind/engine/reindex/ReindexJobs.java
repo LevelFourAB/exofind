@@ -1,8 +1,10 @@
 package se.l4.exofind.engine.reindex;
 
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,6 +24,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.Interruptions;
+import se.l4.exofind.engine.NodeIdentity;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -172,6 +175,13 @@ public class ReindexJobs {
 					+ " caller with `manual`, not with `{{value}}`"
 			);
 
+	/**
+	 * How many random bytes a job id is made of, written as hex.
+	 */
+	private static final int ID_BYTES = 8;
+
+	private static final SecureRandom RANDOM = new SecureRandom();
+
 	private static final ErrorType DOCUMENT_REFUSED =
 		ErrorType.withCode("reindex:document_refused")
 			.withStatus(500)
@@ -181,6 +191,7 @@ public class ReindexJobs {
 			);
 
 	private final NodeState nodeState;
+	private final String node;
 	private final Indexes indexes;
 	private final IndexRegistry registry;
 	private final ReindexJobStorage storage;
@@ -221,6 +232,7 @@ public class ReindexJobs {
 	@Inject
 	public ReindexJobs(
 		NodeState nodeState,
+		NodeIdentity identity,
 		Indexes indexes,
 		IndexRegistry registry,
 		ReindexJobStorage storage,
@@ -233,6 +245,7 @@ public class ReindexJobs {
 		Duration catchUpInterval
 	) {
 		this.nodeState = nodeState;
+		this.node = identity.id();
 		this.indexes = indexes;
 		this.registry = registry;
 		this.storage = storage;
@@ -338,6 +351,9 @@ public class ReindexJobs {
 	 *   {@code auto} or {@code null} to promote once caught up,
 	 *   {@code manual} to stop in the ready phase and leave the promote to
 	 *   the caller
+	 * @param startedBy
+	 *   id of the principal whose request starts the job, recorded so the
+	 *   record says who asked for it
 	 * @return
 	 *   the job as accepted
 	 * @throws ValidationException
@@ -352,7 +368,7 @@ public class ReindexJobs {
 	 * @throws ReindexInProgressException
 	 *   if the index already has a job that is not finished
 	 */
-	public ReindexJob start(String targetName, String from, String promote) {
+	public ReindexJob start(String targetName, String from, String promote, String startedBy) {
 		var target = IndexName.parse(targetName);
 		if(!target.isPinned()) {
 			throw new ValidationException(
@@ -429,6 +445,7 @@ public class ReindexJobs {
 
 			var now = Instant.now();
 			var job = new ReindexJob(
+				newId(),
 				index,
 				target.generation(),
 				sourceGen,
@@ -439,8 +456,11 @@ public class ReindexJobs {
 				0,
 				null,
 				manual,
+				startedBy,
+				node,
 				now,
-				now
+				now,
+				null
 			);
 
 			/*
@@ -472,8 +492,10 @@ public class ReindexJobs {
 
 			logger.atInfo()
 				.addKeyValue("index", index)
+				.addKeyValue("job", job.id())
 				.addKeyValue("target", job.targetName())
 				.addKeyValue("source", job.sourceName())
+				.addKeyValue("startedBy", startedBy)
 				.log("Accepted a reindex");
 
 			return job;
@@ -696,7 +718,7 @@ public class ReindexJobs {
 
 			endTrackingQuietly(job);
 
-			var cancelled = withPhase(job, ReindexPhase.CANCELLED);
+			var cancelled = job.withPhase(ReindexPhase.CANCELLED).written(node, Instant.now());
 			var version = storage.write(index, cancelled.toStore(), stored.version());
 			if(version == null) {
 				// Somebody resumed it in between; they own the record now
@@ -943,15 +965,12 @@ public class ReindexJobs {
 				 * in the commit, and everything after it in the log.
 				 */
 				source.commit();
-				checkpoint(current, j -> withPhase(j, ReindexPhase.COPYING));
+				checkpoint(current, j -> j.withPhase(ReindexPhase.COPYING));
 
 				copy(current, source, target);
 
 				var backlog = changeLogOf(source).size();
-				checkpoint(current, j -> withBacklog(
-					withPhase(j, ReindexPhase.REPLAYING),
-					backlog
-				));
+				checkpoint(current, j -> j.withPhase(ReindexPhase.REPLAYING).withBacklog(backlog));
 			}
 
 			if(current.job.phase() == ReindexPhase.REPLAYING) {
@@ -961,10 +980,7 @@ public class ReindexJobs {
 			if(current.job.phase() == ReindexPhase.READY
 				|| (current.job.phase() == ReindexPhase.REPLAYING && current.job.manualPromote())) {
 				var backlog = changeLogOf(source).size();
-				checkpoint(current, j -> withBacklog(
-					withPhase(j, ReindexPhase.READY),
-					backlog
-				));
+				checkpoint(current, j -> j.withPhase(ReindexPhase.READY).withBacklog(backlog));
 				scheduleCatchUp(current);
 				return;
 			}
@@ -1053,20 +1069,7 @@ public class ReindexJobs {
 				var cursor = lastKey[0];
 				var copied = read;
 				var backlog = changeLogOf(source).size();
-				checkpoint(current, j -> new ReindexJob(
-					j.index(),
-					j.target(),
-					j.source(),
-					j.phase(),
-					cursor,
-					j.documentsCopied() + copied,
-					j.sourceDocCount(),
-					backlog,
-					null,
-					j.manualPromote(),
-					j.startedAt(),
-					j.updatedAt()
-				));
+				checkpoint(current, j -> j.withCopied(cursor, copied, backlog));
 
 				after = source.parsePrimaryKey(cursor);
 			}
@@ -1112,7 +1115,7 @@ public class ReindexJobs {
 		log.forget(snapshot);
 
 		var backlog = log.size();
-		checkpoint(current, j -> withBacklog(j, backlog));
+		checkpoint(current, j -> j.withBacklog(backlog));
 	}
 
 	private void replay(
@@ -1149,7 +1152,7 @@ public class ReindexJobs {
 	 */
 	private void promoteAndFinish(Running current, Index source, Index target)
 		throws IOException {
-		checkpoint(current, j -> withPhase(j, ReindexPhase.PROMOTING));
+		checkpoint(current, j -> j.withPhase(ReindexPhase.PROMOTING));
 
 		/*
 		 * Everything that decides where a write lands happens under one hold:
@@ -1216,7 +1219,7 @@ public class ReindexJobs {
 		 */
 		source.commit();
 
-		checkpoint(current, j -> withBacklog(withPhase(j, ReindexPhase.DONE), 0));
+		checkpoint(current, j -> j.withPhase(ReindexPhase.DONE).withBacklog(0));
 		running.remove(current.index, current);
 	}
 
@@ -1386,7 +1389,8 @@ public class ReindexJobs {
 				 */
 				storage.write(
 					index,
-					withError(job, "The source or target generation no longer exists")
+					job.withError("The source or target generation no longer exists")
+						.written(node, Instant.now())
 						.toStore(),
 					stored.version()
 				);
@@ -1431,7 +1435,7 @@ public class ReindexJobs {
 	 * touching anything further.
 	 */
 	private void checkpoint(Running current, UnaryOperator<ReindexJob> change) throws IOException {
-		var updated = touch(change.apply(current.job));
+		var updated = change.apply(current.job).written(node, Instant.now());
 
 		var version = storage.write(current.index, updated.toStore(), current.version);
 		if(version == null) {
@@ -1454,7 +1458,7 @@ public class ReindexJobs {
 		endTrackingQuietly(current.job);
 
 		try {
-			checkpoint(current, j -> withPhase(j, ReindexPhase.CANCELLED));
+			checkpoint(current, j -> j.withPhase(ReindexPhase.CANCELLED));
 		} catch(IOException | JobLost e) {
 			// The record is another node's, or unreachable - either way not ours
 		}
@@ -1489,7 +1493,7 @@ public class ReindexJobs {
 		endTrackingQuietly(current.job);
 
 		try {
-			checkpoint(current, j -> withBacklog(withPhase(j, ReindexPhase.DONE), 0));
+			checkpoint(current, j -> j.withPhase(ReindexPhase.DONE).withBacklog(0));
 		} catch(IOException | JobLost e) {
 			logger.atWarn()
 				.addKeyValue("index", current.index)
@@ -1524,7 +1528,7 @@ public class ReindexJobs {
 		endTrackingQuietly(current.job);
 
 		try {
-			checkpoint(current, j -> withError(j, reason));
+			checkpoint(current, j -> j.withError(reason));
 		} catch(IOException | JobLost e) {
 			logger.atWarn()
 				.addKeyValue("index", current.index)
@@ -1584,72 +1588,13 @@ public class ReindexJobs {
 		return source.beginChangeTracking();
 	}
 
-	private static ReindexJob withPhase(ReindexJob job, ReindexPhase phase) {
-		return new ReindexJob(
-			job.index(),
-			job.target(),
-			job.source(),
-			phase,
-			job.cursor(),
-			job.documentsCopied(),
-			job.sourceDocCount(),
-			job.backlog(),
-			null,
-			job.manualPromote(),
-			job.startedAt(),
-			job.updatedAt()
-		);
-	}
-
-	private static ReindexJob withBacklog(ReindexJob job, long backlog) {
-		return new ReindexJob(
-			job.index(),
-			job.target(),
-			job.source(),
-			job.phase(),
-			job.cursor(),
-			job.documentsCopied(),
-			job.sourceDocCount(),
-			backlog,
-			job.error(),
-			job.manualPromote(),
-			job.startedAt(),
-			job.updatedAt()
-		);
-	}
-
-	private static ReindexJob withError(ReindexJob job, String error) {
-		return new ReindexJob(
-			job.index(),
-			job.target(),
-			job.source(),
-			ReindexPhase.FAILED,
-			job.cursor(),
-			job.documentsCopied(),
-			job.sourceDocCount(),
-			job.backlog(),
-			error,
-			job.manualPromote(),
-			job.startedAt(),
-			job.updatedAt()
-		);
-	}
-
-	private static ReindexJob touch(ReindexJob job) {
-		return new ReindexJob(
-			job.index(),
-			job.target(),
-			job.source(),
-			job.phase(),
-			job.cursor(),
-			job.documentsCopied(),
-			job.sourceDocCount(),
-			job.backlog(),
-			job.error(),
-			job.manualPromote(),
-			job.startedAt(),
-			Instant.now()
-		);
+	/**
+	 * Mint the id of a job that is being accepted.
+	 */
+	private static String newId() {
+		var bytes = new byte[ID_BYTES];
+		RANDOM.nextBytes(bytes);
+		return HexFormat.of().formatHex(bytes);
 	}
 
 	/**

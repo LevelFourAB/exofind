@@ -157,7 +157,7 @@ The API returns the following HTTP status codes:
 | --- | --- |
 | `200 OK` | The request was served and the response carries a body. |
 | `201 Created` | A resource was created: an index, a generation, the first search settings of an index, or a key. A `PUT` that replaces a resource returns `200 OK` instead. |
-| `202 Accepted` | A reindex job was started and runs asynchronously. Only `POST /v1alpha1/admin/indexes/{name}/actions/reindex` returns this status. |
+| `202 Accepted` | A job was started and runs asynchronously. The `Location` header names the status endpoint of the job. |
 | `204 No Content` | A resource was removed: an index, its search settings, a key, or a document named by key in the path. |
 | `304 Not Modified` | A `GET` carried an `If-None-Match` header naming the stored version. The response carries the `ETag` header and no body. |
 | `400 Bad Request` | The request is invalid and must change before it can be served. |

@@ -119,7 +119,7 @@ public class ObjectStorageIndexerOwnershipTest {
 		var nodeLoads = loads(node);
 		return new ObjectStorageIndexerOwnership(
 			storage,
-			Optional.of(node),
+			node,
 			Optional.ofNullable(address),
 			LEASE,
 			names::get,

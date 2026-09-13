@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,6 +60,7 @@ import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
 import se.l4.exofind.engine.reindex.TestReindexJobs;
 import se.l4.exofind.engine.storage.StorageMode;
+import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.core.UriInfo;
 
 /**
@@ -133,6 +135,8 @@ public class ReindexResourceTest {
 		uriInfo = mock(UriInfo.class);
 		when(uriInfo.getAbsolutePath())
 			.thenReturn(URI.create("http://localhost/v1alpha1/admin/indexes/books"));
+		when(uriInfo.getBaseUriBuilder())
+			.thenAnswer(invocation -> UriBuilder.fromUri("http://localhost/"));
 	}
 
 	@AfterEach
@@ -207,16 +211,28 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		var response = indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		var response = indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		assertThat(response.getStatus(), is(202));
+		assertThat(
+			response.getLocation(),
+			is(URI.create("http://localhost/v1alpha1/admin/reindexes/books"))
+		);
 
 		var accepted = (ReindexInfo) response.getEntity();
+		assertThat(accepted.id(), is(notNullValue()));
 		assertThat(accepted.index(), is("books"));
 		assertThat(accepted.target(), is("books@2"));
 		assertThat(accepted.source(), is("books@1"));
 		assertThat(accepted.promote(), is("manual"));
+		assertThat(accepted.startedBy(), is(Principal.UNCHECKED));
+		assertThat(accepted.node(), is("test-node"));
+		assertThat(accepted.finishedAt(), is(nullValue()));
 
 		awaitPhase("books", "ready");
+
+		var read = resource.status("books");
+		assertThat(read.id(), is(accepted.id()));
+		assertThat(read.startedBy(), is(Principal.UNCHECKED));
 	}
 
 	@Test
@@ -234,11 +250,12 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var cancelled = resource.cancel("books");
 		assertThat(cancelled.phase(), is("cancelled"));
+		assertThat(cancelled.finishedAt(), is(notNullValue()));
 	}
 
 	@Test
@@ -246,7 +263,7 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var listed = resource.list(null, null, null, null, null);
@@ -267,7 +284,7 @@ public class ReindexResourceTest {
 		create("books@2");
 		create("movies");
 
-		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var ofBooks = resource.list("books", null, null, null, null);
@@ -304,8 +321,8 @@ public class ReindexResourceTest {
 		create("movies");
 		create("movies@2");
 
-		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
-		indexResource.reindex("movies@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
+		indexResource.reindex("movies@2", uriInfo, new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 		awaitPhase("movies", "ready");
 
@@ -422,7 +439,7 @@ public class ReindexResourceTest {
 
 		var refusing = spy(reindexJobs);
 		doThrow(new ReindexInProgressException("books"))
-			.when(refusing).start(any(), any(), any());
+			.when(refusing).start(any(), any(), any(), any());
 
 		var resource = new IndexResource(
 			indexes,
@@ -446,7 +463,7 @@ public class ReindexResourceTest {
 		create("books");
 		create("books@2");
 
-		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
 		var promoted = (IndexInfo) indexResource.promote("books@2").getEntity();
@@ -467,10 +484,10 @@ public class ReindexResourceTest {
 
 		answerAs(Permission.INDEXES_REINDEX);
 
-		assertThrows(ForbiddenException.class, () -> indexResource.reindex("books@2", null));
+		assertThrows(ForbiddenException.class, () -> indexResource.reindex("books@2", uriInfo, null));
 		assertThrows(
 			ForbiddenException.class,
-			() -> indexResource.reindex("books@2", new ReindexRequest(null, "auto"))
+			() -> indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "auto"))
 		);
 
 		// Nothing was started by either refusal
@@ -488,8 +505,12 @@ public class ReindexResourceTest {
 
 		answerAs(Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
 
-		var response = indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		var response = indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		assertThat(response.getStatus(), is(202));
+
+		// The record names the key the request was made with
+		var accepted = (ReindexInfo) response.getEntity();
+		assertThat(accepted.startedBy(), is("test"));
 
 		awaitPhase("books", "ready");
 	}

@@ -67,7 +67,7 @@ Content-Type: application/json
    }
    ```
 
-   The endpoint returns `202 Accepted` with the initial job record. If you omit the request body, the job defaults to reading from the live generation with `promote: "auto"`.
+   The endpoint returns `202 Accepted` with the initial job record. The `Location` header names the status endpoint of the job. If you omit the request body, the job defaults to reading from the live generation with `promote: "auto"`.
 
 ## Tracking reindex progress
 
@@ -81,6 +81,7 @@ Content-Type: application/json
 
    ```json
    {
+     "id": "6f1c2a9d8b3e4c05",
      "index": "products",
      "target": "products@2",
      "source": "products@1",
@@ -90,10 +91,15 @@ Content-Type: application/json
      "sourceDocuments": 2400000,
      "backlog": 4100,
      "error": null,
+     "startedBy": "3f9a1c7e2b8d4650",
+     "node": "node-a-7f21",
      "startedAt": "2026-08-28T10:15:30Z",
-     "updatedAt": "2026-08-28T10:16:02Z"
+     "updatedAt": "2026-08-28T10:16:02Z",
+     "finishedAt": null
    }
    ```
+
+   `id` tells this job from one that replaces it on the same index. `node` names the node running the job, and `startedBy` the key that started it.
 
 2. Monitor the `phase` field as the job progresses through its lifecycle:
 
@@ -176,7 +182,8 @@ If a document violates the target schema (for example, missing a required field 
      "source": "products@1",
      "phase": "failed",
      "error": "The target refused the document with key `prod_12345`: Required field `sku` is missing",
-     "updatedAt": "2026-08-28T10:18:12Z"
+     "updatedAt": "2026-08-28T10:18:12Z",
+     "finishedAt": "2026-08-28T10:18:12Z"
    }
    ```
 

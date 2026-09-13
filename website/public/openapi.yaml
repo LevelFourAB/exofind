@@ -4016,7 +4016,8 @@ components:
     ReindexInfo:
       description: "A reindex job record. See [Job record and phases](https://exofind.dev/reference/admin-api/#job-record-and-phases)."
       examples:
-      - index: products
+      - id: 6f1c2a9d8b3e4c05
+        index: products
         target: products@2
         source: products@1
         phase: copying
@@ -4025,10 +4026,20 @@ components:
         sourceDocuments: 2400000
         backlog: 4100
         error: null
+        startedBy: 3f9a1c7e2b8d4650
+        node: node-a-7f21
         startedAt: 2026-08-28T10:15:30Z
         updatedAt: 2026-08-28T10:16:02Z
+        finishedAt: null
       type: object
       properties:
+        id:
+          type: string
+          description: "The id of the job, minted when it was accepted. Tells one\
+            \ job of an index from the one that replaced it. `null` on a record an\
+            \ earlier version wrote."
+          examples:
+          - 6f1c2a9d8b3e4c05
         index:
           type: string
           description: The name of the index.
@@ -4100,6 +4111,21 @@ components:
         error:
           type: string
           description: "The error message if the job failed, or `null`."
+        startedBy:
+          type: string
+          description: "The id of the principal whose request started the job: the\
+            \ id of a key, or the name of a configured principal such as `root`. `null`\
+            \ on a record an earlier version wrote."
+          examples:
+          - 3f9a1c7e2b8d4650
+        node:
+          type: string
+          description: "The name of the node running the job, as the indexer listing\
+            \ names it, or the node that ended it. A job resumed on another node after\
+            \ a failover names that node from its next checkpoint on. `null` on a\
+            \ record an earlier version wrote."
+          examples:
+          - node-a-7f21
         startedAt:
           type: string
           description: The timestamp when the job started.
@@ -4110,19 +4136,31 @@ components:
           description: The timestamp when the job record was last updated.
           examples:
           - 2026-08-28T10:16:02Z
+        finishedAt:
+          type: string
+          description: "The timestamp when the job reached `done`, `failed` or `cancelled`,\
+            \ or `null` while it runs."
+          examples:
+          - 2026-08-28T10:41:17Z
     ReindexListResponse:
       description: "Every reindex job across the deployment, finished ones included."
       examples:
       - reindexes:
-        - index: products
+        - id: 6f1c2a9d8b3e4c05
+          index: products
           target: products@2
           source: products@1
           phase: copying
           promote: auto
           documentsCopied: 125000
           sourceDocuments: 2400000
+          backlog: 4100
+          error: null
+          startedBy: 3f9a1c7e2b8d4650
+          node: node-a-7f21
           startedAt: 2026-08-28T10:15:30Z
           updatedAt: 2026-08-28T10:16:02Z
+          finishedAt: null
       type: object
       properties:
         reindexes:
@@ -7363,7 +7401,7 @@ paths:
 
         Because promoting changes what the index answers for, a request that leaves promotion automatic also needs `indexes.promote` on the target and is refused with `403` without it. A request specifying `"promote": "manual"` needs only `indexes.reindex`.
 
-        An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it. Read the record with `GET /v1alpha1/admin/reindexes/{name}`.
+        An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it. Read the record with `GET /v1alpha1/admin/reindexes/{name}`, which the `Location` header of the response names.
 
         Requires the `indexes.reindex` permission on the index the path names. The `admin` role includes it.
       operationId: startReindex
@@ -7391,12 +7429,14 @@ paths:
         required: false
       responses:
         "202":
-          description: A reindex job was started and runs asynchronously.
+          description: A reindex job was started and runs asynchronously. The `Location`
+            header names the status endpoint of the job.
           content:
             application/json:
               examples:
                 job:
                   value:
+                    id: 6f1c2a9d8b3e4c05
                     index: products
                     target: products@2
                     source: products@1
@@ -7406,8 +7446,11 @@ paths:
                     sourceDocuments: 2400000
                     backlog: 0
                     error: null
+                    startedBy: 3f9a1c7e2b8d4650
+                    node: node-a-7f21
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:15:30Z
+                    finishedAt: null
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "400":
@@ -9047,15 +9090,21 @@ paths:
                 jobs:
                   value:
                     reindexes:
-                    - index: products
+                    - id: 6f1c2a9d8b3e4c05
+                      index: products
                       target: products@2
                       source: products@1
                       phase: copying
                       promote: auto
                       documentsCopied: 125000
                       sourceDocuments: 2400000
+                      backlog: 4100
+                      error: null
+                      startedBy: 3f9a1c7e2b8d4650
+                      node: node-a-7f21
                       startedAt: 2026-08-28T10:15:30Z
                       updatedAt: 2026-08-28T10:16:02Z
+                      finishedAt: null
               schema:
                 $ref: "#/components/schemas/ReindexListResponse"
         "400":
@@ -9148,6 +9197,7 @@ paths:
               examples:
                 job:
                   value:
+                    id: 6f1c2a9d8b3e4c05
                     index: products
                     target: products@2
                     source: products@1
@@ -9157,8 +9207,11 @@ paths:
                     sourceDocuments: 2400000
                     backlog: 4100
                     error: null
+                    startedBy: 3f9a1c7e2b8d4650
+                    node: node-a-7f21
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:16:02Z
+                    finishedAt: null
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
@@ -9250,6 +9303,7 @@ paths:
               examples:
                 job:
                   value:
+                    id: 6f1c2a9d8b3e4c05
                     index: products
                     target: products@2
                     source: products@1
@@ -9259,8 +9313,11 @@ paths:
                     sourceDocuments: 2400000
                     backlog: 4100
                     error: null
+                    startedBy: 3f9a1c7e2b8d4650
+                    node: node-a-7f21
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:16:02Z
+                    finishedAt: null
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":

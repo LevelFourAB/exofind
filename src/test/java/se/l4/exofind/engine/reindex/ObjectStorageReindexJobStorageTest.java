@@ -121,6 +121,7 @@ public class ObjectStorageReindexJobStorageTest {
 		var now = Instant.now();
 
 		return new ReindexJob(
+			"job-1",
 			index,
 			"2",
 			"1",
@@ -131,8 +132,11 @@ public class ObjectStorageReindexJobStorageTest {
 			0,
 			null,
 			false,
+			"tester",
+			"node-a",
 			now,
-			now
+			now,
+			null
 		).toStore();
 	}
 
@@ -140,6 +144,7 @@ public class ObjectStorageReindexJobStorageTest {
 		var now = Instant.now();
 
 		return new ReindexJob(
+			"job-1",
 			index,
 			"2",
 			"1",
@@ -150,8 +155,11 @@ public class ObjectStorageReindexJobStorageTest {
 			0,
 			null,
 			false,
+			"tester",
+			"node-a",
 			now,
-			now
+			now,
+			null
 		).toStore();
 	}
 

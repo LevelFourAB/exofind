@@ -7,6 +7,9 @@ import se.l4.exofind.engine.reindex.ReindexJob;
 /**
  * One reindex job as its durable record stands.
  *
+ * @param id
+ *   the id of the job, minted when it was accepted, or {@code null} on a
+ *   record an earlier version wrote
  * @param index
  *   the name of the index
  * @param target
@@ -29,10 +32,19 @@ import se.l4.exofind.engine.reindex.ReindexJob;
  *   last written
  * @param error
  *   the error message if the job failed, or {@code null} in every other phase
+ * @param startedBy
+ *   the id of the principal whose request started the job, or {@code null}
+ *   on a record an earlier version wrote
+ * @param node
+ *   the name of the node running the job, or the one that ended it, or
+ *   {@code null} on a record an earlier version wrote
  * @param startedAt
  *   the timestamp when the job started, in ISO 8601 format
  * @param updatedAt
  *   the timestamp when the job record was last updated, in ISO 8601 format
+ * @param finishedAt
+ *   the timestamp when the job ended, in ISO 8601 format, or {@code null}
+ *   while it runs
  */
 @Schema(
 	description = """
@@ -41,6 +53,15 @@ import se.l4.exofind.engine.reindex.ReindexJob;
 	examples = ReindexInfo.EXAMPLE
 )
 public record ReindexInfo(
+	@Schema(
+		description = """
+			The id of the job, minted when it was accepted. Tells one job of \
+			an index from the one that replaced it. `null` on a record an \
+			earlier version wrote.""",
+		examples = "6f1c2a9d8b3e4c05"
+	)
+	String id,
+
 	@Schema(description = "The name of the index.", examples = "products")
 	String index,
 
@@ -112,6 +133,25 @@ public record ReindexInfo(
 	String error,
 
 	@Schema(
+		description = """
+			The id of the principal whose request started the job: the id of \
+			a key, or the name of a configured principal such as `root`. \
+			`null` on a record an earlier version wrote.""",
+		examples = "3f9a1c7e2b8d4650"
+	)
+	String startedBy,
+
+	@Schema(
+		description = """
+			The name of the node running the job, as the indexer listing \
+			names it, or the node that ended it. A job resumed on another \
+			node after a failover names that node from its next checkpoint \
+			on. `null` on a record an earlier version wrote.""",
+		examples = "node-a-7f21"
+	)
+	String node,
+
+	@Schema(
 		description = "The timestamp when the job started.",
 		examples = "2026-08-28T10:15:30Z"
 	)
@@ -121,7 +161,15 @@ public record ReindexInfo(
 		description = "The timestamp when the job record was last updated.",
 		examples = "2026-08-28T10:16:02Z"
 	)
-	String updatedAt
+	String updatedAt,
+
+	@Schema(
+		description = """
+			The timestamp when the job reached `done`, `failed` or \
+			`cancelled`, or `null` while it runs.""",
+		examples = "2026-08-28T10:41:17Z"
+	)
+	String finishedAt
 ) {
 	/**
 	 * The example job, as the JSON the engine answers with. The OpenAPI schema
@@ -130,6 +178,7 @@ public record ReindexInfo(
 	 */
 	public static final String EXAMPLE = """
 		{
+		  "id": "6f1c2a9d8b3e4c05",
 		  "index": "products",
 		  "target": "products@2",
 		  "source": "products@1",
@@ -139,8 +188,11 @@ public record ReindexInfo(
 		  "sourceDocuments": 2400000,
 		  "backlog": 4100,
 		  "error": null,
+		  "startedBy": "3f9a1c7e2b8d4650",
+		  "node": "node-a-7f21",
 		  "startedAt": "2026-08-28T10:15:30Z",
-		  "updatedAt": "2026-08-28T10:16:02Z"
+		  "updatedAt": "2026-08-28T10:16:02Z",
+		  "finishedAt": null
 		}""";
 
 	/**
@@ -150,6 +202,7 @@ public record ReindexInfo(
 	 */
 	public static final String EXAMPLE_STARTED = """
 		{
+		  "id": "6f1c2a9d8b3e4c05",
 		  "index": "products",
 		  "target": "products@2",
 		  "source": "products@1",
@@ -159,12 +212,16 @@ public record ReindexInfo(
 		  "sourceDocuments": 2400000,
 		  "backlog": 0,
 		  "error": null,
+		  "startedBy": "3f9a1c7e2b8d4650",
+		  "node": "node-a-7f21",
 		  "startedAt": "2026-08-28T10:15:30Z",
-		  "updatedAt": "2026-08-28T10:15:30Z"
+		  "updatedAt": "2026-08-28T10:15:30Z",
+		  "finishedAt": null
 		}""";
 
 	public static ReindexInfo of(ReindexJob job) {
 		return new ReindexInfo(
+			job.id(),
 			job.index(),
 			job.targetName(),
 			job.sourceName(),
@@ -174,8 +231,11 @@ public record ReindexInfo(
 			job.sourceDocCount(),
 			job.backlog(),
 			job.error(),
+			job.startedBy(),
+			job.node(),
 			job.startedAt().toString(),
-			job.updatedAt().toString()
+			job.updatedAt().toString(),
+			job.finishedAt() == null ? null : job.finishedAt().toString()
 		);
 	}
 }

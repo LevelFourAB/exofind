@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.Indexes;
+import se.l4.exofind.engine.NodeIdentity;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.auth.KeyStorage;
 import se.l4.exofind.engine.auth.LocalKeyStorage;
@@ -267,7 +268,7 @@ public class StorageProviders {
 		IndexRegistry registry,
 		NodeState nodeState,
 		Instance<Indexes> indexes,
-		@ConfigProperty(name = "exofind.node.id") Optional<String> nodeId,
+		NodeIdentity identity,
 		@ConfigProperty(name = "exofind.node.address") Optional<String> address,
 		@ConfigProperty(name = "exofind.indexer.lease.duration", defaultValue = "30s")
 		Duration leaseDuration
@@ -276,7 +277,7 @@ public class StorageProviders {
 			case LOCAL -> new LocalIndexerOwnership();
 			case OBJECT -> new ObjectStorageIndexerOwnership(
 				storage.get(),
-				nodeId,
+				identity.id(),
 				address,
 				leaseDuration,
 				/*

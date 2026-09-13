@@ -1185,7 +1185,7 @@ public class IndexResource {
 				 * loses the flag, and the client calls the action instead.
 				 */
 				try {
-					reindexJobs.start(name, null, reindex);
+					reindexJobs.start(name, null, reindex, auth.principal().id());
 				} catch(RuntimeException e) {
 					rollBack(name);
 					throw e;
@@ -1744,11 +1744,14 @@ public class IndexResource {
 
 			An index can run at most one reindex job at a time. A finished \
 			job's record remains readable until a new job replaces it. Read \
-			the record with `GET /v1alpha1/admin/reindexes/{name}`."""
+			the record with `GET /v1alpha1/admin/reindexes/{name}`, which the \
+			`Location` header of the response names."""
 	)
 	@APIResponse(
 		responseCode = "202",
-		description = "A reindex job was started and runs asynchronously.",
+		description = """
+			A reindex job was started and runs asynchronously. The `Location` \
+			header names the status endpoint of the job.""",
 		content = @Content(
 			schema = @Schema(implementation = ReindexInfo.class),
 			examples = @ExampleObject(name = "job", value = ReindexInfo.EXAMPLE_STARTED)
@@ -1874,6 +1877,7 @@ public class IndexResource {
 			example = "products@2"
 		)
 		@PathParam("name") String name,
+		@Context UriInfo uriInfo,
 		@RequestBody(
 			required = false,
 			content = @Content(
@@ -1900,9 +1904,20 @@ public class IndexResource {
 			throw new ForbiddenException(Permission.INDEXES_PROMOTE);
 		}
 
-		var job = reindexJobs.start(name, body == null ? null : body.from(), promote);
+		var job = reindexJobs.start(
+			name,
+			body == null ? null : body.from(),
+			promote,
+			auth.principal().id()
+		);
 
+		/*
+		 * The record is read under the index the job belongs to rather than
+		 * under the generation this request named, so the caller is told
+		 * where rather than left to work it out.
+		 */
 		return Response.status(Response.Status.ACCEPTED)
+			.location(ReindexResource.statusOf(uriInfo, job.index()))
 			.entity(ReindexInfo.of(job))
 			.build();
 	}

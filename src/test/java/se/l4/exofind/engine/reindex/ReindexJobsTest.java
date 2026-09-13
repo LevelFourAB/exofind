@@ -3,6 +3,7 @@ package se.l4.exofind.engine.reindex;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
 import se.l4.exofind.engine.Indexes;
+import se.l4.exofind.engine.NodeIdentity;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Document;
@@ -105,16 +107,21 @@ public class ReindexJobsTest {
 	}
 
 	private ReindexJobs newJobs() {
-		return newJobs(indexes);
+		return newJobs(indexes, "node-a");
 	}
 
 	private ReindexJobs newJobs(Indexes indexes) {
+		return newJobs(indexes, "node-a");
+	}
+
+	private ReindexJobs newJobs(Indexes indexes, String node) {
 		var ownership = new LocalIndexerOwnership();
 		ownership.start((index, owner) -> {
 		});
 
 		return new ReindexJobs(
 			nodeState,
+			new NodeIdentity(node),
 			indexes,
 			registry,
 			storage,
@@ -130,12 +137,24 @@ public class ReindexJobsTest {
 		var source = catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		var accepted = jobs.start("catalogue@2", null, null);
+		var accepted = jobs.start("catalogue@2", null, null, "tester");
 		assertThat(accepted.phase(), is(ReindexPhase.PENDING));
+		assertThat(accepted.id(), is(notNullValue()));
+		assertThat(accepted.startedBy(), is("tester"));
+		assertThat(accepted.node(), is("node-a"));
+		assertThat(accepted.finishedAt(), is(nullValue()));
 
 		awaitPhase("catalogue", ReindexPhase.DONE);
 
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("2"));
+
+		// The record keeps what the accept wrote and says when the job ended
+		var done = jobs.get("catalogue").orElseThrow();
+		assertThat(done.id(), is(accepted.id()));
+		assertThat(done.startedBy(), is("tester"));
+		assertThat(done.node(), is("node-a"));
+		assertThat(done.finishedAt(), is(notNullValue()));
+		assertThat(done.finishedAt().isBefore(done.startedAt()), is(false));
 
 		var target = indexes.getOrThrow("catalogue@2");
 		assertThat(target.getDocumentCount(), is(3L));
@@ -150,7 +169,7 @@ public class ReindexJobsTest {
 		var source = catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		// Not promoted until the caller says so
@@ -207,7 +226,7 @@ public class ReindexJobsTest {
 		jobs.stop();
 		jobs = newJobs(withHandover);
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		handOver.set(true);
@@ -222,7 +241,7 @@ public class ReindexJobsTest {
 		catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		jobs.start("catalogue@2", null, null);
+		jobs.start("catalogue@2", null, null, "tester");
 		awaitPhase("catalogue", ReindexPhase.DONE);
 
 		var job = jobs.get("catalogue").orElseThrow();
@@ -240,7 +259,7 @@ public class ReindexJobsTest {
 
 		assertThrows(
 			ValidationException.class,
-			() -> jobs.start("catalogue@2", null, null)
+			() -> jobs.start("catalogue@2", null, null, "tester")
 		);
 	}
 
@@ -250,7 +269,7 @@ public class ReindexJobsTest {
 
 		assertThrows(
 			ValidationException.class,
-			() -> jobs.start("catalogue@1", null, null)
+			() -> jobs.start("catalogue@1", null, null, "tester")
 		);
 	}
 
@@ -267,7 +286,7 @@ public class ReindexJobsTest {
 
 		assertThrows(
 			IndexSourceNotKeptException.class,
-			() -> jobs.start("logs@2", null, null)
+			() -> jobs.start("logs@2", null, null, "tester")
 		);
 	}
 
@@ -293,7 +312,7 @@ public class ReindexJobsTest {
 
 		assertThrows(
 			ValidationException.class,
-			() -> jobs.start("catalogue@2", null, null)
+			() -> jobs.start("catalogue@2", null, null, "tester")
 		);
 	}
 
@@ -303,12 +322,12 @@ public class ReindexJobsTest {
 		indexes.createGeneration("catalogue@2", definition().build());
 		indexes.createGeneration("catalogue@3", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		assertThrows(
 			ReindexInProgressException.class,
-			() -> jobs.start("catalogue@3", null, null)
+			() -> jobs.start("catalogue@3", null, null, "tester")
 		);
 	}
 
@@ -318,17 +337,19 @@ public class ReindexJobsTest {
 		indexes.createGeneration("catalogue@2", definition().build());
 		indexes.createGeneration("catalogue@3", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		var cancelled = jobs.cancel("catalogue");
 
 		assertThat(cancelled.phase(), is(ReindexPhase.CANCELLED));
+		assertThat(cancelled.finishedAt(), is(notNullValue()));
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("1"));
 		assertTrue(source.getChangeLog().isEmpty());
 
-		// A finished job frees the index for the next one
-		jobs.start("catalogue@3", null, "manual");
+		// A finished job frees the index for the next one, with an id of its own
+		var next = jobs.start("catalogue@3", null, "manual", "tester");
+		assertThat(next.id(), is(not(cancelled.id())));
 	}
 
 	@Test
@@ -336,7 +357,7 @@ public class ReindexJobsTest {
 		catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		assertThrows(
@@ -362,9 +383,9 @@ public class ReindexJobsTest {
 		storage.write(
 			"catalogue",
 			new ReindexJob(
-				"catalogue", "2", "1",
+				"job-1", "catalogue", "2", "1",
 				ReindexPhase.COPYING,
-				null, 0, 3, 0, null, false, now, now
+				null, 0, 3, 0, null, false, "tester", "node-b", now, now, null
 			).toStore(),
 			null
 		);
@@ -380,12 +401,12 @@ public class ReindexJobsTest {
 		catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		// The node dies; a successor with the same storage picks the job up
 		jobs.stop();
-		jobs = newJobs();
+		jobs = newJobs(indexes, "node-b");
 		jobs.onStart(null);
 
 		await(() -> {
@@ -399,6 +420,11 @@ public class ReindexJobsTest {
 
 		awaitPhase("catalogue", ReindexPhase.DONE);
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("2"));
+
+		// The record names the node that finished the job, not the one that died
+		var done = jobs.get("catalogue").orElseThrow();
+		assertThat(done.node(), is("node-b"));
+		assertThat(done.startedBy(), is("tester"));
 	}
 
 	/**
@@ -412,7 +438,7 @@ public class ReindexJobsTest {
 		var source = catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		// The node dies and the index is taken over, with the job left ready
@@ -456,7 +482,7 @@ public class ReindexJobsTest {
 		indexes.createGeneration("catalogue@2", definition().build());
 		indexes.createGeneration("catalogue@3", definition().build());
 
-		jobs.start("catalogue@2", null, "manual");
+		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
 		registry.promote("catalogue", "3");
@@ -488,7 +514,7 @@ public class ReindexJobsTest {
 
 		indexes.createGeneration("catalogue@2", definition().build());
 
-		jobs.start("catalogue@2", null, null);
+		jobs.start("catalogue@2", null, null, "tester");
 		await(() -> jobs.get("catalogue")
 			.map(job -> job.phase() == ReindexPhase.COPYING && job.documentsCopied() > 0)
 			.orElse(false));
@@ -530,12 +556,13 @@ public class ReindexJobsTest {
 				.build()
 		);
 
-		jobs.start("catalogue@2", null, null);
+		jobs.start("catalogue@2", null, null, "tester");
 		awaitPhase("catalogue", ReindexPhase.FAILED);
 
 		var job = jobs.get("catalogue").orElseThrow();
 		assertThat(job.error(), is(notNullValue()));
 		assertThat(job.error(), containsString("`1`"));
+		assertThat(job.finishedAt(), is(notNullValue()));
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("1"));
 	}
 

@@ -11,6 +11,9 @@ import se.l4.exofind.engine.index.IndexName;
  * exists per index, and a finished one stays readable until the next job for
  * the index replaces it.
  *
+ * @param id
+ *   id of the job, minted when it was accepted, or {@code null} on a record
+ *   an earlier version wrote
  * @param index
  *   name of the index, without a generation
  * @param target
@@ -33,12 +36,22 @@ import se.l4.exofind.engine.index.IndexName;
  *   why the job failed, or {@code null} in every other phase
  * @param manualPromote
  *   whether the creator promotes the target themselves
+ * @param startedBy
+ *   id of the principal whose request started the job, or {@code null} on a
+ *   record an earlier version wrote
+ * @param node
+ *   name of the node that last wrote the record - the one running the job,
+ *   or the one that ended it - or {@code null} on a record an earlier version
+ *   wrote
  * @param startedAt
  *   when the job was accepted
  * @param updatedAt
  *   when the record was last written
+ * @param finishedAt
+ *   when the job ended, or {@code null} while it runs
  */
 public record ReindexJob(
+	String id,
 	String index,
 	String target,
 	String source,
@@ -49,8 +62,11 @@ public record ReindexJob(
 	long backlog,
 	String error,
 	boolean manualPromote,
+	String startedBy,
+	String node,
 	Instant startedAt,
-	Instant updatedAt
+	Instant updatedAt,
+	Instant finishedAt
 ) {
 	/**
 	 * The full name of the generation being filled, as a caller writes it.
@@ -66,6 +82,74 @@ public record ReindexJob(
 		return IndexName.of(index, source).toString();
 	}
 
+	/**
+	 * The job moved to another phase. The error is dropped, as it only
+	 * describes the failed phase.
+	 */
+	ReindexJob withPhase(ReindexPhase phase) {
+		return new ReindexJob(
+			id, index, target, source, phase, cursor, documentsCopied,
+			sourceDocCount, backlog, null, manualPromote, startedBy, node,
+			startedAt, updatedAt, finishedAt
+		);
+	}
+
+	/**
+	 * The job with another backlog figure.
+	 */
+	ReindexJob withBacklog(long backlog) {
+		return new ReindexJob(
+			id, index, target, source, phase, cursor, documentsCopied,
+			sourceDocCount, backlog, error, manualPromote, startedBy, node,
+			startedAt, updatedAt, finishedAt
+		);
+	}
+
+	/**
+	 * The job with its copy moved past one batch.
+	 */
+	ReindexJob withCopied(String cursor, long copied, long backlog) {
+		return new ReindexJob(
+			id, index, target, source, phase, cursor, documentsCopied + copied,
+			sourceDocCount, backlog, error, manualPromote, startedBy, node,
+			startedAt, updatedAt, finishedAt
+		);
+	}
+
+	/**
+	 * The job failed for the given reason.
+	 */
+	ReindexJob withError(String error) {
+		return new ReindexJob(
+			id, index, target, source, ReindexPhase.FAILED, cursor,
+			documentsCopied, sourceDocCount, backlog, error, manualPromote,
+			startedBy, node, startedAt, updatedAt, finishedAt
+		);
+	}
+
+	/**
+	 * The job as a node writes it: the node named, the update time moved to
+	 * now, and the end time set the first time the phase is a finished one.
+	 * Every write of the record passes through here, so the times and the
+	 * node are always those of the write.
+	 *
+	 * @param node
+	 *   name of the node writing the record
+	 * @param now
+	 *   when the record is written
+	 */
+	ReindexJob written(String node, Instant now) {
+		var finished = finishedAt != null
+			? finishedAt
+			: phase.isFinished() ? now : null;
+
+		return new ReindexJob(
+			id, index, target, source, phase, cursor, documentsCopied,
+			sourceDocCount, backlog, error, manualPromote, startedBy, node,
+			startedAt, now, finished
+		);
+	}
+
 	ReindexJobStore toStore() {
 		var builder = ReindexJobStore.newBuilder()
 			.setIndex(index)
@@ -79,12 +163,28 @@ public record ReindexJob(
 			.setStartedAt(startedAt.toEpochMilli())
 			.setUpdatedAt(updatedAt.toEpochMilli());
 
+		if(id != null) {
+			builder.setId(id);
+		}
+
 		if(cursor != null) {
 			builder.setCursor(cursor);
 		}
 
 		if(error != null) {
 			builder.setError(error);
+		}
+
+		if(startedBy != null) {
+			builder.setStartedBy(startedBy);
+		}
+
+		if(node != null) {
+			builder.setNode(node);
+		}
+
+		if(finishedAt != null) {
+			builder.setFinishedAt(finishedAt.toEpochMilli());
 		}
 
 		return builder.build();
@@ -100,6 +200,7 @@ public record ReindexJob(
 	static Optional<ReindexJob> fromStore(ReindexJobStore store) {
 		return ReindexPhase.fromStore(store.getPhase())
 			.map(phase -> new ReindexJob(
+				store.hasId() ? store.getId() : null,
 				store.getIndex(),
 				store.getTarget(),
 				store.getSource(),
@@ -110,8 +211,11 @@ public record ReindexJob(
 				store.getBacklog(),
 				store.hasError() ? store.getError() : null,
 				store.getManualPromote(),
+				store.hasStartedBy() ? store.getStartedBy() : null,
+				store.hasNode() ? store.getNode() : null,
 				Instant.ofEpochMilli(store.getStartedAt()),
-				Instant.ofEpochMilli(store.getUpdatedAt())
+				Instant.ofEpochMilli(store.getUpdatedAt()),
+				store.hasFinishedAt() ? Instant.ofEpochMilli(store.getFinishedAt()) : null
 			));
 	}
 }

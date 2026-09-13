@@ -1,8 +1,6 @@
 package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -277,9 +275,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private record FetchedTable(IndexerLeadership table, String eTag) {
 	}
 
+	/**
+	 * @param node
+	 *   the name this node competes under, as {@code NodeIdentity} gives it
+	 */
 	public ObjectStorageIndexerOwnership(
 		ObjectStorage storage,
-		Optional<String> nodeId,
+		String node,
 		Optional<String> address,
 		Duration leaseDuration,
 		Supplier<? extends SetIterable<String>> indexNames,
@@ -291,7 +293,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		this.bucket = storage.bucket();
 		this.tableKey = storage.rootObject(TABLE_NAME);
 
-		this.node = nodeId.orElseGet(ObjectStorageIndexerOwnership::defaultNodeId);
+		this.node = node;
 		this.address = address;
 		this.leaseDuration = leaseDuration;
 		this.indexNames = indexNames;
@@ -304,22 +306,6 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			thread.setDaemon(true);
 			return thread;
 		});
-	}
-
-	/**
-	 * Identity to compete under when none is configured. The hostname
-	 * carries meaning in most deployments, and the suffix keeps two nodes
-	 * that happen to share one apart.
-	 */
-	private static String defaultNodeId() {
-		String host;
-		try {
-			host = InetAddress.getLocalHost().getHostName();
-		} catch(UnknownHostException e) {
-			host = "node";
-		}
-
-		return host + "-" + Long.toHexString(ThreadLocalRandom.current().nextLong() & 0xffffffffL);
 	}
 
 	@Override

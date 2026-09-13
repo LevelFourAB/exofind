@@ -550,7 +550,7 @@ The request body accepts the following optional JSON fields:
 - `from`: The generation to read documents from. Defaults to the live generation. Must belong to the same index as the target.
 - `promote`: The promotion mode. `auto` (default) automatically promotes the target generation once it catches up with changes. `manual` pauses the job in the `ready` phase and keeps the target caught up until you manually promote it.
 
-A successful request returns `202 Accepted` with the job record in the `pending` phase. A job waits for a concurrency slot on the node before it starts copying. The job runs in the background on the node holding the index.
+A successful request returns `202 Accepted` with the job record in the `pending` phase, and a `Location` header naming the status endpoint of the job, `/v1alpha1/admin/reindexes/{index}`. A job waits for a concurrency slot on the node before it starts copying. The job runs in the background on the node holding the index.
 
 An index can run at most one reindex job at a time. Starting a second job on an index returns `409 Conflict` with the error code `reindex:in_progress`. A finished job's record remains readable until a new job for that index replaces it.
 
@@ -574,6 +574,7 @@ Reindex endpoints return a job record:
 
 ```json
 {
+  "id": "6f1c2a9d8b3e4c05",
   "index": "products",
   "target": "products@2",
   "source": "products@1",
@@ -583,13 +584,17 @@ Reindex endpoints return a job record:
   "sourceDocuments": 2400000,
   "backlog": 4100,
   "error": null,
+  "startedBy": "3f9a1c7e2b8d4650",
+  "node": "node-a-7f21",
   "startedAt": "2026-08-28T10:15:30Z",
-  "updatedAt": "2026-08-28T10:16:02Z"
+  "updatedAt": "2026-08-28T10:16:02Z",
+  "finishedAt": null
 }
 ```
 
 The job record contains the following fields:
 
+- `id`: The id of the job, minted when the job was accepted. A new job on the same index gets a new id, so a client that polls the index can tell the job it started from one that replaced it.
 - `index`: The name of the index.
 - `target`: The generation being populated.
 - `source`: The generation providing the source documents.
@@ -599,8 +604,13 @@ The job record contains the following fields:
 - `sourceDocuments`: The document count of the source generation when the copy started.
 - `backlog`: The number of changed documents waiting to be replayed when the record was last written.
 - `error`: The error message if the job failed, or `null`.
+- `startedBy`: The id of the principal whose request started the job: the id of a key, or the name of a configured principal such as `root`.
+- `node`: The name of the node running the job, as the [indexer listing](#indexers) names it. A job resumed on another node after a failover names that node from its next checkpoint on. A finished job names the node that ended it.
 - `startedAt`: The timestamp when the job started.
 - `updatedAt`: The timestamp when the job record was last updated.
+- `finishedAt`: The timestamp when the job reached `done`, `failed` or `cancelled`, or `null` while it runs.
+
+`id`, `startedBy` and `node` are `null` on a record written by a version of the engine that did not keep them.
 
 A job progresses through the following phases:
 

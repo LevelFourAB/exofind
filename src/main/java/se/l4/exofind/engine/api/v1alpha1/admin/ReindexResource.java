@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
+import java.net.URI;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
@@ -39,6 +40,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.UriInfo;
 
 /**
  * The record of a reindex job, which populates a new generation by copying
@@ -87,6 +89,23 @@ public class ReindexResource {
 	public ReindexResource(ReindexJobs reindexes, AuthContext auth) {
 		this.reindexes = reindexes;
 		this.auth = auth;
+	}
+
+	/**
+	 * Where the job of an index is read, as an absolute URI on the node that
+	 * answers the request. What a response that started a job names in its
+	 * {@code Location} header.
+	 *
+	 * @param uriInfo
+	 *   the request being answered
+	 * @param index
+	 *   name of the index the job belongs to, without a generation
+	 */
+	public static URI statusOf(UriInfo uriInfo, String index) {
+		return uriInfo.getBaseUriBuilder()
+			.path(ReindexResource.class)
+			.path(ReindexResource.class, "status")
+			.build(index);
 	}
 
 	/**

@@ -129,4 +129,29 @@ message ReindexJobStore {
 	 * When the record was last written, as milliseconds since the Unix epoch.
 	 */
 	optional int64 updated_at = 12;
+	/*
+	 * When the job ended, as milliseconds since the Unix epoch. Set with the
+	 * first write of a finished phase and never moved after it. Unset while
+	 * the job runs.
+	 */
+	optional int64 finished_at = 13;
+	/*
+	 * Id of the principal whose request started the job, as the key id or the
+	 * name of a configured principal. Unset on a record an earlier version
+	 * wrote.
+	 */
+	optional string started_by = 14;
+	/*
+	 * Name of the node that last wrote the record - the node running the job,
+	 * or the one that ended it. A job resumed after a failover names its
+	 * successor from the first checkpoint on. Unset on a record an earlier
+	 * version wrote.
+	 */
+	optional string node = 15;
+	/*
+	 * Id of the job, minted when the job is accepted. Tells one job of an
+	 * index from the one that replaced it, which the name alone cannot. Unset
+	 * on a record an earlier version wrote.
+	 */
+	optional string id = 16;
 }
