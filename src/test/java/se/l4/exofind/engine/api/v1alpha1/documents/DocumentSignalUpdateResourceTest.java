@@ -103,6 +103,7 @@ public class DocumentSignalUpdateResourceTest {
 		var response = resource.update(
 			"catalogue",
 			null,
+			null,
 			new UpdateRequest(List.of(document("id", "1", "popularity", 0.8)))
 		);
 
@@ -122,6 +123,7 @@ public class DocumentSignalUpdateResourceTest {
 
 		resource.update(
 			"catalogue",
+			null,
 			null,
 			new UpdateRequest(List.of(document("id", "1", "popularity", null)))
 		);
@@ -143,6 +145,7 @@ public class DocumentSignalUpdateResourceTest {
 		var response = resource.update(
 			"catalogue",
 			"skip",
+			null,
 			new UpdateRequest(
 				List.of(
 					document("id", "1", "popularity", 0.8),
@@ -158,6 +161,7 @@ public class DocumentSignalUpdateResourceTest {
 			IndexSourceNotKeptException.class,
 			() -> resource.update(
 				"catalogue",
+				null,
 				null,
 				new UpdateRequest(List.of(document("id", "1", "name", "Cloudberry jam")))
 			)
@@ -205,6 +209,7 @@ public class DocumentSignalUpdateResourceTest {
 
 		resource.add(
 			"catalogue",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document("id", "1", "name", "Blueberry jam", "popularity", 0.2),

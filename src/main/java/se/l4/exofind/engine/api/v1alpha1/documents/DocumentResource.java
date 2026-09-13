@@ -7,8 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
 
+import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
+import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.impl.factory.Lists;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -30,12 +32,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
+import se.l4.exofind.engine.api.errors.EngineExceptionMapper;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.errors.RequestBodyUnreadableException;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteResponse;
+import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentFailure;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.ScanResponse;
@@ -91,11 +95,13 @@ import jakarta.ws.rs.core.StreamingOutput;
  * sending multiple write requests followed by a single commit, rather than
  * committing per batch.
  *
- * <p>Documents in a batch are processed in the order sent. The first invalid
+ * <p>Documents in a batch are processed in the order sent. The first refused
  * document halts processing and fails the request; documents processed before
- * the failure remain in the index and commit with the rest. Error paths
- * identify which document failed, allowing you to safely resend the request
- * after fixing the error.
+ * the failure remain in the index and commit with the rest. Every error says
+ * which entry of the batch it is about and how many entries the index took
+ * before it, so the request can be resent from where it stopped. A request sent
+ * with {@code ?onError=skip} carries on past a refused document instead and
+ * reports the refused ones in its response.
  *
  * <p>Reading documents returns them in primary key order, formatted as
  * originally indexed, matching the format accepted for indexing. This allows
@@ -184,6 +190,14 @@ public class DocumentResource {
 			.withArguments("value")
 			.withMessage(
 				"A key nothing is indexed under is handled by `fail` or `skip`, not by `{{value}}`"
+			);
+
+	private static final ErrorType ON_ERROR_UNKNOWN =
+		ErrorType.withCode("document:on_error_invalid")
+			.withStatus(400)
+			.withArguments("value")
+			.withMessage(
+				"A document the index refuses is handled by `fail` or `skip`, not by `{{value}}`"
 			);
 
 	private static final ErrorType UPDATE_NOT_FOUND =
@@ -321,6 +335,10 @@ public class DocumentResource {
 	 * Indexes documents into an index.
 	 *
 	 * @param name
+	 * @param onError
+	 *   behavior when the index refuses a document: {@code fail} (the default)
+	 *   fails the request, and {@code skip} indexes the remaining documents and
+	 *   returns the refused ones
 	 * @param body
 	 * @return
 	 */
@@ -335,9 +353,14 @@ public class DocumentResource {
 			Indexes one or more documents into the specified index. Each \
 			document specifies its own primary key. Indexing a document with \
 			an existing key replaces the document under that key. Documents in \
-			a batch are processed in the order sent. The first invalid \
-			document halts processing and fails the request; documents \
-			processed before the failure remain in the index.
+			a batch are processed in the order sent. The first refused document \
+			halts processing and fails the request; documents processed before \
+			the failure remain in the index. Every error names the document it \
+			is about: `position` counts the documents of the request from zero, \
+			`processed` says how many the index took before the failure, and a \
+			newline-delimited body also carries `line`. Send `?onError=skip` to \
+			index the rest of the batch instead and read the refused documents \
+			from `failed`.
 
 			Format the request body as `application/json` with a `documents` \
 			array, or `application/x-ndjson` with one document object per line \
@@ -370,7 +393,11 @@ public class DocumentResource {
 			JSON, or the request body could not be parsed. The `path` of each \
 			error identifies the document and field location as the body \
 			carries it, such as `documents[1].nonexistent` for a `documents` \
-			array and `[1].nonexistent` for a newline-delimited body.""",
+			array and `[1].nonexistent` for a newline-delimited body. The \
+			`arguments` of each error carry the same place as numbers to resume \
+			from: `position` for the document, `processed` for how many \
+			documents the index took before it, and `line` for the line of a \
+			newline-delimited body.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -409,6 +436,11 @@ public class DocumentResource {
 		value = "document:not_an_object",
 		status = 400,
 		when = "A document is not an object keyed by field name."
+	)
+	@ReturnsError(
+		value = "document:on_error_invalid",
+		status = 400,
+		when = "`onError` is neither `fail` nor `skip`."
 	)
 	@ReturnsError(
 		value = "index:not_found",
@@ -554,6 +586,16 @@ public class DocumentResource {
 			example = "books"
 		)
 		@PathParam("name") String name,
+		@Parameter(
+			description = """
+				Behavior when the index refuses a document: `fail` (default) \
+				stops at the first one and fails the request, while `skip` \
+				indexes the remaining documents and returns the refused ones \
+				under `failed`. A body that cannot be read as JSON fails the \
+				request either way.""",
+			schema = @Schema(enumeration = {"fail", "skip"}, defaultValue = "fail")
+		)
+		@QueryParam("onError") String onError,
 		@RequestBody(content = @Content(
 			schema = @Schema(implementation = DocumentsRequest.class),
 			examples = @ExampleObject(
@@ -569,19 +611,39 @@ public class DocumentResource {
 		}
 
 		checkWritable(name);
+		var skipErrors = skipErrors(onError);
 		var documents = body.documents();
+		var failures = Lists.mutable.<DocumentFailure>empty();
 
-		return new DocumentsResponse(measure("add", () -> {
+		var indexed = measure("add", () -> {
+			var written = 0;
+
 			for(var i = 0; i < documents.size(); i++) {
-				var position = i;
-				write(name, index -> {
-					addDocument(index, name, documents.get(position), atDocument(position));
-					return null;
-				});
+				var entry = BatchEntry.inDocuments(i);
+				var json = documents.get(i);
+				var processed = written;
+
+				try {
+					write(name, index -> {
+						addDocument(index, name, json, entry, processed);
+						return null;
+					});
+				} catch(ValidationException e) {
+					if(!skipErrors) {
+						throw e;
+					}
+
+					failures.add(toFailure(entry, e));
+					continue;
+				}
+
+				written++;
 			}
 
-			return documents.size();
-		}));
+			return written;
+		});
+
+		return new DocumentsResponse(indexed, failures);
 	}
 
 	/**
@@ -590,6 +652,7 @@ public class DocumentResource {
 	 * connection can carry rather than what fits in memory.
 	 *
 	 * @param name
+	 * @param onError
 	 * @param body
 	 * @return
 	 */
@@ -611,40 +674,63 @@ public class DocumentResource {
 		status = 400,
 		when = "The body stopped arriving part way through. The documents read before that are indexed; send the rest again."
 	)
-	public DocumentsResponse addStream(@PathParam("name") String name, InputStream body) {
+	public DocumentsResponse addStream(
+		@PathParam("name") String name,
+		@QueryParam("onError") String onError,
+		InputStream body
+	) {
 		if(body == null) {
 			throw new ValidationException(MISSING_BODY.toMessage(ObjectLocation.root()));
 		}
 
 		checkWritable(name);
+		var skipErrors = skipErrors(onError);
+		var failures = Lists.mutable.<DocumentFailure>empty();
 
-		return new DocumentsResponse(measure("add", () -> {
-			var indexed = 0;
+		var indexed = measure("add", () -> {
+			var read = 0;
+			var written = 0;
 
 			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
-				while(hasNext(documents, indexed)) {
+				while(hasNext(documents, read, written)) {
+					var entry = BatchEntry.onLine(read, lineOf(documents));
+
 					/*
 					 * nextValue rather than next: next rewraps what it reads,
 					 * turning a document that is not JSON into an exception
 					 * neither catch below sees and answering with no position.
 					 */
 					var json = documents.nextValue();
-					var position = indexed;
-					write(name, index -> {
-						addDocument(index, name, json, atLine(position));
-						return null;
-					});
+					var processed = written;
 
-					indexed++;
+					read++;
+
+					try {
+						write(name, index -> {
+							addDocument(index, name, json, entry, processed);
+							return null;
+						});
+					} catch(ValidationException e) {
+						if(!skipErrors) {
+							throw e;
+						}
+
+						failures.add(toFailure(entry, e));
+						continue;
+					}
+
+					written++;
 				}
 			} catch(JacksonException e) {
-				throw malformed(e, indexed);
+				throw malformed(e, read, written);
 			} catch(IOException e) {
-				throw new RequestBodyUnreadableException(e);
+				throw unreadable(e, read, written);
 			}
 
-			return indexed;
-		}));
+			return written;
+		});
+
+		return new DocumentsResponse(indexed, failures);
 	}
 
 	/**
@@ -656,6 +742,10 @@ public class DocumentResource {
 	 *   behavior when a document key does not exist: {@code fail} (the default)
 	 *   fails the request, and {@code skip} updates the remaining documents and
 	 *   returns the missing keys
+	 * @param onError
+	 *   behavior when the index refuses a change: {@code fail} (the default)
+	 *   fails the request, and {@code skip} applies the remaining changes and
+	 *   returns the refused ones
 	 * @param body
 	 * @return
 	 */
@@ -691,6 +781,15 @@ public class DocumentResource {
 			the same document in a single batch apply in the order provided, \
 			and the updated document is validated as a whole.
 
+			Changes in a batch are applied in the order sent. The first refused \
+			change halts processing and fails the request; changes applied \
+			before the failure remain in the index. Every error names the change \
+			it is about: `position` counts the changes of the request from zero, \
+			`processed` says how many the index applied before the failure, and \
+			a newline-delimited body also carries `line`. Send `?onError=skip` \
+			to apply the rest of the batch instead and read the refused changes \
+			from `failed`.
+
 			The index has to declare a primary key and retain document source \
 			copies."""
 	)
@@ -706,7 +805,10 @@ public class DocumentResource {
 		responseCode = "400",
 		description = """
 			A change failed validation, or a path in it names something the \
-			index or the document does not hold.""",
+			index or the document does not hold. The `arguments` of each error \
+			carry where in the batch the change sat and how much of the batch \
+			had landed: `position`, `processed`, and `line` for a \
+			newline-delimited body.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -805,6 +907,11 @@ public class DocumentResource {
 		value = "document:patch:missing_invalid",
 		status = 400,
 		when = "`missing` is neither `fail` nor `skip`."
+	)
+	@ReturnsError(
+		value = "document:on_error_invalid",
+		status = 400,
+		when = "`onError` is neither `fail` nor `skip`."
 	)
 	@ReturnsError(
 		value = "request:body_required",
@@ -972,6 +1079,16 @@ public class DocumentResource {
 			schema = @Schema(enumeration = {"fail", "skip"}, defaultValue = "fail")
 		)
 		@QueryParam("missing") String missing,
+		@Parameter(
+			description = """
+				Behavior when the index refuses a change: `fail` (default) stops \
+				at the first one and fails the request, while `skip` applies the \
+				remaining changes and returns the refused ones under `failed`. A \
+				key nothing is indexed under is governed by `missing` instead \
+				when that says `skip`.""",
+			schema = @Schema(enumeration = {"fail", "skip"}, defaultValue = "fail")
+		)
+		@QueryParam("onError") String onError,
 		@RequestBody(content = @Content(
 			schema = @Schema(implementation = UpdateRequest.class),
 			examples = @ExampleObject(
@@ -988,17 +1105,32 @@ public class DocumentResource {
 
 		checkWritable(name);
 		var skipMissing = skipMissing(missing);
+		var skipErrors = skipErrors(onError);
 		var missingKeys = Lists.mutable.empty();
+		var failures = Lists.mutable.<DocumentFailure>empty();
 		var documents = body.documents();
 
 		var updated = measure("update", () -> {
 			var changed = 0;
+
 			for(var i = 0; i < documents.size(); i++) {
-				var position = i;
-				var applied = write(name, index -> updateDocument(
-					index, name, documents.get(position), atDocument(position),
-					skipMissing, missingKeys
-				));
+				var entry = BatchEntry.inDocuments(i);
+				var json = documents.get(i);
+				var processed = changed;
+
+				boolean applied;
+				try {
+					applied = write(name, index -> updateDocument(
+						index, name, json, entry, processed, skipMissing, missingKeys
+					));
+				} catch(ValidationException e) {
+					if(!skipErrors) {
+						throw e;
+					}
+
+					failures.add(toFailure(entry, e));
+					continue;
+				}
 
 				if(applied) {
 					changed++;
@@ -1008,7 +1140,7 @@ public class DocumentResource {
 			return changed;
 		});
 
-		return new UpdateResponse(updated, missingKeys);
+		return new UpdateResponse(updated, missingKeys, failures);
 	}
 
 	/**
@@ -1017,6 +1149,7 @@ public class DocumentResource {
 	 *
 	 * @param name
 	 * @param missing
+	 * @param onError
 	 * @param body
 	 * @return
 	 */
@@ -1038,6 +1171,7 @@ public class DocumentResource {
 	public UpdateResponse updateStream(
 		@PathParam("name") String name,
 		@QueryParam("missing") String missing,
+		@QueryParam("onError") String onError,
 		InputStream body
 	) {
 		if(body == null) {
@@ -1046,37 +1180,51 @@ public class DocumentResource {
 
 		checkWritable(name);
 		var skipMissing = skipMissing(missing);
+		var skipErrors = skipErrors(onError);
 		var missingKeys = Lists.mutable.empty();
+		var failures = Lists.mutable.<DocumentFailure>empty();
 
 		var updated = measure("update", () -> {
 			var read = 0;
 			var changed = 0;
 
 			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
-				while(hasNext(documents, read)) {
+				while(hasNext(documents, read, changed)) {
+					var entry = BatchEntry.onLine(read, lineOf(documents));
 					// nextValue rather than next, see addStream
 					var json = documents.nextValue();
-					var position = read;
-					var applied = write(name, index -> updateDocument(
-						index, name, json, atLine(position), skipMissing, missingKeys
-					));
+					var processed = changed;
+
+					read++;
+
+					boolean applied;
+					try {
+						applied = write(name, index -> updateDocument(
+							index, name, json, entry, processed, skipMissing, missingKeys
+						));
+					} catch(ValidationException e) {
+						if(!skipErrors) {
+							throw e;
+						}
+
+						failures.add(toFailure(entry, e));
+						continue;
+					}
 
 					if(applied) {
 						changed++;
 					}
-
-					read++;
 				}
 			} catch(JacksonException e) {
-				throw malformed(e, read);
+				throw malformed(e, read, changed);
 			} catch(IOException e) {
-				throw new RequestBodyUnreadableException(e);
+				throw unreadable(e, read, changed);
 			}
 
 			return changed;
 		});
 
-		return new UpdateResponse(updated, missingKeys);
+		return new UpdateResponse(updated, missingKeys, failures);
 	}
 
 	/**
@@ -1097,12 +1245,38 @@ public class DocumentResource {
 	}
 
 	/**
+	 * Read what a request asked to happen about a document the index refuses.
+	 *
+	 * <p>This covers a document or a change the index will not take: one that is
+	 * not an object, one that breaks the definition of the index, and a key
+	 * nothing is indexed under where {@code missing} did not already say to skip
+	 * it. It does not cover a body that cannot be read as JSON, because the
+	 * reader cannot then say where the next document begins, nor a failure of
+	 * the index itself, which the documents after it would meet as well.
+	 */
+	private static boolean skipErrors(String onError) {
+		if(onError == null || onError.equals("fail")) {
+			return false;
+		}
+
+		if(onError.equals("skip")) {
+			return true;
+		}
+
+		throw new ValidationException(
+			ON_ERROR_UNKNOWN.toMessage(Location.create("onError"), "value", onError)
+		);
+	}
+
+	/**
 	 * Apply one change of a request, reporting what is wrong with it as
 	 * problems of the request rather than of the change on its own.
 	 *
-	 * @param document
+	 * @param entry
 	 *   where in the request the change sits, which is what its errors are
-	 *   placed under
+	 *   placed under and say about the batch
+	 * @param processed
+	 *   how many documents of the batch the index has changed before this one
 	 * @param missingKeys
 	 *   where a key nothing was indexed under is collected, for a request that
 	 *   asked for those to be skipped
@@ -1113,13 +1287,16 @@ public class DocumentResource {
 		Index index,
 		String name,
 		Map<String, Object> json,
-		ObjectLocation document,
+		BatchEntry entry,
+		int processed,
 		boolean skipMissing,
 		MutableList<Object> missingKeys
 	) {
+		var reported = entry.reported(processed);
+
 		if(json == null) {
 			throw new ValidationException(
-				NOT_AN_OBJECT.toMessage(document)
+				NOT_AN_OBJECT.toMessage(entry.location(), reported)
 			);
 		}
 
@@ -1129,11 +1306,11 @@ public class DocumentResource {
 			patch = DocumentMapper.toPatch(index, json);
 			updated = index.updateDocument(patch);
 		} catch(ValidationException e) {
-			throw new ValidationException(
-				e.getErrors().collect(error -> error.at(at(document, error.getLocation())))
-			);
+			throw new ValidationException(e.getErrors().collect(
+				error -> error.at(at(entry.location(), error.getLocation())).with(reported)
+			));
 		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
+			throw new IndexException(IO_ERROR, reported.withKeyValue("index", name), e);
 		}
 
 		if(updated) {
@@ -1149,8 +1326,8 @@ public class DocumentResource {
 		if(!skipMissing) {
 			throw new ValidationException(
 				UPDATE_NOT_FOUND.toMessage(
-					document,
-					"key", String.valueOf(key)
+					entry.location(),
+					reported.withKeyValue("key", String.valueOf(key))
 				)
 			);
 		}
@@ -2453,35 +2630,77 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Read whether there is another document to index, saying which line
-	 * could not be read when the answer itself fails.
+	 * Read whether there is another document to index, saying where the batch
+	 * had got to when the answer itself fails.
 	 */
 	private static boolean hasNext(
 		MappingIterator<Map<String, Object>> documents,
-		int position
+		int position,
+		int processed
 	) {
 		try {
 			return documents.hasNextValue();
 		} catch(JacksonException e) {
-			throw malformed(e, position);
+			throw malformed(e, position, processed);
 		} catch(IOException e) {
-			throw new RequestBodyUnreadableException(e);
+			throw unreadable(e, position, processed);
 		}
 	}
 
 	/**
-	 * Say that a line of a newline delimited body could not be read as JSON.
-	 * Only such a body reads documents one at a time, so the line is placed as
-	 * one of a body with no wrapper.
+	 * Say that a newline delimited body could not be read as JSON. Only such a
+	 * body reads documents one at a time, so the value is placed as one of a
+	 * body with no wrapper, and the line is the one the reader stopped on rather
+	 * than the one the value started on.
 	 */
-	private static ValidationException malformed(JacksonException e, int position) {
+	private static ValidationException malformed(
+		JacksonException e,
+		int position,
+		int processed
+	) {
+		var entry = BatchEntry.onLine(position, lineOf(e));
+
 		return new ValidationException(
 			MALFORMED.toMessage(
-				atLine(position),
-				"reason",
-				e.getOriginalMessage()
+				entry.location(),
+				entry.reported(processed).withKeyValue("reason", e.getOriginalMessage())
 			)
 		);
+	}
+
+	/**
+	 * Say that the body stopped arriving part way through a streamed batch,
+	 * carrying how far the batch got so the caller can send the rest.
+	 */
+	private static RequestBodyUnreadableException unreadable(
+		IOException e,
+		int position,
+		int processed
+	) {
+		return new RequestBodyUnreadableException(
+			e,
+			"position", position,
+			"processed", processed
+		);
+	}
+
+	/**
+	 * The line the value about to be read starts on, counted from one.
+	 * {@link MappingIterator#hasNextValue()} leaves the reader on the first
+	 * token of the value, so where that token sits is where the value begins.
+	 */
+	private static int lineOf(MappingIterator<Map<String, Object>> documents) {
+		return documents.getParser().currentTokenLocation().getLineNr();
+	}
+
+	/**
+	 * The line a body stopped being readable on, or {@code null} for a failure
+	 * that names no place in the body.
+	 */
+	private static Integer lineOf(JacksonException e) {
+		var location = e.getLocation();
+
+		return location == null ? null : location.getLineNr();
 	}
 
 	/**
@@ -2491,55 +2710,115 @@ public class DocumentResource {
 	 * @param index
 	 * @param name
 	 * @param json
-	 * @param document
+	 * @param entry
 	 *   where in the request the document sits, which is what the errors of
-	 *   the document are placed under
+	 *   the document are placed under and say about the batch
+	 * @param processed
+	 *   how many documents of the batch the index has taken before this one
 	 */
 	private static void addDocument(
 		Index index,
 		String name,
 		Map<String, Object> json,
-		ObjectLocation document
+		BatchEntry entry,
+		int processed
 	) {
+		var reported = entry.reported(processed);
+
 		if(json == null) {
 			throw new ValidationException(
-				NOT_AN_OBJECT.toMessage(document)
+				NOT_AN_OBJECT.toMessage(entry.location(), reported)
 			);
 		}
 
 		try {
 			index.addDocument(DocumentMapper.toEngine(index, json));
 		} catch(ValidationException e) {
-			throw new ValidationException(
-				e.getErrors().collect(error -> error.at(at(document, error.getLocation())))
-			);
+			throw new ValidationException(e.getErrors().collect(
+				error -> error.at(at(entry.location(), error.getLocation())).with(reported)
+			));
 		} catch(IOException e) {
-			throw new IndexException(IO_ERROR, e, "index", name);
+			throw new IndexException(IO_ERROR, reported.withKeyValue("index", name), e);
 		}
 	}
 
 	/**
-	 * Place one document of a body that carries the documents in a
-	 * {@code documents} array, so the third document reads
-	 * {@code documents[2]}.
+	 * Where one entry of a batch sits in the body that carried it, and what an
+	 * error about that entry says about the batch around it.
 	 *
+	 * <p>A body with a {@code documents} array places the third entry at
+	 * {@code documents[2]} and has no line to name. A newline delimited body has
+	 * no wrapper to name, so the third entry is placed at {@code [2]} and also
+	 * carries the line it starts on. The position and the line count different
+	 * things, and a body that spreads an entry over several lines or separates
+	 * entries with blank lines has more lines than entries.
+	 *
+	 * @param location
+	 *   where the errors of the entry are placed
 	 * @param position
-	 * @return
+	 *   which entry of the batch this is, counted from zero
+	 * @param line
+	 *   the line of the body the entry starts on, counted from one, or
+	 *   {@code null} where the body has no line to give
 	 */
-	private static ObjectLocation atDocument(int position) {
-		return ObjectLocation.root().forField("documents").forIndex(position);
+	private record BatchEntry(ObjectLocation location, int position, Integer line) {
+		/**
+		 * Place one entry of a body that carries the documents in a
+		 * {@code documents} array, so the third entry reads
+		 * {@code documents[2]}.
+		 */
+		static BatchEntry inDocuments(int position) {
+			return new BatchEntry(
+				ObjectLocation.root().forField("documents").forIndex(position),
+				position,
+				null
+			);
+		}
+
+		/**
+		 * Place one entry of a newline delimited body, which carries the
+		 * documents one value at a time and has no wrapper to name, so the third
+		 * entry reads {@code [2]}.
+		 */
+		static BatchEntry onLine(int position, Integer line) {
+			return new BatchEntry(ObjectLocation.root().forIndex(position), position, line);
+		}
+
+		/**
+		 * What an error about this entry says about the batch it came from:
+		 * where the entry sat, and how many documents the index had taken before
+		 * it. A caller that has to send the rest of the batch again resumes at
+		 * {@code position}, and knows from {@code processed} what already
+		 * landed.
+		 *
+		 * @param processed
+		 * @return
+		 *   the arguments, which the caller adds its own to
+		 */
+		MutableMap<String, Object> reported(int processed) {
+			var arguments = Maps.mutable.<String, Object>of(
+				"position", position,
+				"processed", processed
+			);
+
+			if(line != null) {
+				arguments.put("line", line);
+			}
+
+			return arguments;
+		}
 	}
 
 	/**
-	 * Place one document of a newline delimited body, which carries the
-	 * documents one per line and has no wrapper to name, so the third document
-	 * reads {@code [2]}.
-	 *
-	 * @param position
-	 * @return
+	 * Report one entry of a batch the index refused, for a request that carries
+	 * on past it.
 	 */
-	private static ObjectLocation atLine(int position) {
-		return ObjectLocation.root().forIndex(position);
+	private static DocumentFailure toFailure(BatchEntry entry, ValidationException e) {
+		return new DocumentFailure(
+			entry.position(),
+			entry.line(),
+			EngineExceptionMapper.toDetails(e.getErrors())
+		);
 	}
 
 	/**

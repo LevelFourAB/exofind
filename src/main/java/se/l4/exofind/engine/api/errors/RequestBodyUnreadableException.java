@@ -19,7 +19,14 @@ public class RequestBodyUnreadableException extends EngineException {
 		.withStatus(400)
 		.withMessage("The request body could not be read to the end");
 
-	public RequestBodyUnreadableException(Throwable cause) {
-		super(TYPE, ErrorType.toArguments(), cause);
+	/**
+	 * @param cause
+	 * @param arguments
+	 *   what the request had got through before the body stopped arriving, as
+	 *   key-value pairs. A streamed batch says how far it got so the caller can
+	 *   send the rest, and a request that reads its body in one go passes none.
+	 */
+	public RequestBodyUnreadableException(Throwable cause, Object... arguments) {
+		super(TYPE, ErrorType.toArguments(arguments), cause);
 	}
 }

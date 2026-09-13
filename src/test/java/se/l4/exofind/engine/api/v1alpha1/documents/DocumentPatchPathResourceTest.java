@@ -609,7 +609,7 @@ public class DocumentPatchPathResourceTest {
 	}
 
 	private void updateIn(String index, Map<String, Object> change) {
-		resource.update(index, null, new UpdateRequest(List.of(change)));
+		resource.update(index, null, null, new UpdateRequest(List.of(change)));
 	}
 
 	/**
@@ -781,6 +781,7 @@ public class DocumentPatchPathResourceTest {
 
 		resource.add(
 			"dynamic",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(
@@ -884,6 +885,7 @@ public class DocumentPatchPathResourceTest {
 
 		resource.add(
 			"catalogue",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(

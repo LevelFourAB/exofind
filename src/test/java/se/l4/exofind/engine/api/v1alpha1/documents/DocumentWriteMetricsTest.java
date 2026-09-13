@@ -119,7 +119,7 @@ public class DocumentWriteMetricsTest {
 	public void newlineDelimitedIndexingSharesTheOperationOfTheJsonForm() throws IOException {
 		catalogue();
 
-		resource.addStream("catalogue", ndjson("""
+		resource.addStream("catalogue", null, ndjson("""
 			{"id": "3", "name": "Oat milk", "category": "dairy", "price": 18.0}
 			{"id": "4", "name": "Butter", "category": "dairy", "price": 42.0}
 			"""));
@@ -134,6 +134,7 @@ public class DocumentWriteMetricsTest {
 
 		resource.update(
 			"catalogue",
+			null,
 			null,
 			new UpdateRequest(
 				List.of(document("id", "1", "price", 9.5), document("id", "2", "price", 8.0))
@@ -295,6 +296,7 @@ public class DocumentWriteMetricsTest {
 
 		resource.add(
 			"catalogue",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document("id", "1", "name", "Blueberry jam", "category", "preserves", "price", 24.5),

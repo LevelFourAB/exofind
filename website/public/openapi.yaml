@@ -670,6 +670,45 @@ components:
           examples:
           - 18.1
       type: object
+    DocumentFailure:
+      description: "One entry of a batch the index refused, reported by a request\
+        \ sent with `?onError=skip`. The entry is named by `position` for a caller\
+        \ walking the list it sent, and also by `line` for a caller pointing at a\
+        \ newline-delimited file."
+      examples:
+      - position: 3
+        line: 4
+        errors:
+        - code: document:field_unknown
+          message: Field `nonexistent` does not exist in index
+          path: "documents[3].nonexistent"
+          arguments:
+            position: "3"
+            processed: "3"
+            name: nonexistent
+      type: object
+      properties:
+        position:
+          type: integer
+          format: int32
+          description: "Which entry of the batch this was, counted from zero. Matches\
+            \ the index in the `path` of each error."
+          examples:
+          - 3
+        line:
+          type: integer
+          format: int32
+          description: "The line of the request body the entry starts on, counted\
+            \ from one. Present only for a newline-delimited body; a body that carries\
+            \ the entries in a `documents` array omits it."
+          examples:
+          - 4
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          description: "Everything wrong with the entry, in the shape the `errors`\
+            \ of a failed request take."
     DocumentsRequest:
       description: "Documents to index. A document specifies its own primary key.\
         \ Indexing a document with an existing key replaces the document under that\
@@ -700,18 +739,28 @@ components:
             \ of numbers, an object field a nested JSON object, and a timestamp an\
             \ ISO 8601 string. A field set to `null` is treated as omitted."
     DocumentsResponse:
-      description: The count of indexed documents.
+      description: "The count of indexed documents, and any that were skipped."
       examples:
       - indexed: 2
+        failed: []
       type: object
       properties:
         indexed:
           type: integer
           format: int32
           description: "The number of documents indexed. For a successful request,\
-            \ this includes every document in the request."
+            \ this includes every document in the request, except any reported under\
+            \ `failed`."
           examples:
           - 2
+        failed:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentFailure"
+          description: "The documents the index refused, in the order sent. Holds\
+            \ entries only when the request is sent with `?onError=skip`; a request\
+            \ sent without it fails on the first refused document. Always present,\
+            \ and empty when nothing was skipped."
     DoubleFieldDefinition:
       required:
       - type
@@ -5806,10 +5855,12 @@ components:
             \ of the field, while `variants[sku=V-2].price` replaces one field inside\
             \ those values."
     UpdateResponse:
-      description: "The count of updated documents, and any keys that were skipped."
+      description: "The count of updated documents, and any keys or changes that were\
+        \ skipped."
       examples:
       - updated: 1998
         missing: []
+        failed: []
       type: object
       properties:
         updated:
@@ -5825,6 +5876,15 @@ components:
             \ Holds keys only when the request is sent with `?missing=skip`; a request\
             \ sent without it fails on the first missing key. Always present, and\
             \ empty when nothing was skipped."
+        failed:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentFailure"
+          description: "The changes the index refused, in the order sent. Holds entries\
+            \ only when the request is sent with `?onError=skip`; a request sent without\
+            \ it fails on the first refused change. A key nothing is indexed under\
+            \ is reported under `missing` instead when the request is sent with `?missing=skip`.\
+            \ Always present, and empty when nothing was skipped."
     VectorFieldDefinition:
       required:
       - type
@@ -9553,6 +9613,18 @@ paths:
         description: "Name of the index to write to. To write to a specific generation,\
           \ append `@` and the name of the generation, such as `books@2`."
         example: books
+      - name: onError
+        in: query
+        schema:
+          type: string
+          default: fail
+          enum:
+          - fail
+          - skip
+        description: "Behavior when the index refuses a document: `fail` (default)\
+          \ stops at the first one and fails the request, while `skip` indexes the\
+          \ remaining documents and returns the refused ones under `failed`. A body\
+          \ that cannot be read as JSON fails the request either way."
       requestBody:
         content:
           application/x-ndjson:
@@ -9587,11 +9659,12 @@ paths:
                 indexed:
                   value:
                     indexed: 2
+                    failed: []
         "400":
           description: |-
-            A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location as the body carries it, such as `documents[1].nonexistent` for a `documents` array and `[1].nonexistent` for a newline-delimited body.
+            A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location as the body carries it, such as `documents[1].nonexistent` for a `documents` array and `[1].nonexistent` for a newline-delimited body. The `arguments` of each error carry the same place as numbers to resume from: `position` for the document, `processed` for how many documents the index took before it, and `line` for the line of a newline-delimited body.
 
-            Error codes: `document:malformed` - A line of the body could not be read as JSON. `request:body_required` - The request carries no documents. `document:not_an_object` - A document is not an object keyed by field name. `document:field_unknown` - A document gives a field the index does not have. `document:field_inside_object` - A document gives a dotted path to a field inside an object instead of the object that holds it. `document:field_required` - A document leaves out a field the definition marks as required. `document:locale_unknown` - A value carries a locale the field does not hold values in. `document:locale_unsupported` - A value carries a locale on a field that is not locale specific. `document:object_required` - A field that holds objects is given a value that is not one. `document:object_unsupported` - A field that does not hold objects is given one. `document:multiple_unsupported` - A field that holds a single value is given several. `document:multiple_per_locale_unsupported` - A field that holds a single value per locale is given several in one locale. `document:object_key_duplicate` - Two values of an object field read the same under the key that tells them apart. `document:number:value_invalid` - A number field is given a value that cannot be read as its type. `document:number:value_out_of_range` - A number field is given a value outside the bounds its definition declares. `document:geo_point:value_invalid` - A geo point field is given a value that is not a latitude and a longitude. `document:geo_point:value_out_of_range` - A geo point field is given a point that is not on the earth. `document:timestamp:value_invalid` - A timestamp field is given a value that is not an ISO 8601 date and time with an offset. `document:vector:value_invalid` - A vector field is given a value that is not an array of floats. `document:vector:value_not_finite` - A vector field is given a value that is not a finite number. `document:vector:dimensions_mismatch` - A vector field is given a vector with other dimensions than the field declares. `document:vector:value_zero` - A vector field compared by cosine is given a vector of only zeros. `index:generation:unsettled` - The generation the index serves from kept changing while the write was made. Send the request again. `request:body_unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again.
+            Error codes: `document:malformed` - A line of the body could not be read as JSON. `request:body_required` - The request carries no documents. `document:not_an_object` - A document is not an object keyed by field name. `document:on_error_invalid` - `onError` is neither `fail` nor `skip`. `document:field_unknown` - A document gives a field the index does not have. `document:field_inside_object` - A document gives a dotted path to a field inside an object instead of the object that holds it. `document:field_required` - A document leaves out a field the definition marks as required. `document:locale_unknown` - A value carries a locale the field does not hold values in. `document:locale_unsupported` - A value carries a locale on a field that is not locale specific. `document:object_required` - A field that holds objects is given a value that is not one. `document:object_unsupported` - A field that does not hold objects is given one. `document:multiple_unsupported` - A field that holds a single value is given several. `document:multiple_per_locale_unsupported` - A field that holds a single value per locale is given several in one locale. `document:object_key_duplicate` - Two values of an object field read the same under the key that tells them apart. `document:number:value_invalid` - A number field is given a value that cannot be read as its type. `document:number:value_out_of_range` - A number field is given a value outside the bounds its definition declares. `document:geo_point:value_invalid` - A geo point field is given a value that is not a latitude and a longitude. `document:geo_point:value_out_of_range` - A geo point field is given a point that is not on the earth. `document:timestamp:value_invalid` - A timestamp field is given a value that is not an ISO 8601 date and time with an offset. `document:vector:value_invalid` - A vector field is given a value that is not an array of floats. `document:vector:value_not_finite` - A vector field is given a value that is not a finite number. `document:vector:dimensions_mismatch` - A vector field is given a vector with other dimensions than the field declares. `document:vector:value_zero` - A vector field compared by cosine is given a vector of only zeros. `index:generation:unsettled` - The generation the index serves from kept changing while the write was made. Send the request again. `request:body_unreadable` - The body stopped arriving part way through. The documents read before that are indexed; send the rest again.
           content:
             application/json:
               schema:
@@ -9603,6 +9676,8 @@ paths:
             when: The request carries no documents.
           - code: document:not_an_object
             when: A document is not an object keyed by field name.
+          - code: document:on_error_invalid
+            when: '`onError` is neither `fail` nor `skip`.'
           - code: document:field_unknown
             when: A document gives a field the index does not have.
           - code: document:field_inside_object
@@ -9741,7 +9816,7 @@ paths:
       - apiKey: []
       summary: Index documents
       description: |-
-        Indexes one or more documents into the specified index. Each document specifies its own primary key. Indexing a document with an existing key replaces the document under that key. Documents in a batch are processed in the order sent. The first invalid document halts processing and fails the request; documents processed before the failure remain in the index.
+        Indexes one or more documents into the specified index. Each document specifies its own primary key. Indexing a document with an existing key replaces the document under that key. Documents in a batch are processed in the order sent. The first refused document halts processing and fails the request; documents processed before the failure remain in the index. Every error names the document it is about: `position` counts the documents of the request from zero, `processed` says how many the index took before the failure, and a newline-delimited body also carries `line`. Send `?onError=skip` to index the rest of the batch instead and read the refused documents from `failed`.
 
         Format the request body as `application/json` with a `documents` array, or `application/x-ndjson` with one document object per line and no outer wrapper. Newline-delimited documents are indexed as they are read, so request size is bounded by network capacity rather than available memory, making it suitable for loading large datasets.
 
@@ -10039,6 +10114,18 @@ paths:
         description: "Behavior when a document key does not exist: `fail` (default)\
           \ fails the request, while `skip` updates the remaining documents and returns\
           \ the missing keys under `missing`."
+      - name: onError
+        in: query
+        schema:
+          type: string
+          default: fail
+          enum:
+          - fail
+          - skip
+        description: "Behavior when the index refuses a change: `fail` (default) stops\
+          \ at the first one and fails the request, while `skip` applies the remaining\
+          \ changes and returns the refused ones under `failed`. A key nothing is\
+          \ indexed under is governed by `missing` instead when that says `skip`."
       requestBody:
         content:
           application/x-ndjson:
@@ -10072,11 +10159,12 @@ paths:
                   value:
                     updated: 1998
                     missing: []
+                    failed: []
         "400":
           description: |-
-            A change failed validation, or a path in it names something the index or the document does not hold.
+            A change failed validation, or a path in it names something the index or the document does not hold. The `arguments` of each error carry where in the batch the change sat and how much of the batch had landed: `position`, `processed`, and `line` for a newline-delimited body.
 
-            Error codes: `document:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `document:source_not_kept` - The index does not store document copies. Send the complete document instead. `document:patch:path_invalid` - A path in the change could not be read. `document:patch:field_unknown` - A path reaches into a field the index does not have. `document:patch:selector_unsupported` - A path names one value of a field that holds neither locale variants nor objects. `document:locale_unknown` - A path names a locale the field holds no variant for. `document:patch:add_unsupported` - A change adds a value to a field that holds a single value. `document:patch:not_an_object` - A path reaches inside a field whose values are not objects. `document:patch:selector_required` - A path reaches into a list of objects without saying which value. `document:patch:no_match` - A selector names no value the document holds. A selector never creates the value it names. `document:patch:key_unsupported` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `document:patch:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `document:patch:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `document:patch:missing_invalid` - `missing` is neither `fail` nor `skip`. `request:body_required` - The request carries no changes. `document:malformed` - A line of the body could not be read as JSON. `document:not_an_object` - A change is not an object keyed by path. `document:field_unknown` - A document gives a field the index does not have. `document:field_inside_object` - A document gives a dotted path to a field inside an object instead of the object that holds it. `document:field_required` - A document leaves out a field the definition marks as required. `document:locale_unsupported` - A value carries a locale on a field that is not locale specific. `document:object_required` - A field that holds objects is given a value that is not one. `document:object_unsupported` - A field that does not hold objects is given one. `document:multiple_unsupported` - A field that holds a single value is given several. `document:multiple_per_locale_unsupported` - A field that holds a single value per locale is given several in one locale. `document:object_key_duplicate` - Two values of an object field read the same under the key that tells them apart. `document:number:value_invalid` - A number field is given a value that cannot be read as its type. `document:number:value_out_of_range` - A number field is given a value outside the bounds its definition declares. `document:geo_point:value_invalid` - A geo point field is given a value that is not a latitude and a longitude. `document:geo_point:value_out_of_range` - A geo point field is given a point that is not on the earth. `document:timestamp:value_invalid` - A timestamp field is given a value that is not an ISO 8601 date and time with an offset. `document:vector:value_invalid` - A vector field is given a value that is not an array of floats. `document:vector:value_not_finite` - A vector field is given a value that is not a finite number. `document:vector:dimensions_mismatch` - A vector field is given a vector with other dimensions than the field declares. `document:vector:value_zero` - A vector field compared by cosine is given a vector of only zeros. `document:primary_key_required` - A change to some of a document carries no primary key, so it names no document. `index:generation:unsettled` - The generation the index serves from kept changing while the write was made. Send the request again. `request:body_unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
+            Error codes: `document:not_found` - A document the change names is not indexed and `missing` is `fail`. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `document:source_not_kept` - The index does not store document copies. Send the complete document instead. `document:patch:path_invalid` - A path in the change could not be read. `document:patch:field_unknown` - A path reaches into a field the index does not have. `document:patch:selector_unsupported` - A path names one value of a field that holds neither locale variants nor objects. `document:locale_unknown` - A path names a locale the field holds no variant for. `document:patch:add_unsupported` - A change adds a value to a field that holds a single value. `document:patch:not_an_object` - A path reaches inside a field whose values are not objects. `document:patch:selector_required` - A path reaches into a list of objects without saying which value. `document:patch:no_match` - A selector names no value the document holds. A selector never creates the value it names. `document:patch:key_unsupported` - A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead. `document:patch:match_not_an_object` - A path matches on a field inside a list whose values are not objects. `document:patch:add_reaches_inside` - A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead. `document:patch:missing_invalid` - `missing` is neither `fail` nor `skip`. `document:on_error_invalid` - `onError` is neither `fail` nor `skip`. `request:body_required` - The request carries no changes. `document:malformed` - A line of the body could not be read as JSON. `document:not_an_object` - A change is not an object keyed by path. `document:field_unknown` - A document gives a field the index does not have. `document:field_inside_object` - A document gives a dotted path to a field inside an object instead of the object that holds it. `document:field_required` - A document leaves out a field the definition marks as required. `document:locale_unsupported` - A value carries a locale on a field that is not locale specific. `document:object_required` - A field that holds objects is given a value that is not one. `document:object_unsupported` - A field that does not hold objects is given one. `document:multiple_unsupported` - A field that holds a single value is given several. `document:multiple_per_locale_unsupported` - A field that holds a single value per locale is given several in one locale. `document:object_key_duplicate` - Two values of an object field read the same under the key that tells them apart. `document:number:value_invalid` - A number field is given a value that cannot be read as its type. `document:number:value_out_of_range` - A number field is given a value outside the bounds its definition declares. `document:geo_point:value_invalid` - A geo point field is given a value that is not a latitude and a longitude. `document:geo_point:value_out_of_range` - A geo point field is given a point that is not on the earth. `document:timestamp:value_invalid` - A timestamp field is given a value that is not an ISO 8601 date and time with an offset. `document:vector:value_invalid` - A vector field is given a value that is not an array of floats. `document:vector:value_not_finite` - A vector field is given a value that is not a finite number. `document:vector:dimensions_mismatch` - A vector field is given a vector with other dimensions than the field declares. `document:vector:value_zero` - A vector field compared by cosine is given a vector of only zeros. `document:primary_key_required` - A change to some of a document carries no primary key, so it names no document. `index:generation:unsettled` - The generation the index serves from kept changing while the write was made. Send the request again. `request:body_unreadable` - The body stopped arriving part way through. The changes read before that are applied; send the rest again.
           content:
             application/json:
               schema:
@@ -10118,6 +10206,8 @@ paths:
               \ does not exist yet. Give the whole value instead."
           - code: document:patch:missing_invalid
             when: '`missing` is neither `fail` nor `skip`.'
+          - code: document:on_error_invalid
+            when: '`onError` is neither `fail` nor `skip`.'
           - code: request:body_required
             when: The request carries no changes.
           - code: document:malformed
@@ -10270,6 +10360,8 @@ paths:
         Send `application/json` with a `documents` array containing change objects, or `application/x-ndjson` with one change object per line and no outer wrapper.
 
         Unlike indexing, this endpoint describes modifications rather than desired state and requires existing documents. Multiple updates to the same document in a single batch apply in the order provided, and the updated document is validated as a whole.
+
+        Changes in a batch are applied in the order sent. The first refused change halts processing and fails the request; changes applied before the failure remain in the index. Every error names the change it is about: `position` counts the changes of the request from zero, `processed` says how many the index applied before the failure, and a newline-delimited body also carries `line`. Send `?onError=skip` to apply the rest of the batch instead and read the refused changes from `failed`.
 
         The index has to declare a primary key and retain document source copies.
 

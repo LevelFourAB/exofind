@@ -284,6 +284,7 @@ public class DocumentScanResourceTest {
 
 		var indexed = resource.addStream(
 			"catalogue-2",
+			null,
 			new ByteArrayInputStream(stream.toByteArray())
 		);
 		copy.commit();
@@ -333,6 +334,7 @@ public class DocumentScanResourceTest {
 
 		resource.add(
 			"catalogue",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document("id", "1", "name", "Blueberry jam", "energy", 234.5),

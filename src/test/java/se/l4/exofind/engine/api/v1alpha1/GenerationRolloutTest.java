@@ -195,7 +195,7 @@ public class GenerationRolloutTest {
 		document.put("title", title);
 		document.put("brand", brand);
 
-		documents.add(name, new DocumentsRequest(List.of(document)));
+		documents.add(name, null, new DocumentsRequest(List.of(document)));
 		admin.commit(name);
 	}
 

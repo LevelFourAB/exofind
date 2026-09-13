@@ -205,7 +205,7 @@ public class IndexSettingsResourceTest {
 			document.put("sales", sales);
 		}
 
-		documents.add(name, new DocumentsRequest(List.of(document)));
+		documents.add(name, null, new DocumentsRequest(List.of(document)));
 		admin.commit(name);
 	}
 
@@ -1084,7 +1084,7 @@ public class IndexSettingsResourceTest {
 			null, null, fields, null, null, null, null
 		));
 
-		documents.add("shoes", new DocumentsRequest(List.of(
+		documents.add("shoes", null, new DocumentsRequest(List.of(
 			Map.of("id", "1", "name", "running sneakers"),
 			Map.of("id", "2", "name", "leather trainers")
 		)));
@@ -1386,7 +1386,7 @@ public class IndexSettingsResourceTest {
 			null, null, fields, null, null, null, null
 		));
 
-		documents.add("cameras", new DocumentsRequest(List.of(
+		documents.add("cameras", null, new DocumentsRequest(List.of(
 			Map.of("id", "1", "name", "canon camera"),
 			Map.of("id", "2", "name", "canyon camera")
 		)));
@@ -1586,7 +1586,7 @@ public class IndexSettingsResourceTest {
 			null, null, fields, null, null, null, null
 		));
 
-		documents.add("boutique", new DocumentsRequest(List.of(
+		documents.add("boutique", null, new DocumentsRequest(List.of(
 			Map.of("id", "1", "name", "Running Shoes", "colour", "Red"),
 			Map.of("id", "2", "name", "Trail Shoes", "colour", "Blue")
 		)));

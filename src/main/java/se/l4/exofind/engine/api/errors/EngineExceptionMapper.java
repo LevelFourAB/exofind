@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.map.MapIterable;
 
 import se.l4.exofind.engine.auth.UnauthenticatedException;
@@ -83,7 +84,7 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 				errors.size() == 1
 					? errors.get(0).getMessage()
 					: "Request contains " + errors.size() + " errors",
-				errors.collect(EngineExceptionMapper::toDetail).toList()
+				toDetails(errors)
 			);
 		}
 
@@ -95,6 +96,20 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 		);
 
 		return new ErrorResponse(e.getCode(), e.getMessage(), List.of(detail));
+	}
+
+	/**
+	 * Render located errors as the API states them. A response that reports
+	 * problems while still succeeding, such as the entries of a batch the index
+	 * refused, describes them the same way a failed request does, so a client
+	 * reads one shape wherever a problem reaches it.
+	 *
+	 * @param errors
+	 * @return
+	 *   the problems, in the order they were found
+	 */
+	public static List<ErrorResponse.ErrorDetail> toDetails(ListIterable<ErrorMessage> errors) {
+		return errors.collect(EngineExceptionMapper::toDetail).toList();
 	}
 
 	private static ErrorResponse.ErrorDetail toDetail(ErrorMessage message) {

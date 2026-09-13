@@ -3,6 +3,7 @@ package se.l4.exofind.engine.api.v1alpha1.documents;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -27,6 +28,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.api.errors.ErrorResponse.ErrorDetail;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
@@ -179,6 +181,7 @@ public class DocumentResourceTest {
 
 		var response = resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(
@@ -212,6 +215,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(
@@ -239,6 +243,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(List.of(document("id", "1", "name", "blåbärssylt")))
 		);
 
@@ -252,7 +257,7 @@ public class DocumentResourceTest {
 		var index = foods();
 
 		var body = document("id", "1", "energy", null);
-		resource.add("foods", new DocumentsRequest(List.of(body)));
+		resource.add("foods", null, new DocumentsRequest(List.of(body)));
 
 		index.commit();
 
@@ -263,8 +268,8 @@ public class DocumentResourceTest {
 	public void testADocumentReplacesTheOneIndexedUnderItsKey() throws IOException {
 		var index = foods();
 
-		resource.add("foods", new DocumentsRequest(List.of(document("id", "1", "energy", 100.0))));
-		resource.add("foods", new DocumentsRequest(List.of(document("id", "1", "energy", 200.0))));
+		resource.add("foods", null, new DocumentsRequest(List.of(document("id", "1", "energy", 100.0))));
+		resource.add("foods", null, new DocumentsRequest(List.of(document("id", "1", "energy", 200.0))));
 
 		index.commit();
 
@@ -296,6 +301,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"products",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(
@@ -340,6 +346,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"products",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(
@@ -399,6 +406,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"products",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document(
@@ -430,6 +438,7 @@ public class DocumentResourceTest {
 
 		var response = resource.addStream(
 			"foods",
+			null,
 			new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
 		);
 
@@ -448,6 +457,7 @@ public class DocumentResourceTest {
 			ValidationException.class,
 			() -> resource.add(
 				"foods",
+				null,
 				new DocumentsRequest(
 					List.of(
 						document("id", "1"),
@@ -480,6 +490,7 @@ public class DocumentResourceTest {
 			ValidationException.class,
 			() -> resource.addStream(
 				"foods",
+				null,
 				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
 			)
 		);
@@ -507,6 +518,7 @@ public class DocumentResourceTest {
 			ValidationException.class,
 			() -> resource.addStream(
 				"foods",
+				null,
 				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
 			)
 		);
@@ -515,11 +527,268 @@ public class DocumentResourceTest {
 		assertThat(e.getErrors().get(0).getLocation().describe(), is("[1]"));
 	}
 
+	/**
+	 * A batch stops at the first document the index refuses and keeps the ones
+	 * before it, so a caller has to know where to send the rest from. The path
+	 * already names the document; the arguments say the same place as numbers,
+	 * together with how many documents the index took before it.
+	 */
+	@Test
+	public void testARefusedDocumentSaysWhereTheBatchStopped() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.add(
+				"foods",
+				null,
+				new DocumentsRequest(
+					List.of(
+						document("id", "1"),
+						document("id", "2"),
+						document("id", "3", "nonexistent", "value")
+					)
+				)
+			)
+		);
+
+		var arguments = e.getErrors().get(0).getArguments();
+
+		assertThat(arguments.get("position"), is(2));
+		assertThat(arguments.get("processed"), is(2));
+		assertThat(arguments.get("line"), is(nullValue()));
+	}
+
+	/**
+	 * A newline delimited body counts its values and its lines separately, so an
+	 * error names both. The refused document below is spread over several lines
+	 * and follows a blank one, which puts it on a line its position does not
+	 * give.
+	 */
+	@Test
+	public void testARefusedDocumentSentOnePerLineNamesBothItsValueAndItsLine()
+		throws IOException
+	{
+		foods();
+
+		var body = """
+			{"id": "1", "name": "blåbärssylt"}
+
+			{
+			  "id": "2",
+			  "nonexistent": "value"
+			}
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.addStream(
+				"foods",
+				null,
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		var arguments = e.getErrors().get(0).getArguments();
+
+		assertThat(arguments.get("position"), is(1));
+		assertThat(arguments.get("line"), is(3));
+		assertThat(arguments.get("processed"), is(1));
+	}
+
+	/** A line that cannot be read as JSON also says how much of the batch landed. */
+	@Test
+	public void testALineThatIsNotJsonSaysHowMuchOfTheBatchLanded() throws IOException {
+		foods();
+
+		var body = """
+			{"id": "1", "name": "blåbärssylt"}
+			not json
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.addStream(
+				"foods",
+				null,
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		var arguments = e.getErrors().get(0).getArguments();
+
+		assertThat(arguments.get("position"), is(1));
+		assertThat(arguments.get("processed"), is(1));
+		assertThat(arguments.get("line"), is(2));
+	}
+
+	/**
+	 * A request that asks for refused documents to be skipped indexes the rest
+	 * of the batch and reports what it left out.
+	 */
+	@Test
+	public void testASkippedDocumentIsReportedAndTheRestAreIndexed() throws IOException {
+		var index = foods();
+
+		var response = resource.add(
+			"foods",
+			"skip",
+			new DocumentsRequest(
+				List.of(
+					document("id", "1"),
+					document("id", "2", "nonexistent", "value"),
+					document("id", "3")
+				)
+			)
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed().size(), is(1));
+
+		var failure = response.failed().get(0);
+
+		assertThat(failure.position(), is(1));
+		assertThat(failure.line(), is(nullValue()));
+		assertThat(
+			failure.errors().stream().map(ErrorDetail::path).toList(),
+			contains("documents[1].nonexistent")
+		);
+
+		assertThat(index.getDocument("1"), is(notNullValue()));
+		assertThat(index.getDocument("2"), is(nullValue()));
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/** A skipped document of a newline delimited body also names its line. */
+	@Test
+	public void testASkippedDocumentSentOnePerLineNamesItsLine() throws IOException {
+		var index = foods();
+
+		var body = """
+			{"id": "1", "name": "blåbärssylt"}
+			{"id": "2", "nonexistent": "value"}
+			{"id": "3", "name": "rågbröd"}
+			""";
+
+		var response = resource.addStream(
+			"foods",
+			"skip",
+			new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed().size(), is(1));
+		assertThat(response.failed().get(0).position(), is(1));
+		assertThat(response.failed().get(0).line(), is(2));
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/**
+	 * The response reaches a client as JSON, so the fields a caller reads have
+	 * to survive being written. A failure of a body with a wrapper carries no
+	 * line and leaves the field out.
+	 */
+	@Test
+	public void testAReportedFailureIsWrittenAsTheApiStatesIt() throws IOException {
+		foods();
+
+		var response = resource.add(
+			"foods",
+			"skip",
+			new DocumentsRequest(List.of(document("id", "1", "nonexistent", "value")))
+		);
+
+		var mapper = new ObjectMapper();
+		var json = mapper.readTree(mapper.writeValueAsString(response));
+
+		assertThat(json.get("indexed").intValue(), is(0));
+		assertThat(json.get("failed").size(), is(1));
+
+		var failure = json.get("failed").get(0);
+
+		assertThat(failure.get("position").intValue(), is(0));
+		assertThat(failure.has("line"), is(false));
+		assertThat(
+			failure.get("errors").get(0).get("code").asText(),
+			is("document:field_unknown")
+		);
+		assertThat(
+			failure.get("errors").get(0).get("path").asText(),
+			is("documents[0].nonexistent")
+		);
+		assertThat(
+			failure.get("errors").get(0).get("arguments").get("processed").asText(),
+			is("0")
+		);
+	}
+
+	/** A batch that nothing was wrong with reports no failures. */
+	@Test
+	public void testABatchWithNothingWrongWithItReportsNoFailures() throws IOException {
+		foods();
+
+		var response = resource.add(
+			"foods",
+			"skip",
+			new DocumentsRequest(List.of(document("id", "1"), document("id", "2")))
+		);
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed(), is(empty()));
+	}
+
+	/**
+	 * Skipping covers what the index refuses and not a body that stopped being
+	 * readable, because the reader cannot then say where the next document
+	 * begins.
+	 */
+	@Test
+	public void testSkippingDoesNotCoverALineThatIsNotJson() throws IOException {
+		foods();
+
+		var body = """
+			{"id": "1", "name": "blåbärssylt"}
+			not json
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.addStream(
+				"foods",
+				"skip",
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("document:malformed"));
+	}
+
+	@Test
+	public void testAnOnErrorThatIsNeitherFailNorSkipIsRefused() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.add(
+				"foods",
+				"ignore",
+				new DocumentsRequest(List.of(document("id", "1")))
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("document:on_error_invalid"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("onError"));
+	}
+
 	@Test
 	public void testARequestWithoutDocumentsIsRefused() {
 		assertThrows(
 			ValidationException.class,
-			() -> resource.add("foods", new DocumentsRequest(null))
+			() -> resource.add("foods", null, new DocumentsRequest(null))
 		);
 	}
 
@@ -529,6 +798,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(List.of(document("id", "1"), document("id", "2")))
 		);
 		index.commit();
@@ -558,6 +828,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(
 				List.of(document("id", "1"), document("id", "2"), document("id", "3"))
 			)
@@ -582,6 +853,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document("id", "1", "tags", List.of("sylt")),
@@ -613,6 +885,7 @@ public class DocumentResourceTest {
 
 		resource.add(
 			"foods",
+			null,
 			new DocumentsRequest(List.of(document("id", "1"), document("id", "2")))
 		);
 		index.commit();
@@ -633,7 +906,7 @@ public class DocumentResourceTest {
 	public void testAQueryWithoutClausesIsRefused() throws IOException {
 		var index = foods();
 
-		resource.add("foods", new DocumentsRequest(List.of(document("id", "1"))));
+		resource.add("foods", null, new DocumentsRequest(List.of(document("id", "1"))));
 		index.commit();
 
 		var e = assertThrows(

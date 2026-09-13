@@ -2,6 +2,7 @@ package se.l4.exofind.engine.errors;
 
 import java.util.Objects;
 
+import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.map.MapIterable;
 
 /**
@@ -43,6 +44,33 @@ public class ErrorMessage {
 	 */
 	public ErrorMessage at(Location location) {
 		return new ErrorMessage(type, location, arguments);
+	}
+
+	/**
+	 * Get this message with added arguments, keeping what went wrong and where.
+	 * Used when a message travels out of the thing it was raised about and the
+	 * thing that carried it knows more about it - a document the index refused
+	 * also sat at a place in the batch that carried it, and a caller has to be
+	 * told which place and how much of the batch landed before it.
+	 *
+	 * <p>An argument the message already carries is kept, so what the error says
+	 * about itself is never replaced by what its surroundings say about it.
+	 *
+	 * @param arguments
+	 * @return
+	 *   a message with the same code and location, carrying both sets of
+	 *   arguments
+	 */
+	public ErrorMessage with(MapIterable<String, Object> arguments) {
+		if(arguments.isEmpty()) {
+			return this;
+		}
+
+		var merged = Maps.mutable.<String, Object>empty();
+		arguments.forEachKeyValue(merged::put);
+		this.arguments.forEachKeyValue(merged::put);
+
+		return new ErrorMessage(type, location, merged);
 	}
 
 	public String getMessage() {

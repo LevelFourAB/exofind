@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.v1alpha1.documents;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.emptyIterable;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
@@ -27,6 +28,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.api.errors.ErrorResponse.ErrorDetail;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -108,6 +110,7 @@ public class DocumentUpdateResourceTest {
 		var response = resource.update(
 			"catalogue",
 			null,
+			null,
 			new UpdateRequest(List.of(document("id", "1", "price", 9.5)))
 		);
 
@@ -132,6 +135,7 @@ public class DocumentUpdateResourceTest {
 		resource.update(
 			"catalogue",
 			null,
+			null,
 			new UpdateRequest(List.of(document("id", "1", "price", null)))
 		);
 
@@ -153,6 +157,7 @@ public class DocumentUpdateResourceTest {
 		var response = resource.updateStream(
 			"catalogue",
 			null,
+			null,
 			new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
 		);
 
@@ -172,6 +177,7 @@ public class DocumentUpdateResourceTest {
 			() -> resource.update(
 				"catalogue",
 				null,
+				null,
 				new UpdateRequest(List.of(document("id", "404", "price", 1.0)))
 			)
 		);
@@ -186,6 +192,7 @@ public class DocumentUpdateResourceTest {
 		var response = resource.update(
 			"catalogue",
 			"skip",
+			null,
 			new UpdateRequest(
 				List.of(
 					document("id", "1", "price", 5.0),
@@ -212,6 +219,7 @@ public class DocumentUpdateResourceTest {
 			() -> resource.update(
 				"catalogue",
 				"upsert",
+				null,
 				new UpdateRequest(List.of(document("id", "1", "price", 1.0)))
 			)
 		);
@@ -228,6 +236,7 @@ public class DocumentUpdateResourceTest {
 			ValidationException.class,
 			() -> resource.update(
 				"catalogue",
+				null,
 				null,
 				new UpdateRequest(
 					List.of(
@@ -259,11 +268,148 @@ public class DocumentUpdateResourceTest {
 			() -> resource.updateStream(
 				"catalogue",
 				null,
+				null,
 				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
 			)
 		);
 
 		assertThat(e.getErrors().get(0).getLocation().describe(), is("[1].price"));
+	}
+
+	/**
+	 * A batch stops at the first change the index refuses and keeps the ones it
+	 * already applied, so an error says where the batch stopped as numbers a
+	 * caller resumes from. A key that was skipped rather than applied is not
+	 * counted as processed, which is what parts the two numbers here.
+	 */
+	@Test
+	public void aRefusedChangeSaysWhereTheBatchStopped() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.update(
+				"catalogue",
+				"skip",
+				null,
+				new UpdateRequest(
+					List.of(
+						document("id", "1", "price", 1.0),
+						document("id", "404", "price", 2.0),
+						document("id", "2", "price", "not a number")
+					)
+				)
+			)
+		);
+
+		var arguments = e.getErrors().get(0).getArguments();
+
+		assertThat(arguments.get("position"), is(2));
+		assertThat(arguments.get("processed"), is(1));
+		assertThat(arguments.get("line"), is(nullValue()));
+	}
+
+	/** A change sent one per line names its line as well as its position. */
+	@Test
+	public void aRefusedChangeSentOnePerLineNamesBothItsValueAndItsLine() throws IOException {
+		catalogue();
+
+		var body = """
+			{"id": "1", "price": 1.5}
+
+			{"id": "2", "price": "not a number"}
+			""";
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.updateStream(
+				"catalogue",
+				null,
+				null,
+				new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+			)
+		);
+
+		var arguments = e.getErrors().get(0).getArguments();
+
+		assertThat(arguments.get("position"), is(1));
+		assertThat(arguments.get("processed"), is(1));
+		assertThat(arguments.get("line"), is(3));
+	}
+
+	/**
+	 * A request that asks for refused changes to be skipped applies the rest of
+	 * the batch and reports what it left out.
+	 */
+	@Test
+	public void askingToSkipRefusedChangesAppliesTheRestAndReportsThem() throws IOException {
+		var index = catalogue();
+
+		var response = resource.update(
+			"catalogue",
+			null,
+			"skip",
+			new UpdateRequest(
+				List.of(
+					document("id", "1", "price", 5.0),
+					document("id", "2", "price", "not a number"),
+					document("id", "2", "price", 6.0)
+				)
+			)
+		);
+
+		assertThat(response.updated(), is(2));
+		assertThat(response.missing(), is(empty()));
+		assertThat(response.failed().size(), is(1));
+		assertThat(response.failed().get(0).position(), is(1));
+		assertThat(
+			response.failed().get(0).errors().stream().map(ErrorDetail::path).toList(),
+			contains("documents[1].price")
+		);
+
+		index.commit();
+		assertThat(index.getDocument("1").get("price"), is(5.0));
+		assertThat(index.getDocument("2").get("price"), is(6.0));
+	}
+
+	/**
+	 * A key nothing is indexed under is a refused change like any other when
+	 * only {@code onError} says to skip, and moves to {@code missing} as soon as
+	 * the request asks for missing keys by name.
+	 */
+	@Test
+	public void aMissingKeyIsAFailureUntilTheRequestAsksForMissingKeys() throws IOException {
+		catalogue();
+
+		var changes = new UpdateRequest(List.of(document("id", "404", "price", 1.0)));
+
+		var refused = resource.update("catalogue", null, "skip", changes);
+
+		assertThat(refused.missing(), is(empty()));
+		assertThat(refused.failed().size(), is(1));
+		assertThat(refused.failed().get(0).errors().get(0).code(), is("document:not_found"));
+
+		var skipped = resource.update("catalogue", "skip", "skip", changes);
+
+		assertThat(skipped.missing(), contains("404"));
+		assertThat(skipped.failed(), is(empty()));
+	}
+
+	@Test
+	public void aWayOfHandlingRefusedChangesThatDoesNotExistIsRefused() throws IOException {
+		catalogue();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.update(
+				"catalogue",
+				null,
+				"ignore",
+				new UpdateRequest(List.of(document("id", "1", "price", 1.0)))
+			)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("document:on_error_invalid"));
 	}
 
 	@Test
@@ -277,12 +423,13 @@ public class DocumentUpdateResourceTest {
 				.build()
 		);
 
-		resource.add("sourceless", new DocumentsRequest(List.of(document("id", "1"))));
+		resource.add("sourceless", null, new DocumentsRequest(List.of(document("id", "1"))));
 
 		assertThrows(
 			IndexSourceNotKeptException.class,
 			() -> resource.update(
 				"sourceless",
+				null,
 				null,
 				new UpdateRequest(List.of(document("id", "1", "name", "jam")))
 			)
@@ -461,6 +608,7 @@ public class DocumentUpdateResourceTest {
 
 		resource.add(
 			"catalogue",
+			null,
 			new DocumentsRequest(
 				List.of(
 					document("id", "1", "name", "Blueberry jam", "category", "preserves", "price", 24.5),
@@ -503,6 +651,7 @@ public class DocumentUpdateResourceTest {
 
 		resource.add(
 			"orders",
+			null,
 			new DocumentsRequest(List.of(document("id", 1, "price", 24.5)))
 		);
 

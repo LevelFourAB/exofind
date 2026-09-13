@@ -117,23 +117,58 @@ The count is what the node answering the search can find. In a deployment with m
 
 If a request fails, use the following guidelines:
 
-- **`400 Bad Request`**: Documents are processed in the order sent. The first invalid document causes the request to fail, but documents sent before it remain indexed. The `path` field in the response identifies the failed document:
+- **`400 Bad Request`**: Documents are processed in the order sent. The first refused document fails the request, and the documents sent before it stay in the index. To resolve a failed batch:
+
+  1. Locate the refused document using `position` in `arguments` (and `line` for newline-delimited JSON), and check `processed` to see how many documents succeeded:
+
+     ```json
+     {
+       "code": "validation",
+       "errors": [
+         {
+           "code": "document:field_required",
+           "path": "documents[41].name",
+           "arguments": { "position": "41", "processed": "41" }
+         }
+       ]
+     }
+     ```
+
+  2. Fix the refused document and reissue the batch starting from `position`. Indexing replaces documents by primary key, so resending a document the index already took overwrites it.
+
+  To index valid documents and skip refused entries, add `?onError=skip` to the request URL:
+
+  ```http
+  POST /v1alpha1/indexes/products/documents?onError=skip
+  Content-Type: application/x-ndjson
+
+  {"id": "1", "name": "Blueberry jam"}
+  {"id": "2", "nonexistent": "value"}
+  {"id": "3", "name": "Rye bread"}
+  ```
+
+  Inspect the `failed` array in the response to review skipped entries:
 
   ```json
   {
-    "code": "validation",
-    "errors": [
+    "indexed": 2,
+    "failed": [
       {
-        "code": "document:field_required",
-        "path": "documents[41].name"
+        "position": 1,
+        "line": 2,
+        "errors": [
+          {
+            "code": "document:field_unknown",
+            "message": "Field `nonexistent` does not exist in index",
+            "path": "[1].nonexistent"
+          }
+        ]
       }
     ]
   }
   ```
 
-  A newline-delimited request carries no `documents` array, so the path starts at the document instead, as `[41].name`.
-
-  Fix the invalid document and reissue the request. Because indexing replaces documents by primary key, previously indexed documents are overwritten safely.
+  For the full rules, see [Skipping refused entries](../reference/documents-api.md#skipping-refused-entries).
 
 - **`409 Conflict`**: The index has no active writer or is synchronizing. Retry the request.
 

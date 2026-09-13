@@ -50,6 +50,14 @@ POST /v1alpha1/indexes/{name}/documents
 
 Indexes one or more documents into the specified index.
 
+### Query parameters
+
+The request supports the following query parameters:
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `onError` | string | `fail` | Behavior when the index refuses a document. Allowed values are `fail` (stops at the first refused document and fails the request) and `skip` (processes the batch and reports refused documents in `failed`). Other values return `document:on_error_invalid`. See [Skipping refused entries](#skipping-refused-entries). |
+
 ### Request headers
 
 The request supports the following headers:
@@ -89,11 +97,13 @@ The following example uses `Content-Type: application/x-ndjson`:
 
 ### Response
 
-The endpoint returns status `200 OK` with the count of indexed documents:
+The endpoint returns status `200 OK` with the count of indexed documents and any documents the index refused:
 
 ```json
-{ "indexed": 2 }
+{ "indexed": 2, "failed": [] }
 ```
+
+The `failed` array is always present and contains entries only when the request is sent with `?onError=skip`. The `indexed` count excludes documents in `failed`. For the entry structure, see [Skipping refused entries](#skipping-refused-entries).
 
 ## Changing some of the fields
 
@@ -116,6 +126,7 @@ The request supports the following query parameters:
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
 | `missing` | string | `fail` | Behavior when a document key does not exist. Allowed values are `fail` (fails the request) and `skip` (skips missing documents and lists them in the response). |
+| `onError` | string | `fail` | Behavior when the index refuses a change. Allowed values are `fail` (stops at the first refused change and fails the request) and `skip` (processes the batch and reports refused changes in `failed`). When `missing` is `skip`, keys with no indexed document are reported under `missing` instead. Other values return `document:on_error_invalid`. See [Skipping refused entries](#skipping-refused-entries). |
 
 #### Request headers
 
@@ -211,17 +222,19 @@ The first two report a mistake in the path text alone. The rest report a path th
 
 #### Response
 
-The endpoint returns status `200 OK` with the count of updated documents and any missing keys:
+The endpoint returns status `200 OK` with the count of updated documents, any missing keys, and any changes the index refused:
 
 ```json
-{ "updated": 2, "missing": [] }
+{ "updated": 2, "missing": [], "failed": [] }
 ```
 
 When called with `?missing=skip`:
 
 ```json
-{ "updated": 1998, "missing": ["sku-9", "sku-40"] }
+{ "updated": 1998, "missing": ["sku-9", "sku-40"], "failed": [] }
 ```
+
+The `failed` array is always present and contains entries only when the request is sent with `?onError=skip`. The `updated` count excludes changes in `failed`. For the entry structure, see [Skipping refused entries](#skipping-refused-entries).
 
 ### Change one document by key
 
@@ -458,7 +471,75 @@ For requests using `keys`, `deleted` is the number of keys provided in the reque
 
 ## Failures
 
-Documents in a batch are processed in the order sent. The first invalid document halts processing and returns status `400 Bad Request`. Documents processed before the failure remain in the index.
+Documents in a batch are processed in the order sent. The first refused document halts processing and returns status `400 Bad Request`. Documents processed before the failure remain in the index.
+
+### Locating a failed entry
+
+Errors concerning a specific entry in a batch include locating values in the `arguments` map of each error object. All values in `arguments` are strings.
+
+| Argument | Type | Description |
+| --- | --- | --- |
+| `position` | string | Index of the batch entry the error concerns, counted from zero. Matches the index in `path` (`documents[n]` for a JSON array body, `[n]` for newline-delimited JSON). |
+| `processed` | string | Number of entries accepted before the failure. For `POST /v1alpha1/indexes/{name}/documents`, this is the count of indexed documents. For `POST /v1alpha1/indexes/{name}/documents/actions/update`, this is the count of changed documents, excluding keys skipped by `missing=skip`. |
+| `line` | string | Line number where the entry starts in the request body, counted from one. Present only for `application/x-ndjson`. For `document:malformed`, this is the line where parsing stopped. |
+
+`position` and `line` count different units. In a newline-delimited request body, an entry formatted across multiple lines or separated by blank lines results in a line count that differs from the position count.
+
+Arguments are included based on the error type:
+
+- Entry-level errors carry `position`, `processed`, and `line` (for `application/x-ndjson`). These include `document:not_an_object`, errors where an entry breaks the index definition (such as `document:field_unknown` and `document:field_required`), `document:not_found`, `document:malformed`, and `storage:io_error`.
+- `request:body_unreadable` carries `position` and `processed` only.
+- Request-level errors (such as `request:body_required`) carry none of these arguments.
+
+### Skipping refused entries
+
+When a batch write request includes `onError=skip`, the endpoint processes the whole batch and returns status `200 OK`. Refused entries are listed in `failed`:
+
+```json
+{
+  "indexed": 2,
+  "failed": [
+    {
+      "position": 1,
+      "line": 2,
+      "errors": [
+        {
+          "code": "document:field_unknown",
+          "message": "Field `nonexistent` does not exist in index",
+          "path": "[1].nonexistent",
+          "arguments": {
+            "position": "1",
+            "processed": "1",
+            "line": "2",
+            "name": "nonexistent"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Each entry of `failed` contains the following fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `position` | integer | Index of the refused entry in the batch, counted from zero. |
+| `line` | integer | Line number where the entry starts, counted from one. Present only for `application/x-ndjson`. |
+| `errors` | array of objects | Error objects describing each validation failure for the entry, matching the format of top-level request `errors`. |
+
+The `onError` parameter accepts `fail` (the default) and `skip`. Any other value returns `document:on_error_invalid` with status `400`, with `path` set to `onError`.
+
+When `onError` is set to `skip`, the endpoint skips and reports the following entry errors in `failed`:
+
+- An entry that is not an object (`document:not_an_object`).
+- An entry that breaks the index definition (such as `document:field_unknown` or `document:field_required`).
+- On the batch update endpoint, a key that does not exist in the index when `missing` is `fail`.
+
+The following errors are not skipped and halt request processing:
+
+- Request body parsing failures (`document:malformed`).
+- Index or node failures, including `storage:io_error`, `index:readonly`, and `indexer:unavailable`.
 
 ### Error response format
 

@@ -13,9 +13,15 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   primary keys that were not found, in the order provided. Holds keys only
  *   when the request specifies skipping missing keys; otherwise, the request
  *   fails on the first missing key and the list is empty
+ * @param failed
+ *   the changes the index refused, in the order sent. Holds entries only when
+ *   the request specifies skipping refused changes; otherwise, the request fails
+ *   on the first refused change and the list is empty
  */
 @Schema(
-	description = "The count of updated documents, and any keys that were skipped.",
+	description = """
+		The count of updated documents, and any keys or changes that were \
+		skipped.""",
 	examples = UpdateResponse.EXAMPLE
 )
 public record UpdateResponse(
@@ -27,13 +33,22 @@ public record UpdateResponse(
 		keys only when the request is sent with `?missing=skip`; a request sent \
 		without it fails on the first missing key. Always present, and empty \
 		when nothing was skipped.""")
-	List<Object> missing
+	List<Object> missing,
+
+	@Schema(description = """
+		The changes the index refused, in the order sent. Holds entries only \
+		when the request is sent with `?onError=skip`; a request sent without it \
+		fails on the first refused change. A key nothing is indexed under is \
+		reported under `missing` instead when the request is sent with \
+		`?missing=skip`. Always present, and empty when nothing was skipped.""")
+	List<DocumentFailure> failed
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
 	 * schema of this record shows this text. A request sent without
-	 * {@code ?missing=skip} answers with an empty {@code missing}.
+	 * {@code ?missing=skip} answers with an empty {@code missing}, and one sent
+	 * without {@code ?onError=skip} with an empty {@code failed}.
 	 */
 	public static final String EXAMPLE = """
-		{ "updated": 1998, "missing": [] }""";
+		{ "updated": 1998, "missing": [], "failed": [] }""";
 }

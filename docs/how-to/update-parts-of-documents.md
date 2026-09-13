@@ -161,9 +161,12 @@ The examples below use a `products` index whose `variants` object field declares
    ```json
    {
      "updated": 2,
-     "missing": ["999"]
+     "missing": ["999"],
+     "failed": []
    }
    ```
+
+   The `missing` and `onError` parameters are separate controls. By default, a refused change stops the batch and returns an error. The error `arguments` provide `position` (the entry index counted from zero) and `processed` (the number of updates applied before the failure). Use these values to fix the entry and resume the batch from that position. To process the remaining entries instead of stopping at a failure, append `?onError=skip` and inspect the refused changes in the `failed` response field. For the full rules, see [Skipping refused entries](../reference/documents-api.md#skipping-refused-entries).
 
 8. Change one document by its key:
 

@@ -76,11 +76,15 @@ When a network timeout occurs or the server returns `502` or `503`, determine wh
 
 ## Recover from refused document batches
 
-Documents are taken in the order you sent them, and the first document the index refuses fails the request. The documents before it are already in the index and are committed with everything else.
+When a batch write stops at a refused entry, entries processed before the failure stay in the index and commit with the rest.
 
-1. Inspect `errors[0].path` in the `400` response to determine the index of the refused document in the batch. Documents preceding the refused document in the payload were already processed into the index.
-2. Correct the invalid document in your batch.
-3. Resend the entire batch. Because document writes represent desired state, reprocessing the previously accepted documents in the batch produces the intended state without duplicating records.
+1. Read `position` from the error `arguments` to find the failed entry.
+2. Read `processed` from `arguments` to see how many entries landed in the index.
+3. If you sent `application/x-ndjson`, read `line` from `arguments` to find the line where the entry starts.
+4. Correct the invalid entry.
+5. Send the batch again. Resending an index batch is safe because indexing states desired state. A resumed update batch must start at `position` and not earlier because partial updates are not idempotent.
+
+To process the full batch without stopping at the first refused entry, send the request with `?onError=skip`. For more information, see [Skipping refused entries](../reference/documents-api.md#skipping-refused-entries).
 
 ## Confirm the error handling
 
