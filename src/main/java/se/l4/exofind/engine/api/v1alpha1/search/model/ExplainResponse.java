@@ -65,6 +65,15 @@ public record ExplainResponse(
 	SearchResponse.Interpreted interpreted,
 
 	/**
+	 * Name of the generation the hit was explained against.
+	 */
+	@Schema(
+		description = SearchResponse.GENERATION_DESCRIPTION,
+		examples = "2"
+	)
+	String generation,
+
+	/**
 	 * Total execution time for the explanation in milliseconds, including
 	 * fractional milliseconds.
 	 */
@@ -101,6 +110,7 @@ public record ExplainResponse(
 		      }
 		    ]
 		  },
+		  "generation": "2",
 		  "tookMs": 1.208
 		}""";
 

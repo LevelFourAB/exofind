@@ -172,66 +172,71 @@ public class SearchResourceTest {
 	}
 
 	/**
+	 * The definition {@link #books()} creates its index with, so that a second
+	 * generation can be created with the same one.
+	 */
+	private static IndexDef booksDef() {
+		return IndexDef.newBuilder()
+			.putFields("id", string().setPrimaryKey(true).build())
+			.putFields(
+				"name",
+				string(
+					StringFieldTypeDef.newBuilder()
+						.setMatching(
+							StringFieldTypeDef.TextUsageConfig.newBuilder()
+								.setHighlight(
+									StringFieldTypeDef.TextUsageConfig.HighlightConfig
+										.getDefaultInstance()
+								)
+						)
+				)
+					.setStored(true)
+					.setSort(SortConfig.getDefaultInstance())
+					.build()
+			)
+			.putFields(
+				"category",
+				string()
+					.setStored(true)
+					.setFilter(FilterConfig.getDefaultInstance())
+					.setFacet(FacetConfig.getDefaultInstance())
+					.build()
+			)
+			.putFields(
+				"tags",
+				string()
+					.setMultiple(true)
+					.setFilter(FilterConfig.getDefaultInstance())
+					.build()
+			)
+			.putFields(
+				"published",
+				bool()
+					.setFilter(FilterConfig.getDefaultInstance())
+					.setFacet(FacetConfig.getDefaultInstance())
+					.build()
+			)
+			.putFields(
+				"pages",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setInt32(Int32FieldTypeDef.getDefaultInstance())
+					)
+					.setFilter(FilterConfig.getDefaultInstance())
+					.setFacet(FacetConfig.getDefaultInstance())
+					.setSort(SortConfig.getDefaultInstance())
+					.build()
+			)
+			.build();
+	}
+
+	/**
 	 * A small index of books, mirroring the one the engine's search tests
 	 * use.
 	 */
 	private void books() throws IOException {
-		var index = indexes.create(
-			"books",
-			IndexDef.newBuilder()
-				.putFields("id", string().setPrimaryKey(true).build())
-				.putFields(
-					"name",
-					string(
-						StringFieldTypeDef.newBuilder()
-							.setMatching(
-								StringFieldTypeDef.TextUsageConfig.newBuilder()
-									.setHighlight(
-										StringFieldTypeDef.TextUsageConfig.HighlightConfig
-											.getDefaultInstance()
-									)
-							)
-					)
-						.setStored(true)
-						.setSort(SortConfig.getDefaultInstance())
-						.build()
-				)
-				.putFields(
-					"category",
-					string()
-						.setStored(true)
-						.setFilter(FilterConfig.getDefaultInstance())
-						.setFacet(FacetConfig.getDefaultInstance())
-						.build()
-				)
-				.putFields(
-					"tags",
-					string()
-						.setMultiple(true)
-						.setFilter(FilterConfig.getDefaultInstance())
-						.build()
-				)
-				.putFields(
-					"published",
-					bool()
-						.setFilter(FilterConfig.getDefaultInstance())
-						.setFacet(FacetConfig.getDefaultInstance())
-						.build()
-				)
-				.putFields(
-					"pages",
-					FieldDef.newBuilder()
-						.setType(
-							FieldTypeDef.newBuilder()
-								.setInt32(Int32FieldTypeDef.getDefaultInstance())
-						)
-						.setFilter(FilterConfig.getDefaultInstance())
-						.setFacet(FacetConfig.getDefaultInstance())
-						.setSort(SortConfig.getDefaultInstance())
-						.build()
-				)
-				.build()
-		);
+		var index = indexes.create("books", booksDef());
 
 		index.addDocument(
 			new Document(
@@ -744,6 +749,89 @@ public class SearchResourceTest {
 		 * what it took rather than nothing at all.
 		 */
 		assertThat(response.tookMs(), is(greaterThan(0d)));
+	}
+
+	@Test
+	public void testTheGenerationThatAnsweredIsReported() throws IOException {
+		books();
+
+		var response = resource.search("books", null);
+
+		assertThat(response.generation(), is("1"));
+	}
+
+	@Test
+	public void testASearchNamingAGenerationIsAnsweredByThatGeneration()
+		throws IOException
+	{
+		books();
+		indexes.createGeneration("books@2", booksDef());
+
+		// The index name still answers from the generation that is live
+		assertThat(resource.search("books", null).generation(), is("1"));
+		assertThat(resource.search("books@2", null).generation(), is("2"));
+	}
+
+	@Test
+	public void testAPromotedGenerationIsTheOneTheIndexNameAnswersFrom()
+		throws IOException
+	{
+		books();
+		indexes.createGeneration("books@2", booksDef());
+		indexes.promote("books@2");
+
+		assertThat(resource.search("books", null).generation(), is("2"));
+	}
+
+	@Test
+	public void testFacetValuesReportTheGenerationTheyWereCountedIn()
+		throws IOException
+	{
+		books();
+		indexes.createGeneration("books@2", booksDef());
+
+		assertThat(
+			resource.facetValues("books", "category", null).generation(),
+			is("1")
+		);
+		assertThat(
+			resource.facetValues("books@2", "category", null).generation(),
+			is("2")
+		);
+	}
+
+	@Test
+	public void testSuggestionsReportTheGenerationTheyWereReadFrom()
+		throws IOException
+	{
+		books();
+		suggesting("books", "category");
+		indexes.createGeneration("books@2", booksDef());
+
+		var request = new SuggestRequest("F", null, null, null, null);
+
+		assertThat(resource.suggest("books", request).generation(), is("1"));
+		assertThat(resource.suggest("books@2", request).generation(), is("2"));
+	}
+
+	@Test
+	public void testAnExplanationReportsTheGenerationItRanAgainst()
+		throws IOException
+	{
+		books();
+
+		var response = resource.explain(
+			"books",
+			"1",
+			0,
+			new SearchRequest(
+				List.of(new Clause.Text("silent", null, null, null, null, null, null, null, null, null)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null,
+				null, null
+			)
+		);
+
+		assertThat(response.generation(), is("1"));
 	}
 
 	@Test

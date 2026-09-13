@@ -39,6 +39,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.SearchDeadline;
@@ -900,7 +901,7 @@ public class SearchResource {
 		 * double divides.
 		 */
 		var tookMs = Math.round(took / 1_000d) / 1_000d;
-		return toResponse(mapped, result, tookMs);
+		return toResponse(mapped, result, generationOf(index), tookMs);
 	}
 
 	/**
@@ -1260,6 +1261,7 @@ public class SearchResource {
 		return new FacetValuesResponse(
 			toFacetValuesJson(counts.values()),
 			counts.totalValues(),
+			generationOf(index),
 			Math.round(took / 1_000d) / 1_000d
 		);
 	}
@@ -1656,7 +1658,11 @@ public class SearchResource {
 			));
 		}
 
-		return new SuggestResponse(suggestions, Math.round(took / 1_000d) / 1_000d);
+		return new SuggestResponse(
+			suggestions,
+			generationOf(index),
+			Math.round(took / 1_000d) / 1_000d
+		);
 	}
 
 	/**
@@ -2366,8 +2372,20 @@ public class SearchResource {
 			toDetailJson(explanation.detail()),
 			toRelaxedJson(explanation.relaxed()),
 			toInterpretedJson(explanation.interpreted()),
+			generationOf(index),
 			Math.round(took / 1_000d) / 1_000d
 		);
+	}
+
+	/**
+	 * Get the name of the generation that answered a request.
+	 *
+	 * <p>A request names either the index, which resolves to the generation
+	 * that is live when the request arrives, or one generation of the index.
+	 * The answer says which generation it was either way.
+	 */
+	private static String generationOf(Index index) {
+		return IndexName.parse(index.getId()).generation();
 	}
 
 	private static ExplainResponse.Detail toDetailJson(SearchExplanation.Detail detail) {
@@ -2392,6 +2410,7 @@ public class SearchResource {
 	private SearchResponse toResponse(
 		SearchRequestMapper.Mapped mapped,
 		SearchResult result,
+		String generation,
 		double tookMs
 	) {
 		/*
@@ -2439,6 +2458,7 @@ public class SearchResource {
 			toPage(mapped, result),
 			toRelaxedJson(result.relaxed()),
 			toInterpretedJson(result.interpreted()),
+			generation,
 			tookMs
 		);
 	}

@@ -1060,6 +1060,7 @@ components:
             clauseType: text
             field: name
             usage: matching
+        generation: "2"
         tookMs: 1.208
       type: object
       properties:
@@ -1088,6 +1089,14 @@ components:
             \ the text that was left. Omitted when nothing was read. The explanation\
             \ tree reflects the search with the filters in it."
           $ref: "#/components/schemas/Interpreted"
+        generation:
+          type: string
+          description: "Name of the generation that answered. A request that names\
+            \ the index answers from the generation that is live when it arrives,\
+            \ so add `@` and this name to the index name to send a later request to\
+            \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
+          examples:
+          - "2"
         tookMs:
           type: number
           format: double
@@ -1370,6 +1379,7 @@ components:
         - value: Adidas Originals
           count: 12
         totalValues: 2
+        generation: "2"
         tookMs: 1.208
       type: object
       properties:
@@ -1384,6 +1394,14 @@ components:
           format: int32
           description: Total count of distinct values that start with the prefix.
             Exceeds the number of entries under `values` when the limit is reached.
+        generation:
+          type: string
+          description: "Name of the generation that answered. A request that names\
+            \ the index answers from the generation that is live when it arrives,\
+            \ so add `@` and this name to the index name to send a later request to\
+            \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
+          examples:
+          - "2"
         tookMs:
           type: number
           format: double
@@ -4583,6 +4601,7 @@ components:
           limit: 20
           offset: 0
           next: AWtaPJHiAAAS1QFmQErhSA
+        generation: "2"
         tookMs: 7.412
       type: object
       properties:
@@ -4623,6 +4642,14 @@ components:
             \ the text that was left. Omitted entirely when nothing was read. See\
             \ [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           $ref: "#/components/schemas/Interpreted"
+        generation:
+          type: string
+          description: "Name of the generation that answered. A request that names\
+            \ the index answers from the generation that is live when it arrives,\
+            \ so add `@` and this name to the index name to send a later request to\
+            \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
+          examples:
+          - "2"
         tookMs:
           type: number
           format: double
@@ -5113,6 +5140,7 @@ components:
           field: brand
           value: Adidas Originals
           count: 12
+        generation: "2"
         tookMs: 0.412
       type: object
       properties:
@@ -5122,6 +5150,14 @@ components:
             $ref: "#/components/schemas/Suggestion"
           description: "The suggestions, the most common first and limited to the\
             \ requested maximum."
+        generation:
+          type: string
+          description: "Name of the generation that answered. A request that names\
+            \ the index answers from the generation that is live when it arrives,\
+            \ so add `@` and this name to the index name to send a later request to\
+            \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
+          examples:
+          - "2"
         tookMs:
           type: number
           format: double
@@ -10676,6 +10712,7 @@ paths:
                     - value: Adidas Originals
                       count: 12
                     totalValues: 2
+                    generation: "2"
                     tookMs: 1.208
               schema:
                 $ref: "#/components/schemas/FacetValuesResponse"
@@ -10951,6 +10988,7 @@ paths:
                       limit: 20
                       offset: 0
                       next: AWtaPJHiAAAS1QFmQErhSA
+                    generation: "2"
                     tookMs: 7.412
               schema:
                 $ref: "#/components/schemas/SearchResponse"
@@ -11391,6 +11429,7 @@ paths:
                         clauseType: text
                         field: name
                         usage: matching
+                    generation: "2"
                     tookMs: 1.208
               schema:
                 $ref: "#/components/schemas/ExplainResponse"
@@ -11804,6 +11843,7 @@ paths:
                       field: brand
                       value: Adidas Originals
                       count: 12
+                    generation: "2"
                     tookMs: 0.412
               schema:
                 $ref: "#/components/schemas/SuggestResponse"

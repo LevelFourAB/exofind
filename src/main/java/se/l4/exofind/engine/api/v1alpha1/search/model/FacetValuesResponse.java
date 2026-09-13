@@ -37,6 +37,15 @@ public record FacetValuesResponse(
 	int totalValues,
 
 	/**
+	 * Name of the generation the values were counted in.
+	 */
+	@Schema(
+		description = SearchResponse.GENERATION_DESCRIPTION,
+		examples = "2"
+	)
+	String generation,
+
+	/**
 	 * Execution time in milliseconds, including fractions of one.
 	 */
 	@Schema(
@@ -55,6 +64,7 @@ public record FacetValuesResponse(
 		    { "value": "Adidas Originals", "count": 12 }
 		  ],
 		  "totalValues": 2,
+		  "generation": "2",
 		  "tookMs": 1.208
 		}""";
 }

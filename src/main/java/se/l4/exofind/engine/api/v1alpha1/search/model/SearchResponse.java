@@ -87,6 +87,15 @@ public record SearchResponse(
 	Interpreted interpreted,
 
 	/**
+	 * Name of the generation that answered the search.
+	 */
+	@Schema(
+		description = GENERATION_DESCRIPTION,
+		examples = "2"
+	)
+	String generation,
+
+	/**
 	 * Total execution time for the search request in milliseconds, including
 	 * fractional milliseconds.
 	 */
@@ -98,6 +107,17 @@ public record SearchResponse(
 	)
 	double tookMs
 ) {
+	/**
+	 * Description of the generation property, shared with the other responses
+	 * of the search API.
+	 */
+	public static final String GENERATION_DESCRIPTION = """
+		Name of the generation that answered. A request that names the index \
+		answers from the generation that is live when it arrives, so add `@` \
+		and this name to the index name to send a later request to the same \
+		data. See [Names and \
+		generations](https://exofind.dev/reference/admin-api/#names-and-generations).""";
+
 	/**
 	 * The example response, as the JSON the engine answers with. It answers
 	 * the request under {@link SearchRequest#EXAMPLE}, so the two read
@@ -128,6 +148,7 @@ public record SearchResponse(
 		    }
 		  },
 		  "page": { "limit": 20, "offset": 0, "next": "AWtaPJHiAAAS1QFmQErhSA" },
+		  "generation": "2",
 		  "tookMs": 7.412
 		}""";
 

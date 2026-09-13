@@ -27,6 +27,15 @@ public record SuggestResponse(
 	List<Suggestion> suggestions,
 
 	/**
+	 * Name of the generation the suggestions were read from.
+	 */
+	@Schema(
+		description = SearchResponse.GENERATION_DESCRIPTION,
+		examples = "2"
+	)
+	String generation,
+
+	/**
 	 * Execution time in milliseconds, including fractions of one.
 	 */
 	@Schema(
@@ -154,6 +163,7 @@ public record SuggestResponse(
 		    { "text": "adidas", "typed": 3, "field": "brand", "value": "adidas", "count": 87 },
 		    { "text": "Adidas Originals", "typed": 3, "field": "brand", "value": "Adidas Originals", "count": 12 }
 		  ],
+		  "generation": "2",
 		  "tookMs": 0.412
 		}""";
 }

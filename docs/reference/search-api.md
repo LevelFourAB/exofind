@@ -805,12 +805,14 @@ The response returns the values in the same shape as the `values` of a facet:
     { "value": "Adidas Originals", "count": 12 }
   ],
   "totalValues": 2,
+  "generation": "2",
   "tookMs": 1.208
 }
 ```
 
 - `values`: Array of facet value objects containing `value` and `count`, in the requested order and capped by `limit`. Includes `label` if the search settings declare a label for the value in the request locale.
 - `totalValues`: Total count of distinct values that start with the prefix.
+- `generation`: Name of the generation that answered. A request that names the index answers from the generation that is live when it arrives, so add `@` and this name to the index name to send a later request to the same data. See [Names and generations](admin-api.md#names-and-generations).
 - `tookMs`: Execution time in milliseconds.
 
 Matching rules:
@@ -857,6 +859,7 @@ The response returns the suggestions:
     { "text": "adidas", "typed": 3, "field": "brand", "value": "adidas", "count": 87 },
     { "text": "Adidas Originals", "typed": 3, "field": "brand", "value": "Adidas Originals", "count": 12 }
   ],
+  "generation": "2",
   "tookMs": 0.412
 }
 ```
@@ -868,6 +871,7 @@ The response returns the suggestions:
 - `value`: The value as the field stores it, which a filter on the field matches.
 - `label`: The label the search settings declare for the value in the request locale (falling back to the field's default locale). Omitted when none is declared.
 - `count`: Number of documents holding the value under the filters.
+- `generation`: Name of the generation that answered. A request that names the index answers from the generation that is live when it arrives, so add `@` and this name to the index name to send a later request to the same data. See [Names and generations](admin-api.md#names-and-generations).
 - `tookMs`: Execution time in milliseconds, including fractions of one.
 
 Matching rules:
@@ -1038,6 +1042,7 @@ When `when` is configured:
   ],
   "total": { "count": 128, "exact": false },
   "page": { "limit": 20, "offset": 0, "next": "AW8..." },
+  "generation": "2",
   "tookMs": 7.412
 }
 ```
@@ -1051,6 +1056,7 @@ When `when` is configured:
 | `page` | Object | Pagination state containing `limit`, `offset` (omitted when navigating via cursor), and optional `next` and `previous` cursor strings. |
 | `relaxed` | Object | Details of dropped terms when query relaxation was applied. Omitted if the query was not relaxed. |
 | `interpreted` | Object | The filters read out of the query text, and the remaining query text. Omitted when nothing was read. See [Reading numbers and units](#reading-numbers-and-units). |
+| `generation` | String | Name of the generation that answered. A request that names the index answers from the generation that is live when it arrives, so add `@` and this name to the index name to send a later request to the same data. See [Names and generations](admin-api.md#names-and-generations). |
 | `tookMs` | Number | Execution time for the search request in milliseconds. |
 
 ### Locale specific fields
@@ -1153,6 +1159,7 @@ The following request properties are ignored: `limit`, `offset`, `after`, `befor
       }
     ]
   },
+  "generation": "2",
   "tookMs": 1.208
 }
 ```
@@ -1166,6 +1173,7 @@ Top-level response properties:
 | `detail` | Object | Root score step explaining how the score was calculated. |
 | `relaxed` | Object | Relaxation details containing `dropped` words and the effective query `text`. Omitted if query relaxation did not run. |
 | `interpreted` | Object | The filters read out of the query text, and the remaining query text. Omitted when nothing was read. |
+| `generation` | String | Name of the generation that answered. A request that names the index answers from the generation that is live when it arrives, so add `@` and this name to the index name to send a later request to the same data. See [Names and generations](admin-api.md#names-and-generations). |
 | `tookMs` | Number | Execution time for the explanation in milliseconds, including fractions of one. An explanation compiles and runs the search the way a search does, so it costs what a search costs. |
 
 Properties of a score step (`detail` and each entry in `children`):
