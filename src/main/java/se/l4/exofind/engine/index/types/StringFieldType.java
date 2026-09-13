@@ -380,6 +380,126 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
+	 * How many compiled prefix automata are kept. The prefixes are text
+	 * somebody typed, so what is kept has to have a ceiling; one of these is a
+	 * table of a state per byte of the prefix, far smaller than a typo tolerant
+	 * one, so this holds a good deal more of them for the same handful of
+	 * megabytes.
+	 */
+	private static final int PREFIX_CACHE_SIZE = 2048;
+
+	/**
+	 * The prefix automata already compiled, by the bytes a term has to start
+	 * with.
+	 *
+	 * Compiling one turns the prefix into a table the term dictionary is walked
+	 * against, which costs several times what building the automaton did. A
+	 * word still being typed is asked of every field a search covers, and every
+	 * keystroke asks again, so the same table would be built over and over for
+	 * work that is the same every time: what the automaton accepts depends on
+	 * the prefix and on nothing of the index or the field, so it is as good
+	 * later as it was when it was compiled, and as good in one thread as in
+	 * another - a compiled automaton is only read once it is built.
+	 *
+	 * Kept under the prefix bytes rather than the field for that reason, so a
+	 * search covering several fields compiles the prefix once and asks each
+	 * field with it. {@link PrefixExpansionQuery} holds the field and the
+	 * rewrite apart from what is compiled.
+	 *
+	 * The least recently asked for goes when the cache is full. Held through
+	 * {@link Collections#synchronizedMap} rather than a concurrent map to keep
+	 * that order, and the lock is held only for the lookup - see
+	 * {@link #prefixAutomaton}.
+	 */
+	private static final Map<BytesRef, CompiledAutomaton> PREFIX_AUTOMATA =
+		Collections.synchronizedMap(
+			new LinkedHashMap<BytesRef, CompiledAutomaton>(PREFIX_CACHE_SIZE, 0.75f, true) {
+				@Override
+				protected boolean removeEldestEntry(
+					Map.Entry<BytesRef, CompiledAutomaton> eldest
+				) {
+					return size() > PREFIX_CACHE_SIZE;
+				}
+			}
+		);
+
+	/**
+	 * The terms starting with a prefix in one field, matched against an
+	 * automaton compiled before the field was known.
+	 *
+	 * Lucene's own {@link PrefixQuery} compiles the automaton in its
+	 * constructor, so a word still being typed would pay for the same table
+	 * once per field of every search it is part of. What the automaton accepts
+	 * depends on the prefix alone, so the compiled table is kept in
+	 * {@link #PREFIX_AUTOMATA} and the field lives here.
+	 *
+	 * Two of these are the same query when they ask the same field for the same
+	 * prefix with the same rewrite, which lets the searcher's own cache answer
+	 * one from the documents another matched.
+	 */
+	private static final class PrefixExpansionQuery extends MultiTermQuery {
+		private final Term prefix;
+		private final CompiledAutomaton compiled;
+
+		PrefixExpansionQuery(Term prefix, RewriteMethod rewriteMethod) {
+			super(prefix.field(), rewriteMethod);
+
+			this.prefix = prefix;
+			this.compiled = prefixAutomaton(prefix.bytes());
+		}
+
+		@Override
+		protected TermsEnum getTermsEnum(Terms terms, AttributeSource atts)
+			throws IOException
+		{
+			return compiled.getTermsEnum(terms);
+		}
+
+		/**
+		 * Offer a highlighter the terms the prefix reaches, so what a half typed
+		 * word matched is what gets marked.
+		 */
+		@Override
+		public void visit(QueryVisitor visitor) {
+			if(visitor.acceptField(getField())) {
+				compiled.visit(visitor, this, getField());
+			}
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * super.hashCode() + prefix.hashCode();
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			return super.equals(obj)
+				&& prefix.equals(((PrefixExpansionQuery) obj).prefix);
+		}
+
+		@Override
+		public String toString(String field) {
+			var builder = new StringBuilder();
+			if(!getField().equals(field)) {
+				builder.append(getField()).append(':');
+			}
+
+			return builder.append(prefix.text()).append('*').toString();
+		}
+	}
+
+	/**
+	 * How the terms a prefix stands for are run where the caller has no reason
+	 * of its own to say. This is the rewrite {@link PrefixQuery} picks for
+	 * itself: a scorer for each of the terms that carry the most documents and
+	 * one set for whatever is left, which is the better trade where a prefix
+	 * is matched on its own rather than weighed against other words - see
+	 * {@link #EXPANSION_REWRITE} for where the other trade is taken.
+	 */
+	private static final MultiTermQuery.RewriteMethod PREFIX_REWRITE =
+		MultiTermQuery.CONSTANT_SCORE_BLENDED_REWRITE;
+
+	/**
 	 * How much a whole-value match adds when the definition names no amount.
 	 *
 	 * On the scale of what a hit in the field already counts, so it is a
@@ -908,8 +1028,9 @@ public class StringFieldType implements FieldType {
 		}
 
 		if(matcher instanceof PrefixMatcher m) {
-			return new PrefixQuery(
-				new Term(filterName(encounter), filterValue(encounter, m.value()))
+			return new PrefixExpansionQuery(
+				new Term(filterName(encounter), filterValue(encounter, m.value())),
+				PREFIX_REWRITE
 			);
 		}
 
@@ -1867,7 +1988,7 @@ public class StringFieldType implements FieldType {
 
 	private static SpanQuery spanTerm(Term term, boolean prefix) {
 		return prefix
-			? new SpanMultiTermQueryWrapper<>(new PrefixQuery(term))
+			? new SpanMultiTermQueryWrapper<>(new PrefixExpansionQuery(term, PREFIX_REWRITE))
 			: new SpanTermQuery(term);
 	}
 
@@ -1941,7 +2062,7 @@ public class StringFieldType implements FieldType {
 		var edits = tolerance == null ? 0 : tolerance.editsAllowed(term.text());
 
 		var exact = prefix
-			? cacheable(new PrefixQuery(term, EXPANSION_REWRITE))
+			? cacheable(new PrefixExpansionQuery(term, EXPANSION_REWRITE))
 			: (Query) new TermQuery(term);
 
 		if(edits == 0) {
@@ -2200,6 +2321,52 @@ public class StringFieldType implements FieldType {
 		}
 
 		return compiled;
+	}
+
+	/**
+	 * Get the table a field's terms are walked against for one prefix, from
+	 * {@link #PREFIX_AUTOMATA} where the same prefix has been asked for before
+	 * - whatever field asked for it - because compiling one costs more than
+	 * running it.
+	 *
+	 * The bytes are only read here, so a caller may hand over the ones its own
+	 * term holds; what is kept is a copy of them, because the term dictionary
+	 * hands out a window onto a buffer it goes on writing into.
+	 */
+	private static CompiledAutomaton prefixAutomaton(BytesRef prefix) {
+		var compiled = PREFIX_AUTOMATA.get(prefix);
+		if(compiled == null) {
+			/*
+			 * Compiled outside the cache rather than through computeIfAbsent,
+			 * so that one prefix being compiled does not hold up the searches
+			 * looking for another. Two threads that want the same one compile
+			 * it twice and keep the second, which is two automata rather than a
+			 * queue behind one.
+			 */
+			compiled = compilePrefixAutomaton(prefix);
+			PREFIX_AUTOMATA.put(BytesRef.deepCopyOf(prefix), compiled);
+		}
+
+		return compiled;
+	}
+
+	/**
+	 * Compile the table {@link #prefixAutomaton} hands out, for a prefix not
+	 * compiled before.
+	 *
+	 * The automaton is the one {@link PrefixQuery} builds - the prefix as a
+	 * chain of bytes with anything at all after it - and it is compiled the way
+	 * {@link org.apache.lucene.search.AutomatonQuery} compiles the automata it
+	 * is handed: as bytes rather than code points, and as endless, which a
+	 * prefix always is because anything may follow it.
+	 */
+	private static CompiledAutomaton compilePrefixAutomaton(BytesRef prefix) {
+		return new CompiledAutomaton(
+			PrefixQuery.toAutomaton(prefix),
+			false,
+			true,
+			true
+		);
 	}
 
 	/**
