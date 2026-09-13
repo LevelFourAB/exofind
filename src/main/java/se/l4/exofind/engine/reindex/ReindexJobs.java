@@ -680,13 +680,19 @@ public class ReindexJobs {
 			 * of the record when it does. The cleanup happens here rather
 			 * than there, so a cancel of a job with no thread - one sitting
 			 * ready - ends the same way.
+			 *
+			 * A job no thread has taken up yet waits for nothing: one still
+			 * queued for a slot in the pool would otherwise hold the request
+			 * for the whole wait and then be closed here regardless.
 			 */
-			try {
-				current.stopped.get(CANCEL_WAIT.toMillis(), TimeUnit.MILLISECONDS);
-			} catch(InterruptedException e) {
-				Thread.currentThread().interrupt();
-			} catch(java.util.concurrent.ExecutionException | TimeoutException e) {
-				// The record write below says what happened either way
+			if(current.started) {
+				try {
+					current.stopped.get(CANCEL_WAIT.toMillis(), TimeUnit.MILLISECONDS);
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				} catch(java.util.concurrent.ExecutionException | TimeoutException e) {
+					// The record write below says what happened either way
+				}
 			}
 
 			current.lock.lock();
@@ -932,6 +938,7 @@ public class ReindexJobs {
 	 * accept, so a resume enters the same way a fresh job does.
 	 */
 	private void run(Running current) {
+		current.started = true;
 		current.lock.lock();
 		try {
 			/*
@@ -1610,6 +1617,13 @@ public class ReindexJobs {
 		volatile ReindexJob job;
 		String version;
 		volatile boolean cancelled;
+
+		/**
+		 * Whether a thread of the pool has taken the job up. Until it has,
+		 * nothing holds the lock for the length of a step, so a cancel closes
+		 * the job itself rather than waiting for a thread to let go.
+		 */
+		volatile boolean started;
 		volatile ScheduledFuture<?> catchUp;
 
 		/**

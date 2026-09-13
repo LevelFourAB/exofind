@@ -115,6 +115,10 @@ public class ReindexJobsTest {
 	}
 
 	private ReindexJobs newJobs(Indexes indexes, String node) {
+		return newJobs(indexes, node, 2);
+	}
+
+	private ReindexJobs newJobs(Indexes indexes, String node, int maxConcurrent) {
 		var ownership = new LocalIndexerOwnership();
 		ownership.start((index, owner) -> {
 		});
@@ -126,7 +130,7 @@ public class ReindexJobsTest {
 			registry,
 			storage,
 			ownership,
-			2,
+			maxConcurrent,
 			Duration.ofMinutes(5),
 			Duration.ofMinutes(5)
 		);
@@ -350,6 +354,43 @@ public class ReindexJobsTest {
 		// A finished job frees the index for the next one, with an id of its own
 		var next = jobs.start("catalogue@3", null, "manual", "tester");
 		assertThat(next.id(), is(not(cancelled.id())));
+	}
+
+	@Test
+	public void cancellingAJobThatWaitsForASlotAnswersAtOnce() throws Exception {
+		// One job at a time, so the second one waits in the queue
+		jobs.stop();
+		jobs = newJobs(indexes, "node-a", 1);
+
+		catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		var pantry = indexes.create("pantry", definition().build());
+		pantry.addDocument(doc("1", "Sea salt", "staples"));
+		pantry.commit();
+		indexes.createGeneration("pantry@2", definition().build());
+
+		/*
+		 * The hold stops the copy of the first job in its first batch, so the
+		 * only slot stays taken while the second job is cancelled.
+		 */
+		try(var hold = indexes.getOrThrow("catalogue@2").holdWrites()) {
+			jobs.start("catalogue@2", null, "manual", "tester");
+			awaitPhase("catalogue", ReindexPhase.COPYING);
+
+			jobs.start("pantry@2", null, "manual", "tester");
+			awaitPhase("pantry", ReindexPhase.PENDING);
+
+			var started = System.nanoTime();
+			var cancelled = jobs.cancel("pantry");
+			var waited = Duration.ofNanos(System.nanoTime() - started);
+
+			assertThat(cancelled.phase(), is(ReindexPhase.CANCELLED));
+			assertTrue(
+				waited.compareTo(Duration.ofSeconds(5)) < 0,
+				"The cancel waited " + waited + " for a job that had not started"
+			);
+		}
 	}
 
 	@Test
