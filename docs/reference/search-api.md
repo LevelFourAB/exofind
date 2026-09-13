@@ -655,7 +655,7 @@ The response returns facet counts under the `facets` object:
 ```
 
 - `values`: Array of facet value objects containing `value` and `count`. Includes `label` if the search settings declare a label for the value in the search locale. See [Declared values](admin-api.md#declared-values).
-- `totalValues`: Total count of distinct values matching the query.
+- `totalValues`: Number of distinct values that match the query, counting the ones the `limit` leaves out. It counts values, not documents.
 
 A facet ordered by `declared` returns values with a declared order first, sorted by their declared order, followed by undeclared values sorted by count. If the search settings declare no order for the field, values return sorted by count. The `limit` truncates the list from the top, so a limit smaller than the number of declared values returns no undeclared values.
 
@@ -710,6 +710,7 @@ Selected buckets can be filtered in subsequent requests using a [`ranges`](#matc
 - **Filter granularity**: Filter exclusions apply to whole filter entries. Separate conditions into distinct filter entries to allow independent facet exclusion.
 - **Locales**: Locale-specific fields are aggregated using the locale variant selected for the search.
 - **Totals**: Calculating facets always computes an exact total count. Setting `"limit": 0` with facets returns facet counts without fetching document hits.
+- **No "other" count**: A facet returns no count for the values the `limit` leaves out. Compare `totalValues` with the length of `values` to see how many values are missing, and raise the `limit` to get counts for them.
 
 ### Counting down a tree
 
@@ -739,7 +740,7 @@ The response returns nested hierarchy levels:
 
 - `value`: The label of the current level.
 - `path`: The full path to the level, used in `under` filter matchers.
-- `limit`, `order`, and `totalValues`: Evaluated independently per hierarchy level.
+- `limit`, `order`, and `totalValues`: Evaluated independently per hierarchy level. A level returns no count for the child values its `limit` leaves out.
 
 A document is counted once at each ancestor level in its path. Specifying `path` or `depth` on non-hierarchical fields returns `search:usage_unsupported`. Combining `path` or `depth` with `ranges` returns `search:facet:ranges_with_tree`.
 
@@ -811,7 +812,7 @@ The response returns the values in the same shape as the `values` of a facet:
 ```
 
 - `values`: Array of facet value objects containing `value` and `count`, in the requested order and capped by `limit`. Includes `label` if the search settings declare a label for the value in the request locale.
-- `totalValues`: Total count of distinct values that start with the prefix.
+- `totalValues`: Number of distinct values that start with the prefix, counting the ones the `limit` leaves out. It counts values, not documents.
 - `generation`: Name of the generation that answered. A request that names the index answers from the generation that is live when it arrives, so add `@` and this name to the index name to send a later request to the same data. See [Names and generations](admin-api.md#names-and-generations).
 - `tookMs`: Execution time in milliseconds.
 

@@ -113,6 +113,10 @@ Before you begin, ensure that you have:
    `"limit": 0`. For counting category trees or bucketing dates, see
    [facets](../reference/search-api.md#facets).
 
+   `totalValues` says how many distinct values match the search. The values
+   past the `limit` get no count of their own, so a filter list that has to
+   show one needs a higher `limit`.
+
    A facet returns at most 1000 values. To let a user type into a filter and
    reach the values past that cut, send the same `query` and `filters` with
    the typed text as `prefix` to

@@ -1244,8 +1244,9 @@ components:
         totalValues:
           type: integer
           format: int32
-          description: Total count of distinct values matching the query. Exceeds
-            the number of entries under `values` when the limit is reached.
+          description: "Total count of distinct values matching the query. Counts\
+            \ values, not documents. Exceeds the number of entries under `values`\
+            \ when the limit is reached, and no count covers the values left out."
         buckets:
           type: array
           items:
@@ -1304,9 +1305,10 @@ components:
         totalValues:
           type: integer
           format: int32
-          description: Total count of distinct child values below this level. Exceeds
-            the number of entries under `values` when the limit is reached. Omitted
-            for non-hierarchical fields.
+          description: "Total count of distinct child values below this level. Counts\
+            \ values, not documents. Exceeds the number of entries under `values`\
+            \ when the limit is reached, and no count covers the values left out.\
+            \ Omitted for non-hierarchical fields."
     FacetValuesRequest:
       description: "Asks for the values of one facet field that start with a prefix,\
         \ counted under the query and filters of a search. All properties are optional;\
@@ -1392,8 +1394,9 @@ components:
         totalValues:
           type: integer
           format: int32
-          description: Total count of distinct values that start with the prefix.
-            Exceeds the number of entries under `values` when the limit is reached.
+          description: "Total count of distinct values that start with the prefix.\
+            \ Counts values, not documents. Exceeds the number of entries under `values`\
+            \ when the limit is reached, and no count covers the values left out."
         generation:
           type: string
           description: "Name of the generation that answered. A request that names\

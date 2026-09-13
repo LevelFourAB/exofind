@@ -28,12 +28,15 @@ public record FacetValuesResponse(
 	List<SearchResponse.FacetValue> values,
 
 	/**
-	 * Total count of distinct values that start with the prefix. Exceeds the
-	 * number of returned values when the limit is reached.
+	 * Total count of distinct values that start with the prefix. Counts
+	 * values, not documents. Exceeds the number of returned values when the
+	 * limit is reached, and no count covers the values left out.
 	 */
 	@Schema(description = """
-		Total count of distinct values that start with the prefix. Exceeds \
-		the number of entries under `values` when the limit is reached.""")
+		Total count of distinct values that start with the prefix. Counts \
+		values, not documents. Exceeds the number of entries under `values` \
+		when the limit is reached, and no count covers the values left \
+		out.""")
 	int totalValues,
 
 	/**

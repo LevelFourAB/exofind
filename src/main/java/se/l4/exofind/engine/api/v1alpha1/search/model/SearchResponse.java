@@ -391,12 +391,14 @@ public record SearchResponse(
 		List<FacetValue> values,
 
 		/**
-		 * Total count of distinct values matching the query. Exceeds the number
-		 * of returned values when the limit is reached.
+		 * Total count of distinct values matching the query. Counts values,
+		 * not documents. Exceeds the number of returned values when the limit
+		 * is reached, and no count covers the values left out.
 		 */
 		@Schema(description = """
-			Total count of distinct values matching the query. Exceeds the \
-			number of entries under `values` when the limit is reached.""")
+			Total count of distinct values matching the query. Counts values, \
+			not documents. Exceeds the number of entries under `values` when \
+			the limit is reached, and no count covers the values left out.""")
 		Integer totalValues,
 
 		/**
@@ -493,14 +495,16 @@ public record SearchResponse(
 		List<FacetValue> values,
 
 		/**
-		 * Total count of distinct child values below this level. Exceeds the
-		 * number of entries under `values` when the limit is reached. Omitted
-		 * for non-hierarchical fields.
+		 * Total count of distinct child values below this level. Counts
+		 * values, not documents. Exceeds the number of entries under
+		 * {@code values} when the limit is reached, and no count covers the
+		 * values left out. Omitted for non-hierarchical fields.
 		 */
 		@Schema(description = """
-			Total count of distinct child values below this level. Exceeds the \
-			number of entries under `values` when the limit is reached. \
-			Omitted for non-hierarchical fields.""")
+			Total count of distinct child values below this level. Counts \
+			values, not documents. Exceeds the number of entries under \
+			`values` when the limit is reached, and no count covers the \
+			values left out. Omitted for non-hierarchical fields.""")
 		Integer totalValues
 	) {
 		/** The example value, as the JSON the engine answers with. */
