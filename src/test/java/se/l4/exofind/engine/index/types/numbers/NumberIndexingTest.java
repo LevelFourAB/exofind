@@ -357,8 +357,8 @@ public class NumberIndexingTest extends AbstractIndexTest {
 		);
 
 		var codes = e.getErrors().collect(error -> error.getCode()).toList();
-		assertThat(codes, hasItem("index:update:number:out_of_bounds"));
-		assertThat(codes, hasItem("index:update:field_not_found"));
+		assertThat(codes, hasItem("document:number:value_out_of_range"));
+		assertThat(codes, hasItem("document:field_unknown"));
 	}
 
 	/**

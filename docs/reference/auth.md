@@ -63,7 +63,7 @@ An index pattern is either the exact name of an index or a prefix followed by an
 
 Permission names are stored inside keys and are immutable.
 
-Permission and role names are matched exactly. Both are lowercase, and a name in any other case returns `auth:key:unknown_permission` or `auth:key:unknown_role`.
+Permission and role names are matched exactly. Both are lowercase, and a name in any other case returns `auth:key:permission_unknown` or `auth:key:role_unknown`.
 
 ### Permissions that reach another permission
 
@@ -213,7 +213,7 @@ To list keys, send a `GET` request to `/v1alpha1/admin/keys`:
 
 The `keys` array contains deployment keys shared across all nodes. The `rootKeyConfigured` and `anonymousKey` fields reflect the local configuration of the node answering the request. The `anonymousKey` field is always present in the response and is `null` when the node rejects unauthenticated requests. A key's `expiresAt` is always present and is `null` when the key does not expire. The permissions of a grant are returned sorted by name, whatever order they were given in when the key was created.
 
-A node that cannot store keys returns `409 Conflict` with the code `auth:keys:unavailable` instead of an empty list, so an empty `keys` array means the deployment holds no key.
+A node that cannot store keys returns `409 Conflict` with the code `storage:unavailable` instead of an empty list, so an empty `keys` array means the deployment holds no key.
 
 The listing takes the `prefix`, `limit` and `after` query parameters every admin [listing](admin-api.md#listings) takes. `prefix` matches the key ID. A listing cut short by `limit` carries the last ID in `next`; pass it as `after` to read on. The `rootKeyConfigured` and `anonymousKey` fields are answered on every page.
 
@@ -257,9 +257,9 @@ The keys API returns the following error status codes:
 | `404 Not Found` | `auth:key:not_found` | The specified key ID does not exist for revocation or rotation. |
 | `409 Conflict` | `auth:key:last_administrator` | The key is the last one granted `keys.write` and the node has no root key. |
 | `409 Conflict` | `auth:key:in_use_as_anonymous` | `EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node. |
-| `409 Conflict` | `auth:keys:unavailable` | Key storage is unavailable because object storage cannot be used for keys on this node. |
-| `409 Conflict` | `auth:keys:io_error` | Key storage could not be reached. Stored keys are unchanged. |
-| `409 Conflict` | `auth:keys:conflict` | Concurrent updates from other nodes conflicted with this request. Stored keys are unchanged. |
+| `409 Conflict` | `storage:unavailable` | Key storage is unavailable because object storage cannot be used for keys on this node. |
+| `409 Conflict` | `storage:io_error` | Key storage could not be reached. Stored keys are unchanged. |
+| `409 Conflict` | `storage:conflict` | Concurrent updates from other nodes conflicted with this request. Stored keys are unchanged. |
 
 ## Compatibility
 

@@ -7,7 +7,8 @@ import se.l4.exofind.engine.errors.ErrorType;
  * used on, such as looking for a number in a field that holds text.
  */
 public class IndexInvalidQueryValueException extends IndexException {
-	private static final ErrorType TYPE = ErrorType.withCode("index:query:invalid_value")
+	private static final ErrorType TYPE = ErrorType.withCode("search:value_invalid")
+		.withStatus(400)
 		.withArguments("name", "expected")
 		.withMessage("Field `{{name}}` can only be searched for a {{expected}} value");
 

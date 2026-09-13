@@ -18,7 +18,8 @@ import se.l4.exofind.engine.index.schema.RankingConfig;
  */
 final class RankingMapper {
 	private static final ErrorType INVALID_SIGNAL_SHAPE =
-		ErrorType.withCode("index:ranking:signal:invalid_shape")
+		ErrorType.withCode("index:ranking:signal:shape_invalid")
+			.withStatus(400)
 			.withMessage(
 				"A ranking signal has to be exactly one shape - `saturation`, `decay`, or `linear`"
 			);

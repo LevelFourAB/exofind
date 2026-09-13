@@ -87,7 +87,8 @@ import se.l4.exofind.engine.query.matchers.UnderMatcher;
 
 public class StringFieldType implements FieldType {
 	private static final ErrorType ANALYSIS_FAILED = ErrorType
-		.withCode("index:query:analysis_failed")
+		.withCode("search:analysis_failed")
+		.withStatus(500)
 		.withArguments("name")
 		.withMessage("The text searched for in field `{{name}}` could not be analyzed");
 
@@ -389,27 +390,32 @@ public class StringFieldType implements FieldType {
 	private static final float DEFAULT_EXACT_BOOST = 2f;
 
 	private static final ErrorType INVALID_MATCHING_WEIGHT = ErrorType
-		.withCode("index:field:matching:invalid_weight")
+		.withCode("index:field:matching:weight_out_of_range")
+		.withStatus(400)
 		.withMessage("The weight of matching has to be greater than zero");
 
 	private static final ErrorType INVALID_AUTOCOMPLETE_WEIGHT = ErrorType
-		.withCode("index:field:autocomplete:invalid_weight")
+		.withCode("index:field:autocomplete:weight_out_of_range")
+		.withStatus(400)
 		.withMessage("The weight of autocomplete has to be greater than zero");
 
 	private static final ErrorType INVALID_TYPO_MIN_LENGTH = ErrorType
-		.withCode("index:field:matching:invalid_typo_min_length")
+		.withCode("index:field:matching:typo_min_length_out_of_range")
+		.withStatus(400)
 		.withMessage(
 			"The shortest word that may contain a typo has to be at least one character"
 		);
 
 	private static final ErrorType INVALID_TYPO_ORDER = ErrorType
-		.withCode("index:field:matching:invalid_typo_order")
+		.withCode("index:field:matching:typo_lengths_conflicting")
+		.withStatus(400)
 		.withMessage(
 			"A word can not be long enough for two typos before it is long enough for one"
 		);
 
 	private static final ErrorType INVALID_EXACT_BOOST = ErrorType
-		.withCode("index:field:exact:invalid_boost")
+		.withCode("index:field:exact:boost_out_of_range")
+		.withStatus(400)
 		.withMessage("The boost of a whole-value match has to be greater than zero");
 
 	/**
@@ -419,24 +425,28 @@ public class StringFieldType implements FieldType {
 	private static final String DEFAULT_SEPARATOR = "/";
 
 	private static final ErrorType INVALID_SEPARATOR = ErrorType
-		.withCode("index:field:hierarchy:invalid_separator")
+		.withCode("index:field:hierarchy:separator_invalid")
+		.withStatus(400)
 		.withMessage(
 			"The separator between the levels of a path can not be empty - leave it out for `/`"
 		);
 
 	private static final ErrorType INVALID_TYPO_PREFIX = ErrorType
-		.withCode("index:field:matching:invalid_typo_prefix")
+		.withCode("index:field:matching:typo_prefix_out_of_range")
+		.withStatus(400)
 		.withMessage("The exactly matched prefix of typo tolerance can not be negative");
 
 	private static final ErrorType UNKNOWN_ANALYZER_REF = ErrorType
-		.withCode("index:field:analyzer:unknown_ref")
+		.withCode("index:field:analyzer:chain_unknown")
+		.withStatus(400)
 		.withArguments("resource")
 		.withMessage(
 			"The usage names analysis chain `{{resource}}` which the resources of the index do not define"
 		);
 
 	private static final ErrorType AMBIGUOUS_ANALYZER = ErrorType
-		.withCode("index:field:analyzer:ambiguous")
+		.withCode("index:field:analyzer:conflicting")
+		.withStatus(400)
 		.withMessage(
 			"The usage carries an analysis chain and names one in the resources - at most one of the two can be given"
 		);

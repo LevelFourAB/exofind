@@ -84,6 +84,7 @@ public class Indexes implements RegistryPoller.Listener {
 
 	private static final ErrorType GENERATION_NOT_CREATABLE =
 		ErrorType.withCode("index:generation:not_creatable")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"`{{name}}` names a generation, and an index is created by its own name."
@@ -92,11 +93,13 @@ public class Indexes implements RegistryPoller.Listener {
 
 	private static final ErrorType GENERATION_NAME_REQUIRED =
 		ErrorType.withCode("index:generation:name_required")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("`{{name}}` names an index rather than one generation of it");
 
 	private static final ErrorType LIVE_GENERATION_UNSETTLED =
 		ErrorType.withCode("index:generation:unsettled")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"The generation `{{name}}` answers from changed while the change"

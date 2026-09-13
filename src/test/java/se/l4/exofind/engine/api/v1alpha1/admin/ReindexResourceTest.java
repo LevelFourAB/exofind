@@ -294,7 +294,7 @@ public class ReindexResourceTest {
 			ValidationException.class,
 			() -> resource.list(null, List.of("running"), null, null, null)
 		);
-		assertThat(e.getMessage(), containsString("reindex:phase_unknown"));
+		assertThat(e.getMessage(), containsString("reindex:phase_invalid"));
 	}
 
 	@Test

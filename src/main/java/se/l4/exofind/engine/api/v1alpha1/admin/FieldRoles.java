@@ -41,14 +41,16 @@ import se.l4.exofind.engine.errors.ValidationException;
  */
 public class FieldRoles {
 	private static final ErrorType NOT_VALID_FOR_TYPE =
-		ErrorType.withCode("index:field:role:not_valid_for_type")
+		ErrorType.withCode("index:field:role:type_unsupported")
+			.withStatus(400)
 			.withArguments("name", "role", "type")
 			.withMessage(
 				"Field `{{name}}` has role `{{role}}`, which no `{{type}}` field can answer for"
 			);
 
 	private static final ErrorType NOT_VALID_IN_OBJECT =
-		ErrorType.withCode("index:field:role:not_valid_in_object")
+		ErrorType.withCode("index:field:role:object_unsupported")
+			.withStatus(400)
 			.withArguments("name", "role")
 			.withMessage(
 				"Field `{{name}}` has role `{{role}}`, which can not be used inside an object field"
@@ -128,9 +130,9 @@ public class FieldRoles {
 	 * @return
 	 *   the same definition with no field carrying a role
 	 * @throws ValidationException
-	 *   with {@code index:field:role:not_valid_for_type} if a field names a
+	 *   with {@code index:field:role:type_unsupported} if a field names a
 	 *   role its type can not answer for, or
-	 *   {@code index:field:role:not_valid_in_object} if a field inside an
+	 *   {@code index:field:role:object_unsupported} if a field inside an
 	 *   object names a role only a field of the index itself can carry
 	 */
 	public static IndexDefinition expand(IndexDefinition definition) {

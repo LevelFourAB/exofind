@@ -214,7 +214,7 @@ public class DeepObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:object:key_duplicate"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:object_key_duplicate"));
 	}
 
 	@Test
@@ -240,7 +240,7 @@ public class DeepObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:required_field_missing"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_required"));
 	}
 
 	@Test
@@ -258,7 +258,7 @@ public class DeepObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:field_inside_object"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_inside_object"));
 	}
 
 	@Test
@@ -280,7 +280,7 @@ public class DeepObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:field_not_found"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_unknown"));
 	}
 
 	@Test
@@ -301,7 +301,7 @@ public class DeepObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_a_document"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:object_required"));
 	}
 
 	/**

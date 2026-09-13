@@ -30,7 +30,8 @@ public class Field {
 	 */
 	public static final Pattern VALID_NAME_PATTERN = Pattern.compile("[a-zA-Z0-9_\\*]+");
 
-	private static ErrorType INVALID_NAME = ErrorType.withCode("index:field:invalid_name")
+	private static ErrorType INVALID_NAME = ErrorType.withCode("index:field:name_invalid")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` should only contain letters, numbers, underscores, and wildcards"
@@ -38,7 +39,8 @@ public class Field {
 		);
 
 	private static ErrorType INVALID_PRIMARY_KEY_WILDCARD = ErrorType
-		.withCode("index:field:invalid_name:primary_key_wildcard")
+		.withCode("index:field:primary_key:wildcard_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is marked as a primary key, but names with wildcards can not be primary keys"
@@ -46,86 +48,99 @@ public class Field {
 
 	private static ErrorType PRIMARY_KEY_NOT_REQUIRED =
 		ErrorType.withCode("index:schema:primary_key_not_required")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Primary key field `{{name}}` is explicitly marked as not required, but the primary key must be required"
 			);
 
 	private static ErrorType INVALID_PRIMARY_KEY_LOCALE_SPECIFIC =
-		ErrorType.withCode("index:schema:primary_key_locale_specific")
+		ErrorType.withCode("index:schema:primary_key_locales_unsupported")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` is marked as a primary key, but locale specific fields can not be primary keys"
 			);
 
 	private static ErrorType UNSUPPORTED_LOCALE = ErrorType
-		.withCode("index:field:locales:unsupported_locale")
+		.withCode("index:field:locales:locale_unsupported")
+		.withStatus(400)
 		.withArguments("name", "locale")
 		.withMessage(
 			"Field `{{name}}` names locale `{{locale}}` which this version of the engine does not support"
 		);
 
 	private static ErrorType INVALID_PRIMARY_KEY_MULTIPLE = ErrorType
-		.withCode("index:field:invalid_primary_key_multiple")
+		.withCode("index:field:primary_key:multiple_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is marked as a primary key and multiple, primary keys can not have multiple values"
 		);
 
-	private static ErrorType INVALID_REQUIRED = ErrorType.withCode("index:field:invalid_required")
+	private static ErrorType INVALID_REQUIRED = ErrorType.withCode("index:field:required:wildcard_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is marked as required, but names with wildcards can not be required"
 		);
 
-	private static ErrorType INVALID_SORTABLE = ErrorType.withCode("index:field:invalid_sortable")
+	private static ErrorType INVALID_SORTABLE = ErrorType.withCode("index:field:sort:multiple_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is sortable and multiple, sortable fields can not have multiple values"
 		);
 
 	private static ErrorType SORTING_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:sorting_not_supported")
+		.withCode("index:field:sort:type_unsupported")
+		.withStatus(400)
 		.withArguments("name", "type")
 		.withMessage(
 			"Field `{{name}}` is sortable, but `{{type}}` fields can not be sorted on"
 		);
 
 	private static ErrorType FACETING_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:faceting_not_supported")
+		.withCode("index:field:facet:type_unsupported")
+		.withStatus(400)
 		.withArguments("name", "type")
 		.withMessage(
 			"Field `{{name}}` is faceted, but `{{type}}` fields can not be counted per value"
 		);
 
-	private static ErrorType MISSING_TYPE = ErrorType.withCode("index:field:missing_type")
+	private static ErrorType MISSING_TYPE = ErrorType.withCode("index:field:type_required")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is missing a type"
 		);
 
-	private static ErrorType UNSUPPORTED_TYPE = ErrorType.withCode("index:field:unsupported_type")
+	private static ErrorType UNSUPPORTED_TYPE = ErrorType.withCode("index:field:type_unsupported")
+		.withStatus(400)
 		.withArguments("name", "type")
 		.withMessage(
 			"Field `{{name}}` has type `{{type}}` which this version of the engine can not index"
 		);
 
 	private static ErrorType INVALID_PRIMARY_KEY_TYPE = ErrorType
-		.withCode("index:field:invalid_primary_key_type")
+		.withCode("index:field:primary_key:type_unsupported")
+		.withStatus(400)
 		.withArguments("name", "type")
 		.withMessage(
 			"Field `{{name}}` is marked as a primary key, but `{{type}}` fields can not be primary keys"
 		);
 
 	private static ErrorType SIGNAL_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:signal_not_supported")
+		.withCode("index:field:signal:type_unsupported")
+		.withStatus(400)
 		.withArguments("name", "type")
 		.withMessage(
 			"Field `{{name}}` is a signal, but `{{type}}` fields can not be refreshed in place"
 		);
 
 	private static ErrorType SIGNAL_WILDCARD = ErrorType
-		.withCode("index:field:signal:wildcard")
+		.withCode("index:field:signal:wildcard_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is a signal, but a name with a wildcard can not be one - a"
@@ -133,7 +148,8 @@ public class Field {
 		);
 
 	private static ErrorType SIGNAL_USAGE_CONFLICT = ErrorType
-		.withCode("index:field:signal:usage_conflict")
+		.withCode("index:field:signal:usage_conflicting")
+		.withStatus(400)
 		.withArguments("name", "usage")
 		.withMessage(
 			"Field `{{name}}` is a signal, which is refreshed in place, so it can not also"

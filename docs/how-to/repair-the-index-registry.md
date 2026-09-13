@@ -219,9 +219,9 @@ follows:
 - **`409 Conflict` with `index:registry:audit_unavailable`:** The node is
   running with `EXOFIND_STORAGE_MODE=local`. Local storage mode does not support
   audit or repair endpoints.
-- **`409 Conflict` with `index:registry:io_error`:** Remote object storage is
+- **`409 Conflict` with `storage:io_error`:** Remote object storage is
   unreachable. Check network connectivity and storage credentials.
-- **`409 Conflict` with `index:registry:conflict`:** A concurrent registry
+- **`409 Conflict` with `storage:conflict`:** A concurrent registry
   write occurred during the repair. Retry the request when other operations
   finish.
 - **`missing` findings:** The repair does not restore missing bucket data.

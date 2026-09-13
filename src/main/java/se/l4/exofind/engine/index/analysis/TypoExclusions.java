@@ -50,14 +50,16 @@ import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
  */
 public final class TypoExclusions {
 	private static final ErrorType UNKNOWN_FIELD =
-		ErrorType.withCode("index:settings:typo_exclusions:unknown_field")
+		ErrorType.withCode("settings:typo_exclusions:field_unknown")
+			.withStatus(400)
 			.withArguments("name", "field")
 			.withMessage(
 				"Typo exclusions `{{name}}` are applied to `{{field}}`, which the index does not have"
 			);
 
 	private static final ErrorType FIELD_NOT_TEXT =
-		ErrorType.withCode("index:settings:typo_exclusions:field_not_text")
+		ErrorType.withCode("settings:typo_exclusions:field_unsupported")
+			.withStatus(400)
 			.withArguments("name", "field")
 			.withMessage(
 				"Typo exclusions `{{name}}` are applied to `{{field}}`, which is not searched as text"

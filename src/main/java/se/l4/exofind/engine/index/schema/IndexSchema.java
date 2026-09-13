@@ -190,16 +190,19 @@ public class IndexSchema {
 	private volatile State state;
 
 	private static ErrorType MULTIPLE_PRIMARY_KEYS =
-		ErrorType.withCode("index:schema:multiple_primary_keys")
+		ErrorType.withCode("index:schema:primary_key_duplicate")
+			.withStatus(400)
 			.withMessage("Only a single primary key field is allowed");
 
 	private static ErrorType TIE_BREAKER_UNKNOWN_FIELD =
-		ErrorType.withCode("index:ranking:unknown_field")
+		ErrorType.withCode("index:ranking:field_unknown")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("Ties can not be broken by field `{{name}}`, which is not defined");
 
 	private static ErrorType TIE_BREAKER_WILDCARD_FIELD =
-		ErrorType.withCode("index:ranking:wildcard_field")
+		ErrorType.withCode("index:ranking:wildcard_unsupported")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Ties can not be broken by `{{name}}`, names with wildcards stand for several fields"
@@ -207,23 +210,27 @@ public class IndexSchema {
 
 	private static ErrorType TIE_BREAKER_NOT_SORTABLE =
 		ErrorType.withCode("index:ranking:field_not_sortable")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Ties can not be broken by field `{{name}}`, which is not defined for sorting"
 			);
 
 	private static ErrorType TIE_BREAKER_DUPLICATE_FIELD =
-		ErrorType.withCode("index:ranking:duplicate_field")
+		ErrorType.withCode("index:ranking:field_duplicate")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("Field `{{name}}` breaks ties more than once");
 
 	private static ErrorType SIGNAL_UNKNOWN_FIELD =
-		ErrorType.withCode("index:ranking:signal:unknown_field")
+		ErrorType.withCode("index:ranking:signal:field_unknown")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("Ranking can not read field `{{name}}`, which is not defined");
 
 	private static ErrorType SIGNAL_WILDCARD_FIELD =
-		ErrorType.withCode("index:ranking:signal:wildcard_field")
+		ErrorType.withCode("index:ranking:signal:wildcard_unsupported")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Ranking can not read `{{name}}`, names with wildcards stand for several fields"
@@ -231,93 +238,110 @@ public class IndexSchema {
 
 	private static ErrorType SIGNAL_NOT_SORTABLE =
 		ErrorType.withCode("index:ranking:signal:field_not_sortable")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Ranking can not read field `{{name}}`, which is not defined for sorting"
 			);
 
 	private static ErrorType SIGNAL_SHAPE_NOT_SET =
-		ErrorType.withCode("index:ranking:signal:shape_not_set")
+		ErrorType.withCode("index:ranking:signal:shape_required")
+			.withStatus(400)
 			.withMessage(
 				"A ranking signal has to say how the value it reads counts, such as `saturation`"
 			);
 
 	private static ErrorType SIGNAL_SHAPE_NOT_SUPPORTED =
-		ErrorType.withCode("index:ranking:signal:shape_not_supported")
+		ErrorType.withCode("index:ranking:signal:shape_unsupported")
+			.withStatus(400)
 			.withArguments("name", "shape")
 			.withMessage("Field `{{name}}` holds nothing that `{{shape}}` can be read from");
 
 	private static ErrorType SIGNAL_INVALID_PIVOT =
-		ErrorType.withCode("index:ranking:signal:invalid_pivot")
+		ErrorType.withCode("index:ranking:signal:pivot_out_of_range")
+			.withStatus(400)
 			.withMessage("The `pivot` of a saturation signal has to be a number above zero");
 
 	private static ErrorType SIGNAL_INVALID_HALF_LIFE =
-		ErrorType.withCode("index:ranking:signal:invalid_half_life")
+		ErrorType.withCode("index:ranking:signal:half_life_out_of_range")
+			.withStatus(400)
 			.withMessage("The `halfLife` of a decay signal has to be longer than nothing");
 
 	private static ErrorType SIGNAL_INVALID_CEILING =
-		ErrorType.withCode("index:ranking:signal:invalid_ceiling")
+		ErrorType.withCode("index:ranking:signal:ceiling_out_of_range")
+			.withStatus(400)
 			.withMessage("The `ceiling` of a linear signal has to be a number above zero");
 
 	private static ErrorType SIGNAL_INVALID_WEIGHT =
-		ErrorType.withCode("index:ranking:signal:invalid_weight")
+		ErrorType.withCode("index:ranking:signal:weight_out_of_range")
+			.withStatus(400)
 			.withMessage("The `weight` of a ranking signal can not be less than nothing");
 
 	private static ErrorType FALLBACK_UNSUPPORTED_LOCALE =
-		ErrorType.withCode("index:locale_fallback:unsupported_locale")
+		ErrorType.withCode("index:locale_fallback:locale_unsupported")
+			.withStatus(400)
 			.withArguments("locale")
 			.withMessage(
 				"Locale `{{locale}}` is fallen back to, which this version of the engine does not support"
 			);
 
 	private static ErrorType FALLBACK_DUPLICATE_LOCALE =
-		ErrorType.withCode("index:locale_fallback:duplicate_locale")
+		ErrorType.withCode("index:locale_fallback:locale_duplicate")
+			.withStatus(400)
 			.withArguments("locale")
 			.withMessage("Locale `{{locale}}` is fallen back to more than once");
 
 	private static ErrorType FALLBACK_LOCALE_NOT_HELD =
 		ErrorType.withCode("index:locale_fallback:locale_not_held")
+			.withStatus(400)
 			.withArguments("locale")
 			.withMessage(
 				"Locale `{{locale}}` is fallen back to, but no field of the index holds values in it"
 			);
 
 	private static ErrorType FALLBACK_WITHOUT_LOCALE_FIELDS =
-		ErrorType.withCode("index:locale_fallback:no_locale_fields")
+		ErrorType.withCode("index:locale_fallback:locale_fields_required")
+			.withStatus(400)
 			.withMessage(
 				"The index falls back between locales, but none of its fields is locale specific"
 			);
 
 	private static ErrorType FALLBACK_ENABLED_WITHOUT_INDEX =
 		ErrorType.withCode("index:field:locales:fallback_without_index")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` takes part in locale fallback, but the index does not declare one"
 			);
 
 	private static ErrorType UNSUPPORTED_FEATURES =
-		ErrorType.withCode("index:schema:unsupported_features")
+		ErrorType.withCode("index:schema:features_unsupported")
+			.withStatus(400)
 			.withArguments("features")
 			.withMessage(
 				"The definition needs features this version of the engine does not have: {{features}}"
 			);
 
 	private static ErrorType SYNONYM_RULE_NOT_ONE_KIND =
-		ErrorType.withCode("index:resources:synonyms:invalid_rule")
+		ErrorType.withCode("index:resources:synonyms:rule_invalid")
+			.withStatus(400)
 			.withMessage(
 				"A synonym rule has to be exactly one kind - equivalent words, or a one way mapping"
 			);
 
 	private static ErrorType SYNONYM_RULE_TOO_FEW_WORDS =
-		ErrorType.withCode("index:resources:synonyms:too_few_words")
+		ErrorType.withCode("index:resources:synonyms:words_too_few")
+			.withStatus(400)
 			.withMessage("Equivalent synonyms need at least two words");
 
 	private static ErrorType SYNONYM_RULE_ONE_SIDED =
 		ErrorType.withCode("index:resources:synonyms:one_sided")
+			.withStatus(400)
 			.withMessage("A synonym mapping needs at least one word on each side");
 
 	private static ErrorType SYNONYM_RULE_BLANK_WORD =
-		ErrorType.withCode("index:resources:synonyms:blank_word")
+		ErrorType.withCode("index:resources:synonyms:word_required")
+			.withStatus(400)
 			.withMessage("A synonym can not be blank");
 
 	/**

@@ -46,6 +46,16 @@ public class EngineException extends RuntimeException {
 		return type.getCode();
 	}
 
+	/**
+	 * Get the HTTP status this exception is answered with, which is the status
+	 * of its type.
+	 *
+	 * @return
+	 */
+	public int getStatus() {
+		return type.getStatus();
+	}
+
 	public MapIterable<String, Object> getArguments() {
 		return arguments;
 	}

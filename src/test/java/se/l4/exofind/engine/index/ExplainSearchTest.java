@@ -241,7 +241,7 @@ public class ExplainSearchTest extends AbstractIndexTest {
 			() -> index.explain(request, "4", 7, null)
 		);
 
-		assertThat(e.getCode(), is("index:explain:value_not_found"));
+		assertThat(e.getCode(), is("search:explain:value_not_found"));
 	}
 
 	@Test
@@ -257,7 +257,7 @@ public class ExplainSearchTest extends AbstractIndexTest {
 			() -> index.explain(request, "404", 0, null)
 		);
 
-		assertThat(e.getCode(), is("index:explain:document_not_found"));
+		assertThat(e.getCode(), is("search:explain:document_not_found"));
 	}
 
 	@Test

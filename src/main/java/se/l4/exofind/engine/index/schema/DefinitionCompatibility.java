@@ -77,6 +77,7 @@ public class DefinitionCompatibility {
 
 	private static final ErrorType USAGE_ADDED =
 		ErrorType.withCode("index:definition:usage_added")
+			.withStatus(409)
 			.withArguments("field", "usage")
 			.withMessage(
 				"`{{usage}}` is turned on for field `{{field}}`, which writes something the"
@@ -85,6 +86,7 @@ public class DefinitionCompatibility {
 
 	private static final ErrorType ANALYSIS_CHANGED =
 		ErrorType.withCode("index:definition:analysis_changed")
+			.withStatus(409)
 			.withArguments("field", "usage")
 			.withMessage(
 				"How `{{usage}}` reads the values of field `{{field}}` has changed, which"
@@ -94,6 +96,7 @@ public class DefinitionCompatibility {
 
 	private static final ErrorType SETTING_CHANGED =
 		ErrorType.withCode("index:definition:setting_changed")
+			.withStatus(409)
 			.withArguments("field", "setting")
 			.withMessage(
 				"`{{setting}}` has changed for field `{{field}}`, and decides what was"
@@ -102,6 +105,7 @@ public class DefinitionCompatibility {
 
 	private static final ErrorType LOCALE_FALLBACK_CHANGED =
 		ErrorType.withCode("index:definition:locale_fallback_changed")
+			.withStatus(409)
 			.withMessage(
 				"The locale fallback of the index has changed, and decides which locales"
 					+ " were filled in for the documents already indexed." + ROLLOUT
@@ -109,6 +113,7 @@ public class DefinitionCompatibility {
 
 	private static final ErrorType SOURCE_ADDED =
 		ErrorType.withCode("index:definition:source_added")
+			.withStatus(409)
 			.withMessage(
 				"The index now keeps a copy of each document, which the documents"
 					+ " already indexed were stored without." + ROLLOUT

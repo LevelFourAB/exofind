@@ -132,30 +132,30 @@ public class DocumentPathTest {
 
 	@Test
 	public void aBracketThatIsNeverClosedIsRefused() {
-		assertThat(codeOfRefusing("variants[sku=V-2"), is("request:update:path_invalid"));
+		assertThat(codeOfRefusing("variants[sku=V-2"), is("document:patch:path_invalid"));
 	}
 
 	@Test
 	public void aSelectorWithNoFieldBeforeItIsRefused() {
-		assertThat(codeOfRefusing("[sku=V-2]"), is("request:update:path_invalid"));
+		assertThat(codeOfRefusing("[sku=V-2]"), is("document:patch:path_invalid"));
 	}
 
 	@Test
 	public void anythingButAFieldAfterTheBracketsIsRefused() {
-		assertThat(codeOfRefusing("variants[sku=V-2]price"), is("request:update:path_invalid"));
+		assertThat(codeOfRefusing("variants[sku=V-2]price"), is("document:patch:path_invalid"));
 	}
 
 	@Test
 	public void aSecondSelectorIsRefused() {
 		assertThat(
 			codeOfRefusing("variants[sku=V-2].price[sv]"),
-			is("request:update:path_invalid")
+			is("document:patch:path_invalid")
 		);
 	}
 
 	@Test
 	public void anEmptyPathIsRefused() {
-		assertThat(codeOfRefusing(""), is("request:update:path_invalid"));
+		assertThat(codeOfRefusing(""), is("document:patch:path_invalid"));
 	}
 
 	private static String codeOfRefusing(String text) {

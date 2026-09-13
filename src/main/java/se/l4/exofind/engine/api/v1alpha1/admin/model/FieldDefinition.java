@@ -235,7 +235,7 @@ public sealed interface FieldDefinition
 	 *
 	 * <p>Each role applies only to the field types that support it; setting a
 	 * role on an unsupported type is rejected with
-	 * {@code index:field:role:not_valid_for_type}. Inside an object field, a
+	 * {@code index:field:role:type_unsupported}. Inside an object field, a
 	 * role enables only what the enclosing object context accepts, omitting
 	 * {@code stored} and {@code highlight}, and omitting {@code sort} inside a
 	 * flattened list.

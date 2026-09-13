@@ -331,7 +331,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 			() -> search(index, Query.field("variants.color", Matchers.equalTo("red")))
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:outside"));
+		assertThat(e.getCode(), is("search:nested:field_outside"));
 	}
 
 	@Test
@@ -346,7 +346,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:not_in_path"));
+		assertThat(e.getCode(), is("search:nested:field_not_inside"));
 	}
 
 	@Test
@@ -377,7 +377,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:unsupported_clause"));
+		assertThat(e.getCode(), is("search:nested:clause_unsupported"));
 	}
 
 	/**
@@ -413,7 +413,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_a_document"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:object_required"));
 	}
 
 	@Test
@@ -431,7 +431,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:unexpected_document"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:object_unsupported"));
 	}
 
 	@Test
@@ -453,7 +453,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:required_field_missing"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_required"));
 	}
 
 	@Test
@@ -478,7 +478,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:field_not_found"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_unknown"));
 	}
 
 	@Test
@@ -504,7 +504,7 @@ public class NestedSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_multiple"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:multiple_unsupported"));
 	}
 
 	private Document variant(String color, double price, String... sizes) {

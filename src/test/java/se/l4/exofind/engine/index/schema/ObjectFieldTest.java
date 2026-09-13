@@ -56,7 +56,7 @@ public class ObjectFieldTest {
 			definition(FieldDef.newBuilder()
 				.setType(FieldTypeDef.newBuilder().setObject(ObjectFieldTypeDef.newBuilder()))
 			),
-			"index:field:object:no_fields"
+			"index:field:object:fields_required"
 		);
 	}
 
@@ -64,7 +64,7 @@ public class ObjectFieldTest {
 	public void testObjectCanNotFilter() {
 		assertRefused(
 			definition(variants().setFilter(FilterConfig.getDefaultInstance())),
-			"index:field:object:usage_not_supported"
+			"index:field:object:usage_unsupported"
 		);
 	}
 
@@ -72,7 +72,7 @@ public class ObjectFieldTest {
 	public void testObjectCanNotSort() {
 		assertRefused(
 			definition(variants().setSort(SortConfig.getDefaultInstance())),
-			"index:field:sorting_not_supported"
+			"index:field:sort:type_unsupported"
 		);
 	}
 
@@ -80,7 +80,7 @@ public class ObjectFieldTest {
 	public void testObjectCanNotFacet() {
 		assertRefused(
 			definition(variants().setFacet(FacetConfig.getDefaultInstance())),
-			"index:field:faceting_not_supported"
+			"index:field:facet:type_unsupported"
 		);
 	}
 
@@ -88,7 +88,7 @@ public class ObjectFieldTest {
 	public void testObjectCanNotBeStored() {
 		assertRefused(
 			definition(variants().setStored(true)),
-			"index:field:object:usage_not_supported"
+			"index:field:object:usage_unsupported"
 		);
 	}
 
@@ -96,7 +96,7 @@ public class ObjectFieldTest {
 	public void testObjectCanNotBeLocaleSpecific() {
 		assertRefused(
 			definition(variants().setLocales(FieldDef.LocaleConfig.getDefaultInstance())),
-			"index:field:object:usage_not_supported"
+			"index:field:object:usage_unsupported"
 		);
 	}
 
@@ -157,7 +157,7 @@ public class ObjectFieldTest {
 	public void testInnerFieldCanNotBePrimaryKey() {
 		assertInnerRefused(
 			string().setPrimaryKey(true),
-			"index:field:object:inner_usage_not_supported"
+			"index:field:object:inner_usage_unsupported"
 		);
 	}
 
@@ -343,7 +343,7 @@ public class ObjectFieldTest {
 			)
 			.setMultiple(true);
 
-		assertRefused(definition(flattened), "index:field:object:flattened_stored");
+		assertRefused(definition(flattened), "index:field:object:flattened_stored_unsupported");
 	}
 
 	@Test
@@ -366,7 +366,7 @@ public class ObjectFieldTest {
 						)
 					)
 			),
-			"index:field:object:flattened_stored"
+			"index:field:object:flattened_stored_unsupported"
 		);
 	}
 
@@ -463,7 +463,7 @@ public class ObjectFieldTest {
 						)
 					)
 			),
-			"index:field:object:flattened_stored"
+			"index:field:object:flattened_stored_unsupported"
 		);
 	}
 
@@ -502,7 +502,7 @@ public class ObjectFieldTest {
 						)
 					)
 			),
-			"index:field:object:flattened_stored"
+			"index:field:object:flattened_stored_unsupported"
 		);
 	}
 
@@ -731,7 +731,7 @@ public class ObjectFieldTest {
 						)
 					)
 			),
-			"index:field:object:flattened_sort"
+			"index:field:object:flattened_sort_unsupported"
 		);
 	}
 
@@ -741,7 +741,7 @@ public class ObjectFieldTest {
 		assertInnerRefusedNamed(
 			"b.c",
 			string(),
-			"index:field:invalid_name"
+			"index:field:name_invalid"
 		);
 	}
 
@@ -905,7 +905,7 @@ public class ObjectFieldTest {
 						)
 					)
 			),
-			"index:field:object:key_not_valid"
+			"index:field:object:key_invalid"
 		);
 	}
 
@@ -914,7 +914,7 @@ public class ObjectFieldTest {
 		assertInnerRefusedNamed(
 			"*",
 			string().setRequired(true),
-			"index:field:invalid_required"
+			"index:field:required:wildcard_unsupported"
 		);
 	}
 
@@ -923,7 +923,7 @@ public class ObjectFieldTest {
 		assertInnerRefusedNamed(
 			"*",
 			string().setPrimaryKey(true),
-			"index:field:object:inner_usage_not_supported"
+			"index:field:object:inner_usage_unsupported"
 		);
 	}
 
@@ -932,7 +932,7 @@ public class ObjectFieldTest {
 		var builder = definition(variants());
 		builder.putFields("variants.color", string().build());
 
-		assertRefused(builder, "index:field:invalid_name");
+		assertRefused(builder, "index:field:name_invalid");
 	}
 
 	@Test
@@ -1007,7 +1007,7 @@ public class ObjectFieldTest {
 	public void testKeyNamingNoFieldOfTheObjectIsRefused() {
 		assertRefused(
 			definition(keyed(builder -> builder.setKey("nothing"))),
-			"index:field:object:key_not_found"
+			"index:field:object:key_unknown"
 		);
 	}
 
@@ -1022,7 +1022,7 @@ public class ObjectFieldTest {
 				"sku",
 				string().setRequired(false).build()
 			))),
-			"index:field:object:key_not_valid"
+			"index:field:object:key_invalid"
 		);
 	}
 
@@ -1033,7 +1033,7 @@ public class ObjectFieldTest {
 				"sku",
 				string().setRequired(true).setMultiple(true).build()
 			))),
-			"index:field:object:key_not_valid"
+			"index:field:object:key_invalid"
 		);
 	}
 
@@ -1055,7 +1055,7 @@ public class ObjectFieldTest {
 					.setRequired(true)
 					.build()
 			))),
-			"index:field:object:key_not_valid"
+			"index:field:object:key_invalid"
 		);
 	}
 
@@ -1093,7 +1093,7 @@ public class ObjectFieldTest {
 			)
 			.setMultiple(true);
 
-		assertRefused(definition(flattened), "index:field:object:flattened_sort");
+		assertRefused(definition(flattened), "index:field:object:flattened_sort_unsupported");
 	}
 
 	@Test

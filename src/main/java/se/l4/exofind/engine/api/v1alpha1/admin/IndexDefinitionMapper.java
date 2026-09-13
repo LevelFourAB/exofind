@@ -21,6 +21,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.VectorFieldDefinition;
 import se.l4.exofind.engine.errors.EngineException;
+import se.l4.exofind.engine.api.errors.RequestErrors;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -85,12 +86,13 @@ import se.l4.exofind.engine.index.schema.VectorFieldTypeDef;
  */
 public class IndexDefinitionMapper {
 	/*
-	 * Distinct from `index:field:unsupported_type`, which is what the engine
+	 * Distinct from `index:field:type_unsupported`, which is what the engine
 	 * reports for a type it can not index. This one is about the API being
 	 * unable to describe a type the engine handles fine.
 	 */
 	private static final ErrorType UNREPRESENTABLE_TYPE =
-		ErrorType.withCode("index:field:unrepresentable_type")
+		ErrorType.withCode("index:field:type_unrepresentable")
+			.withStatus(409)
 			.withArguments("name", "type")
 			.withMessage(
 				"Field `{{name}}` has type `{{type}}` which this version of the API can not represent"
@@ -103,12 +105,14 @@ public class IndexDefinitionMapper {
 	 */
 	private static final ErrorType UNREPRESENTABLE_DEFINITION =
 		ErrorType.withCode("index:definition:unrepresentable")
+			.withStatus(409)
 			.withMessage(
 				"The stored definition holds settings this version of the API can not describe, and updating it here would drop them"
 			);
 
 	private static final ErrorType INVALID_ANALYZER =
 		ErrorType.withCode("index:field:analyzer:invalid")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` has an analyzer that is not exactly one of a preset, a custom chain and a named one"
@@ -116,27 +120,31 @@ public class IndexDefinitionMapper {
 
 	private static final ErrorType NAMED_CHAIN_IN_RESOURCES =
 		ErrorType.withCode("index:resources:analyzers:named")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Analysis chain `{{name}}` in the resources can not be `named` - the resources are where names are defined"
 			);
 
 	private static final ErrorType INVALID_SYNONYM_RULE =
-		ErrorType.withCode("index:resources:synonyms:invalid_rule")
+		ErrorType.withCode("index:resources:synonyms:rule_invalid")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Synonym set `{{name}}` has a rule that is not exactly one kind - equivalent words, or a one way mapping"
 			);
 
 	private static final ErrorType INVALID_ANALYZER_COMPONENT =
-		ErrorType.withCode("index:field:analyzer:invalid_component")
+		ErrorType.withCode("index:field:analyzer:component_invalid")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` has an analysis chain component that is not exactly one kind"
 			);
 
 	private static final ErrorType DECOMPOUND_ON_GIVEN_CHAIN =
-		ErrorType.withCode("index:field:analyzer:decompound_on_given_chain")
+		ErrorType.withCode("index:field:analyzer:decompound_conflicting")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` sets `decompound` alongside a custom or named chain - a given chain says itself whether it splits, through a `decompound` component"
@@ -147,9 +155,6 @@ public class IndexDefinitionMapper {
 	 * there and says nothing, rather than reaching the builders, which refuse
 	 * it with a message that names no place in the request.
 	 */
-	private static final ErrorType VALUE_REQUIRED = ErrorType.withCode("request:value_required")
-		.withMessage("A value is needed here, `null` says nothing");
-
 	private IndexDefinitionMapper() {
 	}
 
@@ -296,7 +301,7 @@ public class IndexDefinitionMapper {
 	 */
 	private static void require(Object value, ObjectLocation at) {
 		if(value == null) {
-			throw new ValidationException(VALUE_REQUIRED.toMessage(at));
+			throw new ValidationException(RequestErrors.VALUE_REQUIRED.toMessage(at));
 		}
 	}
 

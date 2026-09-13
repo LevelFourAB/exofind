@@ -35,12 +35,14 @@ import se.l4.exofind.engine.errors.Location;
  */
 final class QueryBudget {
 	private static final ErrorType TOO_MANY_CLAUSES =
-		ErrorType.withCode("search:query:too_many_clauses")
+		ErrorType.withCode("search:clauses_too_many")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A search holds at most {{max}} clauses, counted across the whole request");
 
 	private static final ErrorType TOO_DEEP =
-		ErrorType.withCode("search:query:too_deep")
+		ErrorType.withCode("search:clauses_too_deep")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("Clauses nest at most {{max}} deep");
 
@@ -51,13 +53,15 @@ final class QueryBudget {
 	 * own and no cap is known.
 	 */
 	private static final ErrorType K_INVALID =
-		ErrorType.withCode("search:clause:k_invalid")
+		ErrorType.withCode("search:clause:k_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A `knn` clause brings back at most {{max}} neighbours");
 
 	/** As {@link #K_INVALID}, for the depth each ranking of a `fuse` is read to. */
 	private static final ErrorType DEPTH_INVALID =
-		ErrorType.withCode("search:clause:depth_invalid")
+		ErrorType.withCode("search:clause:depth_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("Each ranking of a `fuse` clause is read at most {{max}} results down");
 

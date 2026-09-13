@@ -104,7 +104,7 @@ public sealed interface Clause
 			Matches documents by the value of a single field. The targeted \
 			field must be indexed for the requested matcher usage; if it is \
 			not configured for that usage, the request returns \
-			`index:query:usage_not_enabled`.""",
+			`search:usage_unsupported`.""",
 		examples = Field.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
@@ -205,7 +205,7 @@ public sealed interface Clause
 				holds one of them. Excluded terms (`-word`) always apply, and \
 				a filter read out of the text is one of the parts. Setting \
 				`join` with any other `match` returns \
-				`search:clause:join_not_applicable`. See [Reading what was \
+				`search:clause:join_unsupported`. See [Reading what was \
 				typed](https://exofind.dev/reference/search-api/#reading-what-was-typed).""",
 			defaultValue = "all"
 		)
@@ -246,7 +246,7 @@ public sealed interface Clause
 				Number of intervening words permitted between terms in a \
 				phrase, without changing their relative order. Setting `slop` \
 				above `0` with `"match": "all"` or `"match": "any"` returns \
-				`search:clause:slop_not_applicable`.""",
+				`search:clause:slop_unsupported`.""",
 			defaultValue = "0"
 		)
 		Integer slop,
@@ -437,7 +437,7 @@ public sealed interface Clause
 			description = """
 				A field a reading may be a filter on. The field must be a \
 				number field declaring a `unit`; naming one without returns \
-				`index:query:interpret:no_unit`. A field inside a `nested` \
+				`search:interpret:unit_required`. A field inside a `nested` \
 				[object field](https://exofind.dev/reference/field-types/#object) \
 				is named by its dotted path and read against one value at a \
 				time, with `when` saying which.""",
@@ -463,7 +463,7 @@ public sealed interface Clause
 				the document otherwise. Takes what a `nested` clause takes: \
 				`field`, `text`, `and`, `or`, `not` and `boost`. A clause \
 				naming a field outside the list returns \
-				`index:query:nested:not_in_path`.""")
+				`search:nested:field_not_inside`.""")
 			List<Clause> when,
 
 			/**
@@ -475,7 +475,7 @@ public sealed interface Clause
 				value on this one - a product with no price on the customer's \
 				list is read on the store's list. Every target of the chain \
 				must declare the same unit; one in another unit returns \
-				`index:query:interpret:fallback_unit`.""")
+				`search:interpret:fallback_unit_mismatch`.""")
 			List<Target> fallback
 		) {
 			/** The example target, as the JSON a caller writes. */
@@ -503,7 +503,7 @@ public sealed interface Clause
 		description = """
 			Matches the `k` nearest documents by vector distance in a \
 			specified field, scored by proximity. Cannot be combined with \
-			`hits` (`search:hits:with_knn`).""",
+			`hits` (`search:hits:knn_unsupported`).""",
 		examples = Knn.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
@@ -580,7 +580,7 @@ public sealed interface Clause
 			Matches documents where a single element of a `nested` \
 			[object field](https://exofind.dev/reference/field-types/#object) \
 			satisfies all child clauses. A `nested` clause on a flattened \
-			object field returns `index:query:nested:flattened`; on a \
+			object field returns `search:nested:path_not_nested`; on a \
 			non-object field it returns an error. See \
 			[`nested`](https://exofind.dev/reference/search-api/#nested).""",
 		examples = Nested.EXAMPLE,
@@ -613,7 +613,7 @@ public sealed interface Clause
 			where the object field is present. May contain `field`, `text`, \
 			`knn`, `and`, `or`, `not` and `boost`; a clause that only means \
 			something for whole documents, such as another `nested` or a \
-			`fuse`, returns `index:query:nested:unsupported_clause`.""")
+			`fuse`, returns `search:nested:clause_unsupported`.""")
 		List<Clause> clauses,
 
 		/**
@@ -798,7 +798,7 @@ public sealed interface Clause
 				Multiplier applied to matching documents. Values greater than \
 				`1` increase score; values between `0` and `1` decrease score. \
 				Leaving it out, or setting it below `0` or to a non-finite \
-				number, returns `search:clause:weight_invalid`.""",
+				number, returns `search:clause:weight_out_of_range`.""",
 			required = true,
 			examples = "2"
 		)
@@ -852,7 +852,7 @@ public sealed interface Clause
 		@Schema(
 			description = """
 				Rankings to run and merge. Specifying fewer than two rankings \
-				returns `search:clause:rankings_invalid`.""",
+				returns `search:clause:rankings_too_few`.""",
 			required = true
 		)
 		List<Ranking> rankings,

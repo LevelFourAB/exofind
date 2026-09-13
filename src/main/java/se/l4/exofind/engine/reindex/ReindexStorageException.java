@@ -15,7 +15,8 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class ReindexStorageException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType IO_ERROR = ErrorType.withCode("reindex:io_error")
+	private static final ErrorType IO_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withMessage("The reindex record could not be read or written");
 
 	public ReindexStorageException(Throwable cause) {

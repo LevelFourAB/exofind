@@ -13,6 +13,7 @@ public class UnauthenticatedException extends AuthException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("auth:unauthenticated")
+		.withStatus(401)
 		.withMessage("A valid API key is required");
 
 	public UnauthenticatedException() {

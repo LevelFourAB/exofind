@@ -175,7 +175,8 @@ Alongside these pages, the website carries a page per endpoint at
   token filters.
 - [Locales](reference/locales.md): The languages with rules, and what each one
   gets.
-- [Errors](reference/errors.md): The error body and the code vocabulary.
+- [Errors](reference/errors.md): The error body, the grammar every code
+  follows, and the codes a client acts on.
 - [Glossary](reference/glossary.md): The terms the other pages use, each with
   the page that explains it.
 

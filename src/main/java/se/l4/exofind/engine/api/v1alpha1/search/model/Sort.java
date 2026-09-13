@@ -154,7 +154,7 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 			Sorts by distance from the specified geographic coordinate, \
 			nearest first. Accepts no `order` property. A distance sort on a \
 			nested object field returns \
-			`index:query:nested:sort_unsupported`.""",
+			`search:sort:nested_unsupported`.""",
 		examples = Distance.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",

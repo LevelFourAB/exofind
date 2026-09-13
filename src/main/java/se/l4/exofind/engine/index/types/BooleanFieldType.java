@@ -39,7 +39,8 @@ public class BooleanFieldType implements FieldType {
 	private static final BytesRef FALSE = new BytesRef("F");
 
 	private static final ErrorType COLLATION_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:sort:collation_not_supported")
+		.withCode("index:field:sort:collation_unsupported")
+		.withStatus(400)
 		.withMessage("Collation means nothing when sorting a boolean field");
 
 	protected static org.apache.lucene.document.FieldType createFieldType() {

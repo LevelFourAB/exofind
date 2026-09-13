@@ -25,40 +25,46 @@ import se.l4.exofind.engine.index.schema.ResourcesDef;
  */
 public final class AnalyzerChains {
 	private static final ErrorType UNSUPPORTED_LOCALE = ErrorType
-		.withCode("index:field:analyzer:unsupported_locale")
+		.withCode("index:field:analyzer:locale_unsupported")
+		.withStatus(400)
 		.withArguments("locale")
 		.withMessage(
 			"The analysis chain names locale `{{locale}}` which this version of the engine does not support"
 		);
 
 	private static final ErrorType INVALID_GRAMS = ErrorType
-		.withCode("index:field:analyzer:invalid_grams")
+		.withCode("index:field:analyzer:grams_invalid")
+		.withStatus(400)
 		.withMessage(
 			"An n-gram in the analysis chain needs sizes of at least one, with the shortest not longer than the longest"
 		);
 
 	private static final ErrorType INVALID_PATTERN = ErrorType
-		.withCode("index:field:analyzer:invalid_pattern")
+		.withCode("index:field:analyzer:pattern_invalid")
+		.withStatus(400)
 		.withMessage(
 			"A pattern replacement in the analysis chain has to have a valid regular expression"
 		);
 
 	private static final ErrorType UNKNOWN_STOPWORDS = ErrorType
-		.withCode("index:field:analyzer:unknown_stopwords")
+		.withCode("index:field:analyzer:stopwords_unknown")
+		.withStatus(400)
 		.withArguments("resource")
 		.withMessage(
 			"The analysis chain names stopword list `{{resource}}` which the resources of the index do not define"
 		);
 
 	private static final ErrorType UNKNOWN_SYNONYMS = ErrorType
-		.withCode("index:field:analyzer:unknown_synonyms")
+		.withCode("index:field:analyzer:synonyms_unknown")
+		.withStatus(400)
 		.withArguments("resource")
 		.withMessage(
 			"The analysis chain names synonym set `{{resource}}` which the resources of the index do not define"
 		);
 
 	private static final ErrorType UNSUPPORTED_DECOMPOUNDING = ErrorType
-		.withCode("index:field:analyzer:unsupported_decompounding")
+		.withCode("index:field:analyzer:decompound_locale_unsupported")
+		.withStatus(400)
 		.withArguments("locale")
 		.withMessage(
 			"The analysis chain splits compounds by locale `{{locale}}` which this version of the engine has no decompounding data for"

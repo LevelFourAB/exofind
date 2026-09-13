@@ -61,16 +61,19 @@ public class IndexRegistry {
 	private static final int WRITE_ATTEMPTS = 3;
 
 	private static final ErrorType ALREADY_EXISTS = ErrorType.withCode("index:already_exists")
+		.withStatus(409)
 		.withArguments("name")
 		.withMessage("The index `{{name}}` already exists");
 
 	private static final ErrorType GENERATION_ALREADY_EXISTS =
 		ErrorType.withCode("index:generation:already_exists")
+			.withStatus(409)
 			.withArguments("name")
 			.withMessage("The generation `{{name}}` already exists");
 
 	private static final ErrorType GENERATION_IS_LIVE =
 		ErrorType.withCode("index:generation:is_live")
+			.withStatus(409)
 			.withArguments("name")
 			.withMessage(
 				"The generation `{{name}}` is the one its index answers for and cannot be"

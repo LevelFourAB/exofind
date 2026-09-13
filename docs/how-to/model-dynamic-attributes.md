@@ -53,7 +53,7 @@ The engine resolves wildcard field names using these rules:
 - An explicit field definition takes precedence over any matching pattern.
 - When multiple patterns match a field name, the pattern with the longest literal prefix wins. If literal prefixes have the same length, the shorter pattern wins.
 - A field name in a document that matches no explicit field and no pattern is rejected.
-- Wildcard fields cannot serve as the primary key (`index:field:invalid_name:primary_key_wildcard`).
+- Wildcard fields cannot serve as the primary key (`index:field:primary_key:wildcard_unsupported`).
 - Wildcard fields cannot be set to `required`.
 
 ## Index documents with dynamic attributes
@@ -141,7 +141,7 @@ The update endpoint modifies fields using these rules:
 - Setting a field value to `null` removes that attribute from the document.
 - Unspecified fields retain their existing values.
 - The engine validates the updated document as a whole against the index definition.
-- The index must retain source data. If the index uses `"source": "none"`, the request fails with `index:source:not_kept`.
+- The index must retain source data. If the index uses `"source": "none"`, the request fails with `document:source_not_kept`.
 
 ## Confirming the result
 
@@ -170,7 +170,7 @@ Wildcard fields have three limitations:
 
 - **Skipped by general text search:** A `text` clause without explicit `fields` does not search wildcard namespaces. To search dynamic attributes in a single search box, copy their values to an explicit `multiple: true` text field.
 - **No field name discovery:** The engine does not provide an endpoint or facet to list all attribute names in use. Your catalogue system must track which attributes exist and request the relevant facets for a given category.
-- **No index-level ranking on wildcard names:** You cannot reference wildcard patterns or dynamic attribute names in `ranking.tieBreakers` or `ranking.signals` within the index definition or search settings. Defining a pattern fails with `index:ranking:wildcard_field` or `index:ranking:signal:wildcard_field`, and defining a concrete dynamic name fails as an unknown field. To rank results by a dynamic attribute, specify the concrete field in the `signals` parameter of the search request.
+- **No index-level ranking on wildcard names:** You cannot reference wildcard patterns or dynamic attribute names in `ranking.tieBreakers` or `ranking.signals` within the index definition or search settings. Defining a pattern fails with `index:ranking:wildcard_unsupported` or `index:ranking:signal:wildcard_unsupported`, and defining a concrete dynamic name fails as an unknown field. To rank results by a dynamic attribute, specify the concrete field in the `signals` parameter of the search request.
 
 ## Choosing where the pattern goes
 

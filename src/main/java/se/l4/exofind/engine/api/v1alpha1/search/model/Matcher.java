@@ -475,7 +475,7 @@ public sealed interface Matcher
 				word and every quoted phrase, `any` accepts a document that \
 				holds one of them. Excluded terms (`-word`) always apply. \
 				Setting `join` with any other `match` returns \
-				`search:clause:join_not_applicable`.""",
+				`search:clause:join_unsupported`.""",
 			defaultValue = "all"
 		)
 		Join join,

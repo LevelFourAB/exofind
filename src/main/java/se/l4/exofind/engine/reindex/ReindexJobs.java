@@ -113,6 +113,7 @@ public class ReindexJobs {
 
 	private static final ErrorType TARGET_GENERATION_REQUIRED =
 		ErrorType.withCode("reindex:target_generation_required")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"`{{name}}` names an index rather than the generation to fill,"
@@ -121,6 +122,7 @@ public class ReindexJobs {
 
 	private static final ErrorType TARGET_IS_LIVE =
 		ErrorType.withCode("reindex:target_is_live")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"The generation `{{name}}` is the one its index answers for and"
@@ -129,6 +131,7 @@ public class ReindexJobs {
 
 	private static final ErrorType TARGET_NOT_EMPTY =
 		ErrorType.withCode("reindex:target_not_empty")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"The generation `{{name}}` already holds documents, and a reindex"
@@ -137,6 +140,7 @@ public class ReindexJobs {
 
 	private static final ErrorType SOURCE_OTHER_INDEX =
 		ErrorType.withCode("reindex:source_other_index")
+			.withStatus(400)
 			.withArguments("from", "index")
 			.withMessage(
 				"`{{from}}` does not belong to `{{index}}` - a generation is"
@@ -145,11 +149,13 @@ public class ReindexJobs {
 
 	private static final ErrorType SOURCE_IS_TARGET =
 		ErrorType.withCode("reindex:source_is_target")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("The generation `{{name}}` cannot be filled from itself");
 
 	private static final ErrorType PRIMARY_KEY_MISMATCH =
 		ErrorType.withCode("reindex:primary_key_mismatch")
+			.withStatus(400)
 			.withArguments("source", "target")
 			.withMessage(
 				"The primary key of `{{target}}` differs from `{{source}}` in name"
@@ -158,7 +164,8 @@ public class ReindexJobs {
 			);
 
 	private static final ErrorType PROMOTE_UNKNOWN =
-		ErrorType.withCode("reindex:promote_unknown")
+		ErrorType.withCode("reindex:promote_invalid")
+			.withStatus(400)
 			.withArguments("value")
 			.withMessage(
 				"A reindex promotes on its own with `auto` or leaves it to the"
@@ -167,6 +174,7 @@ public class ReindexJobs {
 
 	private static final ErrorType DOCUMENT_REFUSED =
 		ErrorType.withCode("reindex:document_refused")
+			.withStatus(500)
 			.withArguments("key", "reason")
 			.withMessage(
 				"The target refused the document with key `{{key}}`: {{reason}}"

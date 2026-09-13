@@ -132,7 +132,7 @@ public class GeoPointIndexingTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:geo_point:sort_needs_origin"));
+		assertThat(e.getCode(), is("search:sort:origin_required"));
 	}
 
 	@Test
@@ -177,7 +177,7 @@ public class GeoPointIndexingTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			hasItem("index:update:geo_point:out_of_range")
+			hasItem("document:geo_point:value_out_of_range")
 		);
 	}
 
@@ -197,7 +197,7 @@ public class GeoPointIndexingTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			hasItem("index:update:geo_point:invalid_value")
+			hasItem("document:geo_point:value_invalid")
 		);
 	}
 

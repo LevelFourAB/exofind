@@ -40,14 +40,16 @@ import se.l4.exofind.engine.index.types.VectorFieldType;
  */
 public class DocumentMapper {
 	private static final ErrorType UNKNOWN_FIELD = ErrorType
-		.withCode("index:update:field_not_found")
+		.withCode("document:patch:field_unknown")
+		.withStatus(400)
 		.withArguments("path", "name")
 		.withMessage(
 			"`{{path}}` reaches into the field `{{name}}`, which the index does not have"
 		);
 
 	private static final ErrorType SELECTOR_NOT_SUPPORTED = ErrorType
-		.withCode("index:update:selector_not_supported")
+		.withCode("document:patch:selector_unsupported")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` names one value of `{{field}}`, which holds neither locale "
@@ -55,14 +57,16 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType MATCH_NOT_AN_OBJECT = ErrorType
-		.withCode("index:update:match_not_an_object")
+		.withCode("document:patch:match_not_an_object")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` matches on a field inside `{{field}}`, whose values are not objects"
 		);
 
 	private static final ErrorType KEY_NOT_DECLARED = ErrorType
-		.withCode("index:update:key_not_declared")
+		.withCode("document:patch:key_unsupported")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` names a value of `{{field}}` by a key, which the field declares "
@@ -70,12 +74,14 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType LOCALE_UNKNOWN = ErrorType
-		.withCode("index:update:locale_not_declared")
+		.withCode("document:locale_unknown")
+		.withStatus(400)
 		.withArguments("path", "name", "locale")
 		.withMessage("Field `{{name}}` does not hold values in locale `{{locale}}`");
 
 	private static final ErrorType ADD_NOT_MULTIPLE = ErrorType
-		.withCode("index:update:add_not_multiple")
+		.withCode("document:patch:add_unsupported")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` adds a value to `{{field}}`, which holds a single value - "
@@ -83,7 +89,8 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType ADD_REACHES_INSIDE = ErrorType
-		.withCode("request:update:add_reaches_inside")
+		.withCode("document:patch:add_reaches_inside")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage(
 			"`{{path}}` reaches inside a value that is being added, which does not exist yet - "
@@ -91,12 +98,14 @@ public class DocumentMapper {
 		);
 
 	private static final ErrorType NOT_AN_OBJECT = ErrorType
-		.withCode("index:update:not_an_object")
+		.withCode("document:patch:not_an_object")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage("`{{path}}` reaches inside `{{field}}`, whose values are not objects");
 
 	private static final ErrorType VALUE_REQUIRED = ErrorType
-		.withCode("index:update:value_required")
+		.withCode("document:patch:selector_required")
+		.withStatus(400)
 		.withArguments("path", "field", "how")
 		.withMessage(
 			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "

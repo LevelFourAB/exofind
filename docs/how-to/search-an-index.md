@@ -61,7 +61,7 @@ Before you begin, ensure that you have:
      [Read numbers in the search box](read-numbers-in-the-search-box.md).
 
    If you query a field that is not enabled in the index definition, the API
-   returns the error `index:query:usage_not_enabled`.
+   returns the error `search:usage_unsupported`.
 
 3. Separate the base search scope from user filter refinements:
 

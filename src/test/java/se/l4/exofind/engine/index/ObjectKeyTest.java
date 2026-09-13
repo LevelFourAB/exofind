@@ -59,7 +59,7 @@ public class ObjectKeyTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:object:key_duplicate"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:object_key_duplicate"));
 	}
 
 	/**
@@ -111,7 +111,7 @@ public class ObjectKeyTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:update:required_field_missing")
+			is("document:field_required")
 		);
 	}
 

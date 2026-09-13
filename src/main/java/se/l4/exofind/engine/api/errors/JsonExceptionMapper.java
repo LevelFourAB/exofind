@@ -40,21 +40,25 @@ import jakarta.ws.rs.ext.Provider;
 @Provider
 @Priority(Priorities.USER)
 public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingException> {
-	private static final ErrorType MALFORMED = ErrorType.withCode("request:malformed")
+	private static final ErrorType MALFORMED = ErrorType.withCode("request:body_malformed")
+		.withStatus(400)
 		.withArguments("reason", "line", "column")
 		.withMessage("The request body could not be read as JSON: {{reason}}");
 
 	private static final ErrorType UNKNOWN_PROPERTY = ErrorType
-		.withCode("request:unknown_property")
+		.withCode("request:property_unknown")
+		.withStatus(400)
 		.withArguments("path", "property")
 		.withMessage("`{{property}}` is not a property of this request");
 
 	private static final ErrorType VALUE_INVALID = ErrorType.withCode("request:value_invalid")
+		.withStatus(400)
 		.withArguments("path", "reason")
 		.withMessage("`{{path}}` cannot be given that value: {{reason}}");
 
 	/** The same failure where the value is the body itself, which has no path. */
 	private static final ErrorType BODY_INVALID = ErrorType.withCode("request:value_invalid")
+		.withStatus(400)
 		.withArguments("reason")
 		.withMessage("The request body is not shaped as this request needs: {{reason}}");
 

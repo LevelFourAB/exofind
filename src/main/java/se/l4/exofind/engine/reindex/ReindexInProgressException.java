@@ -12,6 +12,7 @@ public class ReindexInProgressException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("reindex:in_progress")
+		.withStatus(409)
 		.withArguments("index")
 		.withMessage(
 			"The index `{{index}}` already has a reindex that is not finished"

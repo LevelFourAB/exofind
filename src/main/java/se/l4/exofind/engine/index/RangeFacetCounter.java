@@ -25,7 +25,8 @@ import se.l4.exofind.engine.query.Facet;
  */
 public interface RangeFacetCounter {
 	ErrorType EMPTY_RANGE = ErrorType
-		.withCode("index:query:facet_range_empty")
+		.withCode("search:facet:range_invalid")
+		.withStatus(400)
 		.withMessage("A bucket holds the values from `from` up to but not including `to`, so `to` has to be above `from`");
 
 	/**

@@ -456,7 +456,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:interpret:no_unit"));
+		assertThat(e.getCode(), is("search:interpret:unit_required"));
 	}
 
 	@Test
@@ -471,7 +471,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:field_not_found"));
+		assertThat(e.getCode(), is("search:field_unknown"));
 	}
 
 	@Test
@@ -484,7 +484,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			() -> search(index, Query.text(user("rain under 100")).withTargets(target))
 		);
 
-		assertThat(e.getCode(), is("index:query:interpret:fallback_unit"));
+		assertThat(e.getCode(), is("search:interpret:fallback_unit_mismatch"));
 	}
 
 	@Test
@@ -498,7 +498,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			() -> search(index, Query.text(user("rain under 100")).withTargets(target))
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:not_in_path"));
+		assertThat(e.getCode(), is("search:nested:field_not_inside"));
 	}
 
 	@Test
@@ -582,7 +582,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:not_in_path"));
+		assertThat(e.getCode(), is("search:nested:field_not_inside"));
 	}
 
 	@Test

@@ -24,6 +24,7 @@ public class KeyInUseException extends AuthException {
 
 	private static final ErrorType LAST_ADMINISTRATOR =
 		ErrorType.withCode("auth:key:last_administrator")
+			.withStatus(409)
 			.withArguments("key")
 			.withMessage(
 				"`{{key}}` is the last key granted `keys.write` and this node has no root"
@@ -33,6 +34,7 @@ public class KeyInUseException extends AuthException {
 
 	private static final ErrorType ANONYMOUS =
 		ErrorType.withCode("auth:key:in_use_as_anonymous")
+			.withStatus(409)
 			.withArguments("key")
 			.withMessage(
 				"`{{key}}` is what EXOFIND_AUTH_ANONYMOUS_KEY names on this node, so"

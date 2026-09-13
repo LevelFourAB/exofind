@@ -123,7 +123,7 @@ public class RequestMistakeStatusTest {
 			.when().post("/v1alpha1/indexes/products/search")
 			.then()
 			.statusCode(400)
-			.body("code", is("index:query:nested:outside"));
+			.body("code", is("search:nested:field_outside"));
 	}
 
 	/**
@@ -192,7 +192,7 @@ public class RequestMistakeStatusTest {
 			.then()
 			.statusCode(400)
 			.body("code", is("validation"))
-			.body("errors[0].code", is("request:document:malformed"));
+			.body("errors[0].code", is("document:malformed"));
 	}
 
 	/**
@@ -224,6 +224,6 @@ public class RequestMistakeStatusTest {
 			.post("/v1alpha1/indexes/products/search/actions/explain?key=404")
 			.then()
 			.statusCode(404)
-			.body("code", is("index:explain:document_not_found"));
+			.body("code", is("search:explain:document_not_found"));
 	}
 }

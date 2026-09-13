@@ -15,14 +15,16 @@ public class IndexExplainTargetNotFoundException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType DOCUMENT =
-		ErrorType.withCode("index:explain:document_not_found")
+		ErrorType.withCode("search:explain:document_not_found")
+			.withStatus(404)
 			.withArguments("key")
 			.withMessage(
 				"No document is indexed under the key `{{key}}`, so there is nothing to explain"
 			);
 
 	private static final ErrorType VALUE =
-		ErrorType.withCode("index:explain:value_not_found")
+		ErrorType.withCode("search:explain:value_not_found")
+			.withStatus(404)
 			.withArguments("key", "path", "index")
 			.withMessage(
 				"The document `{{key}}` has no value of `{{path}}` at position {{index}}"

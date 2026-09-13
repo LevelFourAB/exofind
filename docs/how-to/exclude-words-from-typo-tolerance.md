@@ -25,7 +25,7 @@ Before configuring typo exclusions, ensure you have:
    ```text
    GET /v1alpha1/admin/indexes/products/settings
    ```
-   If the index has no search settings, the endpoint returns `404 Not Found` with the error code `index:settings:not_found`. Treat the settings as empty.
+   If the index has no search settings, the endpoint returns `404 Not Found` with the error code `settings:not_found`. Treat the settings as empty.
 
 2. Store a word list in search settings:
    Send a `PUT` request to write the settings. Include any existing settings, such as `ranking` or `synonyms`, because `PUT` replaces the entire settings object:
@@ -46,7 +46,7 @@ Before configuring typo exclusions, ensure you have:
    - `words`: The words to match as spelled, written as somebody would type them.
    - `fields` (optional): The list of field names the exclusions apply to. If omitted, the list covers every field searched as text (any field with `matching` or `autocomplete` usage).
 
-   The server validates the named fields against the active generation at write time. If a field does not exist or is not searched as text, the server returns `400 Bad Request` with `index:settings:typo_exclusions:unknown_field` or `index:settings:typo_exclusions:field_not_text`.
+   The server validates the named fields against the active generation at write time. If a field does not exist or is not searched as text, the server returns `400 Bad Request` with `settings:typo_exclusions:field_unknown` or `settings:typo_exclusions:field_unsupported`.
 
    The new settings take effect immediately on the answering node and within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds) on other nodes.
 

@@ -17,6 +17,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.ObjectFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.TimestampFieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.VectorFieldDefinition;
+import se.l4.exofind.engine.api.errors.RequestErrors;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -44,12 +45,14 @@ import se.l4.exofind.engine.index.locales.Locales;
 public class IndexLocales {
 	private static final ErrorType DEFAULT_LOCALE_REQUIRED =
 		ErrorType.withCode("index:locales:default_locale_required")
+			.withStatus(400)
 			.withMessage(
 				"The `locales` of the index has no `defaultLocale`, which every field takes as its own"
 			);
 
 	private static final ErrorType NOT_DECLARED =
-		ErrorType.withCode("index:field:locales:not_declared")
+		ErrorType.withCode("index:field:locales:locale_unknown")
+			.withStatus(400)
 			.withArguments("name", "locale")
 			.withMessage(
 				"Field `{{name}}` names locale `{{locale}}`, which the index does not declare in its `locales`"
@@ -57,6 +60,7 @@ public class IndexLocales {
 
 	private static final ErrorType DEFAULT_NOT_IN_ONLY =
 		ErrorType.withCode("index:field:locales:default_not_in_only")
+			.withStatus(400)
 			.withArguments("name", "locale")
 			.withMessage(
 				"Field `{{name}}` narrows to locales that leave out `{{locale}}`, the locale it defaults to"
@@ -64,6 +68,7 @@ public class IndexLocales {
 
 	private static final ErrorType ONLY_WITHOUT_DECLARATION =
 		ErrorType.withCode("index:field:locales:only_without_declaration")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` narrows with `only`, but the index declares no `locales` to narrow"
@@ -71,6 +76,7 @@ public class IndexLocales {
 
 	private static final ErrorType LIST_WITH_DECLARATION =
 		ErrorType.withCode("index:field:locales:list_with_declaration")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` lists its own `locales` while the index declares them - narrow with `only` instead"
@@ -81,9 +87,6 @@ public class IndexLocales {
 	 * left to fail where a locale is canonicalized, which names no place in the
 	 * request.
 	 */
-	private static final ErrorType VALUE_REQUIRED = ErrorType.withCode("request:value_required")
-		.withMessage("A value is needed here, `null` says nothing");
-
 	private IndexLocales() {
 	}
 
@@ -99,7 +102,7 @@ public class IndexLocales {
 	 * @throws ValidationException
 	 *   with {@code index:locales:default_locale_required} if the declaration
 	 *   names no default locale,
-	 *   {@code index:field:locales:not_declared} if a field names a locale the
+	 *   {@code index:field:locales:locale_unknown} if a field names a locale the
 	 *   index does not declare,
 	 *   {@code index:field:locales:default_not_in_only} if a field narrows to
 	 *   locales that leave out the one it defaults to,
@@ -207,7 +210,7 @@ public class IndexLocales {
 	 */
 	private static void require(Object value, ObjectLocation at) {
 		if(value == null) {
-			throw new ValidationException(VALUE_REQUIRED.toMessage(at));
+			throw new ValidationException(RequestErrors.VALUE_REQUIRED.toMessage(at));
 		}
 	}
 

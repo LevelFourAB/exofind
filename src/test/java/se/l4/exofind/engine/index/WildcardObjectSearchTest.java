@@ -141,7 +141,7 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			hasItem("index:update:field_not_found")
+			hasItem("document:field_unknown")
 		);
 	}
 
@@ -252,7 +252,7 @@ public class WildcardObjectSearchTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			contains("index:update:field_inside_object")
+			contains("document:field_inside_object")
 		);
 	}
 

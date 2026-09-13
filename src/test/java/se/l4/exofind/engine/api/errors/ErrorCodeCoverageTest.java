@@ -38,7 +38,7 @@ public class ErrorCodeCoverageTest {
 	 * <ul>
 	 *   <li>{@code validation} is the envelope of a failed request, and the
 	 *   codes a caller branches on are the ones inside its {@code errors}
-	 *   <li>{@code index:io_error} is answered with a 500, the same as any
+	 *   <li>{@code storage:io_error} is answered with a 500, the same as any
 	 *   other failure of the node itself
 	 *   <li>{@code auth:forbidden} is the refusal every endpoint answers with,
 	 *   and {@code RequiredPermissionFilter} writes it into the document from
@@ -48,7 +48,7 @@ public class ErrorCodeCoverageTest {
 	 * </ul>
 	 */
 	private static final Set<String> UNIVERSAL =
-		Set.of("validation", "index:io_error", "auth:forbidden");
+		Set.of("validation", "storage:io_error", "auth:forbidden");
 
 	@Test
 	void everyEndpointNamesTheCodesItCanAnswerWith() throws Exception {

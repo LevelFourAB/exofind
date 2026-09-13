@@ -60,11 +60,13 @@ import se.l4.exofind.engine.query.matchers.RangesMatcher;
  */
 public class TimestampFieldType implements FieldType {
 	private static final ErrorType COLLATION_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:sort:collation_not_supported")
+		.withCode("index:field:sort:collation_unsupported")
+		.withStatus(400)
 		.withMessage("Collation means nothing when sorting a timestamp field");
 
 	private static final ErrorType INVALID_VALUE = ErrorType
-		.withCode("index:update:timestamp:invalid_value")
+		.withCode("document:timestamp:value_invalid")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` holds a timestamp, which has to be an ISO 8601 date and time with an offset, such as `2024-05-01T12:00:00Z`"

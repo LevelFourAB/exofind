@@ -6,6 +6,7 @@ public class IndexNotFoundException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:not_found")
+		.withStatus(404)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` does not exist");
 

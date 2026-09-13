@@ -29,7 +29,7 @@ The `dimensions` and `similarity` properties are fixed once documents are writte
 
 The `similarity` property determines the metric used to judge distance between vectors:
 
-- `cosine` (default): Compares vector direction and ignores length. This metric is standard for most text embedding models. If you submit a vector of all zeros, the engine rejects it with `index:update:vector:zero_vector`.
+- `cosine` (default): Compares vector direction and ignores length. This metric is standard for most text embedding models. If you submit a vector of all zeros, the engine rejects it with `document:vector:value_zero`.
 - `dot_product`: Requires less computation, but only produces valid orderings when every vector has unit length. Use this metric when your model outputs normalized vectors or when you normalize the vectors yourself.
 - `euclidean`: Compares geometric position for vectors where length carries meaning.
 
@@ -48,8 +48,8 @@ Content-Type: application/x-ndjson
 
 When indexing documents with vectors, verify the following requirements:
 
-- Every vector must have the exact number of dimensions declared in the field definition. If dimensions do not match, the engine returns `index:update:vector:wrong_dimensions`.
-- Every component in the vector array must be a finite number. If a component is not finite, the engine returns `index:update:vector:not_finite`.
+- Every vector must have the exact number of dimensions declared in the field definition. If dimensions do not match, the engine returns `document:vector:dimensions_mismatch`.
+- Every component in the vector array must be a finite number. If a component is not finite, the engine returns `document:vector:value_not_finite`.
 - You must use the same model, model version, and prompt or prefix to generate document vectors and query vectors. The engine does not validate model compatibility. If you query with a vector from a different model, the returned nearest neighbours are meaningless. Changing models requires a [rollout into a new generation](roll-out-a-definition-change.md).
 
 A document can omit the vector field. When omitted, other search clauses can match the document, but a `knn` clause never matches it.

@@ -78,18 +78,21 @@ public class ObjectFieldType implements FieldType {
 	);
 
 	private static final ErrorType NO_FIELDS = ErrorType
-		.withCode("index:field:object:no_fields")
+		.withCode("index:field:object:fields_required")
+		.withStatus(400)
 		.withMessage("An object needs at least one field");
 
 	private static final ErrorType USAGE_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:object:usage_not_supported")
+		.withCode("index:field:object:usage_unsupported")
+		.withStatus(400)
 		.withArguments("usage")
 		.withMessage(
 			"An object holds no value of its own, so it can not be defined for `{{usage}}`"
 		);
 
 	private static final ErrorType INNER_USAGE_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:object:inner_usage_not_supported")
+		.withCode("index:field:object:inner_usage_unsupported")
+		.withStatus(400)
 		.withArguments("name", "usage")
 		.withMessage(
 			"Field `{{name}}` is inside an object, where `{{usage}}` is not supported"
@@ -97,6 +100,7 @@ public class ObjectFieldType implements FieldType {
 
 	private static final ErrorType NESTED_IN_NESTED = ErrorType
 		.withCode("index:field:object:nested_in_nested")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is a nested list below a nested list, and values "
@@ -106,6 +110,7 @@ public class ObjectFieldType implements FieldType {
 
 	private static final ErrorType MODE_REQUIRED = ErrorType
 		.withCode("index:field:object:mode_required")
+		.withStatus(400)
 		.withMessage(
 			"A list of objects needs a `mode`: `nested` when a search must be able to "
 			+ "ask that several conditions hold inside the same value, `flattened` when "
@@ -114,33 +119,38 @@ public class ObjectFieldType implements FieldType {
 
 	private static final ErrorType MODE_WITHOUT_MULTIPLE = ErrorType
 		.withCode("index:field:object:mode_without_multiple")
+		.withStatus(400)
 		.withMessage(
 			"A single object is always flattened, so `mode` only applies together with `multiple`"
 		);
 
 	private static final ErrorType KEY_WITHOUT_MULTIPLE = ErrorType
 		.withCode("index:field:object:key_without_multiple")
+		.withStatus(400)
 		.withMessage(
 			"A single object has no other value to be told apart from, so `key` only "
 			+ "applies together with `multiple`"
 		);
 
 	private static final ErrorType KEY_NOT_FOUND = ErrorType
-		.withCode("index:field:object:key_not_found")
+		.withCode("index:field:object:key_unknown")
+		.withStatus(400)
 		.withArguments("key")
 		.withMessage(
 			"`key` names `{{key}}`, which is not one of the fields the object holds"
 		);
 
 	private static final ErrorType KEY_NOT_VALID = ErrorType
-		.withCode("index:field:object:key_not_valid")
+		.withCode("index:field:object:key_invalid")
+		.withStatus(400)
 		.withArguments("key", "reason")
 		.withMessage(
 			"`key` names `{{key}}`, which can not say which value is which: {{reason}}"
 		);
 
 	private static final ErrorType FLATTENED_SORT = ErrorType
-		.withCode("index:field:object:flattened_sort")
+		.withCode("index:field:object:flattened_sort_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is inside a flattened list of objects, where no single "
@@ -149,7 +159,8 @@ public class ObjectFieldType implements FieldType {
 		);
 
 	private static final ErrorType FLATTENED_STORED = ErrorType
-		.withCode("index:field:object:flattened_stored")
+		.withCode("index:field:object:flattened_stored_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is inside a flattened list of objects, whose values "

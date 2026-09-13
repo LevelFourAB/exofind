@@ -98,8 +98,8 @@ public class RefusedRequestBodyTest {
 			.when().put("/v1alpha1/admin/indexes/unknown-property")
 			.then()
 			.statusCode(400)
-			.body("code", is("request:unknown_property"))
-			.body("errors[0].code", is("request:unknown_property"))
+			.body("code", is("request:property_unknown"))
+			.body("errors[0].code", is("request:property_unknown"))
 			.body("errors[0].path", is("localefallback"))
 			.body("errors[0].arguments.property", is("localefallback"));
 	}
@@ -122,7 +122,7 @@ public class RefusedRequestBodyTest {
 			.when().put("/v1alpha1/admin/indexes/unknown-nested")
 			.then()
 			.statusCode(400)
-			.body("code", is("request:unknown_property"))
+			.body("code", is("request:property_unknown"))
 			.body("errors[0].path", is("fields.id.sortable"));
 	}
 
@@ -138,8 +138,8 @@ public class RefusedRequestBodyTest {
 			.when().put("/v1alpha1/admin/indexes/malformed")
 			.then()
 			.statusCode(400)
-			.body("code", is("request:malformed"))
-			.body("errors[0].code", is("request:malformed"))
+			.body("code", is("request:body_malformed"))
+			.body("errors[0].code", is("request:body_malformed"))
 			.body("errors[0].arguments.line", is("1"))
 			.body("errors[0].arguments.column", notNullValue());
 	}
@@ -251,7 +251,7 @@ public class RefusedRequestBodyTest {
 			.when().post("/v1alpha1/indexes/books/search")
 			.then()
 			.statusCode(413)
-			.body("code", is("request:too_large"))
-			.body("errors[0].code", is("request:too_large"));
+			.body("code", is("request:body_too_large"))
+			.body("errors[0].code", is("request:body_too_large"));
 	}
 }

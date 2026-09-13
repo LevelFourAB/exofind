@@ -10,7 +10,8 @@ import se.l4.exofind.engine.errors.ErrorType;
  * can be fixed.
  */
 public class IndexFieldNotFoundException extends IndexException {
-	private static final ErrorType TYPE = ErrorType.withCode("index:query:field_not_found")
+	private static final ErrorType TYPE = ErrorType.withCode("search:field_unknown")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage("Field `{{name}}` does not exist in index");
 

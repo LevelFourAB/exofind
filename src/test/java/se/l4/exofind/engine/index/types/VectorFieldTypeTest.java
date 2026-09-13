@@ -175,7 +175,7 @@ public class VectorFieldTypeTest {
 	public void testDimensionsAreRequired() {
 		assertThat(
 			codes(validate(vector(VectorFieldTypeDef.newBuilder()))),
-			contains("index:field:vector:missing_dimensions")
+			contains("index:field:vector:dimensions_required")
 		);
 	}
 
@@ -183,11 +183,11 @@ public class VectorFieldTypeTest {
 	public void testDimensionsHaveToBeInRange() {
 		assertThat(
 			codes(validate(vector(0))),
-			contains("index:field:vector:invalid_dimensions")
+			contains("index:field:vector:dimensions_out_of_range")
 		);
 		assertThat(
 			codes(validate(vector(4097))),
-			contains("index:field:vector:invalid_dimensions")
+			contains("index:field:vector:dimensions_out_of_range")
 		);
 		assertThat(validate(vector(4096)), is(emptyIterable()));
 	}
@@ -204,7 +204,7 @@ public class VectorFieldTypeTest {
 					)
 				)
 			),
-			contains("index:field:vector:invalid_hnsw_m")
+			contains("index:field:vector:hnsw_m_out_of_range")
 		);
 		assertThat(
 			codes(
@@ -216,7 +216,7 @@ public class VectorFieldTypeTest {
 					)
 				)
 			),
-			contains("index:field:vector:invalid_hnsw_m")
+			contains("index:field:vector:hnsw_m_out_of_range")
 		);
 		assertThat(
 			codes(
@@ -231,7 +231,7 @@ public class VectorFieldTypeTest {
 					)
 				)
 			),
-			contains("index:field:vector:invalid_hnsw_ef_construction")
+			contains("index:field:vector:hnsw_ef_construction_out_of_range")
 		);
 	}
 
@@ -239,7 +239,7 @@ public class VectorFieldTypeTest {
 	public void testFilterIsRefused() {
 		assertThat(
 			codes(validate(vector(3).setFilter(FilterConfig.getDefaultInstance()))),
-			contains("index:field:vector:filter_not_supported")
+			contains("index:field:vector:filter_unsupported")
 		);
 	}
 
@@ -247,7 +247,7 @@ public class VectorFieldTypeTest {
 	public void testMultipleIsRefused() {
 		assertThat(
 			codes(validate(vector(3).setMultiple(true))),
-			contains("index:field:vector:multiple_not_supported")
+			contains("index:field:vector:multiple_unsupported")
 		);
 	}
 
@@ -261,7 +261,7 @@ public class VectorFieldTypeTest {
 					)
 				)
 			),
-			contains("index:field:vector:locales_not_supported")
+			contains("index:field:vector:locales_unsupported")
 		);
 	}
 
@@ -272,7 +272,7 @@ public class VectorFieldTypeTest {
 			() -> index(vector(3), "not a vector")
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:vector:invalid_value"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:vector:value_invalid"));
 	}
 
 	@Test
@@ -282,7 +282,7 @@ public class VectorFieldTypeTest {
 			() -> index(vector(3), new float[] { 1f, 2f })
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:vector:wrong_dimensions"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:vector:dimensions_mismatch"));
 	}
 
 	@Test
@@ -292,7 +292,7 @@ public class VectorFieldTypeTest {
 			() -> index(vector(3), new float[] { 1f, Float.NaN, 3f })
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:vector:not_finite"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:vector:value_not_finite"));
 	}
 
 	@Test
@@ -302,7 +302,7 @@ public class VectorFieldTypeTest {
 			() -> index(vector(3), new float[] { 0f, 0f, 0f })
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:vector:zero_vector"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:vector:value_zero"));
 	}
 
 	@Test

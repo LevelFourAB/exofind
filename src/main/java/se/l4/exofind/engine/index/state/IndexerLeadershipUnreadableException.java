@@ -13,6 +13,7 @@ public class IndexerLeadershipUnreadableException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("indexer:leadership_unreadable")
+		.withStatus(503)
 		.withMessage("Which node writes which index could not be read right now");
 
 	public IndexerLeadershipUnreadableException() {

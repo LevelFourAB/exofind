@@ -128,7 +128,7 @@ public class NestedStoredSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(e.getCode(), is("search:usage_unsupported"));
 	}
 
 	@Test
@@ -142,7 +142,7 @@ public class NestedStoredSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:source_not_kept"));
+		assertThat(e.getCode(), is("search:source_not_kept"));
 	}
 
 	@Test
@@ -221,7 +221,7 @@ public class NestedStoredSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(e.getCode(), is("search:usage_unsupported"));
 	}
 
 	@Test

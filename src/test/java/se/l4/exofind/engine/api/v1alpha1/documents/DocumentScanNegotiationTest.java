@@ -141,7 +141,7 @@ public class DocumentScanNegotiationTest {
 			.when().get("/v1alpha1/indexes/books/documents?limit=0")
 			.then()
 			.statusCode(400)
-			.body("errors[0].code", is("request:scan:limit_invalid"));
+			.body("errors[0].code", is("request:limit_out_of_range"));
 	}
 
 	/**

@@ -11,7 +11,8 @@ import se.l4.exofind.engine.index.IndexException;
 public class SearchSettingsVersionMismatchException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("index:settings:version_mismatch")
+	private static final ErrorType TYPE = ErrorType.withCode("settings:version_mismatch")
+		.withStatus(412)
 		.withArguments("index")
 		.withMessage(
 			"The search settings of index `{{index}}` are not at the version the update expected"

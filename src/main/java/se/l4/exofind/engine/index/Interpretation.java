@@ -102,14 +102,16 @@ import se.l4.exofind.engine.query.matchers.UserText;
  */
 final class Interpretation {
 	private static final ErrorType TARGET_WITHOUT_UNIT = ErrorType
-		.withCode("index:query:interpret:no_unit")
+		.withCode("search:interpret:unit_required")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` declares no unit, so a number in the text can not be read as a filter on it"
 		);
 
 	private static final ErrorType FALLBACK_UNIT_DIFFERS = ErrorType
-		.withCode("index:query:interpret:fallback_unit")
+		.withCode("search:interpret:fallback_unit_mismatch")
+		.withStatus(400)
 		.withArguments("name", "unit", "field", "expected")
 		.withMessage(
 			"Fallback `{{name}}` is in `{{unit}}`, but stands in for `{{field}}` which is in `{{expected}}`"

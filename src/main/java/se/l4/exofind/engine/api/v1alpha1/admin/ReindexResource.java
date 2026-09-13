@@ -73,7 +73,8 @@ import jakarta.ws.rs.core.MediaType;
 @Produces(MediaType.APPLICATION_JSON)
 public class ReindexResource {
 	private static final ErrorType PHASE_UNKNOWN =
-		ErrorType.withCode("reindex:phase_unknown")
+		ErrorType.withCode("reindex:phase_invalid")
+			.withStatus(400)
 			.withArguments("value")
 			.withMessage(
 				"A reindex phase is one of pending, copying, replaying, ready,"
@@ -128,12 +129,12 @@ public class ReindexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:list:limit_invalid",
+		value = "request:limit_out_of_range",
 		status = 400,
 		when = "The `limit` parameter is not a whole number from 1 to 1000."
 	)
 	@ReturnsError(
-		value = "reindex:phase_unknown",
+		value = "reindex:phase_invalid",
 		status = 400,
 		when = "A `phase` parameter names no reindex phase. The `value` argument carries what was sent."
 	)
@@ -143,7 +144,7 @@ public class ReindexResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "reindex:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "The records of the reindexes could not be read. Send the request again once the storage responds."
 	)
@@ -288,7 +289,7 @@ public class ReindexResource {
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
 	@ReturnsError(
-		value = "reindex:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "The record of the reindex could not be read. Send the request again once the storage responds."
 	)
@@ -376,7 +377,7 @@ public class ReindexResource {
 		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
-		value = "reindex:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "The record of the reindex could not be written. Send the request again once the storage responds."
 	)

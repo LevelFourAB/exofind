@@ -268,7 +268,7 @@ public class PerDocumentHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:hits:when_sort_unsupported"));
+		assertThat(e.getCode(), is("search:hits:when_sort_unsupported"));
 	}
 
 	@Test

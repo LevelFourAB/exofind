@@ -819,7 +819,7 @@ public class HighlightSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:outside"));
+		assertThat(e.getCode(), is("search:nested:field_outside"));
 	}
 
 	/**

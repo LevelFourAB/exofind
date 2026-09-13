@@ -190,7 +190,7 @@ public class TimestampIndexingTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			hasItem("index:update:timestamp:invalid_value")
+			hasItem("document:timestamp:value_invalid")
 		);
 	}
 
@@ -210,7 +210,7 @@ public class TimestampIndexingTest extends AbstractIndexTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			hasItem("index:update:timestamp:invalid_value")
+			hasItem("document:timestamp:value_invalid")
 		);
 	}
 

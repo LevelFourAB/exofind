@@ -155,7 +155,7 @@ public class DocumentSourceTest extends AbstractIndexTest {
 			() -> index.search(SearchRequest.create().withFields("category").build())
 		);
 
-		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(e.getCode(), is("search:usage_unsupported"));
 	}
 
 	@Test
@@ -184,14 +184,14 @@ public class DocumentSourceTest extends AbstractIndexTest {
 			() -> index.search(SearchRequest.create().withFields("dimensions").build())
 		);
 
-		assertThat(e.getCode(), is("index:query:source_not_kept"));
+		assertThat(e.getCode(), is("search:source_not_kept"));
 
 		var inside = assertThrows(
 			IndexFieldUsageException.class,
 			() -> index.search(SearchRequest.create().withFields("dimensions.width").build())
 		);
 
-		assertThat(inside.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(inside.getCode(), is("search:usage_unsupported"));
 	}
 
 	/**
@@ -596,7 +596,7 @@ public class DocumentSourceTest extends AbstractIndexTest {
 			IndexException.class,
 			() -> DocumentSource.decode(new BytesRef(truncated))
 		);
-		assertThat(e.getCode(), is("index:source:unreadable"));
+		assertThat(e.getCode(), is("document:source_unreadable"));
 	}
 
 	/**
@@ -625,7 +625,7 @@ public class DocumentSourceTest extends AbstractIndexTest {
 			IndexException.class,
 			() -> DocumentSource.decode(bytes)
 		);
-		assertThat(e.getCode(), is("index:source:unreadable"));
+		assertThat(e.getCode(), is("document:source_unreadable"));
 	}
 
 	private static byte[] encoded(Writer writer) throws IOException {

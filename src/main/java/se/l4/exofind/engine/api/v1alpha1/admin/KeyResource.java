@@ -65,7 +65,8 @@ import jakarta.ws.rs.core.Response;
 @Path("/v1alpha1/admin/keys")
 @Produces(MediaType.APPLICATION_JSON)
 public class KeyResource {
-	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:missing_body")
+	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:body_required")
+		.withStatus(400)
 		.withMessage("A key definition is required");
 
 	private final Keys keys;
@@ -114,7 +115,7 @@ public class KeyResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:list:limit_invalid",
+		value = "request:limit_out_of_range",
 		status = 400,
 		when = "The `limit` parameter is not a whole number from 1 to 1000."
 	)
@@ -124,12 +125,12 @@ public class KeyResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "auth:keys:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "The node is not configured with key storage."
 	)
 	@ReturnsError(
-		value = "auth:keys:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Key storage answered with an error. Send the request again."
 	)
@@ -231,17 +232,17 @@ public class KeyResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:missing_body",
+		value = "request:body_required",
 		status = 400,
 		when = "The request carries no body."
 	)
 	@ReturnsError(
-		value = "auth:key:unknown_role",
+		value = "auth:key:role_unknown",
 		status = 400,
 		when = "The definition names a role this version does not have."
 	)
 	@ReturnsError(
-		value = "auth:key:unknown_permission",
+		value = "auth:key:permission_unknown",
 		status = 400,
 		when = "The definition names a permission this version does not have."
 	)
@@ -261,17 +262,17 @@ public class KeyResource {
 		when = "A grant holds a permission that is about one index and does not say which indexes it covers."
 	)
 	@ReturnsError(
-		value = "auth:key:invalid_index_pattern",
+		value = "auth:key:index_pattern_invalid",
 		status = 400,
 		when = "An entry of `indexes` is neither an index name nor a prefix followed by `*`."
 	)
 	@ReturnsError(
-		value = "auth:key:indexes_not_used",
+		value = "auth:key:indexes_unsupported",
 		status = 400,
 		when = "A grant names `indexes` and holds no permission that is about one index, so the patterns would narrow nothing."
 	)
 	@ReturnsError(
-		value = "auth:key:invalid_expiry",
+		value = "auth:key:expiry_invalid",
 		status = 400,
 		when = "`expiresAt` is not an ISO 8601 timestamp."
 	)
@@ -281,17 +282,17 @@ public class KeyResource {
 		when = "`expiresAt` has already passed, so the key would be lapsed from the moment it was created."
 	)
 	@ReturnsError(
-		value = "auth:keys:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "The node is not configured with key storage."
 	)
 	@ReturnsError(
-		value = "auth:keys:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Key storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "auth:keys:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again."
 	)
@@ -392,17 +393,17 @@ public class KeyResource {
 		when = "`EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node, so revoking it would stop that node from starting."
 	)
 	@ReturnsError(
-		value = "auth:keys:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "The node is not configured with key storage."
 	)
 	@ReturnsError(
-		value = "auth:keys:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Key storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "auth:keys:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again."
 	)
@@ -483,17 +484,17 @@ public class KeyResource {
 		when = "No key is stored under this ID."
 	)
 	@ReturnsError(
-		value = "auth:keys:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "The node is not configured with key storage."
 	)
 	@ReturnsError(
-		value = "auth:keys:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Key storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "auth:keys:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "Other nodes kept changing the stored keys. The stored keys are unchanged; send the request again."
 	)

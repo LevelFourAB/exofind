@@ -17,6 +17,7 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Signal;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
 import se.l4.exofind.engine.errors.ErrorMessage;
+import se.l4.exofind.engine.api.errors.RequestErrors;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -73,158 +74,187 @@ public class SearchRequestMapper {
 	 */
 	public static final int DEFAULT_PAGES_MAX = 9;
 
-	private static final ErrorType LIMIT_INVALID = ErrorType.withCode("search:limit:invalid")
+	private static final ErrorType LIMIT_INVALID = ErrorType.withCode("search:limit_out_of_range")
+		.withStatus(400)
 		.withArguments("max")
 		.withMessage(
 			"A page holds between no results and {{max}} - ask for fewer and follow `next` for the rest"
 		);
 
-	private static final ErrorType OFFSET_INVALID = ErrorType.withCode("search:offset:invalid")
+	private static final ErrorType OFFSET_INVALID = ErrorType.withCode("search:offset_out_of_range")
+		.withStatus(400)
 		.withMessage("A search can not skip fewer than no results");
 
-	private static final ErrorType PAGE_CONFLICTING = ErrorType.withCode("search:page:conflicting")
+	private static final ErrorType PAGE_CONFLICTING = ErrorType.withCode("search:paging_conflicting")
+		.withStatus(400)
 		.withMessage(
 			"Use at most one of `offset`, `after` and `before` to say where the results start"
 		);
 
-	private static final ErrorType PAGE_TOO_DEEP = ErrorType.withCode("search:page:too_deep")
+	private static final ErrorType PAGE_TOO_DEEP = ErrorType.withCode("search:paging_too_deep")
+		.withStatus(400)
 		.withArguments("max")
 		.withMessage(
 			"The results asked for end past result {{max}}, which is as deep as paging goes"
 		);
 
 	private static final ErrorType CURSOR_INVALID = ErrorType.withCode("search:cursor:invalid")
+		.withStatus(400)
 		.withMessage("The cursor is not one this engine handed out");
 
 	private static final ErrorType CURSOR_SORT_MISMATCH =
 		ErrorType.withCode("search:cursor:sort_mismatch")
+			.withStatus(400)
 			.withMessage(
 				"The cursor was handed out under a different sort, so it does not name a position in these results"
 			);
 
 	private static final ErrorType PAGES_WITHOUT_LIMIT =
 		ErrorType.withCode("search:pages:without_limit")
+			.withStatus(400)
 			.withMessage("Numbered pages need a limit above zero");
 
 	private static final ErrorType PAGES_WITHOUT_OFFSET =
 		ErrorType.withCode("search:pages:without_offset")
+			.withStatus(400)
 			.withMessage(
 				"Numbered pages need a position with a number - start from `offset` or a page's cursor rather than `next`/`previous`"
 			);
 
 	private static final ErrorType PAGES_MAX_INVALID =
-		ErrorType.withCode("search:pages:max_invalid")
+		ErrorType.withCode("search:pages:max_out_of_range")
+			.withStatus(400)
 			.withMessage("The number of page entries has to be above zero");
 
 	private static final ErrorType SIGNAL_FIELD_REQUIRED =
 		ErrorType.withCode("search:signal:field_required")
+			.withStatus(400)
 			.withMessage("The name of the field to read the value from is required");
 
 	private static final ErrorType SIGNAL_SHAPE_INVALID =
 		ErrorType.withCode("search:signal:shape_invalid")
+			.withStatus(400)
 			.withMessage(
 				"A ranking signal has to be exactly one shape - `saturation`, `decay`, or `linear`"
 			);
 
 	private static final ErrorType SIGNAL_PIVOT_INVALID =
-		ErrorType.withCode("search:signal:pivot_invalid")
+		ErrorType.withCode("search:signal:pivot_out_of_range")
+			.withStatus(400)
 			.withMessage("The `pivot` of a saturation signal has to be a number above zero");
 
 	private static final ErrorType SIGNAL_HALF_LIFE_INVALID =
-		ErrorType.withCode("search:signal:half_life_invalid")
+		ErrorType.withCode("search:signal:half_life_out_of_range")
+			.withStatus(400)
 			.withMessage("The `halfLife` of a decay signal has to be a number of seconds above zero");
 
 	private static final ErrorType SIGNAL_CEILING_INVALID =
-		ErrorType.withCode("search:signal:ceiling_invalid")
+		ErrorType.withCode("search:signal:ceiling_out_of_range")
+			.withStatus(400)
 			.withMessage("The `ceiling` of a linear signal has to be a number above zero");
 
 	private static final ErrorType SIGNAL_WEIGHT_INVALID =
-		ErrorType.withCode("search:signal:weight_invalid")
+		ErrorType.withCode("search:signal:weight_out_of_range")
+			.withStatus(400)
 			.withMessage("The `weight` of a ranking signal can not be less than nothing");
 
 	private static final ErrorType SIGNAL_MODE_WITHOUT_SIGNALS =
 		ErrorType.withCode("search:signal:mode_without_signals")
+			.withStatus(400)
 			.withMessage(
 				"`signalsMode` says how the signals of a search meet the ranking of the index - give `signals` as well, or leave it out"
 			);
 
 	private static final ErrorType RESCORE_WINDOW_REQUIRED =
 		ErrorType.withCode("search:rescore:window_required")
+			.withStatus(400)
 			.withMessage("How many of the best results a second pass reaches is required");
 
 	private static final ErrorType RESCORE_WINDOW_INVALID =
-		ErrorType.withCode("search:rescore:window_invalid")
+		ErrorType.withCode("search:rescore:window_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A second pass reaches between 1 and {{max}} results");
 
 	private static final ErrorType RESCORE_WINDOW_TOO_SMALL =
 		ErrorType.withCode("search:rescore:window_too_small")
+			.withStatus(400)
 			.withMessage(
 				"A rescore has to reach the results being returned - widen `window`, or ask for an earlier page"
 			);
 
 	private static final ErrorType RESCORE_EMPTY =
 		ErrorType.withCode("search:rescore:empty")
+			.withStatus(400)
 			.withMessage("A rescore has to hold a boost or a signal to reorder by");
 
 	private static final ErrorType RESCORE_WEIGHT_INVALID =
-		ErrorType.withCode("search:rescore:weight_invalid")
+		ErrorType.withCode("search:rescore:weight_out_of_range")
+			.withStatus(400)
 			.withMessage("The `weight` of a rescore can not be less than nothing");
 
 	private static final ErrorType RESCORE_WITH_HITS =
 		ErrorType.withCode("search:rescore:hits_unsupported")
+			.withStatus(400)
 			.withMessage(
 				"A search whose hits are the values of an object field can not rescore - a second pass scores documents"
 			);
 
-	private static final ErrorType REQUIRED = ErrorType.withCode("search:required")
-		.withMessage("A value is required here");
-
 	private static final ErrorType CLAUSE_FIELD_REQUIRED =
 		ErrorType.withCode("search:clause:field_required")
+			.withStatus(400)
 			.withMessage("The name of the field to match is required");
 
 	private static final ErrorType CLAUSE_MATCH_REQUIRED =
 		ErrorType.withCode("search:clause:match_required")
+			.withStatus(400)
 			.withMessage("What to look for in the field is required");
 
 	private static final ErrorType CLAUSE_TEXT_REQUIRED =
 		ErrorType.withCode("search:clause:text_required")
+			.withStatus(400)
 			.withMessage("The text to search for is required");
 
 	private static final ErrorType INTERPRET_FIELDS_REQUIRED =
 		ErrorType.withCode("search:clause:interpret_fields_required")
+			.withStatus(400)
 			.withMessage("At least one target to read the text on is required");
 
 	private static final ErrorType INTERPRET_WHEN_UNSUPPORTED =
 		ErrorType.withCode("search:clause:interpret_when_unsupported")
+			.withStatus(400)
 			.withArguments("type")
 			.withMessage(
 				"The `when` of a target holds what can hold for a single value, which a `{{type}}` clause can not"
 			);
 
 	private static final ErrorType CLAUSE_SLOP_INVALID =
-		ErrorType.withCode("search:clause:slop_invalid")
+		ErrorType.withCode("search:clause:slop_out_of_range")
+			.withStatus(400)
 			.withMessage("How far apart the words of a phrase may sit can not be negative");
 
 	private static final ErrorType CLAUSE_SLOP_NOT_APPLICABLE =
-		ErrorType.withCode("search:clause:slop_not_applicable")
+		ErrorType.withCode("search:clause:slop_unsupported")
+			.withStatus(400)
 			.withMessage(
 				"Only a phrase has words that sit apart - set `match` to `phrase`, or to `user` to read the quotes in what was typed"
 			);
 
 	private static final ErrorType CLAUSE_JOIN_NOT_APPLICABLE =
-		ErrorType.withCode("search:clause:join_not_applicable")
+		ErrorType.withCode("search:clause:join_unsupported")
+			.withStatus(400)
 			.withMessage(
 				"Only what somebody typed has parts to combine - set `match` to `user`, or say `all` or `any` in `match` itself"
 			);
 
 	private static final ErrorType CLAUSE_PATH_REQUIRED =
 		ErrorType.withCode("search:clause:path_required")
+			.withStatus(400)
 			.withMessage("The name of the object field to match inside is required");
 
 	private static final ErrorType CLAUSE_VECTOR_REQUIRED =
 		ErrorType.withCode("search:clause:vector_required")
+			.withStatus(400)
 			.withMessage("The vector to find the neighbours of is required");
 
 	/*
@@ -233,22 +263,31 @@ public class SearchRequestMapper {
 	 * wrong where no cap is known, such as a query that names documents to
 	 * delete.
 	 */
-	private static final ErrorType CLAUSE_K_INVALID =
-		ErrorType.withCode("search:clause:k_invalid")
-			.withMessage("How many neighbours to return is required, above zero");
+	private static final ErrorType CLAUSE_K_REQUIRED =
+		ErrorType.withCode("search:clause:k_required")
+			.withStatus(400)
+			.withMessage("How many neighbours to return is required");
+
+	private static final ErrorType CLAUSE_K_OUT_OF_RANGE =
+		ErrorType.withCode("search:clause:k_out_of_range")
+			.withStatus(400)
+			.withMessage("How many neighbours to return has to be above zero");
 
 	private static final ErrorType CLAUSE_WEIGHT_INVALID =
-		ErrorType.withCode("search:clause:weight_invalid")
+		ErrorType.withCode("search:clause:weight_out_of_range")
+			.withStatus(400)
 			.withMessage("How much the clauses count is required, zero or above");
 
 	private static final ErrorType CLAUSE_RANKINGS_INVALID =
-		ErrorType.withCode("search:clause:rankings_invalid")
+		ErrorType.withCode("search:clause:rankings_too_few")
+			.withStatus(400)
 			.withMessage(
 				"Fusing ranks a document by where several rankings put it, so it needs at least two of them"
 			);
 
 	private static final ErrorType CLAUSE_RANKING_EMPTY =
 		ErrorType.withCode("search:clause:ranking_empty")
+			.withStatus(400)
 			.withMessage("A ranking needs something to rank by");
 
 	/*
@@ -256,162 +295,197 @@ public class SearchRequestMapper {
 	 * under the same code.
 	 */
 	private static final ErrorType CLAUSE_DEPTH_INVALID =
-		ErrorType.withCode("search:clause:depth_invalid")
+		ErrorType.withCode("search:clause:depth_out_of_range")
+			.withStatus(400)
 			.withMessage("How far down each ranking is read has to be at least one result");
 
 	private static final ErrorType CLAUSE_RANK_CONSTANT_INVALID =
-		ErrorType.withCode("search:clause:rank_constant_invalid")
+		ErrorType.withCode("search:clause:rank_constant_out_of_range")
+			.withStatus(400)
 			.withMessage("How much neighbouring ranks differ by has to be a number above zero");
 
 	private static final ErrorType MATCHER_VALUE_REQUIRED =
 		ErrorType.withCode("search:matcher:value_required")
+			.withStatus(400)
 			.withMessage("A value to look for is required");
 
 	private static final ErrorType MATCHER_RANGE_EMPTY =
 		ErrorType.withCode("search:matcher:range_empty")
+			.withStatus(400)
 			.withMessage("A range needs at least one bound");
 
 	private static final ErrorType MATCHER_RANGE_CONFLICTING =
 		ErrorType.withCode("search:matcher:range_conflicting")
+			.withStatus(400)
 			.withMessage("Use only one of `gte` and `gt`, and only one of `lte` and `lt`");
 
 	private static final ErrorType FILTER_CLAUSE_INVALID =
-		ErrorType.withCode("search:filter:clause_invalid")
+		ErrorType.withCode("search:filter:clause_unsupported")
+			.withStatus(400)
 			.withMessage(
 				"A filter is a `field` or a `nested` clause - a clause that scopes the whole search belongs in `query`"
 			);
 
 	private static final ErrorType FILTER_SCORES =
-		ErrorType.withCode("search:filter:scores")
+		ErrorType.withCode("search:filter:scoring_unsupported")
+			.withStatus(400)
 			.withMessage(
 				"A filter narrows without ranking - clauses that score belong in `query`"
 			);
 
 	private static final ErrorType FACET_FIELD_REQUIRED =
 		ErrorType.withCode("search:facet:field_required")
+			.withStatus(400)
 			.withMessage("The name of the field to count is required");
 
 	private static final ErrorType FACET_NAME_INVALID =
 		ErrorType.withCode("search:facet:name_invalid")
+			.withStatus(400)
 			.withMessage("The name of a facet can not be blank - leave it out to key the counts by the field");
 
 	private static final ErrorType FACET_NAME_DUPLICATE =
-		ErrorType.withCode("search:facet:duplicate_name")
+		ErrorType.withCode("search:facet:name_duplicate")
+			.withStatus(400)
 			.withMessage(
 				"Two facets are keyed by the same name - name one of them to tell their counts apart"
 			);
 
 	static final ErrorType FACET_LIMIT_INVALID =
-		ErrorType.withCode("search:facet:limit_invalid")
+		ErrorType.withCode("search:facet:limit_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A facet brings back between 1 and {{max}} values");
 
 	private static final ErrorType FACET_RANGES_REQUIRED =
 		ErrorType.withCode("search:facet:ranges_required")
+			.withStatus(400)
 			.withMessage("Counting into buckets needs at least one bucket - leave `ranges` out to count per value");
 
 	private static final ErrorType FACET_RANGES_TOO_MANY =
 		ErrorType.withCode("search:facet:ranges_too_many")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A facet counts into at most {{max}} buckets");
 
 	private static final ErrorType FACET_RANGES_CONFLICTING =
 		ErrorType.withCode("search:facet:ranges_conflicting")
+			.withStatus(400)
 			.withMessage("Counting into buckets answers one count per bucket in the order given, so neither `limit` nor `order` can be combined with `ranges`");
 
 	private static final ErrorType FACET_PATH_INVALID =
 		ErrorType.withCode("search:facet:path_invalid")
+			.withStatus(400)
 			.withMessage(
 				"The path of a facet names the level to count the children of - leave it out to count from the top"
 			);
 
 	private static final ErrorType FACET_DEPTH_INVALID =
-		ErrorType.withCode("search:facet:depth_invalid")
+		ErrorType.withCode("search:facet:depth_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A facet counts between 1 and {{max}} levels of a tree");
 
 	private static final ErrorType FACET_RANGES_ON_A_TREE =
-		ErrorType.withCode("search:facet:ranges_on_a_tree")
+		ErrorType.withCode("search:facet:ranges_with_tree")
+			.withStatus(400)
 			.withMessage(
 				"Counting into buckets answers one count per bucket, so neither `path` nor `depth` can be combined with `ranges`"
 			);
 
 	private static final ErrorType FACET_RANGE_EMPTY =
 		ErrorType.withCode("search:facet:range_empty")
+			.withStatus(400)
 			.withMessage("A bucket needs at least one bound");
 
 	private static final ErrorType FACET_EXCLUDE_FILTERS_INVALID =
 		ErrorType.withCode("search:facet:exclude_filters_invalid")
+			.withStatus(400)
 			.withMessage(
 				"A path to leave the filters of out can not be blank - leave `excludeFilters` out for the facet's own field, or empty to leave nothing out"
 			);
 
 	private static final ErrorType SORT_FIELD_REQUIRED =
 		ErrorType.withCode("search:sort:field_required")
+			.withStatus(400)
 			.withMessage("The name of the field to sort by is required");
 
 	private static final ErrorType SORT_ORIGIN_REQUIRED =
 		ErrorType.withCode("search:sort:origin_required")
+			.withStatus(400)
 			.withMessage("The `lat` and `lon` of the origin to measure from are required");
 
 	private static final ErrorType MATCHER_ORIGIN_REQUIRED =
 		ErrorType.withCode("search:matcher:origin_required")
+			.withStatus(400)
 			.withMessage("The `lat` and `lon` of the origin to measure from are required");
 
 	private static final ErrorType MATCHER_RADIUS_REQUIRED =
 		ErrorType.withCode("search:matcher:radius_required")
+			.withStatus(400)
 			.withMessage("How far from the origin values may be is required, in meters");
 
 	static final ErrorType LOCALE_UNSUPPORTED =
-		ErrorType.withCode("search:locale:unsupported")
+		ErrorType.withCode("search:locale_unsupported")
+			.withStatus(400)
 			.withArguments("locale")
 			.withMessage("This engine has no rules for locale `{{locale}}`");
 
 	private static final ErrorType HIGHLIGHT_FIELDS_REQUIRED =
 		ErrorType.withCode("search:highlight:fields_required")
+			.withStatus(400)
 			.withMessage("Highlighting needs at least one field to highlight");
 
 	private static final ErrorType HIGHLIGHT_FIELD_REQUIRED =
 		ErrorType.withCode("search:highlight:field_required")
+			.withStatus(400)
 			.withMessage("The name of a field to highlight can not be empty");
 
 	private static final ErrorType HIGHLIGHT_FRAGMENTS_INVALID =
-		ErrorType.withCode("search:highlight:fragments_invalid")
+		ErrorType.withCode("search:highlight:fragments_out_of_range")
+			.withStatus(400)
 			.withMessage("How many fragments to return has to be above zero");
 
 	private static final ErrorType HIGHLIGHT_LENGTH_INVALID =
-		ErrorType.withCode("search:highlight:length_invalid")
+		ErrorType.withCode("search:highlight:length_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A fragment aims to be between 1 and {{max}} characters long");
 
 	private static final ErrorType MATCHED_FIELD_REQUIRED =
 		ErrorType.withCode("search:matched:field_required")
+			.withStatus(400)
 			.withMessage("The name of an object field to answer matched values for is required");
 
 	private static final ErrorType MATCHED_LIMIT_INVALID =
-		ErrorType.withCode("search:matched:limit_invalid")
+		ErrorType.withCode("search:matched:limit_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("Matched values come back between 1 and {{max}} per field");
 
 	private static final ErrorType MATCHED_FIELDS_EMPTY =
 		ErrorType.withCode("search:matched:fields_empty")
+			.withStatus(400)
 			.withMessage("Bringing back only some fields of the values needs at least one field named");
 
 	private static final ErrorType MATCHED_FIELD_NOT_INSIDE =
 		ErrorType.withCode("search:matched:field_not_inside")
+			.withStatus(400)
 			.withArguments("field", "path")
 			.withMessage("Field `{{field}}` is not inside `{{path}}` - the fields of the values are named by their dotted paths");
 
 	private static final ErrorType HITS_PATH_REQUIRED =
 		ErrorType.withCode("search:hits:path_required")
+			.withStatus(400)
 			.withMessage("The name of the object field whose matched values are the hits is required");
 
 	private static final ErrorType HITS_WITH_MATCHED =
-		ErrorType.withCode("search:hits:with_matched")
+		ErrorType.withCode("search:hits:matched_unsupported")
+			.withStatus(400)
 			.withMessage("When the hits are the matched values, `matched` would ask a hit about itself - leave it out");
 
 	private static final ErrorType HITS_WITH_HIGHLIGHT =
-		ErrorType.withCode("search:hits:with_highlight")
+		ErrorType.withCode("search:hits:highlight_field_not_inside")
+			.withStatus(400)
 			.withArguments("field", "path")
 			.withMessage(
 				"Hits that stand for values highlight their own fields, so "
@@ -419,32 +493,39 @@ public class SearchRequestMapper {
 			);
 
 	private static final ErrorType HITS_WITH_KNN =
-		ErrorType.withCode("search:hits:with_knn")
+		ErrorType.withCode("search:hits:knn_unsupported")
+			.withStatus(400)
 			.withMessage("A `knn` clause can not be combined with hits that stand for values");
 
 	private static final ErrorType HITS_DISTANCE_SORT =
-		ErrorType.withCode("search:hits:distance_sort")
+		ErrorType.withCode("search:hits:sort_unsupported")
+			.withStatus(400)
 			.withMessage("Hits that stand for values can not be ordered by distance");
 
 	private static final ErrorType HITS_FIELDS_EMPTY =
 		ErrorType.withCode("search:hits:fields_empty")
+			.withStatus(400)
 			.withMessage("Bringing back only some fields of the values needs at least one field named");
 
 	private static final ErrorType HITS_FIELD_NOT_INSIDE =
 		ErrorType.withCode("search:hits:field_not_inside")
+			.withStatus(400)
 			.withArguments("field", "path")
 			.withMessage("Field `{{field}}` is not inside `{{path}}` - the fields of the values are named by their dotted paths");
 
 	private static final ErrorType HITS_WHEN_CLAUSE_INVALID =
-		ErrorType.withCode("search:hits:when_clause_invalid")
+		ErrorType.withCode("search:hits:when_clause_unsupported")
+			.withStatus(400)
 			.withMessage("Which documents answer as their values is said with `field` and `nested` clauses - a clause that scopes the whole search belongs in the query");
 
 	private static final ErrorType HITS_WHEN_SCORES =
-		ErrorType.withCode("search:hits:when_scores")
+		ErrorType.withCode("search:hits:when_scoring_unsupported")
+			.withStatus(400)
 			.withMessage("Which documents answer as their values is decided without ranking - clauses that score belong in the query");
 
 	private static final ErrorType HITS_WHEN_FIELD_SORT =
-		ErrorType.withCode("search:hits:when_field_sort")
+		ErrorType.withCode("search:hits:when_sort_unsupported")
+			.withStatus(400)
 			.withMessage("Hits chosen per document by `when` hold documents and values at once, which no one field is read at - order them by score");
 
 	/**
@@ -732,7 +813,7 @@ public class SearchRequestMapper {
 			var filter = filters.get(i);
 
 			if(filter == null) {
-				errors.add(REQUIRED.toMessage(Location.create(path)));
+				errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				continue;
 			}
 
@@ -776,7 +857,7 @@ public class SearchRequestMapper {
 			var facet = facets.get(i);
 
 			if(facet == null) {
-				errors.add(REQUIRED.toMessage(Location.create(path)));
+				errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				continue;
 			}
 
@@ -1213,7 +1294,7 @@ public class SearchRequestMapper {
 			var clause = when.get(i);
 
 			if(clause == null) {
-				errors.add(REQUIRED.toMessage(Location.create(path)));
+				errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				continue;
 			}
 
@@ -1403,7 +1484,7 @@ public class SearchRequestMapper {
 			var path = "sort[" + i + "]";
 
 			switch(sort.get(i)) {
-				case null -> errors.add(REQUIRED.toMessage(Location.create(path)));
+				case null -> errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				case Sort.Score score -> result.add(new ScoreSort(toOrder(score.order())));
 				case Sort.Field field -> {
 					if(field.field() == null || field.field().isBlank()) {
@@ -1512,7 +1593,7 @@ public class SearchRequestMapper {
 			var signal = signals.get(i);
 
 			if(signal == null) {
-				errors.add(REQUIRED.toMessage(Location.create(path)));
+				errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				continue;
 			}
 
@@ -1726,7 +1807,7 @@ public class SearchRequestMapper {
 	) {
 		switch(clause) {
 			case null -> {
-				errors.add(REQUIRED.toMessage(Location.create(path)));
+				errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				return null;
 			}
 
@@ -1800,8 +1881,11 @@ public class SearchRequestMapper {
 					valid = false;
 				}
 
-				if(knn.k() == null || knn.k() <= 0) {
-					errors.add(CLAUSE_K_INVALID.toMessage(Location.create(path + ".k")));
+				if(knn.k() == null) {
+					errors.add(CLAUSE_K_REQUIRED.toMessage(Location.create(path + ".k")));
+					valid = false;
+				} else if(knn.k() <= 0) {
+					errors.add(CLAUSE_K_OUT_OF_RANGE.toMessage(Location.create(path + ".k")));
 					valid = false;
 				}
 
@@ -1830,7 +1914,7 @@ public class SearchRequestMapper {
 						var ranking = fuse.rankings().get(i);
 
 						if(ranking == null) {
-							errors.add(REQUIRED.toMessage(Location.create(at)));
+							errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(at)));
 							valid = false;
 							continue;
 						}
@@ -2037,7 +2121,7 @@ public class SearchRequestMapper {
 					var range = ranges.values().get(j);
 
 					if(range == null) {
-						errors.add(REQUIRED.toMessage(Location.create(rangePath)));
+						errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(rangePath)));
 						valid = false;
 						continue;
 					}
@@ -2277,7 +2361,7 @@ public class SearchRequestMapper {
 		MutableList<ErrorMessage> errors
 	) {
 		if(target == null) {
-			errors.add(REQUIRED.toMessage(Location.create(path)));
+			errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 			return null;
 		}
 

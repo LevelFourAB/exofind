@@ -22,9 +22,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 		Document ranking signal used to adjust relevance scoring. Signals apply \
 		only when results are ordered by relevance, so an explicit `sort` \
 		overrides them. Targeting an unknown field returns \
-		`index:query:field_not_found`; targeting a field without sorting enabled \
-		returns `index:query:usage_not_enabled`; a signal function unsupported by \
-		the field type returns `index:invalid-query-type`. See \
+		`search:field_unknown`; targeting a field without sorting enabled \
+		returns `search:usage_unsupported`; a signal function unsupported by \
+		the field type returns `search:matcher:type_unsupported`. See \
 		[Signals](https://exofind.dev/reference/search-api/#signals).""",
 	examples = Signal.EXAMPLE
 )

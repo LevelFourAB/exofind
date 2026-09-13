@@ -102,7 +102,7 @@ public class KeyResourceTest {
 	@Test
 	public void testListWithAnInvalidLimitIsRefused() {
 		var e = assertThrows(ValidationException.class, () -> resource.list(null, null, "0"));
-		assertThat(e.getMessage(), containsString("request:list:limit_invalid"));
+		assertThat(e.getMessage(), containsString("request:limit_out_of_range"));
 	}
 
 	private static Grant grant() {

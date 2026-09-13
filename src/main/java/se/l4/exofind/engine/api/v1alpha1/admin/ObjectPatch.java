@@ -50,12 +50,12 @@ import se.l4.exofind.engine.errors.ValidationException;
  * because a selector picks entries rather than inventing one.
  *
  * <p>A path is written the same way as a path into a document, and a path this
- * object has no place for is reported by a {@code request:update:*} code: what
- * an admin object holds is fixed by the API, so such a path is wrong about the
- * request alone. A path into a document is read against the index definition
- * instead, so the same mistake there is an {@code index:update:*} code. A
- * selector naming nothing stored is {@code index:settings:no_match}, because
- * only the stored settings can answer it.
+ * object has no place for is reported by a {@code settings:patch:*} code. The
+ * same mistake in a path into a document is a {@code document:patch:*} code,
+ * so a client tells the two apart by the family of the code rather than by
+ * the endpoint it sent to. A selector naming nothing stored is
+ * {@code settings:patch:no_match}, because only the stored settings can answer
+ * it.
  */
 final class ObjectPatch {
 	/**
@@ -66,22 +66,26 @@ final class ObjectPatch {
 	private static final Pattern SELECTOR_FIELD = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
 
 	private static final ErrorType MALFORMED = ErrorType
-		.withCode("request:update:path_invalid")
+		.withCode("settings:patch:path_invalid")
+		.withStatus(400)
 		.withArguments("path", "reason")
 		.withMessage("`{{path}}` does not name a place to change: {{reason}}");
 
 	private static final ErrorType NO_MATCH = ErrorType
-		.withCode("index:settings:no_match")
+		.withCode("settings:patch:no_match")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage("`{{path}}` names no value that is stored");
 
 	private static final ErrorType NOT_AN_OBJECT = ErrorType
-		.withCode("request:update:not_an_object")
+		.withCode("settings:patch:not_an_object")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage("`{{path}}` reaches inside `{{field}}`, which holds no fields");
 
 	private static final ErrorType VALUE_REQUIRED = ErrorType
-		.withCode("request:update:value_required")
+		.withCode("settings:patch:selector_required")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "
@@ -89,12 +93,14 @@ final class ObjectPatch {
 		);
 
 	private static final ErrorType SELECTOR_NOT_SUPPORTED = ErrorType
-		.withCode("request:update:selector_not_supported")
+		.withCode("settings:patch:selector_unsupported")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage("`{{path}}` names one value of `{{field}}`, which holds no list");
 
 	private static final ErrorType ADD_REACHES_INSIDE = ErrorType
-		.withCode("request:update:add_reaches_inside")
+		.withCode("settings:patch:add_reaches_inside")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage(
 			"`{{path}}` reaches inside a value that is being added, which does not exist yet - "

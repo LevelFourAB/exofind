@@ -309,7 +309,7 @@ public class FacetPrefixSearchTest extends AbstractIndexTest {
 			() -> count(index, Facet.of("category").withPrefix("M"))
 		);
 
-		assertThat(e.getCode(), is("index:query:facet_prefix_on_a_tree"));
+		assertThat(e.getCode(), is("search:facet:prefix_unsupported"));
 	}
 
 	/**

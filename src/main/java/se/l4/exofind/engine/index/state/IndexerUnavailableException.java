@@ -17,6 +17,7 @@ public class IndexerUnavailableException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("indexer:unavailable")
+		.withStatus(409)
 		.withMessage("No node is serving writes right now");
 
 	public IndexerUnavailableException() {

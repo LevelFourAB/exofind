@@ -146,7 +146,7 @@ public class NumberFieldTypeTest {
 			() -> index(int32().setStored(true), Long.MAX_VALUE)
 		);
 
-		assertThat(codes(e.getErrors()), hasItem("index:update:number:invalid_value"));
+		assertThat(codes(e.getErrors()), hasItem("document:number:value_invalid"));
 	}
 
 	@Test
@@ -156,7 +156,7 @@ public class NumberFieldTypeTest {
 			() -> index(int32().setStored(true), 10.5)
 		);
 
-		assertThat(codes(e.getErrors()), hasItem("index:update:number:invalid_value"));
+		assertThat(codes(e.getErrors()), hasItem("document:number:value_invalid"));
 	}
 
 	@Test
@@ -180,7 +180,7 @@ public class NumberFieldTypeTest {
 			() -> index(floatField().setStored(true), Double.MAX_VALUE)
 		);
 
-		assertThat(codes(e.getErrors()), hasItem("index:update:number:invalid_value"));
+		assertThat(codes(e.getErrors()), hasItem("document:number:value_invalid"));
 	}
 
 	@Test
@@ -190,7 +190,7 @@ public class NumberFieldTypeTest {
 			() -> index(doubleField().setStored(true), Double.NaN)
 		);
 
-		assertThat(codes(e.getErrors()), hasItem("index:update:number:invalid_value"));
+		assertThat(codes(e.getErrors()), hasItem("document:number:value_invalid"));
 	}
 
 	@Test
@@ -210,7 +210,7 @@ public class NumberFieldTypeTest {
 			)
 		);
 
-		assertThat(codes(e.getErrors()), hasItem("index:update:number:out_of_bounds"));
+		assertThat(codes(e.getErrors()), hasItem("document:number:value_out_of_range"));
 	}
 
 	@Test
@@ -223,7 +223,7 @@ public class NumberFieldTypeTest {
 			)
 		);
 
-		assertThat(codes(e.getErrors()), hasItem("index:update:number:out_of_bounds"));
+		assertThat(codes(e.getErrors()), hasItem("document:number:value_out_of_range"));
 	}
 
 	@Test
@@ -243,7 +243,7 @@ public class NumberFieldTypeTest {
 			int32(Int32FieldTypeDef.ValidationConfig.newBuilder().setMin(10).setMax(5))
 		);
 
-		assertThat(codes(errors), contains("index:field:number:invalid_bounds"));
+		assertThat(codes(errors), contains("index:field:number:bounds_conflicting"));
 	}
 
 	@Test
@@ -256,7 +256,7 @@ public class NumberFieldTypeTest {
 				)
 		);
 
-		assertThat(codes(errors), contains("index:field:number:invalid_unit"));
+		assertThat(codes(errors), contains("index:field:number:unit_invalid"));
 	}
 
 	@Test
@@ -286,7 +286,7 @@ public class NumberFieldTypeTest {
 				)
 		);
 
-		assertThat(codes(errors), contains("index:field:number:invalid_bound"));
+		assertThat(codes(errors), contains("index:field:number:bound_invalid"));
 	}
 
 	@Test
@@ -297,7 +297,7 @@ public class NumberFieldTypeTest {
 			)
 		);
 
-		assertThat(codes(errors), contains("index:field:sort:collation_not_supported"));
+		assertThat(codes(errors), contains("index:field:sort:collation_unsupported"));
 	}
 
 	@Test

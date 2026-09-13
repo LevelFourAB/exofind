@@ -203,8 +203,8 @@ public class VectorIndexingTest extends AbstractIndexTest {
 		);
 
 		var codes = e.getErrors().collect(error -> error.getCode()).toList();
-		assertThat(codes, hasItem("index:update:vector:wrong_dimensions"));
-		assertThat(codes, hasItem("index:update:field_not_found"));
+		assertThat(codes, hasItem("document:vector:dimensions_mismatch"));
+		assertThat(codes, hasItem("document:field_unknown"));
 	}
 
 	/**

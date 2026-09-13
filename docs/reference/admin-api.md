@@ -68,7 +68,7 @@ The index, key and reindex listings answer every entry the key can see, ordered 
 | `limit` | Caps how many entries the response holds, from 1 to 1000. A listing cut short carries the last name it holds in `next`. Without a `limit` the whole listing is answered and `next` is absent. |
 | `after` | The name to continue after, as `next` gave it. The named entry is not included. |
 
-To read a long listing, send the first request with a `limit`, and repeat it with `after` set to `next` until a response carries no `next`. An entry the key has no permission on is left out before the page is cut, so it counts against neither the limit nor the place to continue from. A `limit` outside its range returns `400 Bad Request` with `request:list:limit_invalid`.
+To read a long listing, send the first request with a `limit`, and repeat it with `after` set to `next` until a response carries no `next`. An entry the key has no permission on is left out before the page is cut, so it counts against neither the limit nor the place to continue from. A `limit` outside its range returns `400 Bad Request` with `request:limit_out_of_range`.
 
 The reindex listing also takes `index`, which keeps the job of one index, and `phase`, which keeps the jobs in the named [phases](#job-record-and-phases). See [Job status and fleet-wide listing](#job-status-and-fleet-wide-listing).
 
@@ -161,7 +161,7 @@ Search settings hold per-index configuration that affects how searches are answe
 
 Search settings belong to the index name rather than to a generation. Promoting a generation preserves existing search settings. Search settings are stored as a separate object, so modifying them does not create a generation, does not change the index definition, and does not update the definition version. Requests that modify search settings run on the node that holds the index, like other modifying requests; `GET` requests are served by whichever node receives them.
 
-A `GET` request returns the stored settings. If the index has no search settings and searches with its definition alone, the server returns `404 Not Found` with the error code `index:settings:not_found`:
+A `GET` request returns the stored settings. If the index has no search settings and searches with its definition alone, the server returns `404 Not Found` with the error code `settings:not_found`:
 
 ```json
 {
@@ -184,7 +184,7 @@ The response contains the following fields:
 
 A `PUT` request replaces the settings completely and returns them as stored. An index that had no settings answers `201 Created`, and one that had some answers `200 OK`. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
 
-A `PUT` or `PATCH` request carrying an `If-Match` header on an index that has no settings returns `404 Not Found` with the error code `index:settings:not_found`, including `If-Match: *`. See [Conditional requests](api-conventions.md#conditional-requests) for how the header is read.
+A `PUT` or `PATCH` request carrying an `If-Match` header on an index that has no settings returns `404 Not Found` with the error code `settings:not_found`, including `If-Match: *`. See [Conditional requests](api-conventions.md#conditional-requests) for how the header is read.
 
 A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
 
@@ -243,10 +243,10 @@ The engine scores query-time synonyms as follows:
 
 The server validates synonym sets against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
 
-- `index:settings:synonyms:unknown_field`: The set is applied to a field that does not exist in the index.
-- `index:settings:synonyms:field_not_text`: The set is applied to a field that is not searched as text.
-- `index:settings:synonyms:invalid_boost`: The `boost` value is not a positive number.
-- `index:settings:synonyms:invalid_rule`: A rule is not exactly one kind (`equivalent` or `mapping`).
+- `settings:synonyms:field_unknown`: The set is applied to a field that does not exist in the index.
+- `settings:synonyms:field_unsupported`: The set is applied to a field that is not searched as text.
+- `settings:synonyms:boost_out_of_range`: The `boost` value is not a positive number.
+- `settings:synonyms:rule_invalid`: A rule is not exactly one kind (`equivalent` or `mapping`).
 
 ### Typo exclusions
 
@@ -283,8 +283,8 @@ A node whose version does not support the `typo_exclusions` capability sets the 
 
 The server validates word lists against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
 
-- `index:settings:typo_exclusions:unknown_field`: The list is applied to a field that does not exist in the index.
-- `index:settings:typo_exclusions:field_not_text`: The list is applied to a field that is not searched as text.
+- `settings:typo_exclusions:field_unknown`: The list is applied to a field that does not exist in the index.
+- `settings:typo_exclusions:field_unsupported`: The list is applied to a field that is not searched as text.
 
 ### Field settings
 
@@ -330,11 +330,11 @@ A node whose version does not support the `suggest_values` capability sets the e
 
 The server validates field settings against the generation the index name answers from at write time. Invalid settings return `400 Bad Request` with one of the following error codes:
 
-- `index:settings:fields:unknown_field`: The entry names a field that does not exist in the index.
-- `index:settings:fields:interpret_unsupported`: The `interpret` setting is applied to a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`.
-- `index:settings:fields:suggest_unsupported`: The `suggest` setting is applied to a field that is not a `string` field with `facet`, or that has `hierarchy`.
-- `index:settings:fields:values_unsupported`: The `values` list is given for a field that is not a `string` field with `facet`, or that has `hierarchy`.
-- `index:settings:fields:values_invalid`: An entry in `values` lacks a `value`, duplicates a `value`, keys a label with a tag that is not a canonical BCP-47 tag, contains a blank label, or exceeds 10,000 entries. The error message specifies the reason.
+- `settings:fields:field_unknown`: The entry names a field that does not exist in the index.
+- `settings:fields:interpret_unsupported`: The `interpret` setting is applied to a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`.
+- `settings:fields:suggest_unsupported`: The `suggest` setting is applied to a field that is not a `string` field with `facet`, or that has `hierarchy`.
+- `settings:fields:values_unsupported`: The `values` list is given for a field that is not a `string` field with `facet`, or that has `hierarchy`.
+- `settings:fields:values_invalid`: An entry in `values` lacks a `value`, duplicates a `value`, keys a label with a tag that is not a canonical BCP-47 tag, contains a blank label, or exceeds 10,000 entries. The error message specifies the reason.
 
 #### Declared values
 
@@ -423,7 +423,7 @@ A backslash (`\`) escapes the character after it, anywhere in a path. Escape a c
 
 In JSON, write each backslash twice, as `"fields.variants\\.colour.interpret"`.
 
-Objects along a path are created when they do not exist, and `name[]` with a value creates the list when the settings hold none. A selector such as `name[field=x]` never creates anything and returns `index:settings:no_match` when nothing it names is stored.
+Objects along a path are created when they do not exist, and `name[]` with a value creates the list when the settings hold none. A selector such as `name[field=x]` never creates anything and returns `settings:patch:no_match` when nothing it names is stored.
 
 A successful request returns the search settings as stored and their new version in the `ETag` header. An index that had no settings answers `201 Created`, because the change stores its first ones; one that had some answers `200 OK`.
 
@@ -431,23 +431,23 @@ The endpoint enforces the following rules:
 
 - The server validates the merged ranking against the generation the index name answers from, using the same `index:ranking:*` error codes as a `PUT` request.
 - An index with no stored settings is modified as if it had empty settings.
-- Without an `If-Match` header, a change that conflicts with a concurrent update rebuilds on the newer version up to three times before returning `409 Conflict` with `index:settings:conflict`.
+- Without an `If-Match` header, a change that conflicts with a concurrent update rebuilds on the newer version up to three times before returning `409 Conflict` with `storage:conflict`.
 - With an `If-Match` header naming versions, a version mismatch returns `412 Precondition Failed` without retrying.
-- With an `If-Match` header of any form, an index that has no settings returns `404 Not Found` with `index:settings:not_found`.
-- If the stored settings contain capabilities that the answering node cannot describe, the request returns `409 Conflict` with `index:settings:unrepresentable`.
+- With an `If-Match` header of any form, an index that has no settings returns `404 Not Found` with `settings:not_found`.
+- If the stored settings contain capabilities that the answering node cannot describe, the request returns `409 Conflict` with `settings:unrepresentable`.
 
-The endpoint returns `400 Bad Request` with one of the following error codes if a path cannot be applied. A path here is written the same way as a path into a document, but the API fixes what the search settings hold, so most of these codes carry the `request:` prefix where the [Documents API](documents-api.md#constraints-and-errors) reports an `index:update:` one. Only a selector that names nothing stored needs the stored settings to answer it:
+The endpoint returns `400 Bad Request` with one of the following error codes if a path cannot be applied. A path here is written the same way as a path into a document, and the same mistake in a path into a document reports the `document:patch:*` code of the same name. See [Documents API](documents-api.md#constraints-and-errors).
 
 | Code | Condition |
 |---|---|
-| `request:update:path_invalid` | The key is not a valid path. |
-| `request:update:path_unknown_field` | The path names a field that search settings do not have. |
-| `request:update:selector_not_supported` | The path specifies a selector on a field that is not a list. |
-| `request:update:value_required` | The path targets a list without specifying an entry selector. |
-| `request:update:not_an_object` | The path reaches inside a value that is not an object. |
-| `request:update:add_reaches_inside` | The path sets a field on an entry being added (for example, `ranking.signals[].weight`). |
-| `request:update:value_invalid` | The path specifies a value that the target field cannot hold. |
-| `index:settings:no_match` | The selector matches no stored entry in the list. |
+| `settings:patch:path_invalid` | The key is not a valid path. |
+| `settings:patch:field_unknown` | The path names a field that search settings do not have. |
+| `settings:patch:selector_unsupported` | The path specifies a selector on a field that is not a list. |
+| `settings:patch:selector_required` | The path targets a list without specifying an entry selector. |
+| `settings:patch:not_an_object` | The path reaches inside a value that is not an object. |
+| `settings:patch:add_reaches_inside` | The path sets a field on an entry being added (for example, `ranking.signals[].weight`). |
+| `settings:patch:value_invalid` | The path specifies a value that the target field cannot hold. |
+| `settings:patch:no_match` | The selector matches no stored entry in the list. |
 
 ## Index states
 
@@ -622,7 +622,7 @@ To check the status of a job on an index, send a `GET` request to `/v1alpha1/adm
 To list every reindex job across the deployment, send a `GET` request to `/v1alpha1/admin/reindexes`. The listing takes the `prefix`, `limit` and `after` parameters every [listing](#listings) takes, and two of its own:
 
 - `index` keeps the job of one index. An index without a job answers an empty listing rather than `404`, so a poll for a job needs no error handling.
-- `phase` keeps the jobs in the named phases. Repeat the parameter or separate the phases with commas, as `phase=copying,replaying`. A value that names no phase returns `400 Bad Request` with `reindex:phase_unknown`.
+- `phase` keeps the jobs in the named phases. Repeat the parameter or separate the phases with commas, as `phase=copying,replaying`. A value that names no phase returns `400 Bad Request` with `reindex:phase_invalid`.
 
 A finished job stays in the listing until the next job on its index replaces it, so a deployment that has reindexed many indexes answers a long listing. Filter on `phase` to see what is running, or page with `limit` and `after`.
 
@@ -783,11 +783,11 @@ The Admin API returns the following status codes:
 | Status code | Condition |
 |-------------|-----------|
 | `304 Not Modified` | A `GET` of an index or its search settings carried an `If-None-Match` header naming the stored version. The response carries the `ETag` header and no body. |
-| `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`request:update:*`, and `index:settings:no_match` for a selector naming nothing stored). The response body details each validation error. See [Errors](errors.md). |
+| `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`settings:patch:*`). The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |
-| `404 Not Found` | The specified index or generation does not exist, a `PUT` or `PATCH` request with `If-Match` targeted a resource that does not exist, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`index:settings:not_found`), or the index falls outside the credential's allowed patterns. |
-| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, a `PATCH` targeted search settings the node cannot describe (`index:settings:unrepresentable`), the index requires unsupported engine features, storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), another generation was promoted while a reindex job ran (`index:generation:live_moved`), writing to the registry failed, writing search settings failed (`index:settings:conflict`, `index:settings:io_error`, `index:settings:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
+| `404 Not Found` | The specified index or generation does not exist, a `PUT` or `PATCH` request with `If-Match` targeted a resource that does not exist, no reindex job exists for the index (`reindex:not_found`), the index has no search settings (`settings:not_found`), or the index falls outside the credential's allowed patterns. |
+| `409 Conflict` | The index cannot be modified because no forwarding node is available, the index is synchronizing, a reindex job is already in progress (`reindex:in_progress`), the target generation is busy being reindexed (`reindex:target_busy`), a definition change is incompatible with documents in the target generation (`index:definition:incompatible`), the definition contains unrepresentable settings, a `PATCH` targeted search settings the node cannot describe (`settings:unrepresentable`), the index requires unsupported engine features, storage holds a generation under the new name that nothing deleted (`index:generation:storage_held`), another generation was promoted while a reindex job ran (`index:generation:live_moved`), writing to the registry failed, writing search settings failed (`storage:conflict`, `storage:io_error`, `storage:unavailable`), or a registry endpoint was called in local storage mode (`index:registry:audit_unavailable`). |
 | `412 Precondition Failed` | The `If-Match` version does not match the current definition or search settings version. |
 | `502 Bad Gateway` | The request was forwarded to the holder node, but the node did not respond. |
 | `503 Service Unavailable` | The request conflicted with an index being closed to free resources (retrying reopens the index), or a node querying `/v1alpha1/admin/indexers` could not read the shared storage state. |

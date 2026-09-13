@@ -70,7 +70,7 @@ Before you index documents, ensure you have:
    - A field set to `null` clears the current value.
    - An omitted field remains unchanged.
    - Locale-specific fields and object fields are replaced whole. To modify part of an object or locale-specific field, send the complete document.
-   - If the index definition sets `"source": "none"`, partial updates fail with `index:source:not_kept`.
+   - If the index definition sets `"source": "none"`, partial updates fail with `document:source_not_kept`.
    - If a primary key does not exist in the index, the request fails by default. To skip missing keys and receive a list of missing keys in the response, add `?missing=skip` to the request URL.
 
 4. Delete documents (optional):
@@ -124,7 +124,7 @@ If a request fails, use the following guidelines:
     "code": "validation",
     "errors": [
       {
-        "code": "index:update:required_field_missing",
+        "code": "document:field_required",
         "path": "documents[41].name"
       }
     ]

@@ -202,7 +202,7 @@ public class RegistryResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:invalid_name",
+		value = "index:name_invalid",
 		status = 400,
 		when = "An entry of `restore` is not a valid index or generation name."
 	)
@@ -212,12 +212,12 @@ public class RegistryResource {
 		when = "The node stores indexes on local disk, where there is no shared registry to repair."
 	)
 	@ReturnsError(
-		value = "index:registry:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "The registry kept being written by other nodes. The registry is unchanged; send the request again."
 	)
 	@ReturnsError(
-		value = "index:registry:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Registry storage answered with an error. The registry is unchanged; send the request again."
 	)

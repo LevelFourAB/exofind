@@ -25,7 +25,7 @@ Before configuring query-time synonyms, ensure you have:
    ```text
    GET /v1alpha1/admin/indexes/products/settings
    ```
-   If the index has no search settings, the endpoint returns `404 Not Found` with the error code `index:settings:not_found`. Treat the settings as empty.
+   If the index has no search settings, the endpoint returns `404 Not Found` with the error code `settings:not_found`. Treat the settings as empty.
 
 2. Store a synonym set in search settings:
    Send a `PUT` request to write the settings. Include any existing search settings, such as `ranking`, because `PUT` replaces the entire settings object:

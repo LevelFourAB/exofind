@@ -25,6 +25,7 @@ public class NodeFailureMapper implements ExceptionMapper<Throwable> {
 	private static final Log logger = Log.of(NodeFailureMapper.class);
 
 	private static final ErrorType NODE_ERROR = ErrorType.withCode("node:error")
+		.withStatus(500)
 		.withMessage("The node could not serve the request");
 
 	private final RequestMetrics metrics;

@@ -15,7 +15,8 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class IndexSourceNotKeptException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("index:source:not_kept")
+	private static final ErrorType TYPE = ErrorType.withCode("document:source_not_kept")
+		.withStatus(400)
 		.withArguments("index")
 		.withMessage(
 			"The index `{{index}}` does not keep a copy of the documents as they were given, so only whole documents can be indexed"

@@ -39,7 +39,7 @@ Document fields follow these rules:
 - The schema definition determines how a JSON object is parsed (for example, as a locale map or a geo point).
 - If you provide a value without a locale tag for a locale-specific field, the value is stored in the field's default locale.
 - Search hits return a locale-specific field in the single requested locale. For more information, see [locale-specific fields in search results](search-api.md#locale-specific-fields). Indexing that search hit replaces the field with only that single language variant.
-- Object fields must be formatted as nested JSON objects. Specifying dotted paths such as `"dimensions.width"` directly returns the error `index:update:field_inside_object`.
+- Object fields must be formatted as nested JSON objects. Specifying dotted paths such as `"dimensions.width"` directly returns the error `document:field_inside_object`.
 - A field set to `null` is treated as omitted. If the schema marks the field as `required`, validation fails and reports the field as missing.
 
 ## Indexing documents
@@ -159,11 +159,11 @@ A path is a field name, and may carry a selector in brackets and a field inside 
 
 Paths follow these rules:
 
-- A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `index:update:key_not_declared` on a field declaring no key.
+- A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `document:patch:key_unsupported` on a field declaring no key.
 - Empty brackets add a value, which requires a field declared `multiple`. Nothing is matched, so no value is replaced.
 - `field=value` compares the text form of the value. Only the first unescaped `=` splits. A value held as the number `2` matches the selector `2`.
 - Inside brackets, a backslash escapes the character after it, so a selector can hold a `]` of its own. An `=` needs a backslash only in the key form.
-- A field inside a list of objects requires a selector saying which value. Without one, the request returns `index:update:value_required`.
+- A field inside a list of objects requires a selector saying which value. Without one, the request returns `document:patch:selector_required`.
 
 #### Update behavior
 
@@ -186,26 +186,26 @@ Updates follow these rules:
 
 #### Constraints and errors
 
-- If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `index:source:not_kept`. A change that names only signal fields works when `source` is `none`. For more information, see the [Admin API](admin-api.md).
+- If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `document:source_not_kept`. A change that names only signal fields works when `source` is `none`. For more information, see the [Admin API](admin-api.md).
 - If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
-- If `missing` is set to `fail` (default) and a document key is not found, the request fails with `index:document:not_found` for that entry. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
-- A selector that names no value the document holds returns `index:document:no_match`. A key nothing matches is not created.
+- If `missing` is set to `fail` (default) and a document key is not found, the request fails with `document:not_found` for that entry. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
+- A selector that names no value the document holds returns `document:patch:no_match`. A key nothing matches is not created.
 
 The following error codes report a path the endpoint cannot use:
 
 | Code | Meaning |
 | --- | --- |
-| `request:update:path_invalid` | The key cannot be read as a path. |
-| `request:update:add_reaches_inside` | The path reaches inside a value that is being added. |
-| `index:update:field_not_found` | The path reaches into a field the index does not have. |
-| `index:update:selector_not_supported` | The path names one value of a field that holds neither locale variants nor objects. |
-| `index:update:match_not_an_object` | The path matches on an inner field of a field whose values are not objects. |
-| `index:update:locale_not_declared` | The field holds no variant for the named locale. |
-| `index:update:add_not_multiple` | The path adds a value to a field that holds a single value. |
-| `index:update:not_an_object` | The path reaches inside a field whose values are not objects. |
-| `index:update:value_required` | The path reaches into a list of objects without saying which value. |
-| `index:update:key_not_declared` | The path uses a key selector on a field that declares no key. |
-| `index:document:no_match` | The selector names no value the document holds. |
+| `document:patch:path_invalid` | The key cannot be read as a path. |
+| `document:patch:add_reaches_inside` | The path reaches inside a value that is being added. |
+| `document:patch:field_unknown` | The path reaches into a field the index does not have. |
+| `document:patch:selector_unsupported` | The path names one value of a field that holds neither locale variants nor objects. |
+| `document:patch:match_not_an_object` | The path matches on an inner field of a field whose values are not objects. |
+| `document:locale_unknown` | The field holds no variant for the named locale. |
+| `document:patch:add_unsupported` | The path adds a value to a field that holds a single value. |
+| `document:patch:not_an_object` | The path reaches inside a field whose values are not objects. |
+| `document:patch:selector_required` | The path reaches into a list of objects without saying which value. |
+| `document:patch:key_unsupported` | The path uses a key selector on a field that declares no key. |
+| `document:patch:no_match` | The selector names no value the document holds. |
 
 The first two report a mistake in the path text alone. The rest report a path that disagrees with the index definition or with the stored document. For the rule behind the prefixes, see [Errors](errors.md#code-prefixes).
 
@@ -248,14 +248,14 @@ The body is a single change object, meaning what one entry of the batch means. T
 { "price": 34.50, "variants[sku=V-2].price": 29.0, "discount": null }
 ```
 
-Paths and update behavior are the same as in the batch. The body may repeat the primary key field as long as it gives the key the path already names; a different value returns `index:update:key_conflicting`.
+Paths and update behavior are the same as in the batch. The body may repeat the primary key field as long as it gives the key the path already names; a different value returns `document:key_conflicting`.
 
 #### Errors
 
-- `index:document:not_found`: Nothing is indexed under the key. The endpoint returns status `404` and creates nothing, because a change describes what to change about a document rather than what should be there.
-- `index:update:key_conflicting`: The body names the primary key field as another document than the path does.
-- `index:query:invalid_value`: The key cannot be parsed as the defined key field type.
-- The path codes listed for the batch, `index:no_primary_key` and `index:source:not_kept` mean here what they mean in the batch. A key nothing is indexed under is `index:document:not_found` here too, returned with `404` because the URL names the document.
+- `document:not_found`: Nothing is indexed under the key. The endpoint returns status `404` and creates nothing, because a change describes what to change about a document rather than what should be there.
+- `document:key_conflicting`: The body names the primary key field as another document than the path does.
+- `search:value_invalid`: The key cannot be parsed as the defined key field type.
+- The path codes listed for the batch, `index:no_primary_key` and `document:source_not_kept` mean here what they mean in the batch. A key nothing is indexed under is `document:not_found` here too, returned with `404` because the URL names the document.
 
 #### Response
 
@@ -356,8 +356,8 @@ The endpoint rejects requests before generating the response body in the followi
 | Condition | Error code | Status |
 | --- | --- | --- |
 | The index definition declares no primary key | `index:no_primary_key` | 400 |
-| The index is defined with `source: none` and does not store document copies | `index:source:not_kept` | 400 |
-| The `limit` parameter is not a whole number between `1` and `10000` | `request:scan:limit_invalid` | 400 |
+| The index is defined with `source: none` and does not store document copies | `document:source_not_kept` | 400 |
+| The `limit` parameter is not a whole number between `1` and `10000` | `request:limit_out_of_range` | 400 |
 
 ## Removing documents
 
@@ -382,7 +382,7 @@ The request requires the following path parameters:
 
 #### Errors
 
-- `index:query:invalid_value`: The key value cannot be parsed as the defined key field type.
+- `search:value_invalid`: The key value cannot be parsed as the defined key field type.
 - `index:no_primary_key`: The index definition declares no primary key.
 
 #### Response
@@ -435,10 +435,10 @@ The following example deletes every document in the index:
 
 #### Errors
 
-- `request:delete:target_required`: The body names none of `keys`, `query`, and `all`.
-- `request:delete:target_conflicting`: The body names more than one of `keys`, `query`, and `all`.
-- `request:delete:query_empty`: The body names a `query` without clauses. Send `all` to empty the index.
-- `request:delete:locale_without_query`: The body states a `locale` without a `query`.
+- `document:delete:target_required`: The body names none of `keys`, `query`, and `all`.
+- `document:delete:target_conflicting`: The body names more than one of `keys`, `query`, and `all`.
+- `document:delete:query_empty`: The body names a `query` without clauses. Send `all` to empty the index.
+- `document:delete:locale_without_query`: The body states a `locale` without a `query`.
 
 #### Execution behavior
 
@@ -478,7 +478,7 @@ The following example shows an error response:
   "message": "Field `nonexistent` does not exist in index",
   "errors": [
     {
-      "code": "index:update:field_not_found",
+      "code": "document:field_unknown",
       "message": "Field `nonexistent` does not exist in index",
       "path": "documents[1].nonexistent",
       "arguments": { "name": "nonexistent" }
@@ -498,7 +498,7 @@ The API uses the following HTTP status codes:
 | `200` | The documents were indexed, read, updated, or deleted successfully. |
 | `204` | The document was changed or removed by key in the URL path. |
 | `400` | A document or key was rejected by validation, the index definition lacks a primary key or stored source, the limit parameter was invalid, or the request body could not be parsed. |
-| `404` | No index with the specified name exists on this node, or a `PATCH` named a key nothing is indexed under (`index:document:not_found`). |
+| `404` | No index with the specified name exists on this node, or a `PATCH` named a key nothing is indexed under (`document:not_found`). |
 | `409` | No node is available to forward the request to (`indexer:unavailable`), or the index is currently synchronizing. |
 | `502` | The node holding the index writer did not respond to the forwarded request. |
 | `503` | The index was closed to free resources; repeating the request reopens the index. |

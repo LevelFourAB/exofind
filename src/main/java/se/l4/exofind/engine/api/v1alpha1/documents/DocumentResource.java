@@ -146,81 +146,96 @@ public class DocumentResource {
 	 */
 	private static final SerializedString NOTHING = new SerializedString("");
 
-	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:missing_body")
+	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:body_required")
+		.withStatus(400)
 		.withMessage("Documents are required");
 
 	private static final ErrorType NOT_AN_OBJECT = ErrorType
-		.withCode("request:document:not_an_object")
+		.withCode("document:not_an_object")
+		.withStatus(400)
 		.withMessage("A document has to be an object, keyed by field name");
 
-	private static final ErrorType MALFORMED = ErrorType.withCode("request:document:malformed")
+	private static final ErrorType MALFORMED = ErrorType.withCode("document:malformed")
+		.withStatus(400)
 		.withArguments("reason")
 		.withMessage("The document could not be read as JSON: {{reason}}");
 
-	private static final ErrorType IO_ERROR = ErrorType.withCode("index:io_error")
+	private static final ErrorType IO_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` could not be updated on disk");
 
-	private static final ErrorType READ_ERROR = ErrorType.withCode("index:io_error")
+	private static final ErrorType READ_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` could not be read from disk");
 
 	private static final ErrorType SCAN_LIMIT_INVALID =
-		ErrorType.withCode("request:scan:limit_invalid")
+		ErrorType.withCode("request:limit_out_of_range")
+			.withStatus(400)
 			.withArguments("value", "max")
 			.withMessage(
 				"A limit is a whole number from 1 to {{max}}, which `{{value}}` is not"
 			);
 
 	private static final ErrorType UPDATE_MISSING_UNKNOWN =
-		ErrorType.withCode("request:update:missing_unknown")
+		ErrorType.withCode("document:patch:missing_invalid")
+			.withStatus(400)
 			.withArguments("value")
 			.withMessage(
 				"A key nothing is indexed under is handled by `fail` or `skip`, not by `{{value}}`"
 			);
 
 	private static final ErrorType UPDATE_NOT_FOUND =
-		ErrorType.withCode("index:document:not_found")
+		ErrorType.withCode("document:not_found")
+			.withStatus(404)
 			.withArguments("key")
 			.withMessage(
 				"Nothing is indexed under the key `{{key}}`, so there is nothing to change"
 			);
 
 	private static final ErrorType CHANGE_MISSING_BODY = ErrorType
-		.withCode("request:missing_body")
+		.withCode("request:body_required")
+		.withStatus(400)
 		.withMessage("A change is required");
 
 	private static final ErrorType UPDATE_KEY_CONFLICTING =
-		ErrorType.withCode("index:update:key_conflicting")
+		ErrorType.withCode("document:key_conflicting")
+			.withStatus(400)
 			.withArguments("key", "name")
 			.withMessage(
 				"The document to change is the one the path names, `{{key}}`, so `{{name}}` in the body cannot name another"
 			);
 
 	private static final ErrorType DELETE_TARGET_REQUIRED =
-		ErrorType.withCode("request:delete:target_required")
+		ErrorType.withCode("document:delete:target_required")
+			.withStatus(400)
 			.withMessage(
 				"Documents are removed by `keys`, by `query` or by `all`, and one of them is required"
 			);
 
 	private static final ErrorType DELETE_TARGET_CONFLICTING =
-		ErrorType.withCode("request:delete:target_conflicting")
+		ErrorType.withCode("document:delete:target_conflicting")
+			.withStatus(400)
 			.withMessage(
 				"Documents are removed by `keys`, by `query` or by `all`, and only one of them can be used"
 			);
 
 	private static final ErrorType DELETE_QUERY_EMPTY =
-		ErrorType.withCode("request:delete:query_empty")
+		ErrorType.withCode("document:delete:query_empty")
+			.withStatus(400)
 			.withMessage(
 				"A `query` requires at least one clause; use `all` to remove every document"
 			);
 
 	private static final ErrorType DELETE_LOCALE_WITHOUT_QUERY =
-		ErrorType.withCode("request:delete:locale_without_query")
+		ErrorType.withCode("document:delete:locale_without_query")
+			.withStatus(400)
 			.withMessage("A locale says how to match a `query`, which this request does not have");
 
 	private static final ErrorType DELETE_KEY_REQUIRED =
-		ErrorType.withCode("request:delete:key_required")
+		ErrorType.withCode("document:key_required")
+			.withStatus(400)
 			.withMessage("A key is required");
 
 	private final Indexes indexes;
@@ -381,17 +396,17 @@ public class DocumentResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:document:malformed",
+		value = "document:malformed",
 		status = 400,
 		when = "A line of the body could not be read as JSON."
 	)
 	@ReturnsError(
-		value = "request:missing_body",
+		value = "request:body_required",
 		status = 400,
 		when = "The request carries no documents."
 	)
 	@ReturnsError(
-		value = "request:document:not_an_object",
+		value = "document:not_an_object",
 		status = 400,
 		when = "A document is not an object keyed by field name."
 	)
@@ -406,7 +421,7 @@ public class DocumentResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:out-of-date",
+		value = "index:out_of_date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
 	)
@@ -429,6 +444,106 @@ public class DocumentResource {
 		value = "index:closed",
 		status = 503,
 		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "document:field_unknown",
+		status = 400,
+		when = "A document gives a field the index does not have."
+	)
+	@ReturnsError(
+		value = "document:field_inside_object",
+		status = 400,
+		when = "A document gives a dotted path to a field inside an object instead of the object that holds it."
+	)
+	@ReturnsError(
+		value = "document:field_required",
+		status = 400,
+		when = "A document leaves out a field the definition marks as required."
+	)
+	@ReturnsError(
+		value = "document:locale_unknown",
+		status = 400,
+		when = "A value carries a locale the field does not hold values in."
+	)
+	@ReturnsError(
+		value = "document:locale_unsupported",
+		status = 400,
+		when = "A value carries a locale on a field that is not locale specific."
+	)
+	@ReturnsError(
+		value = "document:object_required",
+		status = 400,
+		when = "A field that holds objects is given a value that is not one."
+	)
+	@ReturnsError(
+		value = "document:object_unsupported",
+		status = 400,
+		when = "A field that does not hold objects is given one."
+	)
+	@ReturnsError(
+		value = "document:multiple_unsupported",
+		status = 400,
+		when = "A field that holds a single value is given several."
+	)
+	@ReturnsError(
+		value = "document:multiple_per_locale_unsupported",
+		status = 400,
+		when = "A field that holds a single value per locale is given several in one locale."
+	)
+	@ReturnsError(
+		value = "document:object_key_duplicate",
+		status = 400,
+		when = "Two values of an object field read the same under the key that tells them apart."
+	)
+	@ReturnsError(
+		value = "document:number:value_invalid",
+		status = 400,
+		when = "A number field is given a value that cannot be read as its type."
+	)
+	@ReturnsError(
+		value = "document:number:value_out_of_range",
+		status = 400,
+		when = "A number field is given a value outside the bounds its definition declares."
+	)
+	@ReturnsError(
+		value = "document:geo_point:value_invalid",
+		status = 400,
+		when = "A geo point field is given a value that is not a latitude and a longitude."
+	)
+	@ReturnsError(
+		value = "document:geo_point:value_out_of_range",
+		status = 400,
+		when = "A geo point field is given a point that is not on the earth."
+	)
+	@ReturnsError(
+		value = "document:timestamp:value_invalid",
+		status = 400,
+		when = "A timestamp field is given a value that is not an ISO 8601 date and time with an offset."
+	)
+	@ReturnsError(
+		value = "document:vector:value_invalid",
+		status = 400,
+		when = "A vector field is given a value that is not an array of floats."
+	)
+	@ReturnsError(
+		value = "document:vector:value_not_finite",
+		status = 400,
+		when = "A vector field is given a value that is not a finite number."
+	)
+	@ReturnsError(
+		value = "document:vector:dimensions_mismatch",
+		status = 400,
+		when = "A vector field is given a vector with other dimensions than the field declares."
+	)
+	@ReturnsError(
+		value = "document:vector:value_zero",
+		status = 400,
+		when = "A vector field compared by cosine is given a vector of only zeros."
+	)
+	@ReturnsError(
+		value = "index:generation:unsettled",
+		status = 400,
+		when = "The generation the index serves from kept changing while the write was made. Send the request again."
 	)
 	public DocumentsResponse add(
 		@Parameter(
@@ -492,7 +607,7 @@ public class DocumentResource {
 	 * description instead.
 	 */
 	@ReturnsError(
-		value = "request:unreadable",
+		value = "request:body_unreadable",
 		status = 400,
 		when = "The body stopped arriving part way through. The documents read before that are indexed; send the rest again."
 	)
@@ -617,7 +732,7 @@ public class DocumentResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:document:not_found",
+		value = "document:not_found",
 		status = 400,
 		when = "A document the change names is not indexed and `missing` is `fail`."
 	)
@@ -627,82 +742,82 @@ public class DocumentResource {
 		when = "The index definition declares no primary key, so a document cannot be named."
 	)
 	@ReturnsError(
-		value = "index:source:not_kept",
+		value = "document:source_not_kept",
 		status = 400,
 		when = "The index does not store document copies. Send the complete document instead."
 	)
 	@ReturnsError(
-		value = "request:update:path_invalid",
+		value = "document:patch:path_invalid",
 		status = 400,
 		when = "A path in the change could not be read."
 	)
 	@ReturnsError(
-		value = "index:update:field_not_found",
+		value = "document:patch:field_unknown",
 		status = 400,
 		when = "A path reaches into a field the index does not have."
 	)
 	@ReturnsError(
-		value = "index:update:selector_not_supported",
+		value = "document:patch:selector_unsupported",
 		status = 400,
 		when = "A path names one value of a field that holds neither locale variants nor objects."
 	)
 	@ReturnsError(
-		value = "index:update:locale_not_declared",
+		value = "document:locale_unknown",
 		status = 400,
 		when = "A path names a locale the field holds no variant for."
 	)
 	@ReturnsError(
-		value = "index:update:add_not_multiple",
+		value = "document:patch:add_unsupported",
 		status = 400,
 		when = "A change adds a value to a field that holds a single value."
 	)
 	@ReturnsError(
-		value = "index:update:not_an_object",
+		value = "document:patch:not_an_object",
 		status = 400,
 		when = "A path reaches inside a field whose values are not objects."
 	)
 	@ReturnsError(
-		value = "index:update:value_required",
+		value = "document:patch:selector_required",
 		status = 400,
 		when = "A path reaches into a list of objects without saying which value."
 	)
 	@ReturnsError(
-		value = "index:document:no_match",
+		value = "document:patch:no_match",
 		status = 400,
 		when = "A selector names no value the document holds. A selector never creates the value it names."
 	)
 	@ReturnsError(
-		value = "index:update:key_not_declared",
+		value = "document:patch:key_unsupported",
 		status = 400,
 		when = "A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead."
 	)
 	@ReturnsError(
-		value = "index:update:match_not_an_object",
+		value = "document:patch:match_not_an_object",
 		status = 400,
 		when = "A path matches on a field inside a list whose values are not objects."
 	)
 	@ReturnsError(
-		value = "request:update:add_reaches_inside",
+		value = "document:patch:add_reaches_inside",
 		status = 400,
 		when = "A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
 	)
 	@ReturnsError(
-		value = "request:update:missing_unknown",
+		value = "document:patch:missing_invalid",
 		status = 400,
 		when = "`missing` is neither `fail` nor `skip`."
 	)
 	@ReturnsError(
-		value = "request:missing_body",
+		value = "request:body_required",
 		status = 400,
 		when = "The request carries no changes."
 	)
 	@ReturnsError(
-		value = "request:document:malformed",
+		value = "document:malformed",
 		status = 400,
 		when = "A line of the body could not be read as JSON."
 	)
 	@ReturnsError(
-		value = "request:document:not_an_object",
+		value = "document:not_an_object",
 		status = 400,
 		when = "A change is not an object keyed by path."
 	)
@@ -717,7 +832,7 @@ public class DocumentResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:out-of-date",
+		value = "index:out_of_date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
 	)
@@ -740,6 +855,106 @@ public class DocumentResource {
 		value = "index:closed",
 		status = 503,
 		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "document:field_unknown",
+		status = 400,
+		when = "A document gives a field the index does not have."
+	)
+	@ReturnsError(
+		value = "document:field_inside_object",
+		status = 400,
+		when = "A document gives a dotted path to a field inside an object instead of the object that holds it."
+	)
+	@ReturnsError(
+		value = "document:field_required",
+		status = 400,
+		when = "A document leaves out a field the definition marks as required."
+	)
+	@ReturnsError(
+		value = "document:locale_unsupported",
+		status = 400,
+		when = "A value carries a locale on a field that is not locale specific."
+	)
+	@ReturnsError(
+		value = "document:object_required",
+		status = 400,
+		when = "A field that holds objects is given a value that is not one."
+	)
+	@ReturnsError(
+		value = "document:object_unsupported",
+		status = 400,
+		when = "A field that does not hold objects is given one."
+	)
+	@ReturnsError(
+		value = "document:multiple_unsupported",
+		status = 400,
+		when = "A field that holds a single value is given several."
+	)
+	@ReturnsError(
+		value = "document:multiple_per_locale_unsupported",
+		status = 400,
+		when = "A field that holds a single value per locale is given several in one locale."
+	)
+	@ReturnsError(
+		value = "document:object_key_duplicate",
+		status = 400,
+		when = "Two values of an object field read the same under the key that tells them apart."
+	)
+	@ReturnsError(
+		value = "document:number:value_invalid",
+		status = 400,
+		when = "A number field is given a value that cannot be read as its type."
+	)
+	@ReturnsError(
+		value = "document:number:value_out_of_range",
+		status = 400,
+		when = "A number field is given a value outside the bounds its definition declares."
+	)
+	@ReturnsError(
+		value = "document:geo_point:value_invalid",
+		status = 400,
+		when = "A geo point field is given a value that is not a latitude and a longitude."
+	)
+	@ReturnsError(
+		value = "document:geo_point:value_out_of_range",
+		status = 400,
+		when = "A geo point field is given a point that is not on the earth."
+	)
+	@ReturnsError(
+		value = "document:timestamp:value_invalid",
+		status = 400,
+		when = "A timestamp field is given a value that is not an ISO 8601 date and time with an offset."
+	)
+	@ReturnsError(
+		value = "document:vector:value_invalid",
+		status = 400,
+		when = "A vector field is given a value that is not an array of floats."
+	)
+	@ReturnsError(
+		value = "document:vector:value_not_finite",
+		status = 400,
+		when = "A vector field is given a value that is not a finite number."
+	)
+	@ReturnsError(
+		value = "document:vector:dimensions_mismatch",
+		status = 400,
+		when = "A vector field is given a vector with other dimensions than the field declares."
+	)
+	@ReturnsError(
+		value = "document:vector:value_zero",
+		status = 400,
+		when = "A vector field compared by cosine is given a vector of only zeros."
+	)
+	@ReturnsError(
+		value = "document:primary_key_required",
+		status = 400,
+		when = "A change to some of a document carries no primary key, so it names no document."
+	)
+	@ReturnsError(
+		value = "index:generation:unsettled",
+		status = 400,
+		when = "The generation the index serves from kept changing while the write was made. Send the request again."
 	)
 	public UpdateResponse update(
 		@Parameter(
@@ -816,7 +1031,7 @@ public class DocumentResource {
 	 * above does not.
 	 */
 	@ReturnsError(
-		value = "request:unreadable",
+		value = "request:body_unreadable",
 		status = 400,
 		when = "The body stopped arriving part way through. The changes read before that are applied; send the rest again."
 	)
@@ -1024,12 +1239,12 @@ public class DocumentResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:query:invalid_value",
+		value = "search:value_invalid",
 		status = 400,
 		when = "The key in the path cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
-		value = "index:update:key_conflicting",
+		value = "document:key_conflicting",
 		status = 400,
 		when = "The body gives the primary key field a value other than the key in the path."
 	)
@@ -1039,72 +1254,72 @@ public class DocumentResource {
 		when = "The index definition declares no primary key, so a document cannot be named."
 	)
 	@ReturnsError(
-		value = "index:source:not_kept",
+		value = "document:source_not_kept",
 		status = 400,
 		when = "The index does not store document copies. Send the complete document instead."
 	)
 	@ReturnsError(
-		value = "request:update:path_invalid",
+		value = "document:patch:path_invalid",
 		status = 400,
 		when = "A path in the change could not be read."
 	)
 	@ReturnsError(
-		value = "index:document:no_match",
+		value = "document:patch:no_match",
 		status = 400,
 		when = "A selector names no value the document holds. A selector never creates the value it names."
 	)
 	@ReturnsError(
-		value = "index:update:field_not_found",
+		value = "document:patch:field_unknown",
 		status = 400,
 		when = "A path reaches into a field the index does not have."
 	)
 	@ReturnsError(
-		value = "index:update:not_an_object",
+		value = "document:patch:not_an_object",
 		status = 400,
 		when = "A path reaches inside a field whose values are not objects."
 	)
 	@ReturnsError(
-		value = "index:update:value_required",
+		value = "document:patch:selector_required",
 		status = 400,
 		when = "A path reaches into a list of objects without saying which value."
 	)
 	@ReturnsError(
-		value = "index:update:selector_not_supported",
+		value = "document:patch:selector_unsupported",
 		status = 400,
 		when = "A path names one value of a field that holds neither locale variants nor objects."
 	)
 	@ReturnsError(
-		value = "index:update:locale_not_declared",
+		value = "document:locale_unknown",
 		status = 400,
 		when = "A path names a locale the field holds no variant for."
 	)
 	@ReturnsError(
-		value = "index:update:add_not_multiple",
+		value = "document:patch:add_unsupported",
 		status = 400,
 		when = "The change adds a value to a field that holds a single value. Name the field on its own to replace it."
 	)
 	@ReturnsError(
-		value = "request:update:add_reaches_inside",
+		value = "document:patch:add_reaches_inside",
 		status = 400,
 		when = "A path reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
 	)
 	@ReturnsError(
-		value = "index:update:key_not_declared",
+		value = "document:patch:key_unsupported",
 		status = 400,
 		when = "A path names one value of a list by a key that the field declares none of. Match on a field inside the value instead."
 	)
 	@ReturnsError(
-		value = "index:update:match_not_an_object",
+		value = "document:patch:match_not_an_object",
 		status = 400,
 		when = "A path matches on a field inside a list whose values are not objects."
 	)
 	@ReturnsError(
-		value = "request:missing_body",
+		value = "request:body_required",
 		status = 400,
 		when = "The request carries no change."
 	)
 	@ReturnsError(
-		value = "index:document:not_found",
+		value = "document:not_found",
 		status = 404,
 		when = "Nothing is indexed under the key. Index the document whole first."
 	)
@@ -1119,7 +1334,7 @@ public class DocumentResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:out-of-date",
+		value = "index:out_of_date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
 	)
@@ -1142,6 +1357,101 @@ public class DocumentResource {
 		value = "index:closed",
 		status = 503,
 		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "document:field_unknown",
+		status = 400,
+		when = "A document gives a field the index does not have."
+	)
+	@ReturnsError(
+		value = "document:field_inside_object",
+		status = 400,
+		when = "A document gives a dotted path to a field inside an object instead of the object that holds it."
+	)
+	@ReturnsError(
+		value = "document:field_required",
+		status = 400,
+		when = "A document leaves out a field the definition marks as required."
+	)
+	@ReturnsError(
+		value = "document:locale_unsupported",
+		status = 400,
+		when = "A value carries a locale on a field that is not locale specific."
+	)
+	@ReturnsError(
+		value = "document:object_required",
+		status = 400,
+		when = "A field that holds objects is given a value that is not one."
+	)
+	@ReturnsError(
+		value = "document:object_unsupported",
+		status = 400,
+		when = "A field that does not hold objects is given one."
+	)
+	@ReturnsError(
+		value = "document:multiple_unsupported",
+		status = 400,
+		when = "A field that holds a single value is given several."
+	)
+	@ReturnsError(
+		value = "document:multiple_per_locale_unsupported",
+		status = 400,
+		when = "A field that holds a single value per locale is given several in one locale."
+	)
+	@ReturnsError(
+		value = "document:object_key_duplicate",
+		status = 400,
+		when = "Two values of an object field read the same under the key that tells them apart."
+	)
+	@ReturnsError(
+		value = "document:number:value_invalid",
+		status = 400,
+		when = "A number field is given a value that cannot be read as its type."
+	)
+	@ReturnsError(
+		value = "document:number:value_out_of_range",
+		status = 400,
+		when = "A number field is given a value outside the bounds its definition declares."
+	)
+	@ReturnsError(
+		value = "document:geo_point:value_invalid",
+		status = 400,
+		when = "A geo point field is given a value that is not a latitude and a longitude."
+	)
+	@ReturnsError(
+		value = "document:geo_point:value_out_of_range",
+		status = 400,
+		when = "A geo point field is given a point that is not on the earth."
+	)
+	@ReturnsError(
+		value = "document:timestamp:value_invalid",
+		status = 400,
+		when = "A timestamp field is given a value that is not an ISO 8601 date and time with an offset."
+	)
+	@ReturnsError(
+		value = "document:vector:value_invalid",
+		status = 400,
+		when = "A vector field is given a value that is not an array of floats."
+	)
+	@ReturnsError(
+		value = "document:vector:value_not_finite",
+		status = 400,
+		when = "A vector field is given a value that is not a finite number."
+	)
+	@ReturnsError(
+		value = "document:vector:dimensions_mismatch",
+		status = 400,
+		when = "A vector field is given a vector with other dimensions than the field declares."
+	)
+	@ReturnsError(
+		value = "document:vector:value_zero",
+		status = 400,
+		when = "A vector field compared by cosine is given a vector of only zeros."
+	)
+	@ReturnsError(
+		value = "index:generation:unsettled",
+		status = 400,
+		when = "The generation the index serves from kept changing while the write was made. Send the request again."
 	)
 	public Response patch(
 		@Parameter(
@@ -1344,7 +1654,7 @@ public class DocumentResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:query:invalid_value",
+		value = "search:value_invalid",
 		status = 400,
 		when = "The key in the path cannot be read as the type of the primary key field."
 	)
@@ -1364,7 +1674,7 @@ public class DocumentResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:out-of-date",
+		value = "index:out_of_date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
 	)
@@ -1416,6 +1726,11 @@ public class DocumentResource {
 			The request raced the index being closed to free local resources. \
 			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:generation:unsettled",
+		status = 400,
+		when = "The generation the index serves from kept changing while the write was made. Send the request again."
 	)
 	public Response delete(
 		@Parameter(
@@ -1492,32 +1807,32 @@ public class DocumentResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:delete:target_required",
+		value = "document:delete:target_required",
 		status = 400,
 		when = "The body holds none of `keys`, `query`, and `all`."
 	)
 	@ReturnsError(
-		value = "request:delete:target_conflicting",
+		value = "document:delete:target_conflicting",
 		status = 400,
 		when = "The body holds more than one of `keys`, `query`, and `all`. Send one of them."
 	)
 	@ReturnsError(
-		value = "request:delete:query_empty",
+		value = "document:delete:query_empty",
 		status = 400,
 		when = "The body holds a `query` without clauses. Send `all` to empty the index."
 	)
 	@ReturnsError(
-		value = "request:delete:locale_without_query",
+		value = "document:delete:locale_without_query",
 		status = 400,
 		when = "The body states a `locale` without a `query`."
 	)
 	@ReturnsError(
-		value = "index:query:invalid_value",
+		value = "search:value_invalid",
 		status = 400,
 		when = "A key cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
-		value = "request:delete:key_required",
+		value = "document:key_required",
 		status = 400,
 		when = "An entry of `keys` carries no key."
 	)
@@ -1527,7 +1842,7 @@ public class DocumentResource {
 		when = "The index definition declares no primary key, so a document cannot be named by `keys`."
 	)
 	@ReturnsError(
-		value = "search:required",
+		value = "request:value_required",
 		status = 400,
 		when = "A part of `query` that needs a value carries none. The `path` names it."
 	)
@@ -1557,32 +1872,32 @@ public class DocumentResource {
 		when = "A `knn` clause of `query` carries no vector to find the neighbours of."
 	)
 	@ReturnsError(
-		value = "search:clause:k_invalid",
+		value = "search:clause:k_out_of_range",
 		status = 400,
 		when = "The `k` of a `knn` clause is missing or not above zero."
 	)
 	@ReturnsError(
-		value = "search:clause:weight_invalid",
+		value = "search:clause:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_invalid",
+		value = "search:clause:slop_out_of_range",
 		status = 400,
 		when = "The `slop` of a `text` clause is below zero."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_not_applicable",
+		value = "search:clause:slop_unsupported",
 		status = 400,
 		when = "A `text` clause sets `slop` without matching as a phrase."
 	)
 	@ReturnsError(
-		value = "search:clause:join_not_applicable",
+		value = "search:clause:join_unsupported",
 		status = 400,
 		when = "A `text` clause sets `join` without matching what somebody typed."
 	)
 	@ReturnsError(
-		value = "search:clause:rankings_invalid",
+		value = "search:clause:rankings_too_few",
 		status = 400,
 		when = "A `fuse` clause holds fewer than two rankings to fuse."
 	)
@@ -1592,12 +1907,12 @@ public class DocumentResource {
 		when = "A ranking of a `fuse` clause holds nothing to rank by."
 	)
 	@ReturnsError(
-		value = "search:clause:rank_constant_invalid",
+		value = "search:clause:rank_constant_out_of_range",
 		status = 400,
 		when = "The `rankConstant` of a `fuse` clause is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:clause:depth_invalid",
+		value = "search:clause:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a `fuse` clause is below one result."
 	)
@@ -1647,7 +1962,7 @@ public class DocumentResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:out-of-date",
+		value = "index:out_of_date",
 		status = 409,
 		when = "The index is synchronizing. Send the request again."
 	)
@@ -1699,6 +2014,71 @@ public class DocumentResource {
 			The request raced the index being closed to free local resources. \
 			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "search:field_unknown",
+		status = 400,
+		when = "A clause, sort or facet names a field the index does not have."
+	)
+	@ReturnsError(
+		value = "search:usage_unsupported",
+		status = 400,
+		when = "A clause, sort or facet uses a field in a way the definition does not enable for it."
+	)
+	@ReturnsError(
+		value = "search:matcher:type_unsupported",
+		status = 400,
+		when = "A matcher is used on a field whose type cannot answer it."
+	)
+	@ReturnsError(
+		value = "search:locale_unsupported",
+		status = 400,
+		when = "The `locale` names one the engine has no rules for."
+	)
+	@ReturnsError(
+		value = "search:no_searchable_fields",
+		status = 400,
+		when = "A text clause names no fields and the index has none defined for matching."
+	)
+	@ReturnsError(
+		value = "search:nested:path_not_nested",
+		status = 400,
+		when = "A `nested` clause names a path whose values are flattened."
+	)
+	@ReturnsError(
+		value = "search:nested:field_not_inside",
+		status = 400,
+		when = "A clause inside a `nested` clause names a field outside its path."
+	)
+	@ReturnsError(
+		value = "search:nested:field_outside",
+		status = 400,
+		when = "A clause outside a `nested` clause names a field inside a nested list."
+	)
+	@ReturnsError(
+		value = "search:nested:clause_unsupported",
+		status = 400,
+		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+	)
+	@ReturnsError(
+		value = "search:interpret:unit_required",
+		status = 400,
+		when = "An `interpret` target names a field that is not a number field or declares no `unit`."
+	)
+	@ReturnsError(
+		value = "search:interpret:fallback_unit_mismatch",
+		status = 400,
+		when = "A `fallback` target declares another unit than the target it stands in for."
+	)
+	@ReturnsError(
+		value = "search:clause:k_required",
+		status = 400,
+		when = "A `knn` clause carries no `k`."
+	)
+	@ReturnsError(
+		value = "index:generation:unsettled",
+		status = 400,
+		when = "The generation the index serves from kept changing while the write was made. Send the request again."
 	)
 	public DeleteResponse delete(
 		@Parameter(
@@ -1876,17 +2256,17 @@ public class DocumentResource {
 		when = "The index definition declares no primary key, so documents cannot be scanned in key order."
 	)
 	@ReturnsError(
-		value = "index:source:not_kept",
+		value = "document:source_not_kept",
 		status = 400,
 		when = "The index does not store document copies, so a scan has nothing to return."
 	)
 	@ReturnsError(
-		value = "request:scan:limit_invalid",
+		value = "request:limit_out_of_range",
 		status = 400,
 		when = "The `limit` parameter is not a whole number from 1 to 10000."
 	)
 	@ReturnsError(
-		value = "index:query:invalid_value",
+		value = "search:value_invalid",
 		status = 400,
 		when = "The `after` parameter cannot be read as the type of the primary key field."
 	)

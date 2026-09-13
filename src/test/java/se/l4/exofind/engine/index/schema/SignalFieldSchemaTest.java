@@ -81,7 +81,7 @@ public class SignalFieldSchemaTest {
 			)
 			.build();
 
-		assertThat(codes(definition), hasItem("index:field:signal_not_supported"));
+		assertThat(codes(definition), hasItem("index:field:signal:type_unsupported"));
 	}
 
 	@Test
@@ -99,7 +99,7 @@ public class SignalFieldSchemaTest {
 			.build();
 
 		assertThat(
-			codes(definition).stream().filter("index:field:signal:usage_conflict"::equals).count(),
+			codes(definition).stream().filter("index:field:signal:usage_conflicting"::equals).count(),
 			is(3L)
 		);
 	}
@@ -116,7 +116,7 @@ public class SignalFieldSchemaTest {
 			)
 			.build();
 
-		assertThat(codes(definition), hasItem("index:field:invalid_sortable"));
+		assertThat(codes(definition), hasItem("index:field:sort:multiple_unsupported"));
 	}
 
 	@Test
@@ -128,7 +128,7 @@ public class SignalFieldSchemaTest {
 			)
 			.build();
 
-		assertThat(codes(definition), hasItem("index:field:signal:wildcard"));
+		assertThat(codes(definition), hasItem("index:field:signal:wildcard_unsupported"));
 	}
 
 	@Test
@@ -153,7 +153,7 @@ public class SignalFieldSchemaTest {
 			)
 			.build();
 
-		assertThat(codes(definition), hasItem("index:field:object:inner_usage_not_supported"));
+		assertThat(codes(definition), hasItem("index:field:object:inner_usage_unsupported"));
 	}
 
 	@Test
@@ -196,7 +196,7 @@ public class SignalFieldSchemaTest {
 			)
 			.build();
 
-		assertThat(codes(definition), hasItem("index:ranking:signal:invalid_ceiling"));
+		assertThat(codes(definition), hasItem("index:ranking:signal:ceiling_out_of_range"));
 	}
 
 	@Test
@@ -222,7 +222,7 @@ public class SignalFieldSchemaTest {
 			)
 			.build();
 
-		assertThat(codes(definition), hasItem("index:ranking:signal:shape_not_supported"));
+		assertThat(codes(definition), hasItem("index:ranking:signal:shape_unsupported"));
 	}
 
 	@Test

@@ -98,7 +98,7 @@ public record KeyDefinition(
 
 		@Schema(description = """
 			Permissions by name, added to whatever `role` specifies. An \
-			unknown permission name returns `auth:key:unknown_permission`.""")
+			unknown permission name returns `auth:key:permission_unknown`.""")
 		List<String> permissions,
 
 		@Schema(description = """

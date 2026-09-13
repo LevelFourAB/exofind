@@ -14,6 +14,7 @@ public class IndexNoLiveGenerationException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:no_live_generation")
+		.withStatus(409)
 		.withArguments("index")
 		.withMessage(
 			"The index `{{index}}` has no live generation, so its name answers for nothing."

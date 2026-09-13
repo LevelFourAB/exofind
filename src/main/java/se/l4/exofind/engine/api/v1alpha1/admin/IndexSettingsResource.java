@@ -37,6 +37,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.SearchSettingsDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.SearchSettingsInfo;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.EngineException;
+import se.l4.exofind.engine.api.errors.RequestErrors;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
@@ -102,28 +103,33 @@ public class IndexSettingsResource {
 	 */
 	private static final int PATCH_ATTEMPTS = 3;
 
-	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:missing_body")
+	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:body_required")
+		.withStatus(400)
 		.withMessage("Settings are required");
 
-	private static final ErrorType MISSING_CHANGE = ErrorType.withCode("request:missing_body")
+	private static final ErrorType MISSING_CHANGE = ErrorType.withCode("request:body_required")
+		.withStatus(400)
 		.withMessage("A change is required");
 
 	private static final ErrorType UNKNOWN_FIELD = ErrorType
-		.withCode("request:update:path_unknown_field")
+		.withCode("settings:patch:field_unknown")
+		.withStatus(400)
 		.withArguments("path", "field")
 		.withMessage(
 			"`{{path}}` reaches into the field `{{field}}`, which search settings do not have"
 		);
 
 	private static final ErrorType INVALID_SYNONYM_RULE = ErrorType
-		.withCode("index:settings:synonyms:invalid_rule")
+		.withCode("settings:synonyms:rule_invalid")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Synonym set `{{name}}` has a rule that is not exactly one kind - equivalent words, or a one way mapping"
 		);
 
 	private static final ErrorType INVALID_VALUE = ErrorType
-		.withCode("request:update:value_invalid")
+		.withCode("settings:patch:value_invalid")
+		.withStatus(400)
 		.withArguments("path", "reason")
 		.withMessage("`{{path}}` cannot be given that value: {{reason}}");
 
@@ -131,17 +137,15 @@ public class IndexSettingsResource {
 	 * A `null` inside a list or a map of the body. Refused where it sits rather
 	 * than left to reach the builders, which name no place in the request.
 	 */
-	private static final ErrorType VALUE_REQUIRED = ErrorType.withCode("request:value_required")
-		.withMessage("A value is needed here, `null` says nothing");
-
 	/*
-	 * Distinct from `index:settings:unavailable`, which is about this node
+	 * Distinct from `storage:unavailable`, which is about this node
 	 * having nowhere to keep settings. This one is about the stored settings
 	 * holding something this node has no name for, which only a change built on
 	 * top of them can run into.
 	 */
 	private static final ErrorType UNREPRESENTABLE = ErrorType
-		.withCode("index:settings:unrepresentable")
+		.withCode("settings:unrepresentable")
+		.withStatus(409)
 		.withMessage(
 			"The stored settings hold parts this version can not describe, and changing part of them here would drop those"
 		);
@@ -183,7 +187,7 @@ public class IndexSettingsResource {
 			names the stored version is answered `304 Not Modified`.
 
 			An index with no search settings - one searching with its \
-			definition alone - returns `404` with `index:settings:not_found` \
+			definition alone - returns `404` with `settings:not_found` \
 			rather than an empty object, ensuring the `ETag` always represents \
 			an explicit stored version.
 
@@ -208,7 +212,7 @@ public class IndexSettingsResource {
 	@APIResponse(
 		responseCode = "404",
 		description = """
-			The index has no search settings (`index:settings:not_found`), the \
+			The index has no search settings (`settings:not_found`), the \
 			index does not exist, or the API key lacks permission on the \
 			index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
@@ -219,7 +223,7 @@ public class IndexSettingsResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "index:settings:not_found",
+		value = "settings:not_found",
 		status = 404,
 		when = "The index has no search settings stored."
 	)
@@ -229,12 +233,12 @@ public class IndexSettingsResource {
 		when = "The node holds no such index, or the key has no permission on it."
 	)
 	@ReturnsError(
-		value = "index:settings:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Settings storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "Settings storage could not be reached. Send the request again once it answers."
 	)
@@ -363,7 +367,7 @@ public class IndexSettingsResource {
 		description = """
 			No index has this name, the API key lacks permissions covering it, \
 			or an `If-Match` header was sent for an index that has no settings \
-			(`index:settings:not_found`).""",
+			(`settings:not_found`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -381,7 +385,7 @@ public class IndexSettingsResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:missing_body",
+		value = "request:body_required",
 		status = 400,
 		when = "The request carries no body."
 	)
@@ -391,57 +395,57 @@ public class IndexSettingsResource {
 		when = "A property of the settings that needs a value is `null`."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:unknown_field",
+		value = "settings:synonyms:field_unknown",
 		status = 400,
 		when = "A synonym set names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:field_not_text",
+		value = "settings:synonyms:field_unsupported",
 		status = 400,
 		when = "A synonym set names a field that is not searched as text."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:invalid_boost",
+		value = "settings:synonyms:boost_out_of_range",
 		status = 400,
 		when = "The boost of a synonym set is not a positive number."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:invalid_rule",
+		value = "settings:synonyms:rule_invalid",
 		status = 400,
 		when = "A synonym rule is not exactly one kind - equivalent words, or a one-way mapping."
 	)
 	@ReturnsError(
-		value = "index:settings:typo_exclusions:unknown_field",
+		value = "settings:typo_exclusions:field_unknown",
 		status = 400,
 		when = "A typo exclusion names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:settings:typo_exclusions:field_not_text",
+		value = "settings:typo_exclusions:field_unsupported",
 		status = 400,
 		when = "A typo exclusion names a field that is not searched as text."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:unknown_field",
+		value = "settings:fields:field_unknown",
 		status = 400,
 		when = "The field settings name a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:interpret_unsupported",
+		value = "settings:fields:interpret_unsupported",
 		status = 400,
 		when = "The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:values_unsupported",
+		value = "settings:fields:values_unsupported",
 		status = 400,
 		when = "The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:values_invalid",
+		value = "settings:fields:values_invalid",
 		status = 400,
 		when = "A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:suggest_unsupported",
+		value = "settings:fields:suggest_unsupported",
 		status = 400,
 		when = "The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`."
 	)
@@ -451,27 +455,27 @@ public class IndexSettingsResource {
 		when = "A ranking signal names a field that is not sortable."
 	)
 	@ReturnsError(
-		value = "index:ranking:unknown_field",
+		value = "index:ranking:field_unknown",
 		status = 400,
 		when = "A tie-breaker names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:ranking:wildcard_field",
+		value = "index:ranking:wildcard_unsupported",
 		status = 400,
 		when = "A tie-breaker names fields with a wildcard. A tie-breaker orders by one field."
 	)
 	@ReturnsError(
-		value = "index:ranking:duplicate_field",
+		value = "index:ranking:field_duplicate",
 		status = 400,
 		when = "Two tie-breakers name the same field."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:unknown_field",
+		value = "index:ranking:signal:field_unknown",
 		status = 400,
 		when = "A ranking signal names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:wildcard_field",
+		value = "index:ranking:signal:wildcard_unsupported",
 		status = 400,
 		when = "A ranking signal names fields with a wildcard. A signal reads one field."
 	)
@@ -481,37 +485,37 @@ public class IndexSettingsResource {
 		when = "A ranking signal names a field that holds no value to read."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:shape_not_set",
+		value = "index:ranking:signal:shape_required",
 		status = 400,
 		when = "A ranking signal says no shape to read its field with."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:shape_not_supported",
+		value = "index:ranking:signal:shape_unsupported",
 		status = 400,
 		when = "A ranking signal reads its field with a shape that the type of the field has no meaning for."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_shape",
+		value = "index:ranking:signal:shape_invalid",
 		status = 400,
 		when = "A ranking signal is not exactly one of `saturation`, `decay` and `linear`."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_pivot",
+		value = "index:ranking:signal:pivot_out_of_range",
 		status = 400,
 		when = "The `pivot` of a saturation signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_half_life",
+		value = "index:ranking:signal:half_life_out_of_range",
 		status = 400,
 		when = "The `halfLife` of a decay signal is not a number of seconds above zero."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_ceiling",
+		value = "index:ranking:signal:ceiling_out_of_range",
 		status = 400,
 		when = "The `ceiling` of a linear signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_weight",
+		value = "index:ranking:signal:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a ranking signal is below zero or is not a finite number."
 	)
@@ -521,7 +525,7 @@ public class IndexSettingsResource {
 		when = "The node holds no such index, or the key has no permission on it."
 	)
 	@ReturnsError(
-		value = "index:settings:not_found",
+		value = "settings:not_found",
 		status = 404,
 		when = "An `If-Match` header was sent and the index has no settings for it to match."
 	)
@@ -531,17 +535,17 @@ public class IndexSettingsResource {
 		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Settings storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "Settings storage could not be reached. Send the request again once it answers."
 	)
@@ -551,7 +555,7 @@ public class IndexSettingsResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:settings:version_mismatch",
+		value = "settings:version_mismatch",
 		status = 412,
 		when = "The `If-Match` version is not the one the stored settings are at. Read them again and rebuild the change."
 	)
@@ -699,7 +703,7 @@ public class IndexSettingsResource {
 
 			Without an `If-Match` header, a change that conflicts with a \
 			concurrent update rebuilds on the newer version up to three times \
-			before returning `index:settings:conflict`. With an `If-Match` \
+			before returning `storage:conflict`. With an `If-Match` \
 			header naming versions, a version mismatch returns `412` without \
 			retrying, and an index with no settings returns `404`.
 
@@ -741,7 +745,7 @@ public class IndexSettingsResource {
 		description = """
 			No index has this name, the API key lacks permissions covering it, \
 			or an `If-Match` header was sent for an index that has no settings \
-			(`index:settings:not_found`).""",
+			(`settings:not_found`).""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -751,47 +755,47 @@ public class IndexSettingsResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "request:missing_body",
+		value = "request:body_required",
 		status = 400,
 		when = "The request carries no body."
 	)
 	@ReturnsError(
-		value = "request:update:path_invalid",
+		value = "settings:patch:path_invalid",
 		status = 400,
 		when = "A key of the change could not be read as a path."
 	)
 	@ReturnsError(
-		value = "index:settings:no_match",
+		value = "settings:patch:no_match",
 		status = 400,
 		when = "A selector names nothing the settings hold. A selector never creates the value it names."
 	)
 	@ReturnsError(
-		value = "request:update:value_invalid",
+		value = "settings:patch:value_invalid",
 		status = 400,
 		when = "A key names a field that cannot hold the given value."
 	)
 	@ReturnsError(
-		value = "request:update:path_unknown_field",
+		value = "settings:patch:field_unknown",
 		status = 400,
 		when = "A key reaches into a field the search settings do not have."
 	)
 	@ReturnsError(
-		value = "request:update:not_an_object",
+		value = "settings:patch:not_an_object",
 		status = 400,
 		when = "A key reaches inside a field that holds no fields."
 	)
 	@ReturnsError(
-		value = "request:update:value_required",
+		value = "settings:patch:selector_required",
 		status = 400,
 		when = "A key names a field that holds a list without saying which value, such as `ranking.signals[field=sales]`."
 	)
 	@ReturnsError(
-		value = "request:update:selector_not_supported",
+		value = "settings:patch:selector_unsupported",
 		status = 400,
 		when = "A key names one value of a field that holds no list."
 	)
 	@ReturnsError(
-		value = "request:update:add_reaches_inside",
+		value = "settings:patch:add_reaches_inside",
 		status = 400,
 		when = "A key reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
 	)
@@ -801,57 +805,57 @@ public class IndexSettingsResource {
 		when = "A property of the settings that needs a value is `null`."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:unknown_field",
+		value = "settings:synonyms:field_unknown",
 		status = 400,
 		when = "A synonym set names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:field_not_text",
+		value = "settings:synonyms:field_unsupported",
 		status = 400,
 		when = "A synonym set names a field that is not searched as text."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:invalid_boost",
+		value = "settings:synonyms:boost_out_of_range",
 		status = 400,
 		when = "The boost of a synonym set is not a positive number."
 	)
 	@ReturnsError(
-		value = "index:settings:synonyms:invalid_rule",
+		value = "settings:synonyms:rule_invalid",
 		status = 400,
 		when = "A synonym rule is not exactly one kind - equivalent words, or a one-way mapping."
 	)
 	@ReturnsError(
-		value = "index:settings:typo_exclusions:unknown_field",
+		value = "settings:typo_exclusions:field_unknown",
 		status = 400,
 		when = "A typo exclusion names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:settings:typo_exclusions:field_not_text",
+		value = "settings:typo_exclusions:field_unsupported",
 		status = 400,
 		when = "A typo exclusion names a field that is not searched as text."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:unknown_field",
+		value = "settings:fields:field_unknown",
 		status = 400,
 		when = "The field settings name a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:interpret_unsupported",
+		value = "settings:fields:interpret_unsupported",
 		status = 400,
 		when = "The settings read the values of a field that is not a `string` field with `filter` and `facet` and without `hierarchy`."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:values_unsupported",
+		value = "settings:fields:values_unsupported",
 		status = 400,
 		when = "The settings declare values of a field that is not a `string` field with `facet` and without `hierarchy`."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:values_invalid",
+		value = "settings:fields:values_invalid",
 		status = 400,
 		when = "A declared value carries no `value`, repeats one, is labelled under a tag that is not canonical BCP 47, holds a blank label, or the field declares more than 10000 values."
 	)
 	@ReturnsError(
-		value = "index:settings:fields:suggest_unsupported",
+		value = "settings:fields:suggest_unsupported",
 		status = 400,
 		when = "The settings suggest the values of a field that is not a `string` field with `facet` and without `hierarchy`."
 	)
@@ -861,27 +865,27 @@ public class IndexSettingsResource {
 		when = "A ranking signal names a field that is not sortable."
 	)
 	@ReturnsError(
-		value = "index:ranking:unknown_field",
+		value = "index:ranking:field_unknown",
 		status = 400,
 		when = "A tie-breaker names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:ranking:wildcard_field",
+		value = "index:ranking:wildcard_unsupported",
 		status = 400,
 		when = "A tie-breaker names fields with a wildcard. A tie-breaker orders by one field."
 	)
 	@ReturnsError(
-		value = "index:ranking:duplicate_field",
+		value = "index:ranking:field_duplicate",
 		status = 400,
 		when = "Two tie-breakers name the same field."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:unknown_field",
+		value = "index:ranking:signal:field_unknown",
 		status = 400,
 		when = "A ranking signal names a field the generation does not have."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:wildcard_field",
+		value = "index:ranking:signal:wildcard_unsupported",
 		status = 400,
 		when = "A ranking signal names fields with a wildcard. A signal reads one field."
 	)
@@ -891,37 +895,37 @@ public class IndexSettingsResource {
 		when = "A ranking signal names a field that holds no value to read."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:shape_not_set",
+		value = "index:ranking:signal:shape_required",
 		status = 400,
 		when = "A ranking signal says no shape to read its field with."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:shape_not_supported",
+		value = "index:ranking:signal:shape_unsupported",
 		status = 400,
 		when = "A ranking signal reads its field with a shape that the type of the field has no meaning for."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_shape",
+		value = "index:ranking:signal:shape_invalid",
 		status = 400,
 		when = "A ranking signal is not exactly one of `saturation`, `decay` and `linear`."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_pivot",
+		value = "index:ranking:signal:pivot_out_of_range",
 		status = 400,
 		when = "The `pivot` of a saturation signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_half_life",
+		value = "index:ranking:signal:half_life_out_of_range",
 		status = 400,
 		when = "The `halfLife` of a decay signal is not a number of seconds above zero."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_ceiling",
+		value = "index:ranking:signal:ceiling_out_of_range",
 		status = 400,
 		when = "The `ceiling` of a linear signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "index:ranking:signal:invalid_weight",
+		value = "index:ranking:signal:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a ranking signal is below zero or is not a finite number."
 	)
@@ -931,7 +935,7 @@ public class IndexSettingsResource {
 		when = "The node holds no such index, or the key has no permission on it."
 	)
 	@ReturnsError(
-		value = "index:settings:not_found",
+		value = "settings:not_found",
 		status = 404,
 		when = "An `If-Match` header was sent and the index has no settings for it to match."
 	)
@@ -941,22 +945,22 @@ public class IndexSettingsResource {
 		when = "The index has no live generation. Promote one and send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:unrepresentable",
+		value = "settings:unrepresentable",
 		status = 409,
 		when = "The stored settings hold parts this node cannot describe. Send the request to a node that supports them, or replace the settings with a `PUT`."
 	)
 	@ReturnsError(
-		value = "index:settings:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Settings storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "Settings storage could not be reached. Send the request again once it answers."
 	)
@@ -966,7 +970,7 @@ public class IndexSettingsResource {
 		when = "No node is available to write the index. Send the request again once one is."
 	)
 	@ReturnsError(
-		value = "index:settings:version_mismatch",
+		value = "settings:version_mismatch",
 		status = 412,
 		when = "The `If-Match` version is not the one the stored settings are at. Read them again and rebuild the change."
 	)
@@ -979,7 +983,7 @@ public class IndexSettingsResource {
 		responseCode = "412",
 		description = """
 			The `If-Match` version does not match the stored settings \
-			(`index:settings:version_mismatch`). Read them again and rebuild \
+			(`settings:version_mismatch`). Read them again and rebuild \
 			the change on the version that comes back.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
@@ -1171,7 +1175,7 @@ public class IndexSettingsResource {
 	 */
 	private static void require(Object value, ObjectLocation at) {
 		if(value == null) {
-			throw new ValidationException(VALUE_REQUIRED.toMessage(at));
+			throw new ValidationException(RequestErrors.VALUE_REQUIRED.toMessage(at));
 		}
 	}
 
@@ -1589,17 +1593,17 @@ public class IndexSettingsResource {
 		when = "The node holds no such index, or the key has no permission on it."
 	)
 	@ReturnsError(
-		value = "index:settings:conflict",
+		value = "storage:conflict",
 		status = 409,
 		when = "Other writers kept changing the settings. The stored settings are unchanged; send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:io_error",
+		value = "storage:io_error",
 		status = 409,
 		when = "Settings storage answered with an error. Send the request again."
 	)
 	@ReturnsError(
-		value = "index:settings:unavailable",
+		value = "storage:unavailable",
 		status = 409,
 		when = "Settings storage could not be reached. Send the request again once it answers."
 	)

@@ -12,7 +12,8 @@ import se.l4.exofind.engine.errors.ErrorType;
  * is why this is a refusal rather than an answer from the wrong position.
  */
 public class IndexInvalidCursorException extends IndexException {
-	private static final ErrorType TYPE = ErrorType.withCode("index:query:invalid_cursor")
+	private static final ErrorType TYPE = ErrorType.withCode("search:cursor:stale")
+		.withStatus(400)
 		.withMessage(
 			"The position to continue from does not fit how the search is ordered"
 		);

@@ -13,6 +13,7 @@ public class ReindexTargetBusyException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("reindex:target_busy")
+		.withStatus(409)
 		.withArguments("name")
 		.withMessage(
 			"The generation `{{name}}` is being filled by a reindex and cannot be"

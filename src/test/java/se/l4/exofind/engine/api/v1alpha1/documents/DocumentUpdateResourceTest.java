@@ -176,7 +176,7 @@ public class DocumentUpdateResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:document:not_found"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:not_found"));
 	}
 
 	@Test
@@ -216,7 +216,7 @@ public class DocumentUpdateResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:missing_unknown"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:patch:missing_invalid"));
 	}
 
 	@Test
@@ -331,7 +331,7 @@ public class DocumentUpdateResourceTest {
 			() -> resource.patch("catalogue", "1", null)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:missing_body"));
+		assertThat(e.getErrors().get(0).getCode(), is("request:body_required"));
 	}
 
 	/**
@@ -387,7 +387,7 @@ public class DocumentUpdateResourceTest {
 			() -> resource.patch("catalogue", "1", document("id", "2", "price", 9.5))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:key_conflicting"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:key_conflicting"));
 
 		index.commit();
 		assertThat(index.getDocument("1").get("price"), is(24.5));
@@ -403,7 +403,7 @@ public class DocumentUpdateResourceTest {
 			() -> resource.patch("catalogue", "404", document("price", 1.0))
 		);
 
-		assertThat(e.getCode(), is("index:document:not_found"));
+		assertThat(e.getCode(), is("document:not_found"));
 	}
 
 	@Test

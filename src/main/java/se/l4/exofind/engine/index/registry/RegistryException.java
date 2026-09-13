@@ -14,12 +14,14 @@ import se.l4.exofind.engine.index.IndexException;
 public class RegistryException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType CONFLICT = ErrorType.withCode("index:registry:conflict")
+	private static final ErrorType CONFLICT = ErrorType.withCode("storage:conflict")
+		.withStatus(409)
 		.withMessage(
 			"The indexes were changed by someone else while this change was being made"
 		);
 
-	private static final ErrorType IO_ERROR = ErrorType.withCode("index:registry:io_error")
+	private static final ErrorType IO_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withMessage("The indexes could not be read from or written to storage");
 
 	private RegistryException(ErrorType type) {

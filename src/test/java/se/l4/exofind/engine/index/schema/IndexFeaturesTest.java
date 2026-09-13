@@ -939,6 +939,6 @@ public class IndexFeaturesTest {
 		var e = assertThrows(ValidationException.class, () -> schema.setDefinition(fromTheFuture));
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:schema:unsupported_features"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:schema:features_unsupported"));
 	}
 }

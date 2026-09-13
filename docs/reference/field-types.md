@@ -78,8 +78,8 @@ A role turns on only what the field's position accepts. The flattened list posit
 
 | Error code | Condition |
 |---|---|
-| `index:field:role:not_valid_for_type` | The field names a role that its type cannot answer for, such as `role: "title"` on a `timestamp` field. |
-| `index:field:role:not_valid_in_object` | A field inside an object names a role valid only on a field of the index itself, such as `role: "id"`. |
+| `index:field:role:type_unsupported` | The field names a role that its type cannot answer for, such as `role: "title"` on a `timestamp` field. |
+| `index:field:role:object_unsupported` | A field inside an object names a role valid only on a field of the index itself, such as `role: "id"`. |
 
 ## `string`
 
@@ -115,7 +115,7 @@ Represents numeric values of the specified width. Enabling `filter` supports bot
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `validation` | object | None | Sets allowed numeric bounds. Sub-properties: `min` and `max`. Documents containing values outside these bounds are rejected. |
-| `unit` | string | None | Declares a unit for the field: an ISO 4217 currency code, a CLDR unit identifier, or any other text matched as written. A search in user mode reads a number typed next to the unit or next to a comparative word as a filter on the field. See [Reading numbers and units](search-api.md#reading-numbers-and-units). Changing `unit` needs no reindex. A blank unit returns `index:field:number:invalid_unit`. |
+| `unit` | string | None | Declares a unit for the field: an ISO 4217 currency code, a CLDR unit identifier, or any other text matched as written. A search in user mode reads a number typed next to the unit or next to a comparative word as a filter on the field. See [Reading numbers and units](search-api.md#reading-numbers-and-units). Changing `unit` needs no reindex. A blank unit returns `index:field:number:unit_invalid`. |
 | `signal` | object | None | Configures the numeric field as a signal field whose values are refreshed in place. See [Signal fields](#signal-fields). |
 
 ### Signal fields
@@ -143,11 +143,11 @@ A signal field behaves as follows:
 
 | Error code | Condition |
 |---|---|
-| `index:field:signal_not_supported` | `signal` is enabled on a field that is not a numeric type. |
-| `index:field:signal:usage_conflict` | `signal` is combined with `filter`, `facet`, `stored`, `locales`, or `primaryKey`. |
-| `index:field:signal:wildcard` | `signal` is enabled on a field whose name contains a wildcard. |
-| `index:field:invalid_sortable` | `signal` is combined with `multiple`. |
-| `index:field:object:inner_usage_not_supported` | `signal` is enabled on a field inside an `object` field. |
+| `index:field:signal:type_unsupported` | `signal` is enabled on a field that is not a numeric type. |
+| `index:field:signal:usage_conflicting` | `signal` is combined with `filter`, `facet`, `stored`, `locales`, or `primaryKey`. |
+| `index:field:signal:wildcard_unsupported` | `signal` is enabled on a field whose name contains a wildcard. |
+| `index:field:sort:multiple_unsupported` | `signal` is combined with `multiple`. |
+| `index:field:object:inner_usage_unsupported` | `signal` is enabled on a field inside an `object` field. |
 
 ## `timestamp`
 
@@ -210,14 +210,14 @@ The `key` property names one of the object's child fields as the unique identifi
 
 Definition rules:
 - `key` requires `multiple: true`. Configuring `key` when `multiple` is `false` or omitted is rejected with `index:field:object:key_without_multiple`.
-- `key` must name a field defined in `fields`. If the child field does not exist, the engine returns `index:field:object:key_not_found`.
-- The named child field must have `required: true`, must not be `multiple`, and must be of type `string`, `int32`, or `int64`. Other field configurations are rejected with `index:field:object:key_not_valid`.
+- `key` must name a field defined in `fields`. If the child field does not exist, the engine returns `index:field:object:key_unknown`.
+- The named child field must have `required: true`, must not be `multiple`, and must be of type `string`, `int32`, or `int64`. Other field configurations are rejected with `index:field:object:key_invalid`.
 
 Uniqueness rule:
-- Key values must be unique within a single document. If a document contains duplicate key values for the same object field, indexing is rejected with `index:update:object:key_duplicate`. Different documents can use the same key value.
+- Key values must be unique within a single document. If a document contains duplicate key values for the same object field, indexing is rejected with `document:object_key_duplicate`. Different documents can use the same key value.
 
 Wildcard rule:
-- `key` cannot name a child field whose name contains `*`. Configuring a wildcard field as `key` is rejected with `index:field:object:key_not_valid`.
+- `key` cannot name a child field whose name contains `*`. Configuring a wildcard field as `key` is rejected with `index:field:object:key_invalid`.
 
 Modifying `key`:
 - Adding, removing, or changing `key` on an index that contains documents is rejected by definition compatibility (`index:definition:setting_changed`, naming `key`). Modifying `key` requires reindexing into a new generation.
@@ -229,9 +229,9 @@ For targeting object values by key in update operations, see [Update parts of do
 Child fields support the same options as fields of the index. What a child field cannot configure follows from its position, and the two list positions apply at any depth below the list:
 
 - **Objects inside objects:** Single objects and `flattened` lists nest to any depth. A `nested` list can contain single objects and `flattened` lists, but a `nested` list below a `nested` list is rejected with `index:field:object:nested_in_nested`, through any objects between the two.
-- **Below a `flattened` list:** `sort` is rejected with `index:field:object:flattened_sort` and `stored` with `index:field:object:flattened_stored`. The values of every object mix in the document, so no single value stands for it and nothing says which value a stored one came from. Sorting works in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)).
-- **Below a `nested` list:** `stored` and `highlight` are supported. Each value keeps its own document, storing values and highlight text the same way root documents do. Highlighted fragments return only on value hits (see [What a hit stands for](search-api.md#what-a-hit-stands-for)). A search returning document hits cannot name a field below a `nested` list in `highlight` (`index:query:nested:outside`).
-- **`primaryKey`:** Rejected inside any object with `index:field:object:inner_usage_not_supported`.
+- **Below a `flattened` list:** `sort` is rejected with `index:field:object:flattened_sort_unsupported` and `stored` with `index:field:object:flattened_stored_unsupported`. The values of every object mix in the document, so no single value stands for it and nothing says which value a stored one came from. Sorting works in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)).
+- **Below a `nested` list:** `stored` and `highlight` are supported. Each value keeps its own document, storing values and highlight text the same way root documents do. Highlighted fragments return only on value hits (see [What a hit stands for](search-api.md#what-a-hit-stands-for)). A search returning document hits cannot name a field below a `nested` list in `highlight` (`search:nested:field_outside`).
+- **`primaryKey`:** Rejected inside any object with `index:field:object:inner_usage_unsupported`.
 - **`locales`:** Supported everywhere. Each object value resolves its locales on its own and fills its missing locales from its own given ones. See [Localize fields](../how-to/localize-fields.md).
 - **`required` on child fields:** Setting `required: true` on a child field requires that field in every object instance.
 - **Vector child fields:** In `nested` mode, search a child `vector` field with a `knn` clause inside a `nested` clause for the path (see [Searching vectors inside a nested path](search-api.md#searching-vectors-inside-a-nested-path)).
@@ -246,13 +246,13 @@ Child fields support the same options as fields of the index. What a child field
 | `index:field:object:mode_required` | `multiple: true` is set on an `object` field without specifying `mode`. |
 | `index:field:object:mode_without_multiple` | `mode` is specified on an `object` field where `multiple` is `false` or omitted. |
 | `index:field:object:key_without_multiple` | `key` is specified on an `object` field where `multiple` is `false` or omitted. |
-| `index:field:object:key_not_found` | `key` names a child field that is not defined in `fields`. |
-| `index:field:object:key_not_valid` | The child field named by `key` is not `required: true`, has `multiple: true`, or is not of type `string`, `int32`, or `int64`. |
-| `index:field:object:flattened_sort` | `sort` is configured on a child field below a `flattened` list. |
-| `index:field:object:flattened_stored` | `stored` is configured on a child field below a `flattened` list. |
-| `index:field:object:inner_usage_not_supported` | A child field configures `primaryKey`, which is rejected inside an object. |
+| `index:field:object:key_unknown` | `key` names a child field that is not defined in `fields`. |
+| `index:field:object:key_invalid` | The child field named by `key` is not `required: true`, has `multiple: true`, or is not of type `string`, `int32`, or `int64`. |
+| `index:field:object:flattened_sort_unsupported` | `sort` is configured on a child field below a `flattened` list. |
+| `index:field:object:flattened_stored_unsupported` | `stored` is configured on a child field below a `flattened` list. |
+| `index:field:object:inner_usage_unsupported` | A child field configures `primaryKey`, which is rejected inside an object. |
 | `index:field:object:nested_in_nested` | A `nested` list is declared below another `nested` list. |
-| `index:update:object:key_duplicate` | A document contains multiple object values with the same key value. |
+| `document:object_key_duplicate` | A document contains multiple object values with the same key value. |
 
 ### Wildcard names on object fields
 
@@ -292,16 +292,16 @@ A pattern on the name of an `object` field accepts attribute groups the definiti
 
 Resolution rules:
 - Names resolve by the rules in [Wildcard fields](#wildcard-fields): an explicit name first, then the pattern with the longest literal prefix, then the shorter pattern on an equal prefix.
-- Properties in documents that match no declared field or pattern are rejected with `index:update:field_not_found`.
+- Properties in documents that match no declared field or pattern are rejected with `document:field_unknown`.
 
 Storage modes:
 - `nested`: Each matched object path forms an independent sub-document scope. Clauses inside a `nested` query target inner fields using their full dotted path (for example, `variants.attr.color` or `spec.weight.value`). Faceting, sorting, and matched value retrieval work the same as on declared fields.
-- `flattened`: Matched child fields fold into the document under their dot-notation path and are queried directly without a `nested` clause. Values must be provided inside the object structure; sending flattened paths at the document root is rejected with `index:update:field_inside_object`.
+- `flattened`: Matched child fields fold into the document under their dot-notation path and are queried directly without a `nested` clause. Values must be provided inside the object structure; sending flattened paths at the document root is rejected with `document:field_inside_object`.
 
 Restrictions:
-- Wildcard fields cannot set `required: true` (`index:field:invalid_required`).
-- Wildcard fields inside objects cannot set `primaryKey: true` (`index:field:object:inner_usage_not_supported`).
-- Wildcard fields cannot be configured as the `key` field (`index:field:object:key_not_valid`).
+- Wildcard fields cannot set `required: true` (`index:field:required:wildcard_unsupported`).
+- Wildcard fields inside objects cannot set `primaryKey: true` (`index:field:object:inner_usage_unsupported`).
+- Wildcard fields cannot be configured as the `key` field (`index:field:object:key_invalid`).
 
 Search and update operations:
 - Unfielded `text` queries skip wildcard fields. To include dynamic attributes in unfielded text queries, copy values into a declared field configured with `matching`.
@@ -319,7 +319,7 @@ Search and update operations:
 
 ## Field names
 
-A field name contains letters, numbers, underscores, and the wildcard `*`. A name containing anything else, including a dot, is rejected with `index:field:invalid_name`. Dots appear only in paths: a path such as `dimensions.width` addresses the field `width` inside the [`object`](#object) field `dimensions`, so every dot in a path stands for one level of objects the definition declares.
+A field name contains letters, numbers, underscores, and the wildcard `*`. A name containing anything else, including a dot, is rejected with `index:field:name_invalid`. Dots appear only in paths: a path such as `dimensions.width` addresses the field `width` inside the [`object`](#object) field `dimensions`, so every dot in a path stands for one level of objects the definition declares.
 
 ## Wildcard fields
 
@@ -343,8 +343,8 @@ To disable source document storage, set `"source": "none"` in the index definiti
 
 | Error code | Condition |
 |---|---|
-| `index:query:usage_not_enabled` | A query requests a specific field that has `stored: false` when `"source": "none"`. |
-| `index:query:source_not_kept` | A query requests an `object` field when `"source": "none"`. |
+| `search:usage_unsupported` | A query requests a specific field that has `stored: false` when `"source": "none"`. |
+| `search:source_not_kept` | A query requests an `object` field when `"source": "none"`. |
 
 Queries that do not specify field lists return all stored fields available in the document.
 

@@ -280,7 +280,7 @@ public class IndexResourceTest {
 			() -> resource.put("books", null, null, false, uriInfo, null)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:missing_body"));
+		assertThat(e.getErrors().get(0).getCode(), is("request:body_required"));
 	}
 
 	@Test
@@ -290,7 +290,7 @@ public class IndexResourceTest {
 			() -> resource.put("Books!", null, null, false, uriInfo, definition())
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:invalid_name"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:name_invalid"));
 	}
 
 	@Test
@@ -319,7 +319,7 @@ public class IndexResourceTest {
 
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:invalid_primary_key_multiple")
+			is("index:field:primary_key:multiple_unsupported")
 		);
 
 		assertThat(resource.list(null, null, null).indexes().isEmpty(), is(true));
@@ -465,7 +465,7 @@ public class IndexResourceTest {
 	@Test
 	public void testListWithAnInvalidLimitIsRefused() {
 		var e = assertThrows(ValidationException.class, () -> resource.list(null, null, "0"));
-		assertThat(e.getMessage(), containsString("request:list:limit_invalid"));
+		assertThat(e.getMessage(), containsString("request:limit_out_of_range"));
 
 		assertThrows(ValidationException.class, () -> resource.list(null, null, "many"));
 		assertThrows(ValidationException.class, () -> resource.list(null, null, "1001"));

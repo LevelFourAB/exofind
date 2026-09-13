@@ -127,7 +127,7 @@ public class FlattenedObjectSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:flattened"));
+		assertThat(e.getCode(), is("search:nested:path_not_nested"));
 	}
 
 	@Test
@@ -202,7 +202,7 @@ public class FlattenedObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:field_inside_object"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_inside_object"));
 	}
 
 	@Test
@@ -223,7 +223,7 @@ public class FlattenedObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:field_not_found"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_unknown"));
 	}
 
 	@Test
@@ -248,7 +248,7 @@ public class FlattenedObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:required_field_missing"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:field_required"));
 	}
 
 	@Test
@@ -272,7 +272,7 @@ public class FlattenedObjectSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_multiple"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:multiple_unsupported"));
 	}
 
 	@Test

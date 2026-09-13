@@ -62,7 +62,8 @@ public final class DeclaredValues {
 	public static final int MAX_VALUES = 10_000;
 
 	private static final ErrorType VALUES_UNSUPPORTED =
-		ErrorType.withCode("index:settings:fields:values_unsupported")
+		ErrorType.withCode("settings:fields:values_unsupported")
+			.withStatus(400)
 			.withArguments("field")
 			.withMessage(
 				"Values can not be declared for `{{field}}`; declaring needs a string field"
@@ -70,7 +71,8 @@ public final class DeclaredValues {
 			);
 
 	private static final ErrorType VALUES_INVALID =
-		ErrorType.withCode("index:settings:fields:values_invalid")
+		ErrorType.withCode("settings:fields:values_invalid")
+			.withStatus(400)
 			.withArguments("field", "reason")
 			.withMessage("The values declared for `{{field}}` can not be used: {{reason}}");
 

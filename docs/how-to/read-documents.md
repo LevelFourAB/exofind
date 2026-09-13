@@ -8,7 +8,7 @@ Before you read documents, ensure you have:
 
 - An index defined with a primary key and with document copies kept. An index
   with no primary key is refused with `index:no_primary_key`, and one defined
-  with `source: none` with `index:source:not_kept`.
+  with `source: none` with `document:source_not_kept`.
 - An authentication token or role with the `documents.read` permission at the index scope. The `writer` and `admin` roles include this permission; the `reader` role does not. Anonymous requests are refused.
 
 ## Steps

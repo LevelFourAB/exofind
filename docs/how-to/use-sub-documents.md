@@ -32,7 +32,7 @@ To store sub-documents, define an object field with `"type": "object"`, `"multip
 Keep the following rules in mind when you configure the field:
 
 - Setting `multiple: true` makes the field a list. A list field must specify its `mode`. In flattened mode, conditions such as `color = red` and `price < 20` can match two different variants. Therefore, list fields do not have a default mode.
-- A field without `multiple: true` holds a single value, always flattens, and does not accept a `mode`. If a document provides multiple values for a non-multiple field, the engine rejects the document with `index:update:not_multiple`. Use non-multiple objects for grouped fields that represent a single unit, such as a `dimensions` object with `width` and `height`.
+- A field without `multiple: true` holds a single value, always flattens, and does not accept a `mode`. If a document provides multiple values for a non-multiple field, the engine rejects the document with `document:multiple_unsupported`. Use non-multiple objects for grouped fields that represent a single unit, such as a `dimensions` object with `width` and `height`.
 - Define fields inside the object using the same options as top-level index fields. Inner fields support `filter`, `matching`, `autocomplete`, `sort`, `facet`, `stored`, `highlight`, `locales`, `validation`, `required`, and `multiple`. Setting `required: true` on an inner field makes that field required in every sub-document value.
 - Inner fields do not support `primaryKey`, which names the document itself. Highlighted fragments of inner fields return only on value hits. See [Highlight matches inside sub-documents](#highlight-matches-inside-sub-documents).
 - An inner field can be an object itself: a single object or a `flattened` list. A `nested` list inside a `nested` list is rejected with `index:field:object:nested_in_nested`. For the full position rules, see [Constraints and restrictions](../reference/field-types.md#constraints-and-restrictions).
@@ -58,10 +58,10 @@ The engine validates sub-document values using these rules:
 
 | Condition | Error code |
 | --- | --- |
-| A value that is not an object | `index:update:not_a_document` |
-| An object provided for a field that is not an object | `index:update:unexpected_document` |
-| A field that the object does not declare | `index:update:field_not_found` |
-| A value missing an inner `required` field | `index:update:required_field_missing` |
+| A value that is not an object | `document:object_required` |
+| An object provided for a field that is not an object | `document:object_unsupported` |
+| A field that the object does not declare | `document:field_unknown` |
+| A value missing an inner `required` field | `document:field_required` |
 
 Documents are written whole. Indexing a document with an existing key replaces all previous values in the object field. Deleting a parent document deletes all of its sub-documents.
 
@@ -84,8 +84,8 @@ To require multiple conditions to match within the same sub-document, add a `nes
 
 When building queries with `nested` clauses:
 
-- Reference inner fields by their dotted path (such as `variants.color`). Inner paths resolve only inside a `nested` clause that matches the path. Referencing `variants.color` directly in `query` fails with `index:query:nested:outside`. Referencing it under another object path fails with `index:query:nested:not_in_path`. Top-level index fields cannot appear inside a `nested` clause.
-- A `nested` clause supports clauses that run against a single value: `field`, `text`, `knn`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `fuse` clause inside a `nested` clause, fails with `index:query:nested:unsupported_clause`. An empty `clauses` array matches any document that contains at least one sub-document value.
+- Reference inner fields by their dotted path (such as `variants.color`). Inner paths resolve only inside a `nested` clause that matches the path. Referencing `variants.color` directly in `query` fails with `search:nested:field_outside`. Referencing it under another object path fails with `search:nested:field_not_inside`. Top-level index fields cannot appear inside a `nested` clause.
+- A `nested` clause supports clauses that run against a single value: `field`, `text`, `knn`, `and`, `or`, `not`, and `boost`. A `nested` clause inside another `nested` clause, or a `fuse` clause inside a `nested` clause, fails with `search:nested:clause_unsupported`. An empty `clauses` array matches any document that contains at least one sub-document value.
 - A `knn` clause inside a `nested` clause searches a `vector` inner field, which is how a document held as a list of chunks is searched for its nearest chunks. See [Search chunks inside a document](search-by-vector.md#search-chunks-inside-a-document).
 - Place `nested` clauses in `query` or `filters` based on how facet counts should behave:
   - Page-level conditions (such as the main search box or "only in stock") belong in `query`. This narrows both the hits and the facet counts.
@@ -165,8 +165,8 @@ To return highlighted fragments of inner text fields, configure `highlight` on t
 
 When highlighting inner fields:
 
-- Highlighted fields must sit inside the `hits` path. Naming a top-level field fails with `search:hits:with_highlight`.
-- A search whose hits are documents cannot highlight an inner field of a `nested` list. Naming an inner field in `highlight` fails with `index:query:nested:outside`. Fragments belong to a value, and only a value hit represents one.
+- Highlighted fields must sit inside the `hits` path. Naming a top-level field fails with `search:hits:highlight_field_not_inside`.
+- A search whose hits are documents cannot highlight an inner field of a `nested` list. Naming an inner field in `highlight` fails with `search:nested:field_outside`. Fragments belong to a value, and only a value hit represents one.
 - With [`when`](../reference/search-api.md#expanding-only-some-documents) set, documents that return as whole documents return no fragments.
 - Fragments show what the `nested` clauses matched in the value. The options and markers work as described in [Highlighting](../reference/search-api.md#highlighting).
 
@@ -192,7 +192,7 @@ An ascending sort orders parent documents by their lowest matching value (for ex
 
 Facets count parent documents. For example, a document with three red variants counts as one red document. When a query filters sub-documents by price, facet counts reflect only the colors of matching variants rather than all colors in those documents.
 
-Distance sorting (`distance`) is not supported inside an object and fails with `index:query:nested:sort_unsupported`.
+Distance sorting (`distance`) is not supported inside an object and fails with `search:sort:nested_unsupported`.
 
 ## Update sub-document values
 
@@ -211,7 +211,7 @@ Naming the field alone still replaces every value in the object field. To update
 - A path such as `variants[sku=V-2]` replaces a value whole. Mapping it to `null` removes that value from the list.
 - If the object field definition declares a `key`, the path takes the key on its own as `variants[V-2]`.
 
-A bare dotted inner path without a selector (such as `variants.color`) is refused with `index:update:value_required` on a list of objects. For details on updating sub-documents with selector paths, see [Update parts of documents](update-parts-of-documents.md).
+A bare dotted inner path without a selector (such as `variants.color`) is refused with `document:patch:selector_required` on a list of objects. For details on updating sub-documents with selector paths, see [Update parts of documents](update-parts-of-documents.md).
 
 When replacing the whole list, if you do not have the existing sub-documents, retrieve them before updating:
 
@@ -224,7 +224,7 @@ When replacing the whole list, if you do not have the existing sub-documents, re
 
 Set `fields` to `variants` to return all inner fields, or specify a dotted path such as `variants.price` to return a specific inner field. Retrieving a document by key with this method requires the key field to be configured with `filter`.
 
-If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies. Sub-document values then return only their inner fields set to `stored: true`. Requesting the whole object field fails with `index:query:source_not_kept`, and requesting an inner field without `stored` fails with `index:query:usage_not_enabled`. Retain source data on indexes where you need to update sub-documents, because a replacement built from partial values drops the fields it never saw.
+If the index uses [`source`](../reference/field-types.md#document-source) set to `"none"`, the engine does not store document copies. Sub-document values then return only their inner fields set to `stored: true`. Requesting the whole object field fails with `search:source_not_kept`, and requesting an inner field without `stored` fails with `search:usage_unsupported`. Retain source data on indexes where you need to update sub-documents, because a replacement built from partial values drops the fields it never saw.
 
 ## Accept attributes you did not define
 
@@ -281,7 +281,7 @@ Keep the following rules in mind when using wildcard inner fields:
 - An explicit inner field name takes precedence over a pattern. Among patterns, the longest literal prefix wins. If prefixes are equal, the shorter pattern wins.
 - A wildcard `*` matches exactly one name. The `*` inside `attr` accepts `attr.color` but nothing deeper, such as `attr.a.b`.
 - A pattern cannot be configured as `required`, `primaryKey`, or as the `key` of an object list.
-- An inner name that matches no declared field and no pattern fails indexing with `index:update:field_not_found`.
+- An inner name that matches no declared field and no pattern fails indexing with `document:field_unknown`.
 - Adding a pattern to an existing index does not require reindexing.
 - A `text` clause that specifies no fields skips patterns. To search dynamic attributes from a single search box, copy their values into a declared field configured with `matching`.
 

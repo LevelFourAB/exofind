@@ -32,12 +32,14 @@ import se.l4.exofind.engine.index.settings.FieldSettings;
  */
 public final class SuggestFields {
 	private static final ErrorType UNKNOWN_FIELD =
-		ErrorType.withCode("index:settings:fields:unknown_field")
+		ErrorType.withCode("settings:fields:field_unknown")
+			.withStatus(400)
 			.withArguments("field")
 			.withMessage("Settings are given for `{{field}}`, which the index does not have");
 
 	private static final ErrorType SUGGEST_UNSUPPORTED =
-		ErrorType.withCode("index:settings:fields:suggest_unsupported")
+		ErrorType.withCode("settings:fields:suggest_unsupported")
+			.withStatus(400)
 			.withArguments("field")
 			.withMessage(
 				"The values of `{{field}}` can not be suggested; suggesting needs a string"

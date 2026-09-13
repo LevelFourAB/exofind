@@ -27,7 +27,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 	name = "ErrorResponse",
 	description = """
 		The body of every failed request. Error codes use colon-separated \
-		namespaces such as `index:field:invalid_name`, are stable across API \
+		namespaces such as `index:field:name_invalid`, are stable across API \
 		versions, and are never renamed or reused, so clients match on `code` \
 		rather than on `message`. See \
 		[Errors](https://exofind.dev/reference/errors/).""",
@@ -67,7 +67,7 @@ public record ErrorResponse(
 		  "message": "Request contains 1 error",
 		  "errors": [
 		    {
-		      "code": "index:field:invalid_primary_key_multiple",
+		      "code": "index:field:primary_key:multiple_unsupported",
 		      "message": "Field `id` is marked as a primary key and multiple, primary keys can not have multiple values",
 		      "path": "id"
 		    }
@@ -129,7 +129,7 @@ public record ErrorResponse(
 	public record ErrorDetail(
 		@Schema(
 			description = "The error code identifying this specific problem.",
-			examples = "index:field:invalid_primary_key_multiple"
+			examples = "index:field:primary_key:multiple_unsupported"
 		)
 		String code,
 
@@ -163,7 +163,7 @@ public record ErrorResponse(
 		/** The example problem, as the JSON the engine answers with. */
 		public static final String EXAMPLE = """
 			{
-			  "code": "index:field:invalid_primary_key_multiple",
+			  "code": "index:field:primary_key:multiple_unsupported",
 			  "message": "Field `id` is marked as a primary key and multiple, primary keys can not have multiple values",
 			  "path": "id"
 			}""";

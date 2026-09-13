@@ -14,7 +14,8 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class IndexDocumentNotFoundException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("index:document:not_found")
+	private static final ErrorType TYPE = ErrorType.withCode("document:not_found")
+		.withStatus(404)
 		.withArguments("key")
 		.withMessage("No document is indexed under the key `{{key}}`");
 

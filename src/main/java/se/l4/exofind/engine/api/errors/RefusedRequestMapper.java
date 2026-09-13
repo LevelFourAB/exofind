@@ -33,29 +33,36 @@ public class RefusedRequestMapper implements ExceptionMapper<WebApplicationExcep
 	private static final Log logger = Log.of(RefusedRequestMapper.class);
 
 	private static final ErrorType NOT_FOUND = ErrorType.withCode("request:not_found")
+		.withStatus(404)
 		.withMessage("No endpoint answers this path");
 
 	private static final ErrorType METHOD_NOT_ALLOWED = ErrorType
 		.withCode("request:method_not_allowed")
+		.withStatus(405)
 		.withMessage("This path is not answered for this method");
 
 	private static final ErrorType NOT_ACCEPTABLE = ErrorType
 		.withCode("request:not_acceptable")
+		.withStatus(406)
 		.withMessage("This endpoint answers in none of the media types `Accept` allows");
 
-	private static final ErrorType TOO_LARGE = ErrorType.withCode("request:too_large")
+	private static final ErrorType TOO_LARGE = ErrorType.withCode("request:body_too_large")
+		.withStatus(413)
 		.withMessage("The request body is larger than this node accepts");
 
 	private static final ErrorType UNSUPPORTED_MEDIA_TYPE = ErrorType
 		.withCode("request:unsupported_media_type")
+		.withStatus(415)
 		.withMessage("This endpoint does not read a body in the media type `Content-Type` names");
 
 	/** A refusal with a status none of the above names. */
 	private static final ErrorType REFUSED = ErrorType.withCode("request:refused")
+		.withStatus(400)
 		.withMessage("The request was refused");
 
 	/** The node failed, and the request is not the thing that is wrong. */
 	private static final ErrorType NODE_ERROR = ErrorType.withCode("node:error")
+		.withStatus(500)
 		.withMessage("The node could not serve the request");
 
 	private final RequestMetrics metrics;

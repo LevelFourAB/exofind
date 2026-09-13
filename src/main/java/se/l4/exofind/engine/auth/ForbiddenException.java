@@ -15,6 +15,7 @@ public class ForbiddenException extends AuthException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("auth:forbidden")
+		.withStatus(403)
 		.withArguments("permission")
 		.withMessage("This API key is not granted `{{permission}}`");
 

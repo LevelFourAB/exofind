@@ -27,7 +27,7 @@ An error response uses the following structure:
   "message": "Request contains 2 errors",
   "errors": [
     {
-      "code": "index:field:invalid_primary_key_multiple",
+      "code": "index:field:primary_key:multiple_unsupported",
       "message": "Field `id` is marked as a primary key and multiple, primary keys can not have multiple values",
       "path": "id",
       "arguments": {

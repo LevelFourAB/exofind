@@ -2074,7 +2074,7 @@ public class SearchResourceTest {
 			() -> resource.suggest("books", new SuggestRequest("f", null, null, 0, null))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("search:suggest:limit_invalid"));
+		assertThat(e.getErrors().get(0).getCode(), is("search:suggest:limit_out_of_range"));
 	}
 
 	@Test
@@ -2194,7 +2194,7 @@ public class SearchResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_invalid"));
+		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_out_of_range"));
 		assertThat(e.getErrors().getFirst().getLocation().describe(), is("limit"));
 	}
 
@@ -2219,7 +2219,7 @@ public class SearchResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_invalid"));
+		assertThat(e.getErrors().getFirst().getCode(), is("search:facet:limit_out_of_range"));
 		assertThat(e.getErrors().getFirst().getArguments().get("max"), is(5));
 
 		// The cap itself is still asked for
@@ -2249,7 +2249,7 @@ public class SearchResourceTest {
 			() -> capped.suggest("books", new SuggestRequest("f", null, null, 3, null))
 		);
 
-		assertThat(e.getErrors().getFirst().getCode(), is("search:suggest:limit_invalid"));
+		assertThat(e.getErrors().getFirst().getCode(), is("search:suggest:limit_out_of_range"));
 		assertThat(e.getErrors().getFirst().getArguments().get("max"), is(2));
 	}
 
@@ -2273,7 +2273,7 @@ public class SearchResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().getFirst().getCode(), is("search:filter:clause_invalid"));
+		assertThat(e.getErrors().getFirst().getCode(), is("search:filter:clause_unsupported"));
 	}
 
 	@Test
@@ -2289,6 +2289,6 @@ public class SearchResourceTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:facet_prefix_on_a_tree"));
+		assertThat(e.getCode(), is("search:facet:prefix_unsupported"));
 	}
 }

@@ -278,7 +278,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:join_not_applicable"));
+		assertThat(codesOf(e), contains("search:clause:join_unsupported"));
 		assertThat(pathsOf(e), contains("query[0].join"));
 	}
 
@@ -309,7 +309,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:join_not_applicable"));
+		assertThat(codesOf(e), contains("search:clause:join_unsupported"));
 		assertThat(pathsOf(e), contains("query[0].join"));
 	}
 
@@ -495,7 +495,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:slop_invalid"));
+		assertThat(codesOf(e), contains("search:clause:slop_out_of_range"));
 		assertThat(pathsOf(e), contains("query[0].slop"));
 	}
 
@@ -527,7 +527,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:slop_not_applicable"));
+		assertThat(codesOf(e), contains("search:clause:slop_unsupported"));
 		assertThat(pathsOf(e), contains("query[0].slop"));
 	}
 
@@ -768,9 +768,9 @@ public class SearchRequestMapperTest {
 				"search:signal:field_required",
 				"search:signal:shape_invalid",
 				"search:signal:shape_invalid",
-				"search:signal:pivot_invalid",
-				"search:signal:half_life_invalid",
-				"search:signal:weight_invalid"
+				"search:signal:pivot_out_of_range",
+				"search:signal:half_life_out_of_range",
+				"search:signal:weight_out_of_range"
 			)
 		);
 		assertThat(
@@ -969,7 +969,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:page:conflicting"));
+		assertThat(codesOf(e), contains("search:paging_conflicting"));
 	}
 
 	@Test
@@ -984,7 +984,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:page:too_deep"));
+		assertThat(codesOf(e), contains("search:paging_too_deep"));
 		assertThat(e.getErrors().get(0).getArguments().get("max"), is(100));
 	}
 
@@ -1037,7 +1037,7 @@ public class SearchRequestMapperTest {
 
 		assertThat(
 			codesOf(e),
-			containsInAnyOrder("search:clause:vector_required", "search:clause:k_invalid")
+			containsInAnyOrder("search:clause:vector_required", "search:clause:k_out_of_range")
 		);
 	}
 
@@ -1117,7 +1117,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:rankings_invalid"));
+		assertThat(codesOf(e), contains("search:clause:rankings_too_few"));
 		assertThat(pathsOf(e), contains("query[0].rankings"));
 	}
 
@@ -1148,9 +1148,9 @@ public class SearchRequestMapperTest {
 			codesOf(e),
 			containsInAnyOrder(
 				"search:clause:ranking_empty",
-				"search:clause:weight_invalid",
-				"search:clause:depth_invalid",
-				"search:clause:rank_constant_invalid"
+				"search:clause:weight_out_of_range",
+				"search:clause:depth_out_of_range",
+				"search:clause:rank_constant_out_of_range"
 			)
 		);
 	}
@@ -1181,7 +1181,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:with_knn"));
+		assertThat(codesOf(e), contains("search:hits:knn_unsupported"));
 		assertThat(pathsOf(e), contains("query[0].rankings[1].clauses[0]"));
 	}
 
@@ -1200,7 +1200,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
+		assertThat(codesOf(e), contains("search:clause:weight_out_of_range"));
 		assertThat(pathsOf(e), contains("query[0].weight"));
 	}
 
@@ -1219,7 +1219,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
+		assertThat(codesOf(e), contains("search:clause:weight_out_of_range"));
 		assertThat(pathsOf(e), contains("query[0].weight"));
 	}
 
@@ -1238,7 +1238,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:weight_invalid"));
+		assertThat(codesOf(e), contains("search:clause:weight_out_of_range"));
 		assertThat(pathsOf(e), contains("query[0].weight"));
 	}
 
@@ -1271,7 +1271,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:locale:unsupported"));
+		assertThat(codesOf(e), contains("search:locale_unsupported"));
 		assertThat(pathsOf(e), contains("locale"));
 	}
 
@@ -1355,7 +1355,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:filter:clause_invalid"));
+		assertThat(codesOf(e), contains("search:filter:clause_unsupported"));
 		assertThat(pathsOf(e), contains("filters[0]"));
 	}
 
@@ -1379,7 +1379,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:filter:scores"));
+		assertThat(codesOf(e), contains("search:filter:scoring_unsupported"));
 		assertThat(pathsOf(e), contains("filters[0]"));
 	}
 
@@ -1596,8 +1596,8 @@ public class SearchRequestMapperTest {
 			codesOf(e),
 			contains(
 				"search:facet:path_invalid",
-				"search:facet:depth_invalid",
-				"search:facet:ranges_on_a_tree"
+				"search:facet:depth_out_of_range",
+				"search:facet:ranges_with_tree"
 			)
 		);
 		assertThat(
@@ -1739,8 +1739,8 @@ public class SearchRequestMapperTest {
 				"search:clause:match_required",
 				"search:facet:field_required",
 				"search:facet:name_invalid",
-				"search:facet:limit_invalid",
-				"search:facet:duplicate_name"
+				"search:facet:limit_out_of_range",
+				"search:facet:name_duplicate"
 			)
 		);
 		assertThat(
@@ -1772,7 +1772,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:facet:limit_invalid"));
+		assertThat(codesOf(e), contains("search:facet:limit_out_of_range"));
 		assertThat(pathsOf(e), contains("facets[0].limit"));
 		assertThat(e.getErrors().get(0).getArguments().get("max"), is(50));
 	}
@@ -1846,7 +1846,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:highlight:fragments_invalid"));
+		assertThat(codesOf(e), contains("search:highlight:fragments_out_of_range"));
 		assertThat(pathsOf(e), contains("highlight.fields.name.fragments"));
 	}
 
@@ -1863,7 +1863,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:highlight:length_invalid"));
+		assertThat(codesOf(e), contains("search:highlight:length_out_of_range"));
 		assertThat(pathsOf(e), contains("highlight.fields.name.length"));
 	}
 
@@ -1959,7 +1959,7 @@ public class SearchRequestMapperTest {
 
 		assertThat(
 			codesOf(e),
-			contains("search:matched:limit_invalid", "search:matched:limit_invalid")
+			contains("search:matched:limit_out_of_range", "search:matched:limit_out_of_range")
 		);
 		assertThat(
 			pathsOf(e),
@@ -2174,7 +2174,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:with_matched"));
+		assertThat(codesOf(e), contains("search:hits:matched_unsupported"));
 		assertThat(pathsOf(e), contains("matched"));
 	}
 
@@ -2196,7 +2196,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:with_highlight"));
+		assertThat(codesOf(e), contains("search:hits:highlight_field_not_inside"));
 		assertThat(pathsOf(e), contains("highlight.fields"));
 	}
 
@@ -2238,7 +2238,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:with_knn", "search:hits:with_knn"));
+		assertThat(codesOf(e), contains("search:hits:knn_unsupported", "search:hits:knn_unsupported"));
 		assertThat(pathsOf(e), contains("query[0]", "query[1].clauses[1]"));
 	}
 
@@ -2280,7 +2280,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:distance_sort"));
+		assertThat(codesOf(e), contains("search:hits:sort_unsupported"));
 		assertThat(pathsOf(e), contains("sort[0]"));
 	}
 
@@ -2338,7 +2338,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:when_clause_invalid"));
+		assertThat(codesOf(e), contains("search:hits:when_clause_unsupported"));
 		assertThat(pathsOf(e), contains("hits.when[0]"));
 	}
 
@@ -2365,7 +2365,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:when_scores"));
+		assertThat(codesOf(e), contains("search:hits:when_scoring_unsupported"));
 		assertThat(pathsOf(e), contains("hits.when[0]"));
 	}
 
@@ -2388,7 +2388,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:hits:when_field_sort"));
+		assertThat(codesOf(e), contains("search:hits:when_sort_unsupported"));
 		assertThat(pathsOf(e), contains("sort[0]"));
 	}
 
@@ -2495,7 +2495,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:rescore:window_invalid"));
+		assertThat(codesOf(e), contains("search:rescore:window_out_of_range"));
 		assertThat(pathsOf(e), contains("rescore.window"));
 	}
 
@@ -2553,7 +2553,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:rescore:weight_invalid"));
+		assertThat(codesOf(e), contains("search:rescore:weight_out_of_range"));
 		assertThat(pathsOf(e), contains("rescore.weight"));
 	}
 
@@ -2638,7 +2638,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(withLimit(LIMITS.maxLimit() + 1), LIMITS)
 		);
 
-		assertThat(codesOf(e), contains("search:limit:invalid"));
+		assertThat(codesOf(e), contains("search:limit_out_of_range"));
 		assertThat(pathsOf(e), contains("limit"));
 	}
 
@@ -2658,7 +2658,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(request, limits)
 		);
 
-		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(codesOf(e), contains("search:clauses_too_many"));
 		assertThat(pathsOf(e), contains("filters[1]"));
 	}
 
@@ -2676,7 +2676,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(codesOf(e), contains("search:clauses_too_many"));
 		assertThat(pathsOf(e), contains("query[0].clauses[1]"));
 	}
 
@@ -2698,7 +2698,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(request, limits)
 		);
 
-		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(codesOf(e), contains("search:clauses_too_many"));
 	}
 
 	@Test
@@ -2716,7 +2716,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(withQuery(nested), limits)
 		);
 
-		assertThat(codesOf(e), contains("search:query:too_deep"));
+		assertThat(codesOf(e), contains("search:clauses_too_deep"));
 		assertThat(pathsOf(e), contains("query[0].clauses[0].clauses[0].clauses"));
 	}
 
@@ -2754,7 +2754,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(request, limits)
 		);
 
-		assertThat(codesOf(e), contains("search:query:too_many_clauses"));
+		assertThat(codesOf(e), contains("search:clauses_too_many"));
 		assertThat(
 			pathsOf(e),
 			contains("query[0].interpret.fields[0].fallback[0].when[0]")
@@ -2776,7 +2776,7 @@ public class SearchRequestMapperTest {
 			() -> SearchRequestMapper.toEngine(request, limits)
 		);
 
-		assertThat(codesOf(e), contains("search:query:too_deep"));
+		assertThat(codesOf(e), contains("search:clauses_too_deep"));
 		assertThat(
 			pathsOf(e),
 			contains("query[0].interpret.fields[0].fallback[0].fallback")
@@ -2827,7 +2827,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:k_invalid"));
+		assertThat(codesOf(e), contains("search:clause:k_out_of_range"));
 		assertThat(pathsOf(e), contains("query[0].k"));
 	}
 
@@ -2853,7 +2853,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:clause:depth_invalid"));
+		assertThat(codesOf(e), contains("search:clause:depth_out_of_range"));
 		assertThat(pathsOf(e), contains("query[0].depth"));
 	}
 }

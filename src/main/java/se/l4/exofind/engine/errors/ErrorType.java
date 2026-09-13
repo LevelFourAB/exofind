@@ -8,34 +8,51 @@ import org.eclipse.collections.api.map.MapIterable;
 import org.eclipse.collections.api.set.ImmutableSet;
 
 /**
- * ErrorType defines a type of error with machine-readable code and
- * arguments, as well as a human-readable message.
- * 
- * Example:
- * 
+ * ErrorType defines a type of error with a machine-readable code, the HTTP
+ * status the code is answered with, its arguments, and a human-readable
+ * message.
+ *
+ * <p>Example:
+ *
  * <pre>
- * var type = ErrorType.withCode("error.code")
- * 	.withArguments("arg1", "arg2")
- * 	.withMessage("This is an error with {{arg1}} and {{arg2}}");
+ * var type = ErrorType.withCode("search:facet:limit_out_of_range")
+ * 	.withStatus(400)
+ * 	.withArguments("max")
+ * 	.withMessage("A facet brings back between 1 and {{max}} values");
  * </pre>
- * 
- * To turn into a message:
- * 
+ *
+ * <p>To turn into a message:
+ *
  * <pre>
- * var message = type.toMessage(Location.code(), "arg1", "value1", "arg2", "value2");
+ * var message = type.toMessage(Location.code(), "max", 1000);
  * </pre>
+ *
+ * <p>The status is the one the code answers with as the {@code code} of the
+ * response. A code carried inside the {@code errors} of a validation failure is
+ * answered with the status of the envelope instead. A type declared without a
+ * status is answered with 500, because an unstated status is a failure of the
+ * node rather than of the request.
+ *
+ * <p>A code is part of the API: {@code docs/reference/errors.md} states the
+ * grammar a new code follows and the words its last segment is built from.
  */
 public class ErrorType {
+	/** The status of a type that does not state one. */
+	public static final int UNSTATED_STATUS = 500;
+
 	private final String code;
+	private final int status;
 	private final ImmutableSet<String> arguments;
 	private final String message;
 
 	private ErrorType(
 		String code,
+		int status,
 		ImmutableSet<String> arguments,
 		String message
 	) {
 		this.code = code;
+		this.status = status;
 		this.arguments = arguments;
 		this.message = message;
 	}
@@ -56,7 +73,26 @@ public class ErrorType {
 	 * @return
 	 */
 	public static ErrorType withCode(String code) {
-		return new ErrorType(code, Sets.immutable.empty(), "");
+		return new ErrorType(code, UNSTATED_STATUS, Sets.immutable.empty(), "");
+	}
+
+	/**
+	 * Get the HTTP status this type is answered with.
+	 *
+	 * @return
+	 */
+	public int getStatus() {
+		return status;
+	}
+
+	/**
+	 * Change the HTTP status this type is answered with.
+	 *
+	 * @param status
+	 * @return
+	 */
+	public ErrorType withStatus(int status) {
+		return new ErrorType(code, status, arguments, message);
 	}
 
 	/**
@@ -75,7 +111,7 @@ public class ErrorType {
 	 * @return
 	 */
 	public ErrorType withArguments(String... arguments) {
-		return new ErrorType(code, Sets.immutable.of(arguments), message);
+		return new ErrorType(code, status, Sets.immutable.of(arguments), message);
 	}
 
 	/**
@@ -94,7 +130,7 @@ public class ErrorType {
 	 * @return
 	 */
 	public ErrorType withMessage(String message) {
-		return new ErrorType(code, arguments, message);
+		return new ErrorType(code, status, arguments, message);
 	}
 
 	/**
@@ -150,7 +186,7 @@ public class ErrorType {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(code, arguments, message);
+		return Objects.hash(code, status, arguments, message);
 	}
 
 	@Override
@@ -159,12 +195,13 @@ public class ErrorType {
 		if(obj == null) return false;
 		if(getClass() != obj.getClass()) return false;
 		ErrorType other = (ErrorType) obj;
-		return Objects.equals(code, other.code) && Objects.equals(arguments, other.arguments)
+		return Objects.equals(code, other.code) && status == other.status
+			&& Objects.equals(arguments, other.arguments)
 			&& Objects.equals(message, other.message);
 	}
 
 	@Override
 	public String toString() {
-		return "ErrorType{code=" + code + ", arguments=" + arguments + ", message=" + message + "}";
+		return "ErrorType{code=" + code + ", status=" + status + ", arguments=" + arguments + ", message=" + message + "}";
 	}
 }

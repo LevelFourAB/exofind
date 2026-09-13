@@ -77,13 +77,15 @@ import se.l4.exofind.engine.query.matchers.UserText;
  */
 public class QueryCompiler {
 	private static final ErrorType NO_SEARCHABLE_FIELDS = ErrorType
-		.withCode("index:query:no_searchable_fields")
+		.withCode("search:no_searchable_fields")
+		.withStatus(400)
 		.withMessage(
 			"Searching for text needs at least one field that is defined for matching"
 		);
 
 	private static final ErrorType NESTED_FIELD_OUTSIDE = ErrorType
-		.withCode("index:query:nested:outside")
+		.withCode("search:nested:field_outside")
+		.withStatus(400)
 		.withArguments("name", "path")
 		.withMessage(
 			"Field `{{name}}` is inside the objects of `{{path}}` and can only be used inside a `nested` clause for that path"
@@ -95,28 +97,32 @@ public class QueryCompiler {
 	 * when the text sits inside such a clause.
 	 */
 	static final ErrorType FIELD_NOT_IN_PATH = ErrorType
-		.withCode("index:query:nested:not_in_path")
+		.withCode("search:nested:field_not_inside")
+		.withStatus(400)
 		.withArguments("name", "path")
 		.withMessage(
 			"Field `{{name}}` is not inside the objects of `{{path}}`"
 		);
 
 	private static final ErrorType NESTED_UNSUPPORTED_CLAUSE = ErrorType
-		.withCode("index:query:nested:unsupported_clause")
+		.withCode("search:nested:clause_unsupported")
+		.withStatus(400)
 		.withArguments("type")
 		.withMessage(
 			"A `nested` clause holds what can run against a single value, which a `{{type}}` clause can not"
 		);
 
 	private static final ErrorType NESTED_SORT_UNSUPPORTED = ErrorType
-		.withCode("index:query:nested:sort_unsupported")
+		.withCode("search:sort:nested_unsupported")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` is inside an object and can be ordered by its value, but not in this way"
 		);
 
 	private static final ErrorType NESTED_ON_FLATTENED = ErrorType
-		.withCode("index:query:nested:flattened")
+		.withCode("search:nested:path_not_nested")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage(
 			"The values of `{{path}}` are flattened, so their fields are matched directly "
@@ -125,7 +131,8 @@ public class QueryCompiler {
 		);
 
 	private static final ErrorType MATCHED_NOT_OBJECT = ErrorType
-		.withCode("index:query:matched:not_object")
+		.withCode("search:matched:field_not_nested")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage(
 			"Which values of `{{path}}` matched can only be said for an object field "
@@ -133,7 +140,8 @@ public class QueryCompiler {
 		);
 
 	private static final ErrorType HITS_NOT_OBJECT = ErrorType
-		.withCode("index:query:hits:not_object")
+		.withCode("search:hits:path_not_nested")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage(
 			"Hits can only stand for the values of an object field in `nested` mode, "
@@ -141,7 +149,8 @@ public class QueryCompiler {
 		);
 
 	private static final ErrorType HITS_SORT_UNSUPPORTED = ErrorType
-		.withCode("index:query:hits:sort_unsupported")
+		.withCode("search:hits:sort_unsupported")
+		.withStatus(400)
 		.withArguments("name", "path")
 		.withMessage(
 			"Hits standing for the values of `{{path}}` can be ordered by score or by "
@@ -149,7 +158,8 @@ public class QueryCompiler {
 		);
 
 	private static final ErrorType HITS_WHEN_SORT_UNSUPPORTED = ErrorType
-		.withCode("index:query:hits:when_sort_unsupported")
+		.withCode("search:hits:when_sort_unsupported")
+		.withStatus(400)
 		.withArguments("path")
 		.withMessage(
 			"Hits that stand for the values of `{{path}}` only for the documents "
@@ -499,7 +509,7 @@ public class QueryCompiler {
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by the name
 	 * @throws IndexQueryException
-	 *   with {@code index:query:nested:not_in_path} if the field is not
+	 *   with {@code search:nested:field_not_inside} if the field is not
 	 *   inside the objects of the path
 	 * @throws IndexFieldUsageException
 	 *   if the field was not defined for highlighting
@@ -1370,7 +1380,7 @@ public class QueryCompiler {
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by the name
 	 * @throws IndexQueryException
-	 *   with {@code index:query:matched:not_object} if the field is not an
+	 *   with {@code search:matched:field_not_nested} if the field is not an
 	 *   object in {@code nested} mode
 	 */
 	public Field objectField(String name) {
@@ -1387,7 +1397,7 @@ public class QueryCompiler {
 	 * @throws IndexFieldNotFoundException
 	 *   if the index has no field by the name
 	 * @throws IndexQueryException
-	 *   with {@code index:query:hits:not_object} if the field is not an
+	 *   with {@code search:hits:path_not_nested} if the field is not an
 	 *   object in {@code nested} mode
 	 */
 	public Field hitsObjectField(String name) {
@@ -2247,7 +2257,7 @@ public class QueryCompiler {
 	 * @return
 	 *   the order, or {@code null} to leave the best matches first
 	 * @throws IndexQueryException
-	 *   with {@code index:query:hits:sort_unsupported} for a step no value of
+	 *   with {@code search:hits:sort_unsupported} for a step no value of
 	 *   the path can answer
 	 */
 	/**
@@ -2267,7 +2277,7 @@ public class QueryCompiler {
 	 * @return
 	 *   the order, or {@code null} to leave the best matches first
 	 * @throws IndexQueryException
-	 *   with {@code index:query:hits:when_sort_unsupported} for any step that
+	 *   with {@code search:hits:when_sort_unsupported} for any step that
 	 *   is not the score
 	 */
 	public Sort compileMixedSort(ListIterable<SortBy> sort, String path) {

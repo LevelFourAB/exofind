@@ -511,7 +511,7 @@ public class DocumentResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:document:malformed"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:malformed"));
 		assertThat(e.getErrors().get(0).getLocation().describe(), is("[1]"));
 	}
 
@@ -643,7 +643,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			contains("request:delete:query_empty")
+			contains("document:delete:query_empty")
 		);
 		assertThat(index.getDocument("1"), is(notNullValue()));
 	}
@@ -663,7 +663,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			contains("request:delete:target_required")
+			contains("document:delete:target_required")
 		);
 	}
 
@@ -678,7 +678,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			contains("request:delete:target_required")
+			contains("document:delete:target_required")
 		);
 	}
 
@@ -693,7 +693,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			contains("request:delete:target_conflicting")
+			contains("document:delete:target_conflicting")
 		);
 	}
 
@@ -708,7 +708,7 @@ public class DocumentResourceTest {
 
 		assertThat(
 			e.getErrors().collect(error -> error.getCode()).toList(),
-			contains("request:delete:target_conflicting")
+			contains("document:delete:target_conflicting")
 		);
 	}
 

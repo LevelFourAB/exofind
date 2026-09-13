@@ -27,7 +27,7 @@ Follow these steps to declare the locales of the index, opt fields in, optionall
    - Set `"locales": {}` on a field to opt in. The field then supports every locale declared on the index.
    - Leave `locales` unset to keep a field unlocalized. Unlocalized fields store a single value, such as a SKU or an identifier.
    - Values without a locale tag use the `defaultLocale`.
-   - The engine validates document values against the declared locales. If a document carries a value in an undeclared locale, the engine rejects the document with `index:update:locale_not_declared`.
+   - The engine validates document values against the declared locales. If a document carries a value in an undeclared locale, the engine rejects the document with `document:locale_unknown`.
    - Every locale tag must be valid according to the [locale reference](../reference/locales.md). Unsupported tags fail schema validation.
    - The engine expands the index declaration onto individual fields before storing the schema. Reading the definition back returns `defaultLocale` and `locales` on each field.
    - To add a locale later, add the tag to `supported`. Because the engine rejects changes to `supported` on a generation with documents, roll out the change through [a new generation](roll-out-a-definition-change.md).

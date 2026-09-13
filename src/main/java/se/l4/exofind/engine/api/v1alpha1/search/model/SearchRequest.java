@@ -60,8 +60,8 @@ public record SearchRequest(
 		clauses. Filters narrow hits, but facets on the filtered field \
 		exclude their own filter entries from counts by default (see \
 		[Facets](https://exofind.dev/reference/search-api/#facets)). \
-		Unsupported clause types return `search:filter:clause_invalid`. \
-		Clauses that score results return `search:filter:scores`.""")
+		Unsupported clause types return `search:filter:clause_unsupported`. \
+		Clauses that score results return `search:filter:scoring_unsupported`.""")
 	List<Clause> filters,
 
 	/**
@@ -378,7 +378,7 @@ public record SearchRequest(
 		description = """
 			Computes match counts for distinct values of a field. The target \
 			field must have `facet` enabled in its field definition; \
-			otherwise, the request returns `index:query:usage_not_enabled`.""",
+			otherwise, the request returns `search:usage_unsupported`.""",
 		examples = Facet.EXAMPLE
 	)
 	public record Facet(
@@ -389,7 +389,7 @@ public record SearchRequest(
 		@Schema(description = """
 			Key used for the facet in the response. Required when faceting \
 			on the same field multiple times. Duplicate facet names return \
-			`search:facet:duplicate_name`. Defaults to the field name.""")
+			`search:facet:name_duplicate`. Defaults to the field name.""")
 		String name,
 
 		/**
@@ -529,9 +529,9 @@ public record SearchRequest(
 				value twice. Either bound may be omitted for an open-ended \
 				range, but not both (`search:facet:range_empty`), and `to` \
 				must be greater than `from` \
-				(`index:query:facet_range_empty`). At most 1000 buckets per \
+				(`search:facet:range_invalid`). At most 1000 buckets per \
 				facet (`search:facet:ranges_too_many`); using `ranges` on an \
-				unsupported field type returns `index:invalid-query-type`.""",
+				unsupported field type returns `search:matcher:type_unsupported`.""",
 			examples = Range.EXAMPLE
 		)
 		public record Range(
@@ -619,7 +619,7 @@ public record SearchRequest(
 				has in the index definition. An empty options object asks for \
 				the defaults. Fields must have highlighting enabled \
 				(`matching` or `autocomplete`); requesting an unconfigured \
-				field returns `index:query:usage_not_enabled`.""",
+				field returns `search:usage_unsupported`.""",
 			required = true
 		)
 		Map<String, HighlightField> fields
@@ -637,7 +637,7 @@ public record SearchRequest(
 	@Schema(
 		description = """
 			Requests the matched values of `nested` object fields with each hit. \
-			Cannot be combined with `hits` (`search:hits:with_matched`). See \
+			Cannot be combined with `hits` (`search:hits:matched_unsupported`). See \
 			[Matched \
 			values](https://exofind.dev/reference/search-api/#matched-values).""",
 		examples = Matched.EXAMPLE
@@ -653,7 +653,7 @@ public record SearchRequest(
 				Object fields to answer for, keyed by the name the field has \
 				in the index definition. An empty options object asks for the \
 				defaults. Targeting a field that is not a `nested` object \
-				returns `index:query:matched:not_object`.""",
+				returns `search:matched:field_not_nested`.""",
 			required = true
 		)
 		Map<String, MatchedField> fields
@@ -693,9 +693,9 @@ public record SearchRequest(
 			`when`, only the documents it matches expand and the rest stay \
 			document hits, totals count hits of both kinds and facets count \
 			documents. Cannot be combined with `matched` \
-			(`search:hits:with_matched`) or `knn` clauses \
-			(`search:hits:with_knn`); `highlight` may only name fields inside \
-			`path` (`search:hits:with_highlight`), and each hit returns fragments \
+			(`search:hits:matched_unsupported`) or `knn` clauses \
+			(`search:hits:knn_unsupported`); `highlight` may only name fields inside \
+			`path` (`search:hits:highlight_field_not_inside`), and each hit returns fragments \
 			of its own value. See [What a hit stands \
 			for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for).""",
 		examples = Hits.EXAMPLE
@@ -710,7 +710,7 @@ public record SearchRequest(
 			description = """
 				Dotted path of the nested object field whose matched values \
 				become hits. Targeting a field that is not a `nested` object \
-				returns `index:query:hits:not_object`.""",
+				returns `search:hits:path_not_nested`.""",
 			required = true,
 			examples = "variants"
 		)
@@ -726,9 +726,9 @@ public record SearchRequest(
 			Dotted field paths inside the nested object to return in `value`, \
 			defaulting to all of them. Names must be prefixed by `path` \
 			(`search:hits:field_not_inside`) and exist in the index \
-			(`index:query:field_not_found`). On an index whose `source` is \
+			(`search:field_unknown`). On an index whose `source` is \
 			`none`, a named field has to be `stored` \
-			(`index:query:usage_not_enabled`).""")
+			(`search:usage_unsupported`).""")
 		List<String> fields,
 
 		/**
@@ -745,9 +745,9 @@ public record SearchRequest(
 			other matching document stays a document hit. Combined with an \
 			implicit `AND`, and specified as `field` or `nested` clauses. If \
 			omitted, every matching document expands. Unsupported clause \
-			types return `search:hits:when_clause_invalid`; clauses that \
-			score return `search:hits:when_scores`. Sorting by a field is \
-			refused while this is set (`search:hits:when_field_sort`).""")
+			types return `search:hits:when_clause_unsupported`; clauses that \
+			score return `search:hits:when_scoring_unsupported`. Sorting by a field is \
+			refused while this is set (`search:hits:when_sort_unsupported`).""")
 		List<Clause> when
 	) {
 		/** The example request, as the JSON a caller writes. */
@@ -793,9 +793,9 @@ public record SearchRequest(
 			Field paths inside the nested object to include in each returned \
 			value, defaulting to all of them. Paths must reside under the \
 			target object path (`search:matched:field_not_inside`) and exist \
-			in the schema (`index:query:field_not_found`). On an index whose \
+			in the schema (`search:field_unknown`). On an index whose \
 			`source` is `none`, a named field has to be `stored` \
-			(`index:query:usage_not_enabled`).""")
+			(`search:usage_unsupported`).""")
 		List<String> fields
 	) {
 		/** The example configuration, as the JSON a caller writes. */

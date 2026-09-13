@@ -25,6 +25,7 @@ public class IndexDefinitionIncompatibleException extends ValidationException {
 
 	private static final ErrorType ERROR_TYPE =
 		ErrorType.withCode("index:definition:incompatible")
+			.withStatus(409)
 			.withArguments("errors")
 			.withMessage(
 				"The definition changes how documents are indexed, and the generation"

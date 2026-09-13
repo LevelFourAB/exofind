@@ -46,7 +46,8 @@ public record IndexName(String index, String generation) {
 	public static final Pattern VALID_GENERATION_PATTERN =
 		Pattern.compile("[a-z0-9][a-z0-9_-]{0,31}");
 
-	private static final ErrorType INVALID_INDEX = ErrorType.withCode("index:invalid_name")
+	private static final ErrorType INVALID_INDEX = ErrorType.withCode("index:name_invalid")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Index name `{{name}}` should start with a letter or number and only contain"
@@ -54,7 +55,8 @@ public record IndexName(String index, String generation) {
 		);
 
 	private static final ErrorType INVALID_GENERATION =
-		ErrorType.withCode("index:invalid_generation_name")
+		ErrorType.withCode("index:generation:name_invalid")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Generation name `{{name}}` should start with a letter or number and only"

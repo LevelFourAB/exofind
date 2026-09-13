@@ -62,28 +62,34 @@ import se.l4.exofind.engine.query.matchers.RangesMatcher;
  */
 public abstract class NumberFieldType implements FieldType {
 	private static final ErrorType COLLATION_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:sort:collation_not_supported")
+		.withCode("index:field:sort:collation_unsupported")
+		.withStatus(400)
 		.withMessage("Collation means nothing when sorting a number field");
 
 	private static final ErrorType INVALID_BOUND = ErrorType
-		.withCode("index:field:number:invalid_bound")
+		.withCode("index:field:number:bound_invalid")
+		.withStatus(400)
 		.withMessage("A validation bound has to be a finite number");
 
 	private static final ErrorType INVALID_BOUNDS = ErrorType
-		.withCode("index:field:number:invalid_bounds")
+		.withCode("index:field:number:bounds_conflicting")
+		.withStatus(400)
 		.withMessage("The `min` of the validation can not be above its `max`");
 
 	private static final ErrorType INVALID_UNIT = ErrorType
-		.withCode("index:field:number:invalid_unit")
+		.withCode("index:field:number:unit_invalid")
+		.withStatus(400)
 		.withMessage("A unit has to be text, such as a currency code or a unit identifier");
 
 	private static final ErrorType INVALID_VALUE = ErrorType
-		.withCode("index:update:number:invalid_value")
+		.withCode("document:number:value_invalid")
+		.withStatus(400)
 		.withArguments("name", "type")
 		.withMessage("Field `{{name}}` holds a `{{type}}`, which this value can not be read as");
 
 	private static final ErrorType OUT_OF_BOUNDS = ErrorType
-		.withCode("index:update:number:out_of_bounds")
+		.withCode("document:number:value_out_of_range")
+		.withStatus(400)
 		.withArguments("name", "value")
 		.withMessage(
 			"Field `{{name}}` was given `{{value}}`, which is outside the bounds its definition declares"

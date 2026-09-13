@@ -244,7 +244,7 @@ public class LocaleSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_declared"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:locale_unknown"));
 	}
 
 	@Test
@@ -261,7 +261,7 @@ public class LocaleSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_allowed"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:locale_unsupported"));
 	}
 
 	@Test
@@ -874,7 +874,7 @@ public class LocaleSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_declared"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:locale_unknown"));
 	}
 
 	@Test
@@ -898,6 +898,6 @@ public class LocaleSearchTest extends AbstractIndexTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:locale_not_allowed"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:locale_unsupported"));
 	}
 }

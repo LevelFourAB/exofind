@@ -215,7 +215,7 @@ public class ObjectPatchTest {
 	public void testASelectorMatchingNothingIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{\"signals\":[{\"field\":\"a\"}]}", "signals[field=b]", 1)),
-			is("index:settings:no_match")
+			is("settings:patch:no_match")
 		);
 	}
 
@@ -227,7 +227,7 @@ public class ObjectPatchTest {
 	public void testASelectorOnAMissingListIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{}", "signals[field=a]", 1)),
-			is("index:settings:no_match")
+			is("settings:patch:no_match")
 		);
 	}
 
@@ -235,7 +235,7 @@ public class ObjectPatchTest {
 	public void testASelectorOnSomethingThatIsNotAListIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{\"ranking\":{}}", "ranking[field=a]", 1)),
-			is("request:update:selector_not_supported")
+			is("settings:patch:selector_unsupported")
 		);
 	}
 
@@ -243,7 +243,7 @@ public class ObjectPatchTest {
 	public void testReachingIntoAListWithoutASelectorIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{\"signals\":[]}", "signals.weight", 1)),
-			is("request:update:value_required")
+			is("settings:patch:selector_required")
 		);
 	}
 
@@ -251,7 +251,7 @@ public class ObjectPatchTest {
 	public void testReachingInsideAValueHoldingNoFieldsIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{\"weight\":2}", "weight.pivot", 1)),
-			is("request:update:not_an_object")
+			is("settings:patch:not_an_object")
 		);
 	}
 
@@ -259,20 +259,20 @@ public class ObjectPatchTest {
 	public void testReachingInsideAnAddedValueIsRefused() {
 		assertThat(
 			codeOf(() -> patch("{}", "signals[].weight", 1)),
-			is("request:update:add_reaches_inside")
+			is("settings:patch:add_reaches_inside")
 		);
 	}
 
 	@Test
 	public void testAPathThatIsNotOneIsRefused() {
-		assertThat(codeOf(() -> patch("{}", "", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a.", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", ".a", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a[field=b", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a[field=b]c", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a[b]", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a[b c=1]", 1)), is("request:update:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a\\", 1)), is("request:update:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a.", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", ".a", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a[field=b", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a[field=b]c", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a[b]", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a[b c=1]", 1)), is("settings:patch:path_invalid"));
+		assertThat(codeOf(() -> patch("{}", "a\\", 1)), is("settings:patch:path_invalid"));
 	}
 
 	@Test

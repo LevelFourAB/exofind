@@ -10,7 +10,8 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class IndexVersionMismatchException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("index:version-mismatch")
+	private static final ErrorType TYPE = ErrorType.withCode("index:version_mismatch")
+		.withStatus(412)
 		.withArguments("index", "expected", "actual")
 		.withMessage(
 			"The definition of index `{{index}}` has version `{{actual}}`, but the update expected `{{expected}}`"

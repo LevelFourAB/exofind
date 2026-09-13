@@ -211,7 +211,7 @@ curl http://localhost:8080/v1alpha1/indexes/books/search \
 ```
 
 Because the index definition does not enable filtering on `title`, the server
-rejects the query with the error `index:query:usage_not_enabled`.
+rejects the query with the error `search:usage_unsupported`.
 
 ## Managing data persistence and cleaning up
 

@@ -19,6 +19,7 @@ public class IndexStorageHeldException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:generation:storage_held")
+		.withStatus(409)
 		.withArguments("generation")
 		.withMessage(
 			"The storage holds a generation `{{generation}}` the registry does not name,"

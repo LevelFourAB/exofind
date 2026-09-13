@@ -368,7 +368,7 @@ public class IndexTest {
 		);
 		var e = assertThrows(ValidationException.class, () -> index.addDocument(doc));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_multiple"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:multiple_unsupported"));
 	}
 
 	@Test
@@ -452,7 +452,7 @@ public class IndexTest {
 		);
 		var e = assertThrows(ValidationException.class, () -> index.addDocument(doc));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_multiple_in_locale"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:multiple_per_locale_unsupported"));
 	}
 
 	/**
@@ -489,7 +489,7 @@ public class IndexTest {
 		);
 		var e = assertThrows(ValidationException.class, () -> index.addDocument(doc));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:update:not_multiple"));
+		assertThat(e.getErrors().get(0).getCode(), is("document:multiple_unsupported"));
 	}
 
 	@Test

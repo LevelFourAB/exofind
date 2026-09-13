@@ -655,7 +655,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:hits:facet_unsupported"));
+		assertThat(e.getCode(), is("search:hits:facet_unsupported"));
 	}
 
 	@Test
@@ -672,7 +672,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:hits:sort_unsupported"));
+		assertThat(e.getCode(), is("search:hits:sort_unsupported"));
 	}
 
 	@Test
@@ -689,7 +689,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:not_in_path"));
+		assertThat(e.getCode(), is("search:nested:field_not_inside"));
 	}
 
 	@Test
@@ -705,7 +705,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:hits:not_object"));
+		assertThat(e.getCode(), is("search:hits:path_not_nested"));
 	}
 
 	@Test
@@ -721,7 +721,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:hits:not_object"));
+		assertThat(e.getCode(), is("search:hits:path_not_nested"));
 	}
 
 	@Test
@@ -737,7 +737,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:hits:not_object"));
+		assertThat(e.getCode(), is("search:hits:path_not_nested"));
 	}
 
 	@Test
@@ -920,7 +920,7 @@ public class ValueHitsSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(e.getCode(), is("search:usage_unsupported"));
 	}
 
 	@Test

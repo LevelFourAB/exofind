@@ -19,6 +19,7 @@ public class SearchTimeoutException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("search:timeout")
+		.withStatus(503)
 		.withArguments("index", "timeout")
 		.withMessage(
 			"Searching `{{index}}` took longer than {{timeout}} and was abandoned; narrow the search"

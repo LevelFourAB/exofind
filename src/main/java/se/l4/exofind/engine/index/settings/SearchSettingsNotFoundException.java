@@ -11,7 +11,8 @@ import se.l4.exofind.engine.index.IndexException;
 public class SearchSettingsNotFoundException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("index:settings:not_found")
+	private static final ErrorType TYPE = ErrorType.withCode("settings:not_found")
+		.withStatus(404)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` has no search settings");
 

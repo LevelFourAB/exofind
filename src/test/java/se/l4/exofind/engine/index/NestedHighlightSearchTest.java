@@ -165,7 +165,7 @@ public class NestedHighlightSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(e.getCode(), is("search:usage_unsupported"));
 	}
 
 	private static Query leather() {

@@ -92,7 +92,7 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure), contains("auth:key:unknown_role"));
+		assertThat(codesOf(failure), contains("auth:key:role_unknown"));
 	}
 
 	@Test
@@ -114,7 +114,7 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure), contains("auth:key:unknown_permission"));
+		assertThat(codesOf(failure), contains("auth:key:permission_unknown"));
 	}
 
 	@Test
@@ -168,7 +168,7 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure), contains("auth:key:indexes_not_used"));
+		assertThat(codesOf(failure), contains("auth:key:indexes_unsupported"));
 	}
 
 	@Test
@@ -216,7 +216,7 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure), contains("auth:key:unknown_role"));
+		assertThat(codesOf(failure), contains("auth:key:role_unknown"));
 	}
 
 	@Test
@@ -241,7 +241,7 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure).contains("auth:key:invalid_index_pattern"), is(true));
+		assertThat(codesOf(failure).contains("auth:key:index_pattern_invalid"), is(true));
 	}
 
 	@Test
@@ -270,7 +270,7 @@ public class KeyDefinitionMapperTest {
 			)
 		);
 
-		assertThat(codesOf(failure), contains("auth:key:invalid_expiry"));
+		assertThat(codesOf(failure), contains("auth:key:expiry_invalid"));
 	}
 
 	@Test
@@ -316,9 +316,9 @@ public class KeyDefinitionMapperTest {
 		assertThat(
 			codesOf(failure),
 			contains(
-				"auth:key:unknown_role",
-				"auth:key:unknown_permission",
-				"auth:key:invalid_expiry"
+				"auth:key:role_unknown",
+				"auth:key:permission_unknown",
+				"auth:key:expiry_invalid"
 			)
 		);
 	}

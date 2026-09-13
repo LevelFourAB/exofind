@@ -61,7 +61,7 @@ Before you begin, ensure that you have:
    - `"all"` (the default): Every loose word and quoted phrase must match. In a product catalogue, adding more search words reduces the number of results returned.
    - `"any"`: Documents matching at least one word or phrase are returned. Use this setting for documentation or articles where a page holding some of the terms is still relevant.
 
-   Excluded terms always apply regardless of the `join` mode. Setting `join` on any match mode other than `"user"` returns `search:clause:join_not_applicable`.
+   Excluded terms always apply regardless of the `join` mode. Setting `join` on any match mode other than `"user"` returns `search:clause:join_unsupported`.
 
 3. Configure prefix matching for live search:
 

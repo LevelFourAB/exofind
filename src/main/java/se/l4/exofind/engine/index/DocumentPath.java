@@ -65,7 +65,8 @@ public record DocumentPath(
 	private static final Pattern VALID_PATH_NAME = Pattern.compile("[a-zA-Z0-9_\\.\\*]+");
 
 	private static final ErrorType MALFORMED = ErrorType
-		.withCode("request:update:path_invalid")
+		.withCode("document:patch:path_invalid")
+		.withStatus(400)
 		.withArguments("path", "reason")
 		.withMessage("`{{path}}` does not name a place in a document: {{reason}}");
 

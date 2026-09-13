@@ -163,52 +163,60 @@ public class Index {
 	public static final String CHANGES_FILE = "changes.ef.bin";
 
 	private static final ErrorType ERROR_FIELD_NOT_FOUND =
-		ErrorType.withCode("index:update:field_not_found")
+		ErrorType.withCode("document:field_unknown")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("Field `{{name}}` does not exist in index");
 
 	private static final ErrorType ERROR_REQUIRED_FIELD_MISSING =
-		ErrorType.withCode("index:update:required_field_missing")
+		ErrorType.withCode("document:field_required")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage("Required field `{{name}}` is missing");
 
 	private static final ErrorType ERROR_LOCALE_NOT_ALLOWED =
-		ErrorType.withCode("index:update:locale_not_allowed")
+		ErrorType.withCode("document:locale_unsupported")
+			.withStatus(400)
 			.withArguments("name", "locale")
 			.withMessage(
 				"Field `{{name}}` is not locale specific, but the value carries locale `{{locale}}`"
 			);
 
 	private static final ErrorType ERROR_LOCALE_NOT_DECLARED =
-		ErrorType.withCode("index:update:locale_not_declared")
+		ErrorType.withCode("document:locale_unknown")
+			.withStatus(400)
 			.withArguments("name", "locale")
 			.withMessage(
 				"Field `{{name}}` does not hold values in locale `{{locale}}`"
 			);
 
 	private static final ErrorType ERROR_NOT_MULTIPLE =
-		ErrorType.withCode("index:update:not_multiple")
+		ErrorType.withCode("document:multiple_unsupported")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` holds a single value, but the document gives it several"
 			);
 
 	private static final ErrorType ERROR_NOT_MULTIPLE_IN_LOCALE =
-		ErrorType.withCode("index:update:not_multiple_in_locale")
+		ErrorType.withCode("document:multiple_per_locale_unsupported")
+			.withStatus(400)
 			.withArguments("name", "locale")
 			.withMessage(
 				"Field `{{name}}` holds a single value per locale, but the document gives it several in `{{locale}}`"
 			);
 
 	private static final ErrorType ERROR_NOT_A_DOCUMENT =
-		ErrorType.withCode("index:update:not_a_document")
+		ErrorType.withCode("document:object_required")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` holds documents, but the value given is not one"
 			);
 
 	private static final ErrorType ERROR_OBJECT_KEY_DUPLICATE =
-		ErrorType.withCode("index:update:object:key_duplicate")
+		ErrorType.withCode("document:object_key_duplicate")
+			.withStatus(400)
 			.withArguments("name", "key", "value")
 			.withMessage(
 				"Field `{{name}}` names `{{key}}` as what tells its values apart, but the "
@@ -216,35 +224,40 @@ public class Index {
 			);
 
 	private static final ErrorType ERROR_UNEXPECTED_DOCUMENT =
-		ErrorType.withCode("index:update:unexpected_document")
+		ErrorType.withCode("document:object_unsupported")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Field `{{name}}` does not hold documents, but the value given is one"
 			);
 
 	private static final ErrorType ERROR_FIELD_INSIDE_OBJECT =
-		ErrorType.withCode("index:update:field_inside_object")
+		ErrorType.withCode("document:field_inside_object")
+			.withStatus(400)
 			.withArguments("name", "path")
 			.withMessage(
 				"Field `{{name}}` is inside the object `{{path}}`, which is where the document gives its value"
 			);
 
 	private static final ErrorType ERROR_PRIMARY_KEY_REQUIRED =
-		ErrorType.withCode("index:update:primary_key_required")
+		ErrorType.withCode("document:primary_key_required")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Changing some of the fields of a document needs its primary key in `{{name}}`"
 			);
 
 	private static final ErrorType ERROR_UNSUPPORTED_SEARCH_LOCALE =
-		ErrorType.withCode("index:query:unsupported_locale")
+		ErrorType.withCode("search:locale_unsupported")
+			.withStatus(400)
 			.withArguments("locale")
 			.withMessage(
 				"The search asks for locale `{{locale}}` which this version of the engine does not support"
 			);
 
 	private static final ErrorType ERROR_HITS_FACET_UNSUPPORTED =
-		ErrorType.withCode("index:query:hits:facet_unsupported")
+		ErrorType.withCode("search:hits:facet_unsupported")
+			.withStatus(400)
 			.withArguments("field", "path")
 			.withMessage(
 				"Hits standing for the values of `{{path}}` can count facets over "
@@ -253,7 +266,8 @@ public class Index {
 			);
 
 	private static final ErrorType ERROR_FACET_PREFIX_ON_A_TREE =
-		ErrorType.withCode("index:query:facet_prefix_on_a_tree")
+		ErrorType.withCode("search:facet:prefix_unsupported")
+			.withStatus(400)
 			.withArguments("field")
 			.withMessage(
 				"The values of `{{field}}` are paths through a tree, which a prefix can not pick from"
@@ -5636,7 +5650,7 @@ public class Index {
 	 *   if no document is indexed under the key, or the document holds no value
 	 *   of the path at the position
 	 * @throws IndexQueryException
-	 *   with {@code index:query:unsupported_locale} if the search asks for a
+	 *   with {@code search:locale_unsupported} if the search asks for a
 	 *   locale this build has no rules for
 	 * @throws IOException
 	 */

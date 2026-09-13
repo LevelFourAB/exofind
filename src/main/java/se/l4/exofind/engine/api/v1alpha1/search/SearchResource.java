@@ -90,16 +90,19 @@ import jakarta.ws.rs.core.MediaType;
 @Path("/v1alpha1/indexes/{name}")
 @Produces(MediaType.APPLICATION_JSON)
 public class SearchResource {
-	private static final ErrorType IO_ERROR = ErrorType.withCode("index:io_error")
+	private static final ErrorType IO_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` could not be searched");
 
 	private static final ErrorType EXPLAIN_KEY_REQUIRED =
 		ErrorType.withCode("search:explain:key_required")
+			.withStatus(400)
 			.withMessage("An explanation is of one hit, so `key` names the document it is of");
 
 	private static final ErrorType EXPLAIN_INDEX_INVALID =
-		ErrorType.withCode("search:explain:index_invalid")
+		ErrorType.withCode("search:explain:index_out_of_range")
+			.withStatus(400)
 			.withArguments("index")
 			.withMessage(
 				"`index` counts the values of the `hits` path from zero, so `{{index}}` names none"
@@ -297,7 +300,7 @@ public class SearchResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "search:required",
+		value = "request:value_required",
 		status = 400,
 		when = "A part of the request that needs a value carries none. The `path` names it."
 	)
@@ -327,32 +330,32 @@ public class SearchResource {
 		when = "A `knn` clause carries no vector to find the neighbours of."
 	)
 	@ReturnsError(
-		value = "search:clause:k_invalid",
+		value = "search:clause:k_out_of_range",
 		status = 400,
 		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
-		value = "search:clause:weight_invalid",
+		value = "search:clause:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_invalid",
+		value = "search:clause:slop_out_of_range",
 		status = 400,
 		when = "The `slop` of a `text` clause is below zero."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_not_applicable",
+		value = "search:clause:slop_unsupported",
 		status = 400,
 		when = "A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`."
 	)
 	@ReturnsError(
-		value = "search:clause:join_not_applicable",
+		value = "search:clause:join_unsupported",
 		status = 400,
 		when = "A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself."
 	)
 	@ReturnsError(
-		value = "search:clause:rankings_invalid",
+		value = "search:clause:rankings_too_few",
 		status = 400,
 		when = "A `fuse` clause holds fewer than two rankings to fuse."
 	)
@@ -362,12 +365,12 @@ public class SearchResource {
 		when = "A ranking of a `fuse` clause holds nothing to rank by."
 	)
 	@ReturnsError(
-		value = "search:clause:rank_constant_invalid",
+		value = "search:clause:rank_constant_out_of_range",
 		status = 400,
 		when = "The `rankConstant` of a `fuse` clause is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:clause:depth_invalid",
+		value = "search:clause:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
@@ -407,7 +410,7 @@ public class SearchResource {
 		when = "A distance matcher does not say how far from the origin values may be."
 	)
 	@ReturnsError(
-		value = "search:filter:clause_invalid",
+		value = "search:filter:clause_unsupported",
 		status = 400,
 		when = "A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`."
 	)
@@ -422,17 +425,17 @@ public class SearchResource {
 		when = "A `sort` entry that orders by distance carries no `lat` and `lon` to measure from."
 	)
 	@ReturnsError(
-		value = "search:limit:invalid",
+		value = "search:limit_out_of_range",
 		status = 400,
 		when = "`limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`."
 	)
 	@ReturnsError(
-		value = "search:offset:invalid",
+		value = "search:offset_out_of_range",
 		status = 400,
 		when = "`offset` is below zero."
 	)
 	@ReturnsError(
-		value = "search:page:conflicting",
+		value = "search:paging_conflicting",
 		status = 400,
 		when = "The request combines more than one of `offset`, `after` and `before`."
 	)
@@ -447,7 +450,7 @@ public class SearchResource {
 		when = "A cursor is used under a different `sort` than the one it was handed out under. Start the search again from the first page."
 	)
 	@ReturnsError(
-		value = "index:query:invalid_cursor",
+		value = "search:cursor:stale",
 		status = 400,
 		when = "A cursor was taken under this `sort` but does not name a position in it, which a `sort` field that changed type in the index definition leaves behind. Start the search again from the first page."
 	)
@@ -462,7 +465,7 @@ public class SearchResource {
 		when = "`pages` is asked for from a `next` or `previous` cursor, which carries no page number. Start from `offset` or from a page's own cursor."
 	)
 	@ReturnsError(
-		value = "search:pages:max_invalid",
+		value = "search:pages:max_out_of_range",
 		status = 400,
 		when = "The `max` of `pages` is not above zero."
 	)
@@ -477,17 +480,17 @@ public class SearchResource {
 		when = "A facet is keyed by a blank name. Leave `name` out to key the counts by the field."
 	)
 	@ReturnsError(
-		value = "search:facet:duplicate_name",
+		value = "search:facet:name_duplicate",
 		status = 400,
 		when = "Two facets are keyed by the same name."
 	)
 	@ReturnsError(
-		value = "search:facet:limit_invalid",
+		value = "search:facet:limit_out_of_range",
 		status = 400,
 		when = "The `limit` of a facet asks for more values than the node allows, or for none. The `max` argument carries the cap."
 	)
 	@ReturnsError(
-		value = "search:facet:depth_invalid",
+		value = "search:facet:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a facet counts more levels of a tree than the node allows, or none. The `max` argument carries the cap."
 	)
@@ -517,7 +520,7 @@ public class SearchResource {
 		when = "A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given."
 	)
 	@ReturnsError(
-		value = "search:facet:ranges_on_a_tree",
+		value = "search:facet:ranges_with_tree",
 		status = 400,
 		when = "A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets."
 	)
@@ -537,12 +540,12 @@ public class SearchResource {
 		when = "An entry of the fields to highlight is blank."
 	)
 	@ReturnsError(
-		value = "search:highlight:fragments_invalid",
+		value = "search:highlight:fragments_out_of_range",
 		status = 400,
 		when = "The number of fragments to highlight is not above zero."
 	)
 	@ReturnsError(
-		value = "search:highlight:length_invalid",
+		value = "search:highlight:length_out_of_range",
 		status = 400,
 		when = "The length a highlighted fragment aims for is outside 1 to 10000 characters."
 	)
@@ -562,7 +565,7 @@ public class SearchResource {
 		when = "A `matched` entry names a field that is not inside its object field. Name the fields of the values by their dotted paths."
 	)
 	@ReturnsError(
-		value = "search:matched:limit_invalid",
+		value = "search:matched:limit_out_of_range",
 		status = 400,
 		when = "A `matched` entry asks for more values per field than the node allows, or for none. The `max` argument carries the cap."
 	)
@@ -582,37 +585,37 @@ public class SearchResource {
 		when = "`hits` names a field that is not inside the object field it stands for. Name the fields of the values by their dotted paths."
 	)
 	@ReturnsError(
-		value = "search:hits:when_clause_invalid",
+		value = "search:hits:when_clause_unsupported",
 		status = 400,
 		when = "A clause under `hits.when` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`."
 	)
 	@ReturnsError(
-		value = "search:hits:when_scores",
+		value = "search:hits:when_scoring_unsupported",
 		status = 400,
 		when = "A clause under `hits.when` affects the score. Clauses that score belong in `query`."
 	)
 	@ReturnsError(
-		value = "search:hits:when_field_sort",
+		value = "search:hits:when_sort_unsupported",
 		status = 400,
 		when = "A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score."
 	)
 	@ReturnsError(
-		value = "search:hits:distance_sort",
+		value = "search:hits:sort_unsupported",
 		status = 400,
 		when = "A search whose hits are the values of an object field is ordered by distance."
 	)
 	@ReturnsError(
-		value = "search:hits:with_knn",
+		value = "search:hits:knn_unsupported",
 		status = 400,
 		when = "A search whose hits are the values of an object field holds a `knn` clause."
 	)
 	@ReturnsError(
-		value = "search:hits:with_matched",
+		value = "search:hits:matched_unsupported",
 		status = 400,
 		when = "A search whose hits are the values of an object field also asks for `matched`, which would ask a hit about itself."
 	)
 	@ReturnsError(
-		value = "search:hits:with_highlight",
+		value = "search:hits:highlight_field_not_inside",
 		status = 400,
 		when = "A search whose hits are the values of an object field highlights a field that is not inside those values."
 	)
@@ -627,22 +630,22 @@ public class SearchResource {
 		when = "A signal is not exactly one of `saturation`, `decay` and `linear`."
 	)
 	@ReturnsError(
-		value = "search:signal:pivot_invalid",
+		value = "search:signal:pivot_out_of_range",
 		status = 400,
 		when = "The `pivot` of a saturation signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:signal:half_life_invalid",
+		value = "search:signal:half_life_out_of_range",
 		status = 400,
 		when = "The `halfLife` of a decay signal is not a number of seconds above zero."
 	)
 	@ReturnsError(
-		value = "search:signal:ceiling_invalid",
+		value = "search:signal:ceiling_out_of_range",
 		status = 400,
 		when = "The `ceiling` of a linear signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:signal:weight_invalid",
+		value = "search:signal:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a signal is below zero."
 	)
@@ -657,7 +660,7 @@ public class SearchResource {
 		when = "A `rescore` block does not say how many of the best results the second pass reaches."
 	)
 	@ReturnsError(
-		value = "search:rescore:window_invalid",
+		value = "search:rescore:window_out_of_range",
 		status = 400,
 		when = "The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`."
 	)
@@ -672,7 +675,7 @@ public class SearchResource {
 		when = "A `rescore` block holds neither a boost nor a signal to reorder by."
 	)
 	@ReturnsError(
-		value = "search:rescore:weight_invalid",
+		value = "search:rescore:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `rescore` block is below zero."
 	)
@@ -682,47 +685,47 @@ public class SearchResource {
 		when = "A search whose hits are the values of an object field also asks to `rescore`. A second pass scores documents, so it cannot reorder values."
 	)
 	@ReturnsError(
-		value = "search:locale:unsupported",
+		value = "search:locale_unsupported",
 		status = 400,
 		when = "The request names a locale this engine has no rules for."
 	)
 	@ReturnsError(
-		value = "index:query:source_not_kept",
+		value = "search:source_not_kept",
 		status = 400,
 		when = "`fields` asks for something only the document copy can answer on an index whose `source` is `none`."
 	)
 	@ReturnsError(
-		value = "index:query:interpret:no_unit",
+		value = "search:interpret:unit_required",
 		status = 400,
 		when = "An `interpret` target names a field that is not a number field or that declares no `unit`."
 	)
 	@ReturnsError(
-		value = "search:filter:scores",
+		value = "search:filter:scoring_unsupported",
 		status = 400,
 		when = "A clause under `filter` affects the score. Move it out of `filter`."
 	)
 	@ReturnsError(
-		value = "index:query:field_not_found",
+		value = "search:field_unknown",
 		status = 400,
 		when = "A clause names a field the index does not have."
 	)
 	@ReturnsError(
-		value = "index:query:usage_not_enabled",
+		value = "search:usage_unsupported",
 		status = 400,
 		when = "A field is not defined for the usage the clause asks of it."
 	)
 	@ReturnsError(
-		value = "search:page:too_deep",
+		value = "search:paging_too_deep",
 		status = 400,
 		when = "`offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead."
 	)
 	@ReturnsError(
-		value = "search:query:too_many_clauses",
+		value = "search:clauses_too_many",
 		status = 400,
 		when = "The query holds more clauses than the node allows."
 	)
 	@ReturnsError(
-		value = "search:query:too_deep",
+		value = "search:clauses_too_deep",
 		status = 400,
 		when = "The query nests deeper than the node allows."
 	)
@@ -745,6 +748,76 @@ public class SearchResource {
 		value = "search:timeout",
 		status = 503,
 		when = "The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again."
+	)
+	@ReturnsError(
+		value = "search:value_invalid",
+		status = 400,
+		when = "A matcher is given a value of the wrong kind for the type of its field."
+	)
+	@ReturnsError(
+		value = "search:matcher:type_unsupported",
+		status = 400,
+		when = "A matcher is used on a field whose type cannot answer it."
+	)
+	@ReturnsError(
+		value = "search:no_searchable_fields",
+		status = 400,
+		when = "A text clause names no fields and the index has none defined for matching."
+	)
+	@ReturnsError(
+		value = "search:nested:path_not_nested",
+		status = 400,
+		when = "A `nested` clause names a path whose values are flattened."
+	)
+	@ReturnsError(
+		value = "search:nested:field_not_inside",
+		status = 400,
+		when = "A clause inside a `nested` clause names a field outside its path."
+	)
+	@ReturnsError(
+		value = "search:nested:field_outside",
+		status = 400,
+		when = "A clause outside a `nested` clause names a field inside a nested list."
+	)
+	@ReturnsError(
+		value = "search:nested:clause_unsupported",
+		status = 400,
+		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+	)
+	@ReturnsError(
+		value = "search:interpret:fallback_unit_mismatch",
+		status = 400,
+		when = "A `fallback` target declares another unit than the target it stands in for."
+	)
+	@ReturnsError(
+		value = "search:facet:range_invalid",
+		status = 400,
+		when = "A range bucket has `to` at or below `from`."
+	)
+	@ReturnsError(
+		value = "search:hits:facet_unsupported",
+		status = 400,
+		when = "A facet of a search with `hits` names a field inside another object than the `hits` path."
+	)
+	@ReturnsError(
+		value = "search:hits:path_not_nested",
+		status = 400,
+		when = "The `hits` path names an object field that is not in `nested` mode."
+	)
+	@ReturnsError(
+		value = "search:matched:field_not_nested",
+		status = 400,
+		when = "A `matched` field is an object field that is not in `nested` mode."
+	)
+	@ReturnsError(
+		value = "search:sort:nested_unsupported",
+		status = 400,
+		when = "A sort names a field inside a nested list in a way its values cannot be ordered."
+	)
+	@ReturnsError(
+		value = "search:clause:k_required",
+		status = 400,
+		when = "A `knn` clause carries no `k`."
 	)
 	public SearchResponse search(
 		@Parameter(
@@ -898,7 +971,7 @@ public class SearchResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "search:required",
+		value = "request:value_required",
 		status = 400,
 		when = "A part of the request that needs a value carries none. The `path` names it."
 	)
@@ -928,32 +1001,32 @@ public class SearchResource {
 		when = "A `knn` clause carries no vector to find the neighbours of."
 	)
 	@ReturnsError(
-		value = "search:clause:k_invalid",
+		value = "search:clause:k_out_of_range",
 		status = 400,
 		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
-		value = "search:clause:weight_invalid",
+		value = "search:clause:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_invalid",
+		value = "search:clause:slop_out_of_range",
 		status = 400,
 		when = "The `slop` of a `text` clause is below zero."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_not_applicable",
+		value = "search:clause:slop_unsupported",
 		status = 400,
 		when = "A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`."
 	)
 	@ReturnsError(
-		value = "search:clause:join_not_applicable",
+		value = "search:clause:join_unsupported",
 		status = 400,
 		when = "A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself."
 	)
 	@ReturnsError(
-		value = "search:clause:rankings_invalid",
+		value = "search:clause:rankings_too_few",
 		status = 400,
 		when = "A `fuse` clause holds fewer than two rankings to fuse."
 	)
@@ -963,12 +1036,12 @@ public class SearchResource {
 		when = "A ranking of a `fuse` clause holds nothing to rank by."
 	)
 	@ReturnsError(
-		value = "search:clause:rank_constant_invalid",
+		value = "search:clause:rank_constant_out_of_range",
 		status = 400,
 		when = "The `rankConstant` of a `fuse` clause is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:clause:depth_invalid",
+		value = "search:clause:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
@@ -1008,47 +1081,47 @@ public class SearchResource {
 		when = "A distance matcher does not say how far from the origin values may be."
 	)
 	@ReturnsError(
-		value = "search:filter:clause_invalid",
+		value = "search:filter:clause_unsupported",
 		status = 400,
 		when = "A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`."
 	)
 	@ReturnsError(
-		value = "search:locale:unsupported",
+		value = "search:locale_unsupported",
 		status = 400,
 		when = "The request names a locale this engine has no rules for."
 	)
 	@ReturnsError(
-		value = "index:query:field_not_found",
+		value = "search:field_unknown",
 		status = 400,
 		when = "The request names a field the index does not have."
 	)
 	@ReturnsError(
-		value = "index:query:usage_not_enabled",
+		value = "search:usage_unsupported",
 		status = 400,
 		when = "The field is not defined for `facet` usage."
 	)
 	@ReturnsError(
-		value = "index:query:facet_prefix_on_a_tree",
+		value = "search:facet:prefix_unsupported",
 		status = 400,
 		when = "A prefix was given for a field whose values are paths through a tree."
 	)
 	@ReturnsError(
-		value = "search:facet:limit_invalid",
+		value = "search:facet:limit_out_of_range",
 		status = 400,
 		when = "`limit` is below 1 or above `EXOFIND_SEARCH_MAX_FACET_VALUES`. The `max` argument carries the cap."
 	)
 	@ReturnsError(
-		value = "search:filter:scores",
+		value = "search:filter:scoring_unsupported",
 		status = 400,
 		when = "A clause under `filter` affects the score. Move it out of `filter`."
 	)
 	@ReturnsError(
-		value = "search:query:too_many_clauses",
+		value = "search:clauses_too_many",
 		status = 400,
 		when = "The query holds more clauses than the node allows."
 	)
 	@ReturnsError(
-		value = "search:query:too_deep",
+		value = "search:clauses_too_deep",
 		status = 400,
 		when = "The query nests deeper than the node allows."
 	)
@@ -1071,6 +1144,56 @@ public class SearchResource {
 		value = "search:timeout",
 		status = 503,
 		when = "Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again."
+	)
+	@ReturnsError(
+		value = "search:value_invalid",
+		status = 400,
+		when = "A matcher is given a value of the wrong kind for the type of its field."
+	)
+	@ReturnsError(
+		value = "search:matcher:type_unsupported",
+		status = 400,
+		when = "A matcher is used on a field whose type cannot answer it."
+	)
+	@ReturnsError(
+		value = "search:no_searchable_fields",
+		status = 400,
+		when = "A text clause names no fields and the index has none defined for matching."
+	)
+	@ReturnsError(
+		value = "search:nested:path_not_nested",
+		status = 400,
+		when = "A `nested` clause names a path whose values are flattened."
+	)
+	@ReturnsError(
+		value = "search:nested:field_not_inside",
+		status = 400,
+		when = "A clause inside a `nested` clause names a field outside its path."
+	)
+	@ReturnsError(
+		value = "search:nested:field_outside",
+		status = 400,
+		when = "A clause outside a `nested` clause names a field inside a nested list."
+	)
+	@ReturnsError(
+		value = "search:nested:clause_unsupported",
+		status = 400,
+		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+	)
+	@ReturnsError(
+		value = "search:interpret:unit_required",
+		status = 400,
+		when = "An `interpret` target names a field that is not a number field or declares no `unit`."
+	)
+	@ReturnsError(
+		value = "search:interpret:fallback_unit_mismatch",
+		status = 400,
+		when = "A `fallback` target declares another unit than the target it stands in for."
+	)
+	@ReturnsError(
+		value = "search:clause:k_required",
+		status = 400,
+		when = "A `knn` clause carries no `k`."
 	)
 	public FacetValuesResponse facetValues(
 		@Parameter(
@@ -1220,12 +1343,12 @@ public class SearchResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "search:suggest:limit_invalid",
+		value = "search:suggest:limit_out_of_range",
 		status = 400,
 		when = "`limit` is below 1 or above `EXOFIND_SUGGEST_MAX_LIMIT`. The `max` argument carries the cap."
 	)
 	@ReturnsError(
-		value = "search:required",
+		value = "request:value_required",
 		status = 400,
 		when = "A part of the request that needs a value carries none. The `path` names it."
 	)
@@ -1255,32 +1378,32 @@ public class SearchResource {
 		when = "A `knn` clause carries no vector to find the neighbours of."
 	)
 	@ReturnsError(
-		value = "search:clause:k_invalid",
+		value = "search:clause:k_out_of_range",
 		status = 400,
 		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
-		value = "search:clause:weight_invalid",
+		value = "search:clause:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_invalid",
+		value = "search:clause:slop_out_of_range",
 		status = 400,
 		when = "The `slop` of a `text` clause is below zero."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_not_applicable",
+		value = "search:clause:slop_unsupported",
 		status = 400,
 		when = "A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`."
 	)
 	@ReturnsError(
-		value = "search:clause:join_not_applicable",
+		value = "search:clause:join_unsupported",
 		status = 400,
 		when = "A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself."
 	)
 	@ReturnsError(
-		value = "search:clause:rankings_invalid",
+		value = "search:clause:rankings_too_few",
 		status = 400,
 		when = "A `fuse` clause holds fewer than two rankings to fuse."
 	)
@@ -1290,12 +1413,12 @@ public class SearchResource {
 		when = "A ranking of a `fuse` clause holds nothing to rank by."
 	)
 	@ReturnsError(
-		value = "search:clause:rank_constant_invalid",
+		value = "search:clause:rank_constant_out_of_range",
 		status = 400,
 		when = "The `rankConstant` of a `fuse` clause is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:clause:depth_invalid",
+		value = "search:clause:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
@@ -1335,32 +1458,32 @@ public class SearchResource {
 		when = "A distance matcher does not say how far from the origin values may be."
 	)
 	@ReturnsError(
-		value = "search:filter:clause_invalid",
+		value = "search:filter:clause_unsupported",
 		status = 400,
 		when = "A clause under `filters` is neither a `field` nor a `nested` clause."
 	)
 	@ReturnsError(
-		value = "search:locale:unsupported",
+		value = "search:locale_unsupported",
 		status = 400,
 		when = "The request names a locale the node has no rules for."
 	)
 	@ReturnsError(
-		value = "index:query:field_not_found",
+		value = "search:field_unknown",
 		status = 400,
 		when = "A filter names a field the index does not have."
 	)
 	@ReturnsError(
-		value = "search:filter:scores",
+		value = "search:filter:scoring_unsupported",
 		status = 400,
 		when = "A clause under `filter` affects the score. Move it out of `filter`."
 	)
 	@ReturnsError(
-		value = "search:query:too_many_clauses",
+		value = "search:clauses_too_many",
 		status = 400,
 		when = "The filter holds more clauses than the node allows."
 	)
 	@ReturnsError(
-		value = "search:query:too_deep",
+		value = "search:clauses_too_deep",
 		status = 400,
 		when = "The filter nests deeper than the node allows."
 	)
@@ -1411,6 +1534,61 @@ public class SearchResource {
 			before the node stopped are dropped, so narrow the filters instead \
 			of repeating the request.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "search:usage_unsupported",
+		status = 400,
+		when = "A clause, sort or facet uses a field in a way the definition does not enable for it."
+	)
+	@ReturnsError(
+		value = "search:value_invalid",
+		status = 400,
+		when = "A matcher is given a value of the wrong kind for the type of its field."
+	)
+	@ReturnsError(
+		value = "search:matcher:type_unsupported",
+		status = 400,
+		when = "A matcher is used on a field whose type cannot answer it."
+	)
+	@ReturnsError(
+		value = "search:no_searchable_fields",
+		status = 400,
+		when = "A text clause names no fields and the index has none defined for matching."
+	)
+	@ReturnsError(
+		value = "search:nested:path_not_nested",
+		status = 400,
+		when = "A `nested` clause names a path whose values are flattened."
+	)
+	@ReturnsError(
+		value = "search:nested:field_not_inside",
+		status = 400,
+		when = "A clause inside a `nested` clause names a field outside its path."
+	)
+	@ReturnsError(
+		value = "search:nested:field_outside",
+		status = 400,
+		when = "A clause outside a `nested` clause names a field inside a nested list."
+	)
+	@ReturnsError(
+		value = "search:nested:clause_unsupported",
+		status = 400,
+		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+	)
+	@ReturnsError(
+		value = "search:interpret:unit_required",
+		status = 400,
+		when = "An `interpret` target names a field that is not a number field or declares no `unit`."
+	)
+	@ReturnsError(
+		value = "search:interpret:fallback_unit_mismatch",
+		status = 400,
+		when = "A `fallback` target declares another unit than the target it stands in for."
+	)
+	@ReturnsError(
+		value = "search:clause:k_required",
+		status = 400,
+		when = "A `knn` clause carries no `k`."
 	)
 	public SuggestResponse suggest(
 		@Parameter(
@@ -1541,7 +1719,7 @@ public class SearchResource {
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@ReturnsError(
-		value = "search:required",
+		value = "request:value_required",
 		status = 400,
 		when = "A part of the request that needs a value carries none. The `path` names it."
 	)
@@ -1571,32 +1749,32 @@ public class SearchResource {
 		when = "A `knn` clause carries no vector to find the neighbours of."
 	)
 	@ReturnsError(
-		value = "search:clause:k_invalid",
+		value = "search:clause:k_out_of_range",
 		status = 400,
 		when = "The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`."
 	)
 	@ReturnsError(
-		value = "search:clause:weight_invalid",
+		value = "search:clause:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `boost` clause is missing, below zero or not a finite number."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_invalid",
+		value = "search:clause:slop_out_of_range",
 		status = 400,
 		when = "The `slop` of a `text` clause is below zero."
 	)
 	@ReturnsError(
-		value = "search:clause:slop_not_applicable",
+		value = "search:clause:slop_unsupported",
 		status = 400,
 		when = "A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`."
 	)
 	@ReturnsError(
-		value = "search:clause:join_not_applicable",
+		value = "search:clause:join_unsupported",
 		status = 400,
 		when = "A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself."
 	)
 	@ReturnsError(
-		value = "search:clause:rankings_invalid",
+		value = "search:clause:rankings_too_few",
 		status = 400,
 		when = "A `fuse` clause holds fewer than two rankings to fuse."
 	)
@@ -1606,12 +1784,12 @@ public class SearchResource {
 		when = "A ranking of a `fuse` clause holds nothing to rank by."
 	)
 	@ReturnsError(
-		value = "search:clause:rank_constant_invalid",
+		value = "search:clause:rank_constant_out_of_range",
 		status = 400,
 		when = "The `rankConstant` of a `fuse` clause is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:clause:depth_invalid",
+		value = "search:clause:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`."
 	)
@@ -1651,12 +1829,12 @@ public class SearchResource {
 		when = "A distance matcher does not say how far from the origin values may be."
 	)
 	@ReturnsError(
-		value = "search:filter:clause_invalid",
+		value = "search:filter:clause_unsupported",
 		status = 400,
 		when = "A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`."
 	)
 	@ReturnsError(
-		value = "search:filter:scores",
+		value = "search:filter:scoring_unsupported",
 		status = 400,
 		when = "A clause under `filters` affects the score. Move it out of `filters`."
 	)
@@ -1671,22 +1849,22 @@ public class SearchResource {
 		when = "A `sort` entry that orders by distance carries no `lat` and `lon` to measure from."
 	)
 	@ReturnsError(
-		value = "search:limit:invalid",
+		value = "search:limit_out_of_range",
 		status = 400,
 		when = "`limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`."
 	)
 	@ReturnsError(
-		value = "search:offset:invalid",
+		value = "search:offset_out_of_range",
 		status = 400,
 		when = "`offset` is below zero."
 	)
 	@ReturnsError(
-		value = "search:page:conflicting",
+		value = "search:paging_conflicting",
 		status = 400,
 		when = "The request combines more than one of `offset`, `after` and `before`."
 	)
 	@ReturnsError(
-		value = "search:page:too_deep",
+		value = "search:paging_too_deep",
 		status = 400,
 		when = "`offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`."
 	)
@@ -1711,17 +1889,17 @@ public class SearchResource {
 		when = "`pages` is asked for from a `next` or `previous` cursor, which carries no page number."
 	)
 	@ReturnsError(
-		value = "search:pages:max_invalid",
+		value = "search:pages:max_out_of_range",
 		status = 400,
 		when = "The `max` of `pages` is not above zero."
 	)
 	@ReturnsError(
-		value = "search:query:too_many_clauses",
+		value = "search:clauses_too_many",
 		status = 400,
 		when = "The query holds more clauses than the node allows."
 	)
 	@ReturnsError(
-		value = "search:query:too_deep",
+		value = "search:clauses_too_deep",
 		status = 400,
 		when = "The query nests deeper than the node allows."
 	)
@@ -1736,17 +1914,17 @@ public class SearchResource {
 		when = "A facet is keyed by a blank name. Leave `name` out to key the counts by the field."
 	)
 	@ReturnsError(
-		value = "search:facet:duplicate_name",
+		value = "search:facet:name_duplicate",
 		status = 400,
 		when = "Two facets are keyed by the same name."
 	)
 	@ReturnsError(
-		value = "search:facet:limit_invalid",
+		value = "search:facet:limit_out_of_range",
 		status = 400,
 		when = "The `limit` of a facet asks for more values than the node allows, or for none."
 	)
 	@ReturnsError(
-		value = "search:facet:depth_invalid",
+		value = "search:facet:depth_out_of_range",
 		status = 400,
 		when = "The `depth` of a facet counts more levels of a tree than the node allows, or none."
 	)
@@ -1776,7 +1954,7 @@ public class SearchResource {
 		when = "A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given."
 	)
 	@ReturnsError(
-		value = "search:facet:ranges_on_a_tree",
+		value = "search:facet:ranges_with_tree",
 		status = 400,
 		when = "A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets."
 	)
@@ -1796,12 +1974,12 @@ public class SearchResource {
 		when = "An entry of the fields to highlight is blank."
 	)
 	@ReturnsError(
-		value = "search:highlight:fragments_invalid",
+		value = "search:highlight:fragments_out_of_range",
 		status = 400,
 		when = "The number of fragments to highlight is not above zero."
 	)
 	@ReturnsError(
-		value = "search:highlight:length_invalid",
+		value = "search:highlight:length_out_of_range",
 		status = 400,
 		when = "The length a highlighted fragment aims for is outside 1 to 10000 characters."
 	)
@@ -1821,7 +1999,7 @@ public class SearchResource {
 		when = "A `matched` entry names a field that is not inside its object field."
 	)
 	@ReturnsError(
-		value = "search:matched:limit_invalid",
+		value = "search:matched:limit_out_of_range",
 		status = 400,
 		when = "A `matched` entry asks for more values per field than the node allows, or for none."
 	)
@@ -1841,37 +2019,37 @@ public class SearchResource {
 		when = "`hits` names a field that is not inside the object field it stands for."
 	)
 	@ReturnsError(
-		value = "search:hits:when_clause_invalid",
+		value = "search:hits:when_clause_unsupported",
 		status = 400,
 		when = "A clause under `hits.when` is neither a `field` nor a `nested` clause."
 	)
 	@ReturnsError(
-		value = "search:hits:when_scores",
+		value = "search:hits:when_scoring_unsupported",
 		status = 400,
 		when = "A clause under `hits.when` affects the score. Clauses that score belong in `query`."
 	)
 	@ReturnsError(
-		value = "search:hits:when_field_sort",
+		value = "search:hits:when_sort_unsupported",
 		status = 400,
 		when = "A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score."
 	)
 	@ReturnsError(
-		value = "search:hits:distance_sort",
+		value = "search:hits:sort_unsupported",
 		status = 400,
 		when = "A search whose hits are the values of an object field is ordered by distance."
 	)
 	@ReturnsError(
-		value = "search:hits:with_knn",
+		value = "search:hits:knn_unsupported",
 		status = 400,
 		when = "A search whose hits are the values of an object field holds a `knn` clause."
 	)
 	@ReturnsError(
-		value = "search:hits:with_matched",
+		value = "search:hits:matched_unsupported",
 		status = 400,
 		when = "A search whose hits are the values of an object field also asks for `matched`."
 	)
 	@ReturnsError(
-		value = "search:hits:with_highlight",
+		value = "search:hits:highlight_field_not_inside",
 		status = 400,
 		when = "A search whose hits are the values of an object field highlights a field that is not inside those values."
 	)
@@ -1886,22 +2064,22 @@ public class SearchResource {
 		when = "A signal is not exactly one of `saturation`, `decay` and `linear`."
 	)
 	@ReturnsError(
-		value = "search:signal:pivot_invalid",
+		value = "search:signal:pivot_out_of_range",
 		status = 400,
 		when = "The `pivot` of a saturation signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:signal:half_life_invalid",
+		value = "search:signal:half_life_out_of_range",
 		status = 400,
 		when = "The `halfLife` of a decay signal is not a number of seconds above zero."
 	)
 	@ReturnsError(
-		value = "search:signal:ceiling_invalid",
+		value = "search:signal:ceiling_out_of_range",
 		status = 400,
 		when = "The `ceiling` of a linear signal is not a number above zero."
 	)
 	@ReturnsError(
-		value = "search:signal:weight_invalid",
+		value = "search:signal:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a signal is below zero."
 	)
@@ -1916,7 +2094,7 @@ public class SearchResource {
 		when = "A `rescore` block does not say how many of the best results the second pass reaches."
 	)
 	@ReturnsError(
-		value = "search:rescore:window_invalid",
+		value = "search:rescore:window_out_of_range",
 		status = 400,
 		when = "The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`."
 	)
@@ -1931,7 +2109,7 @@ public class SearchResource {
 		when = "A `rescore` block holds neither a boost nor a signal to reorder by."
 	)
 	@ReturnsError(
-		value = "search:rescore:weight_invalid",
+		value = "search:rescore:weight_out_of_range",
 		status = 400,
 		when = "The `weight` of a `rescore` block is below zero."
 	)
@@ -1941,7 +2119,7 @@ public class SearchResource {
 		when = "A search whose hits are the values of an object field also asks to `rescore`."
 	)
 	@ReturnsError(
-		value = "search:locale:unsupported",
+		value = "search:locale_unsupported",
 		status = 400,
 		when = "The request names a locale this engine has no rules for."
 	)
@@ -1956,17 +2134,17 @@ public class SearchResource {
 		when = "The request carries no `key`, so it names no hit to explain."
 	)
 	@ReturnsError(
-		value = "search:explain:index_invalid",
+		value = "search:explain:index_out_of_range",
 		status = 400,
 		when = "`index` is below zero, so it names no value of the `hits` path."
 	)
 	@ReturnsError(
-		value = "index:explain:document_not_found",
+		value = "search:explain:document_not_found",
 		status = 404,
 		when = "Nothing is indexed under `key`."
 	)
 	@ReturnsError(
-		value = "index:explain:value_not_found",
+		value = "search:explain:value_not_found",
 		status = 404,
 		when = "The document holds no value along the `hits` path at `index`."
 	)
@@ -1989,6 +2167,101 @@ public class SearchResource {
 		value = "search:timeout",
 		status = 503,
 		when = "The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`."
+	)
+	@ReturnsError(
+		value = "search:field_unknown",
+		status = 400,
+		when = "A clause, sort or facet names a field the index does not have."
+	)
+	@ReturnsError(
+		value = "search:usage_unsupported",
+		status = 400,
+		when = "A clause, sort or facet uses a field in a way the definition does not enable for it."
+	)
+	@ReturnsError(
+		value = "search:value_invalid",
+		status = 400,
+		when = "A matcher is given a value of the wrong kind for the type of its field."
+	)
+	@ReturnsError(
+		value = "search:matcher:type_unsupported",
+		status = 400,
+		when = "A matcher is used on a field whose type cannot answer it."
+	)
+	@ReturnsError(
+		value = "search:no_searchable_fields",
+		status = 400,
+		when = "A text clause names no fields and the index has none defined for matching."
+	)
+	@ReturnsError(
+		value = "search:nested:path_not_nested",
+		status = 400,
+		when = "A `nested` clause names a path whose values are flattened."
+	)
+	@ReturnsError(
+		value = "search:nested:field_not_inside",
+		status = 400,
+		when = "A clause inside a `nested` clause names a field outside its path."
+	)
+	@ReturnsError(
+		value = "search:nested:field_outside",
+		status = 400,
+		when = "A clause outside a `nested` clause names a field inside a nested list."
+	)
+	@ReturnsError(
+		value = "search:nested:clause_unsupported",
+		status = 400,
+		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+	)
+	@ReturnsError(
+		value = "search:interpret:unit_required",
+		status = 400,
+		when = "An `interpret` target names a field that is not a number field or declares no `unit`."
+	)
+	@ReturnsError(
+		value = "search:interpret:fallback_unit_mismatch",
+		status = 400,
+		when = "A `fallback` target declares another unit than the target it stands in for."
+	)
+	@ReturnsError(
+		value = "search:source_not_kept",
+		status = 400,
+		when = "`fields` names something only the document copy can answer, and the index keeps none."
+	)
+	@ReturnsError(
+		value = "search:facet:range_invalid",
+		status = 400,
+		when = "A range bucket has `to` at or below `from`."
+	)
+	@ReturnsError(
+		value = "search:hits:facet_unsupported",
+		status = 400,
+		when = "A facet of a search with `hits` names a field inside another object than the `hits` path."
+	)
+	@ReturnsError(
+		value = "search:hits:path_not_nested",
+		status = 400,
+		when = "The `hits` path names an object field that is not in `nested` mode."
+	)
+	@ReturnsError(
+		value = "search:matched:field_not_nested",
+		status = 400,
+		when = "A `matched` field is an object field that is not in `nested` mode."
+	)
+	@ReturnsError(
+		value = "search:sort:nested_unsupported",
+		status = 400,
+		when = "A sort names a field inside a nested list in a way its values cannot be ordered."
+	)
+	@ReturnsError(
+		value = "search:cursor:stale",
+		status = 400,
+		when = "The cursor was taken under this sort, but the values it carries no longer fit how the index defines the sort. Start from the first page."
+	)
+	@ReturnsError(
+		value = "search:clause:k_required",
+		status = 400,
+		when = "A `knn` clause carries no `k`."
 	)
 	public ExplainResponse explain(
 		@Parameter(

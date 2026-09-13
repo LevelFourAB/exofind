@@ -18,7 +18,8 @@ import se.l4.exofind.engine.index.locales.Locales;
  */
 final class SuggestRequestMapper {
 	static final ErrorType LIMIT_INVALID =
-		ErrorType.withCode("search:suggest:limit_invalid")
+		ErrorType.withCode("search:suggest:limit_out_of_range")
+			.withStatus(400)
 			.withArguments("max")
 			.withMessage("A suggest request brings back between 1 and {{max}} suggestions");
 

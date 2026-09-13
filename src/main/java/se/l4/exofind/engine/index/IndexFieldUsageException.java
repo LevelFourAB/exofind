@@ -12,7 +12,8 @@ import se.l4.exofind.engine.errors.ErrorType;
  * than as the definition needing a line added to it.
  */
 public class IndexFieldUsageException extends IndexException {
-	private static final ErrorType TYPE = ErrorType.withCode("index:query:usage_not_enabled")
+	private static final ErrorType TYPE = ErrorType.withCode("search:usage_unsupported")
+		.withStatus(400)
 		.withArguments("name", "usage")
 		.withMessage("Field `{{name}}` is not defined for `{{usage}}`");
 

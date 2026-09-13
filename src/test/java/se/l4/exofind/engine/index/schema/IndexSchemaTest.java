@@ -38,7 +38,7 @@ public class IndexSchemaTest {
 			schema.setDefinition(builder.build());
 		} catch(ValidationException e) {
 			assertThat(e.getErrors().size(), is(1));
-			assertThat(e.getErrors().get(0).getCode(), is("index:field:invalid_name"));
+			assertThat(e.getErrors().get(0).getCode(), is("index:field:name_invalid"));
 		}
 	}
 
@@ -184,7 +184,7 @@ public class IndexSchemaTest {
 
 		var e = assertThrows(ValidationException.class, () -> schema.setDefinition(definition));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:field:missing_type"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:field:type_required"));
 	}
 
 	/**
@@ -212,7 +212,7 @@ public class IndexSchemaTest {
 
 		var e = assertThrows(ValidationException.class, () -> schema.setDefinition(definition));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:field:missing_type"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:field:type_required"));
 	}
 
 	@Test
@@ -234,7 +234,7 @@ public class IndexSchemaTest {
 
 		var e = assertThrows(ValidationException.class, () -> schema.setDefinition(definition));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:field:invalid_primary_key_type"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:field:primary_key:type_unsupported"));
 	}
 
 	@Test
@@ -257,7 +257,7 @@ public class IndexSchemaTest {
 
 		var e = assertThrows(ValidationException.class, () -> schema.setDefinition(definition));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:field:invalid_sortable"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:field:sort:multiple_unsupported"));
 	}
 
 	/**
@@ -288,7 +288,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:sort:collation_not_supported")
+			is("index:field:sort:collation_unsupported")
 		);
 	}
 
@@ -319,7 +319,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:locales:unsupported_locale")
+			is("index:field:locales:locale_unsupported")
 		);
 	}
 
@@ -349,7 +349,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:locales:unsupported_locale")
+			is("index:field:locales:locale_unsupported")
 		);
 	}
 
@@ -382,7 +382,7 @@ public class IndexSchemaTest {
 
 		var e = assertThrows(ValidationException.class, () -> schema.setDefinition(definition));
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:field:analyzer:unknown_ref"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:field:analyzer:chain_unknown"));
 	}
 
 	@Test
@@ -425,7 +425,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:analyzer:unknown_stopwords")
+			is("index:field:analyzer:stopwords_unknown")
 		);
 	}
 
@@ -465,7 +465,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:analyzer:unknown_synonyms")
+			is("index:field:analyzer:synonyms_unknown")
 		);
 	}
 
@@ -498,7 +498,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:analyzer:unsupported_locale")
+			is("index:field:analyzer:locale_unsupported")
 		);
 	}
 
@@ -532,7 +532,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:field:analyzer:unsupported_decompounding")
+			is("index:field:analyzer:decompound_locale_unsupported")
 		);
 	}
 
@@ -583,10 +583,10 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(3));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:resources:synonyms:too_few_words")
+			is("index:resources:synonyms:words_too_few")
 		);
 		assertThat(e.getErrors().get(1).getCode(), is("index:resources:synonyms:one_sided"));
-		assertThat(e.getErrors().get(2).getCode(), is("index:resources:synonyms:blank_word"));
+		assertThat(e.getErrors().get(2).getCode(), is("index:resources:synonyms:word_required"));
 	}
 
 	@Test
@@ -687,7 +687,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:field_unknown"));
 	}
 
 	@Test
@@ -732,7 +732,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:wildcard_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:wildcard_unsupported"));
 	}
 
 	@Test
@@ -753,7 +753,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:duplicate_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:field_duplicate"));
 	}
 
 	/**
@@ -825,7 +825,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:field_unknown"));
 	}
 
 	@Test
@@ -872,7 +872,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:wildcard_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:wildcard_unsupported"));
 	}
 
 	@Test
@@ -893,7 +893,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:shape_not_set"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:shape_required"));
 	}
 
 	@Test
@@ -918,7 +918,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:invalid_pivot"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:pivot_out_of_range"));
 	}
 
 	@Test
@@ -935,7 +935,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:invalid_pivot"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:pivot_out_of_range"));
 	}
 
 	@Test
@@ -956,7 +956,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:invalid_weight"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:weight_out_of_range"));
 	}
 
 	/**
@@ -996,7 +996,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:field:exact:invalid_boost"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:field:exact:boost_out_of_range"));
 	}
 
 	@Test
@@ -1022,7 +1022,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:shape_not_supported"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:shape_unsupported"));
 	}
 
 	@Test
@@ -1051,7 +1051,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:shape_not_supported"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:signal:shape_unsupported"));
 	}
 
 	/**
@@ -1162,7 +1162,7 @@ public class IndexSchemaTest {
 		assertThat(e.getErrors().size(), is(1));
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:locale_fallback:unsupported_locale")
+			is("index:locale_fallback:locale_unsupported")
 		);
 	}
 
@@ -1184,7 +1184,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:locale_fallback:duplicate_locale"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:locale_fallback:locale_duplicate"));
 	}
 
 	/**
@@ -1232,7 +1232,7 @@ public class IndexSchemaTest {
 		);
 
 		assertThat(e.getErrors().size(), is(1));
-		assertThat(e.getErrors().get(0).getCode(), is("index:locale_fallback:no_locale_fields"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:locale_fallback:locale_fields_required"));
 	}
 
 	/**

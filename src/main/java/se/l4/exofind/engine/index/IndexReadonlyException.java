@@ -6,6 +6,7 @@ public class IndexReadonlyException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:readonly")
+		.withStatus(409)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` is readonly and cannot be modified");
 

@@ -214,7 +214,7 @@ public class FieldRolesTest {
 		);
 
 		var error = exception.getErrors().getFirst();
-		assertThat(error.getCode(), is("index:field:role:not_valid_for_type"));
+		assertThat(error.getCode(), is("index:field:role:type_unsupported"));
 		assertThat(error.getLocation().describe(), is("fields.field.role"));
 	}
 
@@ -230,7 +230,7 @@ public class FieldRolesTest {
 		);
 
 		var error = exception.getErrors().getFirst();
-		assertThat(error.getCode(), is("index:field:role:not_valid_for_type"));
+		assertThat(error.getCode(), is("index:field:role:type_unsupported"));
 		assertThat(error.getLocation().describe(), is("fields.field.role"));
 	}
 
@@ -246,7 +246,7 @@ public class FieldRolesTest {
 		);
 
 		var error = exception.getErrors().getFirst();
-		assertThat(error.getCode(), is("index:field:role:not_valid_in_object"));
+		assertThat(error.getCode(), is("index:field:role:object_unsupported"));
 		assertThat(error.getLocation().describe(), is("fields.field.fields.inner.role"));
 	}
 

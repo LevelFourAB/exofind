@@ -35,11 +35,13 @@ import se.l4.exofind.engine.index.source.SourceField;
  */
 public final class DocumentSource {
 	private static final ErrorType UNREADABLE =
-		ErrorType.withCode("index:source:unreadable")
+		ErrorType.withCode("document:source_unreadable")
+			.withStatus(500)
 			.withMessage("The stored copy of the document could not be read");
 
 	private static final ErrorType UNWRITABLE =
-		ErrorType.withCode("index:source:unwritable")
+		ErrorType.withCode("document:source_unwritable")
+			.withStatus(500)
 			.withArguments("name", "type")
 			.withMessage(
 				"Field `{{name}}` holds a `{{type}}`, which can not be kept as it was given"

@@ -221,7 +221,7 @@ public class IndexDeleteTest extends AbstractIndexTest {
 			() -> index.deleteByQuery(Lists.immutable.empty(), "xx-nope")
 		);
 
-		assertThat(e.getCode(), is("index:query:unsupported_locale"));
+		assertThat(e.getCode(), is("search:locale_unsupported"));
 	}
 
 	/**

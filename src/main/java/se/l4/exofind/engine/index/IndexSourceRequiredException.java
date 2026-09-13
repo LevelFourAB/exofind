@@ -19,7 +19,8 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class IndexSourceRequiredException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("index:query:source_not_kept")
+	private static final ErrorType TYPE = ErrorType.withCode("search:source_not_kept")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` can only be returned from the copy of the document, which this index does not keep"

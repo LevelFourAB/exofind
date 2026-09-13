@@ -269,7 +269,7 @@ public class MatchedSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:matched:not_object"));
+		assertThat(e.getCode(), is("search:matched:field_not_nested"));
 	}
 
 	@Test
@@ -285,7 +285,7 @@ public class MatchedSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:matched:not_object"));
+		assertThat(e.getCode(), is("search:matched:field_not_nested"));
 	}
 
 	@Test
@@ -301,7 +301,7 @@ public class MatchedSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:matched:not_object"));
+		assertThat(e.getCode(), is("search:matched:field_not_nested"));
 	}
 
 	@Test
@@ -414,7 +414,7 @@ public class MatchedSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:usage_not_enabled"));
+		assertThat(e.getCode(), is("search:usage_unsupported"));
 	}
 
 	@Test

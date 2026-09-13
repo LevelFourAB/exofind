@@ -93,7 +93,7 @@ public class EngineExceptionMapperTest {
 		assertThat(response.getStatus(), is(409));
 		assertThat(
 			((ErrorResponse) response.getEntity()).code(),
-			is("index:registry:conflict")
+			is("storage:conflict")
 		);
 	}
 

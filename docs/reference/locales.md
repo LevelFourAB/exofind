@@ -142,17 +142,17 @@ The engine rejects unsupported locale tags. The following table lists the error 
 
 | Error | Condition |
 | --- | --- |
-| `index:field:locales:unsupported_locale` | A field definition specifies an unsupported locale tag in `locales` or `defaultLocale`. |
-| `index:field:analyzer:unsupported_locale` | An analysis chain specifies an unsupported locale tag. |
-| `index:locale_fallback:unsupported_locale` | A fallback chain specifies an unsupported locale tag. |
-| `search:locale:unsupported` | A search query specifies an unsupported locale tag. |
+| `index:field:locales:locale_unsupported` | A field definition specifies an unsupported locale tag in `locales` or `defaultLocale`. |
+| `index:field:analyzer:locale_unsupported` | An analysis chain specifies an unsupported locale tag. |
+| `index:locale_fallback:locale_unsupported` | A fallback chain specifies an unsupported locale tag. |
+| `search:locale_unsupported` | A search query specifies an unsupported locale tag. |
 
 The following table lists the error codes returned for index-level locale declarations:
 
 | Error | Condition |
 | --- | --- |
 | `index:locales:default_locale_required` | An index definition specifies `locales` without `defaultLocale`. |
-| `index:field:locales:not_declared` | A field definition specifies a locale in `only` or `defaultLocale` that the index does not declare. |
+| `index:field:locales:locale_unknown` | A field definition specifies a locale in `only` or `defaultLocale` that the index does not declare. |
 | `index:field:locales:default_not_in_only` | A field definition specifies an `only` list that does not contain the default locale of the field. |
 | `index:field:locales:list_with_declaration` | A field definition specifies a `locales` array on an index that declares `locales`. |
 | `index:field:locales:only_without_declaration` | A field definition specifies `only` on an index that does not declare `locales`. |

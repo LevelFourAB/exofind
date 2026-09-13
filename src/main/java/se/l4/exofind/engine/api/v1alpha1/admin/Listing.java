@@ -40,7 +40,8 @@ record Listing<T>(List<T> entries, String next) {
 	static final int MAX_LIMIT = 1000;
 
 	private static final ErrorType LIMIT_INVALID =
-		ErrorType.withCode("request:list:limit_invalid")
+		ErrorType.withCode("request:limit_out_of_range")
+			.withStatus(400)
 			.withArguments("value", "max")
 			.withMessage(
 				"A limit is a whole number from 1 to {{max}}, which `{{value}}` is not"

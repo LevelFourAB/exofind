@@ -13,16 +13,19 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class KeyStorageException extends AuthException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType UNAVAILABLE = ErrorType.withCode("auth:keys:unavailable")
+	private static final ErrorType UNAVAILABLE = ErrorType.withCode("storage:unavailable")
+		.withStatus(409)
 		.withMessage(
 			"This node has nowhere to keep keys and cannot manage them; it can only be"
 				+ " reached with its root key"
 		);
 
-	private static final ErrorType CONFLICT = ErrorType.withCode("auth:keys:conflict")
+	private static final ErrorType CONFLICT = ErrorType.withCode("storage:conflict")
+		.withStatus(409)
 		.withMessage("The keys were changed by someone else while this change was being made");
 
-	private static final ErrorType IO_ERROR = ErrorType.withCode("auth:keys:io_error")
+	private static final ErrorType IO_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withMessage("The keys could not be read from or written to storage");
 
 	private KeyStorageException(ErrorType type) {

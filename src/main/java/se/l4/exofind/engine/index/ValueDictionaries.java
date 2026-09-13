@@ -33,12 +33,14 @@ import se.l4.exofind.engine.index.settings.FieldSettings;
  */
 public final class ValueDictionaries {
 	private static final ErrorType UNKNOWN_FIELD =
-		ErrorType.withCode("index:settings:fields:unknown_field")
+		ErrorType.withCode("settings:fields:field_unknown")
+			.withStatus(400)
 			.withArguments("field")
 			.withMessage("Settings are given for `{{field}}`, which the index does not have");
 
 	private static final ErrorType INTERPRET_UNSUPPORTED =
-		ErrorType.withCode("index:settings:fields:interpret_unsupported")
+		ErrorType.withCode("settings:fields:interpret_unsupported")
+			.withStatus(400)
 			.withArguments("field")
 			.withMessage(
 				"The values of `{{field}}` can not be read from the search text; reading needs"

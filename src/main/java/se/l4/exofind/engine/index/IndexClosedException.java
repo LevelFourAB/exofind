@@ -12,6 +12,7 @@ public class IndexClosedException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:closed")
+		.withStatus(503)
 		.withArguments("index")
 		.withMessage("The index `{{index}}` was closed on this node, try the request again");
 

@@ -134,11 +134,11 @@ public record ObjectFieldDefinition(
 		an array. Targets object values in update paths (such as \
 		`variants[V-2]`) and populates `key` on search value hits. Requires \
 		`multiple: true` (`index:field:object:key_without_multiple`). Must \
-		name a field defined in `fields` (`index:field:object:key_not_found`) \
+		name a field defined in `fields` (`index:field:object:key_unknown`) \
 		that is `required`, not `multiple`, and of type `string`, `int32`, or \
-		`int64` (`index:field:object:key_not_valid`). Duplicate key values \
+		`int64` (`index:field:object:key_invalid`). Duplicate key values \
 		within a document are rejected with \
-		`index:update:object:key_duplicate`.""")
+		`document:object_key_duplicate`.""")
 	String key,
 
 	/**
@@ -150,9 +150,9 @@ public record ObjectFieldDefinition(
 		another `nested` array (`index:field:object:nested_in_nested`). What \
 		a child field may configure follows from where it sits: `sort` and \
 		`stored` are rejected below a `flattened` array \
-		(`index:field:object:flattened_sort`, \
-		`index:field:object:flattened_stored`), and `primaryKey` is rejected \
-		inside any object (`index:field:object:inner_usage_not_supported`). \
+		(`index:field:object:flattened_sort_unsupported`, \
+		`index:field:object:flattened_stored_unsupported`), and `primaryKey` is rejected \
+		inside any object (`index:field:object:inner_usage_unsupported`). \
 		Below a `nested` array `stored` and `highlight` work - highlighted \
 		fragments come back on value hits. `locales` works everywhere.""")
 	Map<String, FieldDefinition> fields

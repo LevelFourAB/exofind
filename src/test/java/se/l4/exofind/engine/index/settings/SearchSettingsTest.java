@@ -174,7 +174,7 @@ public class SearchSettingsTest {
 			SearchSettingsException.class,
 			() -> contended.put("books", storeWith("sales"), null)
 		);
-		assertThat(e.getCode(), is("index:settings:conflict"));
+		assertThat(e.getCode(), is("storage:conflict"));
 	}
 
 	/**
@@ -236,7 +236,7 @@ public class SearchSettingsTest {
 			SearchSettingsException.class,
 			() -> without.put("books", storeWith("sales"), null)
 		);
-		assertThat(e.getCode(), is("index:settings:unavailable"));
+		assertThat(e.getCode(), is("storage:unavailable"));
 	}
 
 	@Test
@@ -265,7 +265,7 @@ public class SearchSettingsTest {
 		storage.unreachable = true;
 
 		var e = assertThrows(SearchSettingsException.class, () -> settings.read("books"));
-		assertThat(e.getCode(), is("index:settings:io_error"));
+		assertThat(e.getCode(), is("storage:io_error"));
 	}
 
 	/**

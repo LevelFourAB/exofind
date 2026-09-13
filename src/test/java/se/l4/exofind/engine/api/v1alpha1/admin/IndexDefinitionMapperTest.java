@@ -1745,7 +1745,7 @@ public class IndexDefinitionMapperTest {
 			() -> IndexDefinitionMapper.checkRepresentable(stored)
 		);
 
-		assertThat(e.getCode(), is("index:field:unrepresentable_type"));
+		assertThat(e.getCode(), is("index:field:type_unrepresentable"));
 	}
 
 	/**

@@ -70,21 +70,24 @@ public final class SynonymOverlay {
 	public static final float DEFAULT_BOOST = 0.8f;
 
 	private static final ErrorType UNKNOWN_FIELD =
-		ErrorType.withCode("index:settings:synonyms:unknown_field")
+		ErrorType.withCode("settings:synonyms:field_unknown")
+			.withStatus(400)
 			.withArguments("name", "field")
 			.withMessage(
 				"Synonym set `{{name}}` is applied to `{{field}}`, which the index does not have"
 			);
 
 	private static final ErrorType FIELD_NOT_TEXT =
-		ErrorType.withCode("index:settings:synonyms:field_not_text")
+		ErrorType.withCode("settings:synonyms:field_unsupported")
+			.withStatus(400)
 			.withArguments("name", "field")
 			.withMessage(
 				"Synonym set `{{name}}` is applied to `{{field}}`, which is not searched as text"
 			);
 
 	private static final ErrorType INVALID_BOOST =
-		ErrorType.withCode("index:settings:synonyms:invalid_boost")
+		ErrorType.withCode("settings:synonyms:boost_out_of_range")
+			.withStatus(400)
 			.withArguments("name")
 			.withMessage(
 				"Synonym set `{{name}}` has a boost that is not a positive number"

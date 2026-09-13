@@ -356,7 +356,7 @@ public class IndexSettingsResourceTest {
 			SearchSettingsNotFoundException.class,
 			() -> resource.get("products", null)
 		);
-		assertThat(e.getCode(), is("index:settings:not_found"));
+		assertThat(e.getCode(), is("settings:not_found"));
 	}
 
 	@Test
@@ -623,7 +623,7 @@ public class IndexSettingsResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:field_unknown"));
 	}
 
 	@Test
@@ -864,7 +864,7 @@ public class IndexSettingsResourceTest {
 			() -> patch("products", null, "ranking.tieBreakers[field=sales].field", "missing")
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("index:ranking:field_unknown"));
 	}
 
 	/**
@@ -880,7 +880,7 @@ public class IndexSettingsResourceTest {
 			() -> patch("products", null, "rankign", Map.of())
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:path_unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:patch:field_unknown"));
 	}
 
 	@Test
@@ -893,7 +893,7 @@ public class IndexSettingsResourceTest {
 			() -> patch("products", null, "ranking.signals[field=missing].weight", 2.0)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:no_match"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:patch:no_match"));
 	}
 
 	@Test
@@ -905,7 +905,7 @@ public class IndexSettingsResourceTest {
 			() -> patch("products", null, "ranking.signals", "not a list")
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("request:update:value_invalid"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:patch:value_invalid"));
 	}
 
 	@Test
@@ -1044,7 +1044,7 @@ public class IndexSettingsResourceTest {
 			() -> patch("products", null, "ranking.tieBreakers[field=sales].direction", "ascending")
 		);
 
-		assertThat(e.getCode(), is("index:settings:unrepresentable"));
+		assertThat(e.getCode(), is("settings:unrepresentable"));
 	}
 
 	@Test
@@ -1188,7 +1188,7 @@ public class IndexSettingsResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:synonyms:unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:synonyms:field_unknown"));
 	}
 
 	/**
@@ -1224,7 +1224,7 @@ public class IndexSettingsResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:synonyms:field_not_text"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:synonyms:field_unsupported"));
 	}
 
 	@Test
@@ -1255,7 +1255,7 @@ public class IndexSettingsResourceTest {
 			)
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:synonyms:invalid_boost"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:synonyms:boost_out_of_range"));
 	}
 
 	@Test
@@ -1284,7 +1284,7 @@ public class IndexSettingsResourceTest {
 		);
 
 		var error = e.getErrors().getFirst();
-		assertThat(error.getCode(), is("index:settings:synonyms:invalid_rule"));
+		assertThat(error.getCode(), is("settings:synonyms:rule_invalid"));
 		assertThat(error.getLocation().describe(), is("synonyms.merch.rules[0]"));
 	}
 
@@ -1479,7 +1479,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:settings:typo_exclusions:unknown_field")
+			is("settings:typo_exclusions:field_unknown")
 		);
 	}
 
@@ -1514,7 +1514,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:settings:typo_exclusions:field_not_text")
+			is("settings:typo_exclusions:field_unsupported")
 		);
 	}
 
@@ -1724,7 +1724,7 @@ public class IndexSettingsResourceTest {
 			() -> resource.put("boutique", null, reading("missing"))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:unknown_field"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:fields:field_unknown"));
 	}
 
 	/**
@@ -1742,7 +1742,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:settings:fields:interpret_unsupported")
+			is("settings:fields:interpret_unsupported")
 		);
 	}
 
@@ -1761,7 +1761,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(
 			e.getErrors().get(0).getCode(),
-			is("index:settings:fields:suggest_unsupported")
+			is("settings:fields:suggest_unsupported")
 		);
 	}
 
@@ -1856,7 +1856,7 @@ public class IndexSettingsResourceTest {
 			() -> resource.put("boutique", null, declaring("name", declared("Shoes", 1, null)))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_unsupported"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:fields:values_unsupported"));
 		assertThat(e.getErrors().get(0).getLocation().describe(), is("fields.name.values"));
 	}
 
@@ -1873,7 +1873,7 @@ public class IndexSettingsResourceTest {
 			))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_invalid"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:fields:values_invalid"));
 		assertThat(
 			e.getErrors().get(0).getLocation().describe(),
 			is("fields.colour.values[1].value")
@@ -1889,7 +1889,7 @@ public class IndexSettingsResourceTest {
 			() -> resource.put("boutique", null, declaring("colour", declared(" ", 1, null)))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_invalid"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:fields:values_invalid"));
 	}
 
 	/**
@@ -1908,7 +1908,7 @@ public class IndexSettingsResourceTest {
 			))
 		);
 
-		assertThat(e.getErrors().get(0).getCode(), is("index:settings:fields:values_invalid"));
+		assertThat(e.getErrors().get(0).getCode(), is("settings:fields:values_invalid"));
 		assertThat(
 			e.getErrors().get(0).getLocation().describe(),
 			is("fields.colour.values[0].labels")

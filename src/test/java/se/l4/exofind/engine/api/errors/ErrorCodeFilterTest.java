@@ -40,6 +40,17 @@ public class ErrorCodeFilterTest {
 	/** How the engine declares a code, which is the only place one is defined. */
 	private static final Pattern DECLARED = Pattern.compile("withCode\\(\"([^\"]+)\"\\)");
 
+	/** How the engine declares the status a code is answered with. */
+	private static final Pattern DECLARED_WITH_STATUS =
+		Pattern.compile("withCode\\(\"([^\"]+)\"\\)\\s*\\.withStatus\\((\\d+)\\)");
+
+	/**
+	 * The status of the envelope a validation failure is answered with. A code
+	 * inside its {@code errors} is answered with that status whatever status
+	 * the code declares for itself.
+	 */
+	private static final int ENVELOPE = 400;
+
 	@Test
 	void everyCodeAnEndpointNamesIsOneTheEngineReturns() throws Exception {
 		var declared = declaredCodes();
@@ -54,6 +65,52 @@ public class ErrorCodeFilterTest {
 		}
 
 		assertThat(unknown, is(empty()));
+	}
+
+	@Test
+	void everyCodeIsNamedWithTheStatusItDeclares() throws Exception {
+		/*
+		 * The status is declared beside the code and the mapper answers with
+		 * it, so an annotation naming another status describes an answer the
+		 * endpoint never gives. The one exception is a code carried inside the
+		 * errors of a validation failure, which is answered with the status of
+		 * the envelope.
+		 */
+		var declared = declaredStatuses();
+		var wrong = new ArrayList<String>();
+
+		for(var endpoint : ApiEndpoints.endpoints()) {
+			for(var code : endpoint.getAnnotationsByType(ReturnsError.class)) {
+				var status = declared.get(code.value());
+				if(status == null) continue;
+
+				if(code.status() != status && code.status() != ENVELOPE) {
+					wrong.add(
+						ApiEndpoints.describe(endpoint) + " names " + code.value()
+							+ " for " + code.status() + ", which is declared as " + status
+					);
+				}
+			}
+		}
+
+		assertThat(wrong, is(empty()));
+	}
+
+	@Test
+	void everyDeclaredCodeStatesItsStatus() throws Exception {
+		// A code without a status is answered with 500, which is right only
+		// for a failure of the node itself
+		var declared = declaredCodes();
+		var withStatus = declaredStatuses();
+		var unstated = new ArrayList<String>();
+
+		for(var code : declared) {
+			if(!withStatus.containsKey(code)) {
+				unstated.add(code);
+			}
+		}
+
+		assertThat(unstated, is(empty()));
 	}
 
 	@Test
@@ -214,6 +271,23 @@ public class ErrorCodeFilterTest {
 		}
 
 		return codes;
+	}
+
+	/** The status every code declares, read from the sources that declare them. */
+	private static Map<String, Integer> declaredStatuses() throws Exception {
+		var statuses = new java.util.HashMap<String, Integer>();
+
+		try(Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
+			for(var file : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+				var matcher = DECLARED_WITH_STATUS.matcher(Files.readString(file));
+
+				while(matcher.find()) {
+					statuses.put(matcher.group(1), Integer.parseInt(matcher.group(2)));
+				}
+			}
+		}
+
+		return statuses;
 	}
 
 	/** The path part of a key, which is what the document is keyed by. */

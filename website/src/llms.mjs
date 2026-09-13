@@ -100,7 +100,7 @@ What to expect from them:
   key replaces the document.
 - A field is usable only in the ways its definition enables. A \`field\` clause
   on a field without \`filter\`, or a sort on one without \`sort\`, answers
-  \`400\` with the code \`index:query:usage_not_enabled\`.
+  \`400\` with the code \`search:usage_unsupported\`.
 - A write is not searchable until the writer commits, which happens on its own
   within 5 seconds by default, or at once after
   \`POST /v1alpha1/admin/indexes/books/actions/commit\`. Every other node

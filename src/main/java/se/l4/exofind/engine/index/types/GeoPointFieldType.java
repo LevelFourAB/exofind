@@ -46,25 +46,29 @@ import se.l4.exofind.engine.query.matchers.Matcher;
  */
 public class GeoPointFieldType implements FieldType {
 	private static final ErrorType COLLATION_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:sort:collation_not_supported")
+		.withCode("index:field:sort:collation_unsupported")
+		.withStatus(400)
 		.withMessage("Collation means nothing when sorting a geo point field");
 
 	private static final ErrorType INVALID_VALUE = ErrorType
-		.withCode("index:update:geo_point:invalid_value")
+		.withCode("document:geo_point:value_invalid")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` holds a geo point, which has to be given as a latitude and a longitude"
 		);
 
 	private static final ErrorType OUT_OF_RANGE = ErrorType
-		.withCode("index:update:geo_point:out_of_range")
+		.withCode("document:geo_point:value_out_of_range")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` was given a point that is not on the earth - latitude is -90 to 90, longitude -180 to 180"
 		);
 
 	private static final ErrorType SORT_NEEDS_ORIGIN = ErrorType
-		.withCode("index:query:geo_point:sort_needs_origin")
+		.withCode("search:sort:origin_required")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` holds a geo point, which is ordered by distance from an origin - use a distance sort"

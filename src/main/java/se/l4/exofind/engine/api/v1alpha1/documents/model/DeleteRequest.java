@@ -38,8 +38,8 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 @Schema(
 	description = """
 		Which documents to remove. The request must name exactly one of `keys`, \
-		`query`, and `all` (`request:delete:target_required`, \
-		`request:delete:target_conflicting`).""",
+		`query`, and `all` (`document:delete:target_required`, \
+		`document:delete:target_conflicting`).""",
 	examples = { DeleteRequest.BY_KEYS, DeleteRequest.BY_QUERY, DeleteRequest.ALL }
 )
 public record DeleteRequest(
@@ -55,7 +55,7 @@ public record DeleteRequest(
 		Query clauses matching documents to delete, using search query clause \
 		syntax. Removes matching committed searchable documents and any \
 		uncommitted documents indexed since the last commit. The array requires \
-		at least one clause (`request:delete:query_empty`). To empty the index, \
+		at least one clause (`document:delete:query_empty`). To empty the index, \
 		send `all` instead.""")
 	List<Clause> query,
 
@@ -68,7 +68,7 @@ public record DeleteRequest(
 		description = """
 			BCP 47 locale tag used to match locale-specific fields, defaulting \
 			to each field's default locale. Valid only when specifying `query` \
-			(`request:delete:locale_without_query`).""",
+			(`document:delete:locale_without_query`).""",
 		examples = "sv"
 	)
 	String locale

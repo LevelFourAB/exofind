@@ -19,6 +19,7 @@ public class LiveGenerationMovedException extends IndexException {
 
 	private static final ErrorType TYPE =
 		ErrorType.withCode("index:generation:live_moved")
+			.withStatus(409)
 			.withArguments("index", "expected", "live")
 			.withMessage(
 				"The index `{{index}}` answers for the generation `{{live}}`"

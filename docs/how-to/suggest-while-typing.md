@@ -60,7 +60,7 @@ Before you begin, ensure you have:
 
    To disable suggestions for a field, set the path to `null`.
 
-   The server validates the fields against the active generation. Storing settings for a field that does not exist returns `index:settings:fields:unknown_field`. Storing settings for a field that is not a `string` with `facet`, or that has `hierarchy`, returns HTTP 400 `index:settings:fields:suggest_unsupported`.
+   The server validates the fields against the active generation. Storing settings for a field that does not exist returns `settings:fields:field_unknown`. Storing settings for a field that is not a `string` with `facet`, or that has `hierarchy`, returns HTTP 400 `settings:fields:suggest_unsupported`.
 
 3. Ask for suggestions from the search box on every keystroke:
 

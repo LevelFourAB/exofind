@@ -15,6 +15,7 @@ public class IndexNoPrimaryKeyException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:no_primary_key")
+		.withStatus(400)
 		.withArguments("index")
 		.withMessage(
 			"The index `{{index}}` has no primary key, so a document can not be named by one"

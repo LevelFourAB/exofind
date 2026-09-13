@@ -237,7 +237,7 @@ public record SearchSettingsDefinition(
 			in `user` mode, as a filter on the field. The field must be a \
 			`string` field with `filter` and `facet` and without `hierarchy`; \
 			otherwise the request returns \
-			`index:settings:fields:interpret_unsupported`. Carries no options. \
+			`settings:fields:interpret_unsupported`. Carries no options. \
 			See [Reading the values of a \
 			field](https://exofind.dev/reference/search-api/#reading-the-values-of-a-field).""")
 		Interpret interpret,
@@ -251,7 +251,7 @@ public record SearchSettingsDefinition(
 			and a search in `user` mode with `interpret` on the field reads a \
 			typed label as its value. The field must be a `string` field with \
 			`facet` and without `hierarchy`; otherwise the request returns \
-			`index:settings:fields:values_unsupported`. At most 10000 values \
+			`settings:fields:values_unsupported`. At most 10000 values \
 			per field. See [Field \
 			settings](https://exofind.dev/reference/admin-api/#field-settings).""")
 		List<DeclaredValue> values,
@@ -261,7 +261,7 @@ public record SearchSettingsDefinition(
 			through `POST /v1alpha1/indexes/{name}/suggest`. The field must \
 			be a `string` field with `facet` and without `hierarchy`; \
 			otherwise the request returns \
-			`index:settings:fields:suggest_unsupported`. Carries no options. \
+			`settings:fields:suggest_unsupported`. Carries no options. \
 			See [Suggesting what to search \
 			for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for).""")
 		Suggest suggest
@@ -318,7 +318,7 @@ public record SearchSettingsDefinition(
 				The value as the field stores it, which is what a facet counts \
 				and a filter matches. Required and unique within the field; \
 				otherwise the request returns \
-				`index:settings:fields:values_invalid`.""",
+				`settings:fields:values_invalid`.""",
 			examples = "S"
 		)
 		String value,
@@ -339,7 +339,7 @@ public record SearchSettingsDefinition(
 			locale, matched as closely as the tags tell apart, and the label \
 			of the field's default locale where its own has none. A tag that \
 			is not canonical, or a blank label, returns \
-			`index:settings:fields:values_invalid`.""")
+			`settings:fields:values_invalid`.""")
 		Map<String, String> labels
 	) {
 		/** The example value, as the JSON a caller writes. */

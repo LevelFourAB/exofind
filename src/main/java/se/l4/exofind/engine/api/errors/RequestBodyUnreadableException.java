@@ -15,7 +15,8 @@ import se.l4.exofind.engine.errors.ErrorType;
 public class RequestBodyUnreadableException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType TYPE = ErrorType.withCode("request:unreadable")
+	private static final ErrorType TYPE = ErrorType.withCode("request:body_unreadable")
+		.withStatus(400)
 		.withMessage("The request body could not be read to the end");
 
 	public RequestBodyUnreadableException(Throwable cause) {

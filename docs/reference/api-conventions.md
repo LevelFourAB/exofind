@@ -185,7 +185,7 @@ The status codes follow a consistent operational division:
 
 Status `400 Bad Request` covers:
 
-- Request body schema and validation failures, including a property no endpoint has (`request:unknown_property`) and a value that does not fit the property it is written at (`request:value_invalid`). A property the endpoint does not have is refused; the server never drops one and serves the rest of the request.
+- Request body schema and validation failures, including a property no endpoint has (`request:property_unknown`) and a value that does not fit the property it is written at (`request:value_invalid`). A property the endpoint does not have is refused; the server never drops one and serves the rest of the request.
 - Queries requesting missing or invalid index features, such as unknown fields, fields used in ways not configured in the definition, document lookups by key on indexes without a primary key, cursors used with a different sort order than the query that created them, or stored field requests on indexes that do not retain document source copies.
 - Unreadable or malformed request payloads.
 
@@ -194,7 +194,7 @@ Status `400 Bad Request` covers:
 Status `409 Conflict` covers:
 
 - No node is available to write the index (`indexer:unavailable`).
-- The index cannot be modified on the target node because the node lost the writer role during execution (`index:readonly`) or is currently synchronizing (`index:out-of-date`).
+- The index cannot be modified on the target node because the node lost the writer role during execution (`index:readonly`) or is currently synchronizing (`index:out_of_date`).
 - An index definition conflicts with documents already stored in the generation (`index:definition:incompatible`).
 - An index or definition requires an engine version newer than the node (`index:definition:unrepresentable`, `index:unsupported`).
 - The index currently has no live generation (`index:no_live_generation`).
@@ -221,7 +221,7 @@ Every failed request returns a JSON response matching the following structure:
   "message": "Request contains 2 errors",
   "errors": [
     {
-      "code": "index:field:invalid_primary_key_multiple",
+      "code": "index:field:primary_key:multiple_unsupported",
       "message": "Field `id` is marked as a primary key and multiple, primary keys can not have multiple values",
       "path": "id",
       "arguments": { "name": "id" }
@@ -256,4 +256,4 @@ A path starts at the root of the request body. A newline-delimited body carries 
 
 A field inside an `object` field is named by its own dotted path, so a `path` reaches it the same way a query does. You can paste the `path` of an error into a request that takes a field.
 
-Error codes use colon-separated namespaces (such as `index:field:invalid_name`). Error codes are stable across API versions and are never renamed or reused. For the complete error code list, see [Errors](errors.md).
+Error codes use colon-separated namespaces (such as `index:field:name_invalid`). Error codes are stable across API versions and are never renamed or reused. For the complete error code list, see [Errors](errors.md).

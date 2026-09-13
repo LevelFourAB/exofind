@@ -13,6 +13,7 @@ public class RegistryAuditUnavailableException extends IndexException {
 
 	private static final ErrorType UNAVAILABLE =
 		ErrorType.withCode("index:registry:audit_unavailable")
+			.withStatus(409)
 			.withMessage(
 				"The registry audit compares the registry with the object storage the"
 					+ " indexes live in, and this node stores locally - there is nothing"

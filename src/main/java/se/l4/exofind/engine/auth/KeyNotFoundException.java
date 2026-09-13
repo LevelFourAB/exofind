@@ -9,6 +9,7 @@ public class KeyNotFoundException extends AuthException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("auth:key:not_found")
+		.withStatus(404)
 		.withArguments("key")
 		.withMessage("There is no key with the id `{{key}}`");
 

@@ -55,55 +55,66 @@ public class VectorFieldType implements FieldType {
 	private static final int MAX_EF_CONSTRUCTION = 3200;
 
 	private static final ErrorType MISSING_DIMENSIONS = ErrorType
-		.withCode("index:field:vector:missing_dimensions")
+		.withCode("index:field:vector:dimensions_required")
+		.withStatus(400)
 		.withMessage("A vector field has to declare its dimensions");
 
 	private static final ErrorType INVALID_DIMENSIONS = ErrorType
-		.withCode("index:field:vector:invalid_dimensions")
+		.withCode("index:field:vector:dimensions_out_of_range")
+		.withStatus(400)
 		.withArguments("max")
 		.withMessage("The dimensions of a vector field have to be between 1 and {{max}}");
 
 	private static final ErrorType INVALID_M = ErrorType
-		.withCode("index:field:vector:invalid_hnsw_m")
+		.withCode("index:field:vector:hnsw_m_out_of_range")
+		.withStatus(400)
 		.withArguments("max")
 		.withMessage("The HNSW neighbour count `m` has to be between 1 and {{max}}");
 
 	private static final ErrorType INVALID_EF_CONSTRUCTION = ErrorType
-		.withCode("index:field:vector:invalid_hnsw_ef_construction")
+		.withCode("index:field:vector:hnsw_ef_construction_out_of_range")
+		.withStatus(400)
 		.withArguments("max")
 		.withMessage("The HNSW `ef_construction` has to be between 1 and {{max}}");
 
 	private static final ErrorType FILTER_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:vector:filter_not_supported")
+		.withCode("index:field:vector:filter_unsupported")
+		.withStatus(400)
 		.withMessage("A vector is searched by similarity, not filtered on as a value");
 
 	private static final ErrorType MULTIPLE_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:vector:multiple_not_supported")
+		.withCode("index:field:vector:multiple_unsupported")
+		.withStatus(400)
 		.withMessage("A vector field holds one vector per document");
 
 	private static final ErrorType LOCALES_NOT_SUPPORTED = ErrorType
-		.withCode("index:field:vector:locales_not_supported")
+		.withCode("index:field:vector:locales_unsupported")
+		.withStatus(400)
 		.withMessage("A vector field can not be locale specific");
 
 	private static final ErrorType INVALID_VALUE = ErrorType
-		.withCode("index:update:vector:invalid_value")
+		.withCode("document:vector:value_invalid")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage("Field `{{name}}` holds a vector, which has to be given as an array of floats");
 
 	private static final ErrorType WRONG_DIMENSIONS = ErrorType
-		.withCode("index:update:vector:wrong_dimensions")
+		.withCode("document:vector:dimensions_mismatch")
+		.withStatus(400)
 		.withArguments("name", "expected", "actual")
 		.withMessage(
 			"Field `{{name}}` is defined with {{expected}} dimensions, but the value has {{actual}}"
 		);
 
 	private static final ErrorType NOT_FINITE = ErrorType
-		.withCode("index:update:vector:not_finite")
+		.withCode("document:vector:value_not_finite")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage("Field `{{name}}` was given a vector with a value that is not a finite number");
 
 	private static final ErrorType ZERO_VECTOR = ErrorType
-		.withCode("index:update:vector:zero_vector")
+		.withCode("document:vector:value_zero")
+		.withStatus(400)
 		.withArguments("name")
 		.withMessage(
 			"Field `{{name}}` compares vectors by cosine, which is undefined for a vector of only zeros"

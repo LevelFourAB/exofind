@@ -16,6 +16,7 @@ public class IndexUnsupportedException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("index:unsupported")
+		.withStatus(409)
 		.withArguments("index", "features")
 		.withMessage(
 			"The index `{{index}}` needs features this node does not have: {{features}}."

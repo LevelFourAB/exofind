@@ -35,7 +35,7 @@ All request properties are optional. An empty request matches all documents in t
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `query` | Array | `[]` | Clauses that a matching document must satisfy. Clauses in the array are combined with an implicit `AND`. Evaluated clauses narrow all facet counts. If omitted, matches all documents. |
-| `filters` | Array | `[]` | Refinement clauses, specified as `field` clauses or `nested` clauses. Filters narrow hits, but facets on the filtered field exclude their own filter entries from counts by default (see [Facets](#facets)). Unsupported clause types return `search:filter:clause_invalid`. Clauses that score results return `search:filter:scores`. |
+| `filters` | Array | `[]` | Refinement clauses, specified as `field` clauses or `nested` clauses. Filters narrow hits, but facets on the filtered field exclude their own filter entries from counts by default (see [Facets](#facets)). Unsupported clause types return `search:filter:clause_unsupported`. Clauses that score results return `search:filter:scoring_unsupported`. |
 | `facets` | Array | `[]` | Fields to aggregate match counts for. See [Facets](#facets). If omitted, no facet counts are calculated. |
 | `sort` | Array | `[{"type": "score"}]` | Order in which results are returned. If omitted, results are sorted by relevance score in descending order. |
 | `signals` | Array | Index ranking signals | Document ranking signals used to adjust relevance scoring. Added to the ranking signals configured on the index unless `signalsMode` says otherwise. See [Signals](#signals). If omitted, uses the ranking signals configured on the index. |
@@ -65,7 +65,7 @@ Matches documents by the value of a single field:
 { "field": "category", "match": { "value": "fiction" } }
 ```
 
-The targeted field must be indexed for the requested matcher usage. If the field is not configured for that usage, the request returns `index:query:usage_not_enabled`.
+The targeted field must be indexed for the requested matcher usage. If the field is not configured for that usage, the request returns `search:usage_unsupported`.
 
 ### `text`
 
@@ -87,9 +87,9 @@ The `text` clause accepts the following options:
 - `interpret`: Reading of numbers, units, and field values in query text: `"auto"` (default) or `"off"`. See [Reading numbers and units](#reading-numbers-and-units) and [Reading the values of a field](#reading-the-values-of-a-field).
 - `combine`: Scope for multi-field term matching: `"term"` (default) or `"field"`.
 
-Phrase queries operate within a single field. In phrase queries, `combine` is ignored and terms are matched exactly as typed, regardless of field `typoTolerance`. Stopwords removed during text analysis leave empty positions: searching for `spring of 1962` matches that sequence, but searching for `spring 1962` does not. Fields defined only for `autocomplete` do not support phrase matching; queries omitting `fields` skip autocomplete-only fields, and explicitly targeting one returns `index:query:usage_not_enabled`.
+Phrase queries operate within a single field. In phrase queries, `combine` is ignored and terms are matched exactly as typed, regardless of field `typoTolerance`. Stopwords removed during text analysis leave empty positions: searching for `spring of 1962` matches that sequence, but searching for `spring 1962` does not. Fields defined only for `autocomplete` do not support phrase matching; queries omitting `fields` skip autocomplete-only fields, and explicitly targeting one returns `search:usage_unsupported`.
 
-The `slop` parameter allows intervening words between phrase terms without changing their relative order. For example, `silent spring` with `"slop": 1` matches `silent green spring`, but does not match `spring silent`. Closer terms rank higher than terms separated by more words. Setting `slop` above `0` with `"match": "all"` or `"match": "any"` returns `search:clause:slop_not_applicable`.
+The `slop` parameter allows intervening words between phrase terms without changing their relative order. For example, `silent spring` with `"slop": 1` matches `silent green spring`, but does not match `spring silent`. Closer terms rank higher than terms separated by more words. Setting `slop` above `0` with `"match": "all"` or `"match": "any"` returns `search:clause:slop_unsupported`.
 
 Under `"combine": "term"`, each term is evaluated across all targeted fields and scored in the highest-scoring field, allowing terms to appear in different fields. Document score is the sum of term scores. Under `"combine": "field"`, a single field must satisfy `match` on its own, and the document is scored by its single best-matching field.
 
@@ -128,7 +128,7 @@ The `join` option controls how parsed query parts are combined in `user` mode:
 
 Excluded terms (`-term`) always apply regardless of `join`. Filters read from query text (see [Reading numbers and units](#reading-numbers-and-units)) are included as parts combined by `join`. Under `"join": "any"`, a document matching either the remaining text or the read filter matches the query, and excluded terms still remove documents from both.
 
-Setting `join` with any `match` mode other than `"user"` returns `search:clause:join_not_applicable`.
+Setting `join` with any `match` mode other than `"user"` returns `search:clause:join_unsupported`.
 
 When `"join": "any"` is set, query relaxation is disabled and the response omits the `relaxed` object. See [Finding something rather than nothing](#finding-something-rather-than-nothing).
 
@@ -142,7 +142,7 @@ A `text` clause is read in any position within `query`: at the top level, inside
 
 A search can specify multiple `text` clauses with the same query text, such as across root-level fields and inside a `nested` clause over variant fields. Each clause is read and receives the filters that its position supports. If `text` clauses contain different text or specify different `interpret` targets, none is read.
 
-Inside a `nested` clause, a reading is a filter on the same list value that matched the text. Only numeric fields within that nested path can hold the filter. Declared fields outside the path are omitted from that position, and their words remain text. If no position in the search can hold a field, a number typed with its unit remains text. Specifying an `interpret` target outside the path of the `nested` clause returns `index:query:nested:not_in_path`. A `fallback` inside a `nested` clause is read for a list value that holds nothing on the target it stands in for.
+Inside a `nested` clause, a reading is a filter on the same list value that matched the text. Only numeric fields within that nested path can hold the filter. Declared fields outside the path are omitted from that position, and their words remain text. If no position in the search can hold a field, a number typed with its unit remains text. Specifying an `interpret` target outside the path of the `nested` clause returns `search:nested:field_not_inside`. A `fallback` inside a `nested` clause is read for a list value that holds nothing on the target it stands in for.
 
 A unit is declared on a numeric field (`int32`, `int64`, `float`, or `double`; see [Numeric fields](field-types.md#int32-int64-float-double)). A unit can be declared on a root field or on a numeric field inside an `object` field. Fields containing a wildcard `*` are not read.
 
@@ -182,10 +182,10 @@ To read only on specific targets, set `interpret` to an object `{ "fields": [ ta
 A target is an object with the following properties:
 
 - `field` (required): Target number field, as named in the index definition. A field inside a `nested` object is named by its dotted path (such as `prices.amount`). A field inside a flattened object or at the root is named the same way a `field` clause names it.
-- `when` (optional): Array of clauses that must hold where the number is read. For a field inside a `nested` list, the clauses must hold in the same value of the list as the number (such as `prices.list` equals `cust-17` alongside `prices.amount`). For a field at the root or inside a flattened object, the clauses must hold for the document. Accepts `field`, `text`, `and`, `or`, `not`, and `boost` clauses. Specifying a `nested`, `knn`, or `fuse` clause inside `when` returns `search:clause:interpret_when_unsupported`. Specifying a `when` clause naming a field outside the nested list returns `index:query:nested:not_in_path`.
-- `fallback` (optional): Array of fallback targets, each with the same target shape (including its own optional `when` and `fallback`). Fallbacks are read in order for documents that hold no value on earlier targets where `when` holds. For a nested target, this means the document has no value in the list where `when` holds and the field is set. Every target in a fallback chain must declare the same unit; specifying a fallback in another unit returns `index:query:interpret:fallback_unit`.
+- `when` (optional): Array of clauses that must hold where the number is read. For a field inside a `nested` list, the clauses must hold in the same value of the list as the number (such as `prices.list` equals `cust-17` alongside `prices.amount`). For a field at the root or inside a flattened object, the clauses must hold for the document. Accepts `field`, `text`, `and`, `or`, `not`, and `boost` clauses. Specifying a `nested`, `knn`, or `fuse` clause inside `when` returns `search:clause:interpret_when_unsupported`. Specifying a `when` clause naming a field outside the nested list returns `search:nested:field_not_inside`.
+- `fallback` (optional): Array of fallback targets, each with the same target shape (including its own optional `when` and `fallback`). Fallbacks are read in order for documents that hold no value on earlier targets where `when` holds. For a nested target, this means the document has no value in the list where `when` holds and the field is set. Every target in a fallback chain must declare the same unit; specifying a fallback in another unit returns `search:interpret:fallback_unit_mismatch`.
 
-Targets are validated on every search that names them, whether or not the query text contains a number. Naming a field that does not exist returns `index:query:field_not_found`. Naming a field that is not a number field or that declares no `unit` returns `index:query:interpret:no_unit`.
+Targets are validated on every search that names them, whether or not the query text contains a number. Naming a field that does not exist returns `search:field_unknown`. Naming a field that is not a number field or that declares no `unit` returns `search:interpret:unit_required`.
 
 Target selection rules when targets are specified:
 
@@ -416,12 +416,12 @@ The `fuse` clause is a top-N clause that matches at most `depth` results per ran
 
 Fusing rules and error conditions:
 
-- Specifying fewer than two rankings returns `search:clause:rankings_invalid`.
+- Specifying fewer than two rankings returns `search:clause:rankings_too_few`.
 - Specifying a ranking with no clauses returns `search:clause:ranking_empty`.
-- Setting a ranking `weight` below `0` or to a non-finite number returns `search:clause:weight_invalid`.
-- Setting `depth` below `1` returns `search:clause:depth_invalid`.
-- Setting `rankConstant` to `0`, below `0`, or to a non-finite number returns `search:clause:rank_constant_invalid`.
-- Specifying a `knn` clause inside a ranking of a search with [`hits`](#what-a-hit-stands-for) returns `search:hits:with_knn`.
+- Setting a ranking `weight` below `0` or to a non-finite number returns `search:clause:weight_out_of_range`.
+- Setting `depth` below `1` returns `search:clause:depth_out_of_range`.
+- Setting `rankConstant` to `0`, below `0`, or to a non-finite number returns `search:clause:rank_constant_out_of_range`.
+- Specifying a `knn` clause inside a ranking of a search with [`hits`](#what-a-hit-stands-for) returns `search:hits:knn_unsupported`.
 
 ### `nested`
 
@@ -438,7 +438,7 @@ Matches documents where a single element of a `nested` [`object` field](field-ty
 - `clauses`: Array of clauses evaluated within a single nested object value. An empty array matches any document where the object field is present.
 - `score`: Scoring mode for aggregating matching nested values: `"max"` (default), `"min"`, `"avg"`, or `"total"`.
 
-A `nested` clause must target a `nested` object field path. Using a `nested` clause on a flattened object field returns `index:query:nested:flattened`. Using a `nested` clause on a non-object field returns an error. Child clauses may include `field`, `text`, `knn`, `and`, `or`, `not`, and `boost`. Including a root-level clause such as another `nested` or a `fuse` clause returns `index:query:nested:unsupported_clause`.
+A `nested` clause must target a `nested` object field path. Using a `nested` clause on a flattened object field returns `search:nested:path_not_nested`. Using a `nested` clause on a non-object field returns an error. Child clauses may include `field`, `text`, `knn`, `and`, `or`, `not`, and `boost`. Including a root-level clause such as another `nested` or a `fuse` clause returns `search:nested:clause_unsupported`.
 
 A `text` clause inside a `nested` clause searches across all fields in the nested path when `fields` is omitted:
 
@@ -462,8 +462,8 @@ A `knn` clause inside a `nested` clause searches a vector field defined within t
 - `k` counts nested values rather than documents. A document that contains multiple nearest values occupies multiple positions in `k`.
 - The `knn` `filter` names fields inside the path and narrows candidate values before the nearest are picked.
 - Clauses placed beside the `nested` clause narrow afterwards and can return fewer than `k` results.
-- Naming a field of the index inside the `nested` clause returns `index:query:nested:not_in_path`.
-- Naming a nested vector field outside a `nested` clause returns `index:query:nested:outside`.
+- Naming a field of the index inside the `nested` clause returns `search:nested:field_not_inside`.
+- Naming a nested vector field outside a `nested` clause returns `search:nested:field_outside`.
 
 To return matched nested values as individual hits, set [`hits`](#what-a-hit-stands-for) to the nested path.
 
@@ -488,7 +488,7 @@ Increases the relevance score of documents that satisfy child clauses without ex
 - `weight`: Multiplier applied to matching documents. Values greater than `1` increase score; values between `0` and `1` decrease score.
 - `clauses`: Array of clauses required to apply the boost weight.
 
-Leaving out `weight`, or setting it below `0` or to a non-finite number, returns `search:clause:weight_invalid`.
+Leaving out `weight`, or setting it below `0` or to a non-finite number, returns `search:clause:weight_out_of_range`.
 
 ## Matchers
 
@@ -535,7 +535,7 @@ To sort by a field inside a `nested` [`object`](field-types.md#object), specify 
 
 Sorting uses only the nested values that matched the query's `nested` clauses. Clauses inside `or`, `not`, or `boost` clauses do not filter values for sorting. If a query contains no `nested` clauses on the path, all nested values are considered. For ascending sorts, the document is sorted by its lowest matching value; for descending sorts, by its highest matching value. Documents with no matching nested values use the `missing` behavior configured in the field definition.
 
-Specifying a `distance` sort on a nested object field returns `index:query:nested:sort_unsupported`.
+Specifying a `distance` sort on a nested object field returns `search:sort:nested_unsupported`.
 
 ## Signals
 
@@ -569,7 +569,7 @@ Omitting `signals` leaves the search to the index's ranking, whatever `signalsMo
 
 Ranking signals apply only when results are ordered by relevance. Providing an explicit `sort` overrides ranking signal ordering.
 
-Targeting an unknown field returns `index:query:field_not_found`. Targeting a field without sorting enabled returns `index:query:usage_not_enabled`. Specifying a ranking signal function unsupported by the field type returns `index:invalid-query-type`.
+Targeting an unknown field returns `search:field_unknown`. Targeting a field without sorting enabled returns `search:usage_unsupported`. Specifying a ranking signal function unsupported by the field type returns `search:matcher:type_unsupported`.
 
 ## Rescoring
 
@@ -599,8 +599,8 @@ Rescoring rules and error conditions:
 
 - The `rescore` block must contain at least one `boost` or `signals` entry. An empty block returns `search:rescore:empty`.
 - Omitting `window` returns `search:rescore:window_required`.
-- Setting `window` below `1` or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` returns `search:rescore:window_invalid`.
-- Setting `weight` below `0` or to a non-finite number returns `search:rescore:weight_invalid`.
+- Setting `window` below `1` or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` returns `search:rescore:window_out_of_range`.
+- Setting `weight` below `0` or to a non-finite number returns `search:rescore:weight_out_of_range`.
 - Specifying `rescore` on a search with [`hits`](#what-a-hit-stands-for) returns `search:rescore:hits_unsupported`.
 - Rescoring applies only when results are ordered by relevance. Providing an explicit `sort` overrides rescoring.
 - The [`explain` endpoint](#explaining-a-result) ignores `rescore` and explains only the first-pass score.
@@ -617,7 +617,7 @@ The window is ranked from the first result on every request. Paging works differ
 
 ## Facets
 
-Facets compute match counts for distinct values of specified fields. The target field must have `facet` enabled in its field definition; otherwise, the request returns `index:query:usage_not_enabled`.
+Facets compute match counts for distinct values of specified fields. The target field must have `facet` enabled in its field definition; otherwise, the request returns `search:usage_unsupported`.
 
 ```json
 "filters": [
@@ -631,9 +631,9 @@ Facets compute match counts for distinct values of specified fields. The target 
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `name` | String | Field name | Key used for the facet in the response. Required when faceting on the same field multiple times. Duplicate facet names return `search:facet:duplicate_name`. |
+| `name` | String | Field name | Key used for the facet in the response. Required when faceting on the same field multiple times. Duplicate facet names return `search:facet:name_duplicate`. |
 | `field` | String | Required | Target field to aggregate. |
-| `limit` | Integer | `10` | Maximum number of facet values to return, from 1 to `EXOFIND_SEARCH_MAX_FACET_VALUES` (default `1000`). Other values return `search:facet:limit_invalid`. |
+| `limit` | Integer | `10` | Maximum number of facet values to return, from 1 to `EXOFIND_SEARCH_MAX_FACET_VALUES` (default `1000`). Other values return `search:facet:limit_out_of_range`. |
 | `order` | String | `"count"` | Sort order of facet values: `"count"` (descending by count), `"value"` (ascending by value), or `"declared"` (the order configured in search settings, followed by undeclared values sorted by count). See [Declared values](admin-api.md#declared-values). |
 | `ranges` | Array | None | Array of range bucket definitions. See [Range buckets](#range-buckets). Cannot be combined with `limit` or `order` (`search:facet:ranges_conflicting`). |
 | `path` | String | Root | Starting path level for hierarchical fields. See [Counting down a tree](#counting-down-a-tree). |
@@ -677,9 +677,9 @@ Range rules:
 
 - A range bucket includes values from `from` (inclusive) up to `to` (exclusive).
 - Either `from` or `to` may be omitted for open-ended ranges, but not both (`search:facet:range_empty`).
-- `to` must be greater than `from` (`index:query:facet_range_empty`).
+- `to` must be greater than `from` (`search:facet:range_invalid`).
 - Maximum 1000 buckets per facet (`search:facet:ranges_too_many`).
-- Using `ranges` on unsupported field types returns `index:invalid-query-type`.
+- Using `ranges` on unsupported field types returns `search:matcher:type_unsupported`.
 
 The response returns range counts in the `buckets` array:
 
@@ -741,7 +741,7 @@ The response returns nested hierarchy levels:
 - `path`: The full path to the level, used in `under` filter matchers.
 - `limit`, `order`, and `totalValues`: Evaluated independently per hierarchy level.
 
-A document is counted once at each ancestor level in its path. Specifying `path` or `depth` on non-hierarchical fields returns `index:query:usage_not_enabled`. Combining `path` or `depth` with `ranges` returns `search:facet:ranges_on_a_tree`.
+A document is counted once at each ancestor level in its path. Specifying `path` or `depth` on non-hierarchical fields returns `search:usage_unsupported`. Combining `path` or `depth` with `ranges` returns `search:facet:ranges_with_tree`.
 
 ### Counting a value inside an object
 
@@ -776,7 +776,7 @@ POST /v1alpha1/indexes/{name}/facets/{field}/values
 
 The endpoint also has a generated page stating every field it accepts and returns. See [Search the values of a facet](https://exofind.dev/api/operations/searchfacetvalues/).
 
-The field must have `facet` enabled in its field definition; otherwise, the request returns `index:query:usage_not_enabled`. The request carries the `query` and `filters` of the search, and what the values start with:
+The field must have `facet` enabled in its field definition; otherwise, the request returns `search:usage_unsupported`. The request carries the `query` and `filters` of the search, and what the values start with:
 
 ```json
 {
@@ -793,7 +793,7 @@ The field must have `facet` enabled in its field definition; otherwise, the requ
 | `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. Filter entries on the facet's own field are left out of the counts. |
 | `prefix` | String | None | Prefix that returned values, or their labels in the request locale, must start with. If omitted or blank, returns all values. |
 | `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields and select labels for declared values, matching search request behavior. |
-| `limit` | Integer | `10` | Maximum number of values to return, from 1 to `EXOFIND_SEARCH_MAX_FACET_VALUES` (default `1000`). Other values return `search:facet:limit_invalid`. |
+| `limit` | Integer | `10` | Maximum number of values to return, from 1 to `EXOFIND_SEARCH_MAX_FACET_VALUES` (default `1000`). Other values return `search:facet:limit_out_of_range`. |
 | `order` | String | `"count"` | Sort order of the values: `"count"` (descending by count), `"value"` (ascending by value), or `"declared"` (the order configured in search settings, followed by undeclared values sorted by count). |
 
 The response returns the values in the same shape as the `values` of a facet:
@@ -818,7 +818,7 @@ Matching rules:
 - **String fields**: The prefix and the values are compared folded in case and Unicode form by the `normalize` filter of the field's [`autocomplete`](field-types.md#string) chain, or of the chain the engine builds for `autocomplete` when the field declares none. `rö` finds `Röd`. Accents are folded only when the chain holds an `asciiFolding` filter. See [Analysis](analysis.md).
 - **Declared labels**: The prefix is also compared, using the same folding rules, against the label of each declared value in the request locale. If the prefix matches a label, the endpoint returns the underlying value. For example, `rö` matches the value `red` when its Swedish label is `Röd`. See [Declared values](admin-api.md#declared-values).
 - **Number, boolean, and timestamp fields**: The prefix is compared with the value as a search response shows it, ignoring case. `19` finds every year of the nineties, and `2024-06` finds a month of timestamps.
-- **Hierarchical fields**: A field configured with `hierarchy` returns `index:query:facet_prefix_on_a_tree`.
+- **Hierarchical fields**: A field configured with `hierarchy` returns `search:facet:prefix_unsupported`.
 - **Counts**: The counts are the ones a facet of the same search answers. The query and the filters on other fields narrow them, and the filter entries on the facet's own field are left out. A search that relaxes its query counts under the relaxed query.
 - **Limits**: The `query` and `filters` count against `EXOFIND_SEARCH_MAX_CLAUSES` and `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH`, `limit` against `EXOFIND_SEARCH_MAX_FACET_VALUES`, and counting stops at `EXOFIND_SEARCH_TIMEOUT`, as for a search.
 - **Metrics**: The duration of these requests is measured by the `exofind.facet.values` timer, apart from searches. See [Metrics](metrics.md).
@@ -846,7 +846,7 @@ Suggestions come only from the fields the search settings opt in with `suggest` 
 | `text` | String | None | What has been typed so far. If omitted or blank, returns the most common values. |
 | `locale` | String | Field default | BCP-47 locale tag used to read locale-specific fields and to pick the labels of declared values, matching search request behavior. |
 | `filters` | Array | None | Refinement clauses, in the same shape as the `filters` of a search. A filter on a suggested field is left out of that field's own counts. |
-| `limit` | Integer | `5` | Maximum number of suggestions to return, from 1 to `EXOFIND_SUGGEST_MAX_LIMIT` (default `100`). Other values return `search:suggest:limit_invalid`. |
+| `limit` | Integer | `5` | Maximum number of suggestions to return, from 1 to `EXOFIND_SUGGEST_MAX_LIMIT` (default `100`). Other values return `search:suggest:limit_out_of_range`. |
 | `typos` | String | `"auto"` | Whether values one mistake away from the text may be suggested: `"auto"` or `"off"`. |
 
 The response returns the suggestions:
@@ -897,7 +897,7 @@ Highlighting returns matched text fragments for specified fields:
 }
 ```
 
-Fields must have highlighting enabled in their field definitions (`matching` or `autocomplete`). Requesting highlighting on an unconfigured field returns `index:query:usage_not_enabled`.
+Fields must have highlighting enabled in their field definitions (`matching` or `autocomplete`). Requesting highlighting on an unconfigured field returns `search:usage_unsupported`.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
@@ -913,7 +913,7 @@ Highlighting rules:
 - Locale-specific fields highlight the variant matched by the search.
 - Text beyond the first 10,000 characters of a field value is not evaluated for highlighting.
 - Highlighted text is not HTML-escaped.
-- A field below a `nested` list highlights only on value hits for that list. Naming a nested field on a search that returns document hits returns `index:query:nested:outside`. See [What a hit stands for](#what-a-hit-stands-for).
+- A field below a `nested` list highlights only on value hits for that list. Naming a nested field on a search that returns document hits returns `search:nested:field_outside`. See [What a hit stands for](#what-a-hit-stands-for).
 
 ## Matched values
 
@@ -927,14 +927,14 @@ Returns matched values of a `nested` [`object` field](field-types.md#object) for
 }
 ```
 
-Targeting a field that is not a `nested` object returns `index:query:matched:not_object`.
+Targeting a field that is not a `nested` object returns `search:matched:field_not_nested`.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `limit` | Integer | `3` | Maximum number of matched values to return per hit (1 to 100). |
 | `fields` | Array | All object fields | Field paths inside the nested object to include in each returned value. |
 
-Field paths in `fields` must reside under the target object path (`search:matched:field_not_inside`) and exist in the schema (`index:query:field_not_found`). If the index has [document source](field-types.md#document-source) set to `none`, a named field must be `stored` (`index:query:usage_not_enabled`). Naming a child object returns `index:query:source_not_kept`.
+Field paths in `fields` must reside under the target object path (`search:matched:field_not_inside`) and exist in the schema (`search:field_unknown`). If the index has [document source](field-types.md#document-source) set to `none`, a named field must be `stored` (`search:usage_unsupported`). Naming a child object returns `search:source_not_kept`.
 
 Response format under each hit:
 
@@ -958,7 +958,7 @@ Setting `hits` causes each matched value of a `nested` [`object` field](field-ty
 "hits": { "path": "variants" }
 ```
 
-When `hits` is configured, totals count matching nested values, facets count value hits, and pagination cursors step through values. Targeting a field that is not a `nested` object returns `index:query:hits:not_object`.
+When `hits` is configured, totals count matching nested values, facets count value hits, and pagination cursors step through values. Targeting a field that is not a `nested` object returns `search:hits:path_not_nested`.
 
 Adding `when` narrows expansion to the documents it matches, leaving the rest as document hits. See [Expanding only some documents](#expanding-only-some-documents).
 
@@ -968,7 +968,7 @@ Adding `when` narrows expansion to the documents it matches, leaving the rest as
 | `fields` | Array | All object fields | Dotted field paths inside the nested object to return in `value`. |
 | `when` | Array | All matching documents | Clauses selecting which documents expand into value hits; other matching documents return as document hits. See [Expanding only some documents](#expanding-only-some-documents). |
 
-Field names in `fields` must be prefixed by `path` (`search:hits:field_not_inside`) and exist in the index (`index:query:field_not_found`). If document source is `none`, a named field must be `stored` (`index:query:usage_not_enabled`). Naming a child object returns `index:query:source_not_kept`.
+Field names in `fields` must be prefixed by `path` (`search:hits:field_not_inside`) and exist in the index (`search:field_unknown`). If document source is `none`, a named field must be `stored` (`search:usage_unsupported`). Naming a child object returns `search:source_not_kept`.
 
 Hit response structure:
 
@@ -991,16 +991,16 @@ Hit response structure:
 
 The identity of a value hit is `id` combined with `key` where a key is declared, and `id` combined with `index` otherwise. The `key` survives a reindex, while `index` does not because reindexing can reorder values. Cursors over value hits still step by position.
 
-Value hit scoring combines the parent document score (including ranking signals) with the nested value's clause score. `sort` can order by `score` or by fields within the nested object path. Specifying index root fields in `sort` returns `index:query:hits:sort_unsupported`; specifying distance sort returns `search:hits:distance_sort`. Index tie-breaker sorts are ignored.
+Value hit scoring combines the parent document score (including ranking signals) with the nested value's clause score. `sort` can order by `score` or by fields within the nested object path. Specifying index root fields in `sort` returns `search:hits:sort_unsupported`; specifying distance sort returns `search:hits:sort_unsupported`. Index tie-breaker sorts are ignored.
 
 Setting `hits` cannot be combined with:
 
-- `matched` (`search:hits:with_matched`)
-- `knn` clauses on a field of the index (`search:hits:with_knn`)
+- `matched` (`search:hits:matched_unsupported`)
+- `knn` clauses on a field of the index (`search:hits:knn_unsupported`)
 
 A `knn` clause inside a `nested` clause for the same path is allowed, and makes the nearest values the hits. See [Searching vectors inside a nested path](#searching-vectors-inside-a-nested-path).
 
-`highlight` can name fields inside `path`, and each value hit returns fragments cut from its own value. Naming any other field returns `search:hits:with_highlight`. A document returning as a document hit under `when` carries no fragments. See [Highlight matches inside sub-documents](../how-to/use-sub-documents.md#highlight-matches-inside-sub-documents).
+`highlight` can name fields inside `path`, and each value hit returns fragments cut from its own value. Naming any other field returns `search:hits:highlight_field_not_inside`. A document returning as a document hit under `when` carries no fragments. See [Highlight matches inside sub-documents](../how-to/use-sub-documents.md#highlight-matches-inside-sub-documents).
 
 ### Expanding only some documents
 
@@ -1013,11 +1013,11 @@ Specifying `when` restricts value expansion to documents that match the `when` c
 }
 ```
 
-The `when` array accepts `field` and `nested` clauses combined with an implicit `AND`. Scoring clauses are not permitted. Unsupported clause types return `search:hits:when_clause_invalid`; clauses that score return `search:hits:when_scores`. Both errors point to `hits.when[<index>]` in the request body. If `when` is omitted, every matching document expands.
+The `when` array accepts `field` and `nested` clauses combined with an implicit `AND`. Scoring clauses are not permitted. Unsupported clause types return `search:hits:when_clause_unsupported`; clauses that score return `search:hits:when_scoring_unsupported`. Both errors point to `hits.when[<index>]` in the request body. If `when` is omitted, every matching document expands.
 
 When `when` is configured:
 
-- **Sorting**: Mixed result pages can only be sorted by `score`. Field sorts return `search:hits:when_field_sort` (pointing to `sort[<index>]`), or `index:query:hits:when_sort_unsupported` when calling the engine directly. Distance sorts return `search:hits:distance_sort`.
+- **Sorting**: Mixed result pages can only be sorted by `score`. Field sorts return `search:hits:when_sort_unsupported` (pointing to `sort[<index>]`), or `search:hits:when_sort_unsupported` when calling the engine directly. Distance sorts return `search:hits:sort_unsupported`.
 - **Scoring**: Every hit receives its parent document relevance score. Nested value clause scores are not added.
 - **Facets**: Facet counts aggregate matching documents rather than hits.
 - **Totals**: The `total` property counts hits, counting expanded documents once per matching nested value. The response includes a `documents` object with `count` and `exact` fields reporting the total count of matching documents.
@@ -1202,17 +1202,17 @@ The duration of explanations is measured by the `exofind.explain` timer. See [Me
 | `400` | Search error codes | The request body is not a valid search request. Returns the same error codes as `POST .../search`. |
 | `401` | Authentication errors | Request lacks valid authentication. |
 | `403` | Authorization errors | Missing the `search` permission. |
-| `404` | `index:explain:document_not_found` | No document exists with the specified `key`. |
-| `404` | `index:explain:value_not_found` | The document contains no value at `index` along the `hits.path`. |
+| `404` | `search:explain:document_not_found` | No document exists with the specified `key`. |
+| `404` | `search:explain:value_not_found` | The document contains no value at `index` along the `hits.path`. |
 | `409` | `index:no_live_generation` | No live index generation is available. |
 | `503` | `index:closed` | The index is closed. |
 | `503` | `search:timeout` | The search behind the explanation ran longer than `EXOFIND_SEARCH_TIMEOUT`. |
 
 ## Paging rules
 
-- `offset` plus `limit` cannot exceed `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, and a request whose page ends past the cap returns `search:page:too_deep` even when its `offset` is below it.
+- `offset` plus `limit` cannot exceed `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, and a request whose page ends past the cap returns `search:paging_too_deep` even when its `offset` is below it.
 - `next` and `previous` cursors encode result positions rather than count offsets. Cursor navigation is uncapped by depth. Cursors are bound to the sort configuration of the original query; using a cursor with a different sort returns `search:cursor:sort_mismatch`.
-- A cursor a request cannot be resumed from returns one of three codes: `search:cursor:invalid` when the engine cannot read the token, `search:cursor:sort_mismatch` when it was taken under a different sort, and `index:query:invalid_cursor` when it was taken under this sort but no longer names a position in it, which a `sort` field that changed type in the index definition leaves behind. All three are HTTP `400`, and all three are answered by starting again from the first page.
+- A cursor a request cannot be resumed from returns one of three codes: `search:cursor:invalid` when the engine cannot read the token, `search:cursor:sort_mismatch` when it was taken under a different sort, and `search:cursor:stale` when it was taken under this sort but no longer names a position in it, which a `sort` field that changed type in the index definition leaves behind. All three are HTTP `400`, and all three are answered by starting again from the first page.
 - A cursor says there may be results that way, not that there are. A page reached by `after` or `before` is a window around a position, and the engine does not count what lies outside it, so a full window always carries both cursors. Following one can answer an empty window with no hits - walking back to the first page and asking for `previous` again is the common way to reach one. A page reached by `offset` is counted, and there both cursors are exact.
 - Cursors inside `pages` encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
 - `pages` can be combined with `offset` or page cursors, but cannot be combined with `after` or `before`.
@@ -1224,15 +1224,15 @@ A node caps what one request may ask it to do. Each cap is a configuration varia
 
 | Setting | Applies to | Error code |
 |---|---|---|
-| `EXOFIND_SEARCH_MAX_LIMIT` | `limit` | `search:limit:invalid` |
-| `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | `offset` plus `limit` | `search:page:too_deep` |
-| `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | `rescore.window` | `search:rescore:window_invalid` |
-| `EXOFIND_SEARCH_MAX_KNN_K` | `k` of a `knn` clause | `search:clause:k_invalid` |
-| `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_invalid` |
-| `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of an interpret target, counted together | `search:query:too_many_clauses` |
-| `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Nesting of clauses inside clauses, and of an interpret target inside a `fallback` | `search:query:too_deep` |
-| `EXOFIND_SEARCH_MAX_FACET_VALUES` | `limit` of a facet, counted beside a search or asked for on its own | `search:facet:limit_invalid` |
-| `EXOFIND_SUGGEST_MAX_LIMIT` | `limit` of a suggest request | `search:suggest:limit_invalid` |
+| `EXOFIND_SEARCH_MAX_LIMIT` | `limit` | `search:limit_out_of_range` |
+| `EXOFIND_SEARCH_MAX_PAGE_DEPTH` | `offset` plus `limit` | `search:paging_too_deep` |
+| `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | `rescore.window` | `search:rescore:window_out_of_range` |
+| `EXOFIND_SEARCH_MAX_KNN_K` | `k` of a `knn` clause | `search:clause:k_out_of_range` |
+| `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_out_of_range` |
+| `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of an interpret target, counted together | `search:clauses_too_many` |
+| `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Nesting of clauses inside clauses, and of an interpret target inside a `fallback` | `search:clauses_too_deep` |
+| `EXOFIND_SEARCH_MAX_FACET_VALUES` | `limit` of a facet, counted beside a search or asked for on its own | `search:facet:limit_out_of_range` |
+| `EXOFIND_SUGGEST_MAX_LIMIT` | `limit` of a suggest request | `search:suggest:limit_out_of_range` |
 
 Each of these returns `400`, and the `path` of the error names where in the body the request went over. A request over `EXOFIND_SEARCH_MAX_CLAUSES` or `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` is answered with that error alone; the rest of the body is not read.
 

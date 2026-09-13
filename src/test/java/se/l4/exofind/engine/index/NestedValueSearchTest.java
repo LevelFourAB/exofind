@@ -142,7 +142,7 @@ public class NestedValueSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:unsupported_clause"));
+		assertThat(e.getCode(), is("search:nested:clause_unsupported"));
 	}
 
 	@Test
@@ -269,7 +269,7 @@ public class NestedValueSearchTest extends AbstractIndexTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:sort_unsupported"));
+		assertThat(e.getCode(), is("search:sort:nested_unsupported"));
 	}
 
 	@Test

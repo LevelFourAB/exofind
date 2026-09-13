@@ -240,7 +240,7 @@ public class IndexLocalesTest {
 			)
 		);
 
-		assertThat(e.getCode(), is("index:field:locales:not_declared"));
+		assertThat(e.getCode(), is("index:field:locales:locale_unknown"));
 		assertThat(e.getArguments().get("locale"), is("fr"));
 	}
 
@@ -251,7 +251,7 @@ public class IndexLocalesTest {
 			Map.of("name", string(new FieldDefinition.Locales("fr", null, null, null)))
 		);
 
-		assertThat(e.getCode(), is("index:field:locales:not_declared"));
+		assertThat(e.getCode(), is("index:field:locales:locale_unknown"));
 		assertThat(e.getArguments().get("locale"), is("fr"));
 	}
 

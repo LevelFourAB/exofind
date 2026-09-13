@@ -144,7 +144,7 @@ public class NestedVectorSearchTest extends AbstractIndexTest {
 			() -> search(index, Query.nested("chunks", Query.knn("summary", X, 2)))
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:not_in_path"));
+		assertThat(e.getCode(), is("search:nested:field_not_inside"));
 	}
 
 	@Test
@@ -156,7 +156,7 @@ public class NestedVectorSearchTest extends AbstractIndexTest {
 			() -> search(index, Query.knn("chunks.embedding", X, 2))
 		);
 
-		assertThat(e.getCode(), is("index:query:nested:outside"));
+		assertThat(e.getCode(), is("search:nested:field_outside"));
 	}
 
 	/**

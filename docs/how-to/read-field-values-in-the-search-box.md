@@ -50,7 +50,7 @@ Before you begin, ensure you have:
    }
    ```
 
-   The server validates the fields against the active generation. Naming a field that does not exist returns `400 Bad Request` with `index:settings:fields:unknown_field`. Naming a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`, returns `index:settings:fields:interpret_unsupported`.
+   The server validates the fields against the active generation. Naming a field that does not exist returns `400 Bad Request` with `settings:fields:field_unknown`. Naming a field that is not a `string` field with `filter` and `facet`, or that has `hierarchy`, returns `settings:fields:interpret_unsupported`.
 
    Settings take effect immediately on the answering node and within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default: `10s`) on other nodes.
 

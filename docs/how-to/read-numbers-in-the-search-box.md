@@ -149,9 +149,9 @@ Before you begin, ensure you have:
 
    Each target object accepts the following properties:
 
-   - `field`: The number field, named as in the index definition or using its dotted path for a nested field. Naming a field that declares no `unit` or is not a number field returns `index:query:interpret:no_unit`.
+   - `field`: The number field, named as in the index definition or using its dotted path for a nested field. Naming a field that declares no `unit` or is not a number field returns `search:interpret:unit_required`.
    - `when`: Optional clauses that must hold where the number is read. For nested lists, the clauses must hold in the same value of the list as the number.
-   - `fallback`: Optional fallback targets read in order for documents with no value on earlier targets. Every target in a fallback chain must declare the same unit, or the index returns `index:query:interpret:fallback_unit`.
+   - `fallback`: Optional fallback targets read in order for documents with no value on earlier targets. Every target in a fallback chain must declare the same unit, or the index returns `search:interpret:fallback_unit_mismatch`.
 
    In this example, the rain jacket matches on the customer price of 89, the rain boots match through the fallback on the store price of 79, and the rain hat does not match because its customer price of 149 exists and is not below 100.
 

@@ -15,17 +15,20 @@ import se.l4.exofind.engine.index.IndexException;
 public class SearchSettingsException extends IndexException {
 	private static final long serialVersionUID = 1L;
 
-	private static final ErrorType UNAVAILABLE = ErrorType.withCode("index:settings:unavailable")
+	private static final ErrorType UNAVAILABLE = ErrorType.withCode("storage:unavailable")
+		.withStatus(409)
 		.withMessage(
 			"This node has nowhere to keep search settings and cannot manage them"
 		);
 
-	private static final ErrorType CONFLICT = ErrorType.withCode("index:settings:conflict")
+	private static final ErrorType CONFLICT = ErrorType.withCode("storage:conflict")
+		.withStatus(409)
 		.withMessage(
 			"The settings were changed by someone else while this change was being made"
 		);
 
-	private static final ErrorType IO_ERROR = ErrorType.withCode("index:settings:io_error")
+	private static final ErrorType IO_ERROR = ErrorType.withCode("storage:io_error")
+		.withStatus(409)
 		.withMessage("The settings could not be read from or written to storage");
 
 	private SearchSettingsException(ErrorType type) {

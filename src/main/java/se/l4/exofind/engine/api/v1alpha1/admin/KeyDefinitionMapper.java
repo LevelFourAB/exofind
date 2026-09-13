@@ -33,23 +33,28 @@ import se.l4.exofind.engine.errors.ValidationException;
 public final class KeyDefinitionMapper {
 	private static final ErrorType GRANTS_REQUIRED =
 		ErrorType.withCode("auth:key:grants_required")
+			.withStatus(400)
 			.withMessage("A key needs at least one grant, one with none could do nothing");
 
 	private static final ErrorType PERMISSIONS_REQUIRED =
 		ErrorType.withCode("auth:key:permissions_required")
+			.withStatus(400)
 			.withMessage("A grant needs a role or a list of permissions");
 
-	private static final ErrorType UNKNOWN_ROLE = ErrorType.withCode("auth:key:unknown_role")
+	private static final ErrorType UNKNOWN_ROLE = ErrorType.withCode("auth:key:role_unknown")
+		.withStatus(400)
 		.withArguments("role", "roles")
 		.withMessage("There is no role `{{role}}`, it has to be one of {{roles}}");
 
 	private static final ErrorType UNKNOWN_PERMISSION =
-		ErrorType.withCode("auth:key:unknown_permission")
+		ErrorType.withCode("auth:key:permission_unknown")
+			.withStatus(400)
 			.withArguments("permission")
 			.withMessage("There is no permission `{{permission}}`");
 
 	private static final ErrorType INDEXES_REQUIRED =
 		ErrorType.withCode("auth:key:indexes_required")
+			.withStatus(400)
 			.withArguments("permissions")
 			.withMessage(
 				"{{permissions}} apply to one index each, so the grant has to say which"
@@ -57,24 +62,28 @@ public final class KeyDefinitionMapper {
 			);
 
 	private static final ErrorType INDEXES_NOT_USED =
-		ErrorType.withCode("auth:key:indexes_not_used")
+		ErrorType.withCode("auth:key:indexes_unsupported")
+			.withStatus(400)
 			.withMessage(
 				"No permission of this grant applies to one index, so `indexes` would not"
 					+ " narrow anything the grant allows. Leave it out"
 			);
 
 	private static final ErrorType INVALID_INDEX_PATTERN =
-		ErrorType.withCode("auth:key:invalid_index_pattern")
+		ErrorType.withCode("auth:key:index_pattern_invalid")
+			.withStatus(400)
 			.withArguments("pattern")
 			.withMessage(
 				"`{{pattern}}` is not an index name or a prefix followed by `*`"
 			);
 
-	private static final ErrorType INVALID_EXPIRY = ErrorType.withCode("auth:key:invalid_expiry")
+	private static final ErrorType INVALID_EXPIRY = ErrorType.withCode("auth:key:expiry_invalid")
+		.withStatus(400)
 		.withArguments("value")
 		.withMessage("`{{value}}` is not an ISO-8601 timestamp");
 
 	private static final ErrorType EXPIRY_IN_PAST = ErrorType.withCode("auth:key:expiry_in_past")
+		.withStatus(400)
 		.withArguments("value")
 		.withMessage(
 			"`{{value}}` has already passed, so the key would be refused as lapsed from"

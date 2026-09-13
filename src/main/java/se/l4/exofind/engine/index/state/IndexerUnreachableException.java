@@ -16,6 +16,7 @@ public class IndexerUnreachableException extends EngineException {
 	private static final long serialVersionUID = 1L;
 
 	private static final ErrorType TYPE = ErrorType.withCode("indexer:unreachable")
+		.withStatus(502)
 		.withArguments("reason")
 		.withMessage("The indexer could not be reached: {{reason}}");
 
