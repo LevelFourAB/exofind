@@ -1,7 +1,6 @@
 package se.l4.exofind.engine.index;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -24,7 +23,6 @@ import org.eclipse.collections.api.map.primitive.LongLongMap;
 
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.Query;
-import se.l4.exofind.engine.query.SearchResult;
 
 /**
  * What counting a facet has to know about a reader before it can count, and
@@ -41,18 +39,9 @@ import se.l4.exofind.engine.query.SearchResult;
  *
  * What a facet counted says just as little about any one search: the same
  * facet counted over the same clauses against the same reader answers the
- * same counts every time, and real traffic asks the same few scopes over and
- * over - the category pages and the common filters of a shop. So what a facet
- * answered is kept per reader under the scope it was counted over, see
- * {@link Scope}, and the next search asking for it is answered without a
- * walk. The shape of a scope is the caller's to choose, so the entries under
- * one reader are bounded, the least recently asked for going first. The
- * total of a scope is kept the same way, so a search every facet of which is
- * answered from here collects nothing at all.
- *
- * A search cut short by its {@link SearchDeadline} counted part of the index,
- * and nothing of it is kept: an entry answers as the whole of the reader, and
- * what was collected over a spent budget is not that.
+ * same counts every time. What a facet answered is kept in the
+ * {@link FacetScopeCache} of the node, under the reader and the {@link Scope}
+ * it was counted over.
  *
  * What a segment holds is fixed for even longer than a reader: a segment is
  * never changed, only merged away, so what is read out of one alone - the
@@ -98,30 +87,11 @@ import se.l4.exofind.engine.query.SearchResult;
  * gauge a node reports. A deployment holding hundreds of indexes reads that
  * gauge to see what warming every open reader costs it.
  *
- * The {@code exofind.facets.scope-cache} system property (default {@code true})
- * turns off what is kept per scope, both the counts and the totals. It is not a
- * configuration setting and a node has no reason to set it: it exists for
- * benchmarks, which repeat one request against one reader and would otherwise
- * measure a map lookup instead of counting. The per-segment caches stay on
- * either way, as a node has those warm too.
+ * The per-segment caches here stay on whatever the {@code
+ * exofind.facets.scope-cache} system property {@link FacetScopeCache} reads
+ * says, as a node has those warm too.
  */
 final class FacetStates {
-	/**
-	 * Whether what a facet answered over a scope is kept, read once when the
-	 * class is loaded - see the class comment.
-	 */
-	private static final boolean SCOPE_CACHE = Boolean.parseBoolean(
-		System.getProperty("exofind.facets.scope-cache", "true")
-	);
-
-	/**
-	 * How many scopes one reader keeps answers for, counts and totals each.
-	 * The shape of a scope is the caller's to choose, so the entries under
-	 * one reader are bounded rather than trusted to be few; past the bound
-	 * the scope asked for least recently goes.
-	 */
-	private static final int SCOPE_LIMIT = 1024;
-
 	/**
 	 * The ordinals of one field's segments lined up against one another, per
 	 * reader and field - see {@link #stringOrdsOf}. An entry is the build
@@ -132,29 +102,12 @@ final class FacetStates {
 		new ConcurrentHashMap<>();
 
 	/**
-	 * What one facet answered over one scope, per reader - see
-	 * {@link #scopeCountsOf}.
-	 */
-	private static final Map<IndexReader.CacheKey, Recent<ScopeKey, SearchResult.Facet>> scopeCounts =
-		new ConcurrentHashMap<>();
-
-	/**
-	 * How many matches one scope holds, per reader - see
-	 * {@link #scopeTotalOf}.
-	 */
-	private static final Map<IndexReader.CacheKey, Recent<Scope, Long>> scopeTotals =
-		new ConcurrentHashMap<>();
-
-	/**
 	 * What one segment counted for everything the reader holds, per segment
 	 * reader and by what was counted - see {@link #segmentCountsOf}.
 	 */
 	private static final Map<IndexReader.CacheKey, Map<SegmentKey, Object>> segmentCounts =
 		new ConcurrentHashMap<>();
 
-	private static final LongAdder scopeHits = new LongAdder();
-	private static final LongAdder scopeMisses = new LongAdder();
-	private static final LongAdder scopeEvictions = new LongAdder();
 	private static final LongAdder segmentHits = new LongAdder();
 	private static final LongAdder segmentMisses = new LongAdder();
 
@@ -728,89 +681,13 @@ final class FacetStates {
 	}
 
 	/**
-	 * Get what the given facet answered over the given scope, or {@code null}
-	 * where nothing was kept - see {@link #keepScopeCounts}.
-	 *
-	 * @param reader
-	 * @param scope
-	 *   the scope the facet is counted over
-	 * @param facet
-	 * @return
-	 */
-	static SearchResult.Facet scopeCountsOf(IndexReader reader, Scope scope, Facet facet) {
-		if(!SCOPE_CACHE) {
-			scopeMisses.increment();
-			return null;
-		}
-
-		var helper = reader.getReaderCacheHelper();
-		if(helper == null) {
-			scopeMisses.increment();
-			return null;
-		}
-
-		var kept = scopeCounts.get(helper.getKey());
-		var counts = kept == null ? null : kept.get(new ScopeKey(scope, shapeOf(facet)));
-		if(counts == null) {
-			scopeMisses.increment();
-		} else {
-			scopeHits.increment();
-		}
-
-		return counts;
-	}
-
-	/**
-	 * Keep what a facet answered over a scope, for as long as the reader is
-	 * open and the scope stays among the {@code SCOPE_LIMIT} most recently
-	 * asked for. Not kept for a reader that cannot say when it closes, and
-	 * not kept when the search has run past its {@link SearchDeadline}, as
-	 * the counts then describe part of the index.
-	 *
-	 * @param reader
-	 * @param scope
-	 *   the scope the facet was counted over
-	 * @param facet
-	 * @param counts
-	 */
-	static void keepScopeCounts(
-		IndexReader reader,
-		Scope scope,
-		Facet facet,
-		SearchResult.Facet counts
-	) {
-		if(!SCOPE_CACHE) {
-			return;
-		}
-
-		var helper = reader.getReaderCacheHelper();
-		if(helper == null || SearchDeadline.exceeded()) {
-			return;
-		}
-
-		var key = helper.getKey();
-		var kept = scopeCounts.get(key);
-		if(kept == null) {
-			kept = scopeCounts.computeIfAbsent(key, ignored -> new Recent<>());
-
-			/*
-			 * Registered against the key rather than against the map, so a
-			 * reader that closed while this was being built drops what was put
-			 * under it instead of leaving it behind.
-			 */
-			helper.addClosedListener(scopeCounts::remove);
-		}
-
-		kept.put(new ScopeKey(scope, shapeOf(facet)), counts);
-	}
-
-	/**
 	 * The part of a facet that decides what it counts: everything but the
 	 * name the answer is keyed by and the filters it leaves out, which have
 	 * done their work by the time the scope is known. Two facets alike in
-	 * this answer alike over one scope, whatever they are called.
+	 * this answer alike over one scope, whatever they are called - what the
+	 * {@link FacetScopeCache} keys an answer by.
 	 */
-	private static Facet shapeOf(Facet facet) {
+	static Facet shapeOf(Facet facet) {
 		return new Facet(
 			facet.field(),
 			facet.field(),
@@ -823,59 +700,6 @@ final class FacetStates {
 			facet.prefix(),
 			facet.prefixEdits()
 		);
-	}
-
-	/**
-	 * Get how many matches the given scope holds, or {@code null} where
-	 * nothing was kept - see {@link #keepScopeTotal}.
-	 *
-	 * @param reader
-	 * @param scope
-	 * @return
-	 */
-	static Long scopeTotalOf(IndexReader reader, Scope scope) {
-		if(!SCOPE_CACHE) {
-			return null;
-		}
-
-		var helper = reader.getReaderCacheHelper();
-		if(helper == null) {
-			return null;
-		}
-
-		var kept = scopeTotals.get(helper.getKey());
-		return kept == null ? null : kept.get(scope);
-	}
-
-	/**
-	 * Keep how many matches a scope holds, for as long as the reader is open
-	 * and the scope stays among the {@code SCOPE_LIMIT} most recently asked
-	 * for. Not kept for a reader that cannot say when it closes, and not kept
-	 * when the search has run past its {@link SearchDeadline}, as the total is
-	 * then of part of the index.
-	 *
-	 * @param reader
-	 * @param scope
-	 * @param total
-	 */
-	static void keepScopeTotal(IndexReader reader, Scope scope, long total) {
-		if(!SCOPE_CACHE) {
-			return;
-		}
-
-		var helper = reader.getReaderCacheHelper();
-		if(helper == null || SearchDeadline.exceeded()) {
-			return;
-		}
-
-		var key = helper.getKey();
-		var kept = scopeTotals.get(key);
-		if(kept == null) {
-			kept = scopeTotals.computeIfAbsent(key, ignored -> new Recent<>());
-			helper.addClosedListener(scopeTotals::remove);
-		}
-
-		kept.put(scope, total);
 	}
 
 	/**
@@ -914,39 +738,6 @@ final class FacetStates {
 		String definitionVersion,
 		ImmutableList<Query> clauses
 	) {
-	}
-
-	/**
-	 * One ask for counts: a facet over a scope.
-	 */
-	private record ScopeKey(Scope scope, Facet facet) {
-	}
-
-	/**
-	 * At most {@code SCOPE_LIMIT} entries, the one asked for least recently
-	 * going first. Locked around every read and write: a read is what moves
-	 * an entry to the front, and the map cannot be shared without it.
-	 */
-	private static final class Recent<K, V> {
-		private final LinkedHashMap<K, V> entries = new LinkedHashMap<>(16, 0.75f, true) {
-			@Override
-			protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-				if(size() > SCOPE_LIMIT) {
-					scopeEvictions.increment();
-					return true;
-				}
-
-				return false;
-			}
-		};
-
-		synchronized V get(K key) {
-			return entries.get(key);
-		}
-
-		synchronized void put(K key, V value) {
-			entries.put(key, value);
-		}
 	}
 
 	/**
@@ -1060,9 +851,9 @@ final class FacetStates {
 	 */
 	static FacetCacheStats stats() {
 		return new FacetCacheStats(
-			scopeHits.sum(),
-			scopeMisses.sum(),
-			scopeEvictions.sum(),
+			FacetScopeCache.hits(),
+			FacetScopeCache.misses(),
+			FacetScopeCache.evictions(),
 			segmentHits.sum(),
 			segmentMisses.sum(),
 			heldBytes()
@@ -1073,7 +864,7 @@ final class FacetStates {
 	 * Estimate what everything kept here takes on the heap: the ordinal maps
 	 * per reader, the columns, postings and decoded trees per segment core,
 	 * and the whole-reader counts per segment reader. What a facet answered
-	 * per scope is left out - a bounded number of small results per reader.
+	 * per scope is left out: the {@link FacetScopeCache} bounds that itself.
 	 *
 	 * An estimate rather than a measurement: the arrays are sized by their
 	 * length and a map by its entries, which is within a small factor of what

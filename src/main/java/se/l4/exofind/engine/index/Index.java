@@ -63,7 +63,6 @@ import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.LRUQueryCache;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.QueryRescorer;
@@ -74,6 +73,7 @@ import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TotalHits;
+import org.apache.lucene.search.UsageTrackingQueryCachingPolicy;
 import org.apache.lucene.search.join.BitSetProducer;
 import org.apache.lucene.search.join.QueryBitSetProducer;
 import org.apache.lucene.search.join.ToChildBlockJoinQuery;
@@ -313,31 +313,6 @@ public class Index {
 	 */
 	private static final long PENDING_ENTRY_OVERHEAD = 64;
 
-	/**
-	 * The cache of matching documents per segment that every searcher of every
-	 * index on this node shares, holding the same number of queries and the
-	 * same share of the heap as the Lucene default but caching over every
-	 * segment of a reader.
-	 *
-	 * <p>Lucene's own default declines any segment holding less than half the
-	 * documents of the average segment of its index, on the grounds that a
-	 * small segment is cheap to run a query over again and is about to be
-	 * merged away. That holds for a term lookup, but a typo tolerant or a
-	 * prefix clause is compiled into an automaton that walks the term
-	 * dictionary of a segment to collect what it matches, and it walks it once
-	 * per segment on every search that leaves it uncached. An index under the
-	 * merge policy of this engine always carries a tail of small segments, and
-	 * a search that expands terms pays for that tail again for every request.
-	 * Caching them costs a bitset per small segment, which is thrown away with
-	 * the segment when a merge replaces it.
-	 */
-	private static final LRUQueryCache QUERY_CACHE = new LRUQueryCache(
-		1000,
-		Math.min(1L << 25, Runtime.getRuntime().maxMemory() / 20),
-		leaf -> true,
-		10
-	);
-
 	private final NodeState nodeState;
 
 	private final String id;
@@ -356,6 +331,21 @@ public class Index {
 	 * cache and what it holds.
 	 */
 	private final DocumentCache documentCache;
+
+	/**
+	 * The caches a search reads through, shared with every other index of the
+	 * node - see {@link SearchCaches} for what each holds.
+	 */
+	private final SearchCaches caches;
+
+	/**
+	 * Decides which narrowing clauses of a search are worth keeping the
+	 * matches of in the query cache of the node: those seen more than once in
+	 * the recent searches of this index. One per index, so that the traffic
+	 * of a busy index does not push what a quiet index repeats out of the
+	 * history before it repeats it.
+	 */
+	private final UsageTrackingQueryCachingPolicy cachingPolicy;
 
 	private final ReadWriteLock syncLock;
 
@@ -740,6 +730,9 @@ public class Index {
 	}
 
 	/**
+	 * Open an index whose searches read through caches of the default sizes,
+	 * shared with nothing.
+	 *
 	 * @param mergeFloorSegment
 	 *   segment size in bytes under which Lucene merges segments toward that
 	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
@@ -762,6 +755,48 @@ public class Index {
 		SearchThreads searchThreads,
 		FacetWarmer facetWarmer
 	) {
+		this(
+			nodeState,
+			name,
+			localPath,
+			sync,
+			commitPolicy,
+			documentCache,
+			metrics,
+			mergeFloorSegment,
+			searchThreads,
+			facetWarmer,
+			SearchCaches.defaults()
+		);
+	}
+
+	/**
+	 * @param mergeFloorSegment
+	 *   segment size in bytes under which Lucene merges segments toward that
+	 *   size, ahead of its usual tiers. Empty leaves Lucene's default floor
+	 * @param searchThreads
+	 *   the threads a search may spread over besides its own, see
+	 *   {@link SearchThreads}
+	 * @param facetWarmer
+	 *   prepares every reader this index opens for counting facets before the
+	 *   first search asks, see {@link FacetWarmer}
+	 * @param caches
+	 *   the caches a search reads through, shared with every other index of
+	 *   the node, see {@link SearchCaches}
+	 */
+	public Index(
+		NodeState nodeState,
+		String name,
+		Path localPath,
+		StateSync sync,
+		CommitPolicy commitPolicy,
+		DocumentCache documentCache,
+		RequestMetrics metrics,
+		OptionalLong mergeFloorSegment,
+		SearchThreads searchThreads,
+		FacetWarmer facetWarmer,
+		SearchCaches caches
+	) {
 		this.metrics = metrics;
 		this.mergeFloorSegment = mergeFloorSegment;
 		this.searchThreads = searchThreads;
@@ -772,6 +807,8 @@ public class Index {
 		this.localPath = localPath;
 		this.sync = sync;
 		this.documentCache = documentCache;
+		this.caches = caches;
+		this.cachingPolicy = new UsageTrackingQueryCachingPolicy();
 
 		this.schema = new IndexSchema();
 		this.similarity = new IndexSimilarity(schema);
@@ -1264,19 +1301,22 @@ public class Index {
 
 	/**
 	 * Open a searcher over a reader: it scores with the similarity of this
-	 * index, it ranks its slices on the search threads of the node, it caches
-	 * what a cacheable clause matches in {@link #QUERY_CACHE}, it keeps where
-	 * a term sits in the reader for the queries that name it again, and it
-	 * stops collecting when the thread searching has run out of time.
+	 * index, it ranks its slices on the search threads of the node, it keeps
+	 * what a cacheable clause matches in the query cache of the node under
+	 * the caching policy of this index, it looks a term up through the term
+	 * states cache of the node, and it stops collecting when the thread
+	 * searching has run out of time.
 	 *
 	 * @see SearchDeadline
 	 * @see SearchThreads
+	 * @see SearchCaches
 	 * @see TermStatesSearcher
 	 */
 	private IndexSearcher newSearcher(IndexReader reader) {
-		var searcher = new TermStatesSearcher(reader, searchThreads.executor());
+		var searcher = new TermStatesSearcher(reader, searchThreads.executor(), caches.termStates());
 		searcher.setSimilarity(similarity);
-		searcher.setQueryCache(QUERY_CACHE);
+		searcher.setQueryCache(caches.queryCache());
+		searcher.setQueryCachingPolicy(cachingPolicy);
 
 		/*
 		 * One searcher answers many requests at once, so the timeout reads the
@@ -3910,7 +3950,7 @@ public class Index {
 				throw new IndexQueryException(ERROR_UNSUPPORTED_SEARCH_LOCALE, "locale", locale);
 			}
 
-			var compiler = new QueryCompiler(schema, locale, nestedParents);
+			var compiler = new QueryCompiler(schema, locale, nestedParents, caches.automata());
 			var documents = parentsOnly(compiler.compile(clauses), compiler, clauses);
 
 			int matched;
@@ -4779,7 +4819,7 @@ public class Index {
 		 * folded, in the locale of the request, so it can not disagree with
 		 * what the facet matched.
 		 */
-		var compiler = new QueryCompiler(schema, request.locale(), nestedParents);
+		var compiler = new QueryCompiler(schema, request.locale(), nestedParents, caches.automata());
 		var suggestions = Suggestions.collector(picked.size());
 		for(var candidate : picked) {
 			var counter = compiler.facetCounter(candidate.field());
@@ -4946,7 +4986,8 @@ public class Index {
 					nestedParents,
 					compileRankingOverride(settings),
 					compileSynonymOverlay(settings),
-					compileTypoExclusions(settings)
+					compileTypoExclusions(settings),
+					caches.automata()
 				);
 				var settingsVersion = settings == null ? null : settings.version();
 				var declared = compileDeclaredValues(settings);
@@ -5720,7 +5761,8 @@ public class Index {
 					nestedParents,
 					compileRankingOverride(settings),
 					compileSynonymOverlay(settings),
-					compileTypoExclusions(settings)
+					compileTypoExclusions(settings),
+					caches.automata()
 				);
 
 				/*
@@ -6492,7 +6534,7 @@ public class Index {
 				: clauses;
 
 			var scope = scopeOf(request, settingsVersion, null, scoped);
-			var kept = FacetStates.scopeCountsOf(reader, scope, facet);
+			var kept = caches.facetScopes().countsOf(reader, scope, facet);
 			if(kept != null) {
 				counts.put(facet.name(), kept);
 				continue;
@@ -6664,7 +6706,7 @@ public class Index {
 				: clauses;
 
 			var scope = scopeOf(request, settingsVersion, path, scoped);
-			var kept = FacetStates.scopeCountsOf(reader, scope, facet);
+			var kept = caches.facetScopes().countsOf(reader, scope, facet);
 			if(kept != null) {
 				counts.put(facet.name(), kept);
 				continue;
@@ -6784,7 +6826,7 @@ public class Index {
 		} else if(everything != null && scope.clauses().isEmpty()) {
 			total = matchCount(everything);
 		} else {
-			var kept = FacetStates.scopeTotalOf(reader, scope);
+			var kept = caches.facetScopes().totalOf(reader, scope);
 			if(kept != null) {
 				return kept;
 			}
@@ -6792,7 +6834,7 @@ public class Index {
 			total = searcher.count(query);
 		}
 
-		FacetStates.keepScopeTotal(reader, scope, total);
+		caches.facetScopes().keepTotal(reader, scope, total);
 		return total;
 	}
 
@@ -7034,7 +7076,7 @@ public class Index {
 			for(var pending : walk.getTwo()) {
 				var counted = pending.count().result();
 				counts.put(pending.facet().name(), counted);
-				FacetStates.keepScopeCounts(reader, pending.scope(), pending.facet(), counted);
+				caches.facetScopes().keepCounts(reader, pending.scope(), pending.facet(), counted);
 			}
 		}
 	}
@@ -7389,7 +7431,7 @@ public class Index {
 					return FacetWarmer.Outcome.SUPERSEDED;
 				}
 
-				var compiler = new QueryCompiler(schema, target.locale(), nestedParents);
+				var compiler = new QueryCompiler(schema, target.locale(), nestedParents, caches.automata());
 				var nested = schema.getNestedField(target.field());
 				var matches = (nested.isPresent()
 					? FacetMatches.everyValue(everything, nestedParents)
@@ -7410,7 +7452,7 @@ public class Index {
 					return FacetWarmer.Outcome.SUPERSEDED;
 				}
 
-				var compiler = new QueryCompiler(schema, target.locale(), nestedParents);
+				var compiler = new QueryCompiler(schema, target.locale(), nestedParents, caches.automata());
 				if(!(compiler.facetCounter(target.field()) instanceof FacetCounter.Strings strings)) {
 					continue;
 				}

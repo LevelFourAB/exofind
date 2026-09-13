@@ -272,6 +272,29 @@ The following table lists document cache configuration variables:
 |----------|-------------|---------|
 | `EXOFIND_INDEXES_DOCUMENT_CACHE_MAX_SIZE` | Maximum memory allocated to cached documents, specified in bytes with an optional `K`, `M`, `G`, or `T` binary suffix. | Off |
 
+## Search caches
+
+A search reads through four caches besides the document cache. Every index
+on the node shares them, and each cache has one budget for the node, so the
+indexes that are searched hold the space and the heap the caches take does
+not grow with the number of open indexes. Sizes are bytes with an optional
+`K`, `M`, `G`, or `T` binary suffix.
+
+The `exofind.query.cache`, `exofind.term.cache`, `exofind.typo.cache`,
+`exofind.prefix.cache`, and `exofind.facet.cache` meters report how each cache
+answers. For every meter, see [Metrics](metrics.md).
+
+The following table lists search cache configuration variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXOFIND_SEARCH_QUERY_CACHE_MAX_QUERIES` | Maximum number of distinct narrowing clauses whose matching documents are kept per segment. A clause is kept once the searches of one index have asked for it more than once among their recent clauses. | `10000` |
+| `EXOFIND_SEARCH_QUERY_CACHE_MAX_SIZE` | Maximum memory the kept matches of the query cache may take. | 5% of the maximum heap |
+| `EXOFIND_SEARCH_TERM_CACHE_MAX_SIZE` | Maximum memory used to remember where a term sits in each open reader, so a word searched again is not looked up in every segment again. An entry is dropped when its reader is replaced by a commit or a pull. | `32M` |
+| `EXOFIND_SEARCH_TYPO_CACHE_MAX_ENTRIES` | Maximum number of compiled typo tolerant automata kept. One automaton serves a word, a number of mistakes, and a prefix length, whichever field or index asks for it. | `1024` |
+| `EXOFIND_SEARCH_PREFIX_CACHE_MAX_ENTRIES` | Maximum number of compiled prefix automata kept, one per half typed word. | `8192` |
+| `EXOFIND_SEARCH_FACET_CACHE_MAX_SIZE` | Maximum memory used to keep what a facet answered over a scope, so a search that repeats the same clauses against an unchanged reader is answered without counting. An entry is dropped when its reader is replaced. | `64M` |
+
 ## Search
 
 Each variable in this section caps what a single request may ask a node to do. For the reasoning behind the caps, see [Cost of a single search](../explanation/node-resources.md#cost-of-a-single-search).

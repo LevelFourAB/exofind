@@ -24,7 +24,6 @@ import org.eclipse.collections.api.factory.primitive.LongLongMaps;
 import org.eclipse.collections.api.map.primitive.MutableLongIntMap;
 import org.eclipse.collections.api.map.primitive.MutableLongLongMap;
 
-import se.l4.exofind.engine.index.types.StringFieldType;
 import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.SearchResult;
 
@@ -68,7 +67,7 @@ import se.l4.exofind.engine.query.SearchResult;
  * so picking them costs a binary search per segment and never a walk of the
  * values. A prefix that forgives mistakes is compiled into the automaton a
  * typo tolerant text search walks a term dictionary with, see
- * {@link StringFieldType#typoAutomaton}, and the same folded dictionary is
+ * {@link AutomatonCache#typo}, and the same folded dictionary is
  * walked with it: that costs the dictionary of a segment once, less the runs
  * a mistake too many rules out.
  *
@@ -98,6 +97,7 @@ final class StringFacetCount implements FacetCount {
 	private final String prefix;
 	private final int prefixEdits;
 	private final DeclaredValues.Localized declared;
+	private final AutomatonCache automata;
 
 	private int totalMatches;
 
@@ -125,7 +125,8 @@ final class StringFacetCount implements FacetCount {
 		Analyzer normalizer,
 		String prefix,
 		int prefixEdits,
-		DeclaredValues.Localized declared
+		DeclaredValues.Localized declared,
+		AutomatonCache automata
 	) {
 		this.field = field;
 		this.mode = scope.mode();
@@ -138,6 +139,7 @@ final class StringFacetCount implements FacetCount {
 		this.prefix = prefix;
 		this.prefixEdits = prefixEdits;
 		this.declared = declared;
+		this.automata = automata;
 	}
 
 	@Override
@@ -316,8 +318,7 @@ final class StringFacetCount implements FacetCount {
 		 */
 		ByteRunAutomaton near = prefixEdits == 0
 			? null
-			: StringFieldType.typoAutomaton(folded.utf8ToString(), prefixEdits, 1, true)
-				.runAutomaton;
+			: automata.typo(folded.utf8ToString(), prefixEdits, 1, true).runAutomaton;
 
 		for(var context : reader.leaves()) {
 			var values = context.reader().getSortedSetDocValues(field);

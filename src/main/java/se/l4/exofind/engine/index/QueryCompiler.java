@@ -223,8 +223,37 @@ public class QueryCompiler {
 	 */
 	private IdentityHashMap<Query, String> clausePaths;
 
+	/**
+	 * Compile against the definition alone, with no search settings applied
+	 * and the automata of {@link AutomatonCache#shared()} - for a test or a
+	 * tool outside a node.
+	 */
 	public QueryCompiler(IndexSchema schema, String locale, BitSetProducer nestedParents) {
-		this(schema, locale, nestedParents, null, SynonymOverlay.none(), TypoExclusions.none());
+		this(schema, locale, nestedParents, AutomatonCache.shared());
+	}
+
+	/**
+	 * Compile against the definition alone, with no search settings applied.
+	 *
+	 * @param automata
+	 *   where the compiled automata of typo tolerant and half typed words are
+	 *   kept
+	 */
+	public QueryCompiler(
+		IndexSchema schema,
+		String locale,
+		BitSetProducer nestedParents,
+		AutomatonCache automata
+	) {
+		this(
+			schema,
+			locale,
+			nestedParents,
+			null,
+			SynonymOverlay.none(),
+			TypoExclusions.none(),
+			automata
+		);
 	}
 
 	public QueryCompiler(
@@ -233,7 +262,8 @@ public class QueryCompiler {
 		BitSetProducer nestedParents,
 		RankingOverride rankingOverride,
 		SynonymOverlay querySynonyms,
-		TypoExclusions typoExclusions
+		TypoExclusions typoExclusions,
+		AutomatonCache automata
 	) {
 		this.schema = schema;
 		this.locale = locale;
@@ -244,7 +274,8 @@ public class QueryCompiler {
 			schema.getResources(),
 			schema.isHighlightingInPostings(),
 			querySynonyms,
-			typoExclusions
+			typoExclusions,
+			automata
 		);
 	}
 

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import se.l4.exofind.engine.index.FacetWarmer;
+import se.l4.exofind.engine.index.SearchCaches;
 import se.l4.exofind.engine.index.SearchThreads;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -116,7 +117,8 @@ public class IndexesPreloadTest {
 			Duration.ZERO,
 			Duration.ZERO,
 			SearchThreads.inline(),
-			FacetWarmer.none()
+			FacetWarmer.none(),
+			SearchCaches.defaults()
 		);
 
 		nodes.add(node);

@@ -258,6 +258,63 @@ public final class Meters {
 	public static final String DOCUMENT_CACHE_EVICTIONS = "exofind.document.cache.evictions";
 
 	/**
+	 * Narrowing clauses answered from the matches the query cache kept per
+	 * segment.
+	 */
+	public static final String QUERY_CACHE_HITS = "exofind.query.cache.hits";
+
+	/**
+	 * Narrowing clauses the query cache held no matches for.
+	 */
+	public static final String QUERY_CACHE_MISSES = "exofind.query.cache.misses";
+
+	/**
+	 * Queries the query cache dropped to stay within its bounds.
+	 */
+	public static final String QUERY_CACHE_EVICTIONS = "exofind.query.cache.evictions";
+
+	/**
+	 * Heap the matches the query cache holds take.
+	 */
+	public static final String QUERY_CACHE_BYTES = "exofind.query.cache.bytes";
+
+	/**
+	 * Term lookups answered from where the term cache already knew a term
+	 * sits in its reader.
+	 */
+	public static final String TERM_CACHE_HITS = "exofind.term.cache.hits";
+
+	/**
+	 * Term lookups that had to seek the term in every segment.
+	 */
+	public static final String TERM_CACHE_MISSES = "exofind.term.cache.misses";
+
+	/**
+	 * Terms the term cache dropped to stay within its bound.
+	 */
+	public static final String TERM_CACHE_EVICTIONS = "exofind.term.cache.evictions";
+
+	/**
+	 * Typo tolerant words answered with an automaton compiled earlier.
+	 */
+	public static final String TYPO_CACHE_HITS = "exofind.typo.cache.hits";
+
+	/**
+	 * Typo tolerant words whose automaton had to be compiled.
+	 */
+	public static final String TYPO_CACHE_MISSES = "exofind.typo.cache.misses";
+
+	/**
+	 * Half typed words answered with an automaton compiled earlier.
+	 */
+	public static final String PREFIX_CACHE_HITS = "exofind.prefix.cache.hits";
+
+	/**
+	 * Half typed words whose automaton had to be compiled.
+	 */
+	public static final String PREFIX_CACHE_MISSES = "exofind.prefix.cache.misses";
+
+	/**
 	 * Facets answered from what an earlier search counted over the same
 	 * scope.
 	 */

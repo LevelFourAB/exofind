@@ -5,11 +5,13 @@ package se.l4.exofind.engine.index;
  * node reports as meters, see {@code docs/reference/metrics.md}.
  *
  * <p>Two caches answer here, one above the other. What a facet answered over
- * one scope is kept per reader, and a search asking for the same facet over
+ * one scope is kept in the {@link FacetScopeCache} of the node under the
+ * reader it was counted against, and a search asking for the same facet over
  * the same scope again is a hit. Below that, what each segment counted for
  * the scope nothing narrows is kept per segment reader, so that a search
  * after a refresh only counts the segments the refresh added; a segment
- * answered from there is a hit. Both are described in {@code FacetStates}.
+ * answered from there is a hit. The lower cache is described in
+ * {@code FacetStates}.
  *
  * <p>Every count only ever grows. A rate is the change over a period. The
  * bytes held are what is kept right now, and go down when readers close.

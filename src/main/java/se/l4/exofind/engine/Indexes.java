@@ -47,6 +47,7 @@ import se.l4.exofind.engine.index.FacetCacheStats;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.FacetWarmer;
+import se.l4.exofind.engine.index.SearchCaches;
 import se.l4.exofind.engine.index.SearchThreads;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
@@ -426,6 +427,12 @@ public class Indexes implements RegistryPoller.Listener {
 	private final DocumentCache documentCache;
 
 	/**
+	 * The caches a search reads through, one set for the node - see
+	 * {@link SearchCaches} for what each holds and how it is sized.
+	 */
+	private final SearchCaches searchCaches;
+
+	/**
 	 * Open indexes that report nothing, for a test that is not measuring.
 	 */
 	public Indexes(
@@ -519,7 +526,8 @@ public class Indexes implements RegistryPoller.Listener {
 			Duration.ZERO,
 			Duration.ZERO,
 			SearchThreads.inline(),
-			FacetWarmer.none()
+			FacetWarmer.none(),
+			SearchCaches.defaults()
 		);
 	}
 
@@ -550,12 +558,14 @@ public class Indexes implements RegistryPoller.Listener {
 		@ConfigProperty(name = "exofind.indexes.preload.max-duration", defaultValue = "5m") Duration preloadMaxDuration,
 		@ConfigProperty(name = "exofind.indexes.preload.readiness-wait", defaultValue = "30s") Duration preloadReadinessWait,
 		SearchThreads searchThreads,
-		FacetWarmer facetWarmer
+		FacetWarmer facetWarmer,
+		SearchCaches searchCaches
 	) throws IOException {
 		this.nodeState = nodeState;
 		this.syncProvider = syncProvider;
 		this.searchThreads = searchThreads;
 		this.facetWarmer = facetWarmer;
+		this.searchCaches = searchCaches;
 		this.registry = registry;
 		this.registryHints = registryHints;
 		this.removals = removals;
@@ -1842,7 +1852,7 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @throws IllegalArgumentException
 	 *   if the value is not a size
 	 */
-	static long parseSize(String value) {
+	public static long parseSize(String value) {
 		var number = value.trim();
 		var multiplier = 1L;
 
@@ -1922,7 +1932,8 @@ public class Indexes implements RegistryPoller.Listener {
 				metrics,
 				mergeFloorSegment,
 				searchThreads,
-				facetWarmer
+				facetWarmer,
+				searchCaches
 			);
 
 			/*
@@ -2259,6 +2270,15 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	public CacheStats getDocumentCacheStats() {
 		return documentCache.stats();
+	}
+
+	/**
+	 * Get the caches a search reads through, for the meters a node reports.
+	 *
+	 * @return
+	 */
+	public SearchCaches getSearchCaches() {
+		return searchCaches;
 	}
 
 	/**

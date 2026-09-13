@@ -169,7 +169,8 @@ public class BooleanFieldType implements FieldType {
 		return FacetCounter.overStrings(
 			encounter.name(FieldNames.VALUES),
 			value -> TRUE.utf8ToString().equals(value),
-			null
+			null,
+			encounter.getAutomata()
 		);
 	}
 

@@ -187,6 +187,95 @@ public class NodeMetrics {
 			.register(registry);
 
 		Gauge.builder(
+				Meters.QUERY_CACHE_HITS,
+				indexes,
+				self -> self.getSearchCaches().queryCache().getHitCount()
+			)
+			.description("Narrowing clauses answered from the matches the query cache kept")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.QUERY_CACHE_MISSES,
+				indexes,
+				self -> self.getSearchCaches().queryCache().getMissCount()
+			)
+			.description("Narrowing clauses the query cache held no matches for")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.QUERY_CACHE_EVICTIONS,
+				indexes,
+				self -> self.getSearchCaches().queryCache().getEvictionCount()
+			)
+			.description("Queries the query cache dropped to stay within its bounds")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.QUERY_CACHE_BYTES,
+				indexes,
+				self -> self.getSearchCaches().queryCache().ramBytesUsed()
+			)
+			.description("Heap the matches the query cache holds take")
+			.baseUnit("bytes")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.TERM_CACHE_HITS,
+				indexes,
+				self -> self.getSearchCaches().termStates().stats().hitCount()
+			)
+			.description("Term lookups answered from the term cache")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.TERM_CACHE_MISSES,
+				indexes,
+				self -> self.getSearchCaches().termStates().stats().missCount()
+			)
+			.description("Term lookups that had to seek every segment")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.TERM_CACHE_EVICTIONS,
+				indexes,
+				self -> self.getSearchCaches().termStates().stats().evictionCount()
+			)
+			.description("Terms the term cache dropped to stay within its bound")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.TYPO_CACHE_HITS,
+				indexes,
+				self -> self.getSearchCaches().automata().typoStats().hitCount()
+			)
+			.description("Typo tolerant words answered with an automaton compiled earlier")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.TYPO_CACHE_MISSES,
+				indexes,
+				self -> self.getSearchCaches().automata().typoStats().missCount()
+			)
+			.description("Typo tolerant words whose automaton had to be compiled")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.PREFIX_CACHE_HITS,
+				indexes,
+				self -> self.getSearchCaches().automata().prefixStats().hitCount()
+			)
+			.description("Half typed words answered with an automaton compiled earlier")
+			.register(registry);
+
+		Gauge.builder(
+				Meters.PREFIX_CACHE_MISSES,
+				indexes,
+				self -> self.getSearchCaches().automata().prefixStats().missCount()
+			)
+			.description("Half typed words whose automaton had to be compiled")
+			.register(registry);
+
+		Gauge.builder(
 				Meters.FACET_CACHE_HITS,
 				indexes,
 				self -> self.getFacetCacheStats().hits()

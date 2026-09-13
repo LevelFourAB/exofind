@@ -1,10 +1,8 @@
 package se.l4.exofind.engine.index.types;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.Field;
@@ -41,12 +39,8 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.automaton.Automata;
-import org.apache.lucene.util.automaton.Automaton;
 import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.apache.lucene.util.automaton.CompiledAutomaton;
-import org.apache.lucene.util.automaton.LevenshteinAutomata;
-import org.apache.lucene.util.automaton.Operations;
 import org.eclipse.collections.api.collection.MutableCollection;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.eclipse.collections.api.list.ListIterable;
@@ -58,6 +52,7 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.index.AnalyzedFields;
 import se.l4.exofind.engine.index.AnalyzingTextField;
+import se.l4.exofind.engine.index.AutomatonCache;
 import se.l4.exofind.engine.index.FacetCounter;
 import se.l4.exofind.engine.index.FieldNames;
 import se.l4.exofind.engine.index.HierarchyFacetCounter;
@@ -110,7 +105,7 @@ public class StringFieldType implements FieldType {
 	 * further edit multiplies the terms a word is near, so two is as many as
 	 * matching can afford.
 	 */
-	private static final int MAX_EDITS = 2;
+	private static final int MAX_EDITS = AutomatonCache.MAX_EDITS;
 
 	/**
 	 * The most typos a word still being typed may carry, unless the definition
@@ -154,67 +149,6 @@ public class StringFieldType implements FieldType {
 		MultiTermQuery.CONSTANT_SCORE_REWRITE;
 
 	/**
-	 * How many compiled typo tolerant automata are kept. The words are text
-	 * somebody typed, so what is kept has to have a ceiling; this one holds
-	 * what a search box being typed into produces - a word per keystroke - for
-	 * a good number of people at once, while the automata stay a few megabytes
-	 * rather than a share of the heap.
-	 */
-	private static final int FUZZY_CACHE_SIZE = 512;
-
-	/**
-	 * The typo tolerant automata already compiled, by the word they forgive
-	 * mistakes in, how many are forgiven, how much of the word has to be right
-	 * and whether the rest of it is still being typed.
-	 *
-	 * Compiling one turns every reading of the word within those mistakes into
-	 * a table the term dictionary is walked against, which costs more than the
-	 * walk itself: a search that found nothing compiles the same word again
-	 * for every word it weighs before letting one go, and the next person to
-	 * type it compiles it again after that. What is compiled depends on the
-	 * word and on nothing of the index, so it is as good later as it was when
-	 * it was compiled.
-	 *
-	 * The field a word is asked of does not decide one, because an automaton
-	 * accepts terms and every field's terms are read the same way - so a search
-	 * covering several fields compiles the word once and asks each field with
-	 * it. Neither does the band of {@link #typoLadder} it serves: a band that
-	 * keeps narrower readings out walks the same terms as the band of its own
-	 * number of mistakes and drops what the band below already holds. A ladder
-	 * therefore compiles one automaton per number of mistakes, and its first
-	 * two bands share the automaton of one mistake. {@link EditBandQuery} holds
-	 * the field and the band apart from what is compiled.
-	 *
-	 * The least recently asked for goes when the cache is full. Held through
-	 * {@link Collections#synchronizedMap} rather than a concurrent map to keep
-	 * that order, and the lock is held only for the lookup - see
-	 * {@link #editAutomaton}.
-	 */
-	private static final Map<AutomatonKey, CompiledAutomaton> FUZZY_AUTOMATA =
-		Collections.synchronizedMap(
-			new LinkedHashMap<AutomatonKey, CompiledAutomaton>(FUZZY_CACHE_SIZE, 0.75f, true) {
-				@Override
-				protected boolean removeEldestEntry(
-					Map.Entry<AutomatonKey, CompiledAutomaton> eldest
-				) {
-					return size() > FUZZY_CACHE_SIZE;
-				}
-			}
-		);
-
-	/**
-	 * What a compiled typo tolerant automaton is decided by, and so what one is
-	 * kept under.
-	 */
-	private record AutomatonKey(
-		String text,
-		int edits,
-		int prefixLength,
-		boolean prefix
-	) {
-	}
-
-	/**
 	 * Which band of {@link #typoLadder} an {@link EditBandQuery} stands for.
 	 * Two queries for the same band and field are the same query, whatever
 	 * automata they were handed.
@@ -230,16 +164,16 @@ public class StringFieldType implements FieldType {
 		 * Get the automaton reaching every term within this band's mistakes,
 		 * including the terms fewer mistakes reach.
 		 */
-		AutomatonKey reached() {
-			return new AutomatonKey(text, edits, prefixLength, prefix);
+		CompiledAutomaton reached(AutomatonCache automata) {
+			return automata.typo(text, edits, prefixLength, prefix);
 		}
 
 		/**
 		 * Get the automaton reaching the terms this band keeps out, which is
 		 * the band of one mistake fewer.
 		 */
-		AutomatonKey narrower() {
-			return new AutomatonKey(text, edits - 1, prefixLength, prefix);
+		CompiledAutomaton narrower(AutomatonCache automata) {
+			return automata.typo(text, edits - 1, prefixLength, prefix);
 		}
 	}
 
@@ -251,8 +185,8 @@ public class StringFieldType implements FieldType {
 	 * automaton it is handed, and compiling costs several times what building
 	 * the automaton did, so a word asked of several fields would pay for the
 	 * same table once per field. What the automaton accepts depends on the word
-	 * alone, so the compiled table is kept in {@link #FUZZY_AUTOMATA} and the
-	 * field lives here.
+	 * alone, so the compiled table is kept in the {@link AutomatonCache} of the
+	 * node and the field lives here.
 	 *
 	 * A band that keeps narrower readings out walks the terms every reading
 	 * within its own mistakes reaches, and drops each term the automaton of one
@@ -380,58 +314,14 @@ public class StringFieldType implements FieldType {
 	}
 
 	/**
-	 * How many compiled prefix automata are kept. The prefixes are text
-	 * somebody typed, so what is kept has to have a ceiling; one of these is a
-	 * table of a state per byte of the prefix, far smaller than a typo tolerant
-	 * one, so this holds a good deal more of them for the same handful of
-	 * megabytes.
-	 */
-	private static final int PREFIX_CACHE_SIZE = 2048;
-
-	/**
-	 * The prefix automata already compiled, by the bytes a term has to start
-	 * with.
-	 *
-	 * Compiling one turns the prefix into a table the term dictionary is walked
-	 * against, which costs several times what building the automaton did. A
-	 * word still being typed is asked of every field a search covers, and every
-	 * keystroke asks again, so the same table would be built over and over for
-	 * work that is the same every time: what the automaton accepts depends on
-	 * the prefix and on nothing of the index or the field, so it is as good
-	 * later as it was when it was compiled, and as good in one thread as in
-	 * another - a compiled automaton is only read once it is built.
-	 *
-	 * Kept under the prefix bytes rather than the field for that reason, so a
-	 * search covering several fields compiles the prefix once and asks each
-	 * field with it. {@link PrefixExpansionQuery} holds the field and the
-	 * rewrite apart from what is compiled.
-	 *
-	 * The least recently asked for goes when the cache is full. Held through
-	 * {@link Collections#synchronizedMap} rather than a concurrent map to keep
-	 * that order, and the lock is held only for the lookup - see
-	 * {@link #prefixAutomaton}.
-	 */
-	private static final Map<BytesRef, CompiledAutomaton> PREFIX_AUTOMATA =
-		Collections.synchronizedMap(
-			new LinkedHashMap<BytesRef, CompiledAutomaton>(PREFIX_CACHE_SIZE, 0.75f, true) {
-				@Override
-				protected boolean removeEldestEntry(
-					Map.Entry<BytesRef, CompiledAutomaton> eldest
-				) {
-					return size() > PREFIX_CACHE_SIZE;
-				}
-			}
-		);
-
-	/**
 	 * The terms starting with a prefix in one field, matched against an
 	 * automaton compiled before the field was known.
 	 *
 	 * Lucene's own {@link PrefixQuery} compiles the automaton in its
 	 * constructor, so a word still being typed would pay for the same table
 	 * once per field of every search it is part of. What the automaton accepts
-	 * depends on the prefix alone, so the compiled table is kept in
-	 * {@link #PREFIX_AUTOMATA} and the field lives here.
+	 * depends on the prefix alone, so the compiled table is kept in the
+	 * {@link AutomatonCache} of the node and the field lives here.
 	 *
 	 * Two of these are the same query when they ask the same field for the same
 	 * prefix with the same rewrite, which lets the searcher's own cache answer
@@ -441,11 +331,11 @@ public class StringFieldType implements FieldType {
 		private final Term prefix;
 		private final CompiledAutomaton compiled;
 
-		PrefixExpansionQuery(Term prefix, RewriteMethod rewriteMethod) {
+		PrefixExpansionQuery(Term prefix, RewriteMethod rewriteMethod, AutomatonCache automata) {
 			super(prefix.field(), rewriteMethod);
 
 			this.prefix = prefix;
-			this.compiled = prefixAutomaton(prefix.bytes());
+			this.compiled = automata.prefix(prefix.bytes());
 		}
 
 		@Override
@@ -1030,7 +920,8 @@ public class StringFieldType implements FieldType {
 		if(matcher instanceof PrefixMatcher m) {
 			return new PrefixExpansionQuery(
 				new Term(filterName(encounter), filterValue(encounter, m.value())),
-				PREFIX_REWRITE
+				PREFIX_REWRITE,
+				encounter.getAutomata()
 			);
 		}
 
@@ -1113,7 +1004,8 @@ public class StringFieldType implements FieldType {
 		return FacetCounter.overStrings(
 			encounter.name(FieldNames.VALUES),
 			value -> value,
-			normalizer
+			normalizer,
+			encounter.getAutomata()
 		);
 	}
 
@@ -1549,7 +1441,8 @@ public class StringFieldType implements FieldType {
 						segments.get(i),
 						prefixLast && isLast,
 						tolerance,
-						positioned
+						positioned,
+						encounter.getAutomata()
 					)
 			);
 		}
@@ -1588,14 +1481,15 @@ public class StringFieldType implements FieldType {
 		TokenGraph.Segment segment,
 		boolean prefix,
 		Tolerance tolerance,
-		boolean positioned
+		boolean positioned,
+		AutomatonCache automata
 	) {
 		if(segment.isSingleWord()) {
 			var words = distinct(segment.words());
 
 			if(words.size() == 1) {
 				return boosted(
-					tokenQuery(new Term(name, words.get(0).text()), prefix, tolerance),
+					tokenQuery(new Term(name, words.get(0).text()), prefix, tolerance, automata),
 					words.get(0).boost()
 				);
 			}
@@ -1618,7 +1512,7 @@ public class StringFieldType implements FieldType {
 			for(var word : words) {
 				builder.add(
 					boosted(
-						tokenQuery(new Term(name, word.text()), prefix, tolerance),
+						tokenQuery(new Term(name, word.text()), prefix, tolerance, automata),
 						word.boost()
 					),
 					BooleanClause.Occur.SHOULD
@@ -1632,7 +1526,7 @@ public class StringFieldType implements FieldType {
 		for(var alternative : segment.alternatives()) {
 			builder.add(
 				boosted(
-					readingQuery(name, alternative, prefix, positioned),
+					readingQuery(name, alternative, prefix, positioned, automata),
 					weightOf(alternative)
 				),
 				BooleanClause.Occur.SHOULD
@@ -1651,19 +1545,20 @@ public class StringFieldType implements FieldType {
 		String name,
 		TokenGraph.Alternative alternative,
 		boolean prefix,
-		boolean positioned
+		boolean positioned,
+		AutomatonCache automata
 	) {
 		var terms = alternative.terms();
 
 		if(terms.size() == 1) {
-			return tokenQuery(new Term(name, terms.get(0).term().text()), prefix, null);
+			return tokenQuery(new Term(name, terms.get(0).term().text()), prefix, null, automata);
 		}
 
 		if(!positioned) {
 			var builder = new BooleanQuery.Builder();
 			for(var placed : terms) {
 				builder.add(
-					tokenQuery(new Term(name, placed.term().text()), false, null),
+					tokenQuery(new Term(name, placed.term().text()), false, null, automata),
 					BooleanClause.Occur.MUST
 				);
 			}
@@ -1675,7 +1570,7 @@ public class StringFieldType implements FieldType {
 		 * Spans rather than a phrase, because a reading can end in a word that
 		 * is still being typed, which a PhraseQuery has no place for.
 		 */
-		return spanReading(name, alternative, prefix);
+		return spanReading(name, alternative, prefix, automata);
 	}
 
 	/**
@@ -1792,7 +1687,14 @@ public class StringFieldType implements FieldType {
 			);
 		}
 
-		return segmentQuery(name, segments.getLast(), false, tolerance, false);
+		return segmentQuery(
+			name,
+			segments.getLast(),
+			false,
+			tolerance,
+			false,
+			encounter.getAutomata()
+		);
 	}
 
 	/**
@@ -1841,7 +1743,14 @@ public class StringFieldType implements FieldType {
 
 		if(segments.size() == 1 && segments.get(0).isSingleWord()) {
 			// A phrase of one word is that word, half typed or not
-			return segmentQuery(name, segments.get(0), prefixLast, null, true);
+			return segmentQuery(
+				name,
+				segments.get(0),
+				prefixLast,
+				null,
+				true,
+				encounter.getAutomata()
+			);
 		}
 
 		if(!prefixLast
@@ -1850,7 +1759,7 @@ public class StringFieldType implements FieldType {
 			return exactPhrase(name, segments);
 		}
 
-		return spanPhrase(name, segments, prefixLast, matcher.slop());
+		return spanPhrase(name, segments, prefixLast, matcher.slop(), encounter.getAutomata());
 	}
 
 	/**
@@ -1903,7 +1812,8 @@ public class StringFieldType implements FieldType {
 		String name,
 		ListIterable<TokenGraph.Segment> segments,
 		boolean prefixLast,
-		int slop
+		int slop,
+		AutomatonCache automata
 	) {
 		var builder = new SpanNearQuery.Builder(name, true);
 		builder.setSlop(slop);
@@ -1918,7 +1828,7 @@ public class StringFieldType implements FieldType {
 				builder.addGap(segment.position() - next);
 			}
 
-			builder.addClause(spanSegment(name, segment, i == last && prefixLast));
+			builder.addClause(spanSegment(name, segment, i == last && prefixLast, automata));
 
 			next = segment.position() + segment.length();
 		}
@@ -1932,11 +1842,12 @@ public class StringFieldType implements FieldType {
 	private static SpanQuery spanSegment(
 		String name,
 		TokenGraph.Segment segment,
-		boolean prefix
+		boolean prefix,
+		AutomatonCache automata
 	) {
 		if(segment.isSingleWord()) {
 			var variants = segment.words()
-				.collect(word -> spanTerm(new Term(name, word.text()), prefix));
+				.collect(word -> spanTerm(new Term(name, word.text()), prefix, automata));
 
 			return variants.size() == 1
 				? variants.get(0)
@@ -1944,7 +1855,7 @@ public class StringFieldType implements FieldType {
 		}
 
 		var readings = segment.alternatives()
-			.collect(alternative -> spanReading(name, alternative, prefix));
+			.collect(alternative -> spanReading(name, alternative, prefix, automata));
 
 		return readings.size() == 1
 			? readings.get(0)
@@ -1958,11 +1869,12 @@ public class StringFieldType implements FieldType {
 	private static SpanQuery spanReading(
 		String name,
 		TokenGraph.Alternative alternative,
-		boolean prefix
+		boolean prefix,
+		AutomatonCache automata
 	) {
 		var terms = alternative.terms();
 		if(terms.size() == 1) {
-			return spanTerm(new Term(name, terms.get(0).term().text()), prefix);
+			return spanTerm(new Term(name, terms.get(0).term().text()), prefix, automata);
 		}
 
 		var builder = new SpanNearQuery.Builder(name, true);
@@ -1977,7 +1889,8 @@ public class StringFieldType implements FieldType {
 
 			builder.addClause(spanTerm(
 				new Term(name, placed.term().text()),
-				prefix && i == terms.size() - 1
+				prefix && i == terms.size() - 1,
+				automata
 			));
 
 			next = placed.offset() + 1;
@@ -1986,9 +1899,11 @@ public class StringFieldType implements FieldType {
 		return builder.build();
 	}
 
-	private static SpanQuery spanTerm(Term term, boolean prefix) {
+	private static SpanQuery spanTerm(Term term, boolean prefix, AutomatonCache automata) {
 		return prefix
-			? new SpanMultiTermQueryWrapper<>(new PrefixExpansionQuery(term, PREFIX_REWRITE))
+			? new SpanMultiTermQueryWrapper<>(
+				new PrefixExpansionQuery(term, PREFIX_REWRITE, automata)
+			)
 			: new SpanTermQuery(term);
 	}
 
@@ -2057,12 +1972,13 @@ public class StringFieldType implements FieldType {
 	private static Query tokenQuery(
 		Term term,
 		boolean prefix,
-		Tolerance tolerance
+		Tolerance tolerance,
+		AutomatonCache automata
 	) {
 		var edits = tolerance == null ? 0 : tolerance.editsAllowed(term.text());
 
 		var exact = prefix
-			? cacheable(new PrefixExpansionQuery(term, EXPANSION_REWRITE))
+			? cacheable(new PrefixExpansionQuery(term, EXPANSION_REWRITE, automata))
 			: (Query) new TermQuery(term);
 
 		if(edits == 0) {
@@ -2076,7 +1992,10 @@ public class StringFieldType implements FieldType {
 		 */
 		return new BooleanQuery.Builder()
 			.add(exact, BooleanClause.Occur.SHOULD)
-			.add(typoLadder(term, edits, tolerance.config(), prefix), BooleanClause.Occur.SHOULD)
+			.add(
+				typoLadder(term, edits, tolerance.config(), prefix, automata),
+				BooleanClause.Occur.SHOULD
+			)
 			.build();
 	}
 
@@ -2115,17 +2034,18 @@ public class StringFieldType implements FieldType {
 		Term term,
 		int edits,
 		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
-		boolean prefix
+		boolean prefix,
+		AutomatonCache automata
 	) {
 		if(edits == 1) {
-			return editBand(term, 1, false, typos, prefix);
+			return editBand(term, 1, false, typos, prefix, automata);
 		}
 
 		var bands = Lists.mutable.<Query>empty();
-		bands.add(new BoostQuery(editBand(term, 1, false, typos, prefix), edits));
+		bands.add(new BoostQuery(editBand(term, 1, false, typos, prefix, automata), edits));
 
 		for(var d = 2; d <= edits; d++) {
-			var band = editBand(term, d, true, typos, prefix);
+			var band = editBand(term, d, true, typos, prefix, automata);
 			var boost = edits - d + 1;
 			bands.add(boost == 1 ? band : new BoostQuery(band, boost));
 		}
@@ -2242,6 +2162,8 @@ public class StringFieldType implements FieldType {
 	 *   the tolerance declared by the definition
 	 * @param prefix
 	 *   if the word may still be half typed
+	 * @param automata
+	 *   where the compiled automata of the node are kept
 	 * @return
 	 */
 	private static Query editBand(
@@ -2249,7 +2171,8 @@ public class StringFieldType implements FieldType {
 		int edits,
 		boolean exactly,
 		StringFieldTypeDef.TextUsageConfig.TypoToleranceConfig typos,
-		boolean prefix
+		boolean prefix,
+		AutomatonCache automata
 	) {
 		var prefixLength = typos.hasPrefixLength()
 			? typos.getPrefixLength()
@@ -2260,147 +2183,9 @@ public class StringFieldType implements FieldType {
 		return cacheable(new EditBandQuery(
 			term.field(),
 			band,
-			editAutomaton(band.reached()),
-			exactly ? editAutomaton(band.narrower()) : null
+			band.reached(automata),
+			exactly ? band.narrower(automata) : null
 		));
-	}
-
-	/**
-	 * Get the automaton accepting every term within the given number of
-	 * mistakes of a word, for walking a dictionary outside a text search - a
-	 * facet picking values near a typed prefix, see
-	 * {@code StringFacetCount}. Shares the compiled automata of the text
-	 * searches, so a word a search has forgiven before is answered without
-	 * compiling.
-	 *
-	 * @param text
-	 *   the word, already folded the way the dictionary it will walk is
-	 * @param edits
-	 *   how many mistakes to forgive, at most {@link #MAX_EDITS}
-	 * @param prefixLength
-	 *   how many leading code points are matched as they stand
-	 * @param prefix
-	 *   whether the word may still be half typed, so a term is accepted as
-	 *   soon as some prefix of it is within the mistakes
-	 * @return
-	 *   the automaton, safe to share between threads
-	 */
-	public static CompiledAutomaton typoAutomaton(
-		String text,
-		int edits,
-		int prefixLength,
-		boolean prefix
-	) {
-		if(edits < 0 || edits > MAX_EDITS) {
-			throw new IllegalArgumentException(
-				"A word forgives between 0 and " + MAX_EDITS + " mistakes"
-			);
-		}
-
-		return editAutomaton(new AutomatonKey(text, edits, prefixLength, prefix));
-	}
-
-	/**
-	 * Get the table a field's terms are walked against for one reading of a
-	 * word, from {@link #FUZZY_AUTOMATA} where the same reading has been asked
-	 * for before - whatever field or band asked for it - because compiling one
-	 * costs more than running it.
-	 */
-	private static CompiledAutomaton editAutomaton(AutomatonKey reading) {
-		var compiled = FUZZY_AUTOMATA.get(reading);
-		if(compiled == null) {
-			/*
-			 * Compiled outside the cache rather than through computeIfAbsent,
-			 * so that one word being compiled does not hold up the searches
-			 * looking for another. Two threads that want the same one compile
-			 * it twice and keep the second, which is two automata rather than a
-			 * queue behind one.
-			 */
-			compiled = compileEditAutomaton(reading);
-			FUZZY_AUTOMATA.put(reading, compiled);
-		}
-
-		return compiled;
-	}
-
-	/**
-	 * Get the table a field's terms are walked against for one prefix, from
-	 * {@link #PREFIX_AUTOMATA} where the same prefix has been asked for before
-	 * - whatever field asked for it - because compiling one costs more than
-	 * running it.
-	 *
-	 * The bytes are only read here, so a caller may hand over the ones its own
-	 * term holds; what is kept is a copy of them, because the term dictionary
-	 * hands out a window onto a buffer it goes on writing into.
-	 */
-	private static CompiledAutomaton prefixAutomaton(BytesRef prefix) {
-		var compiled = PREFIX_AUTOMATA.get(prefix);
-		if(compiled == null) {
-			/*
-			 * Compiled outside the cache rather than through computeIfAbsent,
-			 * so that one prefix being compiled does not hold up the searches
-			 * looking for another. Two threads that want the same one compile
-			 * it twice and keep the second, which is two automata rather than a
-			 * queue behind one.
-			 */
-			compiled = compilePrefixAutomaton(prefix);
-			PREFIX_AUTOMATA.put(BytesRef.deepCopyOf(prefix), compiled);
-		}
-
-		return compiled;
-	}
-
-	/**
-	 * Compile the table {@link #prefixAutomaton} hands out, for a prefix not
-	 * compiled before.
-	 *
-	 * The automaton is the one {@link PrefixQuery} builds - the prefix as a
-	 * chain of bytes with anything at all after it - and it is compiled the way
-	 * {@link org.apache.lucene.search.AutomatonQuery} compiles the automata it
-	 * is handed: as bytes rather than code points, and as endless, which a
-	 * prefix always is because anything may follow it.
-	 */
-	private static CompiledAutomaton compilePrefixAutomaton(BytesRef prefix) {
-		return new CompiledAutomaton(
-			PrefixQuery.toAutomaton(prefix),
-			false,
-			true,
-			true
-		);
-	}
-
-	/**
-	 * Compile the table {@link #editAutomaton} hands out, for a reading not
-	 * compiled before.
-	 *
-	 * The Levenshtein automaton of the word accepts a term close enough to it;
-	 * a half typed word has "anything after" concatenated onto that, so a term
-	 * is accepted as soon as some prefix of it is close enough. The leading
-	 * characters the definition wants matched exactly are kept out of the fuzzy
-	 * part and counted in code points, so a word of characters outside the
-	 * basic plane keeps as much of itself fixed as one of ASCII.
-	 *
-	 * Whether the automaton accepts finitely many terms is told rather than
-	 * left to be found out. A word with an end is near finitely many others
-	 * however many mistakes are forgiven, and a word still being typed stands
-	 * for every term some reading of it starts, which is endless. Both follow
-	 * from the shape asked for, while Lucene would walk the automaton again to
-	 * learn what this already knows.
-	 */
-	private static CompiledAutomaton compileEditAutomaton(AutomatonKey reading) {
-		var text = reading.text();
-
-		var codePoints = text.codePointCount(0, text.length());
-		var prefixEnd = text.offsetByCodePoints(0, Math.min(reading.prefixLength(), codePoints));
-
-		var automaton = levenshtein(text, prefixEnd, reading.edits(), reading.prefix());
-
-		return new CompiledAutomaton(
-			Operations.determinize(automaton, Operations.DEFAULT_DETERMINIZE_WORK_LIMIT),
-			!reading.prefix(),
-			true,
-			false
-		);
 	}
 
 	/**
@@ -2419,27 +2204,6 @@ public class StringFieldType implements FieldType {
 	 */
 	private static Query cacheable(Query expansion) {
 		return new ConstantScoreQuery(expansion);
-	}
-
-	/**
-	 * The automaton accepting every term within the given number of edits of
-	 * the word - or, when the word may still be half typed, every term some
-	 * such reading of it starts.
-	 */
-	private static Automaton levenshtein(
-		String text,
-		int prefixEnd,
-		int edits,
-		boolean prefix
-	) {
-		var automaton = new LevenshteinAutomata(text.substring(prefixEnd), true)
-			.toAutomaton(edits, text.substring(0, prefixEnd));
-
-		if(prefix) {
-			automaton = Operations.concatenate(automaton, Automata.makeAnyString());
-		}
-
-		return automaton;
 	}
 
 	@Override

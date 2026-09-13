@@ -76,6 +76,18 @@ public interface IndexEncounter {
 	}
 
 	/**
+	 * Get where the compiled automata of typo tolerant and half typed words
+	 * are kept. A node hands its own to every query it compiles; an encounter
+	 * built outside a node reads the default sized {@link AutomatonCache#shared()}.
+	 *
+	 * @return
+	 *   never {@code null}
+	 */
+	default AutomatonCache getAutomata() {
+		return AutomatonCache.shared();
+	}
+
+	/**
 	 * Get if the value is the primary key.
 	 *
 	 * @return

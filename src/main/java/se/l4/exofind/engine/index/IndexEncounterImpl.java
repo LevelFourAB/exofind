@@ -17,6 +17,7 @@ public class IndexEncounterImpl implements IndexEncounter {
 	private final boolean highlightsInPostings;
 	private final SynonymOverlay querySynonyms;
 	private final TypoExclusions typoExclusions;
+	private final AutomatonCache automata;
 
 	private Optional<Locale> locale;
 	private LocaleSupport localeSupport;
@@ -27,20 +28,33 @@ public class IndexEncounterImpl implements IndexEncounter {
 	private boolean forHighlighting;
 
 	public IndexEncounterImpl(ResourcesDef resources, boolean highlightsInPostings) {
-		this(resources, highlightsInPostings, SynonymOverlay.none(), TypoExclusions.none());
+		this(
+			resources,
+			highlightsInPostings,
+			SynonymOverlay.none(),
+			TypoExclusions.none(),
+			AutomatonCache.shared()
+		);
 	}
 
 	public IndexEncounterImpl(
 		ResourcesDef resources,
 		boolean highlightsInPostings,
 		SynonymOverlay querySynonyms,
-		TypoExclusions typoExclusions
+		TypoExclusions typoExclusions,
+		AutomatonCache automata
 	) {
 		this.resources = resources;
 		this.highlightsInPostings = highlightsInPostings;
 		this.querySynonyms = querySynonyms;
 		this.typoExclusions = typoExclusions;
+		this.automata = automata;
 		this.locale = Optional.empty();
+	}
+
+	@Override
+	public AutomatonCache getAutomata() {
+		return automata;
 	}
 
 	@Override

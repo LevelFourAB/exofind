@@ -48,6 +48,23 @@ public abstract class AbstractIndexTest {
 	protected Index create(String name, SearchThreads searchThreads, FacetWarmer facetWarmer)
 		throws IOException
 	{
+		return create(name, searchThreads, facetWarmer, SearchCaches.defaults());
+	}
+
+	/**
+	 * Open an index whose searches read through the given caches, for a test
+	 * of what a cache keeps and shares between indexes.
+	 */
+	protected Index create(String name, SearchCaches caches) throws IOException {
+		return create(name, SearchThreads.inline(), FacetWarmer.none(), caches);
+	}
+
+	protected Index create(
+		String name,
+		SearchThreads searchThreads,
+		FacetWarmer facetWarmer,
+		SearchCaches caches
+	) throws IOException {
 		var path = indexRoot.resolve(name);
 		Files.createDirectories(path);
 
@@ -63,11 +80,21 @@ public abstract class AbstractIndexTest {
 			RequestMetrics.none(),
 			OptionalLong.empty(),
 			searchThreads,
-			facetWarmer
+			facetWarmer,
+			caches
 		);
 		index.pull();
 		indexes.add(index);
 		return index;
+	}
+
+	/**
+	 * Close an index before the test ends, for a test of what its closing
+	 * leaves behind.
+	 */
+	protected void close(Index index) throws IOException {
+		indexes.remove(index);
+		index.close();
 	}
 
 	protected Index create(String name, IndexDef.Builder def) throws IOException {

@@ -68,14 +68,17 @@ public interface FacetCounter {
 	 *   the analyzer whose {@link Analyzer#normalize(String, String)} folds a
 	 *   term and a prefix before they are compared, or {@code null} to compare
 	 *   a prefix with the decoded value ignoring case
+	 * @param automata
+	 *   where the automata a prefix with mistakes is walked with are kept
 	 * @return
 	 */
 	static Strings overStrings(
 		String field,
 		Function<String, Object> decode,
-		Analyzer normalizer
+		Analyzer normalizer,
+		AutomatonCache automata
 	) {
-		return new Strings(field, decode, normalizer);
+		return new Strings(field, decode, normalizer, automata);
 	}
 
 	/**
@@ -91,11 +94,14 @@ public interface FacetCounter {
 	 * @param normalizer
 	 *   the analyzer that folds a term and a prefix before they are compared,
 	 *   or {@code null} to compare ignoring case
+	 * @param automata
+	 *   where the automata a prefix with mistakes is walked with are kept
 	 */
 	record Strings(
 		String field,
 		Function<String, Object> decode,
-		Analyzer normalizer
+		Analyzer normalizer,
+		AutomatonCache automata
 	) implements FacetCounter {
 		@Override
 		public FacetCount prepare(
@@ -107,7 +113,16 @@ public interface FacetCounter {
 			DeclaredValues.Localized declared
 		) {
 			return new StringFacetCount(
-				field, scope, limit, order, decode, normalizer, prefix, prefixEdits, declared
+				field,
+				scope,
+				limit,
+				order,
+				decode,
+				normalizer,
+				prefix,
+				prefixEdits,
+				declared,
+				automata
 			);
 		}
 	}

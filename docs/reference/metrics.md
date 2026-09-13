@@ -77,9 +77,20 @@ The `state` tag carries the uppercase name of the state. The admin API answers w
 | `exofind.document.cache.hits` | Counter | Reads | None | Number of document reads served directly from the in-memory cache. |
 | `exofind.document.cache.misses` | Counter | Reads | None | Number of document reads that missed the cache and required a disk lookup. |
 | `exofind.document.cache.evictions` | Counter | Entries | None | Number of entries evicted from the document cache. |
+| `exofind.query.cache.hits` | Counter | Clauses | None | Number of narrowing clauses answered from the matching documents the query cache kept for a segment. |
+| `exofind.query.cache.misses` | Counter | Clauses | None | Number of narrowing clauses the query cache held no matches for. A clause is only kept once the searches of its index have asked for it more than once recently, so a miss does not always mean an entry was made. |
+| `exofind.query.cache.evictions` | Counter | Queries | None | Number of queries the query cache dropped to stay within `EXOFIND_SEARCH_QUERY_CACHE_MAX_QUERIES` and `EXOFIND_SEARCH_QUERY_CACHE_MAX_SIZE`. |
+| `exofind.query.cache.bytes` | Gauge | Bytes | None | Heap the matches the query cache holds take. |
+| `exofind.term.cache.hits` | Counter | Lookups | None | Number of term lookups answered from where the term cache already knew a term sits in its reader. |
+| `exofind.term.cache.misses` | Counter | Lookups | None | Number of term lookups that had to seek the term in every segment of the reader. |
+| `exofind.term.cache.evictions` | Counter | Terms | None | Number of terms the term cache dropped to stay within `EXOFIND_SEARCH_TERM_CACHE_MAX_SIZE`. Terms of a reader that closed are removed, not evicted. |
+| `exofind.typo.cache.hits` | Counter | Words | None | Number of typo tolerant words answered with an automaton compiled earlier. |
+| `exofind.typo.cache.misses` | Counter | Words | None | Number of typo tolerant words whose automaton had to be compiled. |
+| `exofind.prefix.cache.hits` | Counter | Words | None | Number of half typed words answered with an automaton compiled earlier. |
+| `exofind.prefix.cache.misses` | Counter | Words | None | Number of half typed words whose automaton had to be compiled. |
 | `exofind.facet.cache.hits` | Counter | Facets | None | Number of facets answered from the counts an earlier search made over the same scope: the same clauses, locale, settings and definition against the same reader. |
 | `exofind.facet.cache.misses` | Counter | Facets | None | Number of facets that had to be counted. The hit rate over a period is `hits / (hits + misses)`. |
-| `exofind.facet.cache.evictions` | Counter | Entries | None | Number of facet scope entries dropped to make room for ones asked for more recently. Each reader keeps a bounded number of scopes. |
+| `exofind.facet.cache.evictions` | Counter | Entries | None | Number of facet scope entries dropped to stay within `EXOFIND_SEARCH_FACET_CACHE_MAX_SIZE`. Entries of a reader that closed are removed, not evicted. |
 | `exofind.facet.segment.hits` | Counter | Segments | None | Number of segments whose counts over everything the index holds were reused. A refresh keeps the counts of the segments it left untouched, so a search after it only counts the new segments. |
 | `exofind.facet.segment.misses` | Counter | Segments | None | Number of segments a facet had to count over everything the index holds. |
 | `exofind.facet.state.bytes` | Gauge | Bytes | None | Estimated heap memory used by the facet state of all open readers: ordinal maps, segment columns and postings, and counts across each segment. |
