@@ -245,7 +245,7 @@ public class IndexSettingsResourceTest {
 	public void testSettingsReorderSearchesWithoutTouchingTheDefinition() {
 		products();
 
-		var before = (IndexInfo) admin.get("products").getEntity();
+		var before = (IndexInfo) admin.get("products", null).getEntity();
 		assertThat(ids(), contains("1", "2", "3"));
 
 		var response = resource.put(
@@ -259,7 +259,7 @@ public class IndexSettingsResourceTest {
 		assertThat(ids(), contains("3", "2", "1"));
 
 		// The definition was never involved, so its version stands
-		var after = (IndexInfo) admin.get("products").getEntity();
+		var after = (IndexInfo) admin.get("products", null).getEntity();
 		assertThat(after.version(), is(before.version()));
 	}
 
@@ -341,7 +341,7 @@ public class IndexSettingsResourceTest {
 		assertThat(response.getStatus(), is(204));
 
 		assertThat(ids(), contains("1", "2", "3"));
-		assertThrows(SearchSettingsNotFoundException.class, () -> resource.get("products"));
+		assertThrows(SearchSettingsNotFoundException.class, () -> resource.get("products", null));
 	}
 
 	/**
@@ -354,7 +354,7 @@ public class IndexSettingsResourceTest {
 
 		var e = assertThrows(
 			SearchSettingsNotFoundException.class,
-			() -> resource.get("products")
+			() -> resource.get("products", null)
 		);
 		assertThat(e.getCode(), is("index:settings:not_found"));
 	}
@@ -369,12 +369,56 @@ public class IndexSettingsResourceTest {
 			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
 		).getEntity();
 
-		var response = resource.get("products");
+		var response = resource.get("products", null);
 		var info = (SearchSettingsInfo) response.getEntity();
 
 		assertThat(response.getEntityTag().getValue(), is(stored.version()));
 		assertThat(info.ranking().tieBreakers().get(0).field(), is("sales"));
 		assertThat(info.unsupportedFeatures(), is(nullValue()));
+	}
+
+	/**
+	 * A client that sends back the version it holds is told it is still
+	 * current, and gets the settings again once a write has moved them on.
+	 */
+	@Test
+	public void testGetWithTheCurrentVersionIsNotModified() {
+		products();
+
+		var stored = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		).getEntity();
+
+		var unchanged = resource.get("products", "\"" + stored.version() + "\"");
+		assertThat(unchanged.getStatus(), is(304));
+		assertThat(unchanged.getEntity(), is(nullValue()));
+		assertThat(unchanged.getEntityTag().getValue(), is(stored.version()));
+
+		var replaced = (SearchSettingsInfo) resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		).getEntity();
+
+		var changed = resource.get("products", "\"" + stored.version() + "\"");
+		assertThat(changed.getStatus(), is(200));
+		assertThat(changed.getEntityTag().getValue(), is(replaced.version()));
+	}
+
+	/**
+	 * The precondition is read only once settings are found: an index without
+	 * them is not found whatever the client claims to hold.
+	 */
+	@Test
+	public void testGetWithoutSettingsWithAnyVersionIsNotFound() {
+		products();
+
+		assertThrows(
+			SearchSettingsNotFoundException.class,
+			() -> resource.get("products", "*")
+		);
 	}
 
 	/**
@@ -636,11 +680,11 @@ public class IndexSettingsResourceTest {
 
 		assertThat(ids(), contains("1", "2", "3"));
 
-		var info = (SearchSettingsInfo) resource.get("products").getEntity();
+		var info = (SearchSettingsInfo) resource.get("products", null).getEntity();
 		assertThat(info.unsupportedFeatures(), contains("pin_rules"));
 		assertThat(info.ranking(), not(nullValue()));
 
-		var status = ((IndexInfo) admin.get("products").getEntity()).status();
+		var status = ((IndexInfo) admin.get("products", null).getEntity()).status();
 		assertThat(status.settingsUnsupportedFeatures(), contains("pin_rules"));
 	}
 
@@ -797,7 +841,7 @@ public class IndexSettingsResourceTest {
 
 		// Cleared rather than removed, so the settings still have a version
 		assertThat(
-			((SearchSettingsInfo) resource.get("products").getEntity()).version(),
+			((SearchSettingsInfo) resource.get("products", null).getEntity()).version(),
 			is(info.version())
 		);
 	}
@@ -1090,7 +1134,7 @@ public class IndexSettingsResourceTest {
 	public void testSynonymsWidenSearchesWithoutTouchingTheDefinition() {
 		shoes();
 
-		var before = (IndexInfo) admin.get("shoes").getEntity();
+		var before = (IndexInfo) admin.get("shoes", null).getEntity();
 		assertThat(names("trainers"), contains("2"));
 
 		resource.put("shoes", null, equivalent("trainers", "sneakers"));
@@ -1098,7 +1142,7 @@ public class IndexSettingsResourceTest {
 		assertThat(names("trainers"), containsInAnyOrder("1", "2"));
 
 		// The documents were never touched, and neither was the definition
-		var after = (IndexInfo) admin.get("shoes").getEntity();
+		var after = (IndexInfo) admin.get("shoes", null).getEntity();
 		assertThat(after.version(), is(before.version()));
 	}
 
@@ -1108,7 +1152,7 @@ public class IndexSettingsResourceTest {
 
 		resource.put("shoes", null, equivalent("trainers", "sneakers"));
 
-		var info = (SearchSettingsInfo) resource.get("shoes").getEntity();
+		var info = (SearchSettingsInfo) resource.get("shoes", null).getEntity();
 		var set = info.synonyms().get("merch");
 
 		assertThat(set.rules().get(0).equivalent(), contains("trainers", "sneakers"));
@@ -1305,7 +1349,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(names("trainers"), contains("2"));
 
-		var info = (SearchSettingsInfo) resource.get("shoes").getEntity();
+		var info = (SearchSettingsInfo) resource.get("shoes", null).getEntity();
 		assertThat(info.synonyms(), is(nullValue()));
 	}
 
@@ -1368,7 +1412,7 @@ public class IndexSettingsResourceTest {
 	public void testExcludedWordsKeepTheirSpellingWithoutTouchingTheDefinition() {
 		cameras();
 
-		var before = (IndexInfo) admin.get("cameras").getEntity();
+		var before = (IndexInfo) admin.get("cameras", null).getEntity();
 		assertThat(names("cameras", "canon"), containsInAnyOrder("1", "2"));
 
 		resource.put("cameras", null, excluding("canon"));
@@ -1376,7 +1420,7 @@ public class IndexSettingsResourceTest {
 		assertThat(names("cameras", "canon"), contains("1"));
 
 		// The documents were never touched, and neither was the definition
-		var after = (IndexInfo) admin.get("cameras").getEntity();
+		var after = (IndexInfo) admin.get("cameras", null).getEntity();
 		assertThat(after.version(), is(before.version()));
 	}
 
@@ -1386,7 +1430,7 @@ public class IndexSettingsResourceTest {
 
 		resource.put("cameras", null, excluding("canon"));
 
-		var info = (SearchSettingsInfo) resource.get("cameras").getEntity();
+		var info = (SearchSettingsInfo) resource.get("cameras", null).getEntity();
 		var exclusions = info.typoExclusions().get("brands");
 
 		assertThat(exclusions.words(), contains("canon"));
@@ -1505,7 +1549,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(names("cameras", "canon"), containsInAnyOrder("1", "2"));
 
-		var info = (SearchSettingsInfo) resource.get("cameras").getEntity();
+		var info = (SearchSettingsInfo) resource.get("cameras", null).getEntity();
 		assertThat(info.typoExclusions(), is(nullValue()));
 	}
 
@@ -1631,7 +1675,7 @@ public class IndexSettingsResourceTest {
 	public void testFieldValuesAreReadWithoutTouchingTheDefinition() {
 		boutique();
 
-		var before = (IndexInfo) admin.get("boutique").getEntity();
+		var before = (IndexInfo) admin.get("boutique", null).getEntity();
 
 		// No text holds the colour, so the word is dropped and every pair of shoes is found
 		assertThat(typed("boutique", "red shoes"), containsInAnyOrder("1", "2"));
@@ -1641,7 +1685,7 @@ public class IndexSettingsResourceTest {
 		assertThat(typed("boutique", "red shoes"), contains("1"));
 
 		// The documents were never touched, and neither was the definition
-		var after = (IndexInfo) admin.get("boutique").getEntity();
+		var after = (IndexInfo) admin.get("boutique", null).getEntity();
 		assertThat(after.version(), is(before.version()));
 	}
 
@@ -1651,7 +1695,7 @@ public class IndexSettingsResourceTest {
 
 		resource.put("boutique", null, reading("colour"));
 
-		var info = (SearchSettingsInfo) resource.get("boutique").getEntity();
+		var info = (SearchSettingsInfo) resource.get("boutique", null).getEntity();
 		assertThat(info.fields().get("colour").interpret(), is(notNullValue()));
 	}
 
@@ -1780,7 +1824,7 @@ public class IndexSettingsResourceTest {
 			declared("Green", null, Map.of("sv", "Grön"))
 		));
 
-		var info = (SearchSettingsInfo) resource.get("boutique").getEntity();
+		var info = (SearchSettingsInfo) resource.get("boutique", null).getEntity();
 		assertThat(
 			info.fields().get("colour").values(),
 			contains(
@@ -1968,7 +2012,7 @@ public class IndexSettingsResourceTest {
 
 		assertThat(typed("boutique", "red shoes"), containsInAnyOrder("1", "2"));
 
-		var info = (SearchSettingsInfo) resource.get("boutique").getEntity();
+		var info = (SearchSettingsInfo) resource.get("boutique", null).getEntity();
 		assertThat(info.fields(), is(nullValue()));
 	}
 

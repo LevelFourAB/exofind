@@ -190,7 +190,7 @@ public class IndexResourceTest {
 		var withOwnership = new IndexResource(
 			indexes, auth, ownership, reindexJobs, searchSettings
 		);
-		var info = (IndexInfo) withOwnership.get("books").getEntity();
+		var info = (IndexInfo) withOwnership.get("books", null).getEntity();
 
 		assertThat(info.status().indexer(), is(notNullValue()));
 		assertThat(info.status().indexer().node(), is("node-1"));
@@ -211,14 +211,14 @@ public class IndexResourceTest {
 		assertThat(added.generation(), is("2"));
 		assertThat(added.live(), is(false));
 
-		var before = (IndexInfo) resource.get("books").getEntity();
+		var before = (IndexInfo) resource.get("books", null).getEntity();
 		assertThat(before.generation(), is("1"));
 
 		var promoted = (IndexInfo) resource.promote("books@2").getEntity();
 		assertThat(promoted.generation(), is("2"));
 		assertThat(promoted.live(), is(true));
 
-		var after = (IndexInfo) resource.get("books").getEntity();
+		var after = (IndexInfo) resource.get("books", null).getEntity();
 		assertThat(after.generation(), is("2"));
 	}
 
@@ -231,7 +231,7 @@ public class IndexResourceTest {
 		create("books", definition());
 		create("books@2", definition());
 
-		var info = (IndexInfo) resource.get("books").getEntity();
+		var info = (IndexInfo) resource.get("books", null).getEntity();
 
 		assertThat(
 			info.generations().stream().map(GenerationSummary::name).toList(),
@@ -265,7 +265,7 @@ public class IndexResourceTest {
 
 		assertThat(resource.delete("books@1").getStatus(), is(204));
 
-		var info = (IndexInfo) resource.get("books").getEntity();
+		var info = (IndexInfo) resource.get("books", null).getEntity();
 		assertThat(
 			info.generations().stream().map(GenerationSummary::name).toList(),
 			contains("2")
@@ -331,7 +331,7 @@ public class IndexResourceTest {
 	public void testGet() {
 		var created = create("books", definition());
 
-		var response = resource.get("books");
+		var response = resource.get("books", null);
 		assertThat(response.getStatus(), is(200));
 
 		var info = (IndexInfo) response.getEntity();
@@ -342,7 +342,62 @@ public class IndexResourceTest {
 
 	@Test
 	public void testGetUnknown() {
-		assertThrows(IndexNotFoundException.class, () -> resource.get("books"));
+		assertThrows(IndexNotFoundException.class, () -> resource.get("books", null));
+	}
+
+	/**
+	 * A client that sends back the version it holds gets told it is still
+	 * current instead of the whole resource again.
+	 */
+	@Test
+	public void testGetWithTheCurrentVersionIsNotModified() {
+		var created = create("books", definition());
+
+		var response = resource.get("books", "\"" + created.version() + "\"");
+		assertThat(response.getStatus(), is(304));
+		assertThat(response.getEntity(), is(nullValue()));
+		assertThat(response.getEntityTag().getValue(), is(created.version()));
+	}
+
+	/**
+	 * A read compares weakly, so a weak tag and a list holding the version
+	 * among others both say the client holds what is stored.
+	 */
+	@Test
+	public void testGetWithAWeakOrListedVersionIsNotModified() {
+		var created = create("books", definition());
+
+		var weak = resource.get("books", "W/\"" + created.version() + "\"");
+		assertThat(weak.getStatus(), is(304));
+
+		var listed = resource.get("books", "\"other\", \"" + created.version() + "\"");
+		assertThat(listed.getStatus(), is(304));
+	}
+
+	@Test
+	public void testGetWithAnyVersionIsNotModified() {
+		create("books", definition());
+
+		var response = resource.get("books", "*");
+		assertThat(response.getStatus(), is(304));
+	}
+
+	@Test
+	public void testGetWithAnotherVersionAnswersTheIndex() {
+		var created = create("books", definition());
+
+		var response = resource.get("books", "\"other\"");
+		assertThat(response.getStatus(), is(200));
+		assertThat(((IndexInfo) response.getEntity()).version(), is(created.version()));
+	}
+
+	/**
+	 * The precondition is read only once the index is found: what does not
+	 * exist is not found whatever the client claims to hold.
+	 */
+	@Test
+	public void testGetUnknownWithAnyVersionIsNotFound() {
+		assertThrows(IndexNotFoundException.class, () -> resource.get("books", "*"));
 	}
 
 	@Test
@@ -610,7 +665,7 @@ public class IndexResourceTest {
 		assertThat(response.getStatus(), is(204));
 
 		assertThat(resource.list().indexes().isEmpty(), is(true));
-		assertThrows(IndexNotFoundException.class, () -> resource.get("books"));
+		assertThrows(IndexNotFoundException.class, () -> resource.get("books", null));
 	}
 
 	@Test

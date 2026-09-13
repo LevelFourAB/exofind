@@ -168,6 +168,7 @@ public class IndexSettingsResource {
 	 * ensuring the {@code ETag} always represents an explicit stored version.
 	 *
 	 * @param name
+	 * @param ifNoneMatch
 	 * @return
 	 */
 	@GET
@@ -178,7 +179,8 @@ public class IndexSettingsResource {
 		description = """
 			Returns the search settings as stored, with their version in the \
 			`ETag` header. Settings are read directly from storage rather than \
-			from the node's local copy.
+			from the node's local copy. A request whose `If-None-Match` header \
+			names the stored version is answered `304 Not Modified`.
 
 			An index with no search settings - one searching with its \
 			definition alone - returns `404` with `index:settings:not_found` \
@@ -195,6 +197,13 @@ public class IndexSettingsResource {
 			schema = @Schema(implementation = SearchSettingsInfo.class),
 			examples = @ExampleObject(name = "settings", value = SearchSettingsInfo.EXAMPLE)
 		)
+	)
+	@APIResponse(
+		responseCode = "304",
+		description = """
+			The settings are still at a version the `If-None-Match` header \
+			names. The response carries the version in the `ETag` header and \
+			no body."""
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -242,13 +251,28 @@ public class IndexSettingsResource {
 				than to a generation.""",
 			example = "books"
 		)
-		@PathParam("name") String name
+		@PathParam("name") String name,
+
+		@Parameter(
+			description = """
+				Settings versions the client already holds, as `ETag` values \
+				separated by commas, or `*` for any. While the stored version \
+				is one of them, the response is `304 Not Modified` with no \
+				body.""",
+			example = "\"3b7e9d1c5a2f4e60\""
+		)
+		@HeaderParam("If-None-Match") String ifNoneMatch
 	) {
 		indexes.getOrThrow(name);
 
 		var index = IndexName.parse(name).index();
 		var snapshot = searchSettings.read(index)
 			.orElseThrow(() -> new SearchSettingsNotFoundException(index));
+
+		var version = unquote(snapshot.version());
+		if(IfNoneMatch.of(ifNoneMatch).holds(version)) {
+			return Response.notModified(new EntityTag(version)).build();
+		}
 
 		return answer(snapshot, false);
 	}

@@ -6576,7 +6576,7 @@ paths:
       description: |-
         Returns the index resource: its definition as stored, the generation described in the response, every generation it holds, and the status the answering node observes.
 
-        The definition version is returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates.
+        The definition version is returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates, or in the `If-None-Match` header on a later `GET` to receive `304 Not Modified` while the definition is still at that version.
 
         Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
       operationId: getIndex
@@ -6589,6 +6589,14 @@ paths:
         name: name
         in: path
         required: true
+        schema:
+          type: string
+      - description: "Definition versions the client already holds, as `ETag` values\
+          \ separated by commas, or `*` for any. While the stored version is one of\
+          \ them, the response is `304 Not Modified` with no body."
+        example: '"9f2c1a0b3d4e5f60"'
+        name: If-None-Match
+        in: header
         schema:
           type: string
       responses:
@@ -6631,6 +6639,9 @@ paths:
                       createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexInfo"
+        "304":
+          description: The definition is still at a version the `If-None-Match` header
+            names. The response carries the version in the `ETag` header and no body.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8020,7 +8031,7 @@ paths:
     get:
       summary: Get search settings
       description: |-
-        Returns the search settings as stored, with their version in the `ETag` header. Settings are read directly from storage rather than from the node's local copy.
+        Returns the search settings as stored, with their version in the `ETag` header. Settings are read directly from storage rather than from the node's local copy. A request whose `If-None-Match` header names the stored version is answered `304 Not Modified`.
 
         An index with no search settings - one searching with its definition alone - returns `404` with `index:settings:not_found` rather than an empty object, ensuring the `ETag` always represents an explicit stored version.
 
@@ -8037,6 +8048,14 @@ paths:
         name: name
         in: path
         required: true
+        schema:
+          type: string
+      - description: "Settings versions the client already holds, as `ETag` values\
+          \ separated by commas, or `*` for any. While the stored version is one of\
+          \ them, the response is `304 Not Modified` with no body."
+        example: '"3b7e9d1c5a2f4e60"'
+        name: If-None-Match
+        in: header
         schema:
           type: string
       responses:
@@ -8059,6 +8078,9 @@ paths:
                     version: 9f2c1a0b3d4e5f60
               schema:
                 $ref: "#/components/schemas/SearchSettingsInfo"
+        "304":
+          description: The settings are still at a version the `If-None-Match` header
+            names. The response carries the version in the `ETag` header and no body.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.

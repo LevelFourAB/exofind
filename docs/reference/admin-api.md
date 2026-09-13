@@ -88,7 +88,7 @@ The resource contains the following fields:
 - `name`: The name of the index.
 - `generation`: The generation described in the response. When the request specifies only the index name, this is the live generation.
 - `live`: A boolean indicating whether this generation is the live generation.
-- `version`: An identifier for the definition, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates.
+- `version`: An identifier for the definition, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` requests to prevent overwriting concurrent updates, or in the `If-None-Match` header on a later `GET` to receive `304 Not Modified` while the definition is unchanged.
 - `definition`: The active index definition. See [Field types](field-types.md). Presets are stored expanded; the response returns the expanded chain rather than the preset name.
 - `status`: The observed state reported by the answering node. The API does not accept this object as input.
 - `generations`: A list of all generations for the index, including name, live status, and creation timestamp (`createdAt`).
@@ -165,7 +165,7 @@ The response contains the following fields:
 - `synonyms`: Synonym sets applied to the text of a search, keyed by set name. See [Synonyms](#synonyms).
 - `typoExclusions`: Words matched as they are spelled, keyed by list name. See [Typo exclusions](#typo-exclusions).
 - `fields`: Settings that apply to one field, keyed by field name. See [Field settings](#field-settings).
-- `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`.
+- `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`. Pass it in the `If-None-Match` header on a later `GET` to receive `304 Not Modified` while the settings are unchanged.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
 
 A `PUT` request replaces the settings completely and returns them as stored. An index that had no settings answers `201 Created`, and one that had some answers `200 OK`. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
@@ -763,6 +763,7 @@ The Admin API returns the following status codes:
 
 | Status code | Condition |
 |-------------|-----------|
+| `304 Not Modified` | A `GET` of an index or its search settings carried an `If-None-Match` header naming the stored version. The response carries the `ETag` header and no body. |
 | `400 Bad Request` | The request body failed validation, or a `PATCH` of search settings named a place it cannot change (`request:update:*`, and `index:settings:no_match` for a selector naming nothing stored). The response body details each validation error. See [Errors](errors.md). |
 | `401 Unauthorized` | The request lacks valid credentials. See [Authentication](auth.md). |
 | `403 Forbidden` | The credential does not have permission for the requested action on this index. |

@@ -289,7 +289,7 @@ public class ReindexResourceTest {
 		);
 
 		// The refused request left no generation behind
-		var info = (IndexInfo) indexResource.get("books").getEntity();
+		var info = (IndexInfo) indexResource.get("books", null).getEntity();
 		assertThat(info.generations().size(), is(1));
 	}
 
@@ -311,7 +311,7 @@ public class ReindexResourceTest {
 				)
 			);
 
-			var info = (IndexInfo) indexResource.get("books").getEntity();
+			var info = (IndexInfo) indexResource.get("books", null).getEntity();
 			assertThat(info.generations().size(), is(1));
 		}
 	}
@@ -334,7 +334,7 @@ public class ReindexResourceTest {
 			)
 		);
 
-		var info = (IndexInfo) indexResource.get("books").getEntity();
+		var info = (IndexInfo) indexResource.get("books", null).getEntity();
 		assertThat(info.generations().size(), is(1));
 	}
 
@@ -363,7 +363,7 @@ public class ReindexResourceTest {
 			() -> resource.put("books@2", null, "manual", false, uriInfo, definition())
 		);
 
-		var info = (IndexInfo) indexResource.get("books").getEntity();
+		var info = (IndexInfo) indexResource.get("books", null).getEntity();
 		assertThat(info.generations().size(), is(1));
 	}
 
@@ -432,7 +432,7 @@ public class ReindexResourceTest {
 		);
 
 		// The refused request created no generation
-		var info = (IndexInfo) indexResource.get("books").getEntity();
+		var info = (IndexInfo) indexResource.get("books", null).getEntity();
 		assertThat(info.generations().size(), is(1));
 	}
 

@@ -325,7 +325,7 @@ public class GenerationRolloutTest {
 		assertThat(ids("products"), containsInAnyOrder("1", "2"));
 		assertThat(ids("products@2"), contains("3"));
 
-		var info = (IndexInfo) admin.get("products").getEntity();
+		var info = (IndexInfo) admin.get("products", null).getEntity();
 		assertThat(info.generation(), is("1"));
 		assertThat(
 			info.generations().stream().map(GenerationSummary::name).toList(),
@@ -403,7 +403,7 @@ public class GenerationRolloutTest {
 
 		assertThat(admin.delete("products@1").getStatus(), is(204));
 
-		var info = (IndexInfo) admin.get("products").getEntity();
+		var info = (IndexInfo) admin.get("products", null).getEntity();
 		assertThat(
 			info.generations().stream().map(GenerationSummary::name).toList(),
 			contains("2")

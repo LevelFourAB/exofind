@@ -179,9 +179,11 @@ public class IndexResource {
 	}
 
 	/**
-	 * Returns an index, its definition, and its current status.
+	 * Returns an index, its definition, and its current status, or
+	 * {@code 304} while the client already holds the version stored.
 	 *
 	 * @param name
+	 * @param ifNoneMatch
 	 * @return
 	 */
 	@GET
@@ -197,7 +199,9 @@ public class IndexResource {
 
 			The definition version is returned in the `ETag` header. Pass this \
 			value in the `If-Match` header on `PUT` requests to prevent \
-			overwriting concurrent updates."""
+			overwriting concurrent updates, or in the `If-None-Match` header \
+			on a later `GET` to receive `304 Not Modified` while the \
+			definition is still at that version."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -209,6 +213,13 @@ public class IndexResource {
 			schema = @Schema(implementation = IndexInfo.class),
 			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
 		)
+	)
+	@APIResponse(
+		responseCode = "304",
+		description = """
+			The definition is still at a version the `If-None-Match` header \
+			names. The response carries the version in the `ETag` header and \
+			no body."""
 	)
 	@APIResponse(
 		responseCode = "404",
@@ -268,9 +279,25 @@ public class IndexResource {
 				generation by name such as `books@2`.""",
 			example = "books"
 		)
-		@PathParam("name") String name
+		@PathParam("name") String name,
+
+		@Parameter(
+			description = """
+				Definition versions the client already holds, as `ETag` values \
+				separated by commas, or `*` for any. While the stored version \
+				is one of them, the response is `304 Not Modified` with no \
+				body.""",
+			example = "\"9f2c1a0b3d4e5f60\""
+		)
+		@HeaderParam("If-None-Match") String ifNoneMatch
 	) {
 		var index = indexes.getOrThrow(name);
+
+		var version = index.getDefinitionVersion();
+		if(IfNoneMatch.of(ifNoneMatch).holds(version)) {
+			return Response.notModified(new EntityTag(version)).build();
+		}
+
 		return toResponse(Response.ok(), index).build();
 	}
 

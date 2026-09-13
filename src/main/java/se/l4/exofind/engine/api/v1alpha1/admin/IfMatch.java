@@ -133,7 +133,12 @@ final class IfMatch {
 		return header;
 	}
 
-	private static String unquote(String tag) {
+	/**
+	 * Drop the quotes an entity tag is written with, so the tag compares
+	 * against a version as the engine holds it. A tag without them is
+	 * returned as it is.
+	 */
+	static String unquote(String tag) {
 		if(tag.length() >= 2 && tag.startsWith("\"") && tag.endsWith("\"")) {
 			return tag.substring(1, tag.length() - 1);
 		}

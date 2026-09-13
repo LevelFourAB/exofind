@@ -123,13 +123,17 @@ Because desired-state writes are idempotent, a request that times out can be sen
 
 Clients can supply this version in the `If-Match` header on subsequent `PUT` and `PATCH` requests. If the resource changes on the server before the request executes, the update is refused instead of overwriting the intermediate change.
 
+Clients can also supply the version in the `If-None-Match` header on a later `GET` of the same resource. While the stored version is one the header names, the response is `304 Not Modified` with the version in the `ETag` header and no body, so a client that polls for changes transfers the resource only when it has changed.
+
 Conditional requests follow these rules:
 
 - The header holds one or more entity tags, separated by commas, such as `If-Match: "9f2c1a0b3d4e5f60", "1a2b3c4d5e6f7089"`. The header is satisfied while the stored version equals one of them.
-- Versions are compared exactly. A weak tag, written `W/"9f2c1a0b3d4e5f60"`, matches no version.
-- `If-Match: *` asks only that the resource exists, whatever version it is at.
+- `If-Match` compares versions exactly. A weak tag, written `W/"9f2c1a0b3d4e5f60"`, matches no version.
+- `If-None-Match` compares versions weakly, as RFC 9110 states for a read. A weak tag is read the same as a strong one.
+- `If-Match: *` asks only that the resource exists, whatever version it is at. `If-None-Match: *` names every version, so a `GET` that carries it returns `304 Not Modified` whenever the resource exists.
 - An `If-Match` header that the stored version does not satisfy returns `412 Precondition Failed`.
-- An `If-Match` header sent for a resource that does not exist returns `404 Not Found`. This covers `*`, which asks for a resource that exists rather than for one to be created.
+- An `If-None-Match` header that names the stored version returns `304 Not Modified`. One that does not returns the resource as an unconditional `GET` would.
+- An `If-Match` or `If-None-Match` header sent for a resource that does not exist returns `404 Not Found`. This covers `*`, which asks for a resource that exists rather than for one to be created.
 - Search settings that have never been configured return `404 Not Found` rather than an empty object, ensuring the `ETag` always represents an explicit stored version.
 
 ## Serving nodes and forwarding
@@ -155,6 +159,7 @@ The API returns the following HTTP status codes:
 | `201 Created` | A resource was created: an index, a generation, the first search settings of an index, or a key. A `PUT` that replaces a resource returns `200 OK` instead. |
 | `202 Accepted` | A reindex job was started and runs asynchronously. Only `POST /v1alpha1/admin/indexes/{name}/actions/reindex` returns this status. |
 | `204 No Content` | A resource was removed: an index, its search settings, a key, or a document named by key in the path. |
+| `304 Not Modified` | A `GET` carried an `If-None-Match` header naming the stored version. The response carries the `ETag` header and no body. |
 | `400 Bad Request` | The request is invalid and must change before it can be served. |
 | `401 Unauthorized` | The request carries no credential accepted by this node. |
 | `403 Forbidden` | The credential is known, but the key lacks permission for the action. |
