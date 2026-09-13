@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/LevelFourAB/exofind/compare/v0.4.0...v0.4.1) (2026-09-13)
+
+
+### Bug fixes
+
+* Ensure that a node does not break during start up while generating OpenAPI docs ([3d5d827](https://github.com/LevelFourAB/exofind/commit/3d5d827e271cbb80968eb4c74b3eebff2b941408))
+
 ## [0.4.0](https://github.com/LevelFourAB/exofind/compare/v0.3.0...v0.4.0) (2026-09-13)
 
 
