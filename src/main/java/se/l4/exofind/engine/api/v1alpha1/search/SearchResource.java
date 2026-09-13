@@ -550,9 +550,14 @@ public class SearchResource {
 		when = "The length a highlighted fragment aims for is outside 1 to 10000 characters."
 	)
 	@ReturnsError(
+		value = "search:matched:fields_required",
+		status = 400,
+		when = "`matched` names no object field to answer matched values for."
+	)
+	@ReturnsError(
 		value = "search:matched:field_required",
 		status = 400,
-		when = "A `matched` entry does not name the object field to answer matched values for."
+		when = "An entry of the fields to answer matched values for is blank."
 	)
 	@ReturnsError(
 		value = "search:matched:fields_empty",
@@ -1984,9 +1989,14 @@ public class SearchResource {
 		when = "The length a highlighted fragment aims for is outside 1 to 10000 characters."
 	)
 	@ReturnsError(
+		value = "search:matched:fields_required",
+		status = 400,
+		when = "`matched` names no object field to answer matched values for."
+	)
+	@ReturnsError(
 		value = "search:matched:field_required",
 		status = 400,
-		when = "A `matched` entry does not name the object field to answer matched values for."
+		when = "An entry of the fields to answer matched values for is blank."
 	)
 	@ReturnsError(
 		value = "search:matched:fields_empty",

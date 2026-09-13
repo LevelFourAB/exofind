@@ -1922,7 +1922,7 @@ public class SearchRequestMapperTest {
 			)
 		);
 
-		assertThat(codesOf(e), contains("search:matched:field_required"));
+		assertThat(codesOf(e), contains("search:matched:fields_required"));
 		assertThat(pathsOf(e), contains("matched.fields"));
 	}
 
@@ -2197,7 +2197,28 @@ public class SearchRequestMapperTest {
 		);
 
 		assertThat(codesOf(e), contains("search:hits:highlight_field_not_inside"));
-		assertThat(pathsOf(e), contains("highlight.fields"));
+		assertThat(pathsOf(e), contains("highlight.fields.name"));
+	}
+
+	@Test
+	public void testHitsWithBlankHighlightFieldReportsOnlyTheBlankName() {
+		var fields = new HashMap<String, SearchRequest.HighlightField>();
+		fields.put(" ", null);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				withHits(
+					null, null,
+					new SearchRequest.Highlight(fields),
+					null,
+					new SearchRequest.Hits("variants", null, null)
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:highlight:field_required"));
 	}
 
 	@Test

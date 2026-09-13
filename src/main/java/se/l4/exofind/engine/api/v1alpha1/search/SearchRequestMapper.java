@@ -451,10 +451,15 @@ public class SearchRequestMapper {
 			.withArguments("max")
 			.withMessage("A fragment aims to be between 1 and {{max}} characters long");
 
+	private static final ErrorType MATCHED_FIELDS_REQUIRED =
+		ErrorType.withCode("search:matched:fields_required")
+			.withStatus(400)
+			.withMessage("Matched values need at least one object field to answer for");
+
 	private static final ErrorType MATCHED_FIELD_REQUIRED =
 		ErrorType.withCode("search:matched:field_required")
 			.withStatus(400)
-			.withMessage("The name of an object field to answer matched values for is required");
+			.withMessage("The name of an object field to answer matched values for can not be empty");
 
 	private static final ErrorType MATCHED_LIMIT_INVALID =
 		ErrorType.withCode("search:matched:limit_out_of_range")
@@ -1084,7 +1089,7 @@ public class SearchRequestMapper {
 
 		if(matched.fields() == null || matched.fields().isEmpty()) {
 			// Asking about no field is a mistake, not a quieter way of not asking
-			errors.add(MATCHED_FIELD_REQUIRED.toMessage(Location.create("matched.fields")));
+			errors.add(MATCHED_FIELDS_REQUIRED.toMessage(Location.create("matched.fields")));
 			return null;
 		}
 
@@ -1200,11 +1205,16 @@ public class SearchRequestMapper {
 		 */
 		if(body.highlight() != null && body.highlight().fields() != null) {
 			for(var name : body.highlight().fields().keySet()) {
-				if(name == null || !name.startsWith(path + ".")
-					|| name.length() == path.length() + 1) {
+				if(name == null || name.isBlank()) {
+					// A key with no name is already refused where highlighting
+					// is mapped, and there is no field here to judge
+					continue;
+				}
+
+				if(!name.startsWith(path + ".") || name.length() == path.length() + 1) {
 					errors.add(HITS_WITH_HIGHLIGHT.toMessage(
-						Location.create("highlight.fields"),
-						"field", name == null ? "" : name,
+						Location.create("highlight.fields." + name),
+						"field", name,
 						"path", path
 					));
 				}
