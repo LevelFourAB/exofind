@@ -284,18 +284,10 @@ public sealed interface Clause
 		@Schema(
 			description = """
 				Whether parts of `user` text are read as filters on the fields \
-				of the index: `auto` reads a number typed next to the unit of a \
-				number field, or next to a comparative word such as `under`, as \
-				a filter on that field; `off` takes every word as text. An \
-				object with `fields` reads the same way but only on the targets \
-				it names, for an index where several fields hold the same unit \
-				and the caller knows which one is meant. Whatever was read is \
-				reported as `interpreted` beside the results. See [Reading \
-				numbers and \
+				of the index, given as a mode or as the targets to read on. \
+				See [Reading numbers and \
 				units](https://exofind.dev/reference/search-api/#reading-numbers-and-units).""",
-			defaultValue = "auto",
-			implementation = Object.class,
-			oneOf = { Matcher.Text.Interpret.class, Interpret.Targets.class }
+			defaultValue = "auto"
 		)
 		Interpret interpret
 	) implements Clause {
@@ -344,7 +336,21 @@ public sealed interface Clause
 		 * targets together with {@code off}.
 		 */
 		@JsonDeserialize(using = Interpret.Deserializer.class)
-		@Schema(hidden = true)
+		@Schema(
+			name = "Interpret",
+			description = """
+				Whether parts of `user` text are read as filters on the fields \
+				of the index. A string selects a mode: `auto` reads a number \
+				typed next to the unit of a number field, or next to a \
+				comparative word such as `under`, as a filter on that field; \
+				`off` takes every word as text. An object with `fields` reads \
+				the same way but only on the targets it names, for an index \
+				where several fields hold the same unit and the caller knows \
+				which one is meant. Whatever was read is reported as \
+				`interpreted` beside the results. See [Reading numbers and \
+				units](https://exofind.dev/reference/search-api/#reading-numbers-and-units).""",
+			oneOf = { Matcher.Text.Interpret.class, Interpret.Targets.class }
+		)
 		public sealed interface Interpret permits Interpret.Mode, Interpret.Targets {
 			/**
 			 * One of the modes, written as a string.

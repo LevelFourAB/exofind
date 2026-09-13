@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.eclipse.microprofile.openapi.OASFilter;
 import org.eclipse.microprofile.openapi.models.OpenAPI;
+import org.eclipse.microprofile.openapi.models.media.Schema;
 
 import se.l4.exofind.engine.api.auth.RequiredPermissionFilter;
 import se.l4.exofind.engine.api.errors.ErrorCodeFilter;
@@ -17,11 +18,16 @@ import se.l4.exofind.engine.api.errors.ErrorCodeFilter;
  * matters once: {@link RequiredPermissionFilter} writes the {@code 401} and
  * {@code 403} answers that no endpoint declares, and a filter that reads the
  * answers of an operation has to run after them.
+ *
+ * <p>A filter that changes a schema rather than the document as a whole
+ * implements {@link OASFilter#filterSchema(Schema)}, which is delegated the
+ * same way.
  */
 public class ApiDocumentFilter implements OASFilter {
 	private static final List<OASFilter> FILTERS = List.of(
 		new RequiredPermissionFilter(),
-		new ErrorCodeFilter()
+		new ErrorCodeFilter(),
+		new SchemaTypeFilter()
 	);
 
 	@Override
@@ -29,5 +35,20 @@ public class ApiDocumentFilter implements OASFilter {
 		for(var filter : FILTERS) {
 			filter.filterOpenAPI(api);
 		}
+	}
+
+	@Override
+	public Schema filterSchema(Schema schema) {
+		var current = schema;
+
+		for(var filter : FILTERS) {
+			if(current == null) {
+				return null;
+			}
+
+			current = filter.filterSchema(current);
+		}
+
+		return current;
 	}
 }

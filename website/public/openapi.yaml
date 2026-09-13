@@ -28,12 +28,10 @@ components:
         preset:
           description: A preset specifies a predefined analyzer chain. The engine
             expands the preset before storing the index definition.
-          type: string
           $ref: "#/components/schemas/Preset"
         custom:
           description: "A custom analyzer chain that defines character filters, a\
             \ tokenizer, and token filters."
-          type: object
           $ref: "#/components/schemas/Custom"
         named:
           type: string
@@ -114,7 +112,6 @@ components:
             \ a prefix without a manifest (such as an unfinished push or what an interrupted\
             \ removal left of a deleted generation). `missing`: the generation is\
             \ registered, but nothing exists in storage."
-          type: string
           $ref: "#/components/schemas/Stored"
         removedAt:
           type: string
@@ -217,21 +214,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
       type: object
     BoostClause:
@@ -302,15 +295,12 @@ components:
       properties:
         htmlStrip:
           description: Strips HTML and XML markup and keeps text between tags.
-          type: object
           $ref: "#/components/schemas/HtmlStrip"
         mapping:
           description: Replaces occurrences of each key with its value.
-          type: object
           $ref: "#/components/schemas/MappingCharFilter"
         patternReplace:
           description: Replaces substrings that match a regular expression.
-          type: object
           $ref: "#/components/schemas/PatternReplace"
     Claim:
       type: object
@@ -344,7 +334,6 @@ components:
           examples:
           - 2026-08-21T10:15:30Z
     Clause:
-      type: object
       oneOf:
       - $ref: "#/components/schemas/FieldClause"
       - $ref: "#/components/schemas/TextClause"
@@ -415,7 +404,6 @@ components:
           - exok_4ff6b760264c1918_ePQcdT1O9HSATZoXfDbT8hhHGsP9VpZH
         key:
           description: The key as a listing will show it from now on.
-          type: object
           $ref: "#/components/schemas/KeyInfo"
     Custom:
       type: object
@@ -443,7 +431,6 @@ components:
             \ engine chooses a tokenizer based on the locale of the value (Unicode\
             \ segmentation for most locales; language-specific segmentation for Chinese,\
             \ Japanese, and Korean)."
-          type: object
           $ref: "#/components/schemas/Tokenizer"
         filters:
           type: array
@@ -806,21 +793,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         signal:
           description: "Makes the field a ranking signal that is refreshed in place\
@@ -829,12 +812,10 @@ components:
             \ of the document source and cannot be combined with `filter`, `facet`,\
             \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
             \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
-          type: object
           $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
-          type: object
           $ref: "#/components/schemas/DoubleValidation"
         unit:
           type: string
@@ -876,7 +857,6 @@ components:
           - waterproof
         reason:
           description: Reason the word was dropped.
-          type: string
           $ref: "#/components/schemas/Reason"
     EdgeNgram:
       type: object
@@ -1096,20 +1076,17 @@ components:
           - 7.42
         detail:
           description: Root score step explaining how the score was calculated.
-          type: object
           $ref: "#/components/schemas/ExplainDetail"
         relaxed:
           description: "Relaxation details containing dropped words and the effective\
             \ query text. Omitted if query relaxation did not run. When zero results\
             \ trigger query relaxation, the explanation tree reflects the relaxed\
             \ query that executed."
-          type: object
           $ref: "#/components/schemas/Relaxed"
         interpreted:
           description: "What the search read out of the query text as filters, and\
             \ the text that was left. Omitted when nothing was read. The explanation\
             \ tree reflects the search with the filters in it."
-          type: object
           $ref: "#/components/schemas/Interpreted"
         tookMs:
           type: number
@@ -1206,7 +1183,6 @@ components:
             \ `\"value\"` (ascending by value), or `\"declared\"` (the order the search\
             \ settings declare for the field's values, followed by every other value\
             \ by count)."
-          type: string
           default: count
           $ref: "#/components/schemas/FacetOrder"
         ranges:
@@ -1382,7 +1358,6 @@ components:
             \ `\"value\"` (ascending by value), or `\"declared\"` (the order the search\
             \ settings declare for the field's values, followed by every other value\
             \ by count)."
-          type: string
           default: count
           $ref: "#/components/schemas/FacetOrder"
     FacetValuesResponse:
@@ -1449,11 +1424,9 @@ components:
           - category
         match:
           description: Criteria evaluated against the field's values.
-          type: object
           $ref: "#/components/schemas/Matcher"
       type: object
     FieldDefinition:
-      type: object
       oneOf:
       - $ref: "#/components/schemas/StringFieldDefinition"
       - $ref: "#/components/schemas/BooleanFieldDefinition"
@@ -1509,7 +1482,6 @@ components:
             \ a `string` field with `filter` and `facet` and without `hierarchy`;\
             \ otherwise the request returns `settings:fields:interpret_unsupported`.\
             \ Carries no options. See [Reading the values of a field](https://exofind.dev/reference/search-api/#reading-the-values-of-a-field)."
-          type: object
           $ref: "#/components/schemas/InterpretUsage"
         values:
           type: array
@@ -1530,7 +1502,6 @@ components:
             \ `string` field with `facet` and without `hierarchy`; otherwise the request\
             \ returns `settings:fields:suggest_unsupported`. Carries no options. See\
             \ [Suggesting what to search for](https://exofind.dev/reference/search-api/#suggesting-what-to-search-for)."
-          type: object
           $ref: "#/components/schemas/Suggest"
     FieldSort:
       required:
@@ -1556,7 +1527,6 @@ components:
           - name
         order:
           description: Direction to order in.
-          type: string
           default: asc
           $ref: "#/components/schemas/SortOrder"
       type: object
@@ -1589,7 +1559,6 @@ components:
             \ the `match` of a `field` clause takes: a `range` for a bound, an `equals`\
             \ for a number written with its unit and nothing else. Can be sent back\
             \ as a filter as it is."
-          type: object
           $ref: "#/components/schemas/Matcher"
         words:
           type: array
@@ -1656,21 +1625,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         signal:
           description: "Makes the field a ranking signal that is refreshed in place\
@@ -1679,12 +1644,10 @@ components:
             \ of the document source and cannot be combined with `filter`, `facet`,\
             \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
             \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
-          type: object
           $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
-          type: object
           $ref: "#/components/schemas/FloatValidation"
         unit:
           type: string
@@ -1854,7 +1817,6 @@ components:
             \ usages. The role expands into explicit field properties before the definition\
             \ is stored, and any property set alongside the role is preserved as given.\
             \ Supported roles per type are listed under [Field roles](https://exofind.dev/reference/field-types/#field-roles)."
-          type: string
           $ref: "#/components/schemas/Role"
         primaryKey:
           type: boolean
@@ -1885,21 +1847,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: Enables distance-based filtering with the `distance` matcher.
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: "Enables ordering documents by distance from a target origin,\
             \ nearest first."
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
       type: object
     Grant:
@@ -2238,7 +2196,6 @@ components:
             \ entire document, enabling full document retrieval and reindexing from\
             \ the index itself. `none` retains only fields configured as `stored`.\
             \ Changing this setting applies to documents indexed after the update."
-          type: string
           default: full
           $ref: "#/components/schemas/Source"
         metadata:
@@ -2259,12 +2216,10 @@ components:
         ranking:
           description: "Tie-breaking rules and ranking signals. Omitted to order results\
             \ by match score alone. Replaced entirely while an index has [search settings](https://exofind.dev/reference/admin-api/#search-settings)."
-          type: object
           $ref: "#/components/schemas/Ranking"
         resources:
           description: "Shared resources referenced by name from fields, including\
             \ named analysis chains, stopword lists, and synonym sets."
-          type: object
           $ref: "#/components/schemas/Resources"
         locales:
           description: "Declares the locales that localized fields in the index support.\
@@ -2273,14 +2228,12 @@ components:
             \ expands the declaration onto each field before storing the index definition,\
             \ so reading a definition back returns the locales on each field. If omitted,\
             \ each field declares its own locales."
-          type: object
           $ref: "#/components/schemas/IndexLocales"
         localeFallback:
           description: "Configures how missing locale values in a document are populated\
             \ from available locales during indexing. When omitted, missing locales\
             \ remain empty, and searches in a locale find only documents translated\
             \ into it."
-          type: object
           $ref: "#/components/schemas/LocaleFallback"
     IndexInfo:
       description: "An index together with the definition and status of one of its\
@@ -2341,12 +2294,10 @@ components:
         definition:
           description: The active index definition. Presets are stored expanded; the
             response returns the expanded chain rather than the preset name.
-          type: object
           $ref: "#/components/schemas/IndexDefinition"
         status:
           description: The observed state reported by the answering node. The API
             does not accept this object as input.
-          type: object
           $ref: "#/components/schemas/IndexStatus"
         generations:
           type: array
@@ -2442,7 +2393,6 @@ components:
             \ engine features not present on this node version), `incompatible` (the\
             \ Lucene files are too old for this build to open), or `closed` (the index\
             \ is closed on this node; a new request opens a fresh instance)."
-          type: string
           $ref: "#/components/schemas/IndexState"
         readOnly:
           type: boolean
@@ -2455,7 +2405,6 @@ components:
             \ be read, if the holder provided no address, or on nodes using local\
             \ storage where `readOnly` already answers. Data in this field can lag\
             \ behind a node handover by a few seconds."
-          type: object
           $ref: "#/components/schemas/IndexerInfo"
         luceneCompatibility:
           description: "Indicates Lucene version compatibility. `current`: created\
@@ -2466,7 +2415,6 @@ components:
             \ the `incompatible` state and requires reindexing. `unknown`: no version\
             \ was recorded and no commit exists to determine the version, such as\
             \ on an empty index."
-          type: string
           $ref: "#/components/schemas/LuceneCompatibility"
         luceneCreatedMajor:
           type: integer
@@ -2606,21 +2554,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         signal:
           description: "Makes the field a ranking signal that is refreshed in place\
@@ -2629,12 +2573,10 @@ components:
             \ of the document source and cannot be combined with `filter`, `facet`,\
             \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
             \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
-          type: object
           $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
-          type: object
           $ref: "#/components/schemas/Int32Validation"
         unit:
           type: string
@@ -2710,21 +2652,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         signal:
           description: "Makes the field a ranking signal that is refreshed in place\
@@ -2733,12 +2671,10 @@ components:
             \ of the document source and cannot be combined with `filter`, `facet`,\
             \ `stored`, `multiple`, `locales` or `primaryKey`. A document indexed\
             \ without a value keeps the value the field holds. See [Signal fields](https://exofind.dev/reference/field-types/#signal-fields)."
-          type: object
           $ref: "#/components/schemas/SignalUsage"
         validation:
           description: Sets allowed numeric bounds. Documents containing values outside
             these bounds are rejected.
-          type: object
           $ref: "#/components/schemas/Int64Validation"
         unit:
           type: string
@@ -2767,6 +2703,18 @@ components:
           type: integer
           format: int64
           description: Highest value accepted.
+    Interpret:
+      oneOf:
+      - $ref: "#/components/schemas/InterpretMode"
+      - $ref: "#/components/schemas/InterpretTargets"
+      description: "Whether parts of `user` text are read as filters on the fields\
+        \ of the index. A string selects a mode: `auto` reads a number typed next\
+        \ to the unit of a number field, or next to a comparative word such as `under`,\
+        \ as a filter on that field; `off` takes every word as text. An object with\
+        \ `fields` reads the same way but only on the targets it names, for an index\
+        \ where several fields hold the same unit and the caller knows which one is\
+        \ meant. Whatever was read is reported as `interpreted` beside the results.\
+        \ See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
     InterpretMode:
       description: "Whether parts of `user` text are read as filters: `auto` reads\
         \ a number typed next to a unit or a comparative word as a filter on the field\
@@ -3160,7 +3108,6 @@ components:
           description: Controls whether this field participates in the index's `localeFallback`.
             Only evaluated on an index that declares a fallback; setting `enabled`
             on an index without fallback configuration is rejected.
-          type: string
           default: enabled
           $ref: "#/components/schemas/Fallback"
     LuceneCompatibility:
@@ -3285,7 +3232,6 @@ components:
           description: Total count of matched values for the nested field in the document.
             Exceeds the number of entries under `values` when the limit is reached.
     Matcher:
-      type: object
       oneOf:
       - $ref: "#/components/schemas/EqualsMatcher"
       - $ref: "#/components/schemas/InMatcher"
@@ -3394,7 +3340,6 @@ components:
         score:
           description: Scoring mode for aggregating matching nested values. Only applies
             when scoring clauses exist within the nested clause.
-          type: string
           default: max
           $ref: "#/components/schemas/Score"
       type: object
@@ -3505,25 +3450,20 @@ components:
           description: Not supported on an object field; setting it is rejected.
         locales:
           description: Not supported on an object field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: Not supported on an object field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Not supported on an object field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: Not supported on an object field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         mode:
           description: Storage mode for multiple objects. Required when `multiple`
             is `true` (`index:field:object:mode_required`) and rejected when it is
             not (`index:field:object:mode_without_multiple`).
-          type: string
           $ref: "#/components/schemas/Mode"
         key:
           type: string
@@ -3611,7 +3551,6 @@ components:
             \ it arrived, and do not read anything out of it."
         pages:
           description: "Numbered page metadata, present when requested."
-          type: object
           $ref: "#/components/schemas/PagesResult"
     PageRef:
       type: object
@@ -3677,12 +3616,10 @@ components:
         previous:
           description: Metadata for the page preceding the current page. Omitted on
             the first page.
-          type: object
           $ref: "#/components/schemas/PageRef"
         next:
           description: Metadata for the page following the current page. Omitted on
             the final page and when the page exceeds maximum page depth.
-          type: object
           $ref: "#/components/schemas/PageRef"
         start:
           type: array
@@ -3980,7 +3917,6 @@ components:
         registry:
           description: "The state of the registry object: `present`, `absent` (no\
             \ registry object), or `corrupt` (contents cannot be parsed)."
-          type: string
           $ref: "#/components/schemas/Registry"
         indexes:
           type: array
@@ -4408,7 +4344,6 @@ components:
         mapping:
           description: "A one-way mapping rule: values containing a term in `from`\
             \ also match searches for any term in `to`, but not the reverse."
-          type: object
           $ref: "#/components/schemas/Mapping"
     Saturation:
       type: object
@@ -4482,7 +4417,6 @@ components:
           - score
         order:
           description: Direction to order in.
-          type: string
           default: desc
           $ref: "#/components/schemas/SortOrder"
       type: object
@@ -4564,17 +4498,14 @@ components:
             \ The primary key is always included."
         highlight:
           description: "Fields to return highlighted snippets for. See [Highlighting](https://exofind.dev/reference/search-api/#highlighting)."
-          type: object
           $ref: "#/components/schemas/Highlight"
         matched:
           description: "Nested object fields for which to return matched values with\
             \ each hit. See [Matched values](https://exofind.dev/reference/search-api/#matched-values)."
-          type: object
           $ref: "#/components/schemas/Matched"
         hits:
           description: "Specifies an object field whose matched values return as individual\
             \ hits instead of full documents. See [What a hit stands for](https://exofind.dev/reference/search-api/#what-a-hit-stands-for)."
-          type: object
           $ref: "#/components/schemas/Hits"
         limit:
           type: integer
@@ -4600,10 +4531,8 @@ components:
           description: "Requests numbered page metadata. Accepts an optional `{ \"\
             max\": n }` object to limit the number of page entries (default `9`).\
             \ Implies `\"total\": \"exact\"`."
-          type: object
           $ref: "#/components/schemas/PagesRequest"
         total:
-          type: string
           default: estimate
           $ref: "#/components/schemas/TotalMode"
         signals:
@@ -4619,13 +4548,11 @@ components:
             add\"` ranks by both, with a signal here standing in for one on the same\
             \ field; `\"replace\"` ranks by `signals` alone. Supplying this without\
             \ `signals` returns `search:signal:mode_without_signals`."
-          type: string
           default: add
           $ref: "#/components/schemas/SignalsMode"
         rescore:
           description: "Reorders the best results of a search in a second pass without\
             \ changing which documents matched. See [Rescoring](https://exofind.dev/reference/search-api/#rescoring)."
-          type: object
           $ref: "#/components/schemas/Rescore"
     SearchResponse:
       description: "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response)."
@@ -4667,7 +4594,6 @@ components:
         total:
           description: "How many hits matched in total, counted in whatever the search\
             \ answers with: a document that expanded into values counts once per value."
-          type: object
           $ref: "#/components/schemas/Total"
         documents:
           description: "How many documents matched, which is what the facets are counted\
@@ -4676,7 +4602,6 @@ components:
             \ where it would be the same number as `total`. A document that `when`\
             \ expands with no matching value under `path` counts here while answering\
             \ with no hit."
-          type: object
           $ref: "#/components/schemas/Total"
         facets:
           type: object
@@ -4687,19 +4612,16 @@ components:
         page:
           description: "Where in the results this window sits, and how to move from\
             \ it."
-          type: object
           $ref: "#/components/schemas/Page"
         relaxed:
           description: "What the search let go of to find anything. Omitted entirely\
             \ when the query was not relaxed, so its presence always means the results\
             \ answer less than what was asked for."
-          type: object
           $ref: "#/components/schemas/Relaxed"
         interpreted:
           description: "What the search read out of the query text as filters, and\
             \ the text that was left. Omitted entirely when nothing was read. See\
             \ [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
-          type: object
           $ref: "#/components/schemas/Interpreted"
         tookMs:
           type: number
@@ -4761,7 +4683,6 @@ components:
             \ is in force, or replaces them with `signalsMode`. Validated against\
             \ the generation the index name answers from, using the same `index:ranking:*`\
             \ error codes that validate a definition's ranking."
-          type: object
           $ref: "#/components/schemas/Ranking"
         synonyms:
           type: object
@@ -4806,7 +4727,6 @@ components:
         ranking:
           description: The ranking searches run with instead of the definition's ranking.
             Omitted when the settings configure no ranking.
-          type: object
           $ref: "#/components/schemas/Ranking"
         synonyms:
           type: object
@@ -4866,17 +4786,14 @@ components:
         saturation:
           description: Ranks by how far the value rises above a pivot. For number
             fields.
-          type: object
           $ref: "#/components/schemas/Saturation"
         decay:
           description: Ranks by how long ago the value was. For timestamp fields.
-          type: object
           $ref: "#/components/schemas/Decay"
         linear:
           description: "Ranks by how far the value is toward a ceiling, as `value\
             \ / ceiling` held between `0` and `1`. For number fields holding a score\
             \ computed elsewhere."
-          type: object
           $ref: "#/components/schemas/Linear"
         weight:
           type: number
@@ -4908,18 +4825,15 @@ components:
         saturation:
           description: "Ranks by how far the value rises above a pivot. For `int32`,\
             \ `int64`, `float` and `double` fields."
-          type: object
           $ref: "#/components/schemas/RankingSaturation"
         decay:
           description: Ranks by how long ago the value was. For `timestamp` fields.
-          type: object
           $ref: "#/components/schemas/RankingDecay"
         linear:
           description: "Ranks by how far the value is toward a ceiling, as `value\
             \ / ceiling` held between `0` and `1`. For `int32`, `int64`, `float` and\
             \ `double` fields holding a score computed elsewhere, such as an engagement\
             \ score between `0` and `1`."
-          type: object
           $ref: "#/components/schemas/RankingLinear"
         weight:
           type: number
@@ -4951,7 +4865,6 @@ components:
       - dot_product
       - euclidean
     Sort:
-      type: object
       oneOf:
       - $ref: "#/components/schemas/FieldSort"
       - $ref: "#/components/schemas/ScoreSort"
@@ -4987,13 +4900,11 @@ components:
         collation:
           description: Collation order used when comparing values. Applies only to
             string fields.
-          type: string
           default: locale
           $ref: "#/components/schemas/Collation"
         missing:
           description: Places documents without values first or last when sorting
             in ascending order.
-          type: string
           default: last
           $ref: "#/components/schemas/Missing"
     Source:
@@ -5067,7 +4978,6 @@ components:
             \ usages. The role expands into explicit field properties before the definition\
             \ is stored, and any property set alongside the role is preserved as given.\
             \ Supported roles per type are listed under [Field roles](https://exofind.dev/reference/field-types/#field-roles)."
-          type: string
           $ref: "#/components/schemas/Role"
         primaryKey:
           type: boolean
@@ -5098,40 +5008,32 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         keyword:
           description: Configures exact-match normalization for filtering.
-          type: object
           $ref: "#/components/schemas/Keyword"
         matching:
           description: Enables full-text search with analyzed terms.
-          type: object
           $ref: "#/components/schemas/TextUsage"
         autocomplete:
           description: Enables prefix matching for as-you-type search queries. A field
             defined only for `autocomplete` does not support phrase matching.
-          type: object
           $ref: "#/components/schemas/TextUsage"
         hierarchy:
           description: "Enables path hierarchy matching (for example, `Men/Shoes/Running`).\
             \ Facets on hierarchy fields return nested counts per level, and the `under`\
             \ matcher filters to a level and all sub-levels."
-          type: object
           $ref: "#/components/schemas/Hierarchy"
       type: object
     Suggest:
@@ -5194,7 +5096,6 @@ components:
             \ long; a mistake is a character inserted, dropped, replaced, or two adjacent\
             \ ones swapped, never in the first character. Such a suggestion carries\
             \ `corrected: true` and `typed: 0`. `off` never suggests them."
-          type: string
           default: auto
           $ref: "#/components/schemas/SuggestTypos"
     SuggestResponse:
@@ -5371,7 +5272,6 @@ components:
         match:
           description: Term matching mode. `phrase` requires terms to appear in exact
             order and adjacent; `user` parses search syntax such as quotes and negation.
-          type: string
           default: all
           $ref: "#/components/schemas/Match"
         join:
@@ -5380,19 +5280,16 @@ components:
             \ of them. Excluded terms (`-word`) always apply, and a filter read out\
             \ of the text is one of the parts. Setting `join` with any other `match`\
             \ returns `search:clause:join_unsupported`. See [Reading what was typed](https://exofind.dev/reference/search-api/#reading-what-was-typed)."
-          type: string
           default: all
           $ref: "#/components/schemas/Join"
         prefix:
           description: Prefix matching behavior on the final query term. `last_token`
             matches the trailing word as a prefix; `off` requires an exact word match.
-          type: string
           default: last_token
           $ref: "#/components/schemas/Prefix"
         typos:
           description: Typo tolerance handling. `auto` follows each field's `typoTolerance`
             configuration; `off` disables typo tolerance for the clause.
-          type: string
           default: auto
           $ref: "#/components/schemas/TyposMode"
         slop:
@@ -5405,7 +5302,6 @@ components:
         relax:
           description: "Query relaxation strategy applied only when the query returns\
             \ zero matches. See [Finding something rather than nothing](https://exofind.dev/reference/search-api/#finding-something-rather-than-nothing)."
-          type: string
           default: unmatched
           $ref: "#/components/schemas/Relax"
         combine:
@@ -5413,22 +5309,14 @@ components:
             \ term across all targeted fields, so terms may appear in different fields;\
             \ `field` requires a single field to satisfy `match` on its own. Ignored\
             \ by phrase queries."
-          type: string
           default: term
           $ref: "#/components/schemas/Combine"
         interpret:
-          oneOf:
-          - $ref: "#/components/schemas/InterpretMode"
-          - $ref: "#/components/schemas/InterpretTargets"
           description: "Whether parts of `user` text are read as filters on the fields\
-            \ of the index: `auto` reads a number typed next to the unit of a number\
-            \ field, or next to a comparative word such as `under`, as a filter on\
-            \ that field; `off` takes every word as text. An object with `fields`\
-            \ reads the same way but only on the targets it names, for an index where\
-            \ several fields hold the same unit and the caller knows which one is\
-            \ meant. Whatever was read is reported as `interpreted` beside the results.\
-            \ See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
+            \ of the index, given as a mode or as the targets to read on. See [Reading\
+            \ numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
           default: auto
+          $ref: "#/components/schemas/Interpret"
       type: object
     TextMatcher:
       required:
@@ -5451,7 +5339,6 @@ components:
         match:
           description: Term matching mode. `phrase` requires terms to appear in exact
             order and adjacent; `user` parses search syntax such as quotes and negation.
-          type: string
           default: all
           $ref: "#/components/schemas/Match"
         join:
@@ -5459,19 +5346,16 @@ components:
             \ word and every quoted phrase, `any` accepts a document that holds one\
             \ of them. Excluded terms (`-word`) always apply. Setting `join` with\
             \ any other `match` returns `search:clause:join_unsupported`."
-          type: string
           default: all
           $ref: "#/components/schemas/Join"
         prefix:
           description: Prefix matching behavior on the final query term. `last_token`
             matches the trailing word as a prefix; `off` requires an exact word match.
-          type: string
           default: last_token
           $ref: "#/components/schemas/Prefix"
         typos:
           description: Typo tolerance handling. `auto` follows the field's `typoTolerance`
             configuration; `off` disables typo tolerance for the matcher.
-          type: string
           default: auto
           $ref: "#/components/schemas/TyposMode"
         slop:
@@ -5484,7 +5368,6 @@ components:
         relax:
           description: "Query relaxation strategy applied only when the query returns\
             \ zero matches. See [Finding something rather than nothing](https://exofind.dev/reference/search-api/#finding-something-rather-than-nothing)."
-          type: string
           default: unmatched
           $ref: "#/components/schemas/Relax"
         interpret:
@@ -5493,7 +5376,6 @@ components:
             \ field, or next to a comparative word such as `under`, as a filter on\
             \ that field; `off` takes every word as text. Whatever was read is reported\
             \ as `interpreted` beside the results. See [Reading numbers and units](https://exofind.dev/reference/search-api/#reading-numbers-and-units)."
-          type: string
           default: auto
           $ref: "#/components/schemas/InterpretMode"
       type: object
@@ -5512,7 +5394,6 @@ components:
           description: "Specifies how the text of this usage is analyzed. If omitted,\
             \ the engine generates an analyzer based on the field usage and locale.\
             \ See [Analysis](https://exofind.dev/reference/analysis/)."
-          type: object
           $ref: "#/components/schemas/AnalyzerDefinition"
         weight:
           type: number
@@ -5525,12 +5406,10 @@ components:
             Text is stored for highlighting regardless of the `stored` property. Highlighting
             targets `matching` when defined; `highlight` on `autocomplete` takes effect
             only when `matching` is omitted.
-          type: object
           $ref: "#/components/schemas/HighlightUsage"
         typoTolerance:
           description: "Enables typo tolerance for matching search terms, including\
             \ prefixes currently being typed."
-          type: object
           $ref: "#/components/schemas/TypoTolerance"
         decompound:
           description: "Controls compound word splitting in the engine-generated chain.\
@@ -5538,18 +5417,15 @@ components:
             \ only when using engine-generated analyzers; custom analyzers specified\
             \ via `analyzer` define their own decompounding behavior. See [Compound\
             \ words](https://exofind.dev/reference/analysis/#compound-words)."
-          type: string
           $ref: "#/components/schemas/Decompound"
         exact:
           description: Boosts documents where the query matches the full field value.
             Adjusts ranking only without modifying hit counts or facet distributions;
             analyzer normalization is applied before the comparison.
-          type: object
           $ref: "#/components/schemas/Exact"
         lengthNormalization:
           description: Controls the field length penalty in ranking. Changes take
             effect at search time without reindexing.
-          type: string
           default: moderate
           $ref: "#/components/schemas/LengthNormalization"
     TieBreaker:
@@ -5568,7 +5444,6 @@ components:
           - sales
         direction:
           description: The sort direction for breaking ties. Defaults to `descending`.
-          type: string
           default: descending
           $ref: "#/components/schemas/Direction"
     TimestampFieldDefinition:
@@ -5595,7 +5470,6 @@ components:
             \ usages. The role expands into explicit field properties before the definition\
             \ is stored, and any property set alongside the role is preserved as given.\
             \ Supported roles per type are listed under [Field roles](https://exofind.dev/reference/field-types/#field-roles)."
-          type: string
           $ref: "#/components/schemas/Role"
         primaryKey:
           type: boolean
@@ -5626,21 +5500,17 @@ components:
             \ collation follow the locale of each value. On an index that declares\
             \ `locales`, configuring `{}` gives the field every declared locale, and\
             \ `only` narrows the field to a subset of those locales."
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: "Enables filtering search results by exact field value. On\
             \ numeric and timestamp fields, filtering also enables range queries."
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Enables sorting search results by field value.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: "Enables value count aggregations. On numeric and timestamp\
             \ fields, it also enables range buckets."
-          type: object
           $ref: "#/components/schemas/FacetUsage"
       type: object
     TokenFilter:
@@ -5653,41 +5523,33 @@ components:
         normalize:
           description: Applies Unicode normalization and case folding to make analysis
             case-insensitive.
-          type: object
           $ref: "#/components/schemas/Normalize"
         stopwords:
           description: Removes frequent words.
-          type: object
           $ref: "#/components/schemas/StopwordsFilter"
         stemming:
           description: Reduces words to a shared root.
-          type: object
           $ref: "#/components/schemas/Stemming"
         asciiFolding:
           description: Converts non-ASCII characters to ASCII equivalents.
-          type: object
           $ref: "#/components/schemas/AsciiFolding"
         edgeNgram:
           description: Generates prefix n-grams for tokens within the specified character
             lengths.
-          type: object
           $ref: "#/components/schemas/EdgeNgram"
         ngram:
           description: Generates substring n-grams for tokens within the specified
             character lengths.
-          type: object
           $ref: "#/components/schemas/Ngram"
         synonyms:
           description: "Expands tokens with synonyms from a synonym set defined in\
             \ `resources`. Applied when a value is indexed, not when the text of a\
             \ search is analyzed."
-          type: object
           $ref: "#/components/schemas/SynonymsFilter"
         decompound:
           description: "Splits compound words into parts and retains the original\
             \ compound word. See [Compound words](https://exofind.dev/reference/analysis/#compound-words).\
             \ Applied at index time."
-          type: object
           $ref: "#/components/schemas/DecompoundFilter"
     Tokenizer:
       type: object
@@ -5698,19 +5560,15 @@ components:
       properties:
         icu:
           description: Segments text based on Unicode rules. This is the default tokenizer.
-          type: object
           $ref: "#/components/schemas/IcuTokenizer"
         whitespace:
           description: Splits text on whitespace characters.
-          type: object
           $ref: "#/components/schemas/WhitespaceTokenizer"
         keyword:
           description: Retains the entire input value as a single token.
-          type: object
           $ref: "#/components/schemas/KeywordTokenizer"
         letter:
           description: Splits text on non-letter characters.
-          type: object
           $ref: "#/components/schemas/LetterTokenizer"
     Total:
       type: object
@@ -5793,7 +5651,6 @@ components:
         numbers:
           description: "Enables typo tolerance for digit-only words. If omitted, digit-only\
             \ words require exact matches regardless of length."
-          type: object
           $ref: "#/components/schemas/Numbers"
     TyposMode:
       description: "Typo tolerance handling: `auto` follows each field's `typoTolerance`\
@@ -5934,20 +5791,16 @@ components:
           default: false
         locales:
           description: Not supported on a vector field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/Locales"
         filter:
           description: Not supported on a vector field. Vector fields are searched
             by similarity using the `knn` search clause; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/FilterUsage"
         sort:
           description: Not supported on a vector field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/SortUsage"
         facet:
           description: Not supported on a vector field; setting it is rejected.
-          type: object
           $ref: "#/components/schemas/FacetUsage"
         dimensions:
           type: integer
@@ -5959,16 +5812,13 @@ components:
         similarity:
           description: Vector distance metric. `dot_product` requires unit-length
             normalized vectors.
-          type: string
           default: cosine
           $ref: "#/components/schemas/Similarity"
         hnsw:
           description: Hierarchical Navigable Small World index configuration.
-          type: object
           $ref: "#/components/schemas/Hnsw"
         quantization:
           description: Vector compression method.
-          type: string
           default: none
           $ref: "#/components/schemas/Quantization"
       type: object
