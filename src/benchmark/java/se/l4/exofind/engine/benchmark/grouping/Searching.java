@@ -45,8 +45,8 @@ final class Searching {
 	 *
 	 * @param cached
 	 *   whether to keep what a narrowing clause matched, which a repeated
-	 *   refinement is then answered from. Lucene's own default is to keep it,
-	 *   and a node leaves it alone
+	 *   refinement is then answered from. A node keeps it too, over a cache of
+	 *   its own that admits every segment
 	 */
 	static IndexSearcher searcher(org.apache.lucene.index.IndexReader reader, boolean cached) {
 		var searcher = new IndexSearcher(reader);

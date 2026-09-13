@@ -63,6 +63,7 @@ import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LRUQueryCache;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.QueryRescorer;
@@ -311,6 +312,31 @@ public class Index {
 	 * document of an index that keeps no copies - are bounded too.
 	 */
 	private static final long PENDING_ENTRY_OVERHEAD = 64;
+
+	/**
+	 * The cache of matching documents per segment that every searcher of every
+	 * index on this node shares, holding the same number of queries and the
+	 * same share of the heap as the Lucene default but caching over every
+	 * segment of a reader.
+	 *
+	 * <p>Lucene's own default declines any segment holding less than half the
+	 * documents of the average segment of its index, on the grounds that a
+	 * small segment is cheap to run a query over again and is about to be
+	 * merged away. That holds for a term lookup, but a typo tolerant or a
+	 * prefix clause is compiled into an automaton that walks the term
+	 * dictionary of a segment to collect what it matches, and it walks it once
+	 * per segment on every search that leaves it uncached. An index under the
+	 * merge policy of this engine always carries a tail of small segments, and
+	 * a search that expands terms pays for that tail again for every request.
+	 * Caching them costs a bitset per small segment, which is thrown away with
+	 * the segment when a merge replaces it.
+	 */
+	private static final LRUQueryCache QUERY_CACHE = new LRUQueryCache(
+		1000,
+		Math.min(1L << 25, Runtime.getRuntime().maxMemory() / 20),
+		leaf -> true,
+		10
+	);
 
 	private final NodeState nodeState;
 
@@ -1238,8 +1264,9 @@ public class Index {
 
 	/**
 	 * Open a searcher over a reader: it scores with the similarity of this
-	 * index, it ranks its slices on the search threads of the node, and it
-	 * stops collecting when the thread searching has run out of time.
+	 * index, it ranks its slices on the search threads of the node, it caches
+	 * what a cacheable clause matches in {@link #QUERY_CACHE}, and it stops
+	 * collecting when the thread searching has run out of time.
 	 *
 	 * @see SearchDeadline
 	 * @see SearchThreads
@@ -1247,6 +1274,7 @@ public class Index {
 	private IndexSearcher newSearcher(IndexReader reader) {
 		var searcher = new IndexSearcher(reader, searchThreads.executor());
 		searcher.setSimilarity(similarity);
+		searcher.setQueryCache(QUERY_CACHE);
 
 		/*
 		 * One searcher answers many requests at once, so the timeout reads the
