@@ -10,9 +10,10 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param updated
  *   number of documents updated
  * @param missing
- *   primary keys that were not found, in the order provided. Holds keys only
- *   when the request specifies skipping missing keys; otherwise, the request
- *   fails on the first missing key and the list is empty
+ *   primary keys that were not found, in the order provided. Each key is text,
+ *   whatever type the key field holds. Holds keys only when the request
+ *   specifies skipping missing keys; otherwise, the request fails on the first
+ *   missing key and the list is empty
  * @param failed
  *   the changes the index refused, in the order sent. Holds entries only when
  *   the request specifies skipping refused changes; otherwise, the request fails
@@ -29,11 +30,16 @@ public record UpdateResponse(
 	int updated,
 
 	@Schema(description = """
-		List of primary keys that were not found, in the order provided. Holds \
-		keys only when the request is sent with `?missing=skip`; a request sent \
-		without it fails on the first missing key. Always present, and empty \
-		when nothing was skipped.""")
-	List<Object> missing,
+		List of primary keys that were not found, in the order provided. Each \
+		key is text, whatever type the key field declares: a whole-number key \
+		`42` is returned as `"42"`. Send a key back in the `{key}` path \
+		parameter or the `after` parameter as it came. For more information, \
+		see [Primary keys on the \
+		wire](https://exofind.dev/reference/api-conventions/#primary-keys-on-the-wire). \
+		Holds keys only when the request is sent with `?missing=skip`; a \
+		request sent without it fails on the first missing key. Always \
+		present, and empty when nothing was skipped.""")
+	List<String> missing,
 
 	@Schema(description = """
 		The changes the index refused, in the order sent. Holds entries only \

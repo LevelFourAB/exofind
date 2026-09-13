@@ -5871,8 +5871,13 @@ components:
           - 1998
         missing:
           type: array
-          items: {}
+          items:
+            type: string
           description: "List of primary keys that were not found, in the order provided.\
+            \ Each key is text, whatever type the key field declares: a whole-number\
+            \ key `42` is returned as `\"42\"`. Send a key back in the `{key}` path\
+            \ parameter or the `after` parameter as it came. For more information,\
+            \ see [Primary keys on the wire](https://exofind.dev/reference/api-conventions/#primary-keys-on-the-wire).\
             \ Holds keys only when the request is sent with `?missing=skip`; a request\
             \ sent without it fails on the first missing key. Always present, and\
             \ empty when nothing was skipped."

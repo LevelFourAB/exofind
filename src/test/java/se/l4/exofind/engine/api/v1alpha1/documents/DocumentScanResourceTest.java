@@ -155,6 +155,22 @@ public class DocumentScanResourceTest {
 		assertThat(second.next(), is(nullValue()));
 	}
 
+	/**
+	 * A whole-number key is said as text, the shape a key of any type is said
+	 * in, so the answer goes back into the next request as it came.
+	 */
+	@Test
+	public void aWholeNumberKeyToCarryOnAfterIsSaidAsText() throws IOException {
+		orders();
+
+		var first = resource.scan("orders", null, "2");
+		var second = resource.scan("orders", first.next(), "2");
+
+		assertThat(first.next(), is("2"));
+		assertThat(keysOf(second.documents()), contains(3));
+		assertThat(second.next(), is(nullValue()));
+	}
+
 	@Test
 	public void aLimitThatIsNotAWholeNumberInRangeIsRefused() throws IOException {
 		catalogue();
@@ -341,6 +357,39 @@ public class DocumentScanResourceTest {
 					document("id", "2", "name", "Rye bread", "energy", 217.0),
 					document("id", "3", "name", "Lingonberry jam", "energy", 198.0)
 				)
+			)
+		);
+
+		index.commit();
+
+		return index;
+	}
+
+	/**
+	 * An index keyed by a whole number, holding three documents.
+	 */
+	private Index orders() throws IOException {
+		var index = indexes.create(
+			"orders",
+			IndexDef.newBuilder()
+				.putFields(
+					"id",
+					FieldDef.newBuilder()
+						.setPrimaryKey(true)
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setInt64(Int64FieldTypeDef.getDefaultInstance())
+						)
+						.build()
+				)
+				.build()
+		);
+
+		resource.add(
+			"orders",
+			null,
+			new DocumentsRequest(
+				List.of(document("id", 1), document("id", 2), document("id", 3))
 			)
 		);
 

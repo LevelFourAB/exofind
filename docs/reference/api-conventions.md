@@ -117,6 +117,34 @@ Most write endpoints operate as assertions of desired state:
 
 Because desired-state writes are idempotent, a request that times out can be sent again without inspecting the target state first.
 
+## Primary keys on the wire
+
+A primary key field is either text or a whole number (`int32` or `int64`).
+
+The API writes every primary key as a JSON string in responses, regardless of the field type:
+
+- The `next` field in document listings (`GET /v1alpha1/indexes/{name}/documents`).
+- The `missing` array in batch update responses (`POST /v1alpha1/indexes/{name}/documents/actions/update?missing=skip`).
+- The `key` argument in error responses, such as `document:not_found` and `document:key_conflicting`.
+
+For example, a whole-number key `42` or `42.0` is returned as `"42"`.
+
+Outside a request body, the API reads primary keys as text. This applies to the `{key}` path parameter (such as in `DELETE` or `PATCH /v1alpha1/indexes/{name}/documents/{key}`) and the `after` query parameter.
+
+Inside a request body, the API requires the JSON type declared by the key field:
+
+- The primary key field of an indexed document.
+- The primary key field of a batch change.
+- The `keys` array of `POST /v1alpha1/indexes/{name}/documents/actions/delete`.
+
+For a whole-number key field, request bodies accept `42` and reject `"42"`.
+
+For client applications, these rules mean:
+
+- You can pass a key returned in any response directly into a `{key}` path parameter or the `after` query parameter without conversion.
+- Two keys are identical when their string representations match.
+- When sending a key from a response (such as `missing` or `next`) back in a request body, you must convert the key to its declared JSON type. For a whole-number key field, convert the string to a number before passing it in the `keys` array or document body.
+
 ## Conditional requests
 
 `GET` requests for an index definition or search settings return the current version in an `ETag` header.

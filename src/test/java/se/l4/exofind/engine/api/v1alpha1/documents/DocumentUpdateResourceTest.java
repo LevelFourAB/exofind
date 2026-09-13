@@ -210,6 +210,33 @@ public class DocumentUpdateResourceTest {
 		assertThat(index.getDocument("2").get("price"), is(6.0));
 	}
 
+	/**
+	 * A key is named as text whatever type the key field holds, so a caller
+	 * reads one key shape out of every answer and sends it back as it came.
+	 */
+	@Test
+	public void aWholeNumberKeyThatIsMissingIsNamedAsText() throws IOException {
+		var index = orders();
+
+		var response = resource.update(
+			"orders",
+			"skip",
+			null,
+			new UpdateRequest(
+				List.of(
+					document("id", 1, "price", 5.0),
+					document("id", 404, "price", 1.0)
+				)
+			)
+		);
+
+		assertThat(response.updated(), is(1));
+		assertThat(response.missing(), contains("404"));
+
+		index.commit();
+		assertThat(index.getDocument(1L).get("price"), is(5.0));
+	}
+
 	@Test
 	public void aWayOfHandlingMissingKeysThatDoesNotExistIsRefused() throws IOException {
 		catalogue();

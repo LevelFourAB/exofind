@@ -1106,7 +1106,7 @@ public class DocumentResource {
 		checkWritable(name);
 		var skipMissing = skipMissing(missing);
 		var skipErrors = skipErrors(onError);
-		var missingKeys = Lists.mutable.empty();
+		var missingKeys = Lists.mutable.<String>empty();
 		var failures = Lists.mutable.<DocumentFailure>empty();
 		var documents = body.documents();
 
@@ -1181,7 +1181,7 @@ public class DocumentResource {
 		checkWritable(name);
 		var skipMissing = skipMissing(missing);
 		var skipErrors = skipErrors(onError);
-		var missingKeys = Lists.mutable.empty();
+		var missingKeys = Lists.mutable.<String>empty();
 		var failures = Lists.mutable.<DocumentFailure>empty();
 
 		var updated = measure("update", () -> {
@@ -1290,7 +1290,7 @@ public class DocumentResource {
 		BatchEntry entry,
 		int processed,
 		boolean skipMissing,
-		MutableList<Object> missingKeys
+		MutableList<String> missingKeys
 	) {
 		var reported = entry.reported(processed);
 
@@ -1321,13 +1321,13 @@ public class DocumentResource {
 		 * The key is known to be there - a patch without one is refused by the
 		 * index before it looks for anything.
 		 */
-		var key = patch.get(index.getPrimaryKey().orElseThrow().getName());
+		var key = keyText(patch.get(index.getPrimaryKey().orElseThrow().getName()));
 
 		if(!skipMissing) {
 			throw new ValidationException(
 				UPDATE_NOT_FOUND.toMessage(
 					entry.location(),
-					reported.withKeyValue("key", String.valueOf(key))
+					reported.withKeyValue("key", key)
 				)
 			);
 		}
@@ -1753,16 +1753,21 @@ public class DocumentResource {
 		throw new ValidationException(
 			UPDATE_KEY_CONFLICTING.toMessage(
 				ObjectLocation.root().forField(keyField),
-				"key", String.valueOf(primaryKey),
+				"key", keyText(primaryKey),
 				"name", keyField
 			)
 		);
 	}
 
 	/**
-	 * A value from a body as the text the same key arrives as in a path. A
-	 * whole number written as a decimal, such as {@code 1.0}, is written
-	 * without the fraction.
+	 * A primary key as text, the one shape a key takes on the way out. The
+	 * {@code missing} keys of a batch change, the {@code next} key of a read
+	 * and the {@code key} argument of an error are written this way, and the
+	 * {@code after} parameter and the key of a path are read back from it.
+	 *
+	 * <p>A whole number written as a decimal, such as {@code 1.0}, loses the
+	 * fraction, so a body that writes a key as another JSON type names the
+	 * key the path names.
 	 */
 	private static String keyText(Object given) {
 		if(given instanceof Number number) {
@@ -2626,7 +2631,7 @@ public class DocumentResource {
 	 * writes it.
 	 */
 	private static String keyOf(Index index, Document document) {
-		return String.valueOf(document.get(index.getPrimaryKey().orElseThrow().getName()));
+		return keyText(document.get(index.getPrimaryKey().orElseThrow().getName()));
 	}
 
 	/**

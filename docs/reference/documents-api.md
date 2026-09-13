@@ -199,7 +199,7 @@ Updates follow these rules:
 
 - If the index definition sets `source` to `none`, or if a document was indexed when source was disabled, the endpoint returns `document:source_not_kept`. A change that names only signal fields works when `source` is `none`. For more information, see the [Admin API](admin-api.md).
 - If the index definition declares no primary key, the endpoint returns `index:no_primary_key`.
-- If `missing` is set to `fail` (default) and a document key is not found, the request fails with `document:not_found` for that entry. If `missing` is set to `skip`, missing keys are skipped and returned in the response.
+- If `missing` is set to `fail` (default) and a document key is not found, the request fails with `document:not_found` for that entry. If `missing` is set to `skip`, missing keys are skipped and returned as text strings under `missing` in the response.
 - A selector that names no value the document holds returns `document:patch:no_match`. A key nothing matches is not created.
 
 The following error codes report a path the endpoint cannot use:
@@ -233,6 +233,8 @@ When called with `?missing=skip`:
 ```json
 { "updated": 1998, "missing": ["sku-9", "sku-40"], "failed": [] }
 ```
+
+Each key in `missing` is returned as text, regardless of the declared key field type. For example, a whole-number key `9` is returned as `"9"`. This matches the format accepted by the `{key}` path parameter and the `after` query parameter. For more information, see [Primary keys on the wire](api-conventions.md#primary-keys-on-the-wire).
 
 The `failed` array is always present and contains entries only when the request is sent with `?onError=skip`. The `updated` count excludes changes in `failed`. For the entry structure, see [Skipping refused entries](#skipping-refused-entries).
 
