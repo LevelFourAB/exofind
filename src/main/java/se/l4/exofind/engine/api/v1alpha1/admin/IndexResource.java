@@ -1351,7 +1351,8 @@ public class IndexResource {
 
 	/**
 	 * Pushes pending changes (documents and definition) to storage and returns
-	 * the resulting status.
+	 * the index as it is after the push, in the shape {@link #get} answers
+	 * with.
 	 *
 	 * @param name
 	 * @return
@@ -1374,10 +1375,12 @@ public class IndexResource {
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "The resulting status of the index.",
+		description = """
+			The index after the commit, in the shape `GET` returns, with the \
+			definition version in the `ETag` header.""",
 		content = @Content(
-			schema = @Schema(implementation = IndexStatus.class),
-			examples = @ExampleObject(name = "status", value = IndexStatus.EXAMPLE)
+			schema = @Schema(implementation = IndexInfo.class),
+			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
 		)
 	)
 	@APIResponse(
@@ -1420,6 +1423,11 @@ public class IndexResource {
 		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
 	)
 	@ReturnsError(
+		value = "index:field:unrepresentable_type",
+		status = 409,
+		when = "The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field."
+	)
+	@ReturnsError(
 		value = "index:no_live_generation",
 		status = 409,
 		when = "The index has no live generation. Promote one and send the request again."
@@ -1434,7 +1442,7 @@ public class IndexResource {
 		status = 503,
 		when = "The request raced the index being closed. Sending it again reopens the index."
 	)
-	public IndexStatus commit(
+	public Response commit(
 		@Parameter(
 			description = """
 				The index name, which commits the live generation, or a \
@@ -1451,12 +1459,13 @@ public class IndexResource {
 			throw new IndexException(IO_ERROR, e, "index", name);
 		}
 
-		return toStatus(index);
+		return toResponse(Response.ok(), index).build();
 	}
 
 	/**
 	 * Fetches the latest remote state of an index immediately instead of
-	 * waiting for the refresh interval.
+	 * waiting for the refresh interval, and returns the index as this node
+	 * then sees it, in the shape {@link #get} answers with.
 	 *
 	 * <p>A pull updates the local copy on the node serving the request and is
 	 * never forwarded.
@@ -1473,18 +1482,21 @@ public class IndexResource {
 		summary = "Pull the latest state",
 		description = """
 			Fetches the latest remote state immediately instead of waiting for \
-			`EXOFIND_INDEXES_REFRESH_INTERVAL`, and returns the resulting \
-			status.
+			`EXOFIND_INDEXES_REFRESH_INTERVAL`, and returns the index as this \
+			node then sees it.
 
 			A pull updates the local copy on the receiving node and is never \
 			forwarded."""
 	)
 	@APIResponse(
 		responseCode = "200",
-		description = "The resulting status of the index on this node.",
+		description = """
+			The index after the pull, in the shape `GET` returns, with the \
+			definition version in the `ETag` header. The status is the one \
+			this node observes.""",
 		content = @Content(
-			schema = @Schema(implementation = IndexStatus.class),
-			examples = @ExampleObject(name = "status", value = IndexStatus.EXAMPLE)
+			schema = @Schema(implementation = IndexInfo.class),
+			examples = @ExampleObject(name = "index", value = IndexInfo.EXAMPLE)
 		)
 	)
 	@APIResponse(
@@ -1512,6 +1524,11 @@ public class IndexResource {
 		when = "No index or generation has this name, or the key holds no grant covering it."
 	)
 	@ReturnsError(
+		value = "index:field:unrepresentable_type",
+		status = 409,
+		when = "The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field."
+	)
+	@ReturnsError(
 		value = "index:no_live_generation",
 		status = 409,
 		when = "The index has no live generation. Promote one and send the request again."
@@ -1521,7 +1538,7 @@ public class IndexResource {
 		status = 503,
 		when = "The request raced the index being closed. Sending it again reopens the index."
 	)
-	public IndexStatus pull(
+	public Response pull(
 		@Parameter(
 			description = """
 				The index name, which pulls the live generation, or a specific \
@@ -1532,7 +1549,7 @@ public class IndexResource {
 	) {
 		var index = indexes.getOrThrow(name);
 		index.pull();
-		return toStatus(index);
+		return toResponse(Response.ok(), index).build();
 	}
 
 	/**

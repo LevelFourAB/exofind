@@ -473,13 +473,45 @@ The `status.luceneCreatedMajor` field contains the recorded Lucene major version
 
 ## Actions
 
-The API provides index action endpoints:
+Action endpoints trigger operations on an index or generation.
 
-- `commit`: Pushes pending changes (documents and definition) to storage and returns the resulting status.
-- `pull`: Fetches the latest remote state immediately instead of waiting for the refresh interval, and returns the resulting status.
-- `promote`: Configures the index to serve from the specified generation and returns the updated index resource. The request path must specify a generation name; calling `promote` without a generation returns `index:generation:name_required`. Promoting the target of a `ready` reindex job finishes the job, while promoting before the job is ready is refused with `409 Conflict` (`reindex:target_busy`). If another generation was promoted while the reindex job ran, promotion is refused with `409 Conflict` (`index:generation:live_moved`).
+Every action returns the [index resource](#index-resource) of the generation it acted on, with the definition version in the `ETag` header. Nodes automatically discover indexes, generations, and changes at the interval configured by `EXOFIND_INDEXES_REFRESH_INTERVAL`.
 
-`commit` and `pull` act on the generation specified in the request path (or the live generation if omitted). Nodes automatically discover indexes, generations, and changes at the interval configured by `EXOFIND_INDEXES_REFRESH_INTERVAL`.
+### Commit
+
+```text
+POST /v1alpha1/admin/indexes/{name}/actions/commit
+```
+
+Pushes pending changes (documents and definition) to storage and returns the updated index resource.
+
+The `{name}` parameter specifies the target generation (for example, `products@2`). If you omit the generation specifier, the action targets the live generation.
+
+### Pull
+
+```text
+POST /v1alpha1/admin/indexes/{name}/actions/pull
+```
+
+Fetches the latest remote state immediately instead of waiting for the refresh interval.
+
+The `{name}` parameter specifies the target generation (for example, `products@2`). If you omit the generation specifier, the action targets the live generation.
+
+### Promote
+
+```text
+POST /v1alpha1/admin/indexes/{name}/actions/promote
+```
+
+Configures the index to serve queries from the specified generation.
+
+The `{name}` parameter must specify a generation name (for example, `products@2`). Calling `promote` without a generation returns `400 Bad Request` with the error code `index:generation:name_required`.
+
+Promoting a generation interacts with reindex jobs in the following ways:
+
+- Promoting the target generation of a reindex job in the `ready` phase completes the job and transitions it to `done`.
+- Promoting a generation before its reindex job reaches the `ready` phase is rejected with `409 Conflict` and the error code `reindex:target_busy`.
+- If another generation was promoted while the reindex job ran, promotion is rejected with `409 Conflict` and the error code `index:generation:live_moved`.
 
 ## Reindex
 

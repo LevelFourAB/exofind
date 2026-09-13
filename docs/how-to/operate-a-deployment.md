@@ -141,7 +141,8 @@ To immediately update an index without waiting for the next refresh interval:
    POST /v1alpha1/admin/indexes/products/actions/pull
    ```
    This endpoint fetches the latest remote state immediately and returns the
-   resulting status. Use this action after bulk loads or promotions.
+   index resource with the `status` this node then observes. Use this action
+   after bulk loads or promotions.
 2. If all nodes require lower latency, reduce
    `EXOFIND_INDEXES_REFRESH_INTERVAL` in
    your configuration. Lower intervals increase remote storage request volume.

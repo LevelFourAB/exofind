@@ -618,19 +618,36 @@ public class IndexResourceTest {
 		assertThrows(IndexNotFoundException.class, () -> resource.delete("books"));
 	}
 
+	/**
+	 * A commit answers with the same resource a read does, so a caller that
+	 * commits after a definition change holds the version it needs for the
+	 * next update without a second request.
+	 */
 	@Test
-	public void testCommit() {
-		create("books", definition());
+	public void testCommitAnswersWithTheIndex() {
+		var created = create("books", definition());
 
-		var status = resource.commit("books");
-		assertThat(status.state(), is(IndexState.USABLE));
+		var response = resource.commit("books");
+		var info = (IndexInfo) response.getEntity();
+		assertThat(info.name(), is("books"));
+		assertThat(info.generation(), is("1"));
+		assertThat(info.live(), is(true));
+		assertThat(info.version(), is(created.version()));
+		assertThat(info.status().state(), is(IndexState.USABLE));
+		assertThat(response.getEntityTag().getValue(), is(created.version()));
 	}
 
 	@Test
-	public void testPull() {
-		create("books", definition());
+	public void testPullAnswersWithTheIndex() {
+		var created = create("books", definition());
 
-		var status = resource.pull("books");
-		assertThat(status.state(), is(IndexState.USABLE));
+		var response = resource.pull("books");
+		var info = (IndexInfo) response.getEntity();
+		assertThat(info.name(), is("books"));
+		assertThat(info.generation(), is("1"));
+		assertThat(info.live(), is(true));
+		assertThat(info.version(), is(created.version()));
+		assertThat(info.status().state(), is(IndexState.USABLE));
+		assertThat(response.getEntityTag().getValue(), is(created.version()));
 	}
 }
