@@ -238,7 +238,16 @@ public record SearchRequest(
 		Reorders the best results of a search in a second pass without \
 		changing which documents matched. See \
 		[Rescoring](https://exofind.dev/reference/search-api/#rescoring).""")
-	Rescore rescore
+	Rescore rescore,
+
+	/**
+	 * What the request demands of the state it is answered from.
+	 */
+	@Schema(description = """
+		What the request demands of the state it is answered from. Omit it \
+		to be answered from what the node holds. See \
+		[Freshness](https://exofind.dev/reference/search-api/#freshness).""")
+	FreshnessRequest freshness
 ) {
 	/**
 	 * The example search, as the JSON a client sends. The class Javadoc and
@@ -287,7 +296,7 @@ public record SearchRequest(
 	) {
 		this(
 			query, filters, facets, sort, locale, fields, highlight, matched, hits, limit, offset,
-			after, before, pages, total, signals, null, null
+			after, before, pages, total, signals, null, null, null
 		);
 	}
 
@@ -315,7 +324,37 @@ public record SearchRequest(
 	) {
 		this(
 			query, filters, facets, sort, locale, fields, highlight, matched, hits, limit, offset,
-			after, before, pages, total, signals, null, rescore
+			after, before, pages, total, signals, null, rescore, null
+		);
+	}
+
+	/**
+	 * A search answered from whatever state the node holds, with no
+	 * freshness demanded of it.
+	 */
+	public SearchRequest(
+		List<Clause> query,
+		List<Clause> filters,
+		List<Facet> facets,
+		List<Sort> sort,
+		String locale,
+		List<String> fields,
+		Highlight highlight,
+		Matched matched,
+		Hits hits,
+		Integer limit,
+		Integer offset,
+		String after,
+		String before,
+		Pages pages,
+		Total total,
+		List<Signal> signals,
+		SignalsMode signalsMode,
+		Rescore rescore
+	) {
+		this(
+			query, filters, facets, sort, locale, fields, highlight, matched, hits, limit, offset,
+			after, before, pages, total, signals, signalsMode, rescore, null
 		);
 	}
 

@@ -58,6 +58,7 @@ Caches and search internals:
 - **Every Lucene document carries every analyzed field.** `AnalyzedFields` enumerates them through `FieldType.collectAnalyzedFields`, and `Index.addDocument` pads the document. A field a type writes but does not report sends scoring through sparse norms with no change in results.
 - **A signal field lives only in its sort doc values.** A refresh replaces those and nothing else, so the field is left out of the stored source and never written as a stored field. Every path that turns a Lucene document into a `Document` fills it in through `SignalValues` after the `DocumentCache` has answered, never inside the cache. A new read path that skips the fill returns documents without the field and nothing reports it.
 - **A search borrows threads only from `SearchThreads`.** Those carry the `SearchDeadline` budget. Work on any other executor runs past the timeout and nothing reports it.
+- **A read endpoint resolves its index through `FreshnessWaiter.await`, and a change learns its commit inside `Index.beginChange`.** A read that resolves through `Indexes.getOrThrow` accepts a freshness token and ignores it. A token computed after the change scope closes can point at a commit that never comes, and the search waits out `EXOFIND_SEARCH_FRESHNESS_WAIT` for it. Neither is reported.
 - **The default matching chain stems and decompounds.** A test that depends on exact characters or edit distances needs a normalize-only analyzer in its index definition.
 
 Observability:

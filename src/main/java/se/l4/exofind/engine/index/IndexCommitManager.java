@@ -60,6 +60,14 @@ public class IndexCommitManager {
 	 */
 	private static final Duration CLOSE_WAIT = Duration.ofMinutes(1);
 
+	/**
+	 * Shortest time between two commits made because a caller asked for one
+	 * through {@link #commitSoon()}. A search that waits on a commit sequence
+	 * asks on every check, so this is what keeps a stream of such searches
+	 * from turning every check into a push.
+	 */
+	private static final Duration SOON_INTERVAL = Duration.ofSeconds(1);
+
 	private final Index index;
 	private final ScheduledExecutorService executor;
 	private final CommitPolicy policy;
@@ -90,6 +98,20 @@ public class IndexCommitManager {
 	private boolean committing;
 	private int failures;
 	private boolean closed;
+
+	/**
+	 * Whether the commit that runs next was asked for through
+	 * {@link #commitSoon()}, which is what it is reported as started by.
+	 */
+	private boolean soon;
+
+	/**
+	 * When a commit was last started because {@link #commitSoon()} asked for
+	 * one, as {@link System#nanoTime()}. Only meaningful while
+	 * {@link #soonEver} is set.
+	 */
+	private long lastSoonAt;
+	private boolean soonEver;
 
 	/**
 	 * The armed time trigger, or {@code null} when none is waiting to fire.
@@ -164,6 +186,34 @@ public class IndexCommitManager {
 			} else {
 				armTimer();
 			}
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	/**
+	 * Ask for the changes waiting to be committed to be committed now rather
+	 * than at the next trigger. A commit already running is left to finish,
+	 * and what arrived while it ran is taken by the trigger that follows it.
+	 * Nothing happens more often than {@link #SOON_INTERVAL}, so a caller
+	 * that asks on every check of a loop costs at most one commit a second.
+	 */
+	public void commitSoon() {
+		lock.lock();
+		try {
+			if(closed || committing || pendingChanges == 0 || !policy.isEnabled()) {
+				return;
+			}
+
+			var now = System.nanoTime();
+			if(soonEver && now - lastSoonAt < SOON_INTERVAL.toNanos()) {
+				return;
+			}
+
+			soonEver = true;
+			lastSoonAt = now;
+			soon = true;
+			startCommit(Duration.ZERO);
 		} finally {
 			lock.unlock();
 		}
@@ -412,11 +462,14 @@ public class IndexCommitManager {
 	private void runCommit(boolean forMerges) {
 		long attempted;
 		long startedAt;
+		boolean askedFor;
 
 		lock.lock();
 		try {
 			attempted = pendingChanges;
 			startedAt = System.nanoTime();
+			askedFor = soon;
+			soon = false;
 
 			if(closed || (attempted == 0 && !forMerges)) {
 				finish(Outcome.NOTHING_TO_DO, 0, startedAt, forMerges);
@@ -431,7 +484,7 @@ public class IndexCommitManager {
 		 * index, so it runs without this manager's lock - a caller recording a
 		 * change holds a read lock of the index while it takes ours.
 		 */
-		var outcome = commit(attempted, forMerges);
+		var outcome = commit(attempted, forMerges, askedFor);
 
 		lock.lock();
 		try {
@@ -441,7 +494,12 @@ public class IndexCommitManager {
 		}
 	}
 
-	private Outcome commit(long attempted, boolean forMerges) {
+	/**
+	 * @param askedFor
+	 *   whether the commit was asked for through {@link #commitSoon()}, which
+	 *   is what it is reported as started by
+	 */
+	private Outcome commit(long attempted, boolean forMerges, boolean askedFor) {
 		logger.atDebug()
 			.addKeyValue("index", index.getId())
 			.addKeyValue("changes", attempted)
@@ -454,9 +512,11 @@ public class IndexCommitManager {
 		 */
 		var trigger = forMerges && attempted == 0
 			? Meters.TRIGGER_MERGES
-			: policy.maxChanges() > 0 && attempted >= policy.maxChanges()
-				? Meters.TRIGGER_CHANGES
-				: Meters.TRIGGER_INTERVAL;
+			: askedFor
+				? Meters.TRIGGER_FRESHNESS
+				: policy.maxChanges() > 0 && attempted >= policy.maxChanges()
+					? Meters.TRIGGER_CHANGES
+					: Meters.TRIGGER_INTERVAL;
 
 		var started = System.nanoTime();
 		try {

@@ -32,6 +32,7 @@ import se.l4.exofind.engine.api.errors.ErrorResponse.ErrorDetail;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.TestFreshnessWaiters;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
@@ -94,7 +95,8 @@ public class DocumentUpdateResourceTest {
 		resource = new DocumentResource(
 			indexes,
 			new ObjectMapper(),
-			TestReindexJobs.create(nodeState, indexes, registry, storageDirectory)
+			TestReindexJobs.create(nodeState, indexes, registry, storageDirectory),
+			TestFreshnessWaiters.create(indexes, registry)
 		);
 	}
 

@@ -34,7 +34,22 @@ public record DocumentsResponse(
 		when the request is sent with `?onError=skip`; a request sent without it \
 		fails on the first refused document. Always present, and empty when \
 		nothing was skipped.""")
-	List<DocumentFailure> failed
+	List<DocumentFailure> failed,
+
+	/**
+	 * The state the change lands in, as a freshness token.
+	 */
+	@Schema(
+		description = """
+			A freshness token for the state the change lands in. Pass it \
+			as `freshness.atLeast` on a search, or in the \
+			`X-Exofind-Freshness` header of a read, and that request is \
+			answered only once the node holds the change. Opaque; pass it \
+			back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMSATIYBw"
+	)
+	String freshness
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
@@ -42,5 +57,5 @@ public record DocumentsResponse(
 	 * {@code ?onError=skip} answers with an empty {@code failed}.
 	 */
 	public static final String EXAMPLE = """
-		{ "indexed": 2, "failed": [] }""";
+		{ "indexed": 2, "failed": [], "freshness": "AQoIcHJvZHVjdHMSATIYBw" }""";
 }

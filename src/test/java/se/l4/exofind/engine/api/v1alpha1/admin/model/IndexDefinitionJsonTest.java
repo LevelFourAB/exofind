@@ -777,9 +777,11 @@ public class IndexDefinitionJsonTest {
 				10,
 				null
 			),
-			List.of(new GenerationSummary("2", true, "2026-08-16T10:00:00Z"))
+			List.of(new GenerationSummary("2", true, "2026-08-16T10:00:00Z")),
+			null
 		);
 
+		// An answer that made no change carries no freshness token
 		assertThat(
 			mapper.writeValueAsString(info),
 			is(

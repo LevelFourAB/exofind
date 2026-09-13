@@ -14,6 +14,7 @@ import org.eclipse.collections.api.map.MutableMap;
 import org.eclipse.collections.impl.factory.Lists;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
@@ -37,6 +38,7 @@ import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.errors.RequestBodyUnreadableException;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
+import se.l4.exofind.engine.api.v1alpha1.FreshnessTokens;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentFailure;
@@ -52,11 +54,14 @@ import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.Freshness;
+import se.l4.exofind.engine.freshness.FreshnessWaiter;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.DocumentPatch;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.IndexException;
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import jakarta.inject.Inject;
@@ -69,6 +74,8 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
@@ -252,16 +259,31 @@ public class DocumentResource {
 			.withStatus(400)
 			.withMessage("A key is required");
 
+	/**
+	 * The headers of the request being served, for the freshness token a
+	 * read carries in {@link FreshnessTokens#HEADER}. {@code null} on a
+	 * resource built outside a request, the way a test builds one, which is
+	 * a request with no headers.
+	 */
+	@Context
+	HttpHeaders headers;
+
 	private final Indexes indexes;
 	private final ObjectMapper mapper;
 	private final ReindexJobs reindexJobs;
+	private final FreshnessWaiter freshnessWaiter;
 	private final RequestMetrics metrics;
 
 	/**
 	 * Write documents that report nothing, for a test that is not measuring.
 	 */
-	public DocumentResource(Indexes indexes, ObjectMapper mapper, ReindexJobs reindexJobs) {
-		this(indexes, mapper, reindexJobs, RequestMetrics.none());
+	public DocumentResource(
+		Indexes indexes,
+		ObjectMapper mapper,
+		ReindexJobs reindexJobs,
+		FreshnessWaiter freshnessWaiter
+	) {
+		this(indexes, mapper, reindexJobs, freshnessWaiter, RequestMetrics.none());
 	}
 
 	@Inject
@@ -269,11 +291,13 @@ public class DocumentResource {
 		Indexes indexes,
 		ObjectMapper mapper,
 		ReindexJobs reindexJobs,
+		FreshnessWaiter freshnessWaiter,
 		RequestMetrics metrics
 	) {
 		this.indexes = indexes;
 		this.mapper = mapper;
 		this.reindexJobs = reindexJobs;
+		this.freshnessWaiter = freshnessWaiter;
 		this.metrics = metrics;
 	}
 
@@ -296,8 +320,61 @@ public class DocumentResource {
 	 * for as long as the stream runs, and the generation the name answers from
 	 * can be promoted while it is - see {@link Indexes#write}.
 	 */
-	private <T> T write(String name, Indexes.WriteAction<T> action) {
-		return indexes.write(name, action);
+	private <T> T write(String name, Landed landed, Indexes.WriteAction<T> action) {
+		return indexes.write(name, index -> {
+			try(var change = index.beginChange()) {
+				try {
+					return action.apply(index);
+				} finally {
+					/*
+					 * Recorded whatever the change did. A change the index
+					 * refused changed nothing, and the commit it names is then
+					 * the one already open - which the token still has to
+					 * name, as the answer says which state the request left.
+					 */
+					landed.record(index, change.landsIn());
+				}
+			}
+		});
+	}
+
+	/**
+	 * The state the writes of one request land in, collected one write at a
+	 * time, for the request to answer with as a freshness token.
+	 *
+	 * <p>A request that writes a stream of documents resolves the name once
+	 * per document, so its writes can land in two generations when the name
+	 * is promoted while the stream runs. The token carries the last generation
+	 * written and the highest commit sequence the writes landed in there. The
+	 * earlier writes went to a generation the name no longer answers from,
+	 * which no token could make a search see.
+	 */
+	private final class Landed {
+		private IndexName generation;
+		private long commit;
+
+		void record(Index index, long landsIn) {
+			var name = IndexName.parse(index.getId());
+			if(!name.equals(generation)) {
+				generation = name;
+				commit = landsIn;
+			} else {
+				commit = Math.max(commit, landsIn);
+			}
+		}
+
+		/**
+		 * The token the request answers with. A request that wrote nothing
+		 * gives the state the generation is in now.
+		 */
+		String token(String name) {
+			if(generation == null) {
+				var index = indexes.getOrThrow(name);
+				record(index, index.visibleCommit());
+			}
+
+			return FreshnessTokens.encode(Freshness.ofCommit(generation, commit));
+		}
 	}
 
 	/**
@@ -614,6 +691,7 @@ public class DocumentResource {
 		var skipErrors = skipErrors(onError);
 		var documents = body.documents();
 		var failures = Lists.mutable.<DocumentFailure>empty();
+		var landed = new Landed();
 
 		var indexed = measure("add", () -> {
 			var written = 0;
@@ -624,7 +702,7 @@ public class DocumentResource {
 				var processed = written;
 
 				try {
-					write(name, index -> {
+					write(name, landed, index -> {
 						addDocument(index, name, json, entry, processed);
 						return null;
 					});
@@ -643,7 +721,7 @@ public class DocumentResource {
 			return written;
 		});
 
-		return new DocumentsResponse(indexed, failures);
+		return new DocumentsResponse(indexed, failures, landed.token(name));
 	}
 
 	/**
@@ -686,6 +764,7 @@ public class DocumentResource {
 		checkWritable(name);
 		var skipErrors = skipErrors(onError);
 		var failures = Lists.mutable.<DocumentFailure>empty();
+		var landed = new Landed();
 
 		var indexed = measure("add", () -> {
 			var read = 0;
@@ -706,7 +785,7 @@ public class DocumentResource {
 					read++;
 
 					try {
-						write(name, index -> {
+						write(name, landed, index -> {
 							addDocument(index, name, json, entry, processed);
 							return null;
 						});
@@ -730,7 +809,7 @@ public class DocumentResource {
 			return written;
 		});
 
-		return new DocumentsResponse(indexed, failures);
+		return new DocumentsResponse(indexed, failures, landed.token(name));
 	}
 
 	/**
@@ -1109,6 +1188,7 @@ public class DocumentResource {
 		var missingKeys = Lists.mutable.<String>empty();
 		var failures = Lists.mutable.<DocumentFailure>empty();
 		var documents = body.documents();
+		var landed = new Landed();
 
 		var updated = measure("update", () -> {
 			var changed = 0;
@@ -1120,7 +1200,7 @@ public class DocumentResource {
 
 				boolean applied;
 				try {
-					applied = write(name, index -> updateDocument(
+					applied = write(name, landed, index -> updateDocument(
 						index, name, json, entry, processed, skipMissing, missingKeys
 					));
 				} catch(ValidationException e) {
@@ -1140,7 +1220,7 @@ public class DocumentResource {
 			return changed;
 		});
 
-		return new UpdateResponse(updated, missingKeys, failures);
+		return new UpdateResponse(updated, missingKeys, failures, landed.token(name));
 	}
 
 	/**
@@ -1183,6 +1263,7 @@ public class DocumentResource {
 		var skipErrors = skipErrors(onError);
 		var missingKeys = Lists.mutable.<String>empty();
 		var failures = Lists.mutable.<DocumentFailure>empty();
+		var landed = new Landed();
 
 		var updated = measure("update", () -> {
 			var read = 0;
@@ -1199,7 +1280,7 @@ public class DocumentResource {
 
 					boolean applied;
 					try {
-						applied = write(name, index -> updateDocument(
+						applied = write(name, landed, index -> updateDocument(
 							index, name, json, entry, processed, skipMissing, missingKeys
 						));
 					} catch(ValidationException e) {
@@ -1224,7 +1305,7 @@ public class DocumentResource {
 			return changed;
 		});
 
-		return new UpdateResponse(updated, missingKeys, failures);
+		return new UpdateResponse(updated, missingKeys, failures, landed.token(name));
 	}
 
 	/**
@@ -1668,8 +1749,9 @@ public class DocumentResource {
 		}
 
 		checkWritable(name);
+		var landed = new Landed();
 
-		measure("update", () -> write(name, index -> {
+		measure("update", () -> write(name, landed, index -> {
 			var primaryKey = index.parsePrimaryKey(key);
 			var keyField = index.getPrimaryKey().orElseThrow().getName();
 
@@ -1686,7 +1768,9 @@ public class DocumentResource {
 			return 1;
 		}));
 
-		return Response.noContent().build();
+		return Response.noContent()
+			.header(FreshnessTokens.HEADER, landed.token(name))
+			.build();
 	}
 
 	/**
@@ -1931,8 +2015,9 @@ public class DocumentResource {
 		@PathParam("key") String key
 	) {
 		checkWritable(name);
+		var landed = new Landed();
 
-		measure("delete", () -> write(name, index -> {
+		measure("delete", () -> write(name, landed, index -> {
 			try {
 				index.deleteDocument(index.parsePrimaryKey(key));
 			} catch(IOException e) {
@@ -1942,7 +2027,9 @@ public class DocumentResource {
 			return 1;
 		}));
 
-		return Response.noContent().build();
+		return Response.noContent()
+			.header(FreshnessTokens.HEADER, landed.token(name))
+			.build();
 	}
 
 	/**
@@ -2319,28 +2406,29 @@ public class DocumentResource {
 		}
 
 		checkWritable(name);
+		var landed = new Landed();
 
 		if(everything) {
-			return new DeleteResponse(measure("delete_by_query", () -> write(name, index -> {
+			return new DeleteResponse(measure("delete_by_query", () -> write(name, landed, index -> {
 				try {
 					return index.deleteByQuery(Lists.immutable.empty(), null);
 				} catch(IOException e) {
 					throw new IndexException(IO_ERROR, e, "index", name);
 				}
-			})));
+			})), landed.token(name));
 		}
 
 		if(body.keys() != null) {
-			return new DeleteResponse(measure("delete", () -> write(name, index -> {
+			return new DeleteResponse(measure("delete", () -> write(name, landed, index -> {
 				try {
 					return index.deleteDocuments(toKeys(body.keys()));
 				} catch(IOException e) {
 					throw new IndexException(IO_ERROR, e, "index", name);
 				}
-			})));
+			})), landed.token(name));
 		}
 
-		return new DeleteResponse(measure("delete_by_query", () -> write(name, index -> {
+		return new DeleteResponse(measure("delete_by_query", () -> write(name, landed, index -> {
 			try {
 				return index.deleteByQuery(
 					SearchRequestMapper.toQuery(body.query(), "query"),
@@ -2349,7 +2437,7 @@ public class DocumentResource {
 			} catch(IOException e) {
 				throw new IndexException(IO_ERROR, e, "index", name);
 			}
-		})));
+		})), landed.token(name));
 	}
 
 	/**
@@ -2476,6 +2564,34 @@ public class DocumentResource {
 			Repeating the request reopens the index.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
+	@ReturnsError(
+		value = "search:freshness:invalid",
+		status = 400,
+		when = "The `X-Exofind-Freshness` header carries a token the engine did not issue. Pass a token back unchanged."
+	)
+	@ReturnsError(
+		value = "search:freshness:version_unsupported",
+		status = 400,
+		when = "The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token."
+	)
+	@ReturnsError(
+		value = "search:freshness:index_mismatch",
+		status = 400,
+		when = "The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of."
+	)
+	@ReturnsError(
+		value = "search:freshness:unavailable",
+		status = 503,
+		when = "The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header."
+	)
+	@Parameter(
+		name = FreshnessTokens.HEADER,
+		in = ParameterIn.HEADER,
+		description = """
+			A freshness token an earlier response returned. The documents are \
+			read only once the node holds the state it names.""",
+		example = "AQoIcHJvZHVjdHMSATIYBw"
+	)
 	public ScanResponse scan(
 		@Parameter(
 			description = """
@@ -2505,7 +2621,10 @@ public class DocumentResource {
 		)
 		@QueryParam("limit") String limit
 	) {
-		var index = indexes.getOrThrow(name);
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(null, freshnessHeader(), name)
+		);
 		var wanted = scanLimit(limit);
 		var from = scanAfter(index, after);
 
@@ -2520,7 +2639,8 @@ public class DocumentResource {
 
 		return new ScanResponse(
 			documents,
-			read < wanted ? null : keyOf(index, documents.getLast())
+			read < wanted ? null : keyOf(index, documents.getLast()),
+			FreshnessTokens.encode(freshnessWaiter.stateOf(index))
 		);
 	}
 
@@ -2561,7 +2681,10 @@ public class DocumentResource {
 		@QueryParam("after") String after,
 		@QueryParam("limit") String limit
 	) {
-		var index = indexes.getOrThrow(name);
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(null, freshnessHeader(), name)
+		);
 		var wanted = scanLimit(limit);
 		var from = scanAfter(index, after);
 
@@ -2587,7 +2710,17 @@ public class DocumentResource {
 			}
 		};
 
-		return Response.ok(body).build();
+		return Response.ok(body)
+			.header(FreshnessTokens.HEADER, FreshnessTokens.encode(freshnessWaiter.stateOf(index)))
+			.build();
+	}
+
+	/**
+	 * The token the request carries in its header, or {@code null} when it
+	 * carries none.
+	 */
+	private String freshnessHeader() {
+		return headers == null ? null : headers.getHeaderString(FreshnessTokens.HEADER);
 	}
 
 	/**

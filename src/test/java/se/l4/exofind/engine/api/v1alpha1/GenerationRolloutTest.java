@@ -45,6 +45,7 @@ import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.TestFreshnessWaiters;
 import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
@@ -123,7 +124,12 @@ public class GenerationRolloutTest {
 		admin = new IndexResource(
 			indexes, auth, new LocalIndexerOwnership(), reindexJobs, searchSettings
 		);
-		documents = new DocumentResource(indexes, new ObjectMapper(), reindexJobs);
+		documents = new DocumentResource(
+			indexes,
+			new ObjectMapper(),
+			reindexJobs,
+			TestFreshnessWaiters.create(indexes, searchSettings)
+		);
 		search = new SearchResource(
 			indexes,
 			searchSettings,

@@ -59,7 +59,21 @@ public record ScanResponse(
 			returns an empty `documents` array without a `next` field.""",
 		examples = "2"
 	)
-	String next
+	String next,
+
+	/**
+	 * The state the documents were read from, as a freshness token.
+	 */
+	@Schema(
+		description = """
+			A freshness token for the state the documents were read from. \
+			Pass it in the `X-Exofind-Freshness` header of the next request, \
+			and that request is answered from this state or a later one \
+			whichever node it lands on. Opaque; pass it back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMSATIYBw"
+	)
+	String freshness
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
@@ -71,6 +85,7 @@ public record ScanResponse(
 		    { "id": "1", "name": { "sv": "blåbärssylt" }, "energy": 234 },
 		    { "id": "2", "name": { "sv": "hallonsylt" }, "energy": 241 }
 		  ],
-		  "next": "2"
+		  "next": "2",
+		  "freshness": "AQoIcHJvZHVjdHMSATIYBw"
 		}""";
 }

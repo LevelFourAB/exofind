@@ -32,6 +32,7 @@ import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.errors.UnrepresentableStateException;
 import se.l4.exofind.engine.api.routing.ServedBy;
+import se.l4.exofind.engine.api.v1alpha1.FreshnessTokens;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.SearchSettingsDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.SearchSettingsInfo;
@@ -41,6 +42,7 @@ import se.l4.exofind.engine.api.errors.RequestErrors;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.Freshness;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.settings.DeclaredValue;
@@ -278,7 +280,7 @@ public class IndexSettingsResource {
 			return Response.notModified(new EntityTag(version)).build();
 		}
 
-		return answer(snapshot, false);
+		return answer(null, snapshot, false);
 	}
 
 	/**
@@ -629,7 +631,7 @@ public class IndexSettingsResource {
 
 		if(current == null) {
 			try {
-				return answer(searchSettings.create(stored, settings), true);
+				return answer(stored, searchSettings.create(stored, settings), true);
 			} catch(SearchSettingsVersionMismatchException e) {
 				/*
 				 * Settings were stored between the read and the write, so this
@@ -639,7 +641,7 @@ public class IndexSettingsResource {
 			}
 		}
 
-		return answer(searchSettings.put(stored, settings, expectedVersion), false);
+		return answer(stored, searchSettings.put(stored, settings, expectedVersion), false);
 	}
 
 	/**
@@ -1065,6 +1067,7 @@ public class IndexSettingsResource {
 				 * than replaced by a change that never saw it.
 				 */
 				return answer(
+					stored,
 					snapshot == null
 						? searchSettings.create(stored, settings)
 						: searchSettings.put(stored, settings, snapshot.version()),
@@ -1527,15 +1530,23 @@ public class IndexSettingsResource {
 	 * Answer with the settings as stored, tagged with the version they are now
 	 * at.
 	 *
+	 * @param changed
+	 *   name of the index whose settings the request changed, so the answer
+	 *   carries the state the change landed in, or {@code null} for an answer
+	 *   that changed nothing
 	 * @param snapshot
 	 * @param created
 	 *   {@code true} when the index had no settings before the write, which is
 	 *   answered as {@code 201} the way creating an index is
 	 */
-	private static Response answer(SearchSettings.Snapshot snapshot, boolean created) {
+	private static Response answer(String changed, SearchSettings.Snapshot snapshot, boolean created) {
+		var freshness = changed == null
+			? null
+			: FreshnessTokens.encode(Freshness.ofSettings(changed, snapshot.version()));
+
 		return (created ? Response.status(Response.Status.CREATED) : Response.ok())
 			.tag(new EntityTag(unquote(snapshot.version())))
-			.entity(toInfo(snapshot))
+			.entity(toInfo(snapshot, freshness))
 			.build();
 	}
 
@@ -1636,12 +1647,23 @@ public class IndexSettingsResource {
 	) {
 		indexes.getOrThrow(name);
 
-		searchSettings.delete(IndexName.parse(name).index());
+		var index = IndexName.parse(name).index();
+		searchSettings.delete(index);
 
-		return Response.noContent().build();
+		return Response.noContent()
+			.header(
+				FreshnessTokens.HEADER,
+				FreshnessTokens.encode(Freshness.ofSettings(index, null))
+			)
+			.build();
 	}
 
-	private static SearchSettingsInfo toInfo(SearchSettings.Snapshot snapshot) {
+	/**
+	 * @param freshness
+	 *   the state a change landed in, as a token, or {@code null} for an
+	 *   answer that changed nothing
+	 */
+	private static SearchSettingsInfo toInfo(SearchSettings.Snapshot snapshot, String freshness) {
 		return new SearchSettingsInfo(
 			snapshot.stored().hasRanking()
 				? RankingMapper.toApi(snapshot.stored().getRanking())
@@ -1652,7 +1674,8 @@ public class IndexSettingsResource {
 			unquote(snapshot.version()),
 			snapshot.unsupportedFeatures().isEmpty()
 				? null
-				: snapshot.unsupportedFeatures().toList()
+				: snapshot.unsupportedFeatures().toList(),
+			freshness
 		);
 	}
 

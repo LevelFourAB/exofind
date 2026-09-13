@@ -4,11 +4,14 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.FreshnessUnavailableException;
 import se.l4.exofind.engine.index.IndexFieldNotFoundException;
 import se.l4.exofind.engine.index.IndexFieldUsageException;
 import se.l4.exofind.engine.index.IndexInvalidQueryTypeException;
@@ -191,6 +194,25 @@ public class EngineExceptionMapperTest {
 			mapper.toResponse(new IndexInvalidQueryValueException("published", "boolean"))
 				.getStatus(),
 			is(400)
+		);
+	}
+
+	/**
+	 * A state a node did not reach in time is late rather than wrong, so the
+	 * answer says when to ask again. Whole seconds, and never zero, as the
+	 * header counts seconds.
+	 */
+	@Test
+	public void testALateStateSaysWhenToRetry() {
+		var response = mapper.toResponse(
+			new FreshnessUnavailableException("books", Duration.ofSeconds(10))
+		);
+
+		assertThat(response.getStatus(), is(503));
+		assertThat(response.getHeaderString("Retry-After"), is("1"));
+		assertThat(
+			((ErrorResponse) response.getEntity()).code(),
+			is("search:freshness:unavailable")
 		);
 	}
 }

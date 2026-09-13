@@ -96,6 +96,15 @@ public record SearchResponse(
 	String generation,
 
 	/**
+	 * The state the answer came from, as a freshness token.
+	 */
+	@Schema(
+		description = FRESHNESS_DESCRIPTION,
+		examples = FRESHNESS_EXAMPLE
+	)
+	String freshness,
+
+	/**
 	 * Total execution time for the search request in milliseconds, including
 	 * fractional milliseconds.
 	 */
@@ -117,6 +126,24 @@ public record SearchResponse(
 		and this name to the index name to send a later request to the same \
 		data. See [Names and \
 		generations](https://exofind.dev/reference/admin-api/#names-and-generations).""";
+
+	/**
+	 * Description of the freshness property, shared with the other responses
+	 * of the search API and with the responses of the changes that issue one.
+	 */
+	public static final String FRESHNESS_DESCRIPTION = """
+		A freshness token for the state the answer came from: the \
+		generation, its commit, and the version of the search settings. Pass \
+		it as `freshness.atLeast` on a later request, and that request is \
+		answered from this state or a later one whichever node it lands on. \
+		Opaque; pass it back unchanged. See \
+		[Freshness](https://exofind.dev/reference/search-api/#freshness).""";
+
+	/**
+	 * A token as the engine writes one, for the examples of every response
+	 * that carries a token.
+	 */
+	public static final String FRESHNESS_EXAMPLE = "AQoIcHJvZHVjdHMSATIYBw";
 
 	/**
 	 * The example response, as the JSON the engine answers with. It answers

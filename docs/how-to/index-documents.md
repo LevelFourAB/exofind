@@ -111,7 +111,7 @@ POST /v1alpha1/indexes/products/search
 
 With an empty query, the response returns the total count of searchable documents. Documents indexed since the last commit are not counted until they are committed. If the returned count is lower than expected, commit the index and repeat the search.
 
-The count is what the node answering the search can find. In a deployment with more than one node, a committed change reaches the other nodes on a refresh interval, so a count taken through a load balancer can lag the writer. See [Make a write visible to search](make-writes-visible.md).
+The count is what the node answering the search can find. In a deployment with more than one node, a committed change reaches the other nodes on a refresh interval, so a count taken through a load balancer can lag the writer. To count only after the node has the batch, pass the `freshness` token from the indexing response as `freshness.atLeast` in the search request. See [Make a write visible to search](make-writes-visible.md).
 
 ## Handling errors
 

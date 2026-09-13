@@ -54,8 +54,8 @@ states what it needs, the requests to send, and what to do when one is refused.
 - [Reading documents back](how-to/read-documents.md): Page an index back out again
   to export it, load it somewhere else, or see what a document holds.
 - [Make a write visible to search](how-to/make-writes-visible.md): Find out why
-  a document you just indexed is not in the results yet, and choose how to
-  close the gap.
+  a document you just indexed is not in the results yet, and pass the token
+  the write returned so the search waits for it.
 - [Using sub-documents](how-to/use-sub-documents.md): Hold a list of values that
   are documents of their own, ask several things of one of them, and order,
   count, and change them.

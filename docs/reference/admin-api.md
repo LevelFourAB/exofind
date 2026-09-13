@@ -106,6 +106,7 @@ The resource contains the following fields:
 - `definition`: The active index definition. See [Field types](field-types.md). Presets are stored expanded; the response returns the expanded chain rather than the preset name.
 - `status`: The observed state reported by the answering node. The API does not accept this object as input.
 - `generations`: A list of all generations for the index, including name, live status, and creation timestamp (`createdAt`).
+- `freshness`: A token that identifies the state of the index. Present in responses to `commit` and `promote` actions, and omitted on `GET` and `PUT` responses. See [Freshness](search-api.md#freshness).
 
 A `PUT` request that creates a resource returns `201 Created`. A `PUT` request that updates an existing resource returns `200 OK`. The request body must contain the full definition; any omitted settings are removed.
 
@@ -181,14 +182,15 @@ The response contains the following fields:
 - `fields`: Settings that apply to one field, keyed by field name. See [Field settings](#field-settings).
 - `version`: An identifier for the settings, also returned in the `ETag` header. Pass this value in the `If-Match` header on `PUT` and `PATCH` requests to prevent overwriting concurrent updates. A mismatch returns `412 Precondition Failed`. Pass it in the `If-None-Match` header on a later `GET` to receive `304 Not Modified` while the settings are unchanged.
 - `unsupportedFeatures`: Present only when the answering node sets the settings aside because they use capabilities its version does not have. The node searches with the definition alone. Upgrade the node to put the settings in force.
+- `freshness`: A token that identifies the state of the search settings. Present in responses to `PUT` and `PATCH` requests, and omitted on `GET` requests. Pass this value in `freshness.atLeast` on a search request to ensure the query runs with these settings in force on any node. See [Freshness](search-api.md#freshness).
 
 A `PUT` request replaces the settings completely and returns them as stored. An index that had no settings answers `201 Created`, and one that had some answers `200 OK`. The server validates the ranking against the generation the index name answers from, using the same `index:ranking:*` error codes used to validate a definition's ranking. The server validates the fields named by `synonyms`, `typoExclusions`, and `fields` against the same generation.
 
 A `PUT` or `PATCH` request carrying an `If-Match` header on an index that has no settings returns `404 Not Found` with the error code `settings:not_found`, including `If-Match: *`. See [Conditional requests](api-conventions.md#conditional-requests) for how the header is read.
 
-A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`.
+A `DELETE` request removes the settings, returning the index to its definition's ranking, and returns `204 No Content`. Deleting settings that do not exist changes nothing and returns `204 No Content`. The `X-Exofind-Freshness` response header carries a token that identifies the removal.
 
-A change takes effect for searches on the node that holds the index immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently.
+A change takes effect for searches on the node that holds the index immediately and on every other node within `EXOFIND_SETTINGS_REFRESH_INTERVAL` (default 10 seconds). Until then, two nodes can rank the same query differently. A search request that includes the freshness token runs with the updated settings on any node.
 
 Search settings outlive generations. A generation promoted after the settings were written can lack a field used for ranking; searches then skip that entry rather than fail, so a promotion never depends on rewriting settings first.
 
@@ -497,7 +499,7 @@ Every action returns the [index resource](#index-resource) of the generation it 
 POST /v1alpha1/admin/indexes/{name}/actions/commit
 ```
 
-Pushes pending changes (documents and definition) to storage and returns the updated index resource.
+Pushes pending changes (documents and definition) to storage and returns the updated index resource. The `freshness` field of the resource identifies the commit. A search request that includes this token reads from that commit on any node.
 
 The `{name}` parameter specifies the target generation (for example, `products@2`). If you omit the generation specifier, the action targets the live generation.
 
@@ -517,7 +519,7 @@ The `{name}` parameter specifies the target generation (for example, `products@2
 POST /v1alpha1/admin/indexes/{name}/actions/promote
 ```
 
-Configures the index to serve queries from the specified generation.
+Configures the index to serve queries from the specified generation. The `freshness` field of the resource identifies the promoted generation. A search request that includes this token reads from that generation on any node.
 
 The `{name}` parameter must specify a generation name (for example, `products@2`). Calling `promote` without a generation returns `400 Bad Request` with the error code `index:generation:name_required`.
 
@@ -588,7 +590,8 @@ Reindex endpoints return a job record:
   "node": "node-a-7f21",
   "startedAt": "2026-08-28T10:15:30Z",
   "updatedAt": "2026-08-28T10:16:02Z",
-  "finishedAt": null
+  "finishedAt": null,
+  "freshness": null
 }
 ```
 
@@ -609,6 +612,7 @@ The job record contains the following fields:
 - `startedAt`: The timestamp when the job started.
 - `updatedAt`: The timestamp when the job record was last updated.
 - `finishedAt`: The timestamp when the job reached `done`, `failed` or `cancelled`, or `null` while it runs.
+- `freshness`: A token that identifies the promotion of the target generation. Present once the job reaches `done`, and `null` otherwise. See [Freshness](search-api.md#freshness).
 
 `id`, `startedBy` and `node` are `null` on a record written by a version of the engine that did not keep them.
 

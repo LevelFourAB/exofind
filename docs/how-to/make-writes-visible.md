@@ -34,16 +34,62 @@ For more details on configuration settings, see the [Configuration reference](..
 
 - An active Exofind deployment with at least one index.
 - An API key with the permissions required for the strategy you choose:
+  - `documents.write` to index documents.
+  - `search` to run search queries.
   - `indexes.read` to locate writer nodes and check status.
   - `indexes.commit` to trigger immediate commits.
   - `indexes.pull` to force a node to synchronize with storage.
-  - `search` to run search queries.
 
 ## Choose a visibility strategy
 
-Select one of the following four strategies based on your application's architecture and consistency requirements.
+Select one of the following strategies based on your application architecture and consistency requirements. Option 1 works through a load balancer without additional configuration.
 
-### Option 1: Search the writer node directly
+### Option 1: Pass the freshness token from the write to the search
+
+Every write operation returns a freshness token that identifies the state containing the change. When you include the token in a search request, the receiving node answers only after reaching that state. The writer node commits immediately when requested, and reader nodes pull from storage to reach the required commit.
+
+1. Index the document and save the `freshness` token from the response (requires `documents.write`):
+
+   ```http
+   POST /v1alpha1/indexes/products/documents HTTP/1.1
+   Host: exofind.example.com
+   Authorization: Bearer <token>
+   Content-Type: application/json
+
+   { "documents": [ { "id": "42", "name": "laptop" } ] }
+   ```
+
+   ```json
+   { "indexed": 1, "failed": [], "freshness": "AQoIcHJvZHVjdHMSATIYBw" }
+   ```
+
+2. Send the search request with the token in `freshness.atLeast` (requires `search`):
+
+   ```http
+   POST /v1alpha1/indexes/products/search HTTP/1.1
+   Host: exofind.example.com
+   Authorization: Bearer <token>
+   Content-Type: application/json
+
+   {
+     "query": [
+       { "type": "text", "text": "laptop" }
+     ],
+     "freshness": { "atLeast": "AQoIcHJvZHVjdHMSATIYBw" }
+   }
+   ```
+
+   The node answers after reaching the specified state. If the search reaches the writer node, the writer commits immediately. If the search reaches a reader node, the reader waits for the writer to commit and pulls the new state from storage.
+
+3. Retry the request if the server returns `503 Service Unavailable` with the error code `search:freshness:unavailable`:
+
+   This error indicates that the node reached `EXOFIND_SEARCH_FRESHNESS_WAIT` (default: `10s`) before the state became available. Retry the request after the delay in the `Retry-After` header.
+
+Write operations return one token for the entire batch. The commit action, search settings changes, and generation promotions also return freshness tokens. For all endpoints that return tokens and the errors a token can produce, see the [Search API reference](../reference/search-api.md#freshness).
+
+**Trade-off:** Searches on reader nodes wait for the writer commit interval (up to `EXOFIND_INDEXES_COMMIT_MAX_INTERVAL`, default: `5s`) plus the pull duration. A freshness token does not guarantee durability. If the writer node fails before committing, uncommitted writes are lost. See [Write guarantees](../explanation/write-guarantees.md#what-a-freshness-token-promises).
+
+### Option 2: Search the writer node directly
 
 The writer node makes changes searchable immediately after a commit finishes. If your application can route requests directly to a specific node, you can send searches straight to the writer.
 
@@ -87,9 +133,9 @@ The writer node makes changes searchable immediately after a commit finishes. If
 
 **Trade-off:** This provides the lowest latency for read-after-write consistency, but it concentrates search traffic on the writer node and requires direct network access to individual nodes.
 
-### Option 2: Explicitly commit and wait out the refresh interval
+### Option 3: Explicitly commit and wait out the refresh interval
 
-If your application cannot bypass the load balancer, trigger an explicit commit and wait for reader nodes to pull the update.
+If your application cannot pass a token along, trigger an explicit commit and wait for reader nodes to pull the update.
 
 1. Trigger a commit on the index (requires `indexes.commit`):
 
@@ -105,7 +151,7 @@ If your application cannot bypass the load balancer, trigger an explicit commit 
 
 **Trade-off:** This works behind standard load balancers without special routing, but your client must tolerate a delay of up to 30 seconds.
 
-### Option 3: Force a pull on the answering node
+### Option 4: Force a pull on the answering node
 
 You can instruct a specific node to pull the latest state from remote storage immediately.
 
@@ -120,7 +166,7 @@ You can instruct a specific node to pull the latest state from remote storage im
 
 **Trade-off:** A pull runs only on the node that receives the request and is never forwarded. This only works if your client addresses that specific node directly for both the pull and the subsequent search.
 
-### Option 4: Design ingestion around eventual consistency
+### Option 5: Design ingestion around eventual consistency
 
 For bulk data loading or asynchronous ingestion pipelines, structure your workflow so that immediate search visibility is not required.
 
@@ -157,30 +203,33 @@ To verify that an index is ready and check how many documents a node can search:
 
    {
      "limit": 0,
-     "total": "exact"
+     "total": "exact",
+     "freshness": { "atLeast": "AQoIcHJvZHVjdHMSATIYBw" }
    }
    ```
 
-   The `total.count` field in the response shows how many documents the answering node can search. Uncommitted documents are not included in this count. Ask for `"total": "exact"` as shown: counting defaults to `"estimate"`, which stops once the count exceeds the returned window and reports `total.exact` as `false`, so an estimate cannot tell you whether one particular write has arrived.
+   The `total.count` field in the response shows how many documents the answering node can search. Uncommitted documents are not included in this count. Ask for `"total": "exact"` as shown: counting defaults to `"estimate"`, which stops once the count exceeds the returned window and reports `total.exact` as `false`, so an estimate cannot tell you whether one particular write has arrived. When you pass the token of the write in `freshness.atLeast`, the node counts documents only after reaching that state.
 
 ## What Exofind does not provide
 
-Nothing in the API tells you whether a particular node holds a particular write:
+Exofind write visibility has the following operational boundaries:
 
-- **No version tokens or receipts**: Exofind does not provide acknowledgement tokens, transaction IDs, or sequence numbers that you can poll. You cannot ask a node if it contains a specific write.
-- **No response markers**: Search responses do not include generation markers or metadata indicating which index commit answered the query.
-- **Status is not a receipt**: An index state of `usable` on a reader node indicates that the local index is healthy and operational; it does not guarantee that the node holds the most recent commit.
-- **Search keys cannot query admin status**: An API key with only the `search` permission cannot call commit, pull, or status endpoints. Applications that manage visibility must have keys with administrative permissions (`indexes.read`, `indexes.commit`, `indexes.pull`).
+- **No durability receipt**: A freshness token indicates when a write is visible, not that it is durable. If the writer node fails before committing, uncommitted writes are lost. See [Write guarantees](../explanation/write-guarantees.md).
+- **No search forwarding**: Reader nodes do not forward searches to the writer node. A reader node waits for the writer commit interval and pulls the change from storage.
+- **No commit guarantees from index status**: An index state of `usable` on a reader node indicates that the local index is operational, but does not guarantee that the node holds the latest commit. The `freshness` property in a search response identifies the state the node holds.
+- **No admin access for search keys**: An API key with only the `search` permission cannot call commit, pull, or status endpoints. Passing a freshness token requires no permissions beyond `search`.
 
 ## Related
 
-- [Indexing documents](index-documents.md) - Sending documents, loading a dataset, and committing once at the end.
-- [Testing an application against a node](test-against-a-node.md) - Committing before a test asserts on search results.
-- [Searching an index](search-an-index.md) - The search request.
-- [Running multiple nodes](run-multiple-nodes.md) - Configuring which nodes take the writes.
-- [Configuration](../reference/configuration.md) - Every commit and refresh variable.
-- [Admin API](../reference/admin-api.md) - Index status, index states, and the actions.
-- [API conventions](../reference/api-conventions.md) - Why a write is forwarded to the writer while a search is served where it lands.
-- [What a write guarantees](../explanation/write-guarantees.md) - What a `2xx` promises, when the change is durable, and what a failover does to it.
-- [Architecture](../explanation/architecture.md) - Why storage is the source of truth.
-- [Synchronization](../explanation/synchronization.md) - What keeps two writers from corrupting an index.
+- [Indexing documents](index-documents.md) - Send documents, load datasets, and commit changes.
+- [Testing an application against a node](test-against-a-node.md) - Commit changes before asserting on search results in tests.
+- [Searching an index](search-an-index.md) - Construct and execute search queries.
+- [Paginating search results](paginate-search-results.md) - Pass freshness tokens across paginated requests.
+- [Running multiple nodes](run-multiple-nodes.md) - Configure node roles and writer assignment.
+- [Configuration reference](../reference/configuration.md) - Commit, refresh, and wait configuration settings.
+- [Admin API reference](../reference/admin-api.md) - Index status, lifecycle states, and admin actions.
+- [Search API reference](../reference/search-api.md#freshness) - Freshness token properties, request formats, and error codes.
+- [API conventions](../reference/api-conventions.md) - Request forwarding and local execution behavior.
+- [Write guarantees](../explanation/write-guarantees.md) - Acknowledgment semantics, durability, and failover behavior.
+- [Architecture](../explanation/architecture.md) - Overview of storage as the single source of truth.
+- [Synchronization](../explanation/synchronization.md) - Concurrency control and bounded staleness across nodes.

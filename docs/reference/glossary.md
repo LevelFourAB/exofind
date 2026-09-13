@@ -60,6 +60,14 @@ write to the same key either. See
 A field usage that enables value count aggregations or range buckets over
 matching search results. See [Field types](field-types.md).
 
+## Freshness token
+
+An opaque string that identifies a state of an index: the generation the index
+answers from, a commit sequence of that generation, and a version of the
+search settings. Write and read responses return a token, and a read request
+can supply it to ensure that a node answers from that state or a later one.
+See [Search API](search-api.md#freshness).
+
 ## Generation
 
 A complete physical version of an index containing its own Lucene files,

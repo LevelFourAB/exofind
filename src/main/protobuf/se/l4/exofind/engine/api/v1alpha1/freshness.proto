@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+/*
+ * Named so that the descriptor holder does not take the name of the codec
+ * that reads these messages.
+ */
+option java_outer_classname = "FreshnessProto";
+
+package se.l4.exofind.engine.api.v1alpha1;
+
+/*
+ * This file is the format of the freshness token the API returns from every
+ * change and accepts on every read, encoded and handed to clients as an opaque
+ * string. A client holds a token for as long as it likes and hands it to any
+ * node, so the format has to stay readable across releases: scalars are
+ * `optional` so unset can be told apart from the zero value and the empty
+ * string, a field number is never reused, and a field is added rather than
+ * changed. The byte in front of the message gives the format version, so a
+ * node can refuse a token written by a format it does not read instead of
+ * misreading it.
+ */
+
+/*
+ * FreshnessToken is the state of an index a read demands to see, or that an
+ * answer came from. Every part is optional; a part that is unset asks for
+ * nothing.
+ */
+message FreshnessToken {
+	/*
+	 * Name of the index, without a generation. A token is only accepted on
+	 * the index it was issued for.
+	 */
+	optional string index = 1;
+
+	/*
+	 * The generation the state is of. A read of the index name demands that
+	 * the node answers from this generation or one promoted after it.
+	 */
+	optional string generation = 2;
+
+	/*
+	 * The commit sequence to reach in the generation, counted from one over
+	 * the Lucene commits of the generation that carried changes. Only
+	 * meaningful together with `generation`.
+	 */
+	optional int64 commit = 3;
+
+	/*
+	 * The version of the search settings of the index to have seen, as the
+	 * storage reports it. The empty string says the settings were removed.
+	 */
+	optional string settings_version = 4;
+}

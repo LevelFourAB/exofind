@@ -24,6 +24,7 @@ import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.errors.UnrepresentableStateException;
 import se.l4.exofind.engine.api.routing.ServedBy;
+import se.l4.exofind.engine.api.v1alpha1.FreshnessTokens;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.GenerationSummary;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
@@ -37,6 +38,7 @@ import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.Freshness;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexDefinitionIncompatibleException;
 import se.l4.exofind.engine.index.IndexException;
@@ -1472,7 +1474,8 @@ public class IndexResource {
 			indexes.promote(name);
 		}
 
-		return toResponse(Response.ok(), indexes.getOrThrow(name)).build();
+		var index = indexes.getOrThrow(name);
+		return toResponse(Response.ok(), index, landedIn(index)).build();
 	}
 
 	/**
@@ -1585,7 +1588,7 @@ public class IndexResource {
 			throw new IndexException(IO_ERROR, e, "index", name);
 		}
 
-		return toResponse(Response.ok(), index).build();
+		return toResponse(Response.ok(), index, landedIn(index)).build();
 	}
 
 	/**
@@ -1958,6 +1961,28 @@ public class IndexResource {
 		Response.ResponseBuilder builder,
 		Index index
 	) {
+		return toResponse(builder, index, null);
+	}
+
+	/**
+	 * The state a generation is in on this node, as the token the answer to
+	 * a commit or a promotion carries: the generation, and the commit its
+	 * searches answer from.
+	 */
+	private static Freshness landedIn(Index index) {
+		return Freshness.ofCommit(IndexName.parse(index.getId()), index.visibleCommit());
+	}
+
+	/**
+	 * @param freshness
+	 *   the state the action landed in, or {@code null} for an answer that
+	 *   made no change
+	 */
+	private Response.ResponseBuilder toResponse(
+		Response.ResponseBuilder builder,
+		Index index,
+		Freshness freshness
+	) {
 		var version = index.getDefinitionVersion();
 		var name = IndexName.parse(index.getId());
 		var registered = indexes.getRegistered(name.index()).orElse(null);
@@ -1972,7 +1997,8 @@ public class IndexResource {
 					version,
 					IndexDefinitionMapper.toApi(index.getDefinition()),
 					toStatus(index),
-					registered == null ? List.of() : toGenerations(registered)
+					registered == null ? List.of() : toGenerations(registered),
+					freshness == null ? null : FreshnessTokens.encode(freshness)
 				)
 			);
 	}

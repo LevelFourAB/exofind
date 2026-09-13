@@ -25,12 +25,27 @@ public record DeleteResponse(
 			searchable documents.""",
 		examples = "3"
 	)
-	int deleted
+	int deleted,
+
+	/**
+	 * The state the change lands in, as a freshness token.
+	 */
+	@Schema(
+		description = """
+			A freshness token for the state the change lands in. Pass it \
+			as `freshness.atLeast` on a search, or in the \
+			`X-Exofind-Freshness` header of a read, and that request is \
+			answered only once the node holds the change. Opaque; pass it \
+			back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMSATIYBw"
+	)
+	String freshness
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
 	 * schema of this record shows this text.
 	 */
 	public static final String EXAMPLE = """
-		{ "deleted": 3 }""";
+		{ "deleted": 3, "freshness": "AQoIcHJvZHVjdHMSATIYBw" }""";
 }

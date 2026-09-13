@@ -2,7 +2,11 @@ package se.l4.exofind.engine.api.v1alpha1.admin.model;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import se.l4.exofind.engine.api.v1alpha1.FreshnessTokens;
+import se.l4.exofind.engine.freshness.Freshness;
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.reindex.ReindexJob;
+import se.l4.exofind.engine.reindex.ReindexPhase;
 
 /**
  * One reindex job as its durable record stands.
@@ -169,7 +173,23 @@ public record ReindexInfo(
 			`cancelled`, or `null` while it runs.""",
 		examples = "2026-08-28T10:41:17Z"
 	)
-	String finishedAt
+	String finishedAt,
+
+	/**
+	 * The state the promotion of the target landed in, as a freshness token.
+	 * {@code null} until the job reaches {@code done}.
+	 */
+	@Schema(
+		description = """
+			A freshness token for the state the promotion of the target \
+			landed in. Present once the job reaches `done`, and `null` before \
+			that. Pass it as `freshness.atLeast` on a search, and the search \
+			is answered from the target generation whichever node it lands \
+			on. Opaque; pass it back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMSATI"
+	)
+	String freshness
 ) {
 	/**
 	 * The example job, as the JSON the engine answers with. The OpenAPI schema
@@ -192,7 +212,8 @@ public record ReindexInfo(
 		  "node": "node-a-7f21",
 		  "startedAt": "2026-08-28T10:15:30Z",
 		  "updatedAt": "2026-08-28T10:16:02Z",
-		  "finishedAt": null
+		  "finishedAt": null,
+		  "freshness": null
 		}""";
 
 	/**
@@ -216,7 +237,8 @@ public record ReindexInfo(
 		  "node": "node-a-7f21",
 		  "startedAt": "2026-08-28T10:15:30Z",
 		  "updatedAt": "2026-08-28T10:15:30Z",
-		  "finishedAt": null
+		  "finishedAt": null,
+		  "freshness": null
 		}""";
 
 	public static ReindexInfo of(ReindexJob job) {
@@ -235,7 +257,10 @@ public record ReindexInfo(
 			job.node(),
 			job.startedAt().toString(),
 			job.updatedAt().toString(),
-			job.finishedAt() == null ? null : job.finishedAt().toString()
+			job.finishedAt() == null ? null : job.finishedAt().toString(),
+			job.phase() == ReindexPhase.DONE
+				? FreshnessTokens.encode(Freshness.ofGeneration(IndexName.parse(job.targetName())))
+				: null
 		);
 	}
 }

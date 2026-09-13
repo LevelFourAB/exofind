@@ -28,6 +28,7 @@ When using cursors, keep the following behaviors in mind:
 
 - If you change the sort order, the server rejects the cursor with `search:cursor:sort_mismatch`. You can change the query while keeping the position.
 - If you reach a response through a cursor, the response omits `page.offset` because no results were counted to determine an offset.
+- Cursors do not carry freshness tokens. A cursor is a position, not a state. To keep pages at or after the state of the first page across nodes, pass the `freshness` token of each response as `freshness.atLeast` on the next request. See [Freshness](../reference/search-api.md#freshness).
 
 ## Skipping with an offset
 

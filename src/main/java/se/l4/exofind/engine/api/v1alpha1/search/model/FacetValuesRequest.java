@@ -96,8 +96,32 @@ public record FacetValuesRequest(
 			every other value by count).""",
 		defaultValue = "count"
 	)
-	SearchRequest.Facet.Order order
+	SearchRequest.Facet.Order order,
+
+	/**
+	 * What the request demands of the state it is answered from.
+	 */
+	@Schema(description = """
+		What the request demands of the state it is answered from. Omit it \
+		to be answered from what the node holds. See \
+		[Freshness](https://exofind.dev/reference/search-api/#freshness).""")
+	FreshnessRequest freshness
 ) {
+	/**
+	 * A request answered from whatever state the node holds, with no
+	 * freshness demanded of it.
+	 */
+	public FacetValuesRequest(
+		List<Clause> query,
+		List<Clause> filters,
+		String prefix,
+		String locale,
+		Integer limit,
+		SearchRequest.Facet.Order order
+	) {
+		this(query, filters, prefix, locale, limit, order, null);
+	}
+
 	/**
 	 * The example request, answered by {@link FacetValuesResponse#EXAMPLE}.
 	 */

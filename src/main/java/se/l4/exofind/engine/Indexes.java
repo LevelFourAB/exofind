@@ -2313,6 +2313,20 @@ public class Indexes implements RegistryPoller.Listener {
 	}
 
 	/**
+	 * Read the registry now, for a caller that has to know which generation
+	 * a name answers from as of this moment rather than as of the last poll.
+	 * One conditional request, and nothing is opened or pulled: a name
+	 * resolved after this answers from what the registry says now, and the
+	 * generation it names is opened by the request that asks for it.
+	 *
+	 * @return
+	 *   whether the registry could be read
+	 */
+	public boolean refreshRegistry() {
+		return registry.refresh();
+	}
+
+	/**
 	 * Create an index with a first generation, making it available for indexing
 	 * and searching.
 	 *

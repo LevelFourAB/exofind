@@ -12,6 +12,7 @@ import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -27,9 +28,11 @@ import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
+import se.l4.exofind.engine.api.v1alpha1.FreshnessTokens;
 import se.l4.exofind.engine.api.v1alpha1.search.model.ExplainResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.FacetValuesResponse;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FreshnessRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SuggestRequest;
@@ -39,6 +42,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.freshness.FreshnessWaiter;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexException;
 import se.l4.exofind.engine.index.IndexName;
@@ -58,6 +62,8 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 
 /**
@@ -109,8 +115,18 @@ public class SearchResource {
 				"`index` counts the values of the `hits` path from zero, so `{{index}}` names none"
 			);
 
+	/**
+	 * The headers of the request being served, for the freshness token a
+	 * request carries in {@link FreshnessTokens#HEADER} instead of in its
+	 * body. {@code null} on a resource built outside a request, the way a
+	 * test builds one, which is a request with no headers.
+	 */
+	@Context
+	HttpHeaders headers;
+
 	private final Indexes indexes;
 	private final SearchSettings searchSettings;
+	private final FreshnessWaiter freshnessWaiter;
 	private final RequestMetrics metrics;
 	private final SearchLimits limits;
 	private final Duration timeout;
@@ -120,6 +136,7 @@ public class SearchResource {
 	public SearchResource(
 		Indexes indexes,
 		SearchSettings searchSettings,
+		FreshnessWaiter freshnessWaiter,
 		RequestMetrics metrics,
 		@ConfigProperty(
 			name = "exofind.search.max-limit",
@@ -174,6 +191,7 @@ public class SearchResource {
 		this(
 			indexes,
 			searchSettings,
+			freshnessWaiter,
 			metrics,
 			new SearchLimits(
 				maxLimit,
@@ -213,6 +231,29 @@ public class SearchResource {
 	}
 
 	/**
+	 * Create a resource with its limits given directly and a freshness wait of
+	 * ten seconds, the way a test does.
+	 */
+	public SearchResource(
+		Indexes indexes,
+		SearchSettings searchSettings,
+		RequestMetrics metrics,
+		SearchLimits limits,
+		Duration timeout,
+		Duration suggestTimeout
+	) {
+		this(
+			indexes,
+			searchSettings,
+			new FreshnessWaiter(indexes, searchSettings, Duration.ofSeconds(10)),
+			metrics,
+			limits,
+			timeout,
+			suggestTimeout
+		);
+	}
+
+	/**
 	 * Create a resource with its limits given directly, the way a test does,
 	 * instead of reading them from the configuration.
 	 *
@@ -227,6 +268,7 @@ public class SearchResource {
 	public SearchResource(
 		Indexes indexes,
 		SearchSettings searchSettings,
+		FreshnessWaiter freshnessWaiter,
 		RequestMetrics metrics,
 		SearchLimits limits,
 		Duration timeout,
@@ -234,6 +276,7 @@ public class SearchResource {
 	) {
 		this.indexes = indexes;
 		this.searchSettings = searchSettings;
+		this.freshnessWaiter = freshnessWaiter;
 		this.metrics = metrics;
 		this.limits = limits;
 		this.timeout = timeout;
@@ -825,6 +868,34 @@ public class SearchResource {
 		status = 400,
 		when = "A `knn` clause carries no `k`."
 	)
+	@ReturnsError(
+		value = "search:freshness:invalid",
+		status = 400,
+		when = "The freshness token is not one the engine issued. Pass a token back unchanged."
+	)
+	@ReturnsError(
+		value = "search:freshness:version_unsupported",
+		status = 400,
+		when = "The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token."
+	)
+	@ReturnsError(
+		value = "search:freshness:index_mismatch",
+		status = 400,
+		when = "The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of."
+	)
+	@ReturnsError(
+		value = "search:freshness:unavailable",
+		status = 503,
+		when = "The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header."
+	)
+	@Parameter(
+		name = FreshnessTokens.HEADER,
+		in = ParameterIn.HEADER,
+		description = """
+			A freshness token, for a request that carries none in its body. \
+			The body's `freshness.atLeast` is read when both are given.""",
+		example = "AQoIcHJvZHVjdHMSATIYBw"
+	)
 	public SearchResponse search(
 		@Parameter(
 			description = """
@@ -845,7 +916,10 @@ public class SearchResource {
 	) {
 		var started = System.nanoTime();
 
-		var index = indexes.getOrThrow(name);
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(atLeast(body == null ? null : body.freshness()), freshnessHeader(), name)
+		);
 		var mapped = SearchRequestMapper.toEngine(body, limits);
 
 		/*
@@ -901,7 +975,7 @@ public class SearchResource {
 		 * double divides.
 		 */
 		var tookMs = Math.round(took / 1_000d) / 1_000d;
-		return toResponse(mapped, result, generationOf(index), tookMs);
+		return toResponse(mapped, result, generationOf(index), freshnessOf(index), tookMs);
 	}
 
 	/**
@@ -1201,6 +1275,34 @@ public class SearchResource {
 		status = 400,
 		when = "A `knn` clause carries no `k`."
 	)
+	@ReturnsError(
+		value = "search:freshness:invalid",
+		status = 400,
+		when = "The freshness token is not one the engine issued. Pass a token back unchanged."
+	)
+	@ReturnsError(
+		value = "search:freshness:version_unsupported",
+		status = 400,
+		when = "The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token."
+	)
+	@ReturnsError(
+		value = "search:freshness:index_mismatch",
+		status = 400,
+		when = "The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of."
+	)
+	@ReturnsError(
+		value = "search:freshness:unavailable",
+		status = 503,
+		when = "The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header."
+	)
+	@Parameter(
+		name = FreshnessTokens.HEADER,
+		in = ParameterIn.HEADER,
+		description = """
+			A freshness token, for a request that carries none in its body. \
+			The body's `freshness.atLeast` is read when both are given.""",
+		example = "AQoIcHJvZHVjdHMSATIYBw"
+	)
 	public FacetValuesResponse facetValues(
 		@Parameter(
 			description = """
@@ -1228,7 +1330,10 @@ public class SearchResource {
 	) {
 		var started = System.nanoTime();
 
-		var index = indexes.getOrThrow(name);
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(atLeast(body == null ? null : body.freshness()), freshnessHeader(), name)
+		);
 		var request = FacetValuesRequestMapper.toEngine(field, body, limits);
 
 		// Settings belong to the index name, see search
@@ -1262,6 +1367,7 @@ public class SearchResource {
 			toFacetValuesJson(counts.values()),
 			counts.totalValues(),
 			generationOf(index),
+			freshnessOf(index),
 			Math.round(took / 1_000d) / 1_000d
 		);
 	}
@@ -1597,6 +1703,34 @@ public class SearchResource {
 		status = 400,
 		when = "A `knn` clause carries no `k`."
 	)
+	@ReturnsError(
+		value = "search:freshness:invalid",
+		status = 400,
+		when = "The freshness token is not one the engine issued. Pass a token back unchanged."
+	)
+	@ReturnsError(
+		value = "search:freshness:version_unsupported",
+		status = 400,
+		when = "The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token."
+	)
+	@ReturnsError(
+		value = "search:freshness:index_mismatch",
+		status = 400,
+		when = "The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of."
+	)
+	@ReturnsError(
+		value = "search:freshness:unavailable",
+		status = 503,
+		when = "The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header."
+	)
+	@Parameter(
+		name = FreshnessTokens.HEADER,
+		in = ParameterIn.HEADER,
+		description = """
+			A freshness token, for a request that carries none in its body. \
+			The body's `freshness.atLeast` is read when both are given.""",
+		example = "AQoIcHJvZHVjdHMSATIYBw"
+	)
 	public SuggestResponse suggest(
 		@Parameter(
 			description = """
@@ -1617,7 +1751,10 @@ public class SearchResource {
 	) {
 		var started = System.nanoTime();
 
-		var index = indexes.getOrThrow(name);
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(atLeast(body == null ? null : body.freshness()), freshnessHeader(), name)
+		);
 		var request = SuggestRequestMapper.toEngine(body, limits);
 
 		// Settings belong to the index name, see search
@@ -1661,6 +1798,7 @@ public class SearchResource {
 		return new SuggestResponse(
 			suggestions,
 			generationOf(index),
+			freshnessOf(index),
 			Math.round(took / 1_000d) / 1_000d
 		);
 	}
@@ -2279,6 +2417,34 @@ public class SearchResource {
 		status = 400,
 		when = "A `knn` clause carries no `k`."
 	)
+	@ReturnsError(
+		value = "search:freshness:invalid",
+		status = 400,
+		when = "The freshness token is not one the engine issued. Pass a token back unchanged."
+	)
+	@ReturnsError(
+		value = "search:freshness:version_unsupported",
+		status = 400,
+		when = "The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token."
+	)
+	@ReturnsError(
+		value = "search:freshness:index_mismatch",
+		status = 400,
+		when = "The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of."
+	)
+	@ReturnsError(
+		value = "search:freshness:unavailable",
+		status = 503,
+		when = "The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header."
+	)
+	@Parameter(
+		name = FreshnessTokens.HEADER,
+		in = ParameterIn.HEADER,
+		description = """
+			A freshness token, for a request that carries none in its body. \
+			The body's `freshness.atLeast` is read when both are given.""",
+		example = "AQoIcHJvZHVjdHMSATIYBw"
+	)
 	public ExplainResponse explain(
 		@Parameter(
 			description = """
@@ -2334,7 +2500,10 @@ public class SearchResource {
 			throw new ValidationException(errors);
 		}
 
-		var index = indexes.getOrThrow(name);
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(atLeast(body == null ? null : body.freshness()), freshnessHeader(), name)
+		);
 		var mapped = SearchRequestMapper.toExplained(body, limits);
 
 		// Settings belong to the index name, the way they do for a search
@@ -2373,6 +2542,7 @@ public class SearchResource {
 			toRelaxedJson(explanation.relaxed()),
 			toInterpretedJson(explanation.interpreted()),
 			generationOf(index),
+			freshnessOf(index),
 			Math.round(took / 1_000d) / 1_000d
 		);
 	}
@@ -2386,6 +2556,29 @@ public class SearchResource {
 	 */
 	private static String generationOf(Index index) {
 		return IndexName.parse(index.getId()).generation();
+	}
+
+	/**
+	 * Get the state a request was answered from, as the token the answer
+	 * carries so that a later request can demand at least it.
+	 */
+	private String freshnessOf(Index index) {
+		return FreshnessTokens.encode(freshnessWaiter.stateOf(index));
+	}
+
+	/**
+	 * The token a body carries, or {@code null} when it carries none.
+	 */
+	private static String atLeast(FreshnessRequest freshness) {
+		return freshness == null ? null : freshness.atLeast();
+	}
+
+	/**
+	 * The token the request carries in its header, or {@code null} when it
+	 * carries none.
+	 */
+	private String freshnessHeader() {
+		return headers == null ? null : headers.getHeaderString(FreshnessTokens.HEADER);
 	}
 
 	private static ExplainResponse.Detail toDetailJson(SearchExplanation.Detail detail) {
@@ -2411,6 +2604,7 @@ public class SearchResource {
 		SearchRequestMapper.Mapped mapped,
 		SearchResult result,
 		String generation,
+		String freshness,
 		double tookMs
 	) {
 		/*
@@ -2459,6 +2653,7 @@ public class SearchResource {
 			toRelaxedJson(result.relaxed()),
 			toInterpretedJson(result.interpreted()),
 			generation,
+			freshness,
 			tookMs
 		);
 	}

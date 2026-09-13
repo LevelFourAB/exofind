@@ -64,6 +64,26 @@ results for the same query while a reader node waits for its next refresh.
 For strategies on managing this delay, see
 [Make a write visible to search](../how-to/make-writes-visible.md).
 
+## What a freshness token promises
+
+Write operations return a freshness token that identifies the state of the
+index containing the change. The token records the generation, the search
+settings version, and the commit sequence. The commit sequence counts commits
+that carried changes, so every copy of the generation reads the same number.
+
+When you pass a token with a read request, the node waits until it reaches at
+least that state before answering. A writer node commits uncommitted changes,
+while a reader node pulls new manifests until it reaches the sequence. This
+wait is bounded by `EXOFIND_SEARCH_FRESHNESS_WAIT` (default: 10 seconds).
+
+The token guarantees that an answer at or past the named state includes the
+change, with one exception during failover. If a writer node accepts a write
+and stops before committing, that write is lost. When a successor node takes
+over the index, it continues the commit sequence from the last durable commit.
+Its commits reach the sequence number in the token without the lost write,
+and a read that carries the token is answered without it. Only a write made
+durable before it is acknowledged closes this window.
+
 ## What a failover means for a write
 
 Candidate nodes manage index write assignments through a shared leadership table
@@ -116,9 +136,11 @@ patterns:
 - **Explicit commit at completion**: Send an explicit commit request to the
   admin API at the end of a bulk ingestion job to ensure durability and trigger
   replication.
-- **Route for read-your-writes**: If an application requires immediate read
-  visibility after writing, send search queries directly to the writer node's
-  network address rather than through a general load balancer.
+- **Pass the token for read-your-writes**: When you need read-your-writes
+  consistency, pass the `freshness` token from the write response as
+  `freshness.atLeast` on search requests. The receiving node answers once it
+  reaches that state, ensuring visibility across load-balanced nodes. See
+  [Make a write visible to search](../how-to/make-writes-visible.md).
 - **Retry failed requests**: If a write fails due to network interruptions or
   node failover, resend the idempotent document write. For error handling and
   retry guidance, see [Handle API errors](../how-to/handle-api-errors.md).

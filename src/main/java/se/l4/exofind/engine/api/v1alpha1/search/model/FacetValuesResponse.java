@@ -49,6 +49,15 @@ public record FacetValuesResponse(
 	String generation,
 
 	/**
+	 * The state the answer came from, as a freshness token.
+	 */
+	@Schema(
+		description = SearchResponse.FRESHNESS_DESCRIPTION,
+		examples = SearchResponse.FRESHNESS_EXAMPLE
+	)
+	String freshness,
+
+	/**
 	 * Execution time in milliseconds, including fractions of one.
 	 */
 	@Schema(

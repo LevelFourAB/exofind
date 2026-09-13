@@ -97,13 +97,15 @@ The following example uses `Content-Type: application/x-ndjson`:
 
 ### Response
 
-The endpoint returns status `200 OK` with the count of indexed documents and any documents the index refused:
+The endpoint returns status `200 OK` with the count of indexed documents, any documents the index refused, and the state the batch lands in:
 
 ```json
-{ "indexed": 2, "failed": [] }
+{ "indexed": 2, "failed": [], "freshness": "AQoIcHJvZHVjdHMSATIYBw" }
 ```
 
 The `failed` array is always present and contains entries only when the request is sent with `?onError=skip`. The `indexed` count excludes documents in `failed`. For the entry structure, see [Skipping refused entries](#skipping-refused-entries).
+
+`freshness` is a token naming the commit the batch lands in. Pass it in `freshness.atLeast` on a search request to read from a state that includes this batch. For more information, see [Freshness](search-api.md#freshness).
 
 ## Changing some of the fields
 
@@ -225,14 +227,16 @@ The first two report a mistake in the path text alone. The rest report a path th
 The endpoint returns status `200 OK` with the count of updated documents, any missing keys, and any changes the index refused:
 
 ```json
-{ "updated": 2, "missing": [], "failed": [] }
+{ "updated": 2, "missing": [], "failed": [], "freshness": "AQoIcHJvZHVjdHMSATIYBw" }
 ```
 
 When called with `?missing=skip`:
 
 ```json
-{ "updated": 1998, "missing": ["sku-9", "sku-40"], "failed": [] }
+{ "updated": 1998, "missing": ["sku-9", "sku-40"], "failed": [], "freshness": "AQoIcHJvZHVjdHMSATIYBw" }
 ```
+
+`freshness` is a token naming the commit the changes land in. For more information, see [Freshness](search-api.md#freshness).
 
 Each key in `missing` is returned as text, regardless of the declared key field type. For example, a whole-number key `9` is returned as `"9"`. This matches the format accepted by the `{key}` path parameter and the `after` query parameter. For more information, see [Primary keys on the wire](api-conventions.md#primary-keys-on-the-wire).
 
@@ -274,7 +278,7 @@ Paths and update behavior are the same as in the batch. The body may repeat the 
 
 #### Response
 
-The endpoint returns status `204 No Content`. The batch action remains the only form that reports a count.
+The endpoint returns status `204 No Content`. The batch action remains the only form that reports a count. The `X-Exofind-Freshness` response header carries a token naming the commit the change lands in. For more information, see [Freshness](search-api.md#freshness).
 
 ```
 PATCH /v1alpha1/indexes/foods/documents/1
@@ -293,6 +297,8 @@ Reads documents back out of an index in primary key order, returning them as ori
 Reading documents requires the `documents.read` permission at the index scope. Anonymous requests are refused. The `writer` and `admin` roles include this permission; the `reader` role does not.
 
 Read requests are served directly by whichever node receives them, using data that the node has pulled from storage. Unlike write operations, read requests are never forwarded to the indexer node.
+
+To read from a state at or after a change, pass the freshness token from the change in the `X-Exofind-Freshness` request header. The node pulls that state before reading, and returns `search:freshness:unavailable` with a `Retry-After` header if the state does not arrive within `EXOFIND_SEARCH_FRESHNESS_WAIT`. For more information, see [Freshness](search-api.md#freshness).
 
 ### Query parameters
 
@@ -317,7 +323,8 @@ Returns a JSON object with the list of documents and a continuation key:
     { "id": "1", "name": "blåbärssylt", "energy": 234.5 },
     { "id": "2", "name": "rågbröd", "energy": 217.0 }
   ],
-  "next": "2"
+  "next": "2",
+  "freshness": "AQoIcHJvZHVjdHMSATIYBw"
 }
 ```
 
@@ -325,6 +332,7 @@ The response fields are:
 
 - `documents`: Documents in primary key order, formatted as originally indexed.
 - `next`: Primary key to pass as the `after` parameter on the next request. Present only when the response returns as many documents as requested by `limit`. If a batch ends exactly on the last document of the index, `next` is returned and the subsequent request returns an empty `documents` array without a `next` field.
+- `freshness`: A token naming the state the documents were read from. Pass it in the `X-Exofind-Freshness` request header of the next request to read from the same state or a later state on any node. For more information, see [Freshness](search-api.md#freshness).
 
 #### Newline-delimited JSON (`application/x-ndjson`)
 
@@ -335,7 +343,7 @@ Returns newline-delimited JSON containing one document object per line with no o
 {"id": "2", "name": "rågbröd", "energy": 217.0}
 ```
 
-The body contains only documents, matching byte-for-byte the format accepted by `POST /v1alpha1/indexes/{name}/documents` with `Content-Type: application/x-ndjson`.
+The body contains only documents, matching byte-for-byte the format accepted by `POST /v1alpha1/indexes/{name}/documents` with `Content-Type: application/x-ndjson`. The `X-Exofind-Freshness` response header carries the token that the JSON format returns in `freshness`.
 
 To determine if more documents are available, check the number of lines returned. If the response contains as many lines as requested by `limit`, resume the next request by passing the primary key of the last document in the `after` parameter. When the response returns fewer lines than `limit`, all documents have been read.
 
@@ -359,6 +367,8 @@ Across multiple requests, index changes can occur between calls:
 - Documents deleted after being read remain included in earlier responses.
 
 To retrieve a consistent full dataset from an index that is receiving writes, track concurrent modifications and replay them after reading completes.
+
+Across nodes, pass the `freshness` token from each response in the `X-Exofind-Freshness` request header of the next request. Each batch is then read from the state of the first batch or a later state, regardless of which node answers the request.
 
 ### Request limits and pagination
 
@@ -402,7 +412,7 @@ The request requires the following path parameters:
 
 #### Response
 
-The endpoint returns status `204 No Content` whether or not a document existed under the specified key.
+The endpoint returns status `204 No Content` whether or not a document existed under the specified key. The `X-Exofind-Freshness` response header carries a token naming the commit the removal lands in. For more information, see [Freshness](search-api.md#freshness).
 
 ```
 DELETE /v1alpha1/indexes/foods/documents/1
@@ -466,10 +476,10 @@ The following example deletes every document in the index:
 The endpoint returns status `200 OK` with the count of deleted documents:
 
 ```json
-{ "deleted": 3 }
+{ "deleted": 3, "freshness": "AQoIcHJvZHVjdHMSATIYBw" }
 ```
 
-For requests using `keys`, `deleted` is the number of keys provided in the request. For requests using `query` or `all`, `deleted` is the number of matching committed searchable documents.
+For requests using `keys`, `deleted` is the number of keys provided in the request. For requests using `query` or `all`, `deleted` is the number of matching committed searchable documents. `freshness` is a token naming the commit the removal lands in. For more information, see [Freshness](search-api.md#freshness).
 
 ## Failures
 

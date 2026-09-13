@@ -479,6 +479,11 @@ public final class Meters {
 	public static final String TRIGGER_INTERVAL = "interval";
 	public static final String TRIGGER_MERGES = "merges";
 	public static final String TRIGGER_EXPLICIT = "explicit";
+	/**
+	 * A commit asked for by a search waiting on a commit sequence the writer
+	 * had not reached, see {@code IndexCommitManager.commitSoon()}.
+	 */
+	public static final String TRIGGER_FRESHNESS = "freshness";
 
 	public static final String DIRECTION_GAINED = "gained";
 	public static final String DIRECTION_LOST = "lost";

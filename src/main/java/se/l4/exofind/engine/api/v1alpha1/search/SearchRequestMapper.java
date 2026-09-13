@@ -762,7 +762,8 @@ public class SearchRequestMapper {
 				null,
 				body.signals(),
 				body.signalsMode(),
-				null
+				null,
+				body.freshness()
 			),
 			limits
 		);

@@ -30,6 +30,7 @@ import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
+import se.l4.exofind.engine.freshness.TestFreshnessWaiters;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
@@ -97,6 +98,7 @@ public class DocumentWriteMetricsTest {
 			indexes,
 			new ObjectMapper(),
 			TestReindexJobs.create(nodeState, indexes, indexRegistry, storageDirectory),
+			TestFreshnessWaiters.create(indexes, indexRegistry),
 			new RequestMetrics(registry, false)
 		);
 	}

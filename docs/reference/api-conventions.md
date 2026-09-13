@@ -168,7 +168,7 @@ Conditional requests follow these rules:
 
 Clients can send any request to any node in a deployment without tracking index writer assignments.
 
-Read requests are served locally by the node that receives them, using the data that the node has pulled.
+Read requests are served locally by the node that receives them, using the data that the node has pulled. When a read request includes a freshness token, the receiving node answers from the state named in the token or a later state. The node waits to reach that state before answering and does not forward the request. See [Freshness](search-api.md#freshness).
 
 Write requests that must run on an index writer are forwarded automatically when received by another node:
 
@@ -200,7 +200,7 @@ The API returns the following HTTP status codes:
 | `415 Unsupported Media Type` | The `Content-Type` header names a media type the endpoint does not read. |
 | `500 Internal Server Error` | An unmapped engine failure occurred, or the node failed in a way no error code names (`node:error`). The node logs the error code and root cause. |
 | `502 Bad Gateway` | The request was forwarded to the index writer and the writer did not respond. |
-| `503 Service Unavailable` | The node cannot serve the request at this time; retrying the same request is expected to work. |
+| `503 Service Unavailable` | The node cannot serve the request at this time; retrying the same request is expected to work. A response that includes a `Retry-After` header specifies the number of seconds to wait before retrying. |
 
 The status codes follow a consistent operational division:
 
@@ -236,6 +236,7 @@ Status `503 Service Unavailable` covers:
 
 - Indexer leadership assignments could not be read from shared storage (`indexer:leadership_unreadable`).
 - The request raced an index being closed to free local resources on the node (`index:closed`). Retrying the request reopens the index.
+- The node did not reach the state named in a freshness token within `EXOFIND_SEARCH_FRESHNESS_WAIT` (`search:freshness:unavailable`). The `Retry-After` header specifies the number of seconds to wait before retrying.
 
 For per-endpoint status code tables, see [Admin API](admin-api.md), [Documents API](documents-api.md), and [Search API](search-api.md). For error code prefixes and vocabulary, see [Errors](errors.md).
 

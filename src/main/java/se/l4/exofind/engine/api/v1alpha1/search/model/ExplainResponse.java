@@ -74,6 +74,15 @@ public record ExplainResponse(
 	String generation,
 
 	/**
+	 * The state the answer came from, as a freshness token.
+	 */
+	@Schema(
+		description = SearchResponse.FRESHNESS_DESCRIPTION,
+		examples = SearchResponse.FRESHNESS_EXAMPLE
+	)
+	String freshness,
+
+	/**
 	 * Total execution time for the explanation in milliseconds, including
 	 * fractional milliseconds.
 	 */

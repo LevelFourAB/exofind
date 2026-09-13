@@ -99,8 +99,31 @@ public record SuggestRequest(
 			and `typed: 0`. `off` never suggests them.""",
 		defaultValue = "auto"
 	)
-	Typos typos
+	Typos typos,
+
+	/**
+	 * What the request demands of the state it is answered from.
+	 */
+	@Schema(description = """
+		What the request demands of the state it is answered from. Omit it \
+		to be answered from what the node holds. See \
+		[Freshness](https://exofind.dev/reference/search-api/#freshness).""")
+	FreshnessRequest freshness
 ) {
+	/**
+	 * A request answered from whatever state the node holds, with no
+	 * freshness demanded of it.
+	 */
+	public SuggestRequest(
+		String text,
+		String locale,
+		List<Clause> filters,
+		Integer limit,
+		Typos typos
+	) {
+		this(text, locale, filters, limit, typos, null);
+	}
+
 	/**
 	 * Whether a value near the text may be suggested.
 	 */

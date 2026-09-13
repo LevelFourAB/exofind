@@ -431,6 +431,22 @@ public class Index {
 	 */
 	private volatile long committedModifications;
 
+	/**
+	 * Key under which a Lucene commit records the {@link #visibleCommit()
+	 * commit sequence} in its user data. Written into every commit that
+	 * carries changes and read back from the commit a copy opens, so it is a
+	 * stored format that lasts the life of an index: the key never changes,
+	 * and the value is always the decimal sequence.
+	 */
+	public static final String COMMIT_SEQUENCE_KEY = "exofind.commit";
+
+	/**
+	 * The commit sequence the open reader holds, see {@link #visibleCommit()}.
+	 * Moved under the write lock of {@link #syncLock}: forward by a commit that
+	 * carries changes, and to whatever the pulled commit records by a pull.
+	 */
+	private volatile long commitSequence;
+
 	private IndexDef definition;
 	private String definitionVersion;
 
@@ -901,6 +917,112 @@ public class Index {
 	}
 
 	/**
+	 * Get the commit sequence the searches of this instance answer from.
+	 *
+	 * <p>The sequence counts the Lucene commits of a generation that carried
+	 * changes, from one, and is recorded in every such commit under
+	 * {@link #COMMIT_SEQUENCE_KEY}. The writer moves it forward at every
+	 * commit that changes something, and a copy pulled elsewhere reads it out
+	 * of the commit it opens, so the number says the same thing on every node
+	 * and across the writer sessions of the generation. A sequence at or above
+	 * the one a {@link Change#landsIn() change lands in} means the searcher
+	 * holds that change.
+	 *
+	 * @return
+	 *   the sequence, zero while the copy holds no commit
+	 */
+	public long visibleCommit() {
+		return commitSequence;
+	}
+
+	/**
+	 * Begin a change, for a caller that wants to know which commit it lands
+	 * in. Close the change once every write of it has been made.
+	 *
+	 * <p>The change holds the read lock a write holds, so no commit runs while
+	 * it is open and the commit the writes land in is settled: the next one,
+	 * when a write changed something. Keep a change to one document or one
+	 * request-sized batch, as the commits of the generation wait for it.
+	 *
+	 * @return
+	 *   the change, to be closed by the thread that began it
+	 */
+	public Change beginChange() {
+		syncLock.readLock().lock();
+
+		long before;
+		synchronized(stateLock) {
+			before = modifications;
+		}
+
+		return new Change(before);
+	}
+
+	/**
+	 * A change begun with {@link #beginChange()}: the writes made while it is
+	 * open, and the commit they land in.
+	 */
+	public final class Change implements AutoCloseable {
+		private final long before;
+
+		private Change(long before) {
+			this.before = before;
+		}
+
+		/**
+		 * Get the commit sequence at which the writes made so far are
+		 * searchable: the next commit when something was changed, and the
+		 * commit already open when nothing was. Counted over every write to
+		 * the generation, so a change that removed nothing while another
+		 * thread wrote answers the next commit, which that other write makes
+		 * certain to come.
+		 *
+		 * @return
+		 */
+		public long landsIn() {
+			synchronized(stateLock) {
+				return modifications != before ? commitSequence + 1 : commitSequence;
+			}
+		}
+
+		@Override
+		public void close() {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
+	 * Ask for the changes waiting to be committed to be committed now rather
+	 * than at the next trigger, for a caller waiting on a commit sequence this
+	 * writer has not reached. Does nothing on a copy that does not write, and
+	 * nothing more often than the commit manager allows.
+	 */
+	public void commitSoon() {
+		if(isReadOnly()) {
+			return;
+		}
+
+		commitManager.commitSoon();
+	}
+
+	/**
+	 * Read the commit sequence out of the user data of a commit, which is
+	 * nothing for a commit written before sequences were recorded.
+	 */
+	private static long commitSequenceOf(Map<String, String> userData) {
+		var value = userData.get(COMMIT_SEQUENCE_KEY);
+		if(value == null) {
+			return 0;
+		}
+
+		try {
+			return Long.parseLong(value);
+		} catch(NumberFormatException e) {
+			return 0;
+		}
+	}
+
+	/**
 	 * Pull changes to this index from the remote.
 	 */
 	public void pull() {
@@ -1152,6 +1274,16 @@ public class Index {
 					}
 				}
 			}
+
+			/*
+			 * Read from the commit on disk before anything opens it, so that
+			 * what the readers and writers below answer from carries the
+			 * sequence it was committed under - on a pull as much as on the
+			 * first open. A directory holding no commit stands at nothing.
+			 */
+			this.commitSequence = DirectoryReader.indexExists(directory)
+				? commitSequenceOf(SegmentInfos.readLatestCommit(directory).getUserData())
+				: 0;
 
 			if(isReadOnly()) {
 				/*
@@ -8413,6 +8545,22 @@ public class Index {
 				log.save(localPath.resolve(CHANGES_FILE));
 			}
 
+			/*
+			 * A commit that carries changes is the next one in the sequence,
+			 * and the sequence is recorded in the commit itself so that every
+			 * copy that opens it learns where it stands. Read under the write
+			 * lock, the same as below: every write path holds the read lock,
+			 * so nothing lands between deciding this and the commit. A commit
+			 * made for finished merges carries the sequence of the last one
+			 * that changed something, so it moves nothing.
+			 */
+			var advancing = this.modifications != this.committedModifications;
+			if(advancing) {
+				writer.setLiveCommitData(
+					Map.of(COMMIT_SEQUENCE_KEY, Long.toString(commitSequence + 1)).entrySet()
+				);
+			}
+
 			writer.commit();
 
 			/*
@@ -8436,6 +8584,15 @@ public class Index {
 
 			this.searcherManager.refreshLatest(newSearcher(reader));
 			facetWarmer.warm(this);
+
+			/*
+			 * Said to be visible only once the searcher holds it, so a search
+			 * that read the sequence and then took a searcher has at least the
+			 * commit the sequence names.
+			 */
+			if(advancing) {
+				this.commitSequence++;
+			}
 
 			/*
 			 * Everything remembered is in the commit, so the next partial

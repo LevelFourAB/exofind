@@ -556,6 +556,7 @@ components:
       description: The count of deleted documents.
       examples:
       - deleted: 3
+        freshness: AQoIcHJvZHVjdHMSATIYBw
       type: object
       properties:
         deleted:
@@ -567,6 +568,14 @@ components:
             \ using `query`, this is the number of matching committed searchable documents."
           examples:
           - 3
+        freshness:
+          type: string
+          description: "A freshness token for the state the change lands in. Pass\
+            \ it as `freshness.atLeast` on a search, or in the `X-Exofind-Freshness`\
+            \ header of a read, and that request is answered only once the node holds\
+            \ the change. Opaque; pass it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
     Direction:
       description: "Which end of a tie-breaker field wins: `ascending` or `descending`."
       type: string
@@ -730,6 +739,7 @@ components:
       examples:
       - indexed: 2
         failed: []
+        freshness: AQoIcHJvZHVjdHMSATIYBw
       type: object
       properties:
         indexed:
@@ -748,6 +758,14 @@ components:
             \ entries only when the request is sent with `?onError=skip`; a request\
             \ sent without it fails on the first refused document. Always present,\
             \ and empty when nothing was skipped."
+        freshness:
+          type: string
+          description: "A freshness token for the state the change lands in. Pass\
+            \ it as `freshness.atLeast` on a search, or in the `X-Exofind-Freshness`\
+            \ header of a read, and that request is answered only once the node holds\
+            \ the change. Opaque; pass it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
     DoubleFieldDefinition:
       required:
       - type
@@ -1097,6 +1115,15 @@ components:
             \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
           examples:
           - "2"
+        freshness:
+          type: string
+          description: "A freshness token for the state the answer came from: the\
+            \ generation, its commit, and the version of the search settings. Pass\
+            \ it as `freshness.atLeast` on a later request, and that request is answered\
+            \ from this state or a later one whichever node it lands on. Opaque; pass\
+            \ it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
         tookMs:
           type: number
           format: double
@@ -1371,6 +1398,10 @@ components:
             \ by count)."
           default: count
           $ref: "#/components/schemas/FacetOrder"
+        freshness:
+          description: "What the request demands of the state it is answered from.\
+            \ Omit it to be answered from what the node holds. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          $ref: "#/components/schemas/Freshness"
     FacetValuesResponse:
       description: "The values of one facet field that start with the prefix, each\
         \ with how many matching documents hold it."
@@ -1405,6 +1436,15 @@ components:
             \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
           examples:
           - "2"
+        freshness:
+          type: string
+          description: "A freshness token for the state the answer came from: the\
+            \ generation, its commit, and the version of the search settings. Pass\
+            \ it as `freshness.atLeast` on a later request, and that request is answered\
+            \ from this state or a later one whichever node it lands on. Opaque; pass\
+            \ it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
         tookMs:
           type: number
           format: double
@@ -1697,6 +1737,22 @@ components:
           type: number
           format: float
           description: Highest value accepted.
+    Freshness:
+      type: object
+      description: "What the request demands of the state it is answered from. See\
+        \ [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+      properties:
+        atLeast:
+          type: string
+          description: "A freshness token that an earlier response returned in its\
+            \ `freshness` property or `X-Exofind-Freshness` header. The node answers\
+            \ only once it holds the state the token describes: the generation, the\
+            \ commit and the search settings. A node that is behind commits, pulls\
+            \ or reads the settings first, and answers `search:freshness:unavailable`\
+            \ with a `Retry-After` header when it has waited `EXOFIND_SEARCH_FRESHNESS_WAIT`\
+            \ without reaching the state. The token is opaque; pass it back unchanged."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
     FuseClause:
       required:
       - type
@@ -2325,6 +2381,15 @@ components:
           items:
             $ref: "#/components/schemas/GenerationSummary"
           description: "A list of all generations for the index, ordered by name."
+        freshness:
+          type: string
+          description: "A freshness token for the state the action landed in. Present\
+            \ on the answer to a commit and to a promotion, and omitted elsewhere.\
+            \ Pass it as `freshness.atLeast` on a search, and the search is answered\
+            \ only once the node holds the commit or answers from the promoted generation.\
+            \ Opaque; pass it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
     IndexListResponse:
       description: The indexes held across the deployment. Definitions and status
         are omitted; request a specific index to retrieve them.
@@ -4037,6 +4102,7 @@ components:
         startedAt: 2026-08-28T10:15:30Z
         updatedAt: 2026-08-28T10:16:02Z
         finishedAt: null
+        freshness: null
       type: object
       properties:
         id:
@@ -4148,6 +4214,15 @@ components:
             \ or `null` while it runs."
           examples:
           - 2026-08-28T10:41:17Z
+        freshness:
+          type: string
+          description: "A freshness token for the state the promotion of the target\
+            \ landed in. Present once the job reaches `done`, and `null` before that.\
+            \ Pass it as `freshness.atLeast` on a search, and the search is answered\
+            \ from the target generation whichever node it lands on. Opaque; pass\
+            \ it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATI
     ReindexListResponse:
       description: "Every reindex job across the deployment, finished ones included."
       examples:
@@ -4398,6 +4473,7 @@ components:
             sv: hallonsylt
           energy: 241
         next: "2"
+        freshness: AQoIcHJvZHVjdHMSATIYBw
       type: object
       properties:
         documents:
@@ -4415,6 +4491,14 @@ components:
             \ array without a `next` field."
           examples:
           - "2"
+        freshness:
+          type: string
+          description: "A freshness token for the state the documents were read from.\
+            \ Pass it in the `X-Exofind-Freshness` header of the next request, and\
+            \ that request is answered from this state or a later one whichever node\
+            \ it lands on. Opaque; pass it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
     Score:
       description: "How the matching nested values of a document combine into its\
         \ score: `max`, `min`, `avg` or `total`."
@@ -4575,6 +4659,10 @@ components:
           description: "Reorders the best results of a search in a second pass without\
             \ changing which documents matched. See [Rescoring](https://exofind.dev/reference/search-api/#rescoring)."
           $ref: "#/components/schemas/Rescore"
+        freshness:
+          description: "What the request demands of the state it is answered from.\
+            \ Omit it to be answered from what the node holds. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          $ref: "#/components/schemas/Freshness"
     SearchResponse:
       description: "The results of a search. See [Response](https://exofind.dev/reference/search-api/#response)."
       examples:
@@ -4653,6 +4741,15 @@ components:
             \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
           examples:
           - "2"
+        freshness:
+          type: string
+          description: "A freshness token for the state the answer came from: the\
+            \ generation, its commit, and the version of the search settings. Pass\
+            \ it as `freshness.atLeast` on a later request, and that request is answered\
+            \ from this state or a later one whichever node it lands on. Opaque; pass\
+            \ it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
         tookMs:
           type: number
           format: double
@@ -4791,6 +4888,15 @@ components:
           description: Present only when the answering node sets the settings aside
             because they use capabilities its version does not have. The node searches
             with the definition alone. Upgrade the node to put the settings in force.
+        freshness:
+          type: string
+          description: "A freshness token for the state the change landed in. Present\
+            \ on the answer to a `PUT` and a `PATCH`, and omitted on a `GET`. Pass\
+            \ it as `freshness.atLeast` on a search, and the search is answered with\
+            \ these settings in force whichever node it lands on. Opaque; pass it\
+            \ back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMiIiJhYjEyY2QzNCI
     Signal:
       type: object
       description: "Document ranking signal used to adjust relevance scoring. Signals\
@@ -5128,6 +5234,10 @@ components:
             \ `corrected: true` and `typed: 0`. `off` never suggests them."
           default: auto
           $ref: "#/components/schemas/SuggestTypos"
+        freshness:
+          description: "What the request demands of the state it is answered from.\
+            \ Omit it to be answered from what the node holds. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          $ref: "#/components/schemas/Freshness"
     SuggestResponse:
       description: "The suggestions for the typed text, the most common first, with\
         \ every suggestion the text starts before the ones found a mistake away."
@@ -5161,6 +5271,15 @@ components:
             \ the same data. See [Names and generations](https://exofind.dev/reference/admin-api/#names-and-generations)."
           examples:
           - "2"
+        freshness:
+          type: string
+          description: "A freshness token for the state the answer came from: the\
+            \ generation, its commit, and the version of the search settings. Pass\
+            \ it as `freshness.atLeast` on a later request, and that request is answered\
+            \ from this state or a later one whichever node it lands on. Opaque; pass\
+            \ it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
         tookMs:
           type: number
           format: double
@@ -5757,6 +5876,7 @@ components:
       - updated: 1998
         missing: []
         failed: []
+        freshness: AQoIcHJvZHVjdHMSATIYBw
       type: object
       properties:
         updated:
@@ -5786,6 +5906,14 @@ components:
             \ it fails on the first refused change. A key nothing is indexed under\
             \ is reported under `missing` instead when the request is sent with `?missing=skip`.\
             \ Always present, and empty when nothing was skipped."
+        freshness:
+          type: string
+          description: "A freshness token for the state the change lands in. Pass\
+            \ it as `freshness.atLeast` on a search, or in the `X-Exofind-Freshness`\
+            \ header of a read, and that request is answered only once the node holds\
+            \ the change. Opaque; pass it back unchanged. See [Freshness](https://exofind.dev/reference/search-api/#freshness)."
+          examples:
+          - AQoIcHJvZHVjdHMSATIYBw
     VectorFieldDefinition:
       required:
       - type
@@ -7405,6 +7533,7 @@ paths:
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:15:30Z
                     finishedAt: null
+                    freshness: null
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "400":
@@ -9166,6 +9295,7 @@ paths:
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:16:02Z
                     finishedAt: null
+                    freshness: null
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
@@ -9272,6 +9402,7 @@ paths:
                     startedAt: 2026-08-28T10:15:30Z
                     updatedAt: 2026-08-28T10:16:02Z
                     finishedAt: null
+                    freshness: null
               schema:
                 $ref: "#/components/schemas/ReindexInfo"
         "401":
@@ -9384,6 +9515,11 @@ paths:
           minimum: 1
           default: 100
         description: Maximum number of documents to return.
+      - description: A freshness token an earlier response returned. The documents
+          are read only once the node holds the state it names.
+        example: AQoIcHJvZHVjdHMSATIYBw
+        in: header
+        name: X-Exofind-Freshness
       responses:
         "200":
           description: "The documents, in primary key order."
@@ -9403,13 +9539,14 @@ paths:
                         sv: hallonsylt
                       energy: 241
                     next: "2"
+                    freshness: AQoIcHJvZHVjdHMSATIYBw
               schema:
                 $ref: "#/components/schemas/ScanResponse"
         "400":
           description: |-
             The index cannot be scanned, or the `limit` parameter is out of range.
 
-            Error codes: `index:no_primary_key` - The index definition declares no primary key, so documents cannot be scanned in key order. `document:source_not_kept` - The index does not store document copies, so a scan has nothing to return. `request:limit_out_of_range` - The `limit` parameter is not a whole number from 1 to 10000. `search:value_invalid` - The `after` parameter cannot be read as the type of the primary key field.
+            Error codes: `index:no_primary_key` - The index definition declares no primary key, so documents cannot be scanned in key order. `document:source_not_kept` - The index does not store document copies, so a scan has nothing to return. `request:limit_out_of_range` - The `limit` parameter is not a whole number from 1 to 10000. `search:value_invalid` - The `after` parameter cannot be read as the type of the primary key field. `search:freshness:invalid` - The `X-Exofind-Freshness` header carries a token the engine did not issue. Pass a token back unchanged. `search:freshness:version_unsupported` - The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token. `search:freshness:index_mismatch` - The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of.
           content:
             application/json:
               schema:
@@ -9426,6 +9563,16 @@ paths:
           - code: search:value_invalid
             when: The `after` parameter cannot be read as the type of the primary
               key field.
+          - code: search:freshness:invalid
+            when: The `X-Exofind-Freshness` header carries a token the engine did
+              not issue. Pass a token back unchanged.
+          - code: search:freshness:version_unsupported
+            when: The freshness token was issued in a format version this node does
+              not read. The `version` argument carries it; send the request to a node
+              of the release that issued the token.
+          - code: search:freshness:index_mismatch
+            when: The freshness token is of another index than the one in the path.
+              The `index` argument carries the index the token is of.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -9466,7 +9613,7 @@ paths:
           description: |-
             The request raced the index being closed to free local resources. Repeating the request reopens the index.
 
-            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:freshness:unavailable` - The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header.
           content:
             application/json:
               schema:
@@ -9475,6 +9622,10 @@ paths:
           - code: index:closed
             when: The request raced the index being closed to free local resources.
               Sending it again reopens the index.
+          - code: search:freshness:unavailable
+            when: The node did not reach the state the freshness token asks for within
+              `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After`
+              header.
       security:
       - apiKey: []
       summary: Read documents
@@ -9554,6 +9705,7 @@ paths:
                   value:
                     indexed: 2
                     failed: []
+                    freshness: AQoIcHJvZHVjdHMSATIYBw
         "400":
           description: |-
             A document was rejected by validation, a line could not be read as JSON, or the request body could not be parsed. The `path` of each error identifies the document and field location as the body carries it, such as `documents[1].nonexistent` for a `documents` array and `[1].nonexistent` for a newline-delimited body. The `arguments` of each error carry the same place as numbers to resume from: `position` for the document, `processed` for how many documents the index took before it, and `line` for the line of a newline-delimited body.
@@ -9780,6 +9932,7 @@ paths:
                 deleted:
                   value:
                     deleted: 3
+                    freshness: AQoIcHJvZHVjdHMSATIYBw
               schema:
                 $ref: "#/components/schemas/DeleteResponse"
         "400":
@@ -10054,6 +10207,7 @@ paths:
                     updated: 1998
                     missing: []
                     failed: []
+                    freshness: AQoIcHJvZHVjdHMSATIYBw
         "400":
           description: |-
             A change failed validation, or a path in it names something the index or the document does not hold. The `arguments` of each error carry where in the batch the change sat and how much of the batch had landed: `position`, `processed`, and `line` for a newline-delimited body.
@@ -10678,6 +10832,11 @@ paths:
         required: true
         schema:
           type: string
+      - description: "A freshness token, for a request that carries none in its body.\
+          \ The body's `freshness.atLeast` is read when both are given."
+        example: AQoIcHJvZHVjdHMSATIYBw
+        in: header
+        name: X-Exofind-Freshness
       requestBody:
         content:
           application/json:
@@ -10723,7 +10882,7 @@ paths:
           description: |-
             The request is not one that can be counted, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            Error codes: `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:locale_unsupported` - The request names a locale this engine has no rules for. `search:field_unknown` - The request names a field the index does not have. `search:usage_unsupported` - The field is not defined for `facet` usage. `search:facet:prefix_unsupported` - A prefix was given for a field whose values are paths through a tree. `search:facet:limit_out_of_range` - `limit` is below 1 or above `EXOFIND_SEARCH_MAX_FACET_VALUES`. The `max` argument carries the cap. `search:filter:scoring_unsupported` - A clause under `filter` affects the score. Move it out of `filter`. `search:clauses_too_many` - The query holds more clauses than the node allows. `search:clauses_too_deep` - The query nests deeper than the node allows. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or declares no `unit`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:clause:k_required` - A `knn` clause carries no `k`.
+            Error codes: `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:locale_unsupported` - The request names a locale this engine has no rules for. `search:field_unknown` - The request names a field the index does not have. `search:usage_unsupported` - The field is not defined for `facet` usage. `search:facet:prefix_unsupported` - A prefix was given for a field whose values are paths through a tree. `search:facet:limit_out_of_range` - `limit` is below 1 or above `EXOFIND_SEARCH_MAX_FACET_VALUES`. The `max` argument carries the cap. `search:filter:scoring_unsupported` - A clause under `filter` affects the score. Move it out of `filter`. `search:clauses_too_many` - The query holds more clauses than the node allows. `search:clauses_too_deep` - The query nests deeper than the node allows. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or declares no `unit`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:clause:k_required` - A `knn` clause carries no `k`. `search:freshness:invalid` - The freshness token is not one the engine issued. Pass a token back unchanged. `search:freshness:version_unsupported` - The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token. `search:freshness:index_mismatch` - The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of.
           content:
             application/json:
               schema:
@@ -10827,6 +10986,16 @@ paths:
               in for.
           - code: search:clause:k_required
             when: A `knn` clause carries no `k`.
+          - code: search:freshness:invalid
+            when: The freshness token is not one the engine issued. Pass a token back
+              unchanged.
+          - code: search:freshness:version_unsupported
+            when: The freshness token was issued in a format version this node does
+              not read. The `version` argument carries it; send the request to a node
+              of the release that issued the token.
+          - code: search:freshness:index_mismatch
+            when: The freshness token is of another index than the one in the path.
+              The `index` argument carries the index the token is of.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -10880,7 +11049,7 @@ paths:
           description: |-
             The counting did not finish on the node.
 
-            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again. `search:freshness:unavailable` - The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header.
           content:
             application/json:
               schema:
@@ -10893,6 +11062,10 @@ paths:
             when: "Counting ran for longer than `EXOFIND_SEARCH_TIMEOUT`. What it\
               \ collected is dropped, so narrow the search rather than sending it\
               \ again."
+          - code: search:freshness:unavailable
+            when: The node did not reach the state the freshness token asks for within
+              `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After`
+              header.
       security:
       - apiKey: []
       x-required-permission: search
@@ -10921,6 +11094,11 @@ paths:
         required: true
         schema:
           type: string
+      - description: "A freshness token, for a request that carries none in its body.\
+          \ The body's `freshness.atLeast` is read when both are given."
+        example: AQoIcHJvZHVjdHMSATIYBw
+        in: header
+        name: X-Exofind-Freshness
       requestBody:
         content:
           application/json:
@@ -10999,7 +11177,7 @@ paths:
           description: |-
             The request is not a valid search, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            Error codes: `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:sort:field_required` - A `sort` entry does not name the field to sort by. `search:sort:origin_required` - A `sort` entry that orders by distance carries no `lat` and `lon` to measure from. `search:limit_out_of_range` - `limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`. `search:offset_out_of_range` - `offset` is below zero. `search:paging_conflicting` - The request combines more than one of `offset`, `after` and `before`. `search:cursor:invalid` - `after` or `before` carries a cursor this engine did not hand out. `search:cursor:sort_mismatch` - A cursor is used under a different `sort` than the one it was handed out under. Start the search again from the first page. `search:cursor:stale` - A cursor was taken under this `sort` but does not name a position in it, which a `sort` field that changed type in the index definition leaves behind. Start the search again from the first page. `search:pages:without_limit` - `pages` is asked for without a `limit` above zero. `search:pages:without_offset` - `pages` is asked for from a `next` or `previous` cursor, which carries no page number. Start from `offset` or from a page's own cursor. `search:pages:max_out_of_range` - The `max` of `pages` is not above zero. `search:facet:field_required` - A facet does not name the field to count. `search:facet:name_invalid` - A facet is keyed by a blank name. Leave `name` out to key the counts by the field. `search:facet:name_duplicate` - Two facets are keyed by the same name. `search:facet:limit_out_of_range` - The `limit` of a facet asks for more values than the node allows, or for none. The `max` argument carries the cap. `search:facet:depth_out_of_range` - The `depth` of a facet counts more levels of a tree than the node allows, or none. The `max` argument carries the cap. `search:facet:path_invalid` - The `path` of a facet is blank. Leave it out to count from the top of the tree. `search:facet:range_empty` - A bucket of a facet carries no bound. `search:facet:ranges_required` - A facet counts into buckets and lists none. Leave `ranges` out to count one value at a time. `search:facet:ranges_too_many` - A facet counts into more buckets than the node allows. The `max` argument carries the cap. `search:facet:ranges_conflicting` - A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given. `search:facet:ranges_with_tree` - A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets. `search:facet:exclude_filters_invalid` - An entry of `excludeFilters` is blank. Leave the list out for the facet's own field, or give it empty to leave nothing out. `search:highlight:fields_required` - `highlight` names no field to highlight. `search:highlight:field_required` - An entry of the fields to highlight is blank. `search:highlight:fragments_out_of_range` - The number of fragments to highlight is not above zero. `search:highlight:length_out_of_range` - The length a highlighted fragment aims for is outside 1 to 10000 characters. `search:matched:fields_required` - `matched` names no object field to answer matched values for. `search:matched:field_required` - An entry of the fields to answer matched values for is blank. `search:matched:fields_empty` - A `matched` entry asks for only some fields of the values and names none. `search:matched:field_not_inside` - A `matched` entry names a field that is not inside its object field. Name the fields of the values by their dotted paths. `search:matched:limit_out_of_range` - A `matched` entry asks for more values per field than the node allows, or for none. The `max` argument carries the cap. `search:hits:path_required` - `hits` does not name the object field whose matched values are the hits. `search:hits:fields_empty` - `hits` asks for only some fields of the values and names none. `search:hits:field_not_inside` - `hits` names a field that is not inside the object field it stands for. Name the fields of the values by their dotted paths. `search:hits:when_clause_unsupported` - A clause under `hits.when` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:hits:when_scoring_unsupported` - A clause under `hits.when` affects the score. Clauses that score belong in `query`. `search:hits:when_sort_unsupported` - A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score. `search:hits:sort_unsupported` - A search whose hits are the values of an object field is ordered by distance. `search:hits:knn_unsupported` - A search whose hits are the values of an object field holds a `knn` clause. `search:hits:matched_unsupported` - A search whose hits are the values of an object field also asks for `matched`, which would ask a hit about itself. `search:hits:highlight_field_not_inside` - A search whose hits are the values of an object field highlights a field that is not inside those values. `search:signal:field_required` - A signal does not name the field to read its value from. `search:signal:shape_invalid` - A signal is not exactly one of `saturation`, `decay` and `linear`. `search:signal:pivot_out_of_range` - The `pivot` of a saturation signal is not a number above zero. `search:signal:half_life_out_of_range` - The `halfLife` of a decay signal is not a number of seconds above zero. `search:signal:ceiling_out_of_range` - The `ceiling` of a linear signal is not a number above zero. `search:signal:weight_out_of_range` - The `weight` of a signal is below zero. `search:signal:mode_without_signals` - `signalsMode` is given without `signals`. Give the signals as well, or leave the mode out. `search:rescore:window_required` - A `rescore` block does not say how many of the best results the second pass reaches. `search:rescore:window_out_of_range` - The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. `search:rescore:window_too_small` - `offset` plus `limit` reaches past the `window` of a `rescore` block. Widen the window, or ask for an earlier page. `search:rescore:empty` - A `rescore` block holds neither a boost nor a signal to reorder by. `search:rescore:weight_out_of_range` - The `weight` of a `rescore` block is below zero. `search:rescore:hits_unsupported` - A search whose hits are the values of an object field also asks to `rescore`. A second pass scores documents, so it cannot reorder values. `search:locale_unsupported` - The request names a locale this engine has no rules for. `search:source_not_kept` - `fields` asks for something only the document copy can answer on an index whose `source` is `none`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or that declares no `unit`. `search:filter:scoring_unsupported` - A clause under `filter` affects the score. Move it out of `filter`. `search:field_unknown` - A clause names a field the index does not have. `search:usage_unsupported` - A field is not defined for the usage the clause asks of it. `search:paging_too_deep` - `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead. `search:clauses_too_many` - The query holds more clauses than the node allows. `search:clauses_too_deep` - The query nests deeper than the node allows. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:facet:range_invalid` - A range bucket has `to` at or below `from`. `search:hits:facet_unsupported` - A facet of a search with `hits` names a field inside another object than the `hits` path. `search:hits:path_not_nested` - The `hits` path names an object field that is not in `nested` mode. `search:matched:field_not_nested` - A `matched` field is an object field that is not in `nested` mode. `search:sort:nested_unsupported` - A sort names a field inside a nested list in a way its values cannot be ordered. `search:clause:k_required` - A `knn` clause carries no `k`.
+            Error codes: `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:sort:field_required` - A `sort` entry does not name the field to sort by. `search:sort:origin_required` - A `sort` entry that orders by distance carries no `lat` and `lon` to measure from. `search:limit_out_of_range` - `limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`. `search:offset_out_of_range` - `offset` is below zero. `search:paging_conflicting` - The request combines more than one of `offset`, `after` and `before`. `search:cursor:invalid` - `after` or `before` carries a cursor this engine did not hand out. `search:cursor:sort_mismatch` - A cursor is used under a different `sort` than the one it was handed out under. Start the search again from the first page. `search:cursor:stale` - A cursor was taken under this `sort` but does not name a position in it, which a `sort` field that changed type in the index definition leaves behind. Start the search again from the first page. `search:pages:without_limit` - `pages` is asked for without a `limit` above zero. `search:pages:without_offset` - `pages` is asked for from a `next` or `previous` cursor, which carries no page number. Start from `offset` or from a page's own cursor. `search:pages:max_out_of_range` - The `max` of `pages` is not above zero. `search:facet:field_required` - A facet does not name the field to count. `search:facet:name_invalid` - A facet is keyed by a blank name. Leave `name` out to key the counts by the field. `search:facet:name_duplicate` - Two facets are keyed by the same name. `search:facet:limit_out_of_range` - The `limit` of a facet asks for more values than the node allows, or for none. The `max` argument carries the cap. `search:facet:depth_out_of_range` - The `depth` of a facet counts more levels of a tree than the node allows, or none. The `max` argument carries the cap. `search:facet:path_invalid` - The `path` of a facet is blank. Leave it out to count from the top of the tree. `search:facet:range_empty` - A bucket of a facet carries no bound. `search:facet:ranges_required` - A facet counts into buckets and lists none. Leave `ranges` out to count one value at a time. `search:facet:ranges_too_many` - A facet counts into more buckets than the node allows. The `max` argument carries the cap. `search:facet:ranges_conflicting` - A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given. `search:facet:ranges_with_tree` - A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets. `search:facet:exclude_filters_invalid` - An entry of `excludeFilters` is blank. Leave the list out for the facet's own field, or give it empty to leave nothing out. `search:highlight:fields_required` - `highlight` names no field to highlight. `search:highlight:field_required` - An entry of the fields to highlight is blank. `search:highlight:fragments_out_of_range` - The number of fragments to highlight is not above zero. `search:highlight:length_out_of_range` - The length a highlighted fragment aims for is outside 1 to 10000 characters. `search:matched:fields_required` - `matched` names no object field to answer matched values for. `search:matched:field_required` - An entry of the fields to answer matched values for is blank. `search:matched:fields_empty` - A `matched` entry asks for only some fields of the values and names none. `search:matched:field_not_inside` - A `matched` entry names a field that is not inside its object field. Name the fields of the values by their dotted paths. `search:matched:limit_out_of_range` - A `matched` entry asks for more values per field than the node allows, or for none. The `max` argument carries the cap. `search:hits:path_required` - `hits` does not name the object field whose matched values are the hits. `search:hits:fields_empty` - `hits` asks for only some fields of the values and names none. `search:hits:field_not_inside` - `hits` names a field that is not inside the object field it stands for. Name the fields of the values by their dotted paths. `search:hits:when_clause_unsupported` - A clause under `hits.when` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:hits:when_scoring_unsupported` - A clause under `hits.when` affects the score. Clauses that score belong in `query`. `search:hits:when_sort_unsupported` - A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score. `search:hits:sort_unsupported` - A search whose hits are the values of an object field is ordered by distance. `search:hits:knn_unsupported` - A search whose hits are the values of an object field holds a `knn` clause. `search:hits:matched_unsupported` - A search whose hits are the values of an object field also asks for `matched`, which would ask a hit about itself. `search:hits:highlight_field_not_inside` - A search whose hits are the values of an object field highlights a field that is not inside those values. `search:signal:field_required` - A signal does not name the field to read its value from. `search:signal:shape_invalid` - A signal is not exactly one of `saturation`, `decay` and `linear`. `search:signal:pivot_out_of_range` - The `pivot` of a saturation signal is not a number above zero. `search:signal:half_life_out_of_range` - The `halfLife` of a decay signal is not a number of seconds above zero. `search:signal:ceiling_out_of_range` - The `ceiling` of a linear signal is not a number above zero. `search:signal:weight_out_of_range` - The `weight` of a signal is below zero. `search:signal:mode_without_signals` - `signalsMode` is given without `signals`. Give the signals as well, or leave the mode out. `search:rescore:window_required` - A `rescore` block does not say how many of the best results the second pass reaches. `search:rescore:window_out_of_range` - The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. `search:rescore:window_too_small` - `offset` plus `limit` reaches past the `window` of a `rescore` block. Widen the window, or ask for an earlier page. `search:rescore:empty` - A `rescore` block holds neither a boost nor a signal to reorder by. `search:rescore:weight_out_of_range` - The `weight` of a `rescore` block is below zero. `search:rescore:hits_unsupported` - A search whose hits are the values of an object field also asks to `rescore`. A second pass scores documents, so it cannot reorder values. `search:locale_unsupported` - The request names a locale this engine has no rules for. `search:source_not_kept` - `fields` asks for something only the document copy can answer on an index whose `source` is `none`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or that declares no `unit`. `search:filter:scoring_unsupported` - A clause under `filter` affects the score. Move it out of `filter`. `search:field_unknown` - A clause names a field the index does not have. `search:usage_unsupported` - A field is not defined for the usage the clause asks of it. `search:paging_too_deep` - `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. Follow the `next` cursor instead. `search:clauses_too_many` - The query holds more clauses than the node allows. `search:clauses_too_deep` - The query nests deeper than the node allows. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:facet:range_invalid` - A range bucket has `to` at or below `from`. `search:hits:facet_unsupported` - A facet of a search with `hits` names a field inside another object than the `hits` path. `search:hits:path_not_nested` - The `hits` path names an object field that is not in `nested` mode. `search:matched:field_not_nested` - A `matched` field is an object field that is not in `nested` mode. `search:sort:nested_unsupported` - A sort names a field inside a nested list in a way its values cannot be ordered. `search:clause:k_required` - A `knn` clause carries no `k`. `search:freshness:invalid` - The freshness token is not one the engine issued. Pass a token back unchanged. `search:freshness:version_unsupported` - The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token. `search:freshness:index_mismatch` - The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of.
           content:
             application/json:
               schema:
@@ -11260,6 +11438,16 @@ paths:
               be ordered.
           - code: search:clause:k_required
             when: A `knn` clause carries no `k`.
+          - code: search:freshness:invalid
+            when: The freshness token is not one the engine issued. Pass a token back
+              unchanged.
+          - code: search:freshness:version_unsupported
+            when: The freshness token was issued in a format version this node does
+              not read. The `version` argument carries it; send the request to a node
+              of the release that issued the token.
+          - code: search:freshness:index_mismatch
+            when: The freshness token is of another index than the one in the path.
+              The `index` argument carries the index the token is of.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -11313,7 +11501,7 @@ paths:
           description: |-
             The search did not finish on the node.
 
-            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`. What it collected is dropped, so narrow the search rather than sending it again. `search:freshness:unavailable` - The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header.
           content:
             application/json:
               schema:
@@ -11326,6 +11514,10 @@ paths:
             when: "The search collected for longer than `EXOFIND_SEARCH_TIMEOUT`.\
               \ What it collected is dropped, so narrow the search rather than sending\
               \ it again."
+          - code: search:freshness:unavailable
+            when: The node did not reach the state the freshness token asks for within
+              `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After`
+              header.
       security:
       - apiKey: []
       x-required-permission: search
@@ -11375,6 +11567,11 @@ paths:
         in: query
         schema:
           type: string
+      - description: "A freshness token, for a request that carries none in its body.\
+          \ The body's `freshness.atLeast` is read when both are given."
+        example: AQoIcHJvZHVjdHMSATIYBw
+        in: header
+        name: X-Exofind-Freshness
       requestBody:
         content:
           application/json:
@@ -11440,7 +11637,7 @@ paths:
           description: |-
             The request is not a valid search, or the index declares no primary key so a hit cannot be named.
 
-            Error codes: `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:filter:scoring_unsupported` - A clause under `filters` affects the score. Move it out of `filters`. `search:sort:field_required` - A `sort` entry does not name the field to sort by. `search:sort:origin_required` - A `sort` entry that orders by distance carries no `lat` and `lon` to measure from. `search:limit_out_of_range` - `limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`. `search:offset_out_of_range` - `offset` is below zero. `search:paging_conflicting` - The request combines more than one of `offset`, `after` and `before`. `search:paging_too_deep` - `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. `search:cursor:invalid` - `after` or `before` carries a cursor this engine did not hand out. `search:cursor:sort_mismatch` - A cursor is used under a different `sort` than the one it was handed out under. `search:pages:without_limit` - `pages` is asked for without a `limit` above zero. `search:pages:without_offset` - `pages` is asked for from a `next` or `previous` cursor, which carries no page number. `search:pages:max_out_of_range` - The `max` of `pages` is not above zero. `search:clauses_too_many` - The query holds more clauses than the node allows. `search:clauses_too_deep` - The query nests deeper than the node allows. `search:facet:field_required` - A facet does not name the field to count. `search:facet:name_invalid` - A facet is keyed by a blank name. Leave `name` out to key the counts by the field. `search:facet:name_duplicate` - Two facets are keyed by the same name. `search:facet:limit_out_of_range` - The `limit` of a facet asks for more values than the node allows, or for none. `search:facet:depth_out_of_range` - The `depth` of a facet counts more levels of a tree than the node allows, or none. `search:facet:path_invalid` - The `path` of a facet is blank. Leave it out to count from the top of the tree. `search:facet:range_empty` - A bucket of a facet carries no bound. `search:facet:ranges_required` - A facet counts into buckets and lists none. Leave `ranges` out to count one value at a time. `search:facet:ranges_too_many` - A facet counts into more buckets than the node allows. `search:facet:ranges_conflicting` - A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given. `search:facet:ranges_with_tree` - A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets. `search:facet:exclude_filters_invalid` - An entry of `excludeFilters` is blank. `search:highlight:fields_required` - `highlight` names no field to highlight. `search:highlight:field_required` - An entry of the fields to highlight is blank. `search:highlight:fragments_out_of_range` - The number of fragments to highlight is not above zero. `search:highlight:length_out_of_range` - The length a highlighted fragment aims for is outside 1 to 10000 characters. `search:matched:fields_required` - `matched` names no object field to answer matched values for. `search:matched:field_required` - An entry of the fields to answer matched values for is blank. `search:matched:fields_empty` - A `matched` entry asks for only some fields of the values and names none. `search:matched:field_not_inside` - A `matched` entry names a field that is not inside its object field. `search:matched:limit_out_of_range` - A `matched` entry asks for more values per field than the node allows, or for none. `search:hits:path_required` - `hits` does not name the object field whose matched values are the hits. `search:hits:fields_empty` - `hits` asks for only some fields of the values and names none. `search:hits:field_not_inside` - `hits` names a field that is not inside the object field it stands for. `search:hits:when_clause_unsupported` - A clause under `hits.when` is neither a `field` nor a `nested` clause. `search:hits:when_scoring_unsupported` - A clause under `hits.when` affects the score. Clauses that score belong in `query`. `search:hits:when_sort_unsupported` - A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score. `search:hits:sort_unsupported` - A search whose hits are the values of an object field is ordered by distance. `search:hits:knn_unsupported` - A search whose hits are the values of an object field holds a `knn` clause. `search:hits:matched_unsupported` - A search whose hits are the values of an object field also asks for `matched`. `search:hits:highlight_field_not_inside` - A search whose hits are the values of an object field highlights a field that is not inside those values. `search:signal:field_required` - A signal does not name the field to read its value from. `search:signal:shape_invalid` - A signal is not exactly one of `saturation`, `decay` and `linear`. `search:signal:pivot_out_of_range` - The `pivot` of a saturation signal is not a number above zero. `search:signal:half_life_out_of_range` - The `halfLife` of a decay signal is not a number of seconds above zero. `search:signal:ceiling_out_of_range` - The `ceiling` of a linear signal is not a number above zero. `search:signal:weight_out_of_range` - The `weight` of a signal is below zero. `search:signal:mode_without_signals` - `signalsMode` is given without `signals`. `search:rescore:window_required` - A `rescore` block does not say how many of the best results the second pass reaches. `search:rescore:window_out_of_range` - The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. `search:rescore:window_too_small` - `offset` plus `limit` reaches past the `window` of a `rescore` block. `search:rescore:empty` - A `rescore` block holds neither a boost nor a signal to reorder by. `search:rescore:weight_out_of_range` - The `weight` of a `rescore` block is below zero. `search:rescore:hits_unsupported` - A search whose hits are the values of an object field also asks to `rescore`. `search:locale_unsupported` - The request names a locale this engine has no rules for. `index:no_primary_key` - The index declares no primary key, so a hit cannot be named. `search:explain:key_required` - The request carries no `key`, so it names no hit to explain. `search:explain:index_out_of_range` - `index` is below zero, so it names no value of the `hits` path. `search:field_unknown` - A clause, sort or facet names a field the index does not have. `search:usage_unsupported` - A clause, sort or facet uses a field in a way the definition does not enable for it. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or declares no `unit`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:source_not_kept` - `fields` names something only the document copy can answer, and the index keeps none. `search:facet:range_invalid` - A range bucket has `to` at or below `from`. `search:hits:facet_unsupported` - A facet of a search with `hits` names a field inside another object than the `hits` path. `search:hits:path_not_nested` - The `hits` path names an object field that is not in `nested` mode. `search:matched:field_not_nested` - A `matched` field is an object field that is not in `nested` mode. `search:sort:nested_unsupported` - A sort names a field inside a nested list in a way its values cannot be ordered. `search:cursor:stale` - The cursor was taken under this sort, but the values it carries no longer fit how the index defines the sort. Start from the first page. `search:clause:k_required` - A `knn` clause carries no `k`.
+            Error codes: `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. A clause that scopes the whole search belongs in `query`. `search:filter:scoring_unsupported` - A clause under `filters` affects the score. Move it out of `filters`. `search:sort:field_required` - A `sort` entry does not name the field to sort by. `search:sort:origin_required` - A `sort` entry that orders by distance carries no `lat` and `lon` to measure from. `search:limit_out_of_range` - `limit` is below zero or above `EXOFIND_SEARCH_MAX_LIMIT`. `search:offset_out_of_range` - `offset` is below zero. `search:paging_conflicting` - The request combines more than one of `offset`, `after` and `before`. `search:paging_too_deep` - `offset` plus `limit` reaches past `EXOFIND_SEARCH_MAX_PAGE_DEPTH`. `search:cursor:invalid` - `after` or `before` carries a cursor this engine did not hand out. `search:cursor:sort_mismatch` - A cursor is used under a different `sort` than the one it was handed out under. `search:pages:without_limit` - `pages` is asked for without a `limit` above zero. `search:pages:without_offset` - `pages` is asked for from a `next` or `previous` cursor, which carries no page number. `search:pages:max_out_of_range` - The `max` of `pages` is not above zero. `search:clauses_too_many` - The query holds more clauses than the node allows. `search:clauses_too_deep` - The query nests deeper than the node allows. `search:facet:field_required` - A facet does not name the field to count. `search:facet:name_invalid` - A facet is keyed by a blank name. Leave `name` out to key the counts by the field. `search:facet:name_duplicate` - Two facets are keyed by the same name. `search:facet:limit_out_of_range` - The `limit` of a facet asks for more values than the node allows, or for none. `search:facet:depth_out_of_range` - The `depth` of a facet counts more levels of a tree than the node allows, or none. `search:facet:path_invalid` - The `path` of a facet is blank. Leave it out to count from the top of the tree. `search:facet:range_empty` - A bucket of a facet carries no bound. `search:facet:ranges_required` - A facet counts into buckets and lists none. Leave `ranges` out to count one value at a time. `search:facet:ranges_too_many` - A facet counts into more buckets than the node allows. `search:facet:ranges_conflicting` - A facet combines `ranges` with `limit` or `order`. A facet with `ranges` answers one count per bucket, in the order the buckets are given. `search:facet:ranges_with_tree` - A facet combines `ranges` with `path` or `depth`. Those count one level of a tree, and `ranges` counts buckets. `search:facet:exclude_filters_invalid` - An entry of `excludeFilters` is blank. `search:highlight:fields_required` - `highlight` names no field to highlight. `search:highlight:field_required` - An entry of the fields to highlight is blank. `search:highlight:fragments_out_of_range` - The number of fragments to highlight is not above zero. `search:highlight:length_out_of_range` - The length a highlighted fragment aims for is outside 1 to 10000 characters. `search:matched:fields_required` - `matched` names no object field to answer matched values for. `search:matched:field_required` - An entry of the fields to answer matched values for is blank. `search:matched:fields_empty` - A `matched` entry asks for only some fields of the values and names none. `search:matched:field_not_inside` - A `matched` entry names a field that is not inside its object field. `search:matched:limit_out_of_range` - A `matched` entry asks for more values per field than the node allows, or for none. `search:hits:path_required` - `hits` does not name the object field whose matched values are the hits. `search:hits:fields_empty` - `hits` asks for only some fields of the values and names none. `search:hits:field_not_inside` - `hits` names a field that is not inside the object field it stands for. `search:hits:when_clause_unsupported` - A clause under `hits.when` is neither a `field` nor a `nested` clause. `search:hits:when_scoring_unsupported` - A clause under `hits.when` affects the score. Clauses that score belong in `query`. `search:hits:when_sort_unsupported` - A search whose hits are chosen by `hits.when` is ordered by a field. Order it by score. `search:hits:sort_unsupported` - A search whose hits are the values of an object field is ordered by distance. `search:hits:knn_unsupported` - A search whose hits are the values of an object field holds a `knn` clause. `search:hits:matched_unsupported` - A search whose hits are the values of an object field also asks for `matched`. `search:hits:highlight_field_not_inside` - A search whose hits are the values of an object field highlights a field that is not inside those values. `search:signal:field_required` - A signal does not name the field to read its value from. `search:signal:shape_invalid` - A signal is not exactly one of `saturation`, `decay` and `linear`. `search:signal:pivot_out_of_range` - The `pivot` of a saturation signal is not a number above zero. `search:signal:half_life_out_of_range` - The `halfLife` of a decay signal is not a number of seconds above zero. `search:signal:ceiling_out_of_range` - The `ceiling` of a linear signal is not a number above zero. `search:signal:weight_out_of_range` - The `weight` of a signal is below zero. `search:signal:mode_without_signals` - `signalsMode` is given without `signals`. `search:rescore:window_required` - A `rescore` block does not say how many of the best results the second pass reaches. `search:rescore:window_out_of_range` - The `window` of a `rescore` block is below one or above `EXOFIND_SEARCH_MAX_RESCORE_WINDOW`. `search:rescore:window_too_small` - `offset` plus `limit` reaches past the `window` of a `rescore` block. `search:rescore:empty` - A `rescore` block holds neither a boost nor a signal to reorder by. `search:rescore:weight_out_of_range` - The `weight` of a `rescore` block is below zero. `search:rescore:hits_unsupported` - A search whose hits are the values of an object field also asks to `rescore`. `search:locale_unsupported` - The request names a locale this engine has no rules for. `index:no_primary_key` - The index declares no primary key, so a hit cannot be named. `search:explain:key_required` - The request carries no `key`, so it names no hit to explain. `search:explain:index_out_of_range` - `index` is below zero, so it names no value of the `hits` path. `search:field_unknown` - A clause, sort or facet names a field the index does not have. `search:usage_unsupported` - A clause, sort or facet uses a field in a way the definition does not enable for it. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or declares no `unit`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:source_not_kept` - `fields` names something only the document copy can answer, and the index keeps none. `search:facet:range_invalid` - A range bucket has `to` at or below `from`. `search:hits:facet_unsupported` - A facet of a search with `hits` names a field inside another object than the `hits` path. `search:hits:path_not_nested` - The `hits` path names an object field that is not in `nested` mode. `search:matched:field_not_nested` - A `matched` field is an object field that is not in `nested` mode. `search:sort:nested_unsupported` - A sort names a field inside a nested list in a way its values cannot be ordered. `search:cursor:stale` - The cursor was taken under this sort, but the values it carries no longer fit how the index defines the sort. Start from the first page. `search:clause:k_required` - A `knn` clause carries no `k`. `search:freshness:invalid` - The freshness token is not one the engine issued. Pass a token back unchanged. `search:freshness:version_unsupported` - The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token. `search:freshness:index_mismatch` - The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of.
           content:
             application/json:
               schema:
@@ -11701,6 +11898,16 @@ paths:
               \ page."
           - code: search:clause:k_required
             when: A `knn` clause carries no `k`.
+          - code: search:freshness:invalid
+            when: The freshness token is not one the engine issued. Pass a token back
+              unchanged.
+          - code: search:freshness:version_unsupported
+            when: The freshness token was issued in a format version this node does
+              not read. The `version` argument carries it; send the request to a node
+              of the release that issued the token.
+          - code: search:freshness:index_mismatch
+            when: The freshness token is of another index than the one in the path.
+              The `index` argument carries the index the token is of.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -11758,7 +11965,7 @@ paths:
           description: |-
             The explanation did not finish on the node.
 
-            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`. `search:freshness:unavailable` - The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header.
           content:
             application/json:
               schema:
@@ -11769,6 +11976,10 @@ paths:
               Sending it again reopens the index.
           - code: search:timeout
             when: The search behind the explanation ran for longer than `EXOFIND_SEARCH_TIMEOUT`.
+          - code: search:freshness:unavailable
+            when: The node did not reach the state the freshness token asks for within
+              `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After`
+              header.
       security:
       - apiKey: []
       x-required-permission: search
@@ -11810,6 +12021,11 @@ paths:
         required: true
         schema:
           type: string
+      - description: "A freshness token, for a request that carries none in its body.\
+          \ The body's `freshness.atLeast` is read when both are given."
+        example: AQoIcHJvZHVjdHMSATIYBw
+        in: header
+        name: X-Exofind-Freshness
       requestBody:
         content:
           application/json:
@@ -11854,7 +12070,7 @@ paths:
           description: |-
             The request is not one that can be answered, or it asks for more than the node allows. See [Search configuration](https://exofind.dev/reference/configuration/#search) for the caps.
 
-            Error codes: `search:suggest:limit_out_of_range` - `limit` is below 1 or above `EXOFIND_SUGGEST_MAX_LIMIT`. The `max` argument carries the cap. `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. `search:locale_unsupported` - The request names a locale the node has no rules for. `search:field_unknown` - A filter names a field the index does not have. `search:filter:scoring_unsupported` - A clause under `filter` affects the score. Move it out of `filter`. `search:clauses_too_many` - The filter holds more clauses than the node allows. `search:clauses_too_deep` - The filter nests deeper than the node allows. `search:usage_unsupported` - A clause, sort or facet uses a field in a way the definition does not enable for it. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or declares no `unit`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:clause:k_required` - A `knn` clause carries no `k`.
+            Error codes: `search:suggest:limit_out_of_range` - `limit` is below 1 or above `EXOFIND_SUGGEST_MAX_LIMIT`. The `max` argument carries the cap. `request:value_required` - A part of the request that needs a value carries none. The `path` names it. `search:clause:field_required` - A `field` clause does not name the field to match. `search:clause:match_required` - A `field` clause does not say what to look for in the field. `search:clause:text_required` - A `text` clause carries no text to search for. `search:clause:path_required` - A `nested` clause does not name the object field to match inside. `search:clause:vector_required` - A `knn` clause carries no vector to find the neighbours of. `search:clause:k_out_of_range` - The `k` of a `knn` clause is missing, below one, or above `EXOFIND_SEARCH_MAX_KNN_K`. `search:clause:weight_out_of_range` - The `weight` of a `boost` clause is missing, below zero or not a finite number. `search:clause:slop_out_of_range` - The `slop` of a `text` clause is below zero. `search:clause:slop_unsupported` - A `text` clause sets `slop` without matching as a phrase. Set `match` to `phrase`, or to `user`. `search:clause:join_unsupported` - A `text` clause sets `join` without matching what somebody typed. Set `match` to `user`, or say `all` or `any` in `match` itself. `search:clause:rankings_too_few` - A `fuse` clause holds fewer than two rankings to fuse. `search:clause:ranking_empty` - A ranking of a `fuse` clause holds nothing to rank by. `search:clause:rank_constant_out_of_range` - The `rankConstant` of a `fuse` clause is not a number above zero. `search:clause:depth_out_of_range` - The `depth` of a `fuse` clause is below one result, or above `EXOFIND_SEARCH_MAX_FUSE_DEPTH`. `search:clause:interpret_fields_required` - The `interpret` of a `text` clause names no target field. Name at least one, or use `auto` or `off`. `search:clause:interpret_when_unsupported` - The `when` of an `interpret` target holds a `nested`, `knn` or `fuse` clause. `search:matcher:value_required` - A matcher carries no value to look for. `search:matcher:range_empty` - A range matcher carries no bound. `search:matcher:range_conflicting` - A range matcher combines `gte` with `gt`, or `lte` with `lt`. `search:matcher:origin_required` - A distance matcher carries no `lat` and `lon` to measure from. `search:matcher:radius_required` - A distance matcher does not say how far from the origin values may be. `search:filter:clause_unsupported` - A clause under `filters` is neither a `field` nor a `nested` clause. `search:locale_unsupported` - The request names a locale the node has no rules for. `search:field_unknown` - A filter names a field the index does not have. `search:filter:scoring_unsupported` - A clause under `filter` affects the score. Move it out of `filter`. `search:clauses_too_many` - The filter holds more clauses than the node allows. `search:clauses_too_deep` - The filter nests deeper than the node allows. `search:usage_unsupported` - A clause, sort or facet uses a field in a way the definition does not enable for it. `search:value_invalid` - A matcher is given a value of the wrong kind for the type of its field. `search:matcher:type_unsupported` - A matcher is used on a field whose type cannot answer it. `search:no_searchable_fields` - A text clause names no fields and the index has none defined for matching. `search:nested:path_not_nested` - A `nested` clause names a path whose values are flattened. `search:nested:field_not_inside` - A clause inside a `nested` clause names a field outside its path. `search:nested:field_outside` - A clause outside a `nested` clause names a field inside a nested list. `search:nested:clause_unsupported` - A `nested` clause holds a clause that cannot run against a single value, such as `fuse`. `search:interpret:unit_required` - An `interpret` target names a field that is not a number field or declares no `unit`. `search:interpret:fallback_unit_mismatch` - A `fallback` target declares another unit than the target it stands in for. `search:clause:k_required` - A `knn` clause carries no `k`. `search:freshness:invalid` - The freshness token is not one the engine issued. Pass a token back unchanged. `search:freshness:version_unsupported` - The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token. `search:freshness:index_mismatch` - The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of.
           content:
             application/json:
               schema:
@@ -11955,6 +12171,16 @@ paths:
               in for.
           - code: search:clause:k_required
             when: A `knn` clause carries no `k`.
+          - code: search:freshness:invalid
+            when: The freshness token is not one the engine issued. Pass a token back
+              unchanged.
+          - code: search:freshness:version_unsupported
+            when: The freshness token was issued in a format version this node does
+              not read. The `version` argument carries it; send the request to a node
+              of the release that issued the token.
+          - code: search:freshness:index_mismatch
+            when: The freshness token is of another index than the one in the path.
+              The `index` argument carries the index the token is of.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -12010,7 +12236,7 @@ paths:
 
             Also returned when counting collected for longer than `EXOFIND_SUGGEST_TIMEOUT` (`search:timeout`). The counts collected before the node stopped are dropped, so narrow the filters instead of repeating the request.
 
-            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What it collected is dropped, so narrow the filters rather than sending the request again.
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index. `search:timeout` - Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What it collected is dropped, so narrow the filters rather than sending the request again. `search:freshness:unavailable` - The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header.
           content:
             application/json:
               schema:
@@ -12023,6 +12249,10 @@ paths:
             when: "Collecting ran for longer than `EXOFIND_SUGGEST_TIMEOUT`. What\
               \ it collected is dropped, so narrow the filters rather than sending\
               \ the request again."
+          - code: search:freshness:unavailable
+            when: The node did not reach the state the freshness token asks for within
+              `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After`
+              header.
       security:
       - apiKey: []
       x-required-permission: search

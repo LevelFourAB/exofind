@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * An index together with the definition and status of one of its generations.
  *
@@ -26,6 +28,9 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *   observed state of this generation on the answering node
  * @param generations
  *   all generations of the index, ordered by name
+ * @param freshness
+ *   the state a commit or a promotion landed in, as a freshness token, or
+ *   {@code null} on a response that made no change
  */
 @Schema(
 	description = """
@@ -71,7 +76,24 @@ public record IndexInfo(
 
 	@Schema(description = """
 		A list of all generations for the index, ordered by name.""")
-	List<GenerationSummary> generations
+	List<GenerationSummary> generations,
+
+	/**
+	 * The state a commit or a promotion landed in, as a freshness token.
+	 * {@code null} on a response that made no change.
+	 */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(
+		description = """
+			A freshness token for the state the action landed in. Present \
+			on the answer to a commit and to a promotion, and omitted \
+			elsewhere. Pass it as `freshness.atLeast` on a search, and the \
+			search is answered only once the node holds the commit or answers \
+			from the promoted generation. Opaque; pass it back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMSATIYBw"
+	)
+	String freshness
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI

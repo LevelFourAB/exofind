@@ -27,6 +27,7 @@ import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
+import se.l4.exofind.engine.freshness.TestFreshnessWaiters;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
@@ -87,7 +88,8 @@ public class DocumentSignalUpdateResourceTest {
 		resource = new DocumentResource(
 			indexes,
 			new ObjectMapper(),
-			TestReindexJobs.create(nodeState, indexes, registry, storageDirectory)
+			TestReindexJobs.create(nodeState, indexes, registry, storageDirectory),
+			TestFreshnessWaiters.create(indexes, registry)
 		);
 	}
 

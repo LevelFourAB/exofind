@@ -10,6 +10,7 @@ import org.eclipse.collections.api.map.MapIterable;
 import se.l4.exofind.engine.auth.UnauthenticatedException;
 import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorMessage;
+import se.l4.exofind.engine.errors.Retryable;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.RequestMetrics;
@@ -70,6 +71,16 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			 * makes a 401 answerable rather than only a refusal.
 			 */
 			response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+		}
+
+		if(e instanceof Retryable retryable) {
+			/*
+			 * Says how long to wait before sending the same request again, in
+			 * whole seconds and never less than one, as the header counts
+			 * seconds and a zero would say to retry at once.
+			 */
+			var seconds = Math.max(1, retryable.retryAfter().toSeconds());
+			response.header(HttpHeaders.RETRY_AFTER, Long.toString(seconds));
 		}
 
 		return response.build();

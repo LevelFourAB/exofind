@@ -29,6 +29,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *   capabilities the settings require that the answering node does not support;
  *   present only when the node sets the settings aside and searches with the
  *   definition alone
+ * @param freshness
+ *   the state a change to the settings landed in, as a freshness token, or
+ *   {@code null} on a response that made no change
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(
@@ -74,7 +77,23 @@ public record SearchSettingsInfo(
 		they use capabilities its version does not have. The node searches \
 		with the definition alone. Upgrade the node to put the settings in \
 		force.""")
-	List<String> unsupportedFeatures
+	List<String> unsupportedFeatures,
+
+	/**
+	 * The state a change to the settings landed in, as a freshness token.
+	 * {@code null} on a response that made no change.
+	 */
+	@Schema(
+		description = """
+			A freshness token for the state the change landed in. Present \
+			on the answer to a `PUT` and a `PATCH`, and omitted on a `GET`. \
+			Pass it as `freshness.atLeast` on a search, and the search is \
+			answered with these settings in force whichever node it lands on. \
+			Opaque; pass it back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMiIiJhYjEyY2QzNCI"
+	)
+	String freshness
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI

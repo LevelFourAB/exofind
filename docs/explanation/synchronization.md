@@ -64,6 +64,18 @@ The read reports whether the registry changed. A node removes the local copies o
 
 Hints stay advisory rather than authoritative state. A node verifies every local copy directly against storage after at most `EXOFIND_INDEXES_VERIFY_INTERVAL` (default 10 minutes), whatever the hints say. Both refresh intervals are held under the verify interval, so a refresh interval configured above it cannot suppress the verification it promises. If a writer crashes before reporting a hint, or if an older node overwrites the registry without hints, the system experiences temporary staleness or extra requests, but never corrupted state. Like the leadership table, hints optimize performance while conditional reads and writes enforce safety.
 
+## Visibility is bounded staleness, not a watch
+
+A node learns of changes by polling the registry at its refresh interval. Storage never notifies a node that an index changed.
+
+S3 has no watch, subscribe, or long-poll API. Reads are pull-only. Storage notifications, such as AWS S3 Event Notifications, MinIO bucket notifications, SeaweedFS metadata subscriptions, and Ceph RGW notifications, are not portable across storage backends and operate on a best-effort basis. A notification can shorten the window between a push and the pull that follows, but it cannot close the window or serve as a source of truth.
+
+The engine defines a staleness bound instead. A local copy is at most one refresh interval behind the registry, and the registry is at most a few seconds behind a push. Because every poll is a conditional request, an up-to-date copy costs one storage request per interval.
+
+A read that cannot accept this bound carries a freshness token naming an index state. The answering node closes the gap for that read alone: a conditional read of the registry for a generation, a conditional read of the settings object for a settings version, and a pull for a commit sequence. The requests this costs grow with the reads that demand freshness, not with the number of indexes. Background polling remains unchanged.
+
+A freshness token cannot make an uncommitted write survive a writer crash. If a writer stops before committing, it loses the write. When a successor node takes over the index, its commits advance the sequence to the number named in the token without the lost write. For more details, see [What a write guarantees](write-guarantees.md#what-a-freshness-token-promises).
+
 ## Why writes are scoped to epochs
 
 Lucene names its files by sequential numbering. Two independent writer sessions can both produce a file named `_5.cfs`. If both sessions uploaded files using that name, a writer that fails the manifest race could overwrite a file referenced by the winning writer's manifest.

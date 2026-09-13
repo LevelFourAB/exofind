@@ -47,7 +47,22 @@ public record UpdateResponse(
 		fails on the first refused change. A key nothing is indexed under is \
 		reported under `missing` instead when the request is sent with \
 		`?missing=skip`. Always present, and empty when nothing was skipped.""")
-	List<DocumentFailure> failed
+	List<DocumentFailure> failed,
+
+	/**
+	 * The state the change lands in, as a freshness token.
+	 */
+	@Schema(
+		description = """
+			A freshness token for the state the change lands in. Pass it \
+			as `freshness.atLeast` on a search, or in the \
+			`X-Exofind-Freshness` header of a read, and that request is \
+			answered only once the node holds the change. Opaque; pass it \
+			back unchanged. See \
+			[Freshness](https://exofind.dev/reference/search-api/#freshness).""",
+		examples = "AQoIcHJvZHVjdHMSATIYBw"
+	)
+	String freshness
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI
@@ -56,5 +71,5 @@ public record UpdateResponse(
 	 * without {@code ?onError=skip} with an empty {@code failed}.
 	 */
 	public static final String EXAMPLE = """
-		{ "updated": 1998, "missing": [], "failed": [] }""";
+		{ "updated": 1998, "missing": [], "failed": [], "freshness": "AQoIcHJvZHVjdHMSATIYBw" }""";
 }

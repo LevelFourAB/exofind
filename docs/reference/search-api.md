@@ -52,6 +52,7 @@ All request properties are optional. An empty request matches all documents in t
 | `before` | String | None | Cursor string from the `previous` property of a previous response to fetch the preceding page. |
 | `pages` | Object | None | Requests numbered page metadata. Accepts an optional `{ "max": n }` object to limit the number of page entries (default `9`). Implies `"total": "exact"`. |
 | `total` | String | `"estimate"` | Counting mode for the total matching document count: `"estimate"` counts until exceeding the returned window; `"exact"` counts every matching document. |
+| `freshness` | Object | None | Minimum index state required to answer the search. Accepts an object with property `atLeast` containing a freshness token. See [Freshness](#freshness). |
 
 ## Clauses
 
@@ -1044,6 +1045,7 @@ When `when` is configured:
   "total": { "count": 128, "exact": false },
   "page": { "limit": 20, "offset": 0, "next": "AW8..." },
   "generation": "2",
+  "freshness": "AQoIcHJvZHVjdHMSATIYBw",
   "tookMs": 7.412
 }
 ```
@@ -1058,6 +1060,7 @@ When `when` is configured:
 | `relaxed` | Object | Details of dropped terms when query relaxation was applied. Omitted if the query was not relaxed. |
 | `interpreted` | Object | The filters read out of the query text, and the remaining query text. Omitted when nothing was read. See [Reading numbers and units](#reading-numbers-and-units). |
 | `generation` | String | Name of the generation that answered. A request that names the index answers from the generation that is live when it arrives, so add `@` and this name to the index name to send a later request to the same data. See [Names and generations](admin-api.md#names-and-generations). |
+| `freshness` | String | Freshness token naming the index state that produced the response. Pass as `freshness.atLeast` on subsequent requests to evaluate against this state or a later one. See [Freshness](#freshness). |
 | `tookMs` | Number | Execution time for the search request in milliseconds. |
 
 ### Locale specific fields
@@ -1217,6 +1220,53 @@ The duration of explanations is measured by the `exofind.explain` timer. See [Me
 | `503` | `index:closed` | The index is closed. |
 | `503` | `search:timeout` | The search behind the explanation ran longer than `EXOFIND_SEARCH_TIMEOUT`. |
 
+## Freshness
+
+A freshness token identifies a specific index state, consisting of an index generation, a commit sequence number, and a search settings version. Each component is optional. The commit sequence counts Lucene commits containing changes, starting from 1. Tokens are opaque strings consisting of a format version byte and a Protocol Buffers message encoded as unpadded base64url, compatible with JSON strings, HTTP headers, and query parameters. Freshness tokens function in both local and object storage modes.
+
+The following responses return a freshness token:
+
+- Document mutations on the [documents API](documents-api.md) (`POST /v1alpha1/indexes/{name}/documents`, `POST /v1alpha1/indexes/{name}/documents/actions/update`, and `POST /v1alpha1/indexes/{name}/documents/actions/delete`): Returned in the `freshness` response property. A batch returns one token representing the commit containing the batch. A batch that wrote no documents returns the current state.
+- Single-document updates and deletions (`PATCH` and `DELETE` on `/v1alpha1/indexes/{name}/documents/{key}`): Returned in the `X-Exofind-Freshness` response header with HTTP `204 No Content`.
+- Administrative [actions](admin-api.md#actions) (`POST /v1alpha1/admin/indexes/{name}/actions/commit` and `POST /v1alpha1/admin/indexes/{name}/actions/promote`): Returned in the `freshness` property of the index resource. Omitted on `GET` and `PUT` index responses.
+- [Search settings](admin-api.md#search-settings) modifications (`PUT` and `PATCH` on `/v1alpha1/admin/indexes/{name}/settings`): Returned in the `freshness` response property. Settings deletions (`DELETE`) return the token in the `X-Exofind-Freshness` response header. Omitted on `GET` settings responses.
+- Reindex jobs: Returned in the `freshness` property of the [job record](admin-api.md#job-record-and-phases) when the job reaches `done`, and set to `null` before completion.
+- Read operations (search, suggest, facet values, explain, and document scans): Returned in the `freshness` response property, naming the state that answered the request. NDJSON document scans return the token in the `X-Exofind-Freshness` response header.
+
+### Demanding a state
+
+To require a read operation to evaluate against a specific state or later, provide a freshness token in the request:
+
+- On search, suggest, facet values, and explain endpoints: Set `freshness.atLeast` in the JSON request body, or pass the `X-Exofind-Freshness` request header. If both are provided, `freshness.atLeast` takes precedence.
+- On document scans (`GET /v1alpha1/indexes/{name}/documents`): Pass the `X-Exofind-Freshness` request header.
+
+Passing a freshness token requires no permissions beyond the read request itself. Requests that omit a freshness token evaluate against the current state held by the receiving node.
+
+When a request includes a freshness token, the receiving node verifies each state component before answering:
+
+- **Generation**: If the node does not serve the generation named in the token, it reads the registry using one conditional request. A token naming a generation created before the live generation is satisfied immediately by the live generation. A request that explicitly targets a generation (such as `products@2`) answers from that generation regardless of the token's generation.
+- **Settings version**: If the node holds a different settings version, it reads the settings object using one conditional request.
+- **Commit sequence**: If the node's open reader is behind the sequence number, the node waits. The writer node is asked to commit pending changes at most once per second. Non-writer nodes poll the manifest using exponential backoff from 20 ms to 500 ms. Commits are only waited for when the token matches the generation answering the request.
+
+The maximum wait time is bounded by `EXOFIND_SEARCH_FRESHNESS_WAIT` (default: `10s`). Setting the wait to `0` checks once after one pull and fails if the state is not present. Searches are not forwarded to writer nodes; reads on non-writer nodes wait for the writer commit trigger (`EXOFIND_INDEXES_COMMIT_MAX_INTERVAL`, default: `5s`) plus manifest polling.
+
+### Chaining tokens
+
+The `freshness` token in a read response identifies the state that answered the request. Pass it on your next request to answer from the same state or a later one on any node. When you page with cursors, pass each `freshness` token into the next request so you never receive a page from an older state than the page before it.
+
+### Errors
+
+| HTTP status | Error code | Description |
+|---|---|---|
+| `400` | `search:freshness:invalid` | The token is malformed or was not issued by the engine. Located at `freshness.atLeast` or `X-Exofind-Freshness`. |
+| `400` | `search:freshness:version_unsupported` | The token was issued in a format version that this node does not support. The `version` argument specifies the unsupported format version. |
+| `400` | `search:freshness:index_mismatch` | The token belongs to an index other than the one specified in the request path. Arguments: `index` (token index) and `expected` (path index). |
+| `503` | `search:freshness:unavailable` | The node did not reach the requested state within the wait timeout. Returns a `Retry-After` header of `1` second. The `wait` argument specifies the wait duration in milliseconds. |
+
+### Consistency guarantees
+
+A freshness token guarantees that the response reflects all changes up to the specified state, with one exception: HTTP `2xx` responses on write requests confirm that the writer node accepted the write, not that the write is durable. If the writer node fails before committing changes and another node takes over the index, the successor continues the commit sequence from the last pulled commit, reaching the sequence number without including the uncommitted write. See [What a write guarantees](../explanation/write-guarantees.md).
+
 ## Paging rules
 
 - `offset` plus `limit` cannot exceed `EXOFIND_SEARCH_MAX_PAGE_DEPTH`, and a request whose page ends past the cap returns `search:paging_too_deep` even when its `offset` is below it.
@@ -1226,6 +1276,7 @@ The duration of explanations is measured by the `exofind.explain` timer. See [Me
 - Cursors inside `pages` encode count offsets and remain subject to `EXOFIND_SEARCH_MAX_PAGE_DEPTH`.
 - `pages` can be combined with `offset` or page cursors, but cannot be combined with `after` or `before`.
 - A search carrying a `rescore` block pages by counting inside the window and by cursor below it. See [Paging a rescored search](#paging-a-rescored-search).
+- A cursor encodes a position and does not contain index state. To keep subsequent pages at or after the state of the first page across nodes, pass the `freshness` token from each response as `freshness.atLeast` on the next request. See [Freshness](#freshness).
 
 ## Request limits
 
