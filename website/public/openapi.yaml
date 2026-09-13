@@ -2325,6 +2325,12 @@ components:
           items:
             $ref: "#/components/schemas/IndexSummary"
           description: "The indexes visible to the key, ordered by name."
+        next:
+          type: string
+          description: The name to pass as the `after` parameter to list the indexes
+            after these. Present only when a `limit` cut the listing short.
+          examples:
+          - products
     IndexLocales:
       type: object
       description: "Declares the locales that localized fields in an index support,\
@@ -2940,6 +2946,12 @@ components:
             \ `search`."
           examples:
           - fe3747c2761ef89d
+        next:
+          type: string
+          description: The ID to pass as the `after` parameter to list the keys after
+            these. Present only when a `limit` cut the listing short.
+          examples:
+          - 4ff6b760264c1918
     Keyword:
       type: object
       description: Configures exact-match normalization for filtering.
@@ -4119,6 +4131,12 @@ components:
             $ref: "#/components/schemas/ReindexInfo"
           description: "The jobs the key can view, ordered by index name. A job on\
             \ an index on which the key lacks permissions is omitted."
+        next:
+          type: string
+          description: The index name to pass as the `after` parameter to list the
+            jobs after these. Present only when a `limit` cut the listing short.
+          examples:
+          - products
     ReindexRequest:
       description: Configuration for a reindex job. Both fields are optional; an empty
         body reads from the live generation and promotes automatically.
@@ -5996,10 +6014,33 @@ paths:
 
         Index listings omit indexes on which the key has no permissions rather than refusing the listing.
 
+        `prefix` keeps the indexes whose name starts with it. `limit` caps the answer, and a listing cut short names the last index in `next`; pass it as `after` to read on. See [Listings](https://exofind.dev/reference/admin-api/#listings).
+
         Requires the `indexes.read` permission on at least one index. The `reader`, `writer` and `admin` roles include it.
       operationId: listIndexes
       tags:
       - Indexes
+      parameters:
+      - description: "The name to continue after, as the `next` field of the previous\
+          \ response gave it. The named index is not included."
+        example: products
+        name: after
+        in: query
+        schema:
+          type: string
+      - description: "Most indexs to answer. Without it the whole listing is answered.\
+          \ When more remain, the response carries the last name in `next`."
+        schema:
+          maximum: 1000
+          minimum: 1
+          type: integer
+        name: limit
+        in: query
+      - description: Keeps only the indexs whose name starts with this text.
+        name: prefix
+        in: query
+        schema:
+          type: string
       responses:
         "200":
           description: "The indexes the key can see, ordered by name."
@@ -6020,6 +6061,18 @@ paths:
                         createdAt: 2026-08-28T10:15:30Z
               schema:
                 $ref: "#/components/schemas/IndexListResponse"
+        "400":
+          description: |-
+            The `limit` parameter is out of range.
+
+            Error codes: `request:list:limit_invalid` - The `limit` parameter is not a whole number from 1 to 1000.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: request:list:limit_invalid
+            when: The `limit` parameter is not a whole number from 1 to 1000.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8259,12 +8312,35 @@ paths:
 
         Key credentials are stored only as hashes and cannot be recovered from listings. A lost credential must be replaced.
 
+        `prefix` keeps the keys whose ID starts with it. `limit` caps the answer, and a listing cut short names the last ID in `next`; pass it as `after` to read on. See [Listings](https://exofind.dev/reference/admin-api/#listings).
+
         Served by whichever node receives the request.
 
         Requires the `keys.read` permission, which is not about one index. The `admin` role includes it.
       operationId: listKeys
       tags:
       - API keys
+      parameters:
+      - description: "The ID to continue after, as the `next` field of the previous\
+          \ response gave it. The named key is not included."
+        example: 4ff6b760264c1918
+        name: after
+        in: query
+        schema:
+          type: string
+      - description: "Most keys to answer. Without it the whole listing is answered.\
+          \ When more remain, the response carries the last ID in `next`."
+        schema:
+          maximum: 1000
+          minimum: 1
+          type: integer
+        name: limit
+        in: query
+      - description: Keeps only the keys whose ID starts with this text.
+        name: prefix
+        in: query
+        schema:
+          type: string
       responses:
         "200":
           description: The deployment keys and this node's key configuration.
@@ -8288,6 +8364,18 @@ paths:
                     anonymousKey: null
               schema:
                 $ref: "#/components/schemas/KeyListResponse"
+        "400":
+          description: |-
+            The `limit` parameter is out of range.
+
+            Error codes: `request:list:limit_invalid` - The `limit` parameter is not a whole number from 1 to 1000.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: request:list:limit_invalid
+            when: The `limit` parameter is not a whole number from 1 to 1000.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
@@ -8873,10 +8961,49 @@ paths:
 
         Jobs on indexes where the key lacks permissions are omitted rather than refused.
 
+        `index` keeps the job of one index and `phase` the jobs in the named phases, so a poll for running jobs is one request. `prefix` keeps the jobs whose index name starts with it. `limit` caps the answer, and a listing cut short names the last index in `next`; pass it as `after` to read on. See [Listings](https://exofind.dev/reference/admin-api/#listings).
+
         Requires the `indexes.read` permission on at least one index. The `reader`, `writer` and `admin` roles include it.
       operationId: listReindexes
       tags:
       - Reindexes
+      parameters:
+      - description: "The index name to continue after, as the `next` field of the\
+          \ previous response gave it. The job of the named index is not included."
+        example: products
+        name: after
+        in: query
+        schema:
+          type: string
+      - description: Keeps only the job of this index. Answers an empty listing rather
+          than `404` when the index has no job.
+        example: products
+        name: index
+        in: query
+        schema:
+          type: string
+      - description: "Most jobs to answer. Without it the whole listing is answered.\
+          \ When more remain, the response carries the last name in `next`."
+        schema:
+          maximum: 1000
+          minimum: 1
+          type: integer
+        name: limit
+        in: query
+      - description: "Keeps only the jobs in these phases. Repeat the parameter or\
+          \ separate the phases with commas, as `phase=copying,replaying`."
+        example: copying
+        name: phase
+        in: query
+        schema:
+          type: array
+          items:
+            type: string
+      - description: Keeps only the jobs whose index name starts with this text.
+        name: prefix
+        in: query
+        schema:
+          type: string
       responses:
         "200":
           description: "The job records visible to the key, ordered by index name."
@@ -8897,6 +9024,21 @@ paths:
                       updatedAt: 2026-08-28T10:16:02Z
               schema:
                 $ref: "#/components/schemas/ReindexListResponse"
+        "400":
+          description: |-
+            The `limit` parameter is out of range, or `phase` names no phase.
+
+            Error codes: `request:list:limit_invalid` - The `limit` parameter is not a whole number from 1 to 1000. `reindex:phase_unknown` - A `phase` parameter names no reindex phase. The `value` argument carries what was sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: request:list:limit_invalid
+            when: The `limit` parameter is not a whole number from 1 to 1000.
+          - code: reindex:phase_unknown
+            when: A `phase` parameter names no reindex phase. The `value` argument
+              carries what was sent.
         "401":
           description: |-
             The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.

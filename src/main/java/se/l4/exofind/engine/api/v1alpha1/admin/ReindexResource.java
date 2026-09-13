@@ -1,7 +1,13 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -19,14 +25,19 @@ import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexListResponse;
 import se.l4.exofind.engine.auth.Permission;
+import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.Location;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
+import se.l4.exofind.engine.reindex.ReindexPhase;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
 /**
@@ -61,6 +72,14 @@ import jakarta.ws.rs.core.MediaType;
 @Path("/v1alpha1/admin/reindexes")
 @Produces(MediaType.APPLICATION_JSON)
 public class ReindexResource {
+	private static final ErrorType PHASE_UNKNOWN =
+		ErrorType.withCode("reindex:phase_unknown")
+			.withArguments("value")
+			.withMessage(
+				"A reindex phase is one of pending, copying, replaying, ready,"
+					+ " promoting, done, failed and cancelled, which `{{value}}` is not"
+			);
+
 	private final ReindexJobs reindexes;
 	private final AuthContext auth;
 
@@ -87,7 +106,13 @@ public class ReindexResource {
 			any node can serve the request and returns the same response.
 
 			Jobs on indexes where the key lacks permissions are omitted rather \
-			than refused."""
+			than refused.
+
+			`index` keeps the job of one index and `phase` the jobs in the \
+			named phases, so a poll for running jobs is one request. \
+			`prefix` keeps the jobs whose index name starts with it. `limit` \
+			caps the answer, and a listing cut short names the last index in \
+			`next`; pass it as `after` to read on. See [Listings](https://exofind.dev/reference/admin-api/#listings)."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -96,6 +121,21 @@ public class ReindexResource {
 			schema = @Schema(implementation = ReindexListResponse.class),
 			examples = @ExampleObject(name = "jobs", value = ReindexListResponse.EXAMPLE)
 		)
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = "The `limit` parameter is out of range, or `phase` names no phase.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:list:limit_invalid",
+		status = 400,
+		when = "The `limit` parameter is not a whole number from 1 to 1000."
+	)
+	@ReturnsError(
+		value = "reindex:phase_unknown",
+		status = 400,
+		when = "A `phase` parameter names no reindex phase. The `value` argument carries what was sent."
 	)
 	@APIResponse(
 		responseCode = "409",
@@ -107,15 +147,88 @@ public class ReindexResource {
 		status = 409,
 		when = "The records of the reindexes could not be read. Send the request again once the storage responds."
 	)
-	public ReindexListResponse list() {
+	public ReindexListResponse list(
+		@Parameter(
+			description = """
+				Keeps only the job of this index. Answers an empty listing \
+				rather than `404` when the index has no job.""",
+			example = "products"
+		)
+		@QueryParam("index") String index,
+		@Parameter(
+			description = """
+				Keeps only the jobs in these phases. Repeat the parameter or \
+				separate the phases with commas, as `phase=copying,replaying`.""",
+			example = "copying"
+		)
+		@QueryParam("phase") List<String> phase,
+		@Parameter(
+			description = "Keeps only the jobs whose index name starts with this text."
+		)
+		@QueryParam("prefix") String prefix,
+		@Parameter(
+			description = """
+				The index name to continue after, as the `next` field of the \
+				previous response gave it. The job of the named index is not \
+				included.""",
+			example = "products"
+		)
+		@QueryParam("after") String after,
+		@Parameter(
+			description = """
+				Most jobs to answer. Without it the whole listing is \
+				answered. When more remain, the response carries the last \
+				name in `next`.""",
+			schema = @Schema(
+				type = SchemaType.INTEGER,
+				minimum = "1",
+				maximum = "1000"
+			)
+		)
+		@QueryParam("limit") String limit
+	) {
 		var principal = auth.principal();
+		var phases = parsePhases(phase);
 
-		var found = reindexes.list()
+		var visible = reindexes.list()
 			.select(job -> principal.allows(Permission.INDEXES_READ, job.index()))
-			.collect(ReindexInfo::of)
-			.toSortedListBy(ReindexInfo::index);
+			.select(job -> index == null || job.index().equals(index))
+			.select(job -> phases == null || phases.contains(job.phase()))
+			.collect(ReindexInfo::of);
 
-		return new ReindexListResponse(found);
+		var page = Listing.of(visible, ReindexInfo::index, prefix, after, limit);
+		return new ReindexListResponse(page.entries(), page.next());
+	}
+
+	/**
+	 * Read the phases a listing asked for, or {@code null} when it asked for
+	 * every phase. A parameter may be repeated or hold several phases
+	 * separated by commas.
+	 */
+	private static Set<ReindexPhase> parsePhases(List<String> phase) {
+		if(phase == null || phase.isEmpty()) {
+			return null;
+		}
+
+		var phases = EnumSet.noneOf(ReindexPhase.class);
+		for(var value : phase) {
+			for(var one : value.split(",")) {
+				var id = one.trim();
+				if(id.isEmpty()) {
+					continue;
+				}
+
+				var found = Arrays.stream(ReindexPhase.values())
+					.filter(candidate -> candidate.id().equals(id))
+					.findFirst()
+					.orElseThrow(() -> new ValidationException(
+						PHASE_UNKNOWN.toMessage(Location.create("phase"), "value", id)
+					));
+				phases.add(found);
+			}
+		}
+
+		return phases.isEmpty() ? null : phases;
 	}
 
 	/**

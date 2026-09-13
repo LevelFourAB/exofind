@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
@@ -321,7 +322,7 @@ public class IndexResourceTest {
 			is("index:field:invalid_primary_key_multiple")
 		);
 
-		assertThat(resource.list().indexes().isEmpty(), is(true));
+		assertThat(resource.list(null, null, null).indexes().isEmpty(), is(true));
 
 		// The name is free again, so a corrected definition can be sent
 		create("books", definition());
@@ -405,7 +406,7 @@ public class IndexResourceTest {
 		create("books", definition());
 		create("movies", definition());
 
-		var listed = resource.list().indexes();
+		var listed = resource.list(null, null, null).indexes();
 
 		assertThat(
 			listed.stream().map(IndexListResponse.IndexSummary::name).toList(),
@@ -416,6 +417,62 @@ public class IndexResourceTest {
 			listed.stream().map(IndexListResponse.IndexSummary::liveGeneration).toList(),
 			contains("1", "1")
 		);
+	}
+
+	/**
+	 * A listing is read a page at a time: a limit cuts it short and names
+	 * where to continue, and the page after the last one names nothing.
+	 */
+	@Test
+	public void testListIsPagedByLimitAndAfter() {
+		create("books", definition());
+		create("movies", definition());
+		create("music", definition());
+
+		var first = resource.list(null, null, "2");
+		assertThat(names(first), contains("books", "movies"));
+		assertThat(first.next(), is("movies"));
+
+		var second = resource.list(null, first.next(), "2");
+		assertThat(names(second), contains("music"));
+		assertThat(second.next(), is(nullValue()));
+	}
+
+	@Test
+	public void testListKeepsThePrefixAsked() {
+		create("books", definition());
+		create("movies", definition());
+		create("music", definition());
+
+		var listed = resource.list("m", null, null);
+		assertThat(names(listed), contains("movies", "music"));
+		assertThat(listed.next(), is(nullValue()));
+	}
+
+	/**
+	 * A limit the whole listing fits in names nothing to continue from, so a
+	 * caller reading pages stops without an empty request.
+	 */
+	@Test
+	public void testListWithinTheLimitNamesNoNext() {
+		create("books", definition());
+
+		var listed = resource.list(null, null, "10");
+		assertThat(names(listed), contains("books"));
+		assertThat(listed.next(), is(nullValue()));
+	}
+
+	@Test
+	public void testListWithAnInvalidLimitIsRefused() {
+		var e = assertThrows(ValidationException.class, () -> resource.list(null, null, "0"));
+		assertThat(e.getMessage(), containsString("request:list:limit_invalid"));
+
+		assertThrows(ValidationException.class, () -> resource.list(null, null, "many"));
+		assertThrows(ValidationException.class, () -> resource.list(null, null, "1001"));
+	}
+
+	private static List<String> names(IndexListResponse listed) {
+		return listed.indexes().stream().map(IndexListResponse.IndexSummary::name).toList();
 	}
 
 	@Test
@@ -628,7 +685,7 @@ public class IndexResourceTest {
 			() -> resource.put("books", "*", null, false, uriInfo, definition())
 		);
 
-		assertThat(resource.list().indexes().isEmpty(), is(true));
+		assertThat(resource.list(null, null, null).indexes().isEmpty(), is(true));
 	}
 
 	/**
@@ -664,7 +721,7 @@ public class IndexResourceTest {
 		var response = resource.delete("books");
 		assertThat(response.getStatus(), is(204));
 
-		assertThat(resource.list().indexes().isEmpty(), is(true));
+		assertThat(resource.list(null, null, null).indexes().isEmpty(), is(true));
 		assertThrows(IndexNotFoundException.class, () -> resource.get("books", null));
 	}
 

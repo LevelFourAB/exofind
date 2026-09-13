@@ -2,6 +2,7 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -18,6 +19,7 @@ import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.CreatedKey;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyDefinition;
+import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyListResponse;
 import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
@@ -27,6 +29,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -91,6 +94,10 @@ public class KeyResource {
 			Key credentials are stored only as hashes and cannot be recovered \
 			from listings. A lost credential must be replaced.
 
+			`prefix` keeps the keys whose ID starts with it. `limit` caps the \
+			answer, and a listing cut short names the last ID in `next`; pass \
+			it as `after` to read on. See [Listings](https://exofind.dev/reference/admin-api/#listings).
+
 			Served by whichever node receives the request."""
 	)
 	@APIResponse(
@@ -100,6 +107,16 @@ public class KeyResource {
 			schema = @Schema(implementation = KeyListResponse.class),
 			examples = @ExampleObject(name = "keys", value = KeyListResponse.EXAMPLE)
 		)
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = "The `limit` parameter is out of range.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:list:limit_invalid",
+		status = 400,
+		when = "The `limit` parameter is not a whole number from 1 to 1000."
 	)
 	@APIResponse(
 		responseCode = "409",
@@ -116,11 +133,45 @@ public class KeyResource {
 		status = 409,
 		when = "Key storage answered with an error. Send the request again."
 	)
-	public KeyListResponse list() {
+	public KeyListResponse list(
+		@Parameter(
+			description = "Keeps only the keys whose ID starts with this text."
+		)
+		@QueryParam("prefix") String prefix,
+		@Parameter(
+			description = """
+				The ID to continue after, as the `next` field of the \
+				previous response gave it. The named key is not \
+				included.""",
+			example = "4ff6b760264c1918"
+		)
+		@QueryParam("after") String after,
+		@Parameter(
+			description = """
+				Most keys to answer. Without it the whole listing is \
+				answered. When more remain, the response carries the last \
+				ID in `next`.""",
+			schema = @Schema(
+				type = SchemaType.INTEGER,
+				minimum = "1",
+				maximum = "1000"
+			)
+		)
+		@QueryParam("limit") String limit
+	) {
+		var page = Listing.of(
+			keys.list().collect(KeyDefinitionMapper::toApi),
+			KeyInfo::id,
+			prefix,
+			after,
+			limit
+		);
+
 		return new KeyListResponse(
-			keys.list().collect(KeyDefinitionMapper::toApi).toList(),
+			page.entries(),
 			keys.hasRootKey(),
-			keys.anonymousKeyId().orElse(null)
+			keys.anonymousKeyId().orElse(null),
+			page.next()
 		);
 	}
 

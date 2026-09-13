@@ -2,7 +2,10 @@ package se.l4.exofind.engine.api.v1alpha1.admin;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -15,6 +18,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -33,6 +37,7 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.FieldDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.IndexInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexInfo;
+import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexListResponse;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.ReindexRequest;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.StringFieldDefinition;
 import se.l4.exofind.engine.auth.ForbiddenException;
@@ -244,11 +249,80 @@ public class ReindexResourceTest {
 		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
 		awaitPhase("books", "ready");
 
-		var listed = resource.list();
+		var listed = resource.list(null, null, null, null, null);
 		assertThat(
 			listed.reindexes().stream().map(ReindexInfo::index).toList(),
 			contains("books")
 		);
+	}
+
+	/**
+	 * A poll for the jobs of one index, or for the jobs still running, is one
+	 * request: what the filters leave out is answered as an empty listing
+	 * rather than refused.
+	 */
+	@Test
+	public void theListingIsFilteredByIndexAndPhase() throws Exception {
+		create("books");
+		create("books@2");
+		create("movies");
+
+		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		awaitPhase("books", "ready");
+
+		var ofBooks = resource.list("books", null, null, null, null);
+		assertThat(indexesOf(ofBooks), contains("books"));
+
+		var ofMovies = resource.list("movies", null, null, null, null);
+		assertThat(indexesOf(ofMovies), is(empty()));
+
+		var ready = resource.list(null, List.of("copying,ready"), null, null, null);
+		assertThat(indexesOf(ready), contains("books"));
+
+		var finished = resource.list(null, List.of("done", "cancelled"), null, null, null);
+		assertThat(indexesOf(finished), is(empty()));
+
+		resource.cancel("books");
+
+		var cancelled = resource.list(null, List.of("cancelled"), null, null, null);
+		assertThat(indexesOf(cancelled), contains("books"));
+	}
+
+	@Test
+	public void theListingRefusesAPhaseItDoesNotKnow() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.list(null, List.of("running"), null, null, null)
+		);
+		assertThat(e.getMessage(), containsString("reindex:phase_unknown"));
+	}
+
+	@Test
+	public void theListingIsPagedByLimitAndAfter() throws Exception {
+		create("books");
+		create("books@2");
+		create("movies");
+		create("movies@2");
+
+		indexResource.reindex("books@2", new ReindexRequest(null, "manual"));
+		indexResource.reindex("movies@2", new ReindexRequest(null, "manual"));
+		awaitPhase("books", "ready");
+		awaitPhase("movies", "ready");
+
+		var first = resource.list(null, null, null, null, "1");
+		assertThat(indexesOf(first), contains("books"));
+		assertThat(first.next(), is("books"));
+
+		var second = resource.list(null, null, null, first.next(), "1");
+		assertThat(indexesOf(second), contains("movies"));
+		assertThat(second.next(), is(nullValue()));
+
+		var prefixed = resource.list(null, null, "mo", null, null);
+		assertThat(indexesOf(prefixed), contains("movies"));
+	}
+
+	private static List<String> indexesOf(ReindexListResponse listed) {
+		return listed.reindexes().stream().map(ReindexInfo::index).toList();
 	}
 
 	@Test

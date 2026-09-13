@@ -14,7 +14,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *
  * @param indexes
  *   indexes visible to the caller, ordered by name
+ * @param next
+ *   the name to pass as {@code after} to list the indexes after these, or
+ *   {@code null} when the response holds the rest
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(
 	description = """
 		The indexes held across the deployment. Definitions and status are \
@@ -23,7 +27,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 )
 public record IndexListResponse(
 	@Schema(description = "The indexes visible to the key, ordered by name.")
-	List<IndexSummary> indexes
+	List<IndexSummary> indexes,
+
+	@Schema(
+		description = """
+			The name to pass as the `after` parameter to list the indexes \
+			after these. Present only when a `limit` cut the listing short.""",
+		examples = "products"
+	)
+	String next
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI

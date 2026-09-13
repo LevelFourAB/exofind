@@ -215,6 +215,8 @@ The `keys` array contains deployment keys shared across all nodes. The `rootKeyC
 
 A node that cannot store keys returns `409 Conflict` with the code `auth:keys:unavailable` instead of an empty list, so an empty `keys` array means the deployment holds no key.
 
+The listing takes the `prefix`, `limit` and `after` query parameters every admin [listing](admin-api.md#listings) takes. `prefix` matches the key ID. A listing cut short by `limit` carries the last ID in `next`; pass it as `after` to read on. The `rootKeyConfigured` and `anonymousKey` fields are answered on every page.
+
 ### Rotating a credential
 
 To replace the credential of a key without changing what the key allows, send a `POST` request to `/v1alpha1/admin/keys/{id}/actions/rotate`. The response has the same shape as key creation:

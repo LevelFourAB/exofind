@@ -110,6 +110,7 @@ The following table lists the fields and their error codes:
 | `length` of a highlight | `search:highlight:length_invalid` | 1 | 10000, fixed |
 | `index` of an explanation | `search:explain:index_invalid` | 0 | no cap |
 | `limit` of a document scan | `request:scan:limit_invalid` | 1 | 10000, fixed |
+| `limit` of an admin listing | `request:list:limit_invalid` | 1 | 1000, fixed |
 
 A cap on the request as a whole, rather than on one field, keeps a code of its own, because there is no single field to point a caller at:
 

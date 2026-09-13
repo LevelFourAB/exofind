@@ -58,6 +58,20 @@ A `DELETE` request on an index deletes the index and all of its generations. A `
 
 The `promote` action configures the index to serve from the specified generation. The change takes effect immediately on the receiving node and within `EXOFIND_INDEXES_REFRESH_INTERVAL` on all other nodes. To roll back a deployment, promote the previous generation.
 
+## Listings
+
+The index, key and reindex listings answer every entry the key can see, ordered by name. Each takes the same three query parameters to read part of a listing:
+
+| Parameter | Effect |
+|-----------|--------|
+| `prefix` | Keeps only the entries whose name starts with this text. For keys the name is the ID; for reindex jobs it is the index name. |
+| `limit` | Caps how many entries the response holds, from 1 to 1000. A listing cut short carries the last name it holds in `next`. Without a `limit` the whole listing is answered and `next` is absent. |
+| `after` | The name to continue after, as `next` gave it. The named entry is not included. |
+
+To read a long listing, send the first request with a `limit`, and repeat it with `after` set to `next` until a response carries no `next`. An entry the key has no permission on is left out before the page is cut, so it counts against neither the limit nor the place to continue from. A `limit` outside its range returns `400 Bad Request` with `request:list:limit_invalid`.
+
+The reindex listing also takes `index`, which keeps the job of one index, and `phase`, which keeps the jobs in the named [phases](#job-record-and-phases). See [Job status and fleet-wide listing](#job-status-and-fleet-wide-listing).
+
 ## Index resource
 
 A `GET` request on an index endpoint and every successful `PUT` request return an index resource:
@@ -605,7 +619,12 @@ A job progresses through the following phases:
 
 To check the status of a job on an index, send a `GET` request to `/v1alpha1/admin/reindexes/{name}`, where `{name}` is the index or one generation of it. The job belongs to the index in either case. If no job exists for the index, the server returns `404 Not Found` with the error code `reindex:not_found`.
 
-To list every reindex job across the deployment, send a `GET` request to `/v1alpha1/admin/reindexes`.
+To list every reindex job across the deployment, send a `GET` request to `/v1alpha1/admin/reindexes`. The listing takes the `prefix`, `limit` and `after` parameters every [listing](#listings) takes, and two of its own:
+
+- `index` keeps the job of one index. An index without a job answers an empty listing rather than `404`, so a poll for a job needs no error handling.
+- `phase` keeps the jobs in the named phases. Repeat the parameter or separate the phases with commas, as `phase=copying,replaying`. A value that names no phase returns `400 Bad Request` with `reindex:phase_unknown`.
+
+A finished job stays in the listing until the next job on its index replaces it, so a deployment that has reindexed many indexes answers a long listing. Filter on `phase` to see what is running, or page with `limit` and `after`.
 
 Both endpoints require the `indexes.read` permission. Status and fleet-wide listings are served from a durable job record, so any node can serve the request and returns the same response.
 

@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * The deployment API keys and the local key configuration of the answering
  * node.
@@ -18,7 +20,11 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  * @param anonymousKey
  *   ID of the key used for unauthenticated requests, or {@code null} if
  *   unauthenticated requests are rejected
+ * @param next
+ *   the ID to pass as {@code after} to list the keys after these, or
+ *   {@code null} when the response holds the rest
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(
 	description = """
 		Deployment API keys and node key configuration. The keys are shared across \
@@ -44,7 +50,16 @@ public record KeyListResponse(
 			permission other than `search`.""",
 		examples = "fe3747c2761ef89d"
 	)
-	String anonymousKey
+	@JsonInclude(JsonInclude.Include.ALWAYS)
+	String anonymousKey,
+
+	@Schema(
+		description = """
+			The ID to pass as the `after` parameter to list the keys after \
+			these. Present only when a `limit` cut the listing short.""",
+		examples = "4ff6b760264c1918"
+	)
+	String next
 ) {
 	/**
 	 * The example response, as the JSON the engine answers with. The OpenAPI

@@ -154,7 +154,11 @@ public class IndexResource {
 			the live generation each answers for.
 
 			Index listings omit indexes on which the key has no permissions \
-			rather than refusing the listing."""
+			rather than refusing the listing.
+
+			`prefix` keeps the indexes whose name starts with it. `limit` \
+			caps the answer, and a listing cut short names the last index in \
+			`next`; pass it as `after` to read on. See [Listings](https://exofind.dev/reference/admin-api/#listings)."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -164,18 +168,55 @@ public class IndexResource {
 			examples = @ExampleObject(name = "indexes", value = IndexListResponse.EXAMPLE)
 		)
 	)
-	public IndexListResponse list() {
+	@APIResponse(
+		responseCode = "400",
+		description = "The `limit` parameter is out of range.",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "request:list:limit_invalid",
+		status = 400,
+		when = "The `limit` parameter is not a whole number from 1 to 1000."
+	)
+	public IndexListResponse list(
+		@Parameter(
+			description = "Keeps only the indexs whose name starts with this text."
+		)
+		@QueryParam("prefix") String prefix,
+		@Parameter(
+			description = """
+				The name to continue after, as the `next` field of the \
+				previous response gave it. The named index is not \
+				included.""",
+			example = "products"
+		)
+		@QueryParam("after") String after,
+		@Parameter(
+			description = """
+				Most indexs to answer. Without it the whole listing is \
+				answered. When more remain, the response carries the last \
+				name in `next`.""",
+			schema = @Schema(
+				type = SchemaType.INTEGER,
+				minimum = "1",
+				maximum = "1000"
+			)
+		)
+		@QueryParam("limit") String limit
+	) {
 		var principal = auth.principal();
-		var found = indexes.getRegistered()
+		var visible = indexes.getRegistered()
 			.select(index -> principal.allows(Permission.INDEXES_READ, index.name()))
 			.collect(index -> new IndexListResponse.IndexSummary(
 				index.name(),
 				index.live(),
 				toGenerations(index)
-			))
-			.toSortedListBy(IndexListResponse.IndexSummary::name);
+			));
 
-		return new IndexListResponse(found);
+		var page = Listing.of(
+			visible, IndexListResponse.IndexSummary::name, prefix, after, limit
+		);
+		return new IndexListResponse(page.entries(), page.next());
 	}
 
 	/**
