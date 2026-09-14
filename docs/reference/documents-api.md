@@ -284,6 +284,89 @@ The endpoint returns status `204 No Content`. The batch action remains the only 
 PATCH /v1alpha1/indexes/foods/documents/1
 ```
 
+## Reading one document
+
+```
+GET /v1alpha1/indexes/{name}/documents/{key}
+```
+
+Reads the single document indexed under the specified primary key, returning it as originally indexed.
+
+### Path parameters
+
+The request requires the following path parameters:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | string | Name of the index. A generation is named as `books@2`. |
+| `key` | string | Primary key of the document to read. Parsed according to the key field type. |
+
+The key arrives as text regardless of the declared key field type. For example, a whole-number key field reads the text `"2"` as the number `2`.
+
+### Permissions and routing
+
+Reading a document requires the `documents.read` permission at the index scope. Anonymous requests are refused. The `writer` and `admin` roles include this permission; the `reader` role does not.
+
+Read requests are answered directly by the node that receives them, using data that the node has pulled from storage. The request is never forwarded to the indexer node.
+
+### Request headers
+
+The request supports the following headers:
+
+| Header | Description |
+| --- | --- |
+| `X-Exofind-Freshness` | Optional. A freshness token returned by an earlier response. The document is read only once the node holds the state the token names. |
+
+### Response
+
+The endpoint returns status `200 OK` with the document under `document` and the state it was read from under `freshness`:
+
+```json
+{
+  "document": { "id": "1", "name": { "sv": "blåbärssylt" }, "energy": 234 },
+  "freshness": "AQoIcHJvZHVjdHMSATIYBw"
+}
+```
+
+The `document` value is formatted exactly as the indexing endpoint accepts it, so you can send it directly back to `POST /v1alpha1/indexes/{name}/documents` inside a `documents` array.
+
+`freshness` is a token naming the state the document was read from. Pass it in the `X-Exofind-Freshness` header of a later request to answer that request from this state or a later state on any node.
+
+The endpoint has no newline-delimited form. One document is returned as one JSON object.
+
+### Consistency and visibility
+
+A read request is answered from a point-in-time snapshot and sees committed data only:
+
+- A document indexed since the last commit is reported as missing with `document:not_found`.
+- A document removed since the last commit is still returned.
+
+To read back a write as soon as it lands, pass the freshness token returned by the write in the `X-Exofind-Freshness` header.
+
+### Errors
+
+The endpoint returns the following errors:
+
+| Condition | Error code | Status |
+| --- | --- | --- |
+| Nothing is indexed under the key, as of the last commit | `document:not_found` | 404 |
+| No index of that name on this node, or the API key has no permission on it | `index:not_found` | 404 |
+| The key cannot be read as the type of the primary key field | `search:value_invalid` | 400 |
+| The index definition declares no primary key | `index:no_primary_key` | 400 |
+| The index is defined with `source: none` and keeps no document copies | `document:source_not_kept` | 400 |
+| The freshness token is not one the engine issued | `search:freshness:invalid` | 400 |
+| The freshness token is of a format version this node does not read | `search:freshness:version_unsupported` | 400 |
+| The freshness token is of another index than the path names | `search:freshness:index_mismatch` | 400 |
+| The node did not reach the state the freshness token asks for | `search:freshness:unavailable` | 503 |
+| The request raced the index being closed to free local resources | `index:closed` | 503 |
+
+### Example
+
+```http
+GET /v1alpha1/indexes/foods/documents/1
+Authorization: Bearer <key>
+```
+
 ## Reading documents
 
 ```

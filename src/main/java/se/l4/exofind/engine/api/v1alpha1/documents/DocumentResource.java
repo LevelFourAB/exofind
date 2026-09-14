@@ -42,6 +42,7 @@ import se.l4.exofind.engine.api.v1alpha1.FreshnessTokens;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DeleteResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentFailure;
+import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.ScanResponse;
@@ -115,7 +116,9 @@ import jakarta.ws.rs.core.StreamingOutput;
  * you to populate a new generation from the one it replaces or create backups
  * without the originating source system. Responses are always bounded, so
  * reading an entire index requires a sequence of requests, each resuming after
- * the primary key returned by the previous request.
+ * the primary key returned by the previous request. A single document is read
+ * by its key in the URL path instead. A key that names no indexed document is
+ * refused with a 404, unlike removal, which takes any key.
  *
  * <p>Write requests run on the index writer node; a request received by another
  * node is forwarded automatically (see {@code IndexerForwardFilter}). Read
@@ -2457,6 +2460,174 @@ public class DocumentResource {
 		}
 
 		return Lists.immutable.ofAll(keys);
+	}
+
+	/**
+	 * Reads one document back out of an index by its primary key.
+	 *
+	 * <p>Provide the key as text in the URL path, parsed according to the key
+	 * field type.
+	 *
+	 * @param name
+	 * @param key
+	 * @return
+	 *   the document, formatted as originally indexed, with the state it was
+	 *   read from
+	 */
+	@GET
+	@Path("/{key}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.DOCUMENTS_READ)
+	@Operation(
+		operationId = "readDocument",
+		summary = "Read a document by key",
+		description = """
+			Reads the document indexed under the specified primary key, \
+			returning it as originally indexed. The document sits under \
+			`document`, so send that value back to `POST \
+			/v1alpha1/indexes/{name}/documents` to index it again.
+
+			The read is answered from a point-in-time snapshot of the index \
+			and sees committed data only, so a document indexed since the last \
+			commit is reported as missing and one removed since the last \
+			commit is still returned. To read a write back as soon as it \
+			lands, pass the freshness token the write returned in the \
+			`X-Exofind-Freshness` header.
+
+			The index has to declare a primary key and retain document source \
+			copies.
+
+			Read requests are served directly by whichever node receives them, \
+			using data that the node has pulled from storage, and are never \
+			forwarded to the writer."""
+	)
+	@APIResponse(
+		responseCode = "200",
+		description = "The document, formatted as originally indexed.",
+		content = @Content(
+			schema = @Schema(implementation = DocumentResponse.class),
+			examples = @ExampleObject(name = "document", value = DocumentResponse.EXAMPLE)
+		)
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The key cannot be read as the type of the primary key field, the \
+			index declares no primary key, or the index keeps no copies of its \
+			documents.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "search:value_invalid",
+		status = 400,
+		when = "The key in the path cannot be read as the type of the primary key field."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so a document cannot be named."
+	)
+	@ReturnsError(
+		value = "document:source_not_kept",
+		status = 400,
+		when = "The index does not store document copies, so there is nothing to return."
+	)
+	@ReturnsError(
+		value = "search:freshness:invalid",
+		status = 400,
+		when = "The `X-Exofind-Freshness` header carries a token the engine did not issue. Pass a token back unchanged."
+	)
+	@ReturnsError(
+		value = "search:freshness:version_unsupported",
+		status = 400,
+		when = "The freshness token was issued in a format version this node does not read. The `version` argument carries it; send the request to a node of the release that issued the token."
+	)
+	@ReturnsError(
+		value = "search:freshness:index_mismatch",
+		status = 400,
+		when = "The freshness token is of another index than the one in the path. The `index` argument carries the index the token is of."
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			Nothing is indexed under the specified key, no index with the \
+			specified name exists on this node, or the API key lacks \
+			permissions on the index.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "document:not_found",
+		status = 404,
+		when = "Nothing is indexed under the key in the path, as of the last commit."
+	)
+	@ReturnsError(
+		value = "index:not_found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "search:freshness:unavailable",
+		status = 503,
+		when = "The node did not reach the state the freshness token asks for within `EXOFIND_SEARCH_FRESHNESS_WAIT`. Send the request again after the `Retry-After` header."
+	)
+	@Parameter(
+		name = FreshnessTokens.HEADER,
+		in = ParameterIn.HEADER,
+		description = """
+			A freshness token an earlier response returned. The document is \
+			read only once the node holds the state it names.""",
+		example = "AQoIcHJvZHVjdHMSATIYBw"
+	)
+	public DocumentResponse read(
+		@Parameter(
+			description = """
+				Name of the index to read, optionally naming one generation as \
+				`books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		@Parameter(
+			description = """
+				Primary key of the document to read. Parsed according to the \
+				key field type.""",
+			example = "1"
+		)
+		@PathParam("key") String key
+	) {
+		var index = freshnessWaiter.await(
+			name,
+			FreshnessTokens.decode(null, freshnessHeader(), name)
+		);
+
+		index.checkReadable();
+
+		Document document;
+		try {
+			document = index.getDocument(index.parsePrimaryKey(key));
+		} catch(IOException e) {
+			throw new IndexException(READ_ERROR, e, "index", name);
+		}
+
+		if(document == null) {
+			throw new IndexDocumentNotFoundException(key);
+		}
+
+		return new DocumentResponse(
+			document,
+			FreshnessTokens.encode(freshnessWaiter.stateOf(index))
+		);
 	}
 
 	/**

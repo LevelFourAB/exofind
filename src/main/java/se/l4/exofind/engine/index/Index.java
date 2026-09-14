@@ -4171,6 +4171,32 @@ public class Index {
 		return schema.getPrimaryKey().orElseThrow(() -> new IndexNoPrimaryKeyException(id));
 	}
 
+	/**
+	 * Read the stored copy of the document a primary key names, formatted as it
+	 * was indexed.
+	 *
+	 * <p>The read is answered from the last commit, so a document indexed since
+	 * then is not returned and one removed since then still is. Reading holds
+	 * the index against a synchronization pull while it runs.
+	 *
+	 * <p>An index that keeps no copy of its documents answers with the fields
+	 * it stores and the signal values it holds, and leaves out the rest.
+	 * {@link #checkReadable()} says whether a whole document can be read back.
+	 *
+	 * @param primaryKey
+	 *   the key as the type of the key field holds it - text for a string key,
+	 *   a whole number for a numeric one. {@link #parsePrimaryKey(String)}
+	 *   reads a key that arrived as text into that type
+	 * @return
+	 *   the document, or {@code null} when nothing is indexed under the key
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key, so no document can be named
+	 * @throws IndexInvalidQueryValueException
+	 *   if the key is not a value the primary key field holds
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 * @throws IOException
+	 */
 	public Document getDocument(Object primaryKey) throws IOException {
 		syncLock.readLock().lock();
 		try {
@@ -4178,10 +4204,10 @@ public class Index {
 				throw new IndexClosedException(id);
 			}
 
+			var primaryKeyField = primaryKeyField();
+
 			try(var handle = searcherManager.acquire()) {
 				var searcher = handle.getSearcher();
-
-				var primaryKeyField = primaryKeyField();
 
 				var encounter = new IndexEncounterImpl(schema.getResources(), schema.isHighlightingInPostings());
 				encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
@@ -4477,6 +4503,39 @@ public class Index {
 	}
 
 	/**
+	 * Check what reading whole documents back refuses, before any is read.
+	 *
+	 * <p>{@link #getDocument(Object)} answers an index that keeps no copy of
+	 * its documents with the parts it still holds. A caller handing documents
+	 * on as they were indexed asks this first, so that an index with nothing
+	 * whole to give is refused instead of answered in part.
+	 *
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key
+	 * @throws IndexSourceNotKeptException
+	 *   if the index keeps no copy of its documents
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 */
+	public void checkReadable() {
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				throw new IndexClosedException(id);
+			}
+
+			// Called for the refusal it raises: a document is named by its key
+			primaryKeyField();
+
+			if(!schema.isSourceStored()) {
+				throw new IndexSourceNotKeptException(id);
+			}
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
 	 * Check what a {@link #scanDocuments scan} refuses before it reads a
 	 * document, for a caller that cannot turn a refusal into its answer once
 	 * it has started writing one.
@@ -4496,16 +4555,10 @@ public class Index {
 	public void checkScannable(Object after) {
 		syncLock.readLock().lock();
 		try {
-			if(state == IndexState.CLOSED) {
-				throw new IndexClosedException(id);
-			}
-
-			var primaryKeyField = primaryKeyField();
-			if(!schema.isSourceStored()) {
-				throw new IndexSourceNotKeptException(id);
-			}
+			checkReadable();
 
 			if(after != null) {
+				var primaryKeyField = primaryKeyField();
 				primaryKeyField.getType()
 					.createPrimaryKeyTerm(primaryKeyEncounter(primaryKeyField), after);
 			}

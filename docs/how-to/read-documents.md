@@ -64,6 +64,31 @@ Before you read documents, ensure you have:
    - Documents modified after being read are returned in the state they had when read.
    - Documents deleted after being read remain included in earlier responses.
 
+## Reading one document by its key
+
+To inspect a single document, send a `GET` request to `/v1alpha1/indexes/{name}/documents/{key}`:
+
+```http
+GET /v1alpha1/indexes/foods/documents/1
+```
+
+The response returns the document object:
+
+```json
+{
+  "document": { "id": "1", "name": { "sv": "blåbärssylt" }, "energy": 234 },
+  "freshness": "AQoIcHJvZHVjdHMSATIYBw"
+}
+```
+
+The document sits under `document` and can be sent straight back to the indexing endpoint.
+
+If nothing is indexed under the key, the request returns a 404 status with `document:not_found`.
+
+The read sees committed data only, so a document indexed since the last commit reads as missing unless you pass the freshness token the write returned in the `X-Exofind-Freshness` header.
+
+For more details, see [Reading one document](../reference/documents-api.md#reading-one-document) in the Documents API reference.
+
 ## Confirming the result
 
 Verify that the export completed and retrieved the expected dataset:
