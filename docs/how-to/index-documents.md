@@ -41,6 +41,21 @@ Before you index documents, ensure you have:
 
    Documents are indexed as the request body is read. Stream the entire file in one request if the request can be reissued, or split it into requests of a few thousand documents if retries should not start from the beginning.
 
+   To send a single document to its own URL, send a `PUT` request to `/v1alpha1/indexes/{index_name}/documents/{key}`:
+
+   ```http
+   PUT /v1alpha1/indexes/products/documents/1
+   Content-Type: application/json
+
+   {
+     "name": "Rain jacket",
+     "category": "Outerwear",
+     "price": 129
+   }
+   ```
+
+   The body can leave the primary key field out. The document is indexed under the key in the URL. The document goes in whole, so a field left out is not kept. To load a dataset, use one of the batch forms above. This form costs one request for each document.
+
 2. Commit changes (optional for bulk loads):
 
    The index writer commits automatically based on indexed volume or elapsed time (see [Committing](../reference/configuration.md#committing)). If you stream a bulk dataset, send an explicit commit request after all data is loaded:

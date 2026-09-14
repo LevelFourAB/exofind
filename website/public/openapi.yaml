@@ -10593,6 +10593,181 @@ paths:
       - writer
       - admin
       x-permission-anonymous: false
+    put:
+      summary: Index a document under a key
+      description: |-
+        Indexes the document in the request body under the primary key in the path, replacing whatever is indexed under that key. Indexing is a statement of desired state, so repeating the request produces the same outcome and the response says the same thing whether or not a document was indexed under the key before the request.
+
+        The body is one document object, formatted like an entry of `POST /v1alpha1/indexes/{name}/documents`. Leave the primary key field out. The document is indexed under the key in the path. A body that does give the primary key field has to give that same key.
+
+        A document sent this way goes to the index as a whole. Use `PATCH` on the same path to change named parts of a document and leave the rest.
+
+        One request carries one document. To load a dataset, send batches to `POST /v1alpha1/indexes/{name}/documents`, which takes a newline delimited body and costs one request for each batch instead of one for each document.
+
+        Changes become searchable and replicate to remote storage after the index commits. The writer commits automatically based on indexed document volume or elapsed time. To commit changes immediately, call `POST /v1alpha1/admin/indexes/{name}/actions/commit`.
+
+        The index definition has to declare a primary key.
+
+        The operation runs on the index writer node. A write request received by another node is forwarded automatically.
+
+        Requires the `documents.write` permission on the index the path names. The `writer` and `admin` roles include it.
+      operationId: putDocument
+      tags:
+      - Documents
+      parameters:
+      - description: Primary key to index the document under. Parsed according to
+          the key field type.
+        example: "1"
+        name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      - description: "Name of the index to write to, optionally specifying a generation\
+          \ such as `books@2`."
+        example: books
+        name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: "The document, keyed by field name. The primary key field can\
+          \ be left out, because the document is indexed under the key in the path."
+        content:
+          application/json:
+            examples:
+              document:
+                summary: A document with a locale-specific field
+                value:
+                  name:
+                    sv: blåbärssylt
+                  tags:
+                  - sylt
+                  - bär
+                  energy: 234
+            schema:
+              type: object
+        required: true
+      responses:
+        "204":
+          description: "The document was indexed, whether or not a document existed\
+            \ under the specified key."
+        "400":
+          description: |-
+            The key cannot be read as the type of the primary key field, the index declares no primary key, the body names another document than the path, or the index refused the document.
+
+            Error codes: `search:value_invalid` - The key in the path cannot be read as the type of the primary key field. `index:no_primary_key` - The index definition declares no primary key, so a document cannot be named. `document:key_conflicting` - The body gives the primary key field a value other than the key in the path. `request:body_required` - The request carries no document. `index:generation:unsettled` - The generation the index serves from kept changing while the write was made. Send the request again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: search:value_invalid
+            when: The key in the path cannot be read as the type of the primary key
+              field.
+          - code: index:no_primary_key
+            when: "The index definition declares no primary key, so a document cannot\
+              \ be named."
+          - code: document:key_conflicting
+            when: The body gives the primary key field a value other than the key
+              in the path.
+          - code: request:body_required
+            when: The request carries no document.
+          - code: index:generation:unsettled
+            when: The generation the index serves from kept changing while the write
+              was made. Send the request again.
+        "401":
+          description: |-
+            The request carries no credential this node accepts. Absent, malformed, unknown and lapsed keys are all answered alike, so a refusal cannot be used to find out which keys exist. The response carries `WWW-Authenticate: Bearer`.
+
+            Error codes: `auth:unauthenticated` - The request carries no credential this node accepts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:unauthenticated
+            when: The request carries no credential this node accepts.
+        "403":
+          description: |-
+            The API key does not have the `documents.write` permission.
+
+            Error codes: `auth:forbidden` - The key is accepted but does not hold the `documents.write` permission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: auth:forbidden
+            when: The key is accepted but does not hold the `documents.write` permission.
+        "404":
+          description: |-
+            No index with the specified name exists on this node, or the API key lacks permissions on the index.
+
+            Error codes: `index:not_found` - The node holds no such index, or the key has no permission on it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: index:not_found
+            when: "The node holds no such index, or the key has no permission on it."
+        "409":
+          description: |-
+            No node is available to write the index, the index is currently synchronizing, or the target generation is locked by an active reindex job.
+
+            Error codes: `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `index:out_of_date` - The index is synchronizing. Send the request again. `index:readonly` - The node lost the writer role while the request ran. Send the request again to reach the new writer. `reindex:target_busy` - An active reindex job holds the target generation. Wait for the job, or write to another generation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: indexer:unavailable
+            when: No node is available to write the index. Send the request again
+              once one is.
+          - code: index:out_of_date
+            when: The index is synchronizing. Send the request again.
+          - code: index:readonly
+            when: The node lost the writer role while the request ran. Send the request
+              again to reach the new writer.
+          - code: reindex:target_busy
+            when: "An active reindex job holds the target generation. Wait for the\
+              \ job, or write to another generation."
+        "502":
+          description: |-
+            The request was forwarded to the index writer and the writer did not respond.
+
+            Error codes: `indexer:unreachable` - The request was forwarded to the index writer and the writer did not answer. Send it again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: indexer:unreachable
+            when: The request was forwarded to the index writer and the writer did
+              not answer. Send it again.
+        "503":
+          description: |-
+            The request raced the index being closed to free local resources. Repeating the request reopens the index.
+
+            Error codes: `index:closed` - The request raced the index being closed to free local resources. Sending it again reopens the index.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: index:closed
+            when: The request raced the index being closed to free local resources.
+              Sending it again reopens the index.
+      security:
+      - apiKey: []
+      x-required-permission: documents.write
+      x-permission-scope: index
+      x-permission-roles:
+      - writer
+      - admin
+      x-permission-anonymous: false
     patch:
       summary: Update fields of one document
       description: |-

@@ -3,6 +3,7 @@ package se.l4.exofind.engine.api.v1alpha1.documents;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
@@ -71,6 +72,7 @@ import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -117,8 +119,8 @@ import jakarta.ws.rs.core.StreamingOutput;
  * without the originating source system. Responses are always bounded, so
  * reading an entire index requires a sequence of requests, each resuming after
  * the primary key returned by the previous request. A single document is read
- * by its key in the URL path instead. A key that names no indexed document is
- * refused with a 404, unlike removal, which takes any key.
+ * by its key in the URL path instead. A read of a key nothing is indexed
+ * under is refused with a 404, unlike removal, which takes any key.
  *
  * <p>Write requests run on the index writer node; a request received by another
  * node is forwarded automatically (see {@code IndexerForwardFilter}). Read
@@ -223,12 +225,17 @@ public class DocumentResource {
 		.withStatus(400)
 		.withMessage("A change is required");
 
-	private static final ErrorType UPDATE_KEY_CONFLICTING =
+	private static final ErrorType DOCUMENT_MISSING_BODY = ErrorType
+		.withCode("request:body_required")
+		.withStatus(400)
+		.withMessage("A document is required");
+
+	private static final ErrorType KEY_CONFLICTING =
 		ErrorType.withCode("document:key_conflicting")
 			.withStatus(400)
 			.withArguments("key", "name")
 			.withMessage(
-				"The document to change is the one the path names, `{{key}}`, so `{{name}}` in the body cannot name another"
+				"The request is for the document `{{key}}`, so `{{name}}` in the body cannot give another key"
 			);
 
 	private static final ErrorType DELETE_TARGET_REQUIRED =
@@ -1421,6 +1428,266 @@ public class DocumentResource {
 	}
 
 	/**
+	 * Indexes one document under the primary key in the URL path, replacing
+	 * whatever is indexed under that key.
+	 *
+	 * <p>Provide the key as text in the URL path, parsed according to the key
+	 * field type. The body can leave the primary key field out, because the
+	 * document is indexed under the key in the path.
+	 *
+	 * @param name
+	 * @param key
+	 * @param body
+	 *   the whole document, keyed by field name
+	 * @return
+	 *   no content, whether or not a document was indexed under the key before
+	 *   the request
+	 */
+	@PUT
+	@Path("/{key}")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@RequiresPermission(Permission.DOCUMENTS_WRITE)
+	@ServedBy(ServedBy.Node.INDEXER)
+	@Operation(
+		operationId = "putDocument",
+		summary = "Index a document under a key",
+		description = """
+			Indexes the document in the request body under the primary key in \
+			the path, replacing whatever is indexed under that key. Indexing \
+			is a statement of desired state, so repeating the request produces \
+			the same outcome and the response says the same thing whether or \
+			not a document was indexed under the key before the request.
+
+			The body is one document object, formatted like an entry of `POST \
+			/v1alpha1/indexes/{name}/documents`. Leave the primary key field \
+			out. The document is indexed under the key in the path. A body \
+			that does give the primary key field has to give that same key.
+
+			A document sent this way goes to the index as a whole. Use `PATCH` \
+			on the same path to change named parts of a document and leave the \
+			rest.
+
+			One request carries one document. To load a dataset, send batches \
+			to `POST /v1alpha1/indexes/{name}/documents`, which takes a \
+			newline delimited body and costs one request for each batch \
+			instead of one for each document.
+
+			Changes become searchable and replicate to remote storage after \
+			the index commits. The writer commits automatically based on \
+			indexed document volume or elapsed time. To commit changes \
+			immediately, call `POST \
+			/v1alpha1/admin/indexes/{name}/actions/commit`.
+
+			The index definition has to declare a primary key.
+
+			The operation runs on the index writer node. A write request \
+			received by another node is forwarded automatically."""
+	)
+	@APIResponse(
+		responseCode = "204",
+		description = """
+			The document was indexed, whether or not a document existed under \
+			the specified key."""
+	)
+	@APIResponse(
+		responseCode = "400",
+		description = """
+			The key cannot be read as the type of the primary key field, the \
+			index declares no primary key, the body names another document \
+			than the path, or the index refused the document.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@ReturnsError(
+		value = "search:value_invalid",
+		status = 400,
+		when = "The key in the path cannot be read as the type of the primary key field."
+	)
+	@ReturnsError(
+		value = "index:no_primary_key",
+		status = 400,
+		when = "The index definition declares no primary key, so a document cannot be named."
+	)
+	@ReturnsError(
+		value = "document:key_conflicting",
+		status = 400,
+		when = "The body gives the primary key field a value other than the key in the path."
+	)
+	@ReturnsError(
+		value = "request:body_required",
+		status = 400,
+		when = "The request carries no document."
+	)
+	@ReturnsError(
+		value = "index:not_found",
+		status = 404,
+		when = "The node holds no such index, or the key has no permission on it."
+	)
+	@ReturnsError(
+		value = "indexer:unavailable",
+		status = 409,
+		when = "No node is available to write the index. Send the request again once one is."
+	)
+	@ReturnsError(
+		value = "index:out_of_date",
+		status = 409,
+		when = "The index is synchronizing. Send the request again."
+	)
+	@ReturnsError(
+		value = "index:readonly",
+		status = 409,
+		when = "The node lost the writer role while the request ran. Send the request again to reach the new writer."
+	)
+	@ReturnsError(
+		value = "reindex:target_busy",
+		status = 409,
+		when = "An active reindex job holds the target generation. Wait for the job, or write to another generation."
+	)
+	@ReturnsError(
+		value = "indexer:unreachable",
+		status = 502,
+		when = "The request was forwarded to the index writer and the writer did not answer. Send it again."
+	)
+	@ReturnsError(
+		value = "index:closed",
+		status = 503,
+		when = "The request raced the index being closed to free local resources. Sending it again reopens the index."
+	)
+	@ReturnsError(
+		value = "index:generation:unsettled",
+		status = 400,
+		when = "The generation the index serves from kept changing while the write was made. Send the request again."
+	)
+	@APIResponse(
+		responseCode = "404",
+		description = """
+			No index with the specified name exists on this node, or the API \
+			key lacks permissions on the index.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "409",
+		description = """
+			No node is available to write the index, the index is currently \
+			synchronizing, or the target generation is locked by an active \
+			reindex job.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "502",
+		description = """
+			The request was forwarded to the index writer and the writer did \
+			not respond.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "503",
+		description = """
+			The request raced the index being closed to free local resources. \
+			Repeating the request reopens the index.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	public Response put(
+		@Parameter(
+			description = """
+				Name of the index to write to, optionally specifying a \
+				generation such as `books@2`.""",
+			example = "books"
+		)
+		@PathParam("name") String name,
+		@Parameter(
+			description = """
+				Primary key to index the document under. Parsed according to \
+				the key field type.""",
+			example = "1"
+		)
+		@PathParam("key") String key,
+		@RequestBody(
+			description = """
+				The document, keyed by field name. The primary key field can \
+				be left out, because the document is indexed under the key in \
+				the path.""",
+			required = true,
+			content = @Content(
+				schema = @Schema(type = SchemaType.OBJECT, implementation = Object.class),
+				examples = @ExampleObject(
+					name = "document",
+					summary = "A document with a locale-specific field",
+					value = """
+						{ "name": { "sv": "blåbärssylt" }, "tags": ["sylt", "bär"], "energy": 234 }"""
+				)
+			)
+		)
+		Map<String, Object> body
+	) {
+		if(body == null) {
+			throw new ValidationException(DOCUMENT_MISSING_BODY.toMessage(ObjectLocation.root()));
+		}
+
+		checkWritable(name);
+		var landed = new Landed();
+
+		measure("put", () -> write(name, landed, index -> {
+			var primaryKey = index.parsePrimaryKey(key);
+			index.checkPrimaryKey(primaryKey);
+
+			var keyField = index.getPrimaryKey().orElseThrow().getName();
+
+			try {
+				index.addDocument(
+					DocumentMapper.toEngine(index, withKey(index, body, keyField, primaryKey))
+				);
+			} catch(IOException e) {
+				throw new IndexException(IO_ERROR, e, "index", name);
+			}
+
+			return 1;
+		}));
+
+		return Response.noContent()
+			.header(FreshnessTokens.HEADER, landed.token(name))
+			.build();
+	}
+
+	/**
+	 * Give a document the primary key taken from the path, so the write goes
+	 * to the key the request was sent to. A key field the body carries is
+	 * replaced by that key, so the key the write carries has the type the key
+	 * field holds even when the body wrote it as another JSON type.
+	 *
+	 * @throws ValidationException
+	 *   if the body gives the key field another key, which would leave the
+	 *   path and the body disagreeing - the write would go where the body
+	 *   says, and nothing would be indexed under the key that was requested
+	 */
+	private static Map<String, Object> withKey(
+		Index index,
+		Map<String, Object> body,
+		String keyField,
+		Object primaryKey
+	) {
+		var given = body.get(keyField);
+
+		if(given != null && !primaryKey.equals(index.parsePrimaryKey(keyText(given)))) {
+			throw new ValidationException(
+				KEY_CONFLICTING.toMessage(
+					ObjectLocation.root().forField(keyField),
+					"key", keyText(primaryKey),
+					"name", keyField
+				)
+			);
+		}
+
+		/*
+		 * Copied before the key goes in: the body is the request as it was
+		 * read, and an error about it names where a field sat in what arrived.
+		 */
+		var document = new LinkedHashMap<>(body);
+		document.put(keyField, primaryKey);
+
+		return document;
+	}
+
+	/**
 	 * Updates specific fields of the document indexed under the specified
 	 * primary key, leaving the remaining fields unchanged.
 	 *
@@ -1838,7 +2105,7 @@ public class DocumentResource {
 		}
 
 		throw new ValidationException(
-			UPDATE_KEY_CONFLICTING.toMessage(
+			KEY_CONFLICTING.toMessage(
 				ObjectLocation.root().forField(keyField),
 				"key", keyText(primaryKey),
 				"name", keyField

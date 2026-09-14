@@ -4536,6 +4536,40 @@ public class Index {
 	}
 
 	/**
+	 * Check that a key names a document this index could hold, before the key
+	 * is used to look a document up or to write one.
+	 *
+	 * <p>A key that arrived as text is read into the type of the key field by
+	 * {@link #parsePrimaryKey(String)}, which hands back text it could not
+	 * read. This says whether the key field can hold what came out, so that a
+	 * key taken from a URL is refused as a key on every request that carries
+	 * one.
+	 *
+	 * @param primaryKey
+	 *   the key as the type of the key field holds it
+	 * @throws IndexNoPrimaryKeyException
+	 *   if the definition declares no primary key
+	 * @throws IndexInvalidQueryValueException
+	 *   if the key is not a value the primary key field holds
+	 * @throws IndexClosedException
+	 *   if this instance has been closed
+	 */
+	public void checkPrimaryKey(Object primaryKey) {
+		syncLock.readLock().lock();
+		try {
+			if(state == IndexState.CLOSED) {
+				throw new IndexClosedException(id);
+			}
+
+			var primaryKeyField = primaryKeyField();
+			primaryKeyField.getType()
+				.createPrimaryKeyTerm(primaryKeyEncounter(primaryKeyField), primaryKey);
+		} finally {
+			syncLock.readLock().unlock();
+		}
+	}
+
+	/**
 	 * Check what a {@link #scanDocuments scan} refuses before it reads a
 	 * document, for a caller that cannot turn a refusal into its answer once
 	 * it has started writing one.
@@ -4558,9 +4592,7 @@ public class Index {
 			checkReadable();
 
 			if(after != null) {
-				var primaryKeyField = primaryKeyField();
-				primaryKeyField.getType()
-					.createPrimaryKeyTerm(primaryKeyEncounter(primaryKeyField), after);
+				checkPrimaryKey(after);
 			}
 		} finally {
 			syncLock.readLock().unlock();

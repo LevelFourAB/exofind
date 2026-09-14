@@ -107,6 +107,98 @@ The `failed` array is always present and contains entries only when the request 
 
 `freshness` is a token naming the commit the batch lands in. Pass it in `freshness.atLeast` on a search request to read from a state that includes this batch. For more information, see [Freshness](search-api.md#freshness).
 
+## Indexing one document
+
+```
+PUT /v1alpha1/indexes/{name}/documents/{key}
+```
+
+Indexes the document in the request body under the primary key in the path, replacing whatever is indexed under that key.
+
+One request carries one document. To load a dataset, send batches to [`POST /v1alpha1/indexes/{name}/documents`](#indexing-documents), which accepts a newline-delimited body and costs one request for each batch instead of one for each document.
+
+### Path parameters
+
+The request requires the following path parameters:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | string | Name of the index. A generation is named as `books@2`. |
+| `key` | string | Primary key to index the document under. Parsed according to the key field type. |
+
+The key arrives as text regardless of the declared key field type.
+
+### Permissions and routing
+
+Indexing a document requires the `documents.write` permission at the index scope. Anonymous requests are refused. The `writer` and `admin` roles include this permission; the `reader` role does not.
+
+The operation runs on the index writer node. A write request received by another node is forwarded automatically.
+
+### Request body
+
+The body is one document object, formatted like an entry of the `documents` array of `POST /v1alpha1/indexes/{name}/documents`:
+
+```json
+{
+  "name": { "sv": "blåbärssylt" },
+  "tags": ["sylt", "bär"],
+  "energy": 234
+}
+```
+
+Leave the primary key field out. The document is indexed under the key in the path. A body that includes the primary key field must give that same key, or the request returns `document:key_conflicting`. A repeated key can be written as text or as a number, because the engine takes the key from the path.
+
+The content type is `application/json`. The endpoint has no newline-delimited form, because one request carries one document.
+
+### Desired state
+
+Indexing is a statement of desired state. Repeating the request produces the same outcome, and the response is the same whether or not a document was indexed under the key before the request. A request that times out can be sent again without reading the index first.
+
+The endpoint does not require a document to exist. Unlike `PATCH` on the same path, which describes changes to an existing document and returns `404` when nothing is indexed under the key, `PUT` indexes under the key either way.
+
+### Response
+
+The endpoint returns status `204 No Content`, whether or not a document existed under the key.
+
+The `X-Exofind-Freshness` response header carries a token naming the commit the write lands in. Pass it as `freshness.atLeast` on a search request, or in the `X-Exofind-Freshness` header of a read request, to be answered only once the node holds the write.
+
+Changes become searchable and replicate to remote storage after the index commits.
+
+### Index requirements
+
+The index definition must declare a primary key, because the path gives the key to index the document under.
+
+An index defined with `source: none` accepts the document. Indexing needs no copy of what was indexed before.
+
+### Errors
+
+The endpoint returns the following errors:
+
+| Condition | Error code | Status |
+| --- | --- | --- |
+| The key cannot be read as the type of the primary key field | `search:value_invalid` | 400 |
+| The index definition declares no primary key | `index:no_primary_key` | 400 |
+| The body gives the primary key field a value other than the key in the path | `document:key_conflicting` | 400 |
+| The request carries no document | `request:body_required` | 400 |
+| No index of that name on this node, or the API key has no permission on it | `index:not_found` | 404 |
+| No node is available to write the index | `indexer:unavailable` | 409 |
+| The index is synchronizing | `index:out_of_date` | 409 |
+| The node lost the writer role while the request ran | `index:readonly` | 409 |
+| An active reindex job holds the target generation | `reindex:target_busy` | 409 |
+| The request was forwarded to the writer and the writer did not answer | `indexer:unreachable` | 502 |
+| The request raced the index being closed to free local resources | `index:closed` | 503 |
+
+The endpoint also returns every code that a document in a batch is refused with, such as `document:field_unknown`, `document:field_required`, and `document:number:value_invalid`. The whole document is validated as one, so a refused document leaves the index unchanged.
+
+### Example
+
+```http
+PUT /v1alpha1/indexes/foods/documents/1
+Content-Type: application/json
+
+{ "name": "Blueberry jam", "energy": 234 }
+```
+
 ## Changing some of the fields
 
 You can change one document by its key in the URL path, or change several documents in a batch. Both forms describe the change the same way, and both require an index that declares a primary key. A change needs the document source unless it names only [signal fields](field-types.md#signal-fields).
@@ -356,7 +448,7 @@ The endpoint returns the following errors:
 | The index is defined with `source: none` and keeps no document copies | `document:source_not_kept` | 400 |
 | The freshness token is not one the engine issued | `search:freshness:invalid` | 400 |
 | The freshness token is of a format version this node does not read | `search:freshness:version_unsupported` | 400 |
-| The freshness token is of another index than the path names | `search:freshness:index_mismatch` | 400 |
+| The freshness token is of another index than the one in the path | `search:freshness:index_mismatch` | 400 |
 | The node did not reach the state the freshness token asks for | `search:freshness:unavailable` | 503 |
 | The request raced the index being closed to free local resources | `index:closed` | 503 |
 
