@@ -117,6 +117,55 @@ Most write endpoints operate as assertions of desired state:
 
 Because desired-state writes are idempotent, a request that times out can be sent again without inspecting the target state first.
 
+## Actions
+
+An operation that is not a create, read, update or delete on a resource is spelled with an `actions` path segment followed by an imperative verb:
+
+- On a single resource: `/{id}/actions/{verb}`
+- On a collection: `/actions/{verb}`
+
+Every action endpoint uses the `POST` HTTP method.
+
+### Why the actions segment exists
+
+The `actions` segment separates the names of operations from the names of resources so that the two never collide.
+
+On document endpoints, the route `/v1alpha1/indexes/{name}/documents/{key}` matches any text primary key. Without the marker segment, the path `/v1alpha1/indexes/{name}/documents/update` is ambiguous: it could name the batch update operation or a document whose primary key is `update`.
+
+Where no path parameter sits beside the action, the segment reserves the namespace so that a sub-resource added later cannot clash with the name of an existing action.
+
+### Action versus resource test
+
+A segment under `actions/` is an operation on the resource named by the preceding path. Every other segment names a resource.
+
+To determine whether an endpoint is an action or a resource, apply this test:
+
+- If the response is a representation that a client can name and fetch again, the endpoint is a resource.
+- If the endpoint produces a one-shot effect or computes something about another request, the endpoint is an action.
+
+Worked examples:
+
+- `/v1alpha1/indexes/{name}/search` is a resource. It answers with search results.
+- `/v1alpha1/indexes/{name}/suggest` is a resource.
+- `/v1alpha1/indexes/{name}/facets/{field}/values` is a resource. It is a sub-collection of an index.
+- `/v1alpha1/admin/registry/audit` is a resource. It reports the state of the registry.
+- `/v1alpha1/indexes/{name}/search/actions/explain` is an action. It computes an explanation of a search request rather than answering with a resource.
+- `/v1alpha1/admin/indexes/{name}/actions/commit` is an action. It produces an effect and answers with no resource of its own.
+
+### Rules for action endpoints
+
+Every action endpoint follows these rules:
+
+- The method is always `POST`. An action is never served on `GET`, and a response to an action is never cached.
+- An action that acts on one resource sits on that resource (`/{id}/actions/{verb}`). An action that acts on multiple resources sits on the collection (`/actions/{verb}`).
+- The verb is one lowercase word, imperative, and singular, such as `commit`, `promote`, `rotate`, or `cancel`.
+- An action on a collection states in its own reference entry what the response contains when the action succeeds for some targets and fails for others. For example, the batch update endpoint uses the `missing=skip` query parameter and the `missing` array in its response.
+- An action states in its own reference entry whether a repeat is safe. This is an exception to the rule in [Requests as desired state](#requests-as-desired-state). A desired-state write can always be repeated, but an action cannot be assumed to be repeatable. For example, `POST /v1alpha1/indexes/{name}/documents/actions/update` describes a modification rather than desired state; a client that times out must read the document before sending the request again.
+- The name of an action does not change while the version prefix stays the same, following the rules in [What holds for the life of a version](#what-holds-for-the-life-of-a-version).
+- No resource, sub-resource, or collection is named `actions`.
+- The path `/v1alpha1/indexes/{name}/documents/actions` is not answered as an action, because an action always carries a verb after the segment. A document whose primary key is `actions` remains reachable at that path.
+- Every action names the permission it requires in the four OpenAPI extension fields described in [The permission an endpoint requires](#the-permission-an-endpoint-requires), and reports its own error codes. An action is an independent permission surface, not an extension of the permission on the resource it sits under.
+
 ## Primary keys on the wire
 
 A primary key field is either text or a whole number (`int32` or `int64`).
