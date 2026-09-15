@@ -30,10 +30,18 @@ import se.l4.exofind.engine.index.state.IndexerUnavailableException;
 import se.l4.exofind.engine.index.state.IndexerUnreachableException;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.quarkus.vertx.http.runtime.CurrentVertxRequest;
 
 public class EngineExceptionMapperTest {
+	/*
+	 * Built without a request, because none of the cases here asks what the
+	 * request was. The one answer that does - the header that closes the
+	 * connection for a body past the size the node accepts - is checked
+	 * against a running node by StreamedRequestBodyTest.
+	 */
 	private final EngineExceptionMapper mapper = new EngineExceptionMapper(
-		new RequestMetrics(new SimpleMeterRegistry(), false)
+		new RequestMetrics(new SimpleMeterRegistry(), false),
+		new CurrentVertxRequest()
 	);
 
 	private static final ErrorType INVALID = ErrorType.withCode("test:invalid")

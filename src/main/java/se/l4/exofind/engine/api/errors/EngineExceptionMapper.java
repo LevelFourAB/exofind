@@ -14,6 +14,8 @@ import se.l4.exofind.engine.errors.Retryable;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.RequestMetrics;
+import io.quarkus.vertx.http.runtime.CurrentVertxRequest;
+import io.vertx.core.http.HttpVersion;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -34,9 +36,11 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 	private static final Log logger = Log.of(EngineExceptionMapper.class);
 
 	private final RequestMetrics metrics;
+	private final CurrentVertxRequest current;
 
-	public EngineExceptionMapper(RequestMetrics metrics) {
+	public EngineExceptionMapper(RequestMetrics metrics, CurrentVertxRequest current) {
 		this.metrics = metrics;
+		this.current = current;
 	}
 
 	@Override
@@ -73,6 +77,17 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 			response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
 		}
 
+		if(e instanceof RequestBodyTooLargeException && isHttp1()) {
+			/*
+			 * The caller is still sending a body nothing reads, so the
+			 * connection goes down with the answer rather than waiting for the
+			 * rest of it. Only over HTTP/1, where a connection carries one
+			 * request at a time; HTTP/2 refuses the header, and the streams of
+			 * a connection end on their own.
+			 */
+			response.header("Connection", "close");
+		}
+
 		if(e instanceof Retryable retryable) {
 			/*
 			 * Says how long to wait before sending the same request again, in
@@ -84,6 +99,16 @@ public class EngineExceptionMapper implements ExceptionMapper<EngineException> {
 		}
 
 		return response.build();
+	}
+
+	/**
+	 * Whether the request being answered arrived over HTTP/1, which is what
+	 * decides whether the answer may say anything about the connection.
+	 */
+	private boolean isHttp1() {
+		var context = current.getCurrent();
+
+		return context != null && context.request().version() != HttpVersion.HTTP_2;
 	}
 
 	private static ErrorResponse toBody(EngineException e) {

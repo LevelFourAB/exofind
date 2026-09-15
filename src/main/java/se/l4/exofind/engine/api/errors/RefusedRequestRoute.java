@@ -1,15 +1,13 @@
 package se.l4.exofind.engine.api.errors;
 
-import java.util.Optional;
-
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import java.util.Map;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.RequestMetrics;
-import io.quarkus.runtime.configuration.MemorySize;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
@@ -21,13 +19,14 @@ import jakarta.ws.rs.core.Response;
 /**
  * Gives the error body of the API to a body larger than the node accepts.
  *
- * <p>A request whose {@code Content-Length} is past
- * {@code quarkus.http.limits.max-body-size} is refused by the HTTP router
- * before a resource method is chosen, so no
- * {@link jakarta.ws.rs.ext.ExceptionMapper} ever sees it and the refusal the
- * router writes carries no body. This answers such a request first, with the
- * body every other failure carries, and leaves every other request to the rest
- * of the stack.
+ * <p>A request that states a {@code Content-Length} past what
+ * {@link RequestBodyLimits} allows is refused here, before the body arrives and
+ * before a resource method is chosen. Refusing it early is what keeps the node
+ * from reading a body it has already decided not to take.
+ *
+ * <p>A body that states no length is counted as it arrives instead, by
+ * {@link RequestBodyLimitFilter}. Between them every request body the node
+ * reads is bounded.
  *
  * <p>The answer closes the connection, because the caller is still sending a
  * body that nothing reads.
@@ -37,23 +36,24 @@ public class RefusedRequestRoute {
 	private static final Log logger = Log.of(RefusedRequestRoute.class);
 
 	/**
-	 * Where this runs among the handlers of the router. The refusal it replaces
-	 * is written at {@code -2}, so this has to be ahead of that one.
+	 * Where this runs among the handlers of the router. Ahead of everything the
+	 * framework registers, so that a body past the limit is answered before any
+	 * handler asks for it.
 	 */
 	private static final int ORDER = -3;
 
 	private final ObjectMapper mapper;
 	private final RequestMetrics metrics;
-	private final long limit;
+	private final RequestBodyLimits limits;
 
 	public RefusedRequestRoute(
 		ObjectMapper mapper,
 		RequestMetrics metrics,
-		@ConfigProperty(name = "quarkus.http.limits.max-body-size") Optional<MemorySize> limit
+		RequestBodyLimits limits
 	) {
 		this.mapper = mapper;
 		this.metrics = metrics;
-		this.limit = limit.map(MemorySize::asLongValue).orElse(Long.MAX_VALUE);
+		this.limits = limits;
 	}
 
 	/**
@@ -64,15 +64,23 @@ public class RefusedRequestRoute {
 	}
 
 	private void answer(RoutingContext context) {
-		var length = context.request().headers().get(HttpHeaders.CONTENT_LENGTH);
+		var headers = context.request().headers();
+		var limit = limits.forContentType(headers.get(HttpHeaders.CONTENT_TYPE));
+		var length = headers.get(HttpHeaders.CONTENT_LENGTH);
 
-		if(length == null || !isPastLimit(length)) {
+		if(length == null || !isPastLimit(length, limit)) {
 			context.next();
 			return;
 		}
 
 		var status = Response.Status.REQUEST_ENTITY_TOO_LARGE.getStatusCode();
-		var body = RefusedRequestMapper.bodyOf(status);
+		var arguments = ErrorType.toArguments("limit", limit);
+		var body = ErrorResponse.of(
+			RequestBodyTooLargeException.TYPE.getCode(),
+			RequestBodyTooLargeException.TYPE.format(arguments),
+			null,
+			Map.of("limit", Long.toString(limit))
+		);
 
 		String json;
 		try {
@@ -100,7 +108,11 @@ public class RefusedRequestRoute {
 	 * length that is not a number is left to the rest of the stack, which
 	 * refuses the request for being malformed.
 	 */
-	private boolean isPastLimit(String length) {
+	private static boolean isPastLimit(String length, long limit) {
+		if(limit == RequestBodyLimits.NONE) {
+			return false;
+		}
+
 		try {
 			return Long.parseLong(length) > limit;
 		} catch(NumberFormatException e) {

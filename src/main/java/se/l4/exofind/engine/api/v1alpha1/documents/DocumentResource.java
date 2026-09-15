@@ -36,6 +36,7 @@ import se.l4.exofind.engine.api.ExofindApi;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.EngineExceptionMapper;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
+import se.l4.exofind.engine.api.errors.RequestBodyTooLargeException;
 import se.l4.exofind.engine.api.errors.RequestBodyUnreadableException;
 import se.l4.exofind.engine.api.errors.ReturnsError;
 import se.l4.exofind.engine.api.routing.ServedBy;
@@ -141,9 +142,10 @@ import jakarta.ws.rs.core.StreamingOutput;
 public class DocumentResource {
 	/**
 	 * Media type of newline delimited JSON, one document per line - what a
-	 * dataset too large to hold in memory is sent as.
+	 * dataset too large to hold in memory is sent as. Declared for the API as a
+	 * whole, because how large a body in it may be is decided there.
 	 */
-	public static final String NDJSON = "application/x-ndjson";
+	public static final String NDJSON = ExofindApi.NDJSON;
 
 	/**
 	 * How many documents a request that reads them back answers with when it
@@ -452,9 +454,10 @@ public class DocumentResource {
 			Format the request body as `application/json` with a `documents` \
 			array, or `application/x-ndjson` with one document object per line \
 			and no outer wrapper. Newline-delimited documents are indexed as \
-			they are read, so request size is bounded by network capacity \
-			rather than available memory, making it suitable for loading large \
-			datasets.
+			they are read, so the node holds a buffer rather than the whole \
+			body and a single request can carry a whole dataset. A JSON body is \
+			held in memory and is bounded by a smaller size; both sizes are set \
+			by the deployment, and a body past either is refused with `413`.
 
 			Changes become searchable and replicate to remote storage after \
 			the index commits. The writer commits automatically based on \
@@ -485,6 +488,17 @@ public class DocumentResource {
 			from: `position` for the document, `processed` for how many \
 			documents the index took before it, and `line` for the line of a \
 			newline-delimited body.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "413",
+		description = """
+			The request body is larger than the node accepts. The node states \
+			one size for a body it holds in memory and another for a \
+			newline-delimited body it reads as it arrives; the `limit` argument \
+			carries the one this request passed, in bytes. A newline-delimited \
+			body also carries `processed`, how many documents the index took \
+			before the body was cut off, so the rest can be sent again.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -735,9 +749,11 @@ public class DocumentResource {
 	}
 
 	/**
-	 * Put documents into an index, one JSON object per line. The documents
-	 * are indexed as they are read, so the size of the request is what the
-	 * connection can carry rather than what fits in memory.
+	 * Put documents into an index, one JSON object per line. The documents are
+	 * indexed as they are read, so the request costs the node a buffer rather
+	 * than the whole body, and it carries as many documents as the deployment
+	 * allows - by default as many as the connection can carry. See
+	 * {@code RequestBodyLimits}.
 	 *
 	 * @param name
 	 * @param onError
@@ -757,6 +773,11 @@ public class DocumentResource {
 	 * dropped in the merge, so what it does is said in that operation's
 	 * description instead.
 	 */
+	@ReturnsError(
+		value = "request:body_too_large",
+		status = 413,
+		when = "The body passed the size the node accepts for a newline-delimited request. The documents read before that are indexed; `processed` says how many, so the rest can be sent again."
+	)
 	@ReturnsError(
 		value = "request:body_unreadable",
 		status = 400,
@@ -810,6 +831,8 @@ public class DocumentResource {
 
 					written++;
 				}
+			} catch(RequestBodyTooLargeException e) {
+				throw tooLarge(e, read, written);
 			} catch(JacksonException e) {
 				throw malformed(e, read, written);
 			} catch(IOException e) {
@@ -898,6 +921,17 @@ public class DocumentResource {
 			carry where in the batch the change sat and how much of the batch \
 			had landed: `position`, `processed`, and `line` for a \
 			newline-delimited body.""",
+		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+	)
+	@APIResponse(
+		responseCode = "413",
+		description = """
+			The request body is larger than the node accepts. The node states \
+			one size for a body it holds in memory and another for a \
+			newline-delimited body it reads as it arrives; the `limit` argument \
+			carries the one this request passed, in bytes. A newline-delimited \
+			body also carries `processed`, how many documents the index took \
+			before the body was cut off, so the rest can be sent again.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1254,6 +1288,11 @@ public class DocumentResource {
 	 * above does not.
 	 */
 	@ReturnsError(
+		value = "request:body_too_large",
+		status = 413,
+		when = "The body passed the size the node accepts for a newline-delimited request. The changes read before that are applied; `processed` says how many, so the rest can be sent again."
+	)
+	@ReturnsError(
 		value = "request:body_unreadable",
 		status = 400,
 		when = "The body stopped arriving part way through. The changes read before that are applied; send the rest again."
@@ -1306,6 +1345,8 @@ public class DocumentResource {
 						changed++;
 					}
 				}
+			} catch(RequestBodyTooLargeException e) {
+				throw tooLarge(e, read, changed);
 			} catch(JacksonException e) {
 				throw malformed(e, read, changed);
 			} catch(IOException e) {
@@ -3234,6 +3275,16 @@ public class DocumentResource {
 		int position,
 		int processed
 	) {
+		/*
+		 * A body the node refused for its size stops the reader the same way a
+		 * body that ran out does, and Jackson reports both as JSON it could not
+		 * read. The refusal is the node's answer, not the caller's mistake.
+		 */
+		var refused = RequestBodyTooLargeException.wrappedIn(e);
+		if(refused != null) {
+			throw tooLarge(refused, position, processed);
+		}
+
 		var entry = BatchEntry.onLine(position, lineOf(e));
 
 		return new ValidationException(
@@ -3254,6 +3305,22 @@ public class DocumentResource {
 		int processed
 	) {
 		return new RequestBodyUnreadableException(
+			e,
+			"position", position,
+			"processed", processed
+		);
+	}
+
+	/**
+	 * Say that a streamed body passed the size the node accepts, carrying how
+	 * far the batch got so the caller can send the rest.
+	 */
+	private static RequestBodyTooLargeException tooLarge(
+		RequestBodyTooLargeException e,
+		int position,
+		int processed
+	) {
+		return new RequestBodyTooLargeException(
 			e,
 			"position", position,
 			"processed", processed

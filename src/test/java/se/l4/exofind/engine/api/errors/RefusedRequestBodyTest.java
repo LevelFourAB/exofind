@@ -28,8 +28,8 @@ import io.restassured.specification.RequestSpecification;
  * a shape of its own, or with nothing at all.
  *
  * <p>Each case below is refused by a different part of the stack - the JSON
- * reader, the code that picks a resource method, and the HTTP router that
- * counts the bytes of a body - and a client reads one body for all of them. The
+ * reader, the code that picks a resource method, and the HTTP router that reads
+ * the length a body states - and a client reads one body for all of them. The
  * cases run as real requests, because the framework refuses them before any
  * code of this project is reached.
  */
@@ -55,7 +55,7 @@ public class RefusedRequestBodyTest {
 			return Map.of(
 				"exofind.storage.mode", "local",
 				"exofind.storage.local.directory", directory.toString(),
-				"quarkus.http.limits.max-body-size", "2K"
+				"exofind.api.max-body-size", "2K"
 			);
 		}
 	}
@@ -240,8 +240,12 @@ public class RefusedRequestBodyTest {
 	}
 
 	/**
-	 * A body past the size the node accepts, which the HTTP router refuses
-	 * while it is still arriving - before there is an endpoint to refuse it.
+	 * A body whose stated length is past the size the node accepts, which the
+	 * HTTP router refuses before any of the body arrives. The answer carries
+	 * the size, so a caller can split the body without being told it elsewhere.
+	 *
+	 * <p>A body that states no length is counted as it arrives instead. See
+	 * {@code StreamedRequestBodyTest}.
 	 */
 	@Test
 	@Order(11)
@@ -252,6 +256,7 @@ public class RefusedRequestBodyTest {
 			.then()
 			.statusCode(413)
 			.body("code", is("request:body_too_large"))
-			.body("errors[0].code", is("request:body_too_large"));
+			.body("errors[0].code", is("request:body_too_large"))
+			.body("errors[0].arguments.limit", is("2048"));
 	}
 }

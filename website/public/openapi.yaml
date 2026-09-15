@@ -9870,6 +9870,20 @@ paths:
           - code: reindex:target_busy
             when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
+        "413":
+          description: |-
+            The request body is larger than the node accepts. The node states one size for a body it holds in memory and another for a newline-delimited body it reads as it arrives; the `limit` argument carries the one this request passed, in bytes. A newline-delimited body also carries `processed`, how many documents the index took before the body was cut off, so the rest can be sent again.
+
+            Error codes: `request:body_too_large` - The body passed the size the node accepts for a newline-delimited request. The documents read before that are indexed; `processed` says how many, so the rest can be sent again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: request:body_too_large
+            when: "The body passed the size the node accepts for a newline-delimited\
+              \ request. The documents read before that are indexed; `processed` says\
+              \ how many, so the rest can be sent again."
         "502":
           description: |-
             The node holding the index did not answer.
@@ -9902,7 +9916,7 @@ paths:
       description: |-
         Indexes one or more documents into the specified index. Each document specifies its own primary key. Indexing a document with an existing key replaces the document under that key. Documents in a batch are processed in the order sent. The first refused document halts processing and fails the request; documents processed before the failure remain in the index. Every error names the document it is about: `position` counts the documents of the request from zero, `processed` says how many the index took before the failure, and a newline-delimited body also carries `line`. Send `?onError=skip` to index the rest of the batch instead and read the refused documents from `failed`.
 
-        Format the request body as `application/json` with a `documents` array, or `application/x-ndjson` with one document object per line and no outer wrapper. Newline-delimited documents are indexed as they are read, so request size is bounded by network capacity rather than available memory, making it suitable for loading large datasets.
+        Format the request body as `application/json` with a `documents` array, or `application/x-ndjson` with one document object per line and no outer wrapper. Newline-delimited documents are indexed as they are read, so the node holds a buffer rather than the whole body and a single request can carry a whole dataset. A JSON body is held in memory and is bounded by a smaller size; both sizes are set by the deployment, and a body past either is refused with `413`.
 
         Changes become searchable and replicate to remote storage after the index commits. The writer commits automatically based on indexed document volume or elapsed time. To commit changes immediately, call `POST /v1alpha1/admin/indexes/{name}/actions/commit`.
 
@@ -10409,6 +10423,20 @@ paths:
           - code: reindex:target_busy
             when: "An active reindex job holds the target generation. Wait for the\
               \ job, or write to another generation."
+        "413":
+          description: |-
+            The request body is larger than the node accepts. The node states one size for a body it holds in memory and another for a newline-delimited body it reads as it arrives; the `limit` argument carries the one this request passed, in bytes. A newline-delimited body also carries `processed`, how many documents the index took before the body was cut off, so the rest can be sent again.
+
+            Error codes: `request:body_too_large` - The body passed the size the node accepts for a newline-delimited request. The changes read before that are applied; `processed` says how many, so the rest can be sent again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          x-error-codes:
+          - code: request:body_too_large
+            when: "The body passed the size the node accepts for a newline-delimited\
+              \ request. The changes read before that are applied; `processed` says\
+              \ how many, so the rest can be sent again."
         "502":
           description: |-
             The node holding the index did not answer.

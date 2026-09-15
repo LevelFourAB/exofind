@@ -2,7 +2,6 @@ package se.l4.exofind.engine.api.errors;
 
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 
-import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.Priority;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.core.Response;
@@ -23,14 +22,14 @@ import jakarta.ws.rs.ext.Provider;
 @Priority(Priorities.USER)
 public class MismatchedInputExceptionMapper
 	implements ExceptionMapper<MismatchedInputException> {
-	private final RequestMetrics metrics;
+	private final JsonExceptionMapper jsonErrors;
 
-	public MismatchedInputExceptionMapper(RequestMetrics metrics) {
-		this.metrics = metrics;
+	public MismatchedInputExceptionMapper(JsonExceptionMapper jsonErrors) {
+		this.jsonErrors = jsonErrors;
 	}
 
 	@Override
 	public Response toResponse(MismatchedInputException e) {
-		return JsonExceptionMapper.respond(metrics, e);
+		return jsonErrors.toResponse(e);
 	}
 }

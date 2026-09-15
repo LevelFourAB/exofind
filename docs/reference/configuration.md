@@ -140,6 +140,35 @@ has no `EXOFIND_AUTH_ROOT_KEY` configured. If a node in `object` mode cannot
 connect to storage, you can access it only with the root key. A node in `local`
 mode stores keys on local disk.
 
+## API requests
+
+A node limits how large a request body it accepts. The limit that applies is
+decided by the `Content-Type` of the request, because that is what says how the
+node reads the body.
+
+A body in `application/json` is held in memory and parsed as a whole, so it is
+bounded by what the heap has room for. A body in `application/x-ndjson` is read
+and acted on as it arrives, so it costs the node a buffer whatever its size and
+is not bounded unless you ask for a bound. This is what lets one request carry a
+whole dataset. See [Index documents](documents-api.md).
+
+The following table lists request configuration variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXOFIND_API_MAX_BODY_SIZE` | Largest request body the node accepts in any media type other than `application/x-ndjson`. Requests with a larger body are rejected with `request:body_too_large`. Accepts sizes such as `10M` or `10240K`. | `10M` |
+| `EXOFIND_API_MAX_STREAM_BODY_SIZE` | Largest request body the node accepts in `application/x-ndjson`, the media type the document endpoints read as a stream. Not set, so a stream carries as much as the connection carries. Set it where a node has to bound what one caller can send in one request. Accepts sizes such as `1G`. | None |
+
+A body larger than the limit is rejected with `413` and the error code
+`request:body_too_large`, whose `limit` argument carries the size in bytes. A
+newline-delimited request is acted on as it is read, so its rejection also
+carries `processed`, the number of documents the index took before the body was
+cut off. Send the documents after that one rather than the whole dataset again.
+
+The node rejects a request whose `Content-Length` states a size past the limit
+before the body arrives, and counts the bytes of a request that states no
+length. Both end the connection, because the caller is still sending.
+
 ## Index management
 
 The following table lists index management configuration variables:

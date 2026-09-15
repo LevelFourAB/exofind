@@ -46,10 +46,6 @@ public class RefusedRequestMapper implements ExceptionMapper<WebApplicationExcep
 		.withStatus(406)
 		.withMessage("This endpoint answers in none of the media types `Accept` allows");
 
-	private static final ErrorType TOO_LARGE = ErrorType.withCode("request:body_too_large")
-		.withStatus(413)
-		.withMessage("The request body is larger than this node accepts");
-
 	private static final ErrorType UNSUPPORTED_MEDIA_TYPE = ErrorType
 		.withCode("request:unsupported_media_type")
 		.withStatus(415)
@@ -66,9 +62,11 @@ public class RefusedRequestMapper implements ExceptionMapper<WebApplicationExcep
 		.withMessage("The node could not serve the request");
 
 	private final RequestMetrics metrics;
+	private final JsonExceptionMapper jsonErrors;
 
-	public RefusedRequestMapper(RequestMetrics metrics) {
+	public RefusedRequestMapper(RequestMetrics metrics, JsonExceptionMapper jsonErrors) {
 		this.metrics = metrics;
+		this.jsonErrors = jsonErrors;
 	}
 
 	@Override
@@ -84,7 +82,7 @@ public class RefusedRequestMapper implements ExceptionMapper<WebApplicationExcep
 			 * The body reader wraps a body it could not parse, so the
 			 * failure arrives here with the parse failure as its cause.
 			 */
-			return JsonExceptionMapper.respond(metrics, json);
+			return jsonErrors.toResponse(json);
 		}
 
 		var status = refused.getStatus();
@@ -130,7 +128,7 @@ public class RefusedRequestMapper implements ExceptionMapper<WebApplicationExcep
 			case 404 -> NOT_FOUND;
 			case 405 -> METHOD_NOT_ALLOWED;
 			case 406 -> NOT_ACCEPTABLE;
-			case 413 -> TOO_LARGE;
+			case 413 -> RequestBodyTooLargeException.TYPE;
 			case 415 -> UNSUPPORTED_MEDIA_TYPE;
 			default -> status >= 500 ? NODE_ERROR : REFUSED;
 		};

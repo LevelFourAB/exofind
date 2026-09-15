@@ -63,21 +63,29 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 		.withMessage("The request body is not shaped as this request needs: {{reason}}");
 
 	private final RequestMetrics metrics;
+	private final EngineExceptionMapper engineErrors;
 
-	public JsonExceptionMapper(RequestMetrics metrics) {
+	public JsonExceptionMapper(RequestMetrics metrics, EngineExceptionMapper engineErrors) {
 		this.metrics = metrics;
-	}
-
-	@Override
-	public Response toResponse(JsonProcessingException e) {
-		return respond(metrics, e);
+		this.engineErrors = engineErrors;
 	}
 
 	/**
 	 * Answer one body Jackson could not read, counting the code it is answered
 	 * with the way every other failure is counted.
 	 */
-	static Response respond(RequestMetrics metrics, JsonProcessingException e) {
+	@Override
+	public Response toResponse(JsonProcessingException e) {
+		/*
+		 * A body the node refused for its size reaches Jackson as a stream that
+		 * stopped, and Jackson reports it as a body it could not read. The
+		 * caller wrote nothing wrong, so it is answered as the refusal it is.
+		 */
+		var refused = RequestBodyTooLargeException.wrappedIn(e);
+		if(refused != null) {
+			return engineErrors.toResponse(refused);
+		}
+
 		var body = toBody(e);
 		metrics.recordError(body.code());
 

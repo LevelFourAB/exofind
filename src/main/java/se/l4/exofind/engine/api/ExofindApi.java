@@ -41,4 +41,15 @@ public class ExofindApi extends Application {
 	 * credential from it.
 	 */
 	public static final String API_KEY = "apiKey";
+
+	/**
+	 * Media type of newline delimited JSON, one value per line - what a body
+	 * too large to hold in memory is sent as.
+	 *
+	 * <p>The node reads a body in this media type as it arrives rather than
+	 * holding it, so {@code RequestBodyLimits} bounds it by the size an
+	 * operator states for a streamed body rather than by the size of a body
+	 * that has to fit in memory.
+	 */
+	public static final String NDJSON = "application/x-ndjson";
 }
