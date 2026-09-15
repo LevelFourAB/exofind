@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/LevelFourAB/exofind/compare/v0.4.1...v0.5.0) (2026-09-15)
+
+
+### Features
+
+* Allow large chunked streaming to batch endpoints ([5384ed7](https://github.com/LevelFourAB/exofind/commit/5384ed7636f02509442fbe514b645f290bee4216))
+* Index a single document by its key ([a9ab104](https://github.com/LevelFourAB/exofind/commit/a9ab104953ad4c491c5436201084ce573c26cb66))
+* Look up one document by its key over the API ([0029295](https://github.com/LevelFourAB/exofind/commit/0029295e705c190aa161e3d5f8a1ed284577ee1f))
+* Support for freshness tokens to be able to request up to date searches ([17e3474](https://github.com/LevelFourAB/exofind/commit/17e34745ae10d778e073d9ec75d22b5e4136fbfa))
+* Unify and document change path selection for documents and index settings ([85dfd8d](https://github.com/LevelFourAB/exofind/commit/85dfd8d45ddf2ffc0b7dec486ca853dc6f7e392c))
+
 ## [0.4.1](https://github.com/LevelFourAB/exofind/compare/v0.4.0...v0.4.1) (2026-09-13)
 
 
