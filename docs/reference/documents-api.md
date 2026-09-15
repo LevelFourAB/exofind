@@ -262,12 +262,13 @@ A path is a field name, and may carry a selector in brackets and a field inside 
 | `variants[V-2].price` | The `price` field inside that value. |
 | `dimensions.width` | The `width` field inside a single object value. |
 
+A backslash escapes the character after it, in a field name and inside brackets alike. For the path syntax, the selector forms, and the escaping rules, see [Change paths](patch-paths.md).
+
 Paths follow these rules:
 
-- A selector in brackets with no unescaped `=` is a BCP 47 tag on a locale-specific field and a declared key on an object field. A tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`. A key path is refused with `document:patch:key_unsupported` on a field declaring no key.
-- Empty brackets add a value, which requires a field declared `multiple`. Nothing is matched, so no value is replaced.
-- `field=value` compares the text form of the value. Only the first unescaped `=` splits. A value held as the number `2` matches the selector `2`.
-- Inside brackets, a backslash escapes the character after it, so a selector can hold a `]` of its own. An `=` needs a backslash only in the key form.
+- A BCP 47 tag resolves to the variant the field declares, so `title[nb-NO]` changes a field that holds `no`.
+- A key path on a field declaring no key is refused with `document:patch:key_unsupported`.
+- Empty brackets need a field declared `multiple`.
 - A field inside a list of objects requires a selector saying which value. Without one, the request returns `document:patch:selector_required`.
 
 #### Update behavior

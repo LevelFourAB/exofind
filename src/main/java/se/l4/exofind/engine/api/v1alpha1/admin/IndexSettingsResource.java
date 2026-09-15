@@ -55,6 +55,7 @@ import se.l4.exofind.engine.index.settings.SearchSettingsFeatures;
 import se.l4.exofind.engine.index.settings.SearchSettingsNotFoundException;
 import se.l4.exofind.engine.index.settings.SearchSettingsStore;
 import se.l4.exofind.engine.index.settings.SearchSettingsVersionMismatchException;
+import se.l4.exofind.engine.patch.PatchErrors;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -117,9 +118,7 @@ public class IndexSettingsResource {
 		.withCode("settings:patch:field_unknown")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage(
-			"`{{path}}` reaches into the field `{{field}}`, which search settings do not have"
-		);
+		.withMessage(PatchErrors.FIELD_UNKNOWN);
 
 	private static final ErrorType INVALID_SYNONYM_RULE = ErrorType
 		.withCode("settings:synonyms:rule_invalid")
@@ -684,18 +683,30 @@ public class IndexSettingsResource {
 			clears the target value, and an omitted path leaves the existing \
 			value unchanged.
 
-			Paths use field names joined by `.`. A path element can include a \
-			bracket selector to select list entries by content rather than \
-			index: `ranking.signals[field=sales].weight` changes one weight, \
+			A path is written the same way as a path into a document: names \
+			joined by `.`, where a name can carry a bracket selector that \
+			picks list entries by what they hold. \
+			`ranking.signals[field=sales].weight` changes one weight, \
 			`ranking.signals[field=sales]` replaces one signal, \
 			`ranking.signals[]` adds a signal, and `ranking` replaces or \
-			clears the whole ranking. Selecting entries by content ensures \
-			changes apply even if the list order changes.
+			clears the whole ranking. A selector picks entries by content, so \
+			a change still names the same entry after the list is reordered.
 
 			A backslash escapes the character after it, so a name can hold a \
 			`.`, a `[` or a backslash of its own: \
 			`fields.variants\\.colour.interpret` names the field \
 			`variants.colour`. In JSON, write each backslash twice.
+
+			A selector holding a single word names an entry by the key its \
+			list declares: `ranking.signals[sales]` names the signals reading \
+			the field `sales`, `ranking.tieBreakers[sales]` the tie breaker on \
+			it, and `fields.size.values[S]` the declared value `S`. Two \
+			signals may read one field with different shapes, so a key of \
+			`ranking.signals` names every signal reading it, where a key of \
+			`ranking.tieBreakers` and of `fields.<name>.values` names at most \
+			one. A word on a list that declares no key, such as a synonym \
+			rule, returns `settings:patch:key_unsupported`. For the whole \
+			syntax, see [Change paths](https://exofind.dev/reference/patch-paths/).
 
 			The merged settings are validated against the generation the index \
 			name answers from, using the same `index:ranking:*` error codes as \
@@ -800,6 +811,21 @@ public class IndexSettingsResource {
 		value = "settings:patch:add_reaches_inside",
 		status = 400,
 		when = "A key reaches inside a value that the same change adds, which does not exist yet. Give the whole value instead."
+	)
+	@ReturnsError(
+		value = "settings:patch:add_unsupported",
+		status = 400,
+		when = "A key adds a value to a field that holds a single value, such as `ranking[]`. Name the field on its own to replace it."
+	)
+	@ReturnsError(
+		value = "settings:patch:key_unsupported",
+		status = 400,
+		when = "A key names a list entry by a single word on a list that declares no key, such as `synonyms.<name>.rules[x]`. Name a field inside the entry instead, as `rules[field=value]`."
+	)
+	@ReturnsError(
+		value = "settings:patch:match_not_an_object",
+		status = 400,
+		when = "A key matches on a field inside the entries of a list whose entries are not objects."
 	)
 	@ReturnsError(
 		value = "request:value_required",
@@ -1056,7 +1082,12 @@ public class IndexSettingsResource {
 				? new SearchSettingsDefinition(null, null, null, null)
 				: describable(snapshot);
 
-			var changed = read(ObjectPatch.applyTo(mapper.valueToTree(base), body, mapper));
+			var changed = read(ObjectPatch.applyTo(
+				mapper.valueToTree(base),
+				body,
+				mapper,
+				SearchSettingsKeys.KEYS
+			));
 			var settings = toStored(index, changed);
 
 			try {

@@ -1,9 +1,6 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,9 +8,13 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.eclipse.collections.api.list.ListIterable;
+
 import se.l4.exofind.engine.errors.ErrorType;
-import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.patch.PatchErrors;
+import se.l4.exofind.engine.patch.PatchKeys;
+import se.l4.exofind.engine.patch.PatchPath;
 
 /**
  * A change to some of an admin object, written as paths over the JSON the API
@@ -21,103 +22,92 @@ import se.l4.exofind.engine.errors.ValidationException;
  *
  * <p>Every key of the change is a path naming a place, and what it maps to is
  * what that place becomes: a value replaces it, {@code null} clears it, and a
- * place no path names is left as it is. A path is field names joined by
- * {@code .}, and a name may carry a selector in brackets:
+ * place no path names stays as it is. {@link PatchPath} reads the syntax,
+ * which is the same syntax a change to a document is written in:
  *
  * <pre>
- * ranking                            the field itself
- * ranking.signals                    a field inside it
- * ranking.signals[]                  a value added to the list
- * ranking.signals[field=sales]       the list entries whose `field` reads as `sales`
+ * ranking                              the field itself
+ * ranking.signals                      a field inside it
+ * ranking.signals[]                    a value added to the list
+ * ranking.signals[field=sales]         the list entries whose `field` reads as `sales`
  * ranking.signals[field=sales].weight  one field inside those entries
- * fields.variants\.colour.interpret  a field of the field named `variants.colour`
+ * fields.variants\.colour.interpret    a field of the field named `variants.colour`
  * </pre>
  *
- * <p>A backslash escapes the character after it, so a name can hold a character
- * the path syntax uses: {@code variants\.colour} is one name, and a selector
- * value holds a {@code ]} of its own the same way. Every other character is
- * taken as it is written, so a locale tag such as {@code en-GB} and a synonym
- * set named with a hyphen need no backslash. A selector picks entries by what
- * they hold and not by where they sit, so a change written against one read of
- * an object still names the same entry after the list is reordered.
- *
- * <p>A place is replaced whole, so what a change leaves alone is decided by how
+ * <p>A place is replaced whole, so what a change leaves alone depends on how
  * deeply it reaches: {@code ranking.signals} replaces every entry,
  * {@code ranking.signals[field=sales]} replaces one of them, and
- * {@code ranking.signals[field=sales].weight} replaces one field inside it.
- * Objects a path reaches through are made where the object has none, so a
- * change can name a place nothing has been stored under yet; a list is not,
- * because a selector picks entries rather than inventing one.
+ * {@code ranking.signals[field=sales].weight} replaces one field inside it. A
+ * selector picks entries by what they hold and not by where they sit, so a
+ * change written against one read of an object names the same entry after the
+ * list is reordered.
  *
- * <p>A path is written the same way as a path into a document, and a path this
- * object has no place for is reported by a {@code settings:patch:*} code. The
- * same mistake in a path into a document is a {@code document:patch:*} code,
- * so a client tells the two apart by the family of the code rather than by
- * the endpoint it sent to. A selector naming nothing stored is
- * {@code settings:patch:no_match}, because only the stored settings can answer
- * it.
+ * <p>Objects a path reaches through are made where the object has none, so a
+ * change can name a place nothing has been stored under yet. A list is not,
+ * because a selector picks entries instead of inventing one, and a selector
+ * naming nothing stored is {@code settings:patch:no_match}.
+ *
+ * <p>A selector holding a single word names an entry by the key of its list,
+ * which the caller supplies as {@link PatchKeys}. A word on a list that
+ * declares no key is {@code settings:patch:key_unsupported}, and the same
+ * mistake in a path into a document answers with
+ * {@code document:patch:key_unsupported}. The two families differ only in that
+ * prefix, and {@link PatchErrors} states what they share.
  */
 final class ObjectPatch {
-	/**
-	 * What the field of a selector may be. Narrower than a name of a path:
-	 * a selector reads a field of the API model rather than a key an object
-	 * holds, and every one of those is written as an identifier.
-	 */
-	private static final Pattern SELECTOR_FIELD = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
-
 	private static final ErrorType MALFORMED = ErrorType
 		.withCode("settings:patch:path_invalid")
 		.withStatus(400)
 		.withArguments("path", "reason")
-		.withMessage("`{{path}}` does not name a place to change: {{reason}}");
+		.withMessage(PatchErrors.PATH_INVALID);
 
 	private static final ErrorType NO_MATCH = ErrorType
 		.withCode("settings:patch:no_match")
 		.withStatus(400)
 		.withArguments("path")
-		.withMessage("`{{path}}` names no value that is stored");
+		.withMessage(PatchErrors.NO_MATCH);
 
 	private static final ErrorType NOT_AN_OBJECT = ErrorType
 		.withCode("settings:patch:not_an_object")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage("`{{path}}` reaches inside `{{field}}`, which holds no fields");
+		.withMessage(PatchErrors.NOT_AN_OBJECT);
 
 	private static final ErrorType VALUE_REQUIRED = ErrorType
 		.withCode("settings:patch:selector_required")
 		.withStatus(400)
-		.withArguments("path", "field")
-		.withMessage(
-			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "
-			+ "as `{{field}}[field=value]`"
-		);
+		.withArguments("path", "field", "how")
+		.withMessage(PatchErrors.SELECTOR_REQUIRED);
 
 	private static final ErrorType SELECTOR_NOT_SUPPORTED = ErrorType
 		.withCode("settings:patch:selector_unsupported")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage("`{{path}}` names one value of `{{field}}`, which holds no list");
+		.withMessage(PatchErrors.SELECTOR_UNSUPPORTED);
+
+	private static final ErrorType MATCH_NOT_AN_OBJECT = ErrorType
+		.withCode("settings:patch:match_not_an_object")
+		.withStatus(400)
+		.withArguments("path", "field")
+		.withMessage(PatchErrors.MATCH_NOT_AN_OBJECT);
+
+	private static final ErrorType KEY_NOT_DECLARED = ErrorType
+		.withCode("settings:patch:key_unsupported")
+		.withStatus(400)
+		.withArguments("path", "field")
+		.withMessage(PatchErrors.KEY_UNSUPPORTED);
+
+	private static final ErrorType ADD_NOT_MULTIPLE = ErrorType
+		.withCode("settings:patch:add_unsupported")
+		.withStatus(400)
+		.withArguments("path", "field")
+		.withMessage(PatchErrors.ADD_UNSUPPORTED);
 
 	private static final ErrorType ADD_REACHES_INSIDE = ErrorType
 		.withCode("settings:patch:add_reaches_inside")
 		.withStatus(400)
 		.withArguments("path")
-		.withMessage(
-			"`{{path}}` reaches inside a value that is being added, which does not exist yet - "
-			+ "give the whole value instead"
-		);
-
-	/**
-	 * One name of a path, and the selector it carries.
-	 *
-	 * @param name
-	 *   the name before the brackets
-	 * @param selector
-	 *   the text between the brackets, {@code null} when the name has none and
-	 *   empty when the brackets hold nothing
-	 */
-	private record Step(String name, String selector) {
-	}
+		.withMessage(PatchErrors.ADD_REACHES_INSIDE);
 
 	private ObjectPatch() {
 	}
@@ -143,7 +133,12 @@ final class ObjectPatch {
 	 *   or a field inside something holding no fields. The path that failed is
 	 *   the location of the error
 	 */
-	static ObjectNode applyTo(JsonNode base, Map<String, Object> changes, ObjectMapper mapper) {
+	static ObjectNode applyTo(
+		JsonNode base,
+		Map<String, Object> changes,
+		ObjectMapper mapper,
+		PatchKeys keys
+	) {
 		var root = base != null && base.isObject()
 			? (ObjectNode) base.deepCopy()
 			: mapper.createObjectNode();
@@ -153,13 +148,14 @@ final class ObjectPatch {
 
 			apply(
 				root,
-				parse(path),
+				PatchPath.parse(path, MALFORMED),
 				0,
 				change.getValue() == null
 					? NullNode.getInstance()
 					: mapper.valueToTree(change.getValue()),
 				path,
-				mapper
+				mapper,
+				keys
 			);
 		}
 
@@ -168,27 +164,37 @@ final class ObjectPatch {
 
 	private static void apply(
 		ObjectNode parent,
-		List<Step> steps,
+		ListIterable<PatchPath.Step> steps,
 		int at,
 		JsonNode value,
 		String path,
-		ObjectMapper mapper
+		ObjectMapper mapper,
+		PatchKeys keys
 	) {
 		var step = steps.get(at);
 		var last = at == steps.size() - 1;
 		var child = parent.get(step.name());
 
-		if(step.selector() == null) {
-			applyToField(parent, steps, at, last, child, value, path, mapper);
+		if(!step.hasSelector()) {
+			applyToField(parent, steps, at, last, child, value, path, mapper, keys);
 			return;
 		}
 
-		if(step.selector().isEmpty()) {
+		if(step.adds()) {
 			applyToAdded(parent, step, last, child, value, path, mapper);
 			return;
 		}
 
-		applyToMatching(steps, at, last, child, value, path, mapper);
+		var field = step.selectorField();
+		if(field == null) {
+			field = keys.keyOf(steps.collect(PatchPath.Step::name).subList(0, at + 1));
+
+			if(field == null) {
+				throw PatchErrors.failed(KEY_NOT_DECLARED, path, "field", step.name());
+			}
+		}
+
+		applyToMatching(steps, at, last, child, value, path, mapper, keys, field);
 	}
 
 	/**
@@ -196,13 +202,14 @@ final class ObjectPatch {
 	 */
 	private static void applyToField(
 		ObjectNode parent,
-		List<Step> steps,
+		ListIterable<PatchPath.Step> steps,
 		int at,
 		boolean last,
 		JsonNode child,
 		JsonNode value,
 		String path,
-		ObjectMapper mapper
+		ObjectMapper mapper,
+		PatchKeys keys
 	) {
 		var step = steps.get(at);
 
@@ -223,14 +230,19 @@ final class ObjectPatch {
 		}
 
 		if(into.isArray()) {
-			throw failed(VALUE_REQUIRED, path, "field", step.name());
+			throw PatchErrors.failed(
+				VALUE_REQUIRED,
+				path,
+				"field", step.name(),
+				"how", "`" + step.name() + "[field=value]`"
+			);
 		}
 
 		if(!into.isObject()) {
-			throw failed(NOT_AN_OBJECT, path, "field", step.name());
+			throw PatchErrors.failed(NOT_AN_OBJECT, path, "field", step.name());
 		}
 
-		apply((ObjectNode) into, steps, at + 1, value, path, mapper);
+		apply((ObjectNode) into, steps, at + 1, value, path, mapper, keys);
 	}
 
 	/**
@@ -238,7 +250,7 @@ final class ObjectPatch {
 	 */
 	private static void applyToAdded(
 		ObjectNode parent,
-		Step step,
+		PatchPath.Step step,
 		boolean last,
 		JsonNode child,
 		JsonNode value,
@@ -246,7 +258,7 @@ final class ObjectPatch {
 		ObjectMapper mapper
 	) {
 		if(!last) {
-			throw failed(ADD_REACHES_INSIDE, path);
+			throw PatchErrors.failed(ADD_REACHES_INSIDE, path);
 		}
 
 		if(value.isNull()) {
@@ -261,7 +273,7 @@ final class ObjectPatch {
 		} else if(child.isArray()) {
 			list = (ArrayNode) child;
 		} else {
-			throw failed(SELECTOR_NOT_SUPPORTED, path, "field", step.name());
+			throw PatchErrors.failed(ADD_NOT_MULTIPLE, path, "field", step.name());
 		}
 
 		list.add(value);
@@ -271,26 +283,20 @@ final class ObjectPatch {
 	 * Change every entry of a list that holds what the selector asks of it.
 	 */
 	private static void applyToMatching(
-		List<Step> steps,
+		ListIterable<PatchPath.Step> steps,
 		int at,
 		boolean last,
 		JsonNode child,
 		JsonNode value,
 		String path,
-		ObjectMapper mapper
+		ObjectMapper mapper,
+		PatchKeys keys,
+		String field
 	) {
 		var step = steps.get(at);
 
-		var equals = step.selector().indexOf('=');
-		if(equals < 0) {
-			throw malformed(path, "a selector names one value as `field=value`");
-		}
-
-		var field = selectorField(step.selector().substring(0, equals), path);
-		var wanted = step.selector().substring(equals + 1);
-
 		if(child != null && !child.isNull() && !child.isArray()) {
-			throw failed(SELECTOR_NOT_SUPPORTED, path, "field", step.name());
+			throw PatchErrors.failed(SELECTOR_NOT_SUPPORTED, path, "field", step.name());
 		}
 
 		var matched = false;
@@ -304,14 +310,22 @@ final class ObjectPatch {
 			 */
 			for(var i = list.size() - 1; i >= 0; i--) {
 				var entry = list.get(i);
-				if(!entry.isObject() || !holds((ObjectNode) entry, field, wanted)) {
+				if(!entry.isObject()) {
+					throw PatchErrors.failed(
+						MATCH_NOT_AN_OBJECT,
+						path,
+						"field", step.name()
+					);
+				}
+
+				if(!holds((ObjectNode) entry, field, step.selectorValue())) {
 					continue;
 				}
 
 				matched = true;
 
 				if(!last) {
-					apply((ObjectNode) entry, steps, at + 1, value, path, mapper);
+					apply((ObjectNode) entry, steps, at + 1, value, path, mapper, keys);
 				} else if(value.isNull()) {
 					list.remove(i);
 				} else {
@@ -321,7 +335,7 @@ final class ObjectPatch {
 		}
 
 		if(!matched) {
-			throw failed(NO_MATCH, path);
+			throw PatchErrors.failed(NO_MATCH, path);
 		}
 	}
 
@@ -333,153 +347,5 @@ final class ObjectPatch {
 		var value = entry.get(field);
 
 		return value != null && !value.isNull() && wanted.equals(value.asText());
-	}
-
-	/**
-	 * Take a path apart.
-	 *
-	 * @throws ValidationException
-	 *   if the text is not a path, located at the text itself
-	 */
-	private static List<Step> parse(String text) {
-		var steps = new ArrayList<Step>();
-		var name = new StringBuilder();
-		var at = 0;
-
-		while(at < text.length()) {
-			var c = text.charAt(at);
-
-			/*
-			 * A backslash escapes the character after it, so a name holding a
-			 * `.`, a `[` or a backslash of its own can be told from the ones
-			 * the path syntax uses.
-			 */
-			if(c == '\\') {
-				at++;
-
-				if(at >= text.length()) {
-					throw malformed(text, "the path ends in a backslash");
-				}
-
-				name.append(text.charAt(at));
-				at++;
-				continue;
-			}
-
-			if(c == '.') {
-				steps.add(new Step(name(name.toString(), text), null));
-				name.setLength(0);
-
-				at++;
-				if(at >= text.length()) {
-					throw malformed(text, "a `.` needs a field after it");
-				}
-
-				continue;
-			}
-
-			if(c != '[') {
-				name.append(c);
-				at++;
-				continue;
-			}
-
-			var selector = new StringBuilder();
-			at++;
-			while(at < text.length() && text.charAt(at) != ']') {
-				/*
-				 * A backslash escapes the character after it, so a value
-				 * holding a `]` can be told from the one that closes the
-				 * selector.
-				 */
-				if(text.charAt(at) == '\\') {
-					at++;
-
-					if(at >= text.length()) {
-						throw malformed(text, "the path ends in a backslash");
-					}
-				}
-
-				selector.append(text.charAt(at));
-				at++;
-			}
-
-			if(at >= text.length()) {
-				throw malformed(text, "the `[` is never closed");
-			}
-
-			steps.add(new Step(name(name.toString(), text), selector.toString()));
-			name.setLength(0);
-			at++;
-
-			if(at >= text.length()) {
-				continue;
-			}
-
-			if(text.charAt(at) != '.') {
-				throw malformed(text, "a `]` is followed by `.` and a field, or by nothing");
-			}
-
-			at++;
-			if(at >= text.length()) {
-				throw malformed(text, "a `.` needs a field after it");
-			}
-		}
-
-		if(name.length() > 0) {
-			steps.add(new Step(name(name.toString(), text), null));
-		}
-
-		if(steps.isEmpty()) {
-			throw malformed(text, "a field name is required");
-		}
-
-		return steps;
-	}
-
-	/**
-	 * Take one name of a path as it was written. Anything but nothing is a
-	 * name: a key an object holds is what it names, and objects the API reads
-	 * hold keys such as a dotted field path or a locale tag. A name that
-	 * reaches nothing is reported by the caller of {@link #applyTo} instead,
-	 * which knows which fields the object has.
-	 */
-	private static String name(String name, String text) {
-		if(name.isEmpty()) {
-			throw malformed(text, "a field name is required");
-		}
-
-		return name;
-	}
-
-	/**
-	 * Take the field a selector reads, which names a field of the API model
-	 * rather than a key an object happens to hold.
-	 */
-	private static String selectorField(String name, String text) {
-		if(name.isEmpty()) {
-			throw malformed(text, "a field name is required");
-		}
-
-		if(!SELECTOR_FIELD.matcher(name).matches()) {
-			throw malformed(text, "`" + name + "` is not a field name");
-		}
-
-		return name;
-	}
-
-	private static ValidationException malformed(String text, String reason) {
-		return failed(MALFORMED, text, "reason", reason);
-	}
-
-	private static ValidationException failed(ErrorType type, String path, Object... arguments) {
-		var all = new Object[arguments.length + 2];
-		all[0] = "path";
-		all[1] = path;
-		System.arraycopy(arguments, 0, all, 2, arguments.length);
-
-		return new ValidationException(
-			type.toMessage(ObjectLocation.root().forField(path), all)
-		);
 	}
 }

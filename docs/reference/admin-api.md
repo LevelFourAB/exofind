@@ -292,7 +292,7 @@ The server validates word lists against the generation the index name answers fr
 
 Search settings can configure how searches read individual fields under the `fields` field. Each entry configures how a search processes one field. Every capability in an entry remains disabled unless its configuration object is present. An empty object enables the capability with engine defaults.
 
-The `fields` field is an object keyed by field name. For a field inside an `object` field, specify its dotted path, such as `variants.colour`:
+The `fields` field is an object keyed by field name. For a field inside an `object` field, specify its dotted path, such as `variants.colour`. A `PATCH` request names such an entry with the dot escaped, as `fields.variants\.colour`, because a change path splits on the dot. See [Change paths](patch-paths.md):
 
 ```json
 {
@@ -385,7 +385,7 @@ The change object applies the following update rules:
 
 These are the rules a change object follows in [Changing some of the fields](documents-api.md#changing-some-of-the-fields) of a document, so a change is described the same way for both.
 
-Paths use dot-joined field names. A path element can include a bracket selector (`[...]`) to pick list entries by what they hold rather than by position:
+The following paths name places in the search settings. The `<name>` of a field settings entry, a synonym set, or a word list is a name you chose, so escape any `.` or `[` it holds. For the path syntax, the selector forms, the escaping rules, and what a path creates, see [Change paths](patch-paths.md):
 
 | Path | Description |
 |---|---|
@@ -393,7 +393,10 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `ranking.signals` | The whole list of ranking signals. |
 | `ranking.signals[]` | A new ranking signal added to the list. |
 | `ranking.signals[field=sales]` | List entries whose `field` value equals `sales`. |
+| `ranking.signals[sales]` | The same entries, named by the key of the list. Two signals may read one field, so this can name several. |
 | `ranking.signals[field=sales].weight` | The `weight` field inside those matching ranking signal entries. |
+| `ranking.tieBreakers` | The whole list of tie breakers. |
+| `ranking.tieBreakers[sales]` | The tie breaker on the field `sales`, named by the key of the list. A field breaks ties once, so this names at most one. |
 | `synonyms` | The whole synonyms object. |
 | `synonyms.<name>` | A synonym set by name. |
 | `synonyms.<name>.boost` | The boost value of a synonym set. |
@@ -412,20 +415,10 @@ Paths use dot-joined field names. A path element can include a bracket selector 
 | `fields.<name>.values` | The whole list of declared values for a field. |
 | `fields.<name>.values[]` | A new declared value added to the list. |
 | `fields.<name>.values[value=S]` | List entries whose `value` equals `S`. |
+| `fields.<name>.values[S]` | The same entry, named by the key of the list. A `value` is unique, so this names at most one. |
 | `fields.<name>.values[value=S].order` | The `order` field inside those matching value entries. |
 | `fields.<name>.values[value=S].labels.sv` | The `sv` label inside those matching value entries. |
-
-A backslash (`\`) escapes the character after it, anywhere in a path. Escape a character that the path syntax uses: a `.`, a `[` or a `\` in a field name, and a `]` or a `\` in a selector value.
-
-| Path | Description |
-|---|---|
 | `fields.variants\.colour.interpret` | The interpret configuration of the field named `variants.colour`. Without the backslash, the path names the field `colour` inside `variants`. |
-| `ranking.signals[field=a\]b]` | List entries whose `field` value equals `a]b`. |
-| `fields.<name>.values[value=S].labels.en-GB` | The `en-GB` label inside those matching value entries. The hyphen needs no backslash, because the path syntax does not use it. |
-
-In JSON, write each backslash twice, as `"fields.variants\\.colour.interpret"`.
-
-Objects along a path are created when they do not exist, and `name[]` with a value creates the list when the settings hold none. A selector such as `name[field=x]` never creates anything and returns `settings:patch:no_match` when nothing it names is stored.
 
 A successful request returns the search settings as stored and their new version in the `ETag` header. An index that had no settings answers `201 Created`, because the change stores its first ones; one that had some answers `200 OK`.
 
@@ -438,7 +431,7 @@ The endpoint enforces the following rules:
 - With an `If-Match` header of any form, an index that has no settings returns `404 Not Found` with `settings:not_found`.
 - If the stored settings contain capabilities that the answering node cannot describe, the request returns `409 Conflict` with `settings:unrepresentable`.
 
-The endpoint returns `400 Bad Request` with one of the following error codes if a path cannot be applied. A path here is written the same way as a path into a document, and the same mistake in a path into a document reports the `document:patch:*` code of the same name. See [Documents API](documents-api.md#constraints-and-errors).
+The endpoint returns `400 Bad Request` with one of the following error codes if a path cannot be applied. A path here is written the same way as a path into a document, and the same mistake in a path into a document reports the `document:patch:*` code of the same name. See [Change paths](patch-paths.md#error-codes).
 
 | Code | Condition |
 |---|---|
@@ -447,6 +440,9 @@ The endpoint returns `400 Bad Request` with one of the following error codes if 
 | `settings:patch:selector_unsupported` | The path specifies a selector on a field that is not a list. |
 | `settings:patch:selector_required` | The path targets a list without specifying an entry selector. |
 | `settings:patch:not_an_object` | The path reaches inside a value that is not an object. |
+| `settings:patch:match_not_an_object` | The path matches on a field inside the entries of a list whose entries are not objects. |
+| `settings:patch:key_unsupported` | The path names a list entry by a single word on a list that declares no key, such as `synonyms.<name>.rules[x]`. Name a field inside the entry instead. |
+| `settings:patch:add_unsupported` | The path adds a value to a field that holds a single value, such as `ranking[]`. Name the field on its own to replace it. |
 | `settings:patch:add_reaches_inside` | The path sets a field on an entry being added (for example, `ranking.signals[].weight`). |
 | `settings:patch:value_invalid` | The path specifies a value that the target field cannot hold. |
 | `settings:patch:no_match` | The selector matches no stored entry in the list. |

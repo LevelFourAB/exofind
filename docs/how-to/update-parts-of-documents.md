@@ -57,12 +57,7 @@ The examples below use a `products` index whose `variants` object field declares
 
    Because keys are unique inside a document, a key path names at most one value. The `field=value` form can match several values and updates all of them. The `field=value` form keeps working on a keyed field and can name any child field, not only the key. Using a key path on a field that declares no `key` returns `document:patch:key_unsupported`.
 
-   Selectors compare the text form of a value, so a value held as the number `2` matches the selector `2`. When a selector value contains special characters, escape them with a backslash:
-   - A closing bracket `]` must be escaped in both forms, as in `variants[a\]b]` or `variants[sku=a\]b]`.
-   - An equals sign `=` needs escaping only in the key form (`variants[V\=4]`), because an unescaped `=` splits the selector into a field name and a value.
-   - Only the first unescaped `=` splits, so `variants[sku=a=b]` names the value whose `sku` reads `a=b`.
-
-   Because JSON escapes the backslash itself, write these in request bodies with double backslashes, as in `"variants[sku=a\\]b]"` and `"variants[V\\=4]"`.
+   For the escaping rules and how to write them in JSON, see [Change paths](../reference/patch-paths.md).
 
 3. Replace or remove an entire nested object:
 

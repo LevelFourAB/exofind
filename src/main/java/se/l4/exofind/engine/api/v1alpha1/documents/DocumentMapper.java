@@ -18,6 +18,7 @@ import se.l4.exofind.engine.index.GeoPoint;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.schema.Field;
 import se.l4.exofind.engine.index.schema.IndexSchema;
+import se.l4.exofind.engine.patch.PatchErrors;
 import se.l4.exofind.engine.index.types.GeoPointFieldType;
 import se.l4.exofind.engine.index.types.VectorFieldType;
 
@@ -42,36 +43,26 @@ public class DocumentMapper {
 	private static final ErrorType UNKNOWN_FIELD = ErrorType
 		.withCode("document:patch:field_unknown")
 		.withStatus(400)
-		.withArguments("path", "name")
-		.withMessage(
-			"`{{path}}` reaches into the field `{{name}}`, which the index does not have"
-		);
+		.withArguments("path", "field")
+		.withMessage(PatchErrors.FIELD_UNKNOWN);
 
 	private static final ErrorType SELECTOR_NOT_SUPPORTED = ErrorType
 		.withCode("document:patch:selector_unsupported")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage(
-			"`{{path}}` names one value of `{{field}}`, which holds neither locale "
-			+ "variants nor objects"
-		);
+		.withMessage(PatchErrors.SELECTOR_UNSUPPORTED);
 
 	private static final ErrorType MATCH_NOT_AN_OBJECT = ErrorType
 		.withCode("document:patch:match_not_an_object")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage(
-			"`{{path}}` matches on a field inside `{{field}}`, whose values are not objects"
-		);
+		.withMessage(PatchErrors.MATCH_NOT_AN_OBJECT);
 
 	private static final ErrorType KEY_NOT_DECLARED = ErrorType
 		.withCode("document:patch:key_unsupported")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage(
-			"`{{path}}` names a value of `{{field}}` by a key, which the field declares "
-			+ "none of - name a field inside the value instead, as `{{field}}[field=value]`"
-		);
+		.withMessage(PatchErrors.KEY_UNSUPPORTED);
 
 	private static final ErrorType LOCALE_UNKNOWN = ErrorType
 		.withCode("document:locale_unknown")
@@ -83,34 +74,25 @@ public class DocumentMapper {
 		.withCode("document:patch:add_unsupported")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage(
-			"`{{path}}` adds a value to `{{field}}`, which holds a single value - "
-			+ "name the field on its own to replace it"
-		);
+		.withMessage(PatchErrors.ADD_UNSUPPORTED);
 
 	private static final ErrorType ADD_REACHES_INSIDE = ErrorType
 		.withCode("document:patch:add_reaches_inside")
 		.withStatus(400)
 		.withArguments("path")
-		.withMessage(
-			"`{{path}}` reaches inside a value that is being added, which does not exist yet - "
-			+ "give the whole value instead"
-		);
+		.withMessage(PatchErrors.ADD_REACHES_INSIDE);
 
 	private static final ErrorType NOT_AN_OBJECT = ErrorType
 		.withCode("document:patch:not_an_object")
 		.withStatus(400)
 		.withArguments("path", "field")
-		.withMessage("`{{path}}` reaches inside `{{field}}`, whose values are not objects");
+		.withMessage(PatchErrors.NOT_AN_OBJECT);
 
 	private static final ErrorType VALUE_REQUIRED = ErrorType
 		.withCode("document:patch:selector_required")
 		.withStatus(400)
 		.withArguments("path", "field", "how")
-		.withMessage(
-			"`{{field}}` holds a list of values, so `{{path}}` has to say which one, "
-			+ "as {{how}}"
-		);
+		.withMessage(PatchErrors.SELECTOR_REQUIRED);
 
 	private DocumentMapper() {
 	}
@@ -158,7 +140,7 @@ public class DocumentMapper {
 
 		var field = index.getField(path.field()).orElseThrow(
 			() -> new ValidationException(
-				UNKNOWN_FIELD.toMessage(at(text), "path", text, "name", path.field())
+				UNKNOWN_FIELD.toMessage(at(text), "path", text, "field", path.field())
 			)
 		);
 

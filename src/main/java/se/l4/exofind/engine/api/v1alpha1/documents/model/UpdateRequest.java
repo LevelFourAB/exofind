@@ -15,10 +15,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
  *
  * <pre>{@value #EXAMPLE}</pre>
  *
- * <p>Path syntax is defined by {@code DocumentPath}, and update semantics are
- * defined by {@code DocumentPatch}. A single change object with this structure
- * is also accepted by {@code PATCH /v1alpha1/indexes/{name}/documents/{key}},
- * with the primary key specified in the URL path.
+ * <p>{@code PatchPath} reads the path syntax, which is the syntax a change to
+ * search settings is written in. {@code DocumentPath} says what a path means
+ * for a document, and {@code DocumentPatch} what a change does. A single change
+ * object with this structure is also accepted by
+ * {@code PATCH /v1alpha1/indexes/{name}/documents/{key}}, with the primary key
+ * specified in the URL path.
  *
  * @param documents
  *   the changes to apply, in the order provided
@@ -41,7 +43,9 @@ public record UpdateRequest(
 			empties what it names, and an omitted path leaves the existing \
 			value unchanged. The path replaces exactly what it names: \
 			`variants` replaces every value of the field, while \
-			`variants[sku=V-2].price` replaces one field inside those values.""",
+			`variants[sku=V-2].price` replaces one field inside those values. \
+			For the whole syntax, see [Change \
+			paths](https://exofind.dev/reference/patch-paths/).""",
 		required = true
 	)
 	List<Map<String, Object>> documents

@@ -153,6 +153,30 @@ public class DocumentPathTest {
 		);
 	}
 
+	/**
+	 * A path carries its selector at one of its names, and the names before
+	 * and after it stay dotted for the definition to resolve.
+	 */
+	@Test
+	public void aSelectorCanSitPartWayAlongADottedPath() {
+		var path = DocumentPath.parse("a.b[sku=V-2].c.d");
+
+		assertThat(path.field(), is("a.b"));
+		assertThat(path.selectorField(), is("sku"));
+		assertThat(path.selectorValue(), is("V-2"));
+		assertThat(path.inner(), is("c.d"));
+	}
+
+	/**
+	 * Outside brackets a backslash escapes the character after it, the same as
+	 * inside them. A declared name holds no {@code .}, so the path reaches
+	 * where the plain one reaches.
+	 */
+	@Test
+	public void aBackslashOutsideBracketsStandsForTheCharacterAfterIt() {
+		assertThat(DocumentPath.parse("variants\\.colour").field(), is("variants.colour"));
+	}
+
 	@Test
 	public void anEmptyPathIsRefused() {
 		assertThat(codeOfRefusing(""), is("document:patch:path_invalid"));

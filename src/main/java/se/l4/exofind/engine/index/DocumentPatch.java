@@ -8,6 +8,7 @@ import org.eclipse.collections.api.set.SetIterable;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.patch.PatchErrors;
 
 /**
  * A change to some of the fields of a document that is already indexed.
@@ -41,7 +42,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 		.withCode("document:patch:no_match")
 		.withStatus(400)
 		.withArguments("path")
-		.withMessage("`{{path}}` names no value the document holds");
+		.withMessage(PatchErrors.NO_MATCH);
 
 	/**
 	 * Which values of a field a change is about.

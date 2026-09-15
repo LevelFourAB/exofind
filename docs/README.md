@@ -169,6 +169,8 @@ Alongside these pages, the website carries a page per endpoint at
   taking them out again, and the shape they are written in.
 - [Search API](reference/search-api.md): The request and response, every clause,
   matcher, and sort.
+- [Change paths](reference/patch-paths.md): The syntax that names a place to
+  change, shared by the document and search settings endpoints.
 - [Field types](reference/field-types.md): The types a field can have and the
   ways each can be used.
 - [Analysis](reference/analysis.md): Presets, tokenizers, char filters, and

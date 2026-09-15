@@ -42,7 +42,7 @@ public class ObjectPatchTest {
 			changes.put((String) pathsAndValues[i], pathsAndValues[i + 1]);
 		}
 
-		return ObjectPatch.applyTo(json(base), changes, mapper);
+		return ObjectPatch.applyTo(json(base), changes, mapper, SearchSettingsKeys.KEYS);
 	}
 
 	private String codeOf(Executable executable) {
@@ -270,9 +270,104 @@ public class ObjectPatchTest {
 		assertThat(codeOf(() -> patch("{}", ".a", 1)), is("settings:patch:path_invalid"));
 		assertThat(codeOf(() -> patch("{}", "a[field=b", 1)), is("settings:patch:path_invalid"));
 		assertThat(codeOf(() -> patch("{}", "a[field=b]c", 1)), is("settings:patch:path_invalid"));
-		assertThat(codeOf(() -> patch("{}", "a[b]", 1)), is("settings:patch:path_invalid"));
 		assertThat(codeOf(() -> patch("{}", "a[b c=1]", 1)), is("settings:patch:path_invalid"));
 		assertThat(codeOf(() -> patch("{}", "a\\", 1)), is("settings:patch:path_invalid"));
+	}
+
+	/**
+	 * A single word names an entry by the key its list declares, which for the
+	 * ranking is the field the entry reads.
+	 */
+	@Test
+	public void testOneWordNamesAnEntryByTheKeyOfItsList() {
+		assertThat(
+			patch(
+				"{\"ranking\":{\"signals\":[{\"field\":\"a\",\"weight\":1},{\"field\":\"b\"}]}}",
+				"ranking.signals[a].weight", 2
+			),
+			is(json("{\"ranking\":{\"signals\":[{\"field\":\"a\",\"weight\":2},{\"field\":\"b\"}]}}"))
+		);
+
+		assertThat(
+			patch(
+				"{\"ranking\":{\"tieBreakers\":[{\"field\":\"a\",\"direction\":\"ascending\"}]}}",
+				"ranking.tieBreakers[a].direction", "descending"
+			),
+			is(json("{\"ranking\":{\"tieBreakers\":[{\"field\":\"a\",\"direction\":\"descending\"}]}}"))
+		);
+	}
+
+	/**
+	 * The name of a field settings entry is one name of the path, so the key of
+	 * the values below it is found however the field is named.
+	 */
+	@Test
+	public void testTheValuesOfAFieldAreNamedByTheValueTheyDeclare() {
+		assertThat(
+			patch(
+				"{\"fields\":{\"a.b\":{\"values\":[{\"value\":\"S\",\"order\":1}]}}}",
+				"fields.a\\.b.values[S].order", 2
+			),
+			is(json("{\"fields\":{\"a.b\":{\"values\":[{\"value\":\"S\",\"order\":2}]}}}"))
+		);
+	}
+
+	/**
+	 * Two signals may read one field with different shapes, so the key of the
+	 * signals names every entry reading that field.
+	 */
+	@Test
+	public void testAKeyOfTheSignalsNamesEveryEntryReadingTheField() {
+		assertThat(
+			patch(
+				"{\"ranking\":{\"signals\":[{\"field\":\"a\",\"weight\":1},{\"field\":\"a\",\"weight\":1}]}}",
+				"ranking.signals[a].weight", 2
+			),
+			is(json("{\"ranking\":{\"signals\":[{\"field\":\"a\",\"weight\":2},{\"field\":\"a\",\"weight\":2}]}}"))
+		);
+	}
+
+	/**
+	 * A list that declares no key is reached by a field inside its entries, and
+	 * a single word on one says which field to name instead.
+	 */
+	@Test
+	public void testOneWordOnAListWithoutAKeyIsRefused() {
+		assertThat(
+			codeOf(() -> patch(
+				"{\"synonyms\":{\"merch\":{\"rules\":[{\"equivalent\":[\"a\"]}]}}}",
+				"synonyms.merch.rules[a]", 1
+			)),
+			is("settings:patch:key_unsupported")
+		);
+	}
+
+	@Test
+	public void testAddingToAPlaceHoldingOneValueIsRefused() {
+		assertThat(
+			codeOf(() -> patch("{\"ranking\":{\"signals\":1}}", "ranking.signals[]", 1)),
+			is("settings:patch:add_unsupported")
+		);
+	}
+
+	@Test
+	public void testMatchingOnEntriesThatAreNotObjectsIsRefused() {
+		assertThat(
+			codeOf(() -> patch("{\"ranking\":{\"signals\":[1,2]}}", "ranking.signals[field=a]", 1)),
+			is("settings:patch:match_not_an_object")
+		);
+	}
+
+	/**
+	 * A backslash escapes the character after it, which is how a change names
+	 * a field whose own name holds a `.`.
+	 */
+	@Test
+	public void testAnEscapeLetsANameHoldASeparator() {
+		assertThat(
+			patch("{\"fields\":{\"a.b\":{\"interpret\":1}}}", "fields.a\\.b.interpret", 2),
+			is(json("{\"fields\":{\"a.b\":{\"interpret\":2}}}"))
+		);
 	}
 
 	@Test
@@ -281,7 +376,7 @@ public class ObjectPatchTest {
 
 		var changes = new LinkedHashMap<String, Object>();
 		changes.put("ranking.signals[field=a]", null);
-		ObjectPatch.applyTo(base, changes, mapper);
+		ObjectPatch.applyTo(base, changes, mapper, SearchSettingsKeys.KEYS);
 
 		assertThat(base, is(json("{\"ranking\":{\"signals\":[{\"field\":\"a\"}]}}")));
 	}
