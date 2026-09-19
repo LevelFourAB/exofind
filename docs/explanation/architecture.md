@@ -72,8 +72,10 @@ caption: Each node holds local copies of the indexes it serves. {
   }
 }
 
-# The two colours are the ones the API pages spend: red says a thing was
-# removed and green says a thing was created. Each is stated as one value
+# The two colours are the ones the API pages spend: oxide says a thing was
+# removed and green says a thing was created. Neither is the signal red the
+# site spends on links, which is what keeps a lost node from reading as
+# something to click. Each is stated as one value
 # rather than as the pair `website/src/styles/site.css` holds, because D2 is
 # handed a colour and reads no stylesheet, and the site's theme overrides
 # reach the greys alone. Each is a middle tone that clears 3:1 against the
@@ -83,7 +85,7 @@ caption: Each node holds local copies of the indexes it serves. {
 steps: {
   lost: {
     b.style: {
-      stroke: "#c04f4f"
+      stroke: "#b05e46"
       stroke-dash: 4
       stroke-width: 2
       opacity: 0.6
@@ -102,7 +104,7 @@ steps: {
 
   pull: {
     b.style: {
-      stroke: "#2f8f63"
+      stroke: "#5c8d54"
       stroke-dash: 0
       stroke-width: 2
       opacity: 1
@@ -116,7 +118,7 @@ steps: {
       style: {
         opacity: 1
         stroke-dash: 0
-        stroke: "#2f8f63"
+        stroke: "#5c8d54"
         stroke-width: 2
       }
     }
@@ -127,7 +129,7 @@ steps: {
     (searches -> b)[0].style: {
       opacity: 1
       stroke-dash: 0
-      stroke: "#2f8f63"
+      stroke: "#5c8d54"
     }
     (b.copy <-> bucket.files)[0].target-arrowhead.shape: triangle
     caption: It serves from local copies again. No node held the only copy.

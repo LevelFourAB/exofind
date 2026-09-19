@@ -58,6 +58,21 @@ Content-Type: application/json
 const featured = demo('cleveland');
 
 /*
+ * The four facts a reader checks before they read anything else: what the
+ * engine keeps data on, how its nodes agree, what does the matching, and what
+ * they are allowed to do with it. They are set as a specification band under
+ * the hero - labelled cells divided by rules - because that is the form the
+ * answer to each is read in, and because four short answers under the
+ * headline are faster than four paragraphs further down.
+ */
+const specification = [
+	{ label: 'Storage', value: 'S3-compatible bucket' },
+	{ label: 'Coordination', value: 'Conditional writes' },
+	{ label: 'Matching', value: 'Apache Lucene' },
+	{ label: 'License', value: 'Apache 2.0' }
+];
+
+/*
  * What the engine does, and the page that shows each claim is true. The
  * heading is the link rather than the whole block, because the blocks are a
  * pitch and the ones under "Where to go" are the navigation - a reader who
@@ -180,9 +195,9 @@ const doors = [
 		head: [{ tag: 'title', content: 'Exofind' }],
 		/*
 		 * One line says what the engine is, and the sentence under it says how
-		 * it works. The name of the site is the label over the headline rather
-		 * than the headline itself - see `../components/Hero.astro` - which is
-		 * what leaves the headline free to be the pitch.
+		 * it works. The name of the site is the wordmark over the headline
+		 * rather than the headline itself - see `../components/Hero.astro` -
+		 * which is what leaves the headline free to be the pitch.
 		 */
 		hero: {
 			title: 'Delightful search built on object storage',
@@ -195,6 +210,15 @@ const doors = [
 		}
 	}}
 >
+	<dl class="specification not-content">
+		{specification.map(item => (
+			<div class="cell">
+				<dt class="doc-eyebrow">{item.label}</dt>
+				<dd>{item.value}</dd>
+			</div>
+		))}
+	</dl>
+
 	<div class="quickstart">
 		<Tabs>
 			<TabItem label="1. Run node">
@@ -260,8 +284,42 @@ const doors = [
 </StarlightPage>
 
 <style>
+	/*
+	 * The band starts on the numeral column, so its cells start where the
+	 * hero's red rule starts and the two read as the top and the bottom of
+	 * one block.
+	 *
+	 * Each cell carries the rule above it rather than a rule beside it. A
+	 * rule beside it is what a row of zones asks for, and it is wrong the
+	 * moment the row folds: the grid cannot say which cell is now first on
+	 * its line, so the cell that is gets a divider standing against nothing.
+	 * A rule above every cell is right at every width, and it is the mark the
+	 * blocks further down the page already carry.
+	 */
+	.specification {
+		display: grid;
+		column-gap: 2.5rem;
+		grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+		margin-block: 2.75rem 0;
+		margin-inline-start: calc(-1 * var(--doc-margin));
+		padding-inline-start: var(--doc-margin);
+	}
+
+	.specification .cell {
+		border-block-start: 1px solid var(--sl-color-gray-5);
+		padding-block: 0.75rem 0.875rem;
+	}
+
+	.specification dd {
+		color: var(--sl-color-white);
+		font-size: 0.9375rem;
+		font-weight: 500;
+		line-height: 1.35;
+		margin: 0.4375rem 0 0;
+	}
+
 	.quickstart {
-		margin-block-start: 1.5rem;
+		margin-block-start: 2.75rem;
 	}
 
 	/*

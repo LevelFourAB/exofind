@@ -125,7 +125,7 @@ Six things about the section are worth knowing before changing it:
   [`src/styles/site.css`](src/styles/site.css) copied out, because D2 is handed
   colours as text and reads no stylesheet - a change to the palette is made in
   both files. Both are deliberate. A page spends its one accent on the links,
-  so a picture that argues in blue argues with them. And the ramp starts at the
+  so a picture that argues in red argues with them. And the ramp starts at the
   grey a paragraph is set in rather than at the grey a heading is set in, so a
   drawing carries no more weight on the page than the sentence that introduces
   it. A block that
@@ -569,6 +569,12 @@ Archivo and IBM Plex Mono. The site itself loads the variable Archivo, which
 ships as WOFF2 alone. The colours are the dark half of the palette in
 `src/styles/site.css`, copied rather than imported, because a preview card is
 shown against a conversation and follows no theme.
+
+The card is headed by the wordmark, in the red the site header sets it in. The
+static files carry the weight axis and not the width axis, so the mark on a
+card is heavy and tightly tracked but not extended, which is the one way it
+differs from the mark on a page. Widen it only with a static width of Archivo.
+Scaling the drawn text thins the stems it stretches.
 
 The images are written at the end of a build, so `mise run site` serves pages
 whose `og:image` points at a file the dev server does not have. Use

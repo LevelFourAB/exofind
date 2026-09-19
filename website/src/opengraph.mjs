@@ -30,12 +30,12 @@ import { BASE, PREVIEW_HEIGHT, PREVIEW_WIDTH } from './site.mjs';
  * shown against a conversation and never follows the reader's theme. A colour
  * changed there has to be changed here as well; nothing compares the two.
  */
-const INK = '#e4e8e4';
-const MUTED = '#8b969c';
-const RULE = '#293237';
-const PAPER = '#0f1417';
-const ACCENT = '#3a5cf0';
-const ACCENT_HIGH = '#b9c8ff';
+const INK = '#ede9e6';
+const MUTED = '#8d847d';
+const RULE = '#302a26';
+const PAPER = '#121011';
+const ACCENT = '#ff5c3c';
+const ACCENT_HIGH = '#ff6a4d';
 
 /** The name the header shows, and the title the front page carries. */
 const SITE_NAME = 'Exofind';
@@ -73,11 +73,18 @@ const DESCRIPTION_LIMIT = 150;
  * WOFF2, so these are the static WOFF files of both families. The site itself
  * loads the variable Archivo, which ships as WOFF2 alone.
  *
+ * The static files carry the weight axis and not the width axis. The wordmark
+ * drawn here is therefore the heavy, tightly tracked half of the one the site
+ * shows and not the extended half of it - see "The wordmark" in
+ * `./styles/site.css`. Widen it here only with a static width of Archivo, not
+ * by scaling the drawn text, which thins the stems it stretches.
+ *
  * @type {import('astro-opengraph-images').SatoriFontOptions[]}
  */
 export const FONTS = [
 	font('Archivo', 400, '@fontsource/archivo/files/archivo-latin-400-normal.woff'),
 	font('Archivo', 600, '@fontsource/archivo/files/archivo-latin-600-normal.woff'),
+	font('Archivo', 800, '@fontsource/archivo/files/archivo-latin-800-normal.woff'),
 	font('IBM Plex Mono', 500, '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff')
 ];
 
@@ -119,14 +126,14 @@ export function render({ title, description, pathname }) {
 	return column({ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT, backgroundColor: PAPER, color: INK }, [
 		box({ height: 8, backgroundColor: ACCENT }),
 		column({ flexGrow: 1, padding: '64px 80px', justifyContent: 'space-between' }, [
-			eyebrow(sectionOf(pathname)),
+			masthead(sectionOf(pathname)),
 			column({}, [
 				text(cut(headline, 96), {
 					fontFamily: 'Archivo',
-					fontWeight: 600,
+					fontWeight: 800,
 					fontSize: sizeFor(headline),
-					lineHeight: 1.14,
-					letterSpacing: '-0.02em'
+					lineHeight: 1.1,
+					letterSpacing: '-0.035em'
 				}),
 				box({ width: 72, height: 3, margin: '32px 0 0', backgroundColor: ACCENT }),
 				sub
@@ -151,8 +158,16 @@ export function render({ title, description, pathname }) {
 	]);
 }
 
-/** The site name, and the section the page sits in where it has one. */
-function eyebrow(section) {
+/**
+ * The top of the image: the wordmark, and the section the page sits in where
+ * it has one.
+ *
+ * The mark is the red the site header sets it in, and the section beside it
+ * stays a label in the mono face. The two carry different things - one names
+ * the site and one says where in it the page is - and setting both as marks
+ * would leave a reader to work out which is which.
+ */
+function masthead(section) {
 	const label = {
 		fontFamily: 'IBM Plex Mono',
 		fontWeight: 500,
@@ -161,11 +176,17 @@ function eyebrow(section) {
 	};
 
 	return row({ alignItems: 'center' }, [
-		text(SITE_NAME.toUpperCase(), label),
+		text(SITE_NAME.toUpperCase(), {
+			color: ACCENT,
+			fontFamily: 'Archivo',
+			fontWeight: 800,
+			fontSize: 34,
+			letterSpacing: '-0.045em'
+		}),
 		...(section
 			? [
-				text('/', { ...label, margin: '0 16px', color: RULE }),
-				text(section.toUpperCase(), { ...label, color: ACCENT_HIGH })
+				text('/', { ...label, margin: '0 18px', color: RULE }),
+				text(section.toUpperCase(), { ...label, color: MUTED })
 			]
 			: [])
 	]);

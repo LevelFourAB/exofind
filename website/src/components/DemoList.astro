@@ -73,8 +73,8 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 	/*
 	 * The row answers the pointer with a line under its title and no change of
-	 * colour. The blue on this site is the current section and the one primary
-	 * action; a list where every row turns blue under the pointer spends it on
+	 * colour. The red on this site is the current section and the one primary
+	 * action; a list where every row turns red under the pointer spends it on
 	 * the thing the reader is already pointing at.
 	 */
 	.demo-row:hover h3 {
@@ -131,7 +131,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 		white-space: nowrap;
 	}
 
-	/* The label brightens with the title, for the same reason it does not turn blue. */
+	/* The label brightens with the title, for the same reason it does not turn red. */
 	.demo-row:hover .open {
 		color: var(--sl-color-white);
 	}

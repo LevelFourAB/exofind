@@ -1,5 +1,22 @@
+<!--
+	The mark, at the size a browser tab shows it.
+
+	A square of the signal red with the glass drawn on it in the paper colour.
+	The square is square, because every corner on this site is; the strokes are
+	one width and end in a half-circle, which is the one thing the letterforms
+	of the wordmark can carry down to sixteen pixels.
+
+	The two colours are the signal red and the light paper of
+	`../src/styles/site.css`, written out because an icon is fetched on its own
+	and reads no stylesheet. A change to either is made in both files.
+
+	It is one image for both themes. A filled square holds its own shape
+	against tab chrome of any shade, which an outlined mark does not.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-	<rect width="32" height="32" rx="6" fill="#1d3fd6"/>
-	<circle cx="14" cy="14" r="6.5" fill="none" stroke="#f7f8f6" stroke-width="2.5"/>
-	<path d="M19 19l6 6" stroke="#f7f8f6" stroke-width="2.5" stroke-linecap="round"/>
+	<rect width="32" height="32" fill="#e8462a"/>
+	<g fill="none" stroke="#fbfaf9" stroke-width="3.5" stroke-linecap="round">
+		<circle cx="13.5" cy="13.5" r="6.5"/>
+		<path d="M18.1 18.1 24.5 24.5"/>
+	</g>
 </svg>

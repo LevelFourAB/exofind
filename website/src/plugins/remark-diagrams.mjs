@@ -26,9 +26,9 @@ import { docsPathOf } from './remark-docs.mjs';
  * The ramp is used twice over. `N1`-`N7` are what D2 draws text, rules and
  * paper with, and `B1`-`B6` are what it fills a shape with; the `A` pairs are
  * the accents it reserves for the parts of a class or a table. Every one of
- * them is a grey here, so a diagram carries no colour of its own: the page it
- * sits on spends its one accent on the links, and a drawing that answers a
- * question in blue is a drawing that argues with them.
+ * them is a warm grey here, so a diagram carries no colour of its own: the
+ * page it sits on spends its one accent on the links, and a drawing that
+ * answers a question in red is a drawing that argues with them.
  *
  * Both ramps start at the grey the prose is set in rather than at the grey a
  * heading is set in, and end at the paper. A diagram is read at the same
@@ -42,20 +42,20 @@ import { docsPathOf } from './remark-docs.mjs';
  */
 const PALETTE = {
 	light: {
-		N1: '#3e474e', N2: '#5c666e', N3: '#a9b2ac', N4: '#ccd2cd',
-		N5: '#e7eae6', N6: '#eff1ee', N7: '#f7f8f6',
-		B1: '#3e474e', B2: '#5c666e', B3: '#a9b2ac', B4: '#ccd2cd',
-		B5: '#e7eae6', B6: '#eff1ee',
-		AA2: '#5c666e', AA4: '#ccd2cd', AA5: '#e7eae6',
-		AB4: '#ccd2cd', AB5: '#e7eae6'
+		N1: '#4a403a', N2: '#6b605a', N3: '#b0a69f', N4: '#d6cfc8',
+		N5: '#f0ece8', N6: '#f5f2ef', N7: '#fbfaf9',
+		B1: '#4a403a', B2: '#6b605a', B3: '#b0a69f', B4: '#d6cfc8',
+		B5: '#f0ece8', B6: '#f5f2ef',
+		AA2: '#6b605a', AA4: '#d6cfc8', AA5: '#f0ece8',
+		AB4: '#d6cfc8', AB5: '#f0ece8'
 	},
 	dark: {
-		N1: '#a6b0b5', N2: '#8b969c', N3: '#414c52', N4: '#293237',
-		N5: '#161c20', N6: '#161c20', N7: '#0f1417',
-		B1: '#a6b0b5', B2: '#8b969c', B3: '#414c52', B4: '#293237',
-		B5: '#161c20', B6: '#161c20',
-		AA2: '#8b969c', AA4: '#293237', AA5: '#161c20',
-		AB4: '#293237', AB5: '#161c20'
+		N1: '#ada49d', N2: '#8d847d', N3: '#4a423c', N4: '#302a26',
+		N5: '#1a1615', N6: '#1a1615', N7: '#121011',
+		B1: '#ada49d', B2: '#8d847d', B3: '#4a423c', B4: '#302a26',
+		B5: '#1a1615', B6: '#1a1615',
+		AA2: '#8d847d', AA4: '#302a26', AA5: '#1a1615',
+		AB4: '#302a26', AB5: '#1a1615'
 	}
 };
 

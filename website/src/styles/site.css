@@ -12,9 +12,13 @@
  *
  * The documentation is set as a manual rather than as a web page: hairline
  * rules instead of boxes, square corners, labels in the mono face at one small
- * size, one blue, and no filled surface but the primary action. The
+ * size, one red, and no filled surface but the primary action. The
  * arrangement is one axis - see "The axis" below - and everything after it is
  * a part of the page hung off that axis.
+ *
+ * The manual it is set as is a graphics standards manual of the American
+ * modernist period: warm red, warm grey, white and black; a grotesque set
+ * wide and tracked tight.
  *
  * Starlight's own styles are in cascade layers and this file is not in one, so
  * every rule here wins over the component it restyles whatever its
@@ -36,20 +40,35 @@
 	 * the inline script does not run, so a reader whose system is set to light
 	 * is not handed the dark palette by a script that failed.
 	 */
-	--sl-color-accent-low: light-dark(#dfe3fa, #1b2440);
-	--sl-color-accent: light-dark(#1d3fd6, #3a5cf0);
-	--sl-color-accent-high: light-dark(#16309f, #b9c8ff);
+	--sl-color-accent-low: light-dark(#f7ded8, #3a1710);
+	--sl-color-accent: light-dark(#c62e16, #ff5c3c);
+	--sl-color-accent-high: light-dark(#a82410, #ff6a4d);
 
-	--sl-color-white: light-dark(#12171b, #e4e8e4);
-	--sl-color-gray-1: light-dark(#1d242a, #d3d9d5);
-	--sl-color-gray-2: light-dark(#3e474e, #a6b0b5);
-	--sl-color-gray-3: light-dark(#5c666e, #8b969c);
-	--sl-color-gray-4: light-dark(#a9b2ac, #414c52);
-	--sl-color-gray-5: light-dark(#ccd2cd, #293237);
-	--sl-color-gray-6: light-dark(#e7eae6, #161c20);
+	/*
+	 * The greys are warm. Every step holds the same red-yellow cast as the
+	 * red, so a rule beside the signal reads as the quiet end of one palette
+	 * and not as a second, colder one.
+	 */
+	--sl-color-white: light-dark(#17120f, #ede9e6);
+	--sl-color-gray-1: light-dark(#241d18, #dad4cf);
+	--sl-color-gray-2: light-dark(#4a403a, #ada49d);
+	--sl-color-gray-3: light-dark(#6b605a, #8d847d);
+	--sl-color-gray-4: light-dark(#b0a69f, #4a423c);
+	--sl-color-gray-5: light-dark(#d6cfc8, #302a26);
+	--sl-color-gray-6: light-dark(#f0ece8, #1a1615);
 	/* The dark palette has no seventh step; it repeats the sixth. */
-	--sl-color-gray-7: light-dark(#eff1ee, #161c20);
-	--sl-color-black: light-dark(#f7f8f6, #0f1417);
+	--sl-color-gray-7: light-dark(#f5f2ef, #1a1615);
+	--sl-color-black: light-dark(#fbfaf9, #121011);
+
+	/*
+	 * The signal red, at full strength. It is brighter than the red the links
+	 * are set in, because it is used only for large shapes: the band over the
+	 * front page, the wordmark, and the rules that divide the zones. Do not
+	 * set body text in it. Text at a reading size uses
+	 * `--sl-color-text-accent`, which is the same red held to a contrast a
+	 * reader can take at that size.
+	 */
+	--ef-signal: light-dark(#e8462a, #ff5c3c);
 
 	/*
 	 * The theme draws with rules rather than with fills, so the header, the
@@ -106,7 +125,7 @@
 	 */
 	--doc-margin: 0rem;
 
-	/* One blue, and the readable half of it in each palette. */
+	/* One red, and the readable half of it in each palette. */
 	--sl-color-text-accent: var(--sl-color-accent);
 }
 
@@ -187,12 +206,27 @@ main footer .pagination-links a > span:not(.link-title),
 /* The header                                                              */
 /* ----------------------------------------------------------------------- */
 
-/* The site name is read as a name, not as the page's one accent. */
+.site-title,
+.ef-wordmark {
+	color: var(--sl-color-text-accent);
+	font-family: var(--sl-font);
+	font-stretch: 118%;
+	font-weight: 800;
+	letter-spacing: -0.045em;
+	text-transform: uppercase;
+}
+
 .site-title {
-	color: var(--sl-color-white);
 	font-size: 1.0625rem;
-	font-weight: 600;
-	letter-spacing: -0.01em;
+}
+
+/*
+ * A mark is read as one shape, so the browser is told not to break it and not
+ * to letter-space the last pair on a line.
+ */
+.site-title > span,
+.ef-wordmark {
+	white-space: nowrap;
 }
 
 /*
@@ -436,15 +470,19 @@ html[data-has-sidebar] {
  * The colour says what an endpoint does to an index rather than which verb it
  * spells that with. Reading is the grey the column is written in, so what
  * stands out in a list of thirty endpoints is the handful that change
- * something; each way of changing something has a colour of its own. The blue
- * is not among them: on this site blue means the page you are on.
+ * something; each way of changing something has a colour of its own.
+ *
+ * The signal red is not among them. On this site red means the page you are
+ * on and the thing you can act on, so removal is given an oxide that is
+ * darker and duller than the red the links are set in. Each of the four is
+ * mixed warm, to the same cast as the greys around them.
  */
 .method-get {
 	--method: var(--sl-color-gray-3);
 }
 
 .method-post {
-	--method: light-dark(#1f7a4d, #55b98a);
+	--method: light-dark(#3d6b34, #8fbd7c);
 }
 
 .method-put {
@@ -452,11 +490,11 @@ html[data-has-sidebar] {
 }
 
 .method-patch {
-	--method: light-dark(#0f6d75, #4bb6bf);
+	--method: light-dark(#2a6570, #68b3bd);
 }
 
 .method-delete {
-	--method: light-dark(#a72f2f, #e58585);
+	--method: light-dark(#7d2b1c, #c99180);
 }
 
 /*
@@ -612,7 +650,7 @@ main > .content-panel:last-child > .sl-container > footer {
  * rule that stops short of the column reads as a mistake rather than as a
  * measure.
  */
-.sl-markdown-content > :is(p, dl, blockquote) {
+.sl-markdown-content > :is(p, dl, blockquote):not(.not-content) {
 	max-width: 70ch;
 }
 
@@ -721,7 +759,7 @@ main > .content-panel:last-child > .sl-container > footer {
 
 .sl-markdown-content > h2::before,
 .sl-markdown-content > .sl-heading-wrapper.level-h2::before {
-	color: var(--sl-color-gray-3);
+	color: var(--sl-color-text-accent);
 	content: counter(doc-section, decimal-leading-zero);
 	font-family: var(--sl-font-mono);
 	font-size: 0.75rem;
@@ -1162,14 +1200,24 @@ main footer .pagination-links a:hover .link-title {
 /* Headings, buttons and the rest of the square corners                    */
 /* ----------------------------------------------------------------------- */
 
+/*
+ * Every heading is set wide and tracked tight, which is the one typographic
+ * move the whole site is drawn with. The width comes from the font's own
+ * width axis rather than from a second face, so a heading and the paragraph
+ * under it are the same typeface at two settings of it.
+ *
+ * The tracking goes further the larger the type gets. Letters set at a title
+ * size carry more space between them than they need, and taking it back is
+ * what makes a heading read as one word rather than as its letters.
+ */
 .sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
-	font-stretch: 104%;
+	font-stretch: 112%;
 }
 
 h1:not(:where(.not-content *)) {
-	font-weight: 700;
-	letter-spacing: -0.025em;
-	line-height: 1.08;
+	font-weight: 800;
+	letter-spacing: -0.035em;
+	line-height: 1.04;
 }
 
 .sl-link-button {
@@ -1182,8 +1230,8 @@ h1:not(:where(.not-content *)) {
 
 /*
  * The one filled thing on the site, so it is filled with the readable half of
- * the blue - the same one the links are set in - and lettered in the paper of
- * whichever theme is showing. The mid blue is bright enough on a light page and
+ * the red - the same one the links are set in - and lettered in the paper of
+ * whichever theme is showing. The mid red is bright enough on a light page and
  * too dark under paper letters on a dark one, which is what `text-accent`
  * already answers for the links.
  *
