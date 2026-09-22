@@ -189,6 +189,55 @@ Two things follow from these pages being outside `docs/`:
   labels a hit from this one by the directory it is in. A root it does not read
   is a page the site publishes and cannot find.
 
+## The version and the changelog
+
+`src/version.mjs` reads the released version from
+[`.release-please-manifest.json`](../.release-please-manifest.json). Release
+Please writes that file and `pom.xml` together when a release lands, and the
+manifest is the one of the two this project can read: the site builds without
+Java.
+
+The version reaches the site two ways:
+
+- `astro.config.mjs` defines it into the bundle as `__EXOFIND_VERSION__`. The
+  header states it and links to the changelog.
+- `substitute` replaces the placeholders a document writes a released value
+  with: `{{version}}` is `0.5.0`, `{{minor}}` is `0.5`, and `{{image}}` is the
+  container image without a tag. A placeholder that stands for nothing fails
+  the build, so a typo is not published as itself.
+
+Two readers call `substitute`: the loader in
+[`src/content/loader.mjs`](src/content/loader.mjs) for the pages, and
+[`search/documents.mjs`](search/documents.mjs) for the index the site's own
+search searches. A third reader of the Markdown has to call it as well, or the
+site publishes one string and finds another.
+
+A page under `docs/` is read on GitHub, where nothing replaces a placeholder.
+Write one only where the release decides the value, such as an image tag or a
+version to pin. A value the reader decides stays in `<angle brackets>`, which
+is how the pages mark what the reader fills in;
+[`docs/how-to/deploy-on-kubernetes.md`](../docs/how-to/deploy-on-kubernetes.md)
+holds one of each in the same manifest. The `README.md` at the root of the
+repository is not a page of this site, so a placeholder there is never
+replaced.
+
+The changelog is [`CHANGELOG.md`](../CHANGELOG.md) at the root of the
+repository, served at `/changelog/`. The loader reads it as a single file
+instead of as a root - see the `files` option in
+[`src/content.config.ts`](src/content.config.ts), which also states the
+description of the page and holds its on-this-page list to the `##` version
+headings. Release Please writes the file, so a title, a description or a
+paragraph added to it by hand is lost at the next release.
+
+The page is in no sidebar and in no part of the manual. A reader reaches it
+from the version in the header and from the last column of the footer.
+`search/documents.mjs` cuts it at the version headings as well, so a hit names
+the release a change is in.
+
+One thing follows from the file being outside the roots `processedDirs` names:
+its headings carry the ids Astro gives them and no anchor link. A link to one
+release works, and the heading offers no link to copy.
+
 ## The REST API pages
 
 `/api/` holds an overview, a page per endpoint and a page per shared type,
@@ -350,6 +399,11 @@ default header to provide section links:
 - `src/nav.mjs` excludes the tutorials from the header because the front page
   links to them directly. If `nav.mjs` references a section that does not
   exist, the build fails.
+- The released version opens the controls on the trailing side and links to the
+  changelog, because a reader of the manual has nothing else on the page that
+  says which release it describes. It is dropped with the theme and the links
+  on a narrow window, where the footer carries the same link. Where the version
+  comes from is [The version and the changelog](#the-version-and-the-changelog).
 
 The custom header also places search alongside the theme toggle and links.
 By default, Starlight aligns search with the prose column, but the front page

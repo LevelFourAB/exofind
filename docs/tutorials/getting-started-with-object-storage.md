@@ -56,7 +56,7 @@ services:
     command: server -dir=/data -s3 -s3.config=/etc/seaweedfs/s3-config.json
 
   exofind:
-    image: ghcr.io/levelfourab/exofind:main-latest
+    image: ghcr.io/levelfourab/exofind:{{version}}
     container_name: exofind
     depends_on:
       - seaweedfs

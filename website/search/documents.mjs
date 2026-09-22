@@ -9,6 +9,10 @@
  * on - and a section is the smallest piece the site can link to, since
  * Starlight gives every heading an anchor.
  *
+ * The version placeholders in a document are replaced the way the site
+ * replaces them, so a search finds the page by the text the page shows - see
+ * `../src/version.mjs`.
+ *
  * The Markdown is read from the repository rather than from the built site.
  * That keeps indexing independent of a site build, and the two agree because
  * both derive the same things from the same files: the URL of a page is its
@@ -28,10 +32,14 @@ import { DEMOS } from '../src/examples/demos.mjs';
 import { typesIn } from '../src/openapi/types.mjs';
 import { partsFrom } from '../src/sidebar.mjs';
 import { BASE } from '../src/site.mjs';
+import { substitute } from '../src/version.mjs';
 
 const DOCS = new URL('../../docs/', import.meta.url);
 const DOCS_INDEX = new URL('README.md', DOCS);
 const OPENAPI = new URL('../public/openapi.yaml', import.meta.url);
+
+/** The changelog, which the site serves as a page of its own. */
+const CHANGELOG = new URL('../../CHANGELOG.md', import.meta.url);
 
 /*
  * The second directory of Markdown the site publishes - prose written for the
@@ -70,6 +78,7 @@ export async function documentsFor({ build }) {
 	const documents = [
 		...await manualDocuments(),
 		...await pageDocuments(),
+		...await changelogDocuments(),
 		...await apiDocuments(),
 		...demoDocuments()
 	];
@@ -98,6 +107,22 @@ async function pageDocuments() {
 }
 
 /**
+ * Every release in the changelog, as one document each.
+ *
+ * The page is cut at the `##` version headings, so a hit names the version and
+ * holds every change in it. Cut at the `###` headings under those, a hit would
+ * be headed `Features` and say nothing about which release the change is in.
+ * The on-this-page list of the page is cut the same way - see
+ * `../src/content.config.ts`.
+ */
+async function changelogDocuments() {
+	const path = fileURLToPath(CHANGELOG);
+	const contents = substitute(await readFile(path, 'utf-8'), 'CHANGELOG.md');
+
+	return sectionsOf('changelog', 'Changelog', contents, 2);
+}
+
+/**
  * Every section of every document under a root, labelled by what the root
  * says about each.
  *
@@ -113,8 +138,9 @@ async function sectionsUnder(root, partOf) {
 
 	const pages = await Promise.all(files.map(async file => {
 		const slug = posix(relative(path, file)).replace(/\.md$/, '');
+		const contents = substitute(await readFile(file, 'utf-8'), slug);
 
-		return sectionsOf(slug, partOf(slug), await readFile(file, 'utf-8'));
+		return sectionsOf(slug, partOf(slug), contents);
 	}));
 
 	return pages.flat();
@@ -160,8 +186,12 @@ async function documentsIn(root) {
  * section it is under, because it divides an explanation rather than naming one
  * a reader would search for. The text before the first heading is the lead,
  * which is what a search for the page's own name should land on.
+ *
+ * @param {number} [cutAt] the deepest heading that starts a section, for a
+ *   page whose deeper headings divide one subject the reader searches for as a
+ *   whole
  */
-function sectionsOf(slug, part, contents) {
+function sectionsOf(slug, part, contents, cutAt = 3) {
 	const body = withoutFrontmatter(contents);
 	const title = titleOf(body) ?? slug;
 
@@ -200,7 +230,7 @@ function sectionsOf(slug, part, contents) {
 
 		const anchor = slugger.slug(text);
 
-		if(depth > 3) {
+		if(depth > cutAt) {
 			current.lines.push(line);
 			continue;
 		}

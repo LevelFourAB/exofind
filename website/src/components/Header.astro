@@ -9,6 +9,12 @@
  * how-to guides at all. The sections are what this replaces the stock header
  * for; what they are is `../nav.mjs`.
  *
+ * The released version opens that trailing side and leads to the changelog.
+ * A reader who is looking at a page of the manual has no other way to tell
+ * which release it describes, and the version is the question a reader asks
+ * before an upgrade. It is dropped with the sections on a narrow window; the
+ * footer of every page carries the same link.
+ *
  * The search is on the trailing side with the theme and the links, rather
  * than in the middle where Starlight puts it. Starlight's header is a grid
  * built to line the search box up with the column the prose is in, which only
@@ -42,6 +48,18 @@ import SocialIcons from "virtual:starlight/components/SocialIcons";
 import ThemeSelect from "virtual:starlight/components/ThemeSelect";
 
 import { sectionsOf } from "../nav.mjs";
+import { withBase } from "../site.mjs";
+
+/**
+ * The released version, defined into the bundle by `../../astro.config.mjs`
+ * from what `../version.mjs` reads. A page is rendered from a bundle and
+ * cannot read the repository, which is why it arrives as a constant rather
+ * than as an import.
+ *
+ * @type {string}
+ */
+/* global __EXOFIND_VERSION__ */
+const VERSION = __EXOFIND_VERSION__;
 
 const sections = sectionsOf(
 	Astro.locals.starlightRoute.sidebar,
@@ -73,6 +91,14 @@ const searchable =
 	</div>
 
 	<div class="right-group sl-flex print:hidden">
+		<a
+			class="version sl-hidden md:sl-flex"
+			href={withBase("/changelog/")}
+			aria-label={`Changelog, released version ${VERSION}`}
+		>
+			v{VERSION}
+		</a>
+
 		{searchable && (
 			<div class="search sl-flex" transition:persist>
 				<Search />
@@ -139,6 +165,24 @@ const searchable =
 	.social-icons {
 		align-items: center;
 		gap: 1rem;
+	}
+
+	/*
+	 * Set in the mono face the site labels with, so that the row reads as the
+	 * site name and then controls, with the version as a mark on the controls
+	 * rather than a fourth section of the navigation.
+	 */
+	.version {
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.75rem;
+		letter-spacing: 0.04em;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+
+	.version:hover {
+		color: var(--sl-color-text-accent);
 	}
 
 	/* The hairline that separates what leaves the site from what changes it. */

@@ -15,11 +15,36 @@ import { docsFromRepository } from './content/loader.mjs';
  * the manual. A subdirectory there is the path the pages are served under -
  * `compare/algolia.md` is `/compare/algolia/` - which is how `docs/` works
  * too.
+ *
+ * The changelog is the fourth: one file, at the root of the repository,
+ * written by the release process. It is a page of the site for the reader who
+ * wants to know what a version changed, and it is in no sidebar - the footer
+ * and the version in the header are where it is offered.
  */
 export const collections = {
 	docs: defineCollection({
 		loader: docsFromRepository({
 			roots: ['../docs', './src/content/pages'],
+			files: [
+				{
+					id: 'changelog',
+					path: '../CHANGELOG.md',
+					data: {
+						/*
+						 * Both are stated here because the file cannot carry
+						 * them: Release Please writes it, and frontmatter or a
+						 * paragraph added to it is lost at the next release.
+						 *
+						 * The list is cut at the version headings. Every
+						 * release also has a heading per kind of change, and a
+						 * list holding those is a list of the word `Features`
+						 * repeated once per release.
+						 */
+						description: 'Every released version of Exofind, and what changed in it.',
+						tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 2 }
+					}
+				}
+			],
 			repoRoot: '..'
 		}),
 		schema: docsSchema()

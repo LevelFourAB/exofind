@@ -41,6 +41,11 @@ const COMPARISONS = __COMPARISONS__;
  * The parts of the manual come from `docs/README.md`, so a section added
  * there is in the footer as well. The REST API is generated rather than
  * written, so it is named here - the same split `EXTRA` in `../nav.mjs` makes.
+ *
+ * The changelog is in the last column with the repository and the API
+ * document: it is the released software rather than a part of the manual, and
+ * it is the one place on the site that names a version. The header links to it
+ * as well, from the version it states.
  */
 const columns = [
 	{
@@ -57,6 +62,7 @@ const columns = [
 	{
 		label: "Elsewhere",
 		links: [
+			{ label: "Changelog", href: withBase("/changelog/") },
 			{ label: "Source on GitHub", href: REPO },
 			{ label: "OpenAPI document", href: withBase("/openapi.yaml") },
 		],

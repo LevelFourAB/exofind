@@ -13,6 +13,15 @@
  *   know which document they are rendering and can resolve the relative links
  *   between documents into URLs.
  *
+ * It also replaces the `{{version}}` placeholders that a document writes a
+ * released value with - see `../version.mjs`. The substitution happens before
+ * the digest is taken, so a release changes the digest of every page that
+ * names the version and those pages are rendered again.
+ *
+ * A file named on its own is loaded the same way as a directory of them. The
+ * changelog is one: it sits at the root of the repository beside files that
+ * are not documentation, and it is written by the release process.
+ *
  * Rendering happens here rather than through the loader context's
  * `renderMarkdown`, because that renders a string and cannot be told which
  * file the string came from - and without that a relative link has nothing to
@@ -28,10 +37,12 @@
 
 import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { basename, join, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
+
+import { substitute } from '../version.mjs';
 
 /** Longest description taken from a document, in characters. */
 const DESCRIPTION_LIMIT = 160;
@@ -42,11 +53,13 @@ const DESCRIPTION_LIMIT = 160;
  * @param {object} options
  * @param {string[]} options.roots directories to read, relative to the
  *   Astro project - a document found in more than one wins from the last
+ * @param {File[]} [options.files] single files to read, each with the path it
+ *   is served at, for a document that is not in a directory of documentation
  * @param {string} options.repoRoot the repository root, relative to the Astro
  *   project, which recorded paths are expressed against so that edit links
  *   point at the file in the repository
  */
-export function docsFromRepository({ roots, repoRoot }) {
+export function docsFromRepository({ roots, files = [], repoRoot }) {
 	return {
 		name: 'exofind-docs',
 		load: async context => {
@@ -58,14 +71,12 @@ export function docsFromRepository({ roots, repoRoot }) {
 
 			const stale = new Set(store.keys());
 
-			async function sync(rootPath, filePath) {
-				const contents = await readFile(filePath, 'utf-8');
+			async function sync({ filePath, id, docsPath, data: stated }) {
+				const repoRelative = posix(relative(repoPath, filePath));
+
+				const contents = substitute(await readFile(filePath, 'utf-8'), repoRelative);
 				const digest = generateDigest(contents);
 				const { frontmatter, body } = splitFrontmatter(contents);
-
-				const id = idFor(relative(rootPath, filePath));
-				const docsPath = posix(relative(rootPath, filePath));
-				const repoRelative = posix(relative(repoPath, filePath));
 
 				stale.delete(id);
 
@@ -78,6 +89,7 @@ export function docsFromRepository({ roots, repoRoot }) {
 					data: {
 						title: titleOf(body) ?? id,
 						...describe(body),
+						...stated,
 						...frontmatter
 					}
 				});
@@ -118,10 +130,37 @@ export function docsFromRepository({ roots, repoRoot }) {
 					continue;
 				}
 
-				const files = await documentsIn(rootPath);
-				await Promise.all(files.map(file => sync(rootPath, file)));
+				const found = await documentsIn(rootPath);
+				await Promise.all(found.map(file => sync(entryIn(rootPath, file))));
 
-				if(watcher) watch(watcher, rootPath, file => sync(rootPath, file), store, logger);
+				if(watcher) watch(watcher, rootPath, file => sync(entryIn(rootPath, file)), store, logger);
+			}
+
+			for(const file of files) {
+				const filePath = join(projectRoot, file.path);
+
+				if(!existsSync(filePath)) {
+					logger.warn(`No such file: ${filePath}`);
+					continue;
+				}
+
+				const entry = {
+					filePath,
+					id: file.id,
+					/*
+					 * The name of the file, because the plugins in
+					 * `../plugins/remark-docs.mjs` resolve a relative link
+					 * against this path. A file outside `docs/` links to no
+					 * document by relative path, and the name keeps the
+					 * document in the root that the resolution starts from.
+					 */
+					docsPath: basename(filePath),
+					data: file.data
+				};
+
+				await sync(entry);
+
+				if(watcher) watchOne(watcher, filePath, () => sync(entry), logger);
 			}
 
 			for(const id of stale) store.delete(id);
@@ -146,6 +185,35 @@ async function documentsIn(root) {
 			&& entry.name !== 'README.md'
 			&& !entry.name.startsWith('_'))
 		.map(entry => join(entry.parentPath, entry.name));
+}
+
+/**
+ * @typedef {object} File
+ * @property {string} id the path the file is served at
+ * @property {string} path the file, relative to the Astro project
+ * @property {object} [data] frontmatter the file does not carry itself, such
+ *   as the description of a generated document
+ */
+
+/**
+ * @typedef {object} Entry
+ * @property {string} filePath the file to read
+ * @property {string} id the path it is served at
+ * @property {string} docsPath the path a relative link in it resolves against
+ * @property {object} [data] frontmatter to fill in
+ */
+
+/**
+ * One document of a root, as the entry the loader syncs.
+ *
+ * @returns {Entry}
+ */
+function entryIn(rootPath, filePath) {
+	return {
+		filePath,
+		id: idFor(relative(rootPath, filePath)),
+		docsPath: posix(relative(rootPath, filePath))
+	};
 }
 
 /** The id of a document, which is also the path it is served at. */
@@ -218,4 +286,25 @@ function watch(watcher, rootPath, sync, store, logger) {
 
 		store.delete(idFor(relative(rootPath, path)));
 	});
+}
+
+/**
+ * Reload one file when it changes on disk.
+ *
+ * A file that is deleted keeps the page it loaded. It is a file the site is
+ * configured to publish, so it going missing is a build to fix and not a page
+ * to withdraw while the dev server runs.
+ */
+function watchOne(watcher, filePath, sync, logger) {
+	watcher.add(filePath);
+
+	const reload = async path => {
+		if(path !== filePath) return;
+
+		await sync();
+		logger.info(`Reloaded ${basename(filePath)}`);
+	};
+
+	watcher.on('add', reload);
+	watcher.on('change', reload);
 }

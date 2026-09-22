@@ -11,7 +11,7 @@ Before you begin, ensure you have the following:
 
 - Docker or a compatible container runtime installed.
 - Access to the container image `ghcr.io/levelfourab/exofind`. Pin a release tag
-  such as `0.1.0` in your test suite so test runs remain repeatable.
+  such as `{{version}}` in your test suite so test runs remain repeatable.
 
 Exofind uses `local` storage mode by default (`EXOFIND_STORAGE_MODE=local`). In
 this mode, the node stores all indexes and keys on local disk inside the
@@ -38,7 +38,7 @@ To start a standalone container from the command line, run:
 ```shell
 docker run -d --name exofind-test -p 8080:8080 \
   -e EXOFIND_AUTH_MODE=none \
-  ghcr.io/levelfourab/exofind:0.1.0
+  ghcr.io/levelfourab/exofind:{{version}}
 ```
 
 Do not mount a volume on `/data`. Without a persistent volume, all state is
@@ -52,7 +52,7 @@ wait strategy:
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
-GenericContainer<?> exofind = new GenericContainer<>("ghcr.io/levelfourab/exofind:0.1.0")
+GenericContainer<?> exofind = new GenericContainer<>("ghcr.io/levelfourab/exofind:{{version}}")
     .withExposedPorts(8080)
     .withEnv("EXOFIND_AUTH_MODE", "none")
     .waitingFor(Wait.forHttp("/q/health/ready").forStatusCode(200));

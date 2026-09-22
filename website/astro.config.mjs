@@ -17,6 +17,7 @@ import { remarkDiagramPaths, remarkDiagramStyle } from './src/plugins/remark-dia
 import { remarkRewriteLinks, remarkStripTitle } from './src/plugins/remark-docs.mjs';
 import { sidebarFrom } from './src/sidebar.mjs';
 import { BASE, PREVIEW_HEIGHT, PREVIEW_WIDTH, REPO, SITE } from './src/site.mjs';
+import { VERSION } from './src/version.mjs';
 
 const docsRoot = new URL('../docs/', import.meta.url);
 
@@ -42,12 +43,17 @@ export default defineConfig({
 	 * The comparison pages arrive the same way and for the same reason. They
 	 * are read from the files themselves by `./src/compare.mjs`, and the
 	 * footer of every page is what lists them.
+	 *
+	 * The released version arrives the same way as well. The header states it
+	 * and links to the changelog; `./src/version.mjs` reads it from the file
+	 * the release writes.
 	 */
 	vite: {
 		define: {
 			__DOCS_PARTS__: JSON.stringify(PARTS),
 			__DOCS_CATALOGUE__: JSON.stringify(CATALOGUE),
-			__COMPARISONS__: JSON.stringify(comparisons())
+			__COMPARISONS__: JSON.stringify(comparisons()),
+			__EXOFIND_VERSION__: JSON.stringify(VERSION)
 		}
 	},
 

@@ -37,7 +37,7 @@ initContainers:
 
 Nodes with `EXOFIND_INDEXER_ENABLED` set to `false` (the default) answer searches from their local copy and never write. They hold no persistent state, so the volume is ephemeral. A wiped pod slows down temporarily while it refills its cache.
 
-Replace the placeholder values in angle brackets with values sized for your deployment. For details on sizing each parameter, see [Size the pools](#size-the-pools). Replace `<version>` with a specific release version, such as `0.1.0`. Do not use `latest`, so that replaced pods run the same version as existing pods.
+Replace the placeholder values in angle brackets with values sized for your deployment. For details on sizing each parameter, see [Size the pools](#size-the-pools). The image tag names a release, so that replaced pods run the same version as existing pods. Do not use `latest`.
 
 Apply the following `Deployment` manifest to create the search pool:
 
@@ -57,7 +57,7 @@ spec:
       terminationGracePeriodSeconds: <search-grace>
       containers:
         - name: exofind
-          image: ghcr.io/levelfourab/exofind:<version>
+          image: ghcr.io/levelfourab/exofind:{{version}}
           ports:
             - { name: http, containerPort: 8080 }
           env:
@@ -114,7 +114,7 @@ spec:
       terminationGracePeriodSeconds: <indexer-grace>
       containers:
         - name: exofind
-          image: ghcr.io/levelfourab/exofind:<version>
+          image: ghcr.io/levelfourab/exofind:{{version}}
           ports:
             - { name: http, containerPort: 8080 }
           env:

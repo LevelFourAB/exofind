@@ -22,7 +22,7 @@ before it begins handling requests:
    ```text
    INFO  storage=object auth=keys indexer=true bucket=exofind directory=/var/lib/exofind Starting node, which competes to write indexes
    INFO  node=node-a-7f21 address=http://node-a:8080 Competing for the indexer role
-   INFO  exofind 0.1.0 on JVM … started in 1.4s. Listening on: http://0.0.0.0:8080
+   INFO  exofind {{version}} on JVM … started in 1.4s. Listening on: http://0.0.0.0:8080
    ```
 2. Verify the configuration settings:
    - Check `storage`, `auth`, `indexer`, and the storage location (`bucket` or

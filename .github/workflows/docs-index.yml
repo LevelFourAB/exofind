@@ -6,6 +6,12 @@ name: Search index
 # a load that fails leaves the pages deployed rather than the other way round.
 #
 # What it loads and how is `website/search/README.md`.
+#
+# The changelog and the version manifest are loaded as well, for the reason
+# `pages.yml` builds on them: the changelog is a page the search finds, and the
+# version the manifest holds is put in place of the `{{version}}` placeholders
+# in the documentation. An index that misses a release answers with the version
+# before it.
 on:
   push:
     branches: [main]
@@ -14,6 +20,8 @@ on:
       - 'website/public/openapi.yaml'
       - 'website/search/**'
       - 'website/src/examples/demos.mjs'
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
       - '.github/workflows/docs-index.yml'
   # Loading on demand, for an index that has to be written again without the
   # documentation having changed - a new node, or one whose bucket was emptied.

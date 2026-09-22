@@ -3,17 +3,27 @@ name: Pages
 # Building the website - the documentation in `docs/` and the demo pages - and
 # publishing it to GitHub Pages. A pull request is built but not published, so
 # that a change to the documentation is known to build before it is merged.
+#
+# The changelog and the version manifest are built as well, because both reach
+# the pages: the changelog is a page, and the version the manifest holds is
+# printed in the header and put in place of the `{{version}}` placeholders the
+# documentation writes an image tag with. A release changes those two files and
+# nothing else the site reads, so without them a release publishes nothing.
 on:
   push:
     branches: [main]
     paths:
       - 'docs/**'
       - 'website/**'
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
       - '.github/workflows/pages.yml'
   pull_request:
     paths:
       - 'docs/**'
       - 'website/**'
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
       - '.github/workflows/pages.yml'
   # Publishing on demand, for a deployment that has to be redone without the
   # documentation having changed - a new demo node, for instance.

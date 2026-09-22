@@ -18,9 +18,8 @@ without backward compatibility.
 
 ## Starting the container
 
-The Exofind container image is published to GitHub Packages. The `main-latest`
-tag represents the newest development build. For production deployments, pin a
-release version such as `0.1.0` or a specific commit tag.
+The Exofind container image is published to GitHub Packages. This tutorial
+starts the current release, `{{version}}`.
 
 The container image enforces authentication by default (`EXOFIND_AUTH_MODE=keys`).
 When starting a node with no stored keys, you must set `EXOFIND_AUTH_ROOT_KEY` to
@@ -32,7 +31,7 @@ Start the Exofind container:
 docker run -d --name exofind -p 8080:8080 \
   -v exofind-data:/data \
   -e EXOFIND_AUTH_ROOT_KEY=exok_tutorial \
-  ghcr.io/levelfourab/exofind:main-latest
+  ghcr.io/levelfourab/exofind:{{version}}
 ```
 
 The command sets the following options:
