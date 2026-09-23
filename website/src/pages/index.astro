@@ -17,10 +17,21 @@ import { COMPANY } from '../site.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
+/**
+ * The released version, defined into the bundle by `../../astro.config.mjs`
+ * from what `../version.mjs` reads. A page is rendered from a bundle and
+ * cannot read the repository, which is why it arrives as a constant rather
+ * than as an import.
+ *
+ * @type {string}
+ */
+/* global __EXOFIND_VERSION__ */
+const VERSION = __EXOFIND_VERSION__;
+
 const runCommand = `docker run -d --name exofind -p 8080:8080 \\
   -v exofind-data:/data \\
   -e EXOFIND_AUTH_ROOT_KEY=exok_quickstart \\
-  ghcr.io/levelfourab/exofind:main-latest`;
+  ghcr.io/levelfourab/exofind:${VERSION}`;
 
 const defineIndex = `PUT /v1alpha1/admin/indexes/books
 Authorization: Bearer exok_quickstart
