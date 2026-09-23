@@ -40,6 +40,22 @@ public interface RangeFacetCounter {
 	FacetCount prepare(FacetMatches scope);
 
 	/**
+	 * Prepare to count one scope by the values a chain reads for each
+	 * document, instead of by the values of the field - see
+	 * {@link ChainRangeFacetCount}.
+	 *
+	 * @param scope
+	 *   what the matches of the scope are - documents of the index, or
+	 *   values counted by their document
+	 * @param chain
+	 *   the values to count, read from doc values written in the same
+	 *   encoding as the values of this field
+	 * @return
+	 *   the count to feed through {@link FacetWalk}, never {@code null}
+	 */
+	FacetCount prepare(FacetMatches scope, ValueChain chain);
+
+	/**
 	 * Count a field written as sorted numeric doc values, mapping each bound
 	 * into the encoding the values were written in.
 	 *
@@ -82,6 +98,16 @@ public interface RangeFacetCounter {
 			i++;
 		}
 
-		return scope -> new RangeFacetCount(field, scope, ranges, longRanges);
+		return new RangeFacetCounter() {
+			@Override
+			public FacetCount prepare(FacetMatches scope) {
+				return new RangeFacetCount(field, scope, ranges, longRanges);
+			}
+
+			@Override
+			public FacetCount prepare(FacetMatches scope, ValueChain chain) {
+				return new ChainRangeFacetCount(chain, scope, ranges, longRanges);
+			}
+		};
 	}
 }

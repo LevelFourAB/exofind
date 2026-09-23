@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.api.v1alpha1.search.model;
 
+import java.util.List;
+
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.DiscriminatorMapping;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -89,7 +91,11 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 			A field inside a `nested` \
 			[object](https://exofind.dev/reference/field-types/#object) \
 			is named by its dotted path, and only the nested values that the \
-			query's `nested` clauses matched are considered.""",
+			query's `nested` clauses matched are considered. A sort with \
+			`when` or `fallback` reads the values it names instead, such as \
+			the price on the customer's list or else on the store's list. \
+			See [Sorting by the value a customer \
+			sees](https://exofind.dev/reference/search-api/#sorting-by-the-value-a-customer-sees).""",
 		examples = Field.EXAMPLE,
 		properties = @SchemaProperty(
 			name = "type",
@@ -111,11 +117,45 @@ public sealed interface Sort permits Sort.Field, Sort.Score, Sort.Distance {
 		String field,
 
 		@Schema(description = "Direction to order in.", defaultValue = "asc")
-		Order order
+		Order order,
+
+		/**
+		 * Clauses that must hold where the value is read.
+		 */
+		@Schema(description = """
+			Clauses that must hold where the value is read: in the same value \
+			as the field for a field inside a `nested` list, and for the \
+			document otherwise. Inside a list it takes what a `nested` clause \
+			takes. With `when` or `fallback`, the query's `nested` clauses no \
+			longer decide which values are considered, and the field must be a \
+			number or timestamp field (`search:sort:type_unsupported`).""")
+		List<Clause> when,
+
+		/**
+		 * Fields read instead where a document holds no value on this one, in
+		 * order.
+		 */
+		@Schema(description = """
+			Fields read instead, in order, for a document that holds no value \
+			on `field` where `when` holds - a product with no price on the \
+			customer's list is ordered by its price on the store's list. Every \
+			field must be of the type of `field` \
+			(`search:sort:fallback_type_mismatch`).""")
+		List<FallbackTarget> fallback
 	) implements Sort {
 		/** The example sort, as the JSON a caller writes. */
 		public static final String EXAMPLE = """
 			{ "field": "name", "order": "asc" }""";
+
+		/**
+		 * Sort by every value of the field the query matched.
+		 *
+		 * @param field
+		 * @param order
+		 */
+		public Field(String field, Order order) {
+			this(field, order, null, null);
+		}
 	}
 
 	/**

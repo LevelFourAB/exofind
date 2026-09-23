@@ -58,6 +58,10 @@ final class SortKeys {
 			return nested.mirrored();
 		}
 
+		if(field instanceof ChainSortField chain) {
+			return chain.mirrored();
+		}
+
 		/*
 		 * Mirrored as its own kind, so a page read backwards skips through the
 		 * points the same way the forward page does.

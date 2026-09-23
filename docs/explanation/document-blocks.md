@@ -67,6 +67,18 @@ When a query asks something of sub-document values, it must evaluate those condi
 
 This join adds search overhead that top-level field queries avoid.
 
+### Reading one value per document
+
+A sort or a range facet with `when` and `fallback` reads one set of values per document, such as the price on the customer's list, or else on the store's list. The engine reads these values at search time. For each document, it walks the sub-documents in the block and stops at the first step of the chain that holds a value.
+
+The indexer could instead write a column per pricelist beside each document. That makes a sort as cheap as a sort on a top-level field, but it has three costs:
+
+- The chain lives in the request. A column per chain would need a definition change and a reindex for each new list or new fallback order.
+- A shop with hundreds of lists would write hundreds of columns into every document, most of them empty.
+- A change to one price would rewrite the column of every chain that reads that list.
+
+Reading at search time costs a walk of the block of each matched document. That is the same walk a sort on a nested field already makes. The engine cannot skip documents with the points of the field, because the points describe every value and not the value a chain picks. See [Sorting by the value a customer sees](../reference/search-api.md#sorting-by-the-value-a-customer-sees).
+
 ## Choosing a variant layout
 
 Whether variants belong inside the parent document as nested sub-documents, in separate documents of their own, or rolled up onto the parent document depends on your query patterns and update frequencies.

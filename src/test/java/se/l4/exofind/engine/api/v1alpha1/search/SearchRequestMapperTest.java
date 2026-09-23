@@ -20,6 +20,7 @@ import org.eclipse.collections.api.factory.Sets;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FallbackTarget;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
@@ -38,6 +39,7 @@ import se.l4.exofind.engine.query.ScoreSort;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.query.TextQuery;
+import se.l4.exofind.engine.query.ValueTarget;
 import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
 import se.l4.exofind.engine.query.matchers.RangesMatcher;
@@ -642,6 +644,68 @@ public class SearchRequestMapperTest {
 				new FieldSort("name", SortBy.Order.DESCENDING)
 			)
 		);
+	}
+
+	@Test
+	public void testSortCarriesWhenAndFallback() {
+		var mapped = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null, null, null,
+				List.of(new Sort.Field(
+					"prices.amount",
+					null,
+					List.of(listIs("cust-17")),
+					List.of(new FallbackTarget("prices.amount", List.of(listIs("store")), null))
+				)),
+				null, null, null, null, null, null, null, null, null, null, null, null
+			),
+			LIMITS
+		);
+
+		assertThat(
+			mapped.request().sort(),
+			contains(
+				new FieldSort(
+					"prices.amount",
+					SortBy.Order.ASCENDING,
+					Lists.immutable.of(engineListIs("cust-17")),
+					Lists.immutable.of(
+						ValueTarget.of("prices.amount").withWhen(engineListIs("store"))
+					)
+				)
+			)
+		);
+	}
+
+	@Test
+	public void testSortFallbackWithoutAFieldIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null, null, null,
+					List.of(new Sort.Field(
+						"prices.amount",
+						null,
+						null,
+						List.of(new FallbackTarget(" ", null, null))
+					)),
+					null, null, null, null, null, null, null, null, null, null, null, null
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:sort:field_required"));
+		assertThat(pathsOf(e), contains("sort[0].fallback[0].field"));
+	}
+
+	private static Clause listIs(String list) {
+		return new Clause.Field("prices.list", new Matcher.Equals(list));
+	}
+
+	private static FieldQuery engineListIs(String list) {
+		return new FieldQuery("prices.list", new EqualsMatcher(list));
 	}
 
 	private static SearchRequest withSignals(List<Signal> signals) {
@@ -1453,6 +1517,63 @@ public class SearchRequestMapperTest {
 			mapped.request().facets().get(0).excludeFilters(),
 			is(Lists.immutable.of("price", "sale_price"))
 		);
+	}
+
+	@Test
+	public void testFacetCarriesWhenAndFallback() {
+		var mapped = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null, null,
+				List.of(new SearchRequest.Facet(
+					null, "prices.amount", null, null,
+					List.of(new SearchRequest.Facet.Range(null, 100)),
+					null, null, null,
+					List.of(listIs("cust-17")),
+					List.of(new FallbackTarget(
+						"prices.amount",
+						List.of(listIs("store")),
+						List.of(new FallbackTarget("sale_price", null, null))
+					))
+				)),
+				null, null, null, null, null, null, null, null, null, null, null, null, null
+			),
+			LIMITS
+		);
+
+		var facet = mapped.request().facets().get(0);
+		assertThat(facet.when(), is(Lists.immutable.of(engineListIs("cust-17"))));
+		assertThat(
+			facet.fallback(),
+			is(Lists.immutable.of(
+				ValueTarget.of("prices.amount")
+					.withWhen(engineListIs("store"))
+					.withFallback(ValueTarget.of("sale_price"))
+			))
+		);
+	}
+
+	@Test
+	public void testFacetFallbackWithoutAFieldIsRefused() {
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null, null,
+					List.of(new SearchRequest.Facet(
+						null, "prices.amount", null, null,
+						List.of(new SearchRequest.Facet.Range(null, 100)),
+						null, null, null,
+						null,
+						List.of(new FallbackTarget(null, null, null))
+					)),
+					null, null, null, null, null, null, null, null, null, null, null, null, null
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:facet:field_required"));
+		assertThat(pathsOf(e), contains("facets[0].fallback[0].field"));
 	}
 
 	@Test
@@ -2780,6 +2901,55 @@ public class SearchRequestMapperTest {
 			pathsOf(e),
 			contains("query[0].interpret.fields[0].fallback[0].when[0]")
 		);
+	}
+
+	@Test
+	public void testClausesOfASortAreCounted() {
+		var limits = LIMITS.withMaxClauses(1);
+
+		var request = new SearchRequest(
+			null, null, null,
+			List.of(new Sort.Field(
+				"prices.amount",
+				null,
+				List.of(listIs("cust-17")),
+				List.of(new FallbackTarget("prices.amount", List.of(listIs("store")), null))
+			)),
+			null, null, null, null, null, null, null, null, null, null, null, null
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(request, limits)
+		);
+
+		assertThat(codesOf(e), contains("search:clauses_too_many"));
+		assertThat(pathsOf(e), contains("sort[0].fallback[0].when[0]"));
+	}
+
+	@Test
+	public void testClausesOfAFacetAreCounted() {
+		var limits = LIMITS.withMaxClauses(1);
+
+		var request = new SearchRequest(
+			null, null,
+			List.of(new SearchRequest.Facet(
+				null, "prices.amount", null, null,
+				List.of(new SearchRequest.Facet.Range(null, 100)),
+				null, null, null,
+				List.of(listIs("cust-17"), listIs("cust-18")),
+				null
+			)),
+			null, null, null, null, null, null, null, null, null, null, null, null, null
+		);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(request, limits)
+		);
+
+		assertThat(codesOf(e), contains("search:clauses_too_many"));
+		assertThat(pathsOf(e), contains("facets[0].when[1]"));
 	}
 
 	@Test

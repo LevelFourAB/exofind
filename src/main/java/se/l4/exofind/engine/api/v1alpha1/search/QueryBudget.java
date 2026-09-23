@@ -5,7 +5,9 @@ import java.util.List;
 import org.eclipse.collections.api.list.MutableList;
 
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FallbackTarget;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Sort;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
@@ -29,7 +31,8 @@ import se.l4.exofind.engine.errors.Location;
  *
  * <p>Every clause that can hold clauses is walked here, including a
  * {@code text} clause, which holds none of its own but carries a chain of
- * interpret targets that do. The walk switches over {@link Clause} without a
+ * interpret targets that do. The {@code when} and {@code fallback} of a sort
+ * and of a facet are walked the same way. The walk switches over {@link Clause} without a
  * default branch, so a clause type added to the API without being counted here
  * fails to compile.
  */
@@ -115,6 +118,27 @@ final class QueryBudget {
 
 		if(body.rescore() != null) {
 			budget.walk(body.rescore().boost(), "rescore.boost", 1);
+		}
+
+		if(body.sort() != null) {
+			for(var i = 0; i < body.sort().size(); i++) {
+				if(body.sort().get(i) instanceof Sort.Field field) {
+					var at = "sort[" + i + "]";
+					budget.walk(field.when(), at + ".when", 1);
+					budget.walkFallbacks(field.fallback(), at + ".fallback", 2);
+				}
+			}
+		}
+
+		if(body.facets() != null) {
+			for(var i = 0; i < body.facets().size(); i++) {
+				var facet = body.facets().get(i);
+				if(facet != null) {
+					var at = "facets[" + i + "]";
+					budget.walk(facet.when(), at + ".when", 1);
+					budget.walkFallbacks(facet.fallback(), at + ".fallback", 2);
+				}
+			}
 		}
 
 		return !budget.oversized;
@@ -302,6 +326,44 @@ final class QueryBudget {
 			var at = path + "[" + i + "]";
 			walk(target.when(), at + ".when", depth);
 			walkTargets(target.fallback(), at + ".fallback", depth + 1);
+
+			if(oversized) {
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Measure the fallback targets of a sort or a facet, the same way the
+	 * targets of an interpret chain are measured: the clauses of each
+	 * {@code when} count, and each fallback nested inside another sits one
+	 * level deeper.
+	 *
+	 * @param path
+	 *   path of the list itself; an entry reports at its own index
+	 * @param depth
+	 *   how deep the clauses of these targets sit
+	 */
+	private void walkFallbacks(List<FallbackTarget> targets, String path, int depth) {
+		if(targets == null || oversized) {
+			return;
+		}
+
+		if(depth > limits.maxClauseDepth()) {
+			refuse(TOO_DEEP.toMessage(Location.create(path), "max", limits.maxClauseDepth()));
+			return;
+		}
+
+		for(var i = 0; i < targets.size(); i++) {
+			var target = targets.get(i);
+			if(target == null) {
+				// The mapper reports what is missing; an absent target costs nothing
+				continue;
+			}
+
+			var at = path + "[" + i + "]";
+			walk(target.when(), at + ".when", depth);
+			walkFallbacks(target.fallback(), at + ".fallback", depth + 1);
 
 			if(oversized) {
 				return;

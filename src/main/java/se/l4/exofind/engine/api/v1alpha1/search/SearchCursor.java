@@ -291,6 +291,17 @@ sealed interface SearchCursor {
 			description.append(step.type());
 			if(step instanceof FieldSort field) {
 				description.append(':').append(field.field());
+
+				/*
+				 * The values a chain reads are part of the order - a position
+				 * taken at the price on one list names nothing among the
+				 * prices on another. A sort without one fingerprints as it
+				 * did before chains existed.
+				 */
+				if(field.target().selects()) {
+					description.append(":when=").append(field.when())
+						.append(":fallback=").append(field.fallback());
+				}
 			}
 			if(step instanceof GeoDistanceSort geo) {
 				/*

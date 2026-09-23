@@ -106,7 +106,7 @@ Before you begin, ensure you have:
          "key": "list",
          "fields": {
            "list": { "type": "string", "filter": {}, "required": true },
-           "amount": { "type": "double", "filter": {}, "sort": {}, "unit": "SEK" }
+           "amount": { "type": "double", "filter": {}, "sort": {}, "facet": {}, "unit": "SEK" }
          }
        }
      }
@@ -156,6 +156,43 @@ Before you begin, ensure you have:
    In this example, the rain jacket matches on the customer price of 89, the rain boots match through the fallback on the store price of 79, and the rain hat does not match because its customer price of 149 exists and is not below 100.
 
    The response echoes `when` and `fallback` on each filter so the interface can send the target back.
+
+   To order the results and count the price facet by the same price, give the sort and the range facet the same `when` and `fallback`:
+
+   ```json
+   {
+     "sort": [
+       {
+         "field": "prices.amount",
+         "order": "asc",
+         "when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+         "fallback": [
+           {
+             "field": "prices.amount",
+             "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+           }
+         ]
+       }
+     ],
+     "facets": [
+       {
+         "field": "prices.amount",
+         "ranges": [ { "to": 100 }, { "from": 100 } ],
+         "when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+         "fallback": [
+           {
+             "field": "prices.amount",
+             "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+           }
+         ]
+       }
+     ]
+   }
+   ```
+
+   The rain boots at 79 come first and the rain jacket at 89 second. Without `interpret`, the rain hat comes last at 149. The facet counts the rain hat in the bucket from 100, and not below 100, where its store price of 99 would put it. See [Sorting by the value a customer sees](../reference/search-api.md#sorting-by-the-value-a-customer-sees) and [Counting by the value a customer sees](../reference/search-api.md#counting-by-the-value-a-customer-sees).
+
+   **Note:** A filter on `prices.list` in the request drops the products that hold no price on that list. Put the list in `when` instead, so a product without a customer price is read on the store's list.
 
    **Note:** A field declares one unit. Pricelists in several currencies need one amount field per currency (such as `prices.sek` and `prices.eur`), and the request targets the field of the customer's currency.
 

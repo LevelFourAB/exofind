@@ -24,6 +24,15 @@ import org.eclipse.collections.api.list.ImmutableList;
  * one red product. Only the values the search matched are counted, which is
  * what its {@link NestedQuery} clauses say.
  *
+ * A facet counting into buckets and given {@code when} or {@code fallback}
+ * names the values it counts itself, the way a {@link ValueTarget} does, and
+ * the {@link NestedQuery} clauses of the search take no part: a document
+ * counts into a bucket when a value of the first step of the chain it holds
+ * any value on falls in it. That counts each product at the price a customer
+ * sees - the one on their own list, or on the store's list where a product has
+ * none on theirs - the same price a {@link FieldSort} with the same chain
+ * orders by.
+ *
  * A field whose values are paths through a tree counts a level at a time and
  * answers the counts nested, which is what a category navigation is built out
  * of: {@link #path()} says which level to count the children of and
@@ -78,6 +87,14 @@ import org.eclipse.collections.api.list.ImmutableList;
  *   half typed word finds what it would have with the mistake fixed. The
  *   first character of the prefix is never read as a mistake. Only string
  *   fields compare this way; every other field answers as with zero
+ * @param when
+ *   the clauses that have to hold where a value is counted, empty for none -
+ *   see {@link ValueTarget#when()}. Only read by a facet counting into
+ *   buckets
+ * @param fallback
+ *   the targets counted instead where a document holds no value on the
+ *   field, empty for none - see {@link ValueTarget#fallback()}. Only read by
+ *   a facet counting into buckets
  */
 public record Facet(
 	String name,
@@ -89,7 +106,9 @@ public record Facet(
 	int depth,
 	ImmutableList<String> excludeFilters,
 	String prefix,
-	int prefixEdits
+	int prefixEdits,
+	ImmutableList<Query> when,
+	ImmutableList<ValueTarget> fallback
 ) {
 	/**
 	 * The most mistakes a prefix may forgive. One is what a word still being
@@ -250,6 +269,33 @@ public record Facet(
 				"A prefix forgives between 0 and " + MAX_PREFIX_EDITS + " mistakes"
 			);
 		}
+
+		if(when == null) {
+			when = Lists.immutable.empty();
+		}
+
+		if(fallback == null) {
+			fallback = Lists.immutable.empty();
+		}
+	}
+
+	/**
+	 * Count per value, answering the values that start with the prefix within
+	 * the given number of mistakes.
+	 */
+	public Facet(
+		String name,
+		String field,
+		int limit,
+		Order order,
+		ImmutableList<Range> ranges,
+		String path,
+		int depth,
+		ImmutableList<String> excludeFilters,
+		String prefix,
+		int prefixEdits
+	) {
+		this(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, null, null);
 	}
 
 	/**
@@ -347,7 +393,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withName(String name) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
 	}
 
 	/**
@@ -357,7 +403,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withLimit(int limit) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
 	}
 
 	/**
@@ -367,7 +413,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withOrder(Order order) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
 	}
 
 	/**
@@ -380,7 +426,7 @@ public record Facet(
 	public Facet withRanges(Range... ranges) {
 		return new Facet(
 			name, field, limit, order, Lists.immutable.of(ranges), path, depth, excludeFilters,
-			prefix, prefixEdits
+			prefix, prefixEdits, when, fallback
 		);
 	}
 
@@ -394,7 +440,7 @@ public record Facet(
 	public Facet withRanges(Iterable<? extends Range> ranges) {
 		return new Facet(
 			name, field, limit, order, Lists.immutable.ofAll(ranges), path, depth, excludeFilters,
-			prefix, prefixEdits
+			prefix, prefixEdits, when, fallback
 		);
 	}
 
@@ -406,7 +452,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPath(String path) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
 	}
 
 	/**
@@ -416,7 +462,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withDepth(int depth) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
 	}
 
 	/**
@@ -430,7 +476,7 @@ public record Facet(
 	public Facet withExcludeFilters(String... excludeFilters) {
 		return new Facet(
 			name, field, limit, order, ranges, path, depth,
-			Lists.immutable.of(excludeFilters), prefix, prefixEdits
+			Lists.immutable.of(excludeFilters), prefix, prefixEdits, when, fallback
 		);
 	}
 
@@ -445,7 +491,7 @@ public record Facet(
 	public Facet withExcludeFilters(Iterable<String> excludeFilters) {
 		return new Facet(
 			name, field, limit, order, ranges, path, depth,
-			Lists.immutable.ofAll(excludeFilters), prefix, prefixEdits
+			Lists.immutable.ofAll(excludeFilters), prefix, prefixEdits, when, fallback
 		);
 	}
 
@@ -458,7 +504,7 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPrefix(String prefix) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
 	}
 
 	/**
@@ -471,6 +517,54 @@ public record Facet(
 	 * @return
 	 */
 	public Facet withPrefixEdits(int prefixEdits) {
-		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits);
+		return new Facet(name, field, limit, order, ranges, path, depth, excludeFilters, prefix, prefixEdits, when, fallback);
+	}
+
+	/**
+	 * Count only the values where the given clauses hold, see the class
+	 * comment for how a facet reads them.
+	 *
+	 * @param when
+	 * @return
+	 */
+	public Facet withWhen(Query... when) {
+		return new Facet(
+			name, field, limit, order, ranges, path, depth, excludeFilters,
+			prefix, prefixEdits, Lists.immutable.of(when), fallback
+		);
+	}
+
+	/**
+	 * Count the given targets instead where a document holds no value on the
+	 * field, see the class comment for how a facet reads them.
+	 *
+	 * @param fallback
+	 * @return
+	 */
+	public Facet withFallback(ValueTarget... fallback) {
+		return new Facet(
+			name, field, limit, order, ranges, path, depth, excludeFilters,
+			prefix, prefixEdits, when, Lists.immutable.of(fallback)
+		);
+	}
+
+	/**
+	 * Get whether the facet names the values it counts itself, through
+	 * {@code when} or {@code fallback}. A facet without them counts every
+	 * value the search matched.
+	 *
+	 * @return
+	 */
+	public boolean selects() {
+		return when.notEmpty() || fallback.notEmpty();
+	}
+
+	/**
+	 * Get the values this facet counts, as a target.
+	 *
+	 * @return
+	 */
+	public ValueTarget target() {
+		return new ValueTarget(field, when, fallback);
 	}
 }

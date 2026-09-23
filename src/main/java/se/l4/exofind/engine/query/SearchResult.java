@@ -341,7 +341,7 @@ public record SearchResult(
 		 *   order they were typed
 		 * @param when
 		 *   the clauses that have to hold where the filter is read, as the
-		 *   {@link TextQuery.Target target} the search named said. Empty when
+		 *   {@link ValueTarget target} the search named said. Empty when
 		 *   the filter is read wherever the field holds a value
 		 * @param fallback
 		 *   the targets read instead where a document holds no value on the
@@ -353,7 +353,7 @@ public record SearchResult(
 			se.l4.exofind.engine.query.matchers.Matcher matcher,
 			ImmutableList<String> words,
 			ImmutableList<Query> when,
-			ImmutableList<TextQuery.Target> fallback
+			ImmutableList<ValueTarget> fallback
 		) {
 			public Filter {
 				if(kind == null) {

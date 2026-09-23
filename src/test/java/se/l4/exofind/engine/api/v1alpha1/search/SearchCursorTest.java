@@ -10,10 +10,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.Test;
 
+import se.l4.exofind.engine.query.FieldSort;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest.Hits;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.SortKey;
+import se.l4.exofind.engine.query.ValueTarget;
+import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.Matchers;
 
 /**
@@ -117,6 +120,34 @@ public class SearchCursorTest {
 
 		assertThat(score, is(not(byName)));
 		assertThat(byName, is(not(byNameDescending)));
+	}
+
+	@Test
+	public void testTheValuesASortReadsArePartOfTheFingerprint() {
+		var plain = new FieldSort("prices.amount", SortBy.Order.ASCENDING);
+		var customer = plain.withWhen(listIs("cust-17"));
+		var otherCustomer = plain.withWhen(listIs("cust-18"));
+		var withFallback = customer.withFallback(
+			ValueTarget.of("prices.amount").withWhen(listIs("store"))
+		);
+
+		var plainPrint = SearchCursor.fingerprintOf(Lists.immutable.of(plain));
+		var customerPrint = SearchCursor.fingerprintOf(Lists.immutable.of(customer));
+
+		// A position at the price on one list names nothing on another
+		assertThat(customerPrint, is(not(plainPrint)));
+		assertThat(customerPrint, is(not(SearchCursor.fingerprintOf(Lists.immutable.of(otherCustomer)))));
+		assertThat(customerPrint, is(not(SearchCursor.fingerprintOf(Lists.immutable.of(withFallback)))));
+
+		// The same sort asked for again fingerprints the same
+		assertThat(
+			SearchCursor.fingerprintOf(Lists.immutable.of(plain.withWhen(listIs("cust-17")))),
+			is(customerPrint)
+		);
+	}
+
+	private static Query listIs(String list) {
+		return Query.field("prices.list", new EqualsMatcher(list));
 	}
 
 	@Test

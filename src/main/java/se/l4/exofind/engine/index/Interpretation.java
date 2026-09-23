@@ -27,6 +27,7 @@ import se.l4.exofind.engine.query.OrQuery;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.TextQuery;
+import se.l4.exofind.engine.query.ValueTarget;
 import se.l4.exofind.engine.query.matchers.AnyMatcher;
 import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.Matcher;
@@ -69,7 +70,7 @@ import se.l4.exofind.engine.query.matchers.UserText;
  * see {@link QuantityReader} and {@link ValueReader}.
  *
  * <p>A search may name the fields a reading is allowed to be a filter on,
- * see {@link TextQuery.Target}. That is for an index where the unit alone
+ * see {@link ValueTarget}. That is for an index where the unit alone
  * does not say which field was meant - a product priced on many lists holds
  * the same currency on every one, and only the caller knows which list the
  * person is on. The named targets stand in for the fields of the index: the
@@ -226,7 +227,7 @@ final class Interpretation {
 	 */
 	private record Chain(
 		ImmutableList<Step> steps,
-		TextQuery.Target target
+		ValueTarget target
 	) {
 		UnitField head() {
 			return steps.get(0).field();
@@ -689,7 +690,7 @@ final class Interpretation {
 	private static ImmutableList<Chain> named(
 		IndexSchema schema,
 		LocaleSupport locale,
-		ListIterable<TextQuery.Target> targets,
+		ListIterable<ValueTarget> targets,
 		ListIterable<Place> places
 	) {
 		var chains = Lists.mutable.<Chain>empty();
@@ -732,7 +733,7 @@ final class Interpretation {
 		IndexSchema schema,
 		LocaleSupport locale,
 		UnitField head,
-		ListIterable<TextQuery.Target> fallbacks,
+		ListIterable<ValueTarget> fallbacks,
 		MutableList<Step> into
 	) {
 		for(var fallback : fallbacks) {

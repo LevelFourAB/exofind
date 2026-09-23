@@ -37,7 +37,7 @@ import se.l4.exofind.engine.query.OrQuery;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
-import se.l4.exofind.engine.query.TextQuery;
+import se.l4.exofind.engine.query.ValueTarget;
 import se.l4.exofind.engine.query.matchers.EqualsMatcher;
 import se.l4.exofind.engine.query.matchers.RangeMatcher;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
@@ -390,7 +390,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		var result = search(
 			index,
 			Query.text(user("rain under 2 kg"))
-				.withTargets(onList("cust-17"), TextQuery.Target.of("weight"))
+				.withTargets(onList("cust-17"), ValueTarget.of("weight"))
 		);
 
 		assertThat(ids(result), contains("2"));
@@ -403,12 +403,12 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		var index = pricelists();
 
 		var query = Query.text(user("rain under 100"))
-			.withTargets(onList("cust-17"), TextQuery.Target.of("shipping"));
+			.withTargets(onList("cust-17"), ValueTarget.of("shipping"));
 
 		assertThat(search(index, query).interpreted(), is(nullValue()));
 
 		var withUnit = Query.text(user("rain under 100 kr"))
-			.withTargets(onList("cust-17"), TextQuery.Target.of("shipping"));
+			.withTargets(onList("cust-17"), ValueTarget.of("shipping"));
 		var result = search(index, withUnit);
 
 		assertThat(result.interpreted().filters().size(), is(1));
@@ -426,7 +426,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		var result = search(
 			index,
 			Query.text(user("rain under 100"))
-				.withTargets(TextQuery.Target.of("price_customer"), TextQuery.Target.of("price_store"))
+				.withTargets(ValueTarget.of("price_customer"), ValueTarget.of("price_store"))
 		);
 
 		assertThat(ids(result), containsInAnyOrder("1", "2", "3"));
@@ -437,8 +437,8 @@ public class InterpretSearchTest extends AbstractIndexTest {
 	public void testFallbackOnFlatFields() throws IOException {
 		var index = flatPricelists();
 
-		var target = TextQuery.Target.of("price_customer")
-			.withFallback(TextQuery.Target.of("price_store"));
+		var target = ValueTarget.of("price_customer")
+			.withFallback(ValueTarget.of("price_store"));
 		var result = search(index, Query.text(user("rain under 100")).withTargets(target));
 
 		assertThat(ids(result), containsInAnyOrder("1", "2"));
@@ -452,7 +452,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			IndexException.class,
 			() -> search(
 				index,
-				Query.text(user("rain")).withTargets(TextQuery.Target.of("prices.list"))
+				Query.text(user("rain")).withTargets(ValueTarget.of("prices.list"))
 			)
 		);
 
@@ -467,7 +467,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 			IndexException.class,
 			() -> search(
 				index,
-				Query.text(user("rain")).withTargets(TextQuery.Target.of("cost"))
+				Query.text(user("rain")).withTargets(ValueTarget.of("cost"))
 			)
 		);
 
@@ -478,7 +478,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 	public void testFallbackInAnotherUnitIsRefused() throws IOException {
 		var index = pricelists();
 
-		var target = onList("cust-17").withFallback(TextQuery.Target.of("weight"));
+		var target = onList("cust-17").withFallback(ValueTarget.of("weight"));
 		var e = assertThrows(
 			IndexException.class,
 			() -> search(index, Query.text(user("rain under 100")).withTargets(target))
@@ -491,7 +491,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 	public void testWhenNamingAFieldOutsideTheListIsRefused() throws IOException {
 		var index = pricelists();
 
-		var target = TextQuery.Target.of("prices.amount")
+		var target = ValueTarget.of("prices.amount")
 			.withWhen(Query.field("id", new EqualsMatcher("1")));
 		var e = assertThrows(
 			IndexException.class,
@@ -577,7 +577,7 @@ public class InterpretSearchTest extends AbstractIndexTest {
 				index,
 				NestedQuery.of(
 					"variants",
-					Query.text(user("blue")).withTargets(TextQuery.Target.of("weight"))
+					Query.text(user("blue")).withTargets(ValueTarget.of("weight"))
 				)
 			)
 		);
@@ -739,8 +739,8 @@ public class InterpretSearchTest extends AbstractIndexTest {
 		return Query.field("prices.list", new EqualsMatcher(list));
 	}
 
-	private static TextQuery.Target onList(String list) {
-		return TextQuery.Target.of("prices.amount").withWhen(listIs(list));
+	private static ValueTarget onList(String list) {
+		return ValueTarget.of("prices.amount").withWhen(listIs(list));
 	}
 
 	/**

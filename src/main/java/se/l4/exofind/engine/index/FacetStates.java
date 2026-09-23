@@ -698,7 +698,9 @@ final class FacetStates {
 			facet.depth(),
 			Lists.immutable.empty(),
 			facet.prefix(),
-			facet.prefixEdits()
+			facet.prefixEdits(),
+			facet.when(),
+			facet.fallback()
 		);
 	}
 

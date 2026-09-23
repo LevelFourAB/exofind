@@ -516,11 +516,55 @@ public record SearchRequest(
 			facet's calculation. Defaults to the facet's own field path. An \
 			empty array `[]` disables filter exclusion. A blank path returns \
 			`search:facet:exclude_filters_invalid`.""")
-		List<String> excludeFilters
+		List<String> excludeFilters,
+
+		/**
+		 * Clauses that must hold where a value is counted, for a facet
+		 * counting into ranges.
+		 */
+		@Schema(description = """
+			Clauses that must hold where a value is counted: in the same value \
+			as the field for a field inside a `nested` list, and for the \
+			document otherwise. Inside a list it takes what a `nested` clause \
+			takes. With `when` or `fallback`, the query's `nested` clauses no \
+			longer decide which values are counted. Needs `ranges` \
+			(`search:facet:fallback_unsupported`). See [Counting by the value \
+			a customer \
+			sees](https://exofind.dev/reference/search-api/#counting-by-the-value-a-customer-sees).""")
+		List<Clause> when,
+
+		/**
+		 * Fields counted instead where a document holds no value on this one,
+		 * in order, for a facet counting into ranges.
+		 */
+		@Schema(description = """
+			Fields counted instead, in order, for a document that holds no \
+			value on `field` where `when` holds - a product with no price on \
+			the customer's list counts at its price on the store's list. Every \
+			field must be of the type of `field` \
+			(`search:facet:fallback_type_mismatch`). Needs `ranges` \
+			(`search:facet:fallback_unsupported`).""")
+		List<FallbackTarget> fallback
 	) {
 		/** The example facet, as the JSON a caller writes. */
 		public static final String EXAMPLE = """
 			{ "field": "category", "limit": 20, "order": "count" }""";
+
+		/**
+		 * Count every value of the field the query matched.
+		 */
+		public Facet(
+			String name,
+			String field,
+			Integer limit,
+			Order order,
+			List<Range> ranges,
+			String path,
+			Integer depth,
+			List<String> excludeFilters
+		) {
+			this(name, field, limit, order, ranges, path, depth, excludeFilters, null, null);
+		}
 
 		/**
 		 * Sort order of facet values: descending by count, ascending by

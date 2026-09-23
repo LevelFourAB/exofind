@@ -6664,6 +6664,11 @@ public class Index {
 	 * scope that still narrows the values collects them, one collection per
 	 * object field and set of kept filters.
 	 *
+	 * A facet naming the values it counts with {@code when} and
+	 * {@code fallback} reads them off each document, so it is counted over the
+	 * documents the way a facet over a field of the index is, whatever the
+	 * search asked of the values - see {@link ChainRangeFacetCount}.
+	 *
 	 * A facet over a field whose values are paths counts a level of the tree at
 	 * a time and answers the counts nested. The scope is worked out the same
 	 * way, which is what keeps the sideways rule true down a tree: the filter
@@ -6757,8 +6762,15 @@ public class Index {
 				continue;
 			}
 
+			/*
+			 * A facet naming its values with `when` and `fallback` reads them
+			 * off each document itself, so it counts documents whatever the
+			 * search asked of the values.
+			 */
+			var countsValues = nested.isPresent() && !facet.selects();
+
 			FacetMatches matches;
-			if(nested.isPresent() && compiler.narrowsValues(nested.get().path(), scoped)) {
+			if(countsValues && compiler.narrowsValues(nested.get().path(), scoped)) {
 				/*
 				 * Something asked of the values, so only a walk of them tells
 				 * which of a document's values matched: the scope is the
@@ -6806,7 +6818,7 @@ public class Index {
 					hits = whole;
 				}
 
-				matches = nested.isPresent()
+				matches = countsValues
 					? FacetMatches.everyValue(hits, nestedParents)
 					: FacetMatches.of(hits);
 
@@ -6852,7 +6864,10 @@ public class Index {
 	 * there, so a brand facet answers how many matching variants each brand
 	 * has. A facet over a field inside another object is refused: its values
 	 * are not the hits and not on the documents either, so no count of it
-	 * describes this result set.
+	 * describes this result set. A facet naming its values with {@code when}
+	 * and {@code fallback} reads one set of them per document, wherever its
+	 * fields sit, and counts each value hit into what the document holding it
+	 * reads - the same as a field of the index.
 	 *
 	 * The sideways rule holds unchanged - a facet leaves the filter entries it
 	 * {@link Facet#excludes(String) excludes} out of its scope - and a scope
@@ -6907,7 +6922,14 @@ public class Index {
 		var walks = Maps.mutable.<FacetMatches, MutableList<PendingFacet>>empty();
 
 		for(var facet : request.facets()) {
-			var nested = schema.getNestedField(facet.field());
+			/*
+			 * A facet naming its values with `when` and `fallback` reads them
+			 * off the document of each hit, the way a field of the index is
+			 * read, wherever its fields sit.
+			 */
+			var nested = facet.selects()
+				? Optional.<IndexSchema.NestedField>empty()
+				: schema.getNestedField(facet.field());
 			if(nested.isPresent() && !nested.get().path().equals(path)) {
 				throw new IndexQueryException(
 					ERROR_HITS_FACET_UNSUPPORTED,
@@ -7170,7 +7192,8 @@ public class Index {
 	 *   declare none
 	 * @throws IndexQueryException
 	 *   if the facet asks for the values starting with a prefix from a field
-	 *   whose values are paths through a tree
+	 *   whose values are paths through a tree, or names its values with
+	 *   {@code when} or {@code fallback} without counting into ranges
 	 */
 	private FacetCount prepareFacet(
 		QueryCompiler compiler,
@@ -7178,6 +7201,13 @@ public class Index {
 		FacetMatches scope,
 		DeclaredValues.Localized declared
 	) {
+		if(facet.ranges().isEmpty() && facet.selects()) {
+			throw new IndexQueryException(
+				QueryCompiler.FACET_CHAIN_UNSUPPORTED,
+				"field", facet.field()
+			);
+		}
+
 		if(facet.ranges().isEmpty() && compiler.isHierarchical(facet.field())) {
 			if(facet.prefix() != null) {
 				throw new IndexQueryException(ERROR_FACET_PREFIX_ON_A_TREE, "field", facet.field());
@@ -7208,8 +7238,10 @@ public class Index {
 				);
 		}
 
-		return compiler.rangeFacetCounter(facet.field(), facet.ranges())
-			.prepare(scope);
+		var counter = compiler.rangeFacetCounter(facet.field(), facet.ranges());
+		return facet.selects()
+			? counter.prepare(scope, compiler.facetChain(facet))
+			: counter.prepare(scope);
 	}
 
 	/**

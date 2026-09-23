@@ -11,6 +11,7 @@ import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.MapIterable;
 
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
+import se.l4.exofind.engine.api.v1alpha1.search.model.FallbackTarget;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Matcher;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Rescore;
 import se.l4.exofind.engine.api.v1alpha1.search.model.SearchRequest;
@@ -42,6 +43,7 @@ import se.l4.exofind.engine.query.ScoreSort;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.query.TextQuery;
+import se.l4.exofind.engine.query.ValueTarget;
 import se.l4.exofind.engine.query.matchers.AnyMatcher;
 import se.l4.exofind.engine.query.matchers.DistanceMatcher;
 import se.l4.exofind.engine.query.matchers.EqualsMatcher;
@@ -946,6 +948,19 @@ public class SearchRequestMapper {
 				}
 			}
 
+			var before = errors.size();
+			var when = toClauses(facet.when(), path + ".when", errors);
+			var fallback = toFallbackTargets(
+				facet.fallback(),
+				path + ".fallback",
+				FACET_FIELD_REQUIRED,
+				errors
+			);
+
+			if(errors.size() != before) {
+				valid = false;
+			}
+
 			ImmutableList<String> excludeFilters = null;
 			if(facet.excludeFilters() != null) {
 				var excluded = Lists.mutable.<String>empty();
@@ -983,7 +998,11 @@ public class SearchRequestMapper {
 				ranges.toImmutable(),
 				facet.path(),
 				depth,
-				excludeFilters
+				excludeFilters,
+				null,
+				0,
+				when,
+				fallback
 			));
 		}
 
@@ -1498,12 +1517,24 @@ public class SearchRequestMapper {
 				case null -> errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(path)));
 				case Sort.Score score -> result.add(new ScoreSort(toOrder(score.order())));
 				case Sort.Field field -> {
+					var valid = true;
 					if(field.field() == null || field.field().isBlank()) {
 						errors.add(
 							SORT_FIELD_REQUIRED.toMessage(Location.create(path + ".field"))
 						);
-					} else {
-						result.add(new FieldSort(field.field(), toOrder(field.order())));
+						valid = false;
+					}
+
+					var when = toClauses(field.when(), path + ".when", errors);
+					var fallback = toFallbackTargets(
+						field.fallback(),
+						path + ".fallback",
+						SORT_FIELD_REQUIRED,
+						errors
+					);
+
+					if(valid) {
+						result.add(new FieldSort(field.field(), toOrder(field.order()), when, fallback));
 					}
 				}
 				case Sort.Distance distance -> {
@@ -1764,6 +1795,57 @@ public class SearchRequestMapper {
 				? se.l4.exofind.engine.query.Rescore.DEFAULT_WEIGHT
 				: rescore.weight()
 		);
+	}
+
+	/**
+	 * Map the fields a sort or a facet reads instead where a document holds
+	 * no value on the field before them.
+	 *
+	 * @param targets
+	 *   the targets as received, or {@code null} for none
+	 * @param path
+	 *   where the targets sit in the request
+	 * @param fieldRequired
+	 *   the error for a target naming no field, which is the one the sort or
+	 *   the facet holding it answers for its own field
+	 * @param errors
+	 * @return
+	 *   the targets that could be mapped, empty for none
+	 */
+	private static ImmutableList<ValueTarget> toFallbackTargets(
+		List<FallbackTarget> targets,
+		String path,
+		ErrorType fieldRequired,
+		MutableList<ErrorMessage> errors
+	) {
+		if(targets == null) {
+			return Lists.immutable.empty();
+		}
+
+		var result = Lists.mutable.<ValueTarget>empty();
+		for(var i = 0; i < targets.size(); i++) {
+			var at = path + "[" + i + "]";
+			var target = targets.get(i);
+			if(target == null) {
+				errors.add(RequestErrors.VALUE_REQUIRED.toMessage(Location.create(at)));
+				continue;
+			}
+
+			var valid = true;
+			if(target.field() == null || target.field().isBlank()) {
+				errors.add(fieldRequired.toMessage(Location.create(at + ".field")));
+				valid = false;
+			}
+
+			var when = toClauses(target.when(), at + ".when", errors);
+			var fallback = toFallbackTargets(target.fallback(), at + ".fallback", fieldRequired, errors);
+
+			if(valid) {
+				result.add(new ValueTarget(target.field(), when, fallback));
+			}
+		}
+
+		return result.toImmutable();
 	}
 
 	private static SortBy.Order toOrder(Sort.Order order) {
@@ -2333,7 +2415,7 @@ public class SearchRequestMapper {
 	 * a clause that named targets and can be read on none of them asked for
 	 * something the engine would quietly do nothing with.
 	 */
-	private static ImmutableList<TextQuery.Target> toTargets(
+	private static ImmutableList<ValueTarget> toTargets(
 		List<Clause.Text.Target> targets,
 		String path,
 		MutableList<ErrorMessage> errors
@@ -2346,7 +2428,7 @@ public class SearchRequestMapper {
 		return toFallbacks(targets, path, errors);
 	}
 
-	private static ImmutableList<TextQuery.Target> toFallbacks(
+	private static ImmutableList<ValueTarget> toFallbacks(
 		List<Clause.Text.Target> targets,
 		String path,
 		MutableList<ErrorMessage> errors
@@ -2355,7 +2437,7 @@ public class SearchRequestMapper {
 			return Lists.immutable.empty();
 		}
 
-		var result = Lists.mutable.<TextQuery.Target>empty();
+		var result = Lists.mutable.<ValueTarget>empty();
 		for(var i = 0; i < targets.size(); i++) {
 			var target = toTarget(targets.get(i), path + "[" + i + "]", errors);
 			if(target != null) {
@@ -2366,7 +2448,7 @@ public class SearchRequestMapper {
 		return result.toImmutable();
 	}
 
-	private static TextQuery.Target toTarget(
+	private static ValueTarget toTarget(
 		Clause.Text.Target target,
 		String path,
 		MutableList<ErrorMessage> errors
@@ -2401,7 +2483,7 @@ public class SearchRequestMapper {
 			return null;
 		}
 
-		return new TextQuery.Target(target.field(), when, fallback);
+		return new ValueTarget(target.field(), when, fallback);
 	}
 
 	/**
@@ -2499,7 +2581,7 @@ public class SearchRequestMapper {
 	 * @param targets
 	 * @return
 	 */
-	public static List<Clause.Text.Target> toTargetsJson(ImmutableList<TextQuery.Target> targets) {
+	public static List<Clause.Text.Target> toTargetsJson(ImmutableList<ValueTarget> targets) {
 		var result = new java.util.ArrayList<Clause.Text.Target>(targets.size());
 		for(var target : targets) {
 			result.add(new Clause.Text.Target(

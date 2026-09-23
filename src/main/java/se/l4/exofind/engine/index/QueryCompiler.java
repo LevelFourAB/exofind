@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index;
 
 import java.util.IdentityHashMap;
 import java.util.Locale;
+import java.util.function.Function;
 
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -53,6 +54,7 @@ import se.l4.exofind.engine.query.ScoreSort;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.TextQuery;
+import se.l4.exofind.engine.query.ValueTarget;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
 import se.l4.exofind.engine.query.matchers.UserText;
 
@@ -166,6 +168,67 @@ public class QueryCompiler {
 			+ "`when` names hold documents and values at once, which no one field "
 			+ "is read at - order them by score"
 		);
+
+	private static final ErrorType HITS_SORT_CHAIN_UNSUPPORTED = ErrorType
+		.withCode("search:hits:sort_fallback_unsupported")
+		.withStatus(400)
+		.withArguments("name", "path")
+		.withMessage(
+			"Hits standing for the values of `{{path}}` are ordered by their own value of "
+			+ "`{{name}}`, so the sort takes neither `when` nor `fallback`"
+		);
+
+	private static final ErrorType SORT_CHAIN_TYPE_UNSUPPORTED = ErrorType
+		.withCode("search:sort:type_unsupported")
+		.withStatus(400)
+		.withArguments("name")
+		.withMessage(
+			"A sort with `when` or `fallback` orders by a number or a timestamp, "
+			+ "which `{{name}}` is not"
+		);
+
+	private static final ErrorType SORT_FALLBACK_TYPE_MISMATCH = ErrorType
+		.withCode("search:sort:fallback_type_mismatch")
+		.withStatus(400)
+		.withArguments("name", "type", "field", "expected")
+		.withMessage(
+			"Fallback `{{name}}` is a `{{type}}` field, but `{{field}}` is a `{{expected}}` field; "
+			+ "every field a sort reads has to be of one type"
+		);
+
+	/**
+	 * A facet naming the values it counts with {@code when} or
+	 * {@code fallback} while counting per value.
+	 */
+	static final ErrorType FACET_CHAIN_UNSUPPORTED = ErrorType
+		.withCode("search:facet:fallback_unsupported")
+		.withStatus(400)
+		.withArguments("field")
+		.withMessage(
+			"The facet on `{{field}}` counts per value, which counts every value a document "
+			+ "holds; only a facet counting into `ranges` takes `when` and `fallback`"
+		);
+
+	private static final ErrorType FACET_FALLBACK_TYPE_MISMATCH = ErrorType
+		.withCode("search:facet:fallback_type_mismatch")
+		.withStatus(400)
+		.withArguments("name", "type", "field", "expected")
+		.withMessage(
+			"Fallback `{{name}}` is a `{{type}}` field, but `{{field}}` is a `{{expected}}` field; "
+			+ "every field a facet counts has to be of one type"
+		);
+
+	/**
+	 * The kinds of ordering that can order a document by the values a chain
+	 * of {@code when} and {@code fallback} reads for it - the ones number and
+	 * timestamp fields write. See {@link ChainSortField}.
+	 */
+	private static final ImmutableSet<SortField.Type> CHAIN_SORT_TYPES = Sets.immutable.of(
+		SortField.Type.INT,
+		SortField.Type.LONG,
+		SortField.Type.FLOAT,
+		SortField.Type.DOUBLE
+	);
 
 	/**
 	 * The kinds of ordering that can read a value out of the objects of one
@@ -2172,6 +2235,8 @@ public class QueryCompiler {
 				s.order() == SortBy.Order.ASCENDING
 			);
 
+			case FieldSort s when s.target().selects() -> chainSort(s);
+
 			case FieldSort s -> {
 				var nested = schema.getNestedField(s.field());
 				var field = nested.isPresent() ? nested.get().field() : field(s.field());
@@ -2208,6 +2273,224 @@ public class QueryCompiler {
 					: ordering;
 			}
 		};
+	}
+
+	/**
+	 * Order documents by the values a chain of {@code when} and
+	 * {@code fallback} reads for them - see {@link FieldSort} for what that
+	 * means and {@link ChainSortField} for how it is read.
+	 *
+	 * The first field decides everything a plain ordering by it would: where a
+	 * document holding no value ends up, and how its values compare. Every
+	 * other field of the chain has to write the same kind of value, or one
+	 * document would be ordered by a price and the next by a date.
+	 *
+	 * @param sort
+	 * @return
+	 * @throws IndexQueryException
+	 *   with {@code search:sort:type_unsupported} for a first field that is
+	 *   not a number or a timestamp, and with
+	 *   {@code search:sort:fallback_type_mismatch} for a fallback of another
+	 *   type than the first field
+	 */
+	private SortField chainSort(FieldSort sort) {
+		var steps = chainSteps(sort.target());
+		var head = steps.get(0);
+		if(!head.field().isSorted()) {
+			throw new IndexFieldUsageException(head.name(), "sort");
+		}
+
+		var ascending = sort.order() == SortBy.Order.ASCENDING;
+
+		select(head.name(), head.field());
+		var ordering = head.field().getType().createSortField(encounter, ascending);
+		if(!CHAIN_SORT_TYPES.contains(ordering.getType())) {
+			throw new IndexQueryException(SORT_CHAIN_TYPE_UNSUPPORTED, "name", head.name());
+		}
+
+		requireOneType(steps, "sort", SORT_FALLBACK_TYPE_MISMATCH);
+
+		var chain = valueChain(
+			steps,
+			step -> step.field().getType().createSortField(encounter, ascending).getField()
+		);
+
+		/*
+		 * The field a step reads is taken from the ordering its own type
+		 * builds, the same field a plain ordering by it reads.
+		 */
+		var result = new ChainSortField(
+			ordering.getField(),
+			ordering.getType(),
+			ordering.getReverse(),
+			!ascending,
+			chain
+		);
+
+		if(ordering.getMissingValue() != null) {
+			result.setMissingValue(ordering.getMissingValue());
+		}
+
+		return result;
+	}
+
+	/**
+	 * Resolve the values a facet names with {@code when} and
+	 * {@code fallback}, read from the doc values a range facet counts - see
+	 * {@link Facet} for what that means and {@link ChainRangeFacetCount} for
+	 * how it is counted.
+	 *
+	 * @param facet
+	 *   the facet, counting into ranges
+	 * @return
+	 * @throws IndexFieldUsageException
+	 *   if a field of the chain is not defined for faceting
+	 * @throws IndexQueryException
+	 *   with {@code search:facet:fallback_type_mismatch} for a fallback of
+	 *   another type than the first field
+	 */
+	ValueChain facetChain(Facet facet) {
+		var steps = chainSteps(facet.target());
+		var head = steps.get(0);
+		if(!head.field().isFaceted()) {
+			throw new IndexFieldUsageException(head.name(), "facet");
+		}
+
+		requireOneType(steps, "facet", FACET_FALLBACK_TYPE_MISMATCH);
+
+		return valueChain(steps, step -> encounter.name(FieldNames.VALUES));
+	}
+
+	/**
+	 * One step of a chain of {@code when} and {@code fallback}, resolved
+	 * against the index.
+	 *
+	 * @param name
+	 *   the field as the search named it
+	 * @param field
+	 *   the field
+	 * @param path
+	 *   the object field whose values hold the field, or {@code null} for a
+	 *   field of the index
+	 * @param when
+	 *   the clauses that have to hold where the value is read
+	 */
+	private record ChainStep(
+		String name,
+		Field field,
+		String path,
+		ListIterable<Query> when
+	) {
+	}
+
+	/**
+	 * Resolve every step of a target in the order they are read: the target,
+	 * then each fallback followed by its own fallbacks - the order
+	 * {@link Interpretation} reads a number in.
+	 */
+	private ImmutableList<ChainStep> chainSteps(ValueTarget target) {
+		var steps = Lists.mutable.<ChainStep>empty();
+		collectChainSteps(target, steps);
+		return steps.toImmutable();
+	}
+
+	private void collectChainSteps(ValueTarget target, MutableList<ChainStep> into) {
+		var nested = schema.getNestedField(target.field());
+		if(nested.isPresent()) {
+			into.add(new ChainStep(
+				target.field(),
+				nested.get().field(),
+				nested.get().path(),
+				target.when()
+			));
+		} else {
+			into.add(new ChainStep(target.field(), field(target.field()), null, target.when()));
+		}
+
+		for(var fallback : target.fallback()) {
+			collectChainSteps(fallback, into);
+		}
+	}
+
+	/**
+	 * Refuse a chain whose fields are not all of the type of the first one.
+	 * The values of every step are compared with each other and counted into
+	 * the same buckets, which only means something within one type.
+	 *
+	 * @param usage
+	 *   what the chain is read for, {@code sort} or {@code facet}, for
+	 *   refusing a field that was not defined for it
+	 * @param mismatch
+	 *   the error to refuse a field of another type with
+	 */
+	private void requireOneType(
+		ListIterable<ChainStep> steps,
+		String usage,
+		ErrorType mismatch
+	) {
+		var head = steps.get(0);
+		var expected = head.field().getDef().getType().getTypeCase();
+
+		for(var step : steps.subList(1, steps.size())) {
+			var usable = usage.equals("sort") ? step.field().isSorted() : step.field().isFaceted();
+			if(!usable) {
+				throw new IndexFieldUsageException(step.name(), usage);
+			}
+
+			var type = step.field().getDef().getType().getTypeCase();
+			if(type != expected) {
+				throw new IndexQueryException(
+					mismatch,
+					"name", step.name(),
+					"type", type.name().toLowerCase(Locale.ROOT),
+					"field", head.name(),
+					"expected", expected.name().toLowerCase(Locale.ROOT)
+				);
+			}
+		}
+	}
+
+	/**
+	 * Compile the steps of a chain into what reads them in a segment.
+	 *
+	 * A step inside a list reads the values of its path that its clauses hold
+	 * for, compiled the way a {@code nested} clause compiles them. A step on a
+	 * field of the index reads the value of the document, where its clauses
+	 * hold for the document.
+	 *
+	 * @param steps
+	 * @param luceneField
+	 *   the Lucene field a step reads, asked with the encounter pointing at
+	 *   the step
+	 * @return
+	 */
+	private ValueChain valueChain(
+		ListIterable<ChainStep> steps,
+		Function<ChainStep, String> luceneField
+	) {
+		var compiled = Lists.mutable.<ValueChain.Step>empty();
+		for(var step : steps) {
+			select(step.name(), step.field());
+			var field = luceneField.apply(step);
+
+			if(step.path() != null) {
+				requireNestedSupported(step.when());
+
+				compiled.add(new ValueChain.Step(
+					field,
+					new QueryBitSetProducer(valuesOf(step.path(), step.when(), false)),
+					true
+				));
+			} else {
+				compiled.add(new ValueChain.Step(
+					field,
+					step.when().isEmpty() ? null : new QueryBitSetProducer(compileAll(step.when())),
+					false
+				));
+			}
+		}
+
+		return new ValueChain(nestedParents, compiled.toImmutable());
 	}
 
 	/**
@@ -2351,6 +2634,16 @@ public class QueryCompiler {
 				null,
 				SortField.Type.SCORE,
 				s.order() == SortBy.Order.ASCENDING
+			);
+
+			/*
+			 * A chain picks one value to stand for a document, and a hit here
+			 * is a value standing for itself.
+			 */
+			case FieldSort s when s.target().selects() -> throw new IndexQueryException(
+				HITS_SORT_CHAIN_UNSUPPORTED,
+				"name", s.field(),
+				"path", path
 			);
 
 			case FieldSort s -> {

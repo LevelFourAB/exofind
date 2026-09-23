@@ -831,7 +831,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:nested:clause_unsupported",
 		status = 400,
-		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+		when = "A `nested` clause, or the `when` of a sort or facet on a field inside a nested list, holds a clause that cannot run against a single value, such as `fuse`."
 	)
 	@ReturnsError(
 		value = "search:interpret:fallback_unit_mismatch",
@@ -862,6 +862,31 @@ public class SearchResource {
 		value = "search:sort:nested_unsupported",
 		status = 400,
 		when = "A sort names a field inside a nested list in a way its values cannot be ordered."
+	)
+	@ReturnsError(
+		value = "search:sort:type_unsupported",
+		status = 400,
+		when = "A sort with `when` or `fallback` names a field that is not a number or timestamp field."
+	)
+	@ReturnsError(
+		value = "search:sort:fallback_type_mismatch",
+		status = 400,
+		when = "A `fallback` of a sort names a field of another type than the field of the sort."
+	)
+	@ReturnsError(
+		value = "search:facet:fallback_unsupported",
+		status = 400,
+		when = "A facet with `when` or `fallback` has no `ranges`."
+	)
+	@ReturnsError(
+		value = "search:facet:fallback_type_mismatch",
+		status = 400,
+		when = "A `fallback` of a facet names a field of another type than the field of the facet."
+	)
+	@ReturnsError(
+		value = "search:hits:sort_fallback_unsupported",
+		status = 400,
+		when = "A sort of a search whose hits are nested values carries `when` or `fallback`."
 	)
 	@ReturnsError(
 		value = "search:clause:k_required",
@@ -2365,7 +2390,7 @@ public class SearchResource {
 	@ReturnsError(
 		value = "search:nested:clause_unsupported",
 		status = 400,
-		when = "A `nested` clause holds a clause that cannot run against a single value, such as `fuse`."
+		when = "A `nested` clause, or the `when` of a sort or facet on a field inside a nested list, holds a clause that cannot run against a single value, such as `fuse`."
 	)
 	@ReturnsError(
 		value = "search:interpret:unit_required",
@@ -2406,6 +2431,31 @@ public class SearchResource {
 		value = "search:sort:nested_unsupported",
 		status = 400,
 		when = "A sort names a field inside a nested list in a way its values cannot be ordered."
+	)
+	@ReturnsError(
+		value = "search:sort:type_unsupported",
+		status = 400,
+		when = "A sort with `when` or `fallback` names a field that is not a number or timestamp field."
+	)
+	@ReturnsError(
+		value = "search:sort:fallback_type_mismatch",
+		status = 400,
+		when = "A `fallback` of a sort names a field of another type than the field of the sort."
+	)
+	@ReturnsError(
+		value = "search:facet:fallback_unsupported",
+		status = 400,
+		when = "A facet with `when` or `fallback` has no `ranges`."
+	)
+	@ReturnsError(
+		value = "search:facet:fallback_type_mismatch",
+		status = 400,
+		when = "A `fallback` of a facet names a field of another type than the field of the facet."
+	)
+	@ReturnsError(
+		value = "search:hits:sort_fallback_unsupported",
+		status = 400,
+		when = "A sort of a search whose hits are nested values carries `when` or `fallback`."
 	)
 	@ReturnsError(
 		value = "search:cursor:stale",

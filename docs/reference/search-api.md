@@ -515,7 +515,7 @@ Sort objects specify the ordering of returned hits. A sort is structured as a ta
 
 | Sort | Shape | Description |
 |---|---|---|
-| `field` | `{ "field": "name", "order": "asc" }` | Sorts by field value (`"asc"` or `"desc"`). The target field must have sorting enabled. |
+| `field` | `{ "field": "name", "order": "asc" }` | Sorts by field value (`"asc"` or `"desc"`). The target field must have sorting enabled. Accepts `when` and `fallback`, see [Sorting by the value a customer sees](#sorting-by-the-value-a-customer-sees). |
 | `score` | `{ "type": "score" }` | Sorts by document relevance score in descending order. |
 | `distance` | `{ "type": "distance", "field": "location", "lat": 59.3, "lon": 18.1 }` | Sorts by distance from the specified geographic coordinate, nearest first. Does not accept an `order` property. |
 
@@ -537,6 +537,47 @@ To sort by a field inside a `nested` [`object`](field-types.md#object), specify 
 Sorting uses only the nested values that matched the query's `nested` clauses. Clauses inside `or`, `not`, or `boost` clauses do not filter values for sorting. If a query contains no `nested` clauses on the path, all nested values are considered. For ascending sorts, the document is sorted by its lowest matching value; for descending sorts, by its highest matching value. Documents with no matching nested values use the `missing` behavior configured in the field definition.
 
 Specifying a `distance` sort on a nested object field returns `search:sort:nested_unsupported`.
+
+### Sorting by the value a customer sees
+
+A `field` sort can name the values it reads itself, with the same `when` and `fallback` a [reading target](#choosing-the-fields-a-reading-may-target) takes. Use it where a product holds a price on many lists and the list decides the price a customer sees:
+
+```json
+"sort": [
+  {
+    "field": "prices.amount",
+    "order": "asc",
+    "when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+    "fallback": [
+      {
+        "field": "prices.amount",
+        "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+      }
+    ]
+  }
+]
+```
+
+A `field` sort accepts these properties besides `field` and `order`:
+
+- `when` (optional): Array of clauses that must hold where the value is read. For a field inside a `nested` list, the clauses must hold in the same value of the list as the field. For a field at the root or inside a flattened object, the clauses must hold for the document. Inside a list, `when` takes what a `nested` clause takes: `field`, `text`, `and`, `or`, `not`, and `boost`. A clause of another type returns `search:nested:clause_unsupported`, and a clause naming a field outside the list returns `search:nested:field_not_inside`.
+- `fallback` (optional): Array of fallback targets, each with `field` and optional `when` and `fallback`. A fallback is read for a document that holds no value on the fields before it where their `when` holds. A fallback's own fallbacks are read after it and before the next fallback beside it.
+
+The sort reads each document as follows:
+
+1. It takes the values of the first target of the chain that the document holds any value on.
+2. It orders the document by the lowest of those values for `asc`, and by the highest for `desc`.
+3. It places a document that holds no value on any target where the `missing` setting of the first field puts a missing value.
+
+With `when` or `fallback`, the query's `nested` clauses no longer decide which values the sort reads. The sort reads the same price whatever values the query matched. This matches how a [reading target](#choosing-the-fields-a-reading-may-target) with the same chain filters, and how a [facet with the same chain](#counting-by-the-value-a-customer-sees) counts.
+
+Sort rules:
+
+- The first field must be a number or timestamp field. Another type returns `search:sort:type_unsupported`.
+- Every fallback field must be of the type of the first field. A field of another type returns `search:sort:fallback_type_mismatch`.
+- Every field of the chain must have sorting enabled. A field without it returns `search:usage_unsupported`.
+- A search whose [hits are nested values](#what-a-hit-stands-for) orders each value by its own value. A sort with `when` or `fallback` there returns `search:hits:sort_fallback_unsupported`.
+- A cursor taken under one chain is refused under another chain with `search:cursor:sort_mismatch`.
 
 ## Signals
 
@@ -640,6 +681,8 @@ Facets compute match counts for distinct values of specified fields. The target 
 | `path` | String | Root | Starting path level for hierarchical fields. See [Counting down a tree](#counting-down-a-tree). |
 | `depth` | Integer | `1` | Number of hierarchical levels below `path` to count (1 to 10). |
 | `excludeFilters` | Array | Facet field | List of field paths whose filter entries are excluded from this facet's calculation. Defaults to the facet's own field path. An empty array `[]` disables filter exclusion. A blank path returns `search:facet:exclude_filters_invalid`. |
+| `when` | Array | None | Clauses that must hold where a value is counted, for a facet with `ranges`. See [Counting by the value a customer sees](#counting-by-the-value-a-customer-sees). |
+| `fallback` | Array | None | Fields counted instead where a document holds no value on `field`, for a facet with `ranges`. See [Counting by the value a customer sees](#counting-by-the-value-a-customer-sees). |
 
 The response returns facet counts under the `facets` object:
 
@@ -767,6 +810,35 @@ A filter on a nested field is specified as a `nested` clause in `filters`:
 ```
 
 Filter exclusions identify entries by the most specific path covering all clauses within the entry. A filter entry covering both `variants.color` and `variants.price` is treated as a filter on `variants`.
+
+### Counting by the value a customer sees
+
+A facet with `ranges` can name the values it counts with `when` and `fallback`, in the same shape a [sort](#sorting-by-the-value-a-customer-sees) takes. Each document then counts at the price a customer sees:
+
+```json
+"facets": [
+  {
+    "field": "prices.amount",
+    "ranges": [ { "to": 100 }, { "from": 100, "to": 200 }, { "from": 200 } ],
+    "when": [ { "field": "prices.list", "match": { "value": "cust-17" } } ],
+    "fallback": [
+      {
+        "field": "prices.amount",
+        "when": [ { "field": "prices.list", "match": { "value": "store" } } ]
+      }
+    ]
+  }
+]
+```
+
+A document counts in a bucket when a value of the first target of the chain that it holds any value on falls in the bucket. A document counts once per bucket, and a document with no value on any target counts in no bucket. The values of later targets take no part for that document, so a product with a customer price of 149 and a store price of 99 counts in the bucket from 100 to 200 only.
+
+Facet rules:
+
+- The query's `nested` clauses no longer decide which values are counted. The `query` and the kept `filters` still decide which documents are counted.
+- A facet without `ranges` counts every value a document holds, so `when` or `fallback` on it returns `search:facet:fallback_unsupported`.
+- Every fallback field must be of the type of `field`. A field of another type returns `search:facet:fallback_type_mismatch`.
+- In a search whose [hits are nested values](#what-a-hit-stands-for), each hit counts in the buckets of the document that holds it.
 
 ### Searching the values of a facet
 
@@ -1289,7 +1361,7 @@ A node caps what one request may ask it to do. Each cap is a configuration varia
 | `EXOFIND_SEARCH_MAX_RESCORE_WINDOW` | `rescore.window` | `search:rescore:window_out_of_range` |
 | `EXOFIND_SEARCH_MAX_KNN_K` | `k` of a `knn` clause | `search:clause:k_out_of_range` |
 | `EXOFIND_SEARCH_MAX_FUSE_DEPTH` | `depth` of a `fuse` clause | `search:clause:depth_out_of_range` |
-| `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of an interpret target, counted together | `search:clauses_too_many` |
+| `EXOFIND_SEARCH_MAX_CLAUSES` | Clauses in `query`, `filters`, `hits.when`, `rescore.boost`, and the `when` of an interpret target, a sort, a facet, or a fallback target, counted together | `search:clauses_too_many` |
 | `EXOFIND_SEARCH_MAX_CLAUSE_DEPTH` | Nesting of clauses inside clauses, and of an interpret target inside a `fallback` | `search:clauses_too_deep` |
 | `EXOFIND_SEARCH_MAX_FACET_VALUES` | `limit` of a facet, counted beside a search or asked for on its own | `search:facet:limit_out_of_range` |
 | `EXOFIND_SUGGEST_MAX_LIMIT` | `limit` of a suggest request | `search:suggest:limit_out_of_range` |
