@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/LevelFourAB/exofind/compare/v0.5.0...v0.6.0) (2026-09-23)
+
+
+### Features
+
+* Allow fallback fields when sorting ([2a8fcd8](https://github.com/LevelFourAB/exofind/commit/2a8fcd8d80a7b55db41033943ef6eba0f7fc0f3e))
+
 ## [0.5.0](https://github.com/LevelFourAB/exofind/compare/v0.4.1...v0.5.0) (2026-09-15)
 
 
