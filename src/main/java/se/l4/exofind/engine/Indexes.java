@@ -1731,6 +1731,17 @@ public class Indexes implements RegistryPoller.Listener {
 	private void removeVanished(String name) {
 		lifecycleLock.lock();
 		try {
+			/*
+			 * The pass read the registry before it took the lock, and a create
+			 * of the same name can have run in between. A create writes the
+			 * registry before it lets the lock go, so a generation it made is
+			 * named here, and its copy is not one that vanished.
+			 */
+			var parsed = IndexName.tryParse(name).orElse(null);
+			if(parsed != null && registry.names(parsed)) {
+				return;
+			}
+
 			var index = indexes.getIfPresent(name);
 			if(index != null) {
 				var state = index.getState();
