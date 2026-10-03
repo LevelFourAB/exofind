@@ -16,6 +16,7 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.lucene.util.Version;
 import org.junit.jupiter.api.AfterEach;
@@ -792,6 +793,54 @@ public class IndexTest {
 
 		assertThat(index.getState(), is(IndexState.USABLE));
 		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+	}
+
+	/**
+	 * A close whose push failed leaves its commit on disk. A writer that opens
+	 * over the copy has changed nothing itself and says it is usable. A
+	 * handover the node chose must still push that commit, as the successor
+	 * pulls only what the remote holds.
+	 */
+	@Test
+	public void testHandingOverPushesACommitThatAFailedCloseLeftBehind() throws IOException {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var pushFails = new AtomicBoolean();
+		var pushes = new AtomicInteger();
+		var sync = new NoopSync() {
+			@Override
+			public void push(Set<String> files) throws IOException {
+				if(pushFails.get()) {
+					throw new IOException("The storage refused the push");
+				}
+
+				pushes.incrementAndGet();
+			}
+		};
+
+		// An instance commits a document on close, and the push of that commit fails
+		var closed = new Index(state, "test", path, sync);
+		closed.pull();
+		closed.updateDefinition(oneBooleanField());
+		closed.addDocument(new Document(new Document.Value("field1", true)));
+
+		pushFails.set(true);
+		assertThrows(IOException.class, closed::close);
+
+		// A writer opens over the copy that holds the commit
+		pushFails.set(false);
+		var index = new Index(state, "test", path, sync);
+		indexes.add(index);
+		index.pull();
+		assertThat(index.getState(), is(IndexState.USABLE));
+
+		var before = pushes.get();
+		state.updateOwnership(false);
+		assertThat(index.reopen(true), is(true));
+
+		assertThat(pushes.get(), is(before + 1));
 	}
 
 	/**

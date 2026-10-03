@@ -3,6 +3,7 @@ package se.l4.exofind.engine;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -120,7 +121,8 @@ public class Indexes implements RegistryPoller.Listener {
 	 * How long to wait for a retiring instance to finish closing before its
 	 * directory is used again. A close that takes longer is abandoned - the
 	 * lock inside the Lucene directory is what then still keeps a new writer
-	 * out until the old one is really gone.
+	 * out until the old one is really gone. A handover flush that abandons a
+	 * close fails, as the close may still be pushing.
 	 */
 	private static final Duration RETIRING_WAIT = Duration.ofSeconds(30);
 
@@ -909,10 +911,12 @@ public class Indexes implements RegistryPoller.Listener {
 	 * Push everything this node still holds for an index, for a handover
 	 * this node chose. The open generations of the index are committed,
 	 * pushed and reopened read-only, and evicted instances that are still
-	 * closing are waited out - so when the returned future completes,
-	 * nothing held here can reach the remote anymore. The claim on the index
-	 * is released only then, which is what keeps the successor from pulling
-	 * a manifest the flush had not written yet.
+	 * closing are waited out. A local copy that no instance has open is
+	 * pushed when it holds changes the remote never got, which a close whose
+	 * push failed leaves behind. When the returned future completes, nothing
+	 * held here can reach the remote anymore. The claim on the index is
+	 * released only then, which is what keeps the successor from pulling a
+	 * manifest the flush had not written yet.
 	 *
 	 * <p>Meaningful only after the ownership change that took the index away
 	 * from this node has reached {@link NodeState} - reopening reads it, and
@@ -922,8 +926,10 @@ public class Indexes implements RegistryPoller.Listener {
 	 *   name of the index, without a generation
 	 * @return
 	 *   completes when nothing more can be pushed from here, and exceptionally
-	 *   when a generation could not be pushed - the index keeps its writer and
-	 *   is served here until the handover is tried again
+	 *   when a generation could not be pushed, when an evicted instance did not
+	 *   finish closing in time, or when a local copy still holds changes the
+	 *   remote never got - the index keeps its writer and is served here until
+	 *   the handover is tried again
 	 */
 	public CompletableFuture<Void> flushForHandover(String index) {
 		var flushed = new CompletableFuture<Void>();
@@ -940,9 +946,13 @@ public class Indexes implements RegistryPoller.Listener {
 				// An evicted generation that is still closing may push while it does
 				for(var name : retiring.keySet()) {
 					var parsed = IndexName.tryParse(name).orElse(null);
-					if(parsed != null && parsed.index().equals(index)) {
-						drainRetiring(name, true);
+					if(parsed != null && parsed.index().equals(index) && !drainRetiring(name, true)) {
+						pushed = false;
 					}
+				}
+
+				if(!pushStrandedCopies(index)) {
+					pushed = false;
 				}
 
 				if(pushed) {
@@ -962,6 +972,109 @@ public class Indexes implements RegistryPoller.Listener {
 		});
 
 		return flushed;
+	}
+
+	/**
+	 * Push the local copies of an index that hold changes the remote never
+	 * got and that no instance has open. A close whose push failed leaves its
+	 * commit in such a copy, and nothing else pushes it before the successor
+	 * pulls.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @return
+	 *   whether no local copy of the index is left holding changes the remote
+	 *   never got
+	 */
+	private boolean pushStrandedCopies(String index) {
+		List<Path> paths;
+		try(var listing = Files.list(indexRoot)) {
+			paths = listing.filter(Files::isDirectory).toList();
+		} catch(NoSuchFileException e) {
+			return true;
+		} catch(IOException e) {
+			logger.atWarn()
+				.addKeyValue("index", index)
+				.setCause(e)
+				.log("Could not list the local copies of the index; " + e.getMessage());
+
+			return false;
+		}
+
+		var clean = true;
+		for(var path : paths) {
+			var name = path.getFileName().toString();
+			var parsed = IndexName.tryParse(name).orElse(null);
+			if(parsed == null || !parsed.index().equals(index)) {
+				continue;
+			}
+
+			// Held so that no instance opens the directory while it is pushed
+			var lock = nameLock(name);
+			lock.lock();
+			try {
+				if(!LocalCopy.hasUnpushedChanges(path)) {
+					continue;
+				}
+
+				if(indexes.getIfPresent(name) != null || retiring.containsKey(name)) {
+					/*
+					 * The reopen and the drain above pushed what the instances
+					 * held, so this copy holds something an open instance
+					 * could not push. Pushing beside it would race its pulls.
+					 */
+					logger.atWarn()
+						.addKeyValue("index", name)
+						.log("An open instance holds changes the remote never got");
+
+					clean = false;
+					continue;
+				}
+
+				var registered = parsed.isPinned() && registry.get(parsed.index())
+					.map(entry -> entry.hasGeneration(parsed.generation()))
+					.orElse(false);
+
+				if(!registered) {
+					/*
+					 * A generation the registry does not name is being removed
+					 * or created. A push could write a manifest under a prefix
+					 * that a removal is clearing, so the handover waits until
+					 * the registry settles which of the two it is.
+					 */
+					logger.atWarn()
+						.addKeyValue("index", name)
+						.log("A generation the registry does not name holds changes the remote never got");
+
+					clean = false;
+					continue;
+				}
+
+				var sync = syncProvider.createSync(parsed, path);
+				Index.pushLocalCopy(path, sync);
+
+				sync.syncedVersion().ifPresent(version -> registryHints.reportManifest(
+					parsed.index(),
+					parsed.generation(),
+					version
+				));
+
+				logger.atInfo()
+					.addKeyValue("index", name)
+					.log("Pushed changes that a close left behind, before the handover");
+			} catch(IOException | RuntimeException e) {
+				logger.atLevel(Interruptions.levelOf(e))
+					.addKeyValue("index", name)
+					.setCause(e)
+					.log("Could not push changes that a close left behind; " + e.getMessage());
+
+				clean = false;
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		return clean;
 	}
 
 	/**
@@ -1005,11 +1118,16 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @param commit
 	 *   whether the instance may still flush what it holds, {@code false} when
 	 *   the index is being removed and its changes are of no interest
+	 * @return
+	 *   {@code true} when there was no retiring instance, or its close finished
+	 *   without a failed push. {@code false} when the close could not push what
+	 *   the instance held, or did not finish within {@link #RETIRING_WAIT} and
+	 *   may still be pushing
 	 */
-	private void drainRetiring(String name, boolean commit) {
+	private boolean drainRetiring(String name, boolean commit) {
 		var retired = retiring.get(name);
 		if(retired == null) {
-			return;
+			return true;
 		}
 
 		retired.closeNow(commit);
@@ -1017,7 +1135,11 @@ public class Indexes implements RegistryPoller.Listener {
 			logger.atWarn()
 				.addKeyValue("index", name)
 				.log("Retired instance of this index did not finish closing, continuing without it");
+
+			return false;
 		}
+
+		return retired.pushed();
 	}
 
 	/**
@@ -1030,7 +1152,12 @@ public class Indexes implements RegistryPoller.Listener {
 		private final String name;
 		private final Index index;
 		private final AtomicBoolean closing;
-		private final CompletableFuture<Void> done;
+
+		/**
+		 * Completed when the close has finished, with whether it did so
+		 * without a failed push.
+		 */
+		private final CompletableFuture<Boolean> done;
 
 		RetiringIndex(String name, Index index) {
 			this.name = name;
@@ -1044,9 +1171,11 @@ public class Indexes implements RegistryPoller.Listener {
 				return;
 			}
 
+			var pushed = false;
 			try {
 				try {
 					index.close(commit);
+					pushed = true;
 				} catch(IOException | RuntimeException e) {
 					logger.atWarn()
 						.addKeyValue("index", name)
@@ -1065,8 +1194,16 @@ public class Indexes implements RegistryPoller.Listener {
 			} finally {
 				recordUsed(name);
 				retiring.remove(name, this);
-				done.complete(null);
+				done.complete(pushed);
 			}
+		}
+
+		/**
+		 * Whether the close finished without a failed push. {@code false}
+		 * while the close has not finished.
+		 */
+		boolean pushed() {
+			return done.getNow(false);
 		}
 
 		boolean await(Duration timeout) {

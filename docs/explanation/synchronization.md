@@ -223,6 +223,14 @@ Because of this order, a successor node always pulls a manifest that includes th
 
 A failed flush cancels the handover instead of completing it. The index keeps its writer and the data the flush could not push, the claim stays with the holder, and the index accepts writes here again. A subsequent round starts the handover anew and flushes again. A shutting-down node whose flush fails leaves its claims to lapse rather than releasing them, so a successor waits the lease out instead of pulling a manifest that is missing acknowledged documents.
 
+The flush covers every local copy of the index that can hold acknowledged documents:
+
+- The open generations commit and push what they hold.
+- A generation that the node evicted and is still closing pushes as it closes, and the flush waits for that close.
+- A close whose push failed leaves its commit on disk. The flush pushes that copy.
+
+If one of these pushes fails, or a close does not finish within 30 seconds, the flush fails and the handover is called off. Without this, an evicted generation could hold the only copy of acknowledged documents when the claim moves.
+
 A node tells the two cases apart by how the claim left it. A claim it still holds while the index drains marks a handover it chose, so the index flushes. A claim that ends up naming another node, or that the round dropped along with a deleted index, marks a loss. Every generation of a lost index then stops pushing at once, including a flush that a handover queued moments earlier and the push that closing an index normally makes.
 
 An unassigned index does not wait for a coordination round. The first candidate node that receives a write claims the index immediately. This ensures newly created indexes acquire writers immediately and routes writes promptly if a holder fails.

@@ -125,6 +125,7 @@ import se.l4.exofind.engine.index.settings.FieldSettings;
 import se.l4.exofind.engine.index.settings.QuerySynonyms;
 import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
+import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.StateSync;
 import se.l4.exofind.engine.index.state.SyncConflictException;
 import se.l4.exofind.engine.index.state.SyncIncompatibleException;
@@ -1515,11 +1516,17 @@ public class Index {
 				return true;
 			}
 
+			/*
+			 * A writer opened over a commit the remote never got - one a close
+			 * left behind when its push failed - says it is usable, as it has
+			 * changed nothing itself. The copy is asked as well, or the pull
+			 * below drops that commit.
+			 */
 			flush = flushFirst
 				&& mayPush
 				&& writer != null
 				&& !shouldWrite
-				&& state != IndexState.USABLE;
+				&& (state != IndexState.USABLE || LocalCopy.hasUnpushedChanges(localPath));
 		} finally {
 			syncLock.writeLock().unlock();
 		}
@@ -1737,7 +1744,7 @@ public class Index {
 			 */
 			var commit = snapshotLatestCommit();
 			try {
-				sync.push(indexFiles(commit));
+				sync.push(indexFiles(localPath, commit));
 			} finally {
 				if(commit != null) {
 					snapshots.release(commit);
@@ -1846,13 +1853,15 @@ public class Index {
 	 * keys such a file by its contents so that a rewrite never replaces the
 	 * object an earlier manifest names.
 	 *
+	 * @param localPath
+	 *   directory of the local copy
 	 * @param commit
 	 *   commit to take the files of, or {@code null} for an index that has not
 	 *   been committed yet
 	 * @return
 	 * @throws IOException
 	 */
-	private Set<String> indexFiles(IndexCommit commit) throws IOException {
+	private static Set<String> indexFiles(Path localPath, IndexCommit commit) throws IOException {
 		var files = new LinkedHashSet<String>();
 
 		if(Files.exists(localPath.resolve(DEFINITION_FILE))) {
@@ -1873,6 +1882,36 @@ public class Index {
 		}
 
 		return files;
+	}
+
+	/**
+	 * Push a local copy of a generation that no instance has open. The push
+	 * sends what a push of an open instance sends: the files of the newest
+	 * commit, the definition, and the change log.
+	 *
+	 * <p>No Lucene writer holds the directory while this runs, so the caller
+	 * must keep every instance of the generation from opening it until this
+	 * returns.
+	 *
+	 * <p>Blocks on the remote, see {@link StateSync#push(Set)}.
+	 *
+	 * @param localPath
+	 *   directory of the local copy
+	 * @param sync
+	 *   synchronization of the generation, created for this push alone
+	 * @throws SyncConflictException
+	 *   if another node changed the remote since the copy was synchronized
+	 * @throws IOException
+	 *   if the copy could not be read or pushed
+	 */
+	public static void pushLocalCopy(Path localPath, StateSync sync) throws IOException {
+		try(var directory = FSDirectory.open(localPath)) {
+			var commit = DirectoryReader.indexExists(directory)
+				? DirectoryReader.listCommits(directory).getLast()
+				: null;
+
+			sync.push(indexFiles(localPath, commit));
+		}
 	}
 
 	/**
