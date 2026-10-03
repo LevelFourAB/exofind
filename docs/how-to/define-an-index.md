@@ -181,7 +181,7 @@ A wildcard field is also a starting point while the shape of a catalogue is stil
 }
 ```
 
-Treat this as a starting point rather than a destination. Every distinct name still becomes a field of its own, so keep it only while the names come from a catalogue you control, and replace it with named fields as the shape settles. To keep attributes that are never named in advance, use the typed namespaces in [Model dynamic attributes](model-dynamic-attributes.md) instead.
+Treat this as a starting point rather than a destination. Every distinct name still becomes a field of its own, so keep it only while the names come from a catalogue you control, and replace it with named fields as the shape settles. When the index holds documents, a named field that takes its name from `*` must index values the way `*` did. For example, a named field that turns on `filter` or `facet` where `*` did not returns `409 Conflict`. To apply such a change, [roll out the change in a new generation](roll-out-a-definition-change.md). To keep attributes that are never named in advance, use the typed namespaces in [Model dynamic attributes](model-dynamic-attributes.md) instead.
 
 ### Decide how much of a document is kept
 

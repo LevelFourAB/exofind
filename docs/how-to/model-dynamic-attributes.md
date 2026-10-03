@@ -193,7 +193,7 @@ Because nested objects cannot isolate facet exclusions per attribute, use wildca
 
 ## What a definition change costs
 
-- **Adding a new pattern is free:** Adding a new wildcard pattern to an index definition requires no reindexing. Existing documents were not indexed with that pattern, so no stale data exists.
+- **Adding a new pattern is free:** Adding a new wildcard pattern to an index definition requires no reindexing. Existing documents were not indexed with that pattern, so no stale data exists. The exception is a pattern that takes names from another pattern, such as `color*` beside `*` inside `attr`. Existing documents were indexed under the other pattern, so the new pattern must index those names the same way. On a generation that holds documents, indexing them differently returns `409 Conflict` with `index:definition:incompatible`. To apply the change to existing documents, [roll out a new generation](roll-out-a-definition-change.md).
 - **Adding usages to an existing pattern requires a rollout:** Enabling a new usage on an existing pattern (such as adding `facet` to the `*` inside `attr`) when documents already exist is rejected with `index:definition:usage_added`. To apply the new usage to existing documents, [roll out a new generation](roll-out-a-definition-change.md).
 
 To avoid generation rollouts, define all required usages when creating a namespace. If an existing namespace needs a new usage, add a new namespace prefix instead.

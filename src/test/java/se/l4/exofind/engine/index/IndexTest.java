@@ -194,6 +194,85 @@ public class IndexTest {
 		);
 	}
 
+	private static FieldDef stringField(StringFieldTypeDef.Builder type) {
+		return FieldDef.newBuilder()
+			.setType(FieldTypeDef.newBuilder().setString(type))
+			.build();
+	}
+
+	private static FieldDef filteredString(boolean caseFolding) {
+		return stringField(
+			StringFieldTypeDef.newBuilder()
+				.setKeyword(
+					StringFieldTypeDef.KeywordConfig.newBuilder().setCaseFolding(caseFolding)
+				)
+		).toBuilder()
+			.setFilter(FilterConfig.getDefaultInstance())
+			.build();
+	}
+
+	/**
+	 * A document that gave {@code brand} was indexed by the catch-all
+	 * {@code *}, which wrote no filter terms for it. A named field that
+	 * filters on {@code brand} would miss that document.
+	 */
+	@Test
+	public void testNamedFieldThatTakesItsNameFromAWildcardIsRefused() throws IOException {
+		var catchAll = stringField(
+			StringFieldTypeDef.newBuilder()
+				.setMatching(StringFieldTypeDef.TextUsageConfig.getDefaultInstance())
+		);
+		var index = create(oneStringField(false).putFields("*", catchAll));
+		index.addDocument(
+			new Document(new Document.Value("id", "1"), new Document.Value("brand", "Nike"))
+		);
+		index.commit();
+
+		var named = oneStringField(false)
+			.putFields("brand", filteredString(true))
+			.putFields("*", catchAll)
+			.build();
+
+		var e = assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> index.updateDefinition(named)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:definition:usage_added"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("brand"));
+		assertThat(index.getField("brand").get().getName(), is("*"));
+	}
+
+	/**
+	 * A dropped field whose name a pattern also accepts is read by the pattern
+	 * from then on. The pattern folds case where the dropped field did not, so
+	 * a filter on the value as it was written would miss the document.
+	 */
+	@Test
+	public void testDroppingAFieldThatAPatternTakesOverIsRefused() throws IOException {
+		var index = create(
+			oneStringField(false)
+				.putFields("attr_color", filteredString(false))
+				.putFields("attr_*", filteredString(true))
+		);
+		index.addDocument(
+			new Document(new Document.Value("id", "1"), new Document.Value("attr_color", "Red"))
+		);
+		index.commit();
+
+		var dropped = oneStringField(false)
+			.putFields("attr_*", filteredString(true))
+			.build();
+
+		var e = assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> index.updateDefinition(dropped)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:definition:setting_changed"));
+		assertThat(index.getField("attr_color").get().getName(), is("attr_color"));
+	}
+
 	@Test
 	public void testDefinitionChangeIsAcceptedWhenStaleDocumentsAreAllowed() throws IOException {
 		var index = create(oneStringField(false));

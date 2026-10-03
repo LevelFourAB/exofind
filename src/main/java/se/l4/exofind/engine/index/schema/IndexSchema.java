@@ -1669,12 +1669,17 @@ public class IndexSchema {
 	 * pattern does ({@code a.*} before {@code a.*x}). Documented in the
 	 * README and pinned by IndexSchemaTest, so a change here fails loudly
 	 * instead of quietly moving names to another field.
+	 * {@link DefinitionCompatibility} resolves names by the same order.
+	 *
+	 * <p>A name without a wildcard sorts before every pattern that matches
+	 * it, so sorting exact names and patterns together gives the order in
+	 * which a name is resolved against them.
 	 *
 	 * @param a
 	 * @param b
 	 * @return
 	 */
-	private int compareFieldNames(String a, String b) {
+	static int compareFieldNames(String a, String b) {
 		var aChars = a.toCharArray();
 		var bChars = b.toCharArray();
 

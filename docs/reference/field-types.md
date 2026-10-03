@@ -306,7 +306,8 @@ Restrictions:
 Search and update operations:
 - Unfielded `text` queries skip wildcard fields. To include dynamic attributes in unfielded text queries, copy values into a declared field configured with `matching`.
 - Partial update paths target dynamic properties by their concrete name in the document (for example, `variants[V-1].attr.color` or `spec.weight.value`), not the pattern name.
-- Adding a wildcard pattern to an existing index definition does not require reindexing.
+- Adding a wildcard pattern to an existing index definition does not require reindexing, unless the pattern takes names from another pattern that indexes them differently.
+- On a generation that holds documents, a named field or a narrower pattern that takes names from a wildcard pattern is compared with that pattern. A pattern that takes over the name of a removed field is compared with that field. Any difference returns `409 Conflict` with `index:definition:incompatible`. See [Index resource](admin-api.md#index-resource).
 
 ### Feature requirements
 

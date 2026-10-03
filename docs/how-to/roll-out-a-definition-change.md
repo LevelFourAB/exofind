@@ -10,6 +10,7 @@ Use this guide when a definition change alters how existing values are indexed:
 - A changed or newly referenced stopword list or synonym set
 - A new locale on a field, or a changed locale fallback chain
 - Different vector dimensions
+- A name moving to a field that indexes it differently, such as a named field or a narrower pattern taking names from a wildcard pattern, or a pattern taking over the name of a removed field
 
 Sending such a change to a generation that holds documents returns `409 Conflict` with `index:definition:incompatible`, so this procedure is required rather than recommended. You do not need this procedure if the generation is empty, if the change reaches every document already indexed, such as adding a field or turning a usage off, or if you are about to reindex everything, where `allowStaleDocuments=true` takes the change in place. For conceptual background, see [Generations](../explanation/generations.md).
 

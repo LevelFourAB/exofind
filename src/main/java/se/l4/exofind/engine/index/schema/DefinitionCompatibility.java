@@ -1,8 +1,13 @@
 package se.l4.exofind.engine.index.schema;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import org.apache.lucene.util.automaton.Automata;
+import org.apache.lucene.util.automaton.Automaton;
+import org.apache.lucene.util.automaton.Operations;
+import org.apache.lucene.util.automaton.TooComplexToDeterminizeException;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.list.ListIterable;
@@ -39,11 +44,15 @@ import se.l4.exofind.engine.errors.ObjectLocation;
  * <p>Three asymmetries are deliberate:
  *
  * <ul>
- * <li>A field the current definition does not have is not compared. No document
- * was indexed with it, so there is nothing for the new field to disagree with.
- * <li>A field the incoming definition drops is not compared. What was written
- * for it stays in the index and nothing reads it any more, which is narrower
- * rather than wrong.
+ * <li>A name no field of the current definition accepts is not compared. No
+ * document was indexed with it, so there is nothing for the new field to
+ * disagree with. A name a pattern accepted is compared with that pattern, so
+ * a named field that takes its name from {@code *} is compared with {@code *}.
+ * <li>A field the incoming definition drops is not compared, unless a pattern
+ * takes over its name. What was written for it stays in the index and nothing
+ * reads it any more, which is narrower rather than wrong. A pattern that
+ * takes over the name reads what was written by its own rules, so the two are
+ * compared.
  * <li>Turning a usage <em>off</em> is not reported, for the same reason -
  * only turning one on is, because that is what asks for something the earlier
  * documents were never given.
@@ -214,10 +223,19 @@ public class DefinitionCompatibility {
 	}
 
 	/**
-	 * Compare the fields two definitions share, by the name each is given to.
-	 * The fields inside an object are compared the same way one level down, and
-	 * named by the dotted path through it so an error points where a caller
-	 * wrote the field.
+	 * Compare the fields at one level of two definitions, pairing them by the
+	 * names a document can give. A name is read by the field it resolves to:
+	 * a field with that exact name, or else the first pattern that matches it,
+	 * in the order {@link IndexSchema#compareFieldNames} gives. A pair is
+	 * compared when some name resolves to the one field in the current
+	 * definition and to the other in the incoming one. Pairing by the key alone
+	 * misses a named field that takes its name from a pattern, a narrower
+	 * pattern that takes names from a broader one, and a dropped field whose
+	 * name a pattern takes over.
+	 *
+	 * <p>The fields inside an object are compared the same way one level down,
+	 * and named by the dotted path through it so an error points where a
+	 * caller wrote the field.
 	 *
 	 * @param prefix
 	 *   the path the fields sit under, empty at the root
@@ -231,23 +249,202 @@ public class DefinitionCompatibility {
 		ResourcesDef incomingResources,
 		MutableList<ErrorMessage> errors
 	) {
+		var currentNames = new Names(current.keySet());
+		var incomingNames = new Names(incoming.keySet());
+
+		// A named field, compared with what read its name before
 		for(var entry : incoming.entrySet()) {
-			var before = current.get(entry.getKey());
+			var key = entry.getKey();
+			if(isPattern(key)) {
+				continue;
+			}
+
+			var before = currentNames.resolve(key);
 			if(before == null) {
 				continue;
 			}
 
-			var name = prefix.isEmpty() ? entry.getKey() : prefix + '.' + entry.getKey();
-
 			checkField(
-				location.forKey(entry.getKey()),
-				name,
-				before,
+				location.forKey(key),
+				path(prefix, key),
+				current.get(before),
 				currentResources,
 				entry.getValue(),
 				incomingResources,
 				errors
 			);
+		}
+
+		// A dropped named field, compared with the pattern that reads its name now
+		for(var entry : current.entrySet()) {
+			var key = entry.getKey();
+			if(isPattern(key) || incoming.containsKey(key)) {
+				continue;
+			}
+
+			var after = incomingNames.resolve(key);
+			if(after == null) {
+				continue;
+			}
+
+			checkField(
+				location.forKey(after),
+				path(prefix, key),
+				entry.getValue(),
+				currentResources,
+				incoming.get(after),
+				incomingResources,
+				errors
+			);
+		}
+
+		// A pattern, compared with every pattern that read some of its names before
+		for(var entry : incoming.entrySet()) {
+			var key = entry.getKey();
+			if(!isPattern(key)) {
+				continue;
+			}
+
+			for(var before : current.keySet()) {
+				if(!isPattern(before) || !currentNames.sharesNames(before, incomingNames, key)) {
+					continue;
+				}
+
+				checkField(
+					location.forKey(key),
+					path(prefix, key),
+					current.get(before),
+					currentResources,
+					entry.getValue(),
+					incomingResources,
+					errors
+				);
+			}
+		}
+	}
+
+	private static String path(String prefix, String name) {
+		return prefix.isEmpty() ? name : prefix + '.' + name;
+	}
+
+	private static boolean isPattern(String name) {
+		return name.indexOf('*') >= 0;
+	}
+
+	/**
+	 * The names of the fields at one level of a definition, in the order a
+	 * name a document gives is resolved against them. A {@code *} in a name
+	 * matches one or more characters other than a dot, the way
+	 * {@link Field#nameMatches(String)} reads it.
+	 */
+	private static final class Names {
+		/** What a {@code *} matches: one or more characters other than a dot. */
+		private static final Automaton SEGMENT = Operations.repeat(
+			Operations.union(
+				Automata.makeCharRange(0, '.' - 1),
+				Automata.makeCharRange('.' + 1, Character.MAX_CODE_POINT)
+			),
+			1
+		);
+
+		private final ListIterable<String> ordered;
+		private final Map<String, Automaton> accepted;
+		private final Map<String, Automaton> resolved;
+
+		Names(Iterable<String> names) {
+			this.ordered = Lists.mutable.withAll(names)
+				.sortThis(IndexSchema::compareFieldNames);
+			this.accepted = new HashMap<>();
+			this.resolved = new HashMap<>();
+		}
+
+		/**
+		 * Get the field a name resolves to.
+		 *
+		 * @return
+		 *   the name of the field, or {@code null} when no field accepts the
+		 *   name
+		 */
+		String resolve(String name) {
+			for(var field : ordered) {
+				if(isPattern(field) ? accepts(field, name) : field.equals(name)) {
+					return field;
+				}
+			}
+
+			return null;
+		}
+
+		/**
+		 * Get whether some name resolves to a pattern here and to a pattern of
+		 * another level.
+		 */
+		boolean sharesNames(String pattern, Names other, String otherPattern) {
+			var shared = Operations.intersection(
+				resolved(pattern),
+				other.resolved(otherPattern)
+			);
+
+			return !Operations.isEmpty(shared);
+		}
+
+		private boolean accepts(String field, String name) {
+			var matched = Operations.intersection(Automata.makeString(name), accepted(field));
+			return !Operations.isEmpty(matched);
+		}
+
+		/**
+		 * The names a field accepts.
+		 */
+		private Automaton accepted(String field) {
+			return accepted.computeIfAbsent(field, Names::accepts);
+		}
+
+		/**
+		 * The names that resolve to a field: those it accepts, less those a
+		 * field earlier in the order accepts.
+		 */
+		private Automaton resolved(String field) {
+			return resolved.computeIfAbsent(field, f -> {
+				var earlier = Lists.mutable.<Automaton>empty();
+				for(var other : ordered) {
+					if(other.equals(f)) {
+						break;
+					}
+
+					earlier.add(accepted(other));
+				}
+
+				if(earlier.isEmpty()) {
+					return accepted(f);
+				}
+
+				try {
+					return Operations.minus(
+						accepted(f),
+						Operations.union(earlier),
+						Operations.DEFAULT_DETERMINIZE_WORK_LIMIT
+					);
+				} catch(TooComplexToDeterminizeException e) {
+					/*
+					 * Every name the field accepts is taken as resolving to
+					 * it. That can pair fields no name reaches both of, which
+					 * refuses a change that was safe, never the other way.
+					 */
+					return accepted(f);
+				}
+			});
+		}
+
+		private static Automaton accepts(String field) {
+			var parts = Lists.mutable.<Automaton>empty();
+			for(var i = 0; i < field.length(); ) {
+				var c = field.codePointAt(i);
+				parts.add(c == '*' ? SEGMENT : Automata.makeChar(c));
+				i += Character.charCount(c);
+			}
+
+			return Operations.concatenate(parts);
 		}
 	}
 

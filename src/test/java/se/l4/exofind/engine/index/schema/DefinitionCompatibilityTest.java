@@ -106,6 +106,192 @@ public class DefinitionCompatibilityTest {
 		assertThat(codes(base().build(), incoming), is(empty()));
 	}
 
+	/**
+	 * A string field that searches its values as text, the way a catch-all
+	 * {@code *} is usually defined.
+	 */
+	private static FieldDef matchingText() {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setString(
+						StringFieldTypeDef.newBuilder()
+							.setMatching(StringFieldTypeDef.TextUsageConfig.getDefaultInstance())
+					)
+			)
+			.build();
+	}
+
+	/**
+	 * A string field that filters on its values, folding their case or not.
+	 */
+	private static FieldDef keyword(boolean caseFolding) {
+		return FieldDef.newBuilder()
+			.setType(
+				FieldTypeDef.newBuilder()
+					.setString(
+						StringFieldTypeDef.newBuilder()
+							.setKeyword(
+								StringFieldTypeDef.KeywordConfig.newBuilder()
+									.setCaseFolding(caseFolding)
+							)
+					)
+			)
+			.setFilter(FilterConfig.getDefaultInstance())
+			.build();
+	}
+
+	/**
+	 * A document that gave {@code brand} was indexed by {@code *}, so a named
+	 * field that takes the name is compared with {@code *}. The documents
+	 * already indexed hold no filter terms for it.
+	 */
+	@Test
+	public void aNamedFieldIsComparedWithTheWildcardThatReadItsNameBefore() {
+		var current = base().putFields("*", matchingText()).build();
+		var incoming = current.toBuilder().putFields("brand", keyword(true)).build();
+
+		assertThat(codes(current, incoming), contains("index:definition:usage_added"));
+		assertThat(paths(current, incoming), contains("brand"));
+	}
+
+	@Test
+	public void aNamedFieldThatTakesItsNameFromAPatternIsComparedWithIt() {
+		var current = base().putFields("attr_*", keyword(true)).build();
+		var incoming = current.toBuilder().putFields("attr_color", keyword(false)).build();
+
+		assertThat(codes(current, incoming), contains("index:definition:setting_changed"));
+		assertThat(paths(current, incoming), contains("attr_color"));
+	}
+
+	@Test
+	public void aNarrowerPatternIsComparedWithTheBroaderOneItTakesNamesFrom() {
+		var current = base().putFields("attr_*", keyword(true)).build();
+		var incoming = current.toBuilder()
+			.putFields(
+				"attr_c*",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setInt32(Int32FieldTypeDef.getDefaultInstance())
+					)
+					.setFilter(FilterConfig.getDefaultInstance())
+					.build()
+			)
+			.build();
+
+		assertThat(codes(current, incoming), contains("index:definition:setting_changed"));
+		assertThat(paths(current, incoming), contains("attr_c*"));
+	}
+
+	/**
+	 * A dropped field whose name a pattern also accepts is read by the
+	 * pattern from then on, by the rules of the pattern. The error sits at the
+	 * pattern and names the field it takes over.
+	 */
+	@Test
+	public void aDroppedFieldIsComparedWithThePatternThatTakesOverItsName() {
+		var incoming = base().putFields("attr_*", keyword(true)).build();
+		var current = incoming.toBuilder().putFields("attr_color", keyword(false)).build();
+
+		var errors = DefinitionCompatibility.check(current, incoming);
+
+		assertThat(codes(current, incoming), contains("index:definition:setting_changed"));
+		assertThat(paths(current, incoming), contains("attr_*"));
+		assertThat(errors.getFirst().getArguments().get("field"), is("attr_color"));
+	}
+
+	@Test
+	public void aDroppedPatternIsComparedWithThePatternThatTakesOverItsNames() {
+		var incoming = base().putFields("*", matchingText()).build();
+		var current = incoming.toBuilder().putFields("attr_*", keyword(true)).build();
+
+		assertThat(codes(current, incoming), contains("index:definition:usage_added"));
+		assertThat(paths(current, incoming), contains("*"));
+	}
+
+	/**
+	 * Patterns that overlap read each name by one field only, the first in
+	 * the order names resolve in. An unchanged definition pairs no field with
+	 * another.
+	 */
+	@Test
+	public void overlappingPatternsThatStayAsTheyAreReportNothing() {
+		var current = base()
+			.putFields("*", matchingText())
+			.putFields("attr_*", keyword(true))
+			.putFields("attr_color", keyword(false))
+			.build();
+
+		assertThat(codes(current, current), is(empty()));
+	}
+
+	@Test
+	public void aNamedFieldThatWritesWhatThePatternWroteIsCompatible() {
+		var current = base().putFields("*", matchingText()).build();
+		var incoming = current.toBuilder().putFields("brand", matchingText()).build();
+
+		assertThat(codes(current, incoming), is(empty()));
+	}
+
+	/**
+	 * A named field wins over a pattern, so a pattern added beside it takes
+	 * no name that was read before.
+	 */
+	@Test
+	public void aPatternThatTakesNoNameFromAnotherFieldIsCompatible() {
+		var current = base().putFields("attr_color", keyword(false)).build();
+		var incoming = current.toBuilder()
+			.putFields(
+				"attr_*",
+				keyword(true).toBuilder().setFacet(FacetConfig.getDefaultInstance()).build()
+			)
+			.build();
+
+		assertThat(codes(current, incoming), is(empty()));
+	}
+
+	@Test
+	public void aNamedFieldInsideAnObjectIsComparedWithThePatternBesideIt() {
+		UnaryOperator<ObjectFieldTypeDef.Builder> attributes = object -> object
+			.putFields("*", keyword(true));
+
+		var current = base()
+			.putFields(
+				"attr",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setObject(attributes.apply(ObjectFieldTypeDef.newBuilder()))
+					)
+					.build()
+			)
+			.build();
+
+		var incoming = base()
+			.putFields(
+				"attr",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setObject(
+								attributes.apply(ObjectFieldTypeDef.newBuilder())
+									.putFields(
+										"color",
+										keyword(true).toBuilder()
+											.setFacet(FacetConfig.getDefaultInstance())
+											.build()
+									)
+							)
+					)
+					.build()
+			)
+			.build();
+
+		assertThat(codes(current, incoming), contains("index:definition:usage_added"));
+		assertThat(paths(current, incoming), contains("attr.color"));
+	}
+
 	@Test
 	public void turningOnStoredIsIncompatible() {
 		var incoming = base()
