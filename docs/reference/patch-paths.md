@@ -71,7 +71,7 @@ The target endpoint determines what a single word in brackets means:
 | A document | A BCP 47 language tag on a locale-specific field, or the declared key on an object field. A field is never both. |
 | Search settings | The key the list declares: `field` on `ranking.signals` and `ranking.tieBreakers`, and `value` on `fields.<name>.values`. Every other list declares none, and a word on one returns `settings:patch:key_unsupported`. |
 
-In document fields, a BCP 47 tag resolves against the variants declared on the field. For example, `title[nb-NO]` changes a field that declares `no`. If the field declares no variant for the tag, the endpoint returns `document:locale_unknown`. For more details on fields, see [Field types](field-types.md).
+In document fields, a BCP 47 tag resolves against the variants declared on the field. For example, `title[nb-NO]` changes a field that declares `no`. If the field declares no variant for the tag, the endpoint returns `document:locale_unknown`. A locale path selects every value the field holds in the resolved variant, including values the document gave without a locale (held in the default locale of the field) and values given under a more precise tag that resolves to the variant, such as `en-GB` for `en`. For more details on fields, see [Field types](field-types.md).
 
 ## Target depth and creation
 

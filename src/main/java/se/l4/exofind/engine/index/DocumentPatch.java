@@ -8,6 +8,7 @@ import org.eclipse.collections.api.set.SetIterable;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.patch.PatchErrors;
 
 /**
@@ -67,12 +68,37 @@ public record DocumentPatch(ListIterable<Change> changes) {
 		/**
 		 * The values the field holds in one locale.
 		 *
+		 * <p>A document keeps each value with the locale it was given in: no
+		 * locale, or a tag such as {@code en-GB} that is more precise than the
+		 * locales the field declares. Indexing holds such a value in the
+		 * locale the field resolves it to, and this selector picks out values
+		 * by that same locale.
+		 *
 		 * @param locale
 		 *   BCP 47 tag of a locale the field declares, rather than the one the
 		 *   change was written with - a field holding {@code no} is changed in
 		 *   {@code no} by a change naming {@code nb-NO}
+		 * @param defaultLocale
+		 *   the locale the field holds a value given without a locale in
+		 * @param locales
+		 *   every locale the field holds values in, which a value given under
+		 *   another tag is resolved against
 		 */
-		record InLocale(String locale) implements Selector {
+		record InLocale(
+			String locale,
+			String defaultLocale,
+			SetIterable<String> locales
+		) implements Selector {
+			/**
+			 * Get whether the field holds a value in this locale.
+			 */
+			boolean holds(Document.Value value) {
+				var held = value.locale() == null
+					? defaultLocale
+					: Locales.resolve(value.locale(), locales).orElse(value.locale());
+
+				return locale.equals(held);
+			}
 		}
 
 		/**
@@ -218,8 +244,7 @@ public record DocumentPatch(ListIterable<Change> changes) {
 			}
 			case Selector.Added ignored -> values.addAllIterable(change.values());
 			case Selector.InLocale inLocale -> {
-				values.removeIf(value -> value.name().equals(field)
-					&& inLocale.locale().equals(value.locale()));
+				values.removeIf(value -> value.name().equals(field) && inLocale.holds(value));
 				values.addAllIterable(change.values());
 			}
 			case Selector.Matching matching -> applyToMatching(

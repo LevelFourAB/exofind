@@ -447,6 +447,77 @@ public class DocumentPatchPathResourceTest {
 		assertThat(e.getErrors().get(0).getCode(), is("document:locale_unknown"));
 	}
 
+	/**
+	 * A value given without a locale is held in the default locale of the
+	 * field, so a change to that locale replaces it.
+	 */
+	@Test
+	public void aChangeToTheDefaultLocaleReplacesAValueGivenWithoutALocale() throws IOException {
+		var index = localized(document("id", "1", "name", "blåbärssylt"));
+
+		updateIn("localized", document("id", "1", "name[sv]", "lingonsylt"));
+
+		index.commit();
+		assertThat(index.getDocument("1").getAll("name"), contains("lingonsylt"));
+	}
+
+	@Test
+	public void emptyingTheDefaultLocaleRemovesAValueGivenWithoutALocale() throws IOException {
+		var index = localized(document("id", "1", "name", "blåbärssylt"));
+
+		updateIn("localized", document("id", "1", "name[sv]", null));
+
+		index.commit();
+		assertThat(index.getDocument("1").get("name"), is(nullValue()));
+	}
+
+	/**
+	 * A value given under a regional tag is held in the locale the field
+	 * resolves the tag to, so a change to that locale replaces it.
+	 */
+	@Test
+	public void aChangeToALocaleReplacesAValueGivenUnderARegionalTagOfIt() throws IOException {
+		var index = localized(
+			document("id", "1", "name", Map.of("sv", "blåbärssylt", "en-GB", "blueberry jam"))
+		);
+
+		updateIn("localized", document("id", "1", "name[en]", "lingonberry jam"));
+
+		index.commit();
+		var stored = index.getDocument("1");
+		assertThat(inLocale(stored, "name", "sv"), is("blåbärssylt"));
+		assertThat(inLocale(stored, "name", "en"), is("lingonberry jam"));
+		assertThat(stored.getAll("name").size(), is(2));
+	}
+
+	@Test
+	public void aChangeToTheDefaultLocaleOfAMultipleFieldReplacesValuesGivenWithoutALocale()
+		throws IOException {
+		var index = localized(document("id", "1", "labels", List.of("röd", "söt")));
+
+		updateIn("localized", document("id", "1", "labels[sv]", List.of("blå")));
+
+		index.commit();
+		assertThat(index.getDocument("1").getAll("labels"), contains("blå"));
+	}
+
+	/**
+	 * A value given without a locale is held in the default locale only, so a
+	 * change to another locale leaves it.
+	 */
+	@Test
+	public void aChangeToAnotherLocaleLeavesAValueGivenWithoutALocale() throws IOException {
+		var index = localized(document("id", "1", "name", "blåbärssylt"));
+
+		updateIn("localized", document("id", "1", "name[en]", "blueberry jam"));
+
+		index.commit();
+		var stored = index.getDocument("1");
+		assertThat(stored.getAll("name").size(), is(2));
+		assertThat(inLocale(stored, "name", "en"), is("blueberry jam"));
+		assertThat(stored.getAll("name").contains("blåbärssylt"), is(true));
+	}
+
 	@Test
 	public void addingToAFieldThatHoldsASingleValueIsRefused() throws IOException {
 		catalogue();
@@ -807,6 +878,29 @@ public class DocumentPatchPathResourceTest {
 			.setType(
 				FieldTypeDef.newBuilder().setDouble(DoubleFieldTypeDef.getDefaultInstance())
 			);
+	}
+
+	/**
+	 * An index with a locale specific single value field {@code name} and a
+	 * locale specific multiple field {@code labels}, both held in {@code sv}
+	 * by default and in {@code en}, holding one document.
+	 */
+	private Index localized(Map<String, Object> document) throws IOException {
+		var locales = FieldDef.LocaleConfig.newBuilder()
+			.setDefaultLocale("sv")
+			.addLocales("en");
+
+		var index = indexes.create(
+			"localized",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields("name", string().setLocales(locales).build())
+				.putFields("labels", string().setMultiple(true).setLocales(locales).build())
+				.build()
+		);
+
+		resource.add("localized", null, new DocumentsRequest(List.of(document)));
+		return index;
 	}
 
 	private Index catalogue() throws IOException {

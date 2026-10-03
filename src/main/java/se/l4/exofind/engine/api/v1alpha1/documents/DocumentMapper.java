@@ -321,7 +321,7 @@ public class DocumentMapper {
 
 		return new DocumentPatch.Change(
 			path.field(),
-			new DocumentPatch.Selector.InLocale(locale),
+			new DocumentPatch.Selector.InLocale(locale, field.getDefaultLocale(), field.getLocales()),
 			null,
 			mapped(index, Optional.of(field), leafOf(path.field()), path.field(), locale, value)
 		);

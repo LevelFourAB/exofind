@@ -116,7 +116,7 @@ The examples below use a `products` index whose `variants` object field declares
    }
    ```
 
-   Locale tags resolve against the variants declared in the field definition, so `title[nb-NO]` changes a field that holds `no`. A tag the field holds no variant for returns `document:locale_unknown`.
+   Locale tags resolve against the variants declared in the field definition, so `title[nb-NO]` changes a field that holds `no`. A tag the field holds no variant for returns `document:locale_unknown`. A path such as `title[en]` also changes or removes values that the document gave without a locale (when `en` is the default locale of the field) or under a more precise tag such as `en-GB` that resolves to `en`.
 
 6. Update a field inside a single object:
 
