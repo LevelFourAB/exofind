@@ -569,8 +569,16 @@ public class ObjectStorageSync implements StateSync {
 
 				var localFile = resolveLocal(file.getName());
 
+				/*
+				 * The last synced manifest vouches only for a file that is
+				 * never rewritten. A file the engine rewrites in place can
+				 * hold a change this node wrote after that manifest, such as a
+				 * definition update whose push was refused, so it is checked
+				 * against the wanted entry below instead.
+				 */
 				if(
-					isUnchanged(currentFiles.get(file.getName()), file)
+					!isRewrittenInPlace(file.getName())
+						&& isUnchanged(currentFiles.get(file.getName()), file)
 						&& Files.exists(localFile)
 				) {
 					continue;

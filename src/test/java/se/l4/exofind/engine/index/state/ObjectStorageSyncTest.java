@@ -1294,6 +1294,59 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * The engine rewrites the definition in place before it pushes. When that
+	 * push is refused, the pull that follows must put back the definition the
+	 * remote holds, even though the last synced manifest names the same entry.
+	 * The rewrite keeps the size, so only the checksum tells the two apart.
+	 */
+	@Test
+	void testPullAfterARefusedPushRestoresTheDefinitionTheRemoteHolds() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var definition = createLocalFile("definition.ef.bin", 40);
+		push(segment, definition);
+
+		// Another node pulls the index and claims the writer
+		var successor = newSync(s3Client, otherLocalPath);
+		assertThat(successor.pull(), is(true));
+		successor.claimWriter();
+
+		// This node rewrites its definition, and the push is refused
+		createLocalFile("definition.ef.bin", 40);
+		assertThrows(SyncConflictException.class, () -> push(segment, definition));
+
+		assertThat(sync.pull(), is(true));
+		verifyLocalFile(definition);
+	}
+
+	/**
+	 * The same for the change log, where the successor also pushed a commit of
+	 * its own. The pull brings the new commit and the change log the remote
+	 * holds, not the one this node wrote after the last synced manifest.
+	 */
+	@Test
+	void testPullAfterARefusedPushRestoresTheChangeLogTheRemoteHolds() throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		var changes = createLocalFile("changes.ef.bin", 32);
+		push(segment, changes);
+
+		// Another node pulls the index, claims the writer and pushes a commit
+		var successor = newSync(s3Client, otherLocalPath);
+		assertThat(successor.pull(), is(true));
+		successor.claimWriter();
+		var successorSegment = createLocalFile(otherLocalPath, "segments_2", 12);
+		push(successor, segment, successorSegment, changes);
+
+		// This node records more changes and commits, and the push is refused
+		createLocalFile("changes.ef.bin", 48);
+		var stale = createLocalFile("segments_2", 14);
+		assertThrows(SyncConflictException.class, () -> push(segment, stale, changes));
+
+		assertThat(sync.pull(), is(true));
+		verifyLocalFile(successorSegment);
+		verifyLocalFile(changes);
+	}
+
+	/**
 	 * A manifest write that succeeded with a lost response is attempted again,
 	 * and that attempt is refused by the node's own earlier write. The refusal
 	 * has to read as the success it is, and leave the node able to keep
