@@ -1,13 +1,17 @@
 package se.l4.exofind.engine.auth;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,8 +21,27 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.google.protobuf.ByteString;
+import com.google.protobuf.UnknownFieldSet;
+
 public class KeysTest {
 	private static final String ROOT_KEY = "a-long-random-root-key";
+
+	/**
+	 * A feature name no build has. A newer version writes such a name into a
+	 * key that narrows what it allows.
+	 */
+	private static final String FUTURE_FEATURE = "key.from_the_future";
+
+	/**
+	 * A permission name no build has. A newer version can grant it.
+	 */
+	private static final String FUTURE_PERMISSION = "documents.teleport";
+
+	/**
+	 * A field number that keys.proto does not use yet.
+	 */
+	private static final int FUTURE_FIELD = 99;
 
 	InMemoryKeyStorage storage;
 
@@ -63,10 +86,12 @@ public class KeysTest {
 	private String storeKey(Instant expiresAt, Grant... grants) {
 		var generated = KeySecret.generate();
 		var existing = Lists.mutable.<Key>empty();
+		KeyStore previous = null;
 
 		try {
 			if(storage.read(null) instanceof KeyStorage.Read.Loaded loaded) {
-				existing.addAll(KeyStoreCodec.fromStored(loaded.keys()).toList());
+				previous = loaded.keys();
+				existing.addAll(KeyStoreCodec.fromStored(previous).toList());
 			}
 		} catch(Exception e) {
 			throw new IllegalStateException(e);
@@ -83,8 +108,33 @@ public class KeysTest {
 			)
 		);
 
-		storage.set(KeyStoreCodec.toStored(existing.toImmutable()));
+		storage.set(KeyStoreCodec.toStored(previous, existing.toImmutable()));
 		return generated.credential();
+	}
+
+	/**
+	 * Start a key as a node of any version would store it, granted
+	 * {@code search} on {@code books}.
+	 */
+	private static KeyDef.Builder storedKey(String id) {
+		return KeyDef.newBuilder()
+			.setId(id)
+			.setHashAlgorithm(HashAlgorithm.HASH_ALGORITHM_SHA256)
+			.setSecretHash(ByteString.copyFrom(HexFormat.of().parseHex(KeySecret.hash("secret"))))
+			.setCreatedAt(1000)
+			.addGrants(GrantDef.newBuilder().addPermissions("search").addIndexes("books"));
+	}
+
+	private KeyDef stored(String id) throws IOException {
+		if(!(storage.read(null) instanceof KeyStorage.Read.Loaded loaded)) {
+			throw new AssertionError("The store holds nothing");
+		}
+
+		return loaded.keys().getKeysList()
+			.stream()
+			.filter(key -> key.getId().equals(id))
+			.findFirst()
+			.orElseThrow(() -> new AssertionError("The store no longer holds key " + id));
 	}
 
 	@Test
@@ -566,5 +616,112 @@ public class KeysTest {
 	@Test
 	void rotatingAKeyThatIsNotThereSaysSo() {
 		assertThrows(KeyNotFoundException.class, () -> keys().rotate("0123456789abcdef"));
+	}
+
+	/**
+	 * A newer node wrote a key that this build refuses. This node must not
+	 * delete that key when it writes the store for its own change.
+	 */
+	@Test
+	void aKeyThisBuildRefusesSurvivesThisNodeCreatingAnotherKey() throws IOException {
+		// Given the store holds a key that needs a feature this build lacks
+		storage.set(
+			KeyStore.newBuilder()
+				.addKeys(storedKey("aaaaaaaaaaaaaaaa").addRequiredFeatures(FUTURE_FEATURE))
+				.build()
+		);
+
+		// When this node creates another key
+		keys().create("loader", Lists.immutable.of(grant("books", Permission.SEARCH)), null);
+
+		// Then the refused key is still in the store, with its feature
+		var kept = stored("aaaaaaaaaaaaaaaa");
+		assertThat(kept.getRequiredFeaturesList(), contains(FUTURE_FEATURE));
+	}
+
+	/**
+	 * A grant names a permission a newer version added. This node must not
+	 * remove that permission when it writes the store for another change.
+	 */
+	@Test
+	void aPermissionThisBuildDoesNotKnowSurvivesThisNodeCreatingAnotherKey() throws IOException {
+		// Given the store holds a key granted a permission this build lacks
+		storage.set(
+			KeyStore.newBuilder()
+				.addKeys(
+					storedKey("bbbbbbbbbbbbbbbb")
+						.clearGrants()
+						.addGrants(
+							GrantDef.newBuilder()
+								.addPermissions("search")
+								.addPermissions(FUTURE_PERMISSION)
+								.addIndexes("books")
+						)
+				)
+				.build()
+		);
+
+		// When this node creates another key
+		keys().create("loader", Lists.immutable.of(grant("books", Permission.SEARCH)), null);
+
+		// Then the stored grant still names the permission
+		var kept = stored("bbbbbbbbbbbbbbbb");
+		assertThat(kept.getGrants(0).getPermissionsList(), hasItem(FUTURE_PERMISSION));
+	}
+
+	/**
+	 * A rotation keeps the grants of the key. A node that does not know one
+	 * permission of the grant must keep it all the same.
+	 */
+	@Test
+	void rotatingAKeyKeepsAPermissionThisBuildDoesNotKnow() throws IOException {
+		// Given the store holds a key granted a permission this build lacks
+		storage.set(
+			KeyStore.newBuilder()
+				.addKeys(
+					storedKey("cccccccccccccccc")
+						.clearGrants()
+						.addGrants(
+							GrantDef.newBuilder()
+								.addPermissions("search")
+								.addPermissions(FUTURE_PERMISSION)
+								.addIndexes("books")
+						)
+				)
+				.build()
+		);
+
+		// When this node rotates the credential of that key
+		keys().rotate("cccccccccccccccc");
+
+		// Then the stored grant still names the permission
+		var kept = stored("cccccccccccccccc");
+		assertThat(kept.getGrants(0).getPermissionsList(), hasItem(FUTURE_PERMISSION));
+	}
+
+	/**
+	 * A newer version can add a field to a key. This node must keep that field
+	 * when it writes the store for a change to another key.
+	 */
+	@Test
+	void aFieldANewerVersionAddedSurvivesThisNodeRevokingAnotherKey() throws IOException {
+		// Given the store holds a key with a field this build has no code for
+		var unknown = UnknownFieldSet.newBuilder()
+			.addField(FUTURE_FIELD, UnknownFieldSet.Field.newBuilder().addVarint(7).build())
+			.build();
+
+		storage.set(
+			KeyStore.newBuilder()
+				.addKeys(storedKey("dddddddddddddddd").setUnknownFields(unknown))
+				.addKeys(storedKey("eeeeeeeeeeeeeeee"))
+				.build()
+		);
+
+		// When this node revokes the other key
+		keys().delete("eeeeeeeeeeeeeeee");
+
+		// Then the first key still carries the field
+		var kept = stored("dddddddddddddddd");
+		assertThat(kept.getUnknownFields().hasField(FUTURE_FIELD), is(true));
 	}
 }

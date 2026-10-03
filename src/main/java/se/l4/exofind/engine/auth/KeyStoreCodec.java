@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.Maps;
 import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
 
@@ -21,6 +22,11 @@ import java.util.HexFormat;
  * permission name is dropped and grants nothing; everything else that can not
  * be read - a hash this build can not check against, a required feature it does
  * not have - takes the whole key out of the store on this node.
+ *
+ * <p>Writing starts from the contents the change was built on. What a read
+ * left out is written back unchanged: the keys this build refuses, the
+ * permission names it does not know, and fields a newer version added to the
+ * store, to a key, or to a grant.
  */
 public final class KeyStoreCodec {
 	private static final Log logger = Log.of(KeyStoreCodec.class);
@@ -60,34 +66,11 @@ public final class KeyStoreCodec {
 			return Optional.empty();
 		}
 
-		var unsupported = AuthFeatures.unsupportedIn(stored);
-		if(unsupported.notEmpty()) {
+		var refusal = refusalOf(stored);
+		if(refusal != null) {
 			logger.atError()
 				.addKeyValue("key", id)
-				.log(
-					"Refusing key, it needs features this node does not have: "
-						+ unsupported.toSortedList().makeString(", ")
-						+ ". Upgrade this node or the key will not work here"
-				);
-
-			return Optional.empty();
-		}
-
-		if(stored.getHashAlgorithm() != HashAlgorithm.HASH_ALGORITHM_SHA256) {
-			logger.atError()
-				.addKeyValue("key", id)
-				.log(
-					"Refusing key, its secret is hashed with an algorithm this node"
-						+ " cannot check against"
-				);
-
-			return Optional.empty();
-		}
-
-		if(stored.getSecretHash().isEmpty()) {
-			logger.atError()
-				.addKeyValue("key", id)
-				.log("Refusing key, it carries no hash to check a secret against");
+				.log("Refusing key, " + refusal);
 
 			return Optional.empty();
 		}
@@ -104,45 +87,113 @@ public final class KeyStoreCodec {
 		);
 	}
 
-	private static ListIterable<Grant> grantsFrom(KeyDef stored) {
-		var grants = Lists.mutable.<Grant>empty();
-
-		for(var grant : stored.getGrantsList()) {
-			var permissions = Sets.mutable.<Permission>empty();
-			for(var name : grant.getPermissionsList()) {
-				/*
-				 * A name from a newer version names something this node cannot
-				 * do, so leaving it out is what the key would have meant here
-				 * anyway.
-				 */
-				Permission.byId(name).ifPresent(permissions::add);
-			}
-
-			grants.add(new Grant(permissions, Lists.immutable.ofAll(grant.getIndexesList())));
+	/**
+	 * Get why this build refuses a stored key that has an id.
+	 *
+	 * @return
+	 *   the reason, worded to follow "Refusing key, " in a log line, or
+	 *   {@code null} when this build can read the key
+	 */
+	private static String refusalOf(KeyDef stored) {
+		var unsupported = AuthFeatures.unsupportedIn(stored);
+		if(unsupported.notEmpty()) {
+			return "it needs features this node does not have: "
+				+ unsupported.toSortedList().makeString(", ")
+				+ ". Upgrade this node or the key will not work here";
 		}
 
-		return grants.toImmutable();
+		if(stored.getHashAlgorithm() != HashAlgorithm.HASH_ALGORITHM_SHA256) {
+			return "its secret is hashed with an algorithm this node cannot check against";
+		}
+
+		if(stored.getSecretHash().isEmpty()) {
+			return "it carries no hash to check a secret against";
+		}
+
+		return null;
+	}
+
+	private static boolean isReadable(KeyDef stored) {
+		return !stored.getId().isEmpty() && refusalOf(stored) == null;
+	}
+
+	private static ListIterable<Grant> grantsFrom(KeyDef stored) {
+		return Lists.immutable.ofAll(stored.getGrantsList()).collect(KeyStoreCodec::grantFrom);
+	}
+
+	private static Grant grantFrom(GrantDef stored) {
+		var permissions = Sets.mutable.<Permission>empty();
+		for(var name : stored.getPermissionsList()) {
+			/*
+			 * A name from a newer version names something this node cannot do,
+			 * so leaving it out is what the key would have meant here anyway.
+			 */
+			Permission.byId(name).ifPresent(permissions::add);
+		}
+
+		return new Grant(permissions, Lists.immutable.ofAll(stored.getIndexesList()));
 	}
 
 	/**
-	 * Write the keys, ordered by id so that the same set of keys always
-	 * produces the same bytes.
+	 * Write the keys as the store holds them.
 	 *
+	 * <p>The keys are written in order of id, the refused ones included. The
+	 * same contents and the same keys always produce the same bytes.
+	 *
+	 * @param previous
+	 *   the contents the change was built on, or {@code null} when the store is
+	 *   being written for the first time
 	 * @param keys
+	 *   the keys this build can read that the store is to hold. A key in
+	 *   {@code previous} that this build refuses is kept.
 	 * @return
 	 */
-	public static KeyStore toStored(ListIterable<Key> keys) {
-		var builder = KeyStore.newBuilder();
+	public static KeyStore toStored(KeyStore previous, ListIterable<Key> keys) {
+		var store = previous == null
+			? KeyStore.newBuilder()
+			: previous.toBuilder();
 
-		for(var key : keys.toSortedListBy(Key::id)) {
-			builder.addKeys(toStored(key));
+		/*
+		 * A key that was read is rewritten from the record the caller changed,
+		 * and one that was refused is put back byte for byte. A caller only
+		 * holds the keys this build can read, so a refused key that is missing
+		 * from the records is not one the caller asked to remove.
+		 */
+		var readable = Maps.mutable.<String, KeyDef>empty();
+		var written = Lists.mutable.<KeyDef>empty();
+		for(var stored : store.getKeysList()) {
+			if(isReadable(stored)) {
+				readable.put(stored.getId(), stored);
+			} else {
+				written.add(stored);
+			}
 		}
 
-		return builder.build();
+		for(var key : keys) {
+			written.add(toStored(readable.get(key.id()), key));
+		}
+
+		store.clearKeys();
+		store.addAllKeys(written.sortThisBy(KeyDef::getId));
+
+		return store.build();
 	}
 
-	private static KeyDef toStored(Key key) {
-		var builder = KeyDef.newBuilder()
+	/**
+	 * Write one key over the stored key it was read from.
+	 *
+	 * @param previous
+	 *   the stored key the record was read from, or {@code null} for a key the
+	 *   store does not hold yet
+	 * @param key
+	 * @return
+	 */
+	private static KeyDef toStored(KeyDef previous, Key key) {
+		var builder = previous == null
+			? KeyDef.newBuilder()
+			: previous.toBuilder();
+
+		builder
 			.setId(key.id())
 			.setHashAlgorithm(HashAlgorithm.HASH_ALGORITHM_SHA256)
 			.setSecretHash(
@@ -152,23 +203,47 @@ public final class KeyStoreCodec {
 
 		if(!key.description().isEmpty()) {
 			builder.setDescription(key.description());
+		} else {
+			builder.clearDescription();
 		}
 
 		if(key.expiresAt() != null) {
 			builder.setExpiresAt(key.expiresAt().toEpochMilli());
+		} else {
+			builder.clearExpiresAt();
 		}
+
+		/*
+		 * A grant the record still holds as it was read is put back as it was
+		 * stored, with the permission names this build dropped when it read
+		 * it. Grants are matched by what they read as, not by position, so a
+		 * change to one grant leaves the others as they were stored.
+		 */
+		var unmatched = Lists.mutable.ofAll(builder.getGrantsList());
+		builder.clearGrants();
 
 		for(var grant : key.grants()) {
-			var grantBuilder = GrantDef.newBuilder();
+			var stored = unmatched.detect(candidate -> grantFrom(candidate).equals(grant));
 
-			for(var permission : grant.permissions().toSortedListBy(Permission::id)) {
-				grantBuilder.addPermissions(permission.id());
+			if(stored != null) {
+				unmatched.remove(stored);
+				builder.addGrants(stored);
+			} else {
+				builder.addGrants(toStored(grant));
 			}
-
-			grantBuilder.addAllIndexes(grant.indexes().toList());
-			builder.addGrants(grantBuilder);
 		}
 
+		return builder.build();
+	}
+
+	private static GrantDef toStored(Grant grant) {
+		var builder = GrantDef.newBuilder();
+
+		for(var permission : grant.permissions().toSortedListBy(Permission::id)) {
+			builder.addPermissions(permission.id());
+		}
+
+		builder.addAllIndexes(grant.indexes().toList());
 		return builder.build();
 	}
 }

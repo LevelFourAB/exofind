@@ -93,25 +93,34 @@ public class Keys {
 	private boolean forcedReadEver;
 
 	/**
-	 * The keys as of one read of the store, together with the version they were
-	 * read at.
+	 * The keys as of one read of the store, together with the contents and the
+	 * version they were read at.
+	 *
+	 * @param stored
+	 *   the contents the keys were read from and a change is written over, or
+	 *   {@code null} when the store holds nothing
 	 */
 	private record Snapshot(
 		ListIterable<Key> keys,
 		MapIterable<String, Key> byId,
+		KeyStore stored,
 		String version
 	) {
 		static Snapshot empty() {
-			return new Snapshot(Lists.immutable.empty(), Maps.immutable.empty(), null);
+			return new Snapshot(Lists.immutable.empty(), Maps.immutable.empty(), null, null);
 		}
 
-		static Snapshot of(ListIterable<Key> keys, String version) {
+		static Snapshot of(KeyStore stored, String version) {
+			return of(KeyStoreCodec.fromStored(stored), stored, version);
+		}
+
+		static Snapshot of(ListIterable<Key> keys, KeyStore stored, String version) {
 			var byId = Maps.mutable.<String, Key>empty();
 			for(var key : keys) {
 				byId.put(key.id(), key);
 			}
 
-			return new Snapshot(keys, byId.toImmutable(), version);
+			return new Snapshot(keys, byId.toImmutable(), stored, version);
 		}
 	}
 
@@ -431,7 +440,7 @@ public class Keys {
 					}
 				}
 				case KeyStorage.Read.Loaded loaded -> snapshot = Snapshot.of(
-					KeyStoreCodec.fromStored(loaded.keys()),
+					loaded.keys(),
 					loaded.version()
 				);
 			}
@@ -626,16 +635,17 @@ public class Keys {
 
 			var current = snapshot;
 			var updated = change.apply(current.keys());
+			var stored = KeyStoreCodec.toStored(current.stored(), updated);
 
 			String version;
 			try {
-				version = storage.write(KeyStoreCodec.toStored(updated), current.version());
+				version = storage.write(stored, current.version());
 			} catch(IOException e) {
 				throw KeyStorageException.ioError(e);
 			}
 
 			if(version != null) {
-				snapshot = Snapshot.of(updated, version);
+				snapshot = Snapshot.of(updated, stored, version);
 				return;
 			}
 		}

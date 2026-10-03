@@ -38,7 +38,7 @@ public class KeyStoreCodecTest {
 			Instant.ofEpochMilli(5000)
 		);
 
-		var read = KeyStoreCodec.fromStored(KeyStoreCodec.toStored(Lists.immutable.of(key)));
+		var read = KeyStoreCodec.fromStored(KeyStoreCodec.toStored(null, Lists.immutable.of(key)));
 
 		assertThat(read.size(), is(1));
 		assertThat(read.getFirst(), is(key));
@@ -57,7 +57,7 @@ public class KeyStoreCodecTest {
 			null
 		);
 
-		var read = KeyStoreCodec.fromStored(KeyStoreCodec.toStored(Lists.immutable.of(key)));
+		var read = KeyStoreCodec.fromStored(KeyStoreCodec.toStored(null, Lists.immutable.of(key)));
 
 		assertThat(read.getFirst().expiresAt(), is((Instant) null));
 	}
@@ -71,8 +71,8 @@ public class KeyStoreCodecTest {
 			"bbbb", KeySecret.hash("b"), "", Lists.immutable.empty(), Instant.EPOCH, null
 		);
 
-		var one = KeyStoreCodec.toStored(Lists.immutable.of(first, second));
-		var other = KeyStoreCodec.toStored(Lists.immutable.of(second, first));
+		var one = KeyStoreCodec.toStored(null, Lists.immutable.of(first, second));
+		var other = KeyStoreCodec.toStored(null, Lists.immutable.of(second, first));
 
 		assertThat(one, is(other));
 	}
@@ -152,5 +152,66 @@ public class KeyStoreCodecTest {
 
 		assertThat(read.size(), is(1));
 		assertThat(read.getFirst().id(), is("bbbbbbbbbbbbbbbb"));
+	}
+
+	@Test
+	void aChangedGrantIsWrittenFromTheKeyAndTheOthersAsTheyWereStored() {
+		var previous = KeyStore.newBuilder()
+			.addKeys(
+				storedKey("0123456789abcdef")
+					.addGrants(
+						GrantDef.newBuilder()
+							.addPermissions("search")
+							.addPermissions("documents.teleport")
+							.addIndexes("books")
+					)
+					.addGrants(
+						GrantDef.newBuilder()
+							.addPermissions("search")
+							.addPermissions("documents.teleport")
+							.addIndexes("movies")
+					)
+			)
+			.build();
+
+		// The grant on books is replaced, the grant on movies is kept
+		var read = KeyStoreCodec.fromStored(previous).getFirst();
+		var changed = new Key(
+			read.id(),
+			read.secretHash(),
+			read.description(),
+			Lists.immutable.of(
+				new Grant(Sets.immutable.of(Permission.DOCUMENTS_WRITE), Lists.immutable.of("books")),
+				read.grants().getLast()
+			),
+			read.createdAt(),
+			read.expiresAt()
+		);
+
+		var written = KeyStoreCodec.toStored(previous, Lists.immutable.of(changed)).getKeys(0);
+
+		assertThat(written.getGrants(0).getPermissionsList(), contains("documents.write"));
+		assertThat(written.getGrants(1), is(previous.getKeys(0).getGrants(1)));
+	}
+
+	@Test
+	void aRefusedKeyIsWrittenBackAmongTheOthersInOrderOfId() {
+		var refused = storedKey("bbbbbbbbbbbbbbbb").addRequiredFeatures("key.unknown").build();
+		var previous = KeyStore.newBuilder().addKeys(refused).build();
+
+		var first = new Key(
+			"aaaaaaaaaaaaaaaa", KeySecret.hash("a"), "", Lists.immutable.empty(), Instant.EPOCH, null
+		);
+		var last = new Key(
+			"cccccccccccccccc", KeySecret.hash("c"), "", Lists.immutable.empty(), Instant.EPOCH, null
+		);
+
+		var written = KeyStoreCodec.toStored(previous, Lists.immutable.of(last, first));
+
+		assertThat(
+			written.getKeysList().stream().map(KeyDef::getId).toList(),
+			contains("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc")
+		);
+		assertThat(written.getKeys(1), is(refused));
 	}
 }
