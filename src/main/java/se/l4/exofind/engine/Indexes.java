@@ -1632,6 +1632,13 @@ public class Indexes implements RegistryPoller.Listener {
 	 * copies are the storage. The node keeps the copies and logs an error
 	 * instead. Once this node has read a registry that lists an index, a later
 	 * read that lists none is a delete, and the copies go.
+	 *
+	 * <p>In local storage mode no copy is removed here. The directories are the
+	 * only copy of the data, and a delete on this node removes its own copy. A
+	 * directory the registry does not name is one a delete could not remove,
+	 * or one that a registry put back from an older backup does not know. The
+	 * node keeps it and logs an error, as only the operator can tell the two
+	 * apart.
 	 */
 	private void removeUnregisteredCopies() {
 		if(!registry.hasBeenRead()) {
@@ -1690,6 +1697,20 @@ public class Indexes implements RegistryPoller.Listener {
 						+ " found until the registry lists them again. Restore the registry"
 						+ " from a backup, or rebuild it with the registry repair endpoint"
 						+ " if you store indexes in object storage"
+				);
+
+			return;
+		}
+
+		if(!syncProvider.hasRemote()) {
+			logger.atError()
+				.addKeyValue("directories", String.join(", ", vanished.stream().sorted().toList()))
+				.log(
+					"The index registry does not name some index directories on disk. In"
+						+ " local storage mode these directories are the only copy of their"
+						+ " data, so the node keeps them. Requests for those indexes return"
+						+ " not found. Put back a registry that names them, or delete the"
+						+ " directories by hand if their indexes were deleted"
 				);
 
 			return;

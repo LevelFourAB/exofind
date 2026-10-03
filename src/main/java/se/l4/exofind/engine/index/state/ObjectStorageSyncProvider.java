@@ -32,6 +32,11 @@ public class ObjectStorageSyncProvider implements StateSyncProvider {
 	}
 
 	@Override
+	public boolean hasRemote() {
+		return true;
+	}
+
+	@Override
 	public OptionalLong remoteVersion(IndexName generation) throws IOException {
 		var request = GetObjectRequest.builder()
 			.bucket(storage.bucket())

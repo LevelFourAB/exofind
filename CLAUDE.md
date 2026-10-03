@@ -49,7 +49,7 @@ Stored formats and identifiers:
 
 Coordination between nodes:
 
-- **Only a removal mark says stored data was deleted.** A prefix the registry does not name is either a deleted index or a lost registry, and the repair rebuilds the registry from such prefixes. A sweep or a creation that removes objects from registry absence alone destroys data. See `IndexRemovals`.
+- **Only a removal mark says stored data was deleted.** A prefix the registry does not name is either a deleted index or a lost registry, and the repair rebuilds the registry from such prefixes. A sweep or a creation that removes objects from registry absence alone destroys data. See `IndexRemovals`. In local mode the index directories are the stored data and no mark is written, so `Indexes.removeUnregisteredCopies` removes a directory only when `StateSyncProvider.hasRemote` says it copies a remote.
 - **Only `IndexerOwnership.Listener.onOwnershipRevoked` tells a lost claim from a handover.** A node that hands over pushes what it holds. A node whose claim was taken must push nothing, or it replaces documents its successor already acknowledged. The signal reaches the generations through `NodeState.revokeOwnership` and `Index.revokeWriting`.
 - **Only the answer of `Indexes.flushForHandover` says a handover may go ahead.** It combines the answer of `Index.reopen(true)` for each open generation, the outcome of each evicted instance that is still closing, and the push of each local copy that a failed close left behind. `ObjectStorageIndexerOwnership` reads it. A path that pushes for a handover and drops its answer releases the claim after a failed push, and the successor pulls a manifest without those documents.
 

@@ -32,6 +32,26 @@ index directories are the only copy of the data, and only a re-pull in object
 storage mode. Local storage mode has no audit or repair endpoint, so you put
 `registry.ef.bin` back from a backup.
 
+A node in local storage mode keeps any index directory that the registry does
+not name, does not serve it, and logs an error with the directory names in the
+`directories` field:
+
+```text
+The index registry does not name some index directories on disk. In local storage mode these directories are the only copy of their data, so the node keeps them. Requests for those indexes return not found. Put back a registry that names them, or delete the directories by hand if their indexes were deleted
+```
+
+The node cannot tell apart two causes of this error:
+
+- **A registry put back from an older backup:** The backup does not name the
+  indexes and generations created after it. Put back a newer backup of
+  `registry.ef.bin` that names the indexes.
+- **A delete that could not remove its directory:** The delete request
+  returned `storage:io_error`, and the registry no longer names the index.
+  Delete the directory by hand.
+
+**Note:** Do not create an index with one of those names. Creating an index
+removes every directory of that name.
+
 Identify registry problems by checking node logs, readiness checks, and index
 listings:
 

@@ -41,8 +41,10 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.IndexRemovals;
+import se.l4.exofind.engine.index.state.NoopRemoteSyncProvider;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.index.state.RecordingIndexRemovals;
+import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.storage.StorageMode;
 
 public class IndexesTest {
@@ -95,9 +97,20 @@ public class IndexesTest {
 		IndexRemovals removals
 	)
 		throws IOException {
+		return newNode(directory, registry, maxOpen, removals, new NoopSyncProvider());
+	}
+
+	private static Indexes newNode(
+		Path directory,
+		IndexRegistry registry,
+		OptionalInt maxOpen,
+		IndexRemovals removals,
+		StateSyncProvider syncProvider
+	)
+		throws IOException {
 		return new Indexes(
 			nodeState(true),
-			new NoopSyncProvider(),
+			syncProvider,
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
 			removals,
@@ -168,12 +181,19 @@ public class IndexesTest {
 
 	/**
 	 * The registry is one object read at one version, so a name being absent
-	 * from it is an answer rather than a gap - a node removes its copy of an
-	 * index another node deleted the first time it reads that it is gone.
+	 * from it is an answer rather than a gap - a node whose directories copy a
+	 * remote removes its copy of an index another node deleted the first time
+	 * it reads that it is gone.
 	 */
 	@Test
 	public void testIndexDeletedElsewhereIsRemoved() throws IOException {
-		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
+		var other = newNode(
+			storageDirectory.resolve("other"),
+			registry(),
+			OptionalInt.empty(),
+			new RecordingIndexRemovals(),
+			new NoopRemoteSyncProvider()
+		);
 		try {
 			indexes.create("books", IndexDef.getDefaultInstance());
 

@@ -36,4 +36,17 @@ public interface StateSyncProvider {
 	 *   if the remote could not be asked
 	 */
 	OptionalLong remoteVersion(IndexName generation) throws IOException;
+
+	/**
+	 * Whether the local directories are copies of generations that a remote
+	 * holds. A node removes a local copy that the registry no longer names
+	 * only when this is {@code true}.
+	 *
+	 * @return
+	 *   {@code false} by default, which is what local storage mode answers:
+	 *   there the local directories are the only copy of the data
+	 */
+	default boolean hasRemote() {
+		return false;
+	}
 }
