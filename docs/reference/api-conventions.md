@@ -180,6 +180,8 @@ For example, a whole-number key `42` or `42.0` is returned as `"42"`.
 
 Outside a request body, the API reads primary keys as text. This applies to the `{key}` path parameter (such as in `DELETE` or `PATCH /v1alpha1/indexes/{name}/documents/{key}`) and the `after` query parameter.
 
+In the `{key}` path parameter, percent-encode a `/` as `%2F` and a `;` as `%3B`. A path that holds a `;` that is not percent-encoded is rejected with `request:path_invalid`, because the server does not read matrix parameters.
+
 Inside a request body, the API requires the JSON type declared by the key field:
 
 - The primary key field of an indexed document.
@@ -265,6 +267,7 @@ Status `400 Bad Request` covers:
 - Request body schema and validation failures, including a property no endpoint has (`request:property_unknown`) and a value that does not fit the property it is written at (`request:value_invalid`). A property the endpoint does not have is refused; the server never drops one and serves the rest of the request.
 - Queries requesting missing or invalid index features, such as unknown fields, fields used in ways not configured in the definition, document lookups by key on indexes without a primary key, cursors used with a different sort order than the query that created them, or stored field requests on indexes that do not retain document source copies.
 - Unreadable or malformed request payloads.
+- A URL path that holds a `;` that is not percent-encoded (`request:path_invalid`).
 
 ### What 409 covers
 
