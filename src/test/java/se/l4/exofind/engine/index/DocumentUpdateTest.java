@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -10,6 +11,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
@@ -18,9 +25,12 @@ import org.junit.jupiter.api.Test;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
+import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.FloatFieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.query.Query;
+import se.l4.exofind.engine.query.matchers.Matchers;
 
 /**
  * Tests for changing some of the fields of a document that is already indexed.
@@ -122,6 +132,92 @@ public class DocumentUpdateTest extends AbstractIndexTest {
 		index.deleteByQuery(Lists.immutable.empty(), null);
 
 		assertFalse(index.updateDocument(patch(set("id", "1"), set("price", 1f))));
+	}
+
+	/**
+	 * Control for the race below: run one after the other, in either order,
+	 * a removal by query of an uncommitted document leaves it gone.
+	 */
+	@Test
+	public void aRemovalByQueryAndAPatchRunOneAfterTheOtherLeaveTheDocumentGone()
+		throws IOException {
+		// Given
+		var index = catalogue();
+		index.addDocument(new Document(set("id", "a"), set("name", "x")));
+		index.addDocument(new Document(set("id", "b"), set("name", "x")));
+
+		// When the patch runs first for a, and the removal first for b
+		index.updateDocument(patch(set("id", "a"), set("name", "Road runner")));
+		index.deleteByQuery(Lists.immutable.of(Query.field("id", Matchers.equalTo("a"))), null);
+		index.deleteByQuery(Lists.immutable.of(Query.field("id", Matchers.equalTo("b"))), null);
+		var patchedB = index.updateDocument(patch(set("id", "b"), set("name", "Road runner")));
+		index.commit();
+
+		// Then
+		assertFalse(patchedB);
+		assertThat(index.getDocument("a"), is(nullValue()));
+		assertThat(index.getDocument("b"), is(nullValue()));
+	}
+
+	/**
+	 * A removal by query and a patch of a document it matches, sent at the
+	 * same time. In either order the two can run one after the other, the
+	 * document is gone at the end: the patch runs first and is then removed,
+	 * or it runs second and finds nothing. A patch must not read the document
+	 * before the removal and write it back after it.
+	 *
+	 * <p>The race depends on timing, so the test repeats it. A document that
+	 * is still there after both have run is a lost removal.
+	 */
+	@Test
+	public void aRemovalByQueryIsNotUndoneByAPatchRunningAtTheSameTime() throws Exception {
+		// Given
+		var index = catalogue();
+		var rounds = 400;
+		var survivors = new ArrayList<String>();
+		ExecutorService threads = Executors.newFixedThreadPool(2);
+
+		try {
+			for(var i = 0; i < rounds; i++) {
+				var key = "doc-" + i;
+				index.addDocument(new Document(set("id", key), set("name", "Trail runner")));
+
+				// When both run at once
+				var barrier = new CyclicBarrier(2);
+				Future<Boolean> patched = threads.submit(() -> {
+					barrier.await(5, TimeUnit.SECONDS);
+					return index.updateDocument(patch(set("id", key), set("name", "Road runner")));
+				});
+				Future<Integer> removed = threads.submit(() -> {
+					barrier.await(5, TimeUnit.SECONDS);
+					return index.deleteByQuery(
+						Lists.immutable.of(Query.field("id", Matchers.equalTo(key))),
+						null
+					);
+				});
+
+				patched.get(10, TimeUnit.SECONDS);
+				removed.get(10, TimeUnit.SECONDS);
+			}
+
+			index.commit();
+
+			for(var i = 0; i < rounds; i++) {
+				var key = "doc-" + i;
+				if(index.getDocument(key) != null) {
+					survivors.add(key);
+				}
+			}
+		} finally {
+			threads.shutdownNow();
+		}
+
+		// Then
+		assertThat(
+			survivors.size() + " of " + rounds + " documents came back after their removal",
+			survivors,
+			is(empty())
+		);
 	}
 
 	@Test
@@ -240,7 +336,13 @@ public class DocumentUpdateTest extends AbstractIndexTest {
 
 	private static IndexDef.Builder definition() {
 		return IndexDef.newBuilder()
-			.putFields("id", string().setPrimaryKey(true).build())
+			.putFields(
+				"id",
+				string()
+					.setPrimaryKey(true)
+					.setFilter(FilterConfig.getDefaultInstance())
+					.build()
+			)
 			.putFields("name", string().build())
 			.putFields("category", string().build())
 			.putFields("tags", string().setMultiple(true).build())

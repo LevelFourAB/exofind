@@ -569,7 +569,8 @@ public class Index {
 	/**
 	 * One lock per bucket of primary keys, held while a document is read and
 	 * written back, so that two partial updates of the same document can not
-	 * each merge into what was there before the other.
+	 * each merge into what was there before the other. A removal by query
+	 * holds all of them.
 	 */
 	private final ReentrantLock[] documentLocks;
 
@@ -3948,8 +3949,9 @@ public class Index {
 
 	/**
 	 * Get the locks covering a set of documents, in the order they have to be
-	 * taken. Everything else takes one lock at a time, so keeping these in a
-	 * fixed order is what stops two of these from deadlocking each other.
+	 * taken. A removal by query takes every lock in the same order, and
+	 * everything else takes one lock at a time. The fixed order stops two
+	 * callers that take more than one lock from deadlocking each other.
 	 */
 	private ReentrantLock[] locksFor(Term[] terms) {
 		var buckets = new TreeSet<Integer>();
@@ -4098,6 +4100,11 @@ public class Index {
 	 * Documents indexed since the last commit are removed as well, and are not
 	 * part of the count - nothing is searchable until it has been committed.
 	 *
+	 * <p>A partial update that runs at the same time takes effect either
+	 * before the removal or after it. When it runs after, it finds no document
+	 * where the removal took one. Every write of a document by its primary key
+	 * waits while the removal runs.
+	 *
 	 * @param clauses
 	 *   what a document has to satisfy to be removed, all of them. An empty
 	 *   list matches every document and empties the index
@@ -4139,13 +4146,31 @@ public class Index {
 				recordMatches(log, documents);
 			}
 
-			writer.deleteDocuments(withNestedValues(documents));
-
 			/*
-			 * Which documents went is not known key by key here, so nothing
-			 * remembered can be trusted to still be there.
+			 * Which documents the query removes is not known key by key, so
+			 * every document lock is held over the removal, in the order
+			 * locksFor takes them. Otherwise a partial update could read a
+			 * document just before the removal and write its merge back
+			 * after it, which brings the document back.
 			 */
-			invalidateMergeReader();
+			for(var lock : documentLocks) {
+				lock.lock();
+			}
+
+			try {
+				writer.deleteDocuments(withNestedValues(documents));
+
+				/*
+				 * Nothing remembered can be trusted to still be there. Forgotten
+				 * under the locks, so an update that waited for them reads the
+				 * index as the removal left it.
+				 */
+				invalidateMergeReader();
+			} finally {
+				for(var i = documentLocks.length - 1; i >= 0; i--) {
+					documentLocks[i].unlock();
+				}
+			}
 
 			/*
 			 * The count only covers what was searchable, while the removal also
