@@ -282,6 +282,21 @@ public class IndexRegistry {
 		return Optional.ofNullable(snapshot.get().byName().get(index));
 	}
 
+	/**
+	 * Get whether this node's copy names one generation, without going back
+	 * to the registry for a name it has not seen.
+	 *
+	 * @param generation
+	 *   full name of the generation
+	 * @return
+	 *   {@code false} when the copy holds no such index or no such generation
+	 *   of it
+	 */
+	public boolean names(IndexName generation) {
+		var found = snapshot.get().byName().get(generation.index());
+		return found != null && found.hasGeneration(generation.generation());
+	}
+
 	private boolean forcedReadAllowed() {
 		var now = System.nanoTime();
 

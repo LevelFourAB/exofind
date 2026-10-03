@@ -2057,6 +2057,19 @@ public class Indexes implements RegistryPoller.Listener {
 	private Index loadIndex(String index, String source) {
 		var recordOpen = !Meters.SOURCE_PRELOAD.equals(source);
 
+		var parsed = IndexName.parse(index);
+
+		/*
+		 * The caller resolved the name through the registry, but a delete can
+		 * have gone through since. Opening the generation then would make its
+		 * directory again and leave an instance of it here, which answers for
+		 * the name if it is created again. A delete that starts after this
+		 * check waits for the open in removeLocalCopy and closes what it made.
+		 */
+		if(!registry.names(parsed)) {
+			throw new IndexNotFoundException(index);
+		}
+
 		// Held until the pull is done, keeping the disk sweep off the directory
 		var lock = nameLock(index);
 		lock.lock();
@@ -2079,7 +2092,6 @@ public class Indexes implements RegistryPoller.Listener {
 				recordOpened(index, dataPath);
 			}
 
-			var parsed = IndexName.parse(index);
 			var loaded = new Index(
 				nodeState,
 				index,
@@ -2810,10 +2822,16 @@ public class Indexes implements RegistryPoller.Listener {
 	 * registered, so there is nothing left to push them to.
 	 */
 	private void removeLocalCopy(String name) throws IOException {
-		var index = indexes.getIfPresent(name);
+		/*
+		 * Removed from the map rather than looked up first. A lookup answers
+		 * nothing while an open of the name is in flight, and that open would
+		 * then put an instance of the removed generation in the cache after
+		 * this returns. The removal waits for an open in flight to finish and
+		 * hands back what it opened.
+		 */
+		var index = indexes.asMap().remove(name);
 		if(index != null) {
 			index.close(false);
-			indexes.invalidate(name);
 		}
 
 		// A retired instance would write into the files being removed
