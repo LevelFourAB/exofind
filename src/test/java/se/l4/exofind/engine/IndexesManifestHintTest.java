@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.is;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -21,6 +22,7 @@ import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.InMemoryRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
+import se.l4.exofind.engine.index.registry.RegistryHintsTestSupport;
 import se.l4.exofind.engine.index.registry.VersionHint;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
@@ -156,14 +158,14 @@ public class IndexesManifestHintTest {
 			assertThat(sync.pulls.get(), is(before + 1));
 
 			// The copy stands where the hint says the remote does, so a pass asks nothing
-			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4)));
+			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4, null)));
 			sync.synced = OptionalLong.of(4);
 			before = sync.pulls.get();
 			reader.refresh();
 			assertThat(sync.pulls.get(), is(before));
 
 			// A version past the copy is what a pass acts on
-			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 5)));
+			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 5, null)));
 			before = sync.pulls.get();
 			reader.refresh();
 			assertThat(sync.pulls.get(), is(before + 1));
@@ -203,7 +205,7 @@ public class IndexesManifestHintTest {
 		writer.create("books", IndexDef.getDefaultInstance());
 		writer.close();
 
-		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 12)));
+		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 12, null)));
 
 		var provider = new CountingSyncProvider();
 		var reader = newNode(false, registry, provider, Duration.ZERO, Duration.ofMinutes(10));
@@ -245,7 +247,7 @@ public class IndexesManifestHintTest {
 		writer.create("books", IndexDef.getDefaultInstance());
 		writer.close();
 
-		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4)));
+		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4, null)));
 
 		var provider = new CountingSyncProvider();
 		var reader = newNode(false, registry, provider, Duration.ZERO, Duration.ZERO);
@@ -259,6 +261,93 @@ public class IndexesManifestHintTest {
 			assertThat(sync.pulls.get(), is(before + 1));
 		} finally {
 			reader.close();
+		}
+	}
+
+	/**
+	 * The writer of a deleted generation still holds a report when another
+	 * node deletes the index and creates it again. The report must not stick
+	 * to the new generation: hints only go up, and a reader that holds a copy
+	 * of the deleted generation at that version would skip pulling the new
+	 * one until the verify interval, answering with deleted documents.
+	 */
+	@Test
+	public void testAHintOfADeletedGenerationDoesNotStopAReaderFromPullingTheNewOne()
+		throws Exception
+	{
+		var registryStorage = new InMemoryRegistryStorage();
+		var registry = new IndexRegistry(registryStorage, Duration.ofMinutes(5));
+
+		var writer = newNode(
+			true,
+			registry,
+			new NoopSyncProvider(),
+			Duration.ZERO,
+			Duration.ofMinutes(10)
+		);
+		writer.create("books", IndexDef.getDefaultInstance());
+		writer.close();
+
+		var deleted = createdAt(registry, "books", "1");
+		registry.updateHints(
+			Lists.immutable.of(new VersionHint.Manifest("books", "1", 58, deleted))
+		);
+
+		var provider = new CountingSyncProvider();
+		var reader = newNode(
+			false,
+			registry,
+			provider,
+			Duration.ZERO,
+			Duration.ofMinutes(10)
+		);
+		try {
+			// The reader holds a copy of the generation at version 58
+			reader.getOrThrow("books");
+			var sync = provider.syncs.get("books@1");
+			sync.synced = OptionalLong.of(58);
+
+			// The old writer has a report of version 58 it has not flushed
+			var oldWriter = new RegistryHints(registry, StorageMode.OBJECT);
+			oldWriter.reportManifest("books", "1", deleted, 58);
+
+			// Another node deletes the index and creates it again
+			registry.remove("books");
+			awaitNextMillisecond();
+			registry.create("books", "1");
+			var created = createdAt(registry, "books", "1");
+
+			// The old writer flushes, then the new writer reports its first push
+			RegistryHintsTestSupport.flush(oldWriter);
+			var newWriter = new RegistryHints(registry, StorageMode.OBJECT);
+			newWriter.reportManifest("books", "1", created, 1);
+			RegistryHintsTestSupport.flush(newWriter);
+
+			var before = sync.pulls.get();
+			reader.refresh(true);
+
+			assertThat(sync.pulls.get(), is(before + 1));
+		} finally {
+			reader.close();
+		}
+	}
+
+	private static Instant createdAt(IndexRegistry registry, String index, String generation) {
+		return registry.get(index)
+			.flatMap(entry -> entry.generation(generation))
+			.orElseThrow()
+			.createdAt();
+	}
+
+	/**
+	 * The registry keeps creation times in milliseconds, so a generation
+	 * created again within the same one could not be told apart. That takes
+	 * a delete and a create inside one millisecond, which only a test does.
+	 */
+	private static void awaitNextMillisecond() {
+		var start = Instant.now().toEpochMilli();
+		while(Instant.now().toEpochMilli() == start) {
+			Thread.onSpinWait();
 		}
 	}
 
@@ -300,7 +389,7 @@ public class IndexesManifestHintTest {
 			var before = sync.pulls.get();
 
 			// Even a hint past the copy waits out the interval
-			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 5)));
+			registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 5, null)));
 			reader.refresh();
 			reader.refresh();
 

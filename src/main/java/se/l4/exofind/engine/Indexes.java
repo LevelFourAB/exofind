@@ -1053,9 +1053,11 @@ public class Indexes implements RegistryPoller.Listener {
 				var sync = syncProvider.createSync(parsed, path);
 				Index.pushLocalCopy(path, sync);
 
+				var createdAt = createdAtOf(parsed);
 				sync.syncedVersion().ifPresent(version -> registryHints.reportManifest(
 					parsed.index(),
 					parsed.generation(),
+					createdAt,
 					version
 				));
 
@@ -2110,11 +2112,15 @@ public class Indexes implements RegistryPoller.Listener {
 			 * Every push reports its version, so the other nodes learn from
 			 * their next read of the registry that this generation moved -
 			 * or that it did not, which is what lets them skip asking for
-			 * its manifest.
+			 * its manifest. The report carries when the generation this
+			 * instance opened was created, so that it is dropped rather than
+			 * raise the hint of a generation created again under the name.
 			 */
+			var createdAt = createdAtOf(parsed);
 			loaded.onPushed(version -> registryHints.reportManifest(
 				parsed.index(),
 				parsed.generation(),
+				createdAt,
 				version
 			));
 
@@ -2135,6 +2141,17 @@ public class Indexes implements RegistryPoller.Listener {
 		} finally {
 			lock.unlock();
 		}
+	}
+
+	/**
+	 * When the registry says a generation was created, or {@code null} when it
+	 * does not say or does not name the generation.
+	 */
+	private Instant createdAtOf(IndexName generation) {
+		return registry.get(generation.index())
+			.flatMap(entry -> entry.generation(generation.generation()))
+			.map(RegisteredIndex.Generation::createdAt)
+			.orElse(null);
 	}
 
 	private ReentrantLock nameLock(String name) {

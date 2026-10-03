@@ -49,7 +49,7 @@ public class IndexRegistryHintsTest {
 		registry.create("books", "1");
 
 		registry.updateHints(Lists.immutable.of(
-			new VersionHint.Manifest("books", "1", 4)
+			new VersionHint.Manifest("books", "1", 4, null)
 		));
 
 		assertThat(
@@ -66,9 +66,9 @@ public class IndexRegistryHintsTest {
 	@Test
 	public void testManifestHintNeverLowersTheStoredVersion() {
 		registry.create("books", "1");
-		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4)));
+		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 4, null)));
 
-		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 2)));
+		registry.updateHints(Lists.immutable.of(new VersionHint.Manifest("books", "1", 2, null)));
 
 		assertThat(
 			registry.get("books").orElseThrow().manifestVersion("1"),
@@ -86,13 +86,13 @@ public class IndexRegistryHintsTest {
 		registry.create("books", "1");
 		registry.updateHints(Lists.immutable.of(
 			new VersionHint.Settings("books", "\"v1\""),
-			new VersionHint.Manifest("books", "1", 3)
+			new VersionHint.Manifest("books", "1", 3, null)
 		));
 
 		var before = storedVersion();
 		var updated = registry.updateHints(Lists.immutable.of(
 			new VersionHint.Settings("books", "\"v1\""),
-			new VersionHint.Manifest("books", "1", 3)
+			new VersionHint.Manifest("books", "1", 3, null)
 		));
 
 		assertThat(updated, is(true));
@@ -111,7 +111,7 @@ public class IndexRegistryHintsTest {
 		var before = storedVersion();
 		var updated = registry.updateHints(Lists.immutable.of(
 			new VersionHint.Settings("movies", "\"v1\""),
-			new VersionHint.Manifest("books", "2", 7)
+			new VersionHint.Manifest("books", "2", 7, null)
 		));
 
 		assertThat(updated, is(true));
@@ -145,7 +145,7 @@ public class IndexRegistryHintsTest {
 		registry.create("books", "1");
 		registry.updateHints(Lists.immutable.of(
 			new VersionHint.Settings("books", "\"v1\""),
-			new VersionHint.Manifest("books", "1", 4)
+			new VersionHint.Manifest("books", "1", 4, null)
 		));
 
 		registry.addGeneration("books", "2");
@@ -185,7 +185,7 @@ public class IndexRegistryHintsTest {
 
 		registry.refresh();
 		var updated = registry.updateHints(Lists.immutable.of(
-			new VersionHint.Manifest("books", "1", 4)
+			new VersionHint.Manifest("books", "1", 4, null)
 		));
 
 		assertThat(updated, is(true));

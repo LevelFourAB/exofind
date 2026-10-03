@@ -686,6 +686,7 @@ public class IndexRegistry {
 				case VersionHint.Manifest manifest -> {
 					var generation = entry.generation(manifest.generation()).orElse(null);
 					if(generation == null
+						|| !sameCreation(generation, manifest)
 						|| (generation.manifestVersion() != null
 							&& generation.manifestVersion() >= manifest.version())) {
 						yield null;
@@ -718,6 +719,21 @@ public class IndexRegistry {
 		return changed
 			? merged.valuesView().toSortedListBy(RegisteredIndex::name)
 			: null;
+	}
+
+	/**
+	 * Whether a manifest hint was reported for the generation the registry
+	 * names now, rather than for a deleted one of the same name. Compared in
+	 * milliseconds, which is what the registry stores. A side that does not
+	 * know the time cannot tell, and the hint is taken as before.
+	 */
+	private static boolean sameCreation(
+		RegisteredIndex.Generation generation,
+		VersionHint.Manifest manifest
+	) {
+		return generation.createdAt() == null
+			|| manifest.createdAt() == null
+			|| generation.createdAt().toEpochMilli() == manifest.createdAt().toEpochMilli();
 	}
 
 	/**

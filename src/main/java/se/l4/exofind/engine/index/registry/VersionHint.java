@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.index.registry;
 
+import java.time.Instant;
+
 /**
  * One version a writer reports into the registry, so that other nodes can tell
  * from the registry alone - which they already read - whether an object of an
@@ -30,10 +32,25 @@ public sealed interface VersionHint {
 	/**
 	 * Version of a generation's manifest as its writer pushed it.
 	 *
+	 * <p>An index can be deleted and created again under the same name while
+	 * the writer of the deleted generation still holds a report. Manifest
+	 * hints only ever go up, so that report would stick to the new generation
+	 * and readers would skip its pulls. The creation time tells the two apart.
+	 *
 	 * @param index
 	 * @param generation
 	 * @param version
+	 * @param createdAt
+	 *   when the generation the writer pushed was created, as the registry
+	 *   named it when the writer opened it, or {@code null} when that is not
+	 *   known. A hint is folded in only while the registry names the same
+	 *   time, or names none
 	 */
-	record Manifest(String index, String generation, long version) implements VersionHint {
+	record Manifest(
+		String index,
+		String generation,
+		long version,
+		Instant createdAt
+	) implements VersionHint {
 	}
 }

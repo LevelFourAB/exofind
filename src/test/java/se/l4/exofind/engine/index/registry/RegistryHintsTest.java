@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.OptionalLong;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +33,7 @@ public class RegistryHintsTest {
 		registry.create("books", "1");
 
 		hints.reportSettings("books", "\"v1\"");
-		hints.reportManifest("books", "1", 3);
+		hints.reportManifest("books", "1", null, 3);
 		hints.flush();
 
 		var entry = registry.get("books").orElseThrow();
@@ -59,14 +60,113 @@ public class RegistryHintsTest {
 	public void testGatheredManifestReportsKeepTheLargestVersion() {
 		registry.create("books", "1");
 
-		hints.reportManifest("books", "1", 5);
-		hints.reportManifest("books", "1", 3);
+		hints.reportManifest("books", "1", null, 5);
+		hints.reportManifest("books", "1", null, 3);
 		hints.flush();
 
 		assertThat(
 			registry.get("books").orElseThrow().manifestVersion("1"),
 			is(OptionalLong.of(5))
 		);
+	}
+
+	/**
+	 * The writer of a deleted generation still holds a report when the name
+	 * is created again. Its flush must not land on the new generation, or the
+	 * lower versions of the new writer are never taken and readers skip its
+	 * pulls.
+	 */
+	@Test
+	public void testAReportOfADeletedGenerationDoesNotStickToTheRecreatedOne() {
+		registry.create("books", "1");
+
+		var oldWriter = new RegistryHints(registry, StorageMode.OBJECT);
+		oldWriter.reportManifest("books", "1", createdAt("books", "1"), 58);
+
+		// The index is deleted and created again before the old writer flushes
+		registry.remove("books");
+		awaitNextMillisecond();
+		registry.create("books", "1");
+
+		oldWriter.flush();
+		hints.reportManifest("books", "1", createdAt("books", "1"), 1);
+		hints.flush();
+
+		assertThat(
+			registry.get("books").orElseThrow().manifestVersion("1"),
+			is(OptionalLong.of(1))
+		);
+	}
+
+	/**
+	 * One node writes the deleted generation and then the new one before a
+	 * flush. The reports are kept apart, rather than merged into the larger
+	 * version of the deleted generation.
+	 */
+	@Test
+	public void testReportsGatheredAcrossARecreateDoNotKeepTheDeletedVersion() {
+		registry.create("books", "1");
+		hints.reportManifest("books", "1", createdAt("books", "1"), 58);
+
+		registry.remove("books");
+		awaitNextMillisecond();
+		registry.create("books", "1");
+		hints.reportManifest("books", "1", createdAt("books", "1"), 1);
+
+		hints.flush();
+
+		assertThat(
+			registry.get("books").orElseThrow().manifestVersion("1"),
+			is(OptionalLong.of(1))
+		);
+	}
+
+	/**
+	 * A repair registers the generations it finds with no creation time, so
+	 * the registry can not tell which one a report is for. The report is
+	 * taken, or the writers that are open would report into nothing until
+	 * they open again.
+	 */
+	@Test
+	public void testAReportIsTakenForAGenerationWithNoCreationTime() {
+		storage.set(
+			IndexRegistryStore.newBuilder()
+				.addIndexes(
+					IndexEntry.newBuilder()
+						.setName("books")
+						.addGenerations(GenerationEntry.newBuilder().setName("1"))
+						.setLive("1")
+				)
+				.build()
+		);
+		registry.refresh();
+
+		hints.reportManifest("books", "1", Instant.ofEpochMilli(1_000), 3);
+		hints.flush();
+
+		assertThat(
+			registry.get("books").orElseThrow().manifestVersion("1"),
+			is(OptionalLong.of(3))
+		);
+	}
+
+	private Instant createdAt(String index, String generation) {
+		return registry.get(index)
+			.flatMap(entry -> entry.generation(generation))
+			.orElseThrow()
+			.createdAt();
+	}
+
+	/**
+	 * The registry keeps creation times in milliseconds, so a generation
+	 * created again within the same one could not be told apart. That takes
+	 * a delete and a create inside one millisecond, which only a test does.
+	 */
+	private static void awaitNextMillisecond() {
+		var start = Instant.now().toEpochMilli();
+		while(Instant.now().toEpochMilli() == start) {
+			Thread.onSpinWait();
+		}
 	}
 
 	/**

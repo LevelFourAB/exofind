@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.registry;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -52,12 +53,30 @@ public class RegistryHints {
 	private final ConcurrentHashMap<String, String> settings = new ConcurrentHashMap<>();
 
 	/**
-	 * The manifest version to report per generation, by full name. Merged by
-	 * keeping the larger value, as manifest versions only grow.
+	 * The manifest version to report per generation, by full name and the
+	 * time the generation was created. Merged by keeping the larger value, as
+	 * manifest versions only grow - within one generation. A generation that
+	 * was deleted and created again under the same name starts over, so its
+	 * reports are kept apart from the ones of the deleted generation.
 	 */
 	private final ConcurrentHashMap<GenerationKey, Long> manifests = new ConcurrentHashMap<>();
 
-	private record GenerationKey(String index, String generation) {
+	/**
+	 * @param createdAt
+	 *   milliseconds since the epoch, or {@code null} when not known
+	 */
+	private record GenerationKey(String index, String generation, Long createdAt) {
+		static GenerationKey of(String index, String generation, Instant createdAt) {
+			return new GenerationKey(
+				index,
+				generation,
+				createdAt == null ? null : createdAt.toEpochMilli()
+			);
+		}
+
+		Instant createdAtInstant() {
+			return createdAt == null ? null : Instant.ofEpochMilli(createdAt);
+		}
 	}
 
 	private final ScheduledExecutorService executor;
@@ -123,14 +142,19 @@ public class RegistryHints {
 	 *   name of the index
 	 * @param generation
 	 *   name of the generation
+	 * @param createdAt
+	 *   when the generation was created, as the registry named it when the
+	 *   writer opened it, or {@code null} when not known. The registry drops
+	 *   the report if it names another time, which is what keeps a report of
+	 *   a deleted generation off one created again under the same name
 	 * @param version
 	 */
-	public void reportManifest(String index, String generation, long version) {
+	public void reportManifest(String index, String generation, Instant createdAt, long version) {
 		if(!enabled) {
 			return;
 		}
 
-		manifests.merge(new GenerationKey(index, generation), version, Math::max);
+		manifests.merge(GenerationKey.of(index, generation, createdAt), version, Math::max);
 	}
 
 	/**
@@ -151,7 +175,12 @@ public class RegistryHints {
 		for(var key : manifests.keySet()) {
 			var version = manifests.remove(key);
 			if(version != null) {
-				pending.add(new VersionHint.Manifest(key.index(), key.generation(), version));
+				pending.add(new VersionHint.Manifest(
+					key.index(),
+					key.generation(),
+					version,
+					key.createdAtInstant()
+				));
 			}
 		}
 
@@ -163,7 +192,7 @@ public class RegistryHints {
 			switch(hint) {
 				case VersionHint.Settings s -> settings.putIfAbsent(s.index(), s.version());
 				case VersionHint.Manifest m -> manifests.merge(
-					new GenerationKey(m.index(), m.generation()),
+					GenerationKey.of(m.index(), m.generation(), m.createdAt()),
 					m.version(),
 					Math::max
 				);

@@ -2,6 +2,7 @@ package se.l4.exofind.engine;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -139,7 +140,7 @@ public class RegistryHintBackfill {
 
 				if(generation.manifestVersion() == null) {
 					lookups++;
-					fillManifest(index.name(), generation.name());
+					fillManifest(index.name(), generation.name(), generation.createdAt());
 				}
 			}
 		}
@@ -164,7 +165,7 @@ public class RegistryHintBackfill {
 		}
 	}
 
-	private void fillManifest(String index, String generation) {
+	private void fillManifest(String index, String generation, Instant createdAt) {
 		try {
 			var version = syncProvider.remoteVersion(IndexName.of(index, generation));
 
@@ -174,7 +175,7 @@ public class RegistryHintBackfill {
 			 * probed again on every pass, and every node would keep asking
 			 * the storage for a manifest that is not there.
 			 */
-			hints.reportManifest(index, generation, version.orElse(0));
+			hints.reportManifest(index, generation, createdAt, version.orElse(0));
 		} catch(IOException e) {
 			logger.atDebug()
 				.addKeyValue("index", index)
