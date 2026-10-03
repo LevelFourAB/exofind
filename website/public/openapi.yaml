@@ -7767,7 +7767,7 @@ paths:
 
         Runs on the node that writes the index. The `settings.write` permission is separate from `indexes.write`, so relevance tuning can be granted without the power to change what an index contains.
 
-        Requires the `settings.write` permission on the index the path names. The `admin` role includes it.
+        Requires the `settings.write` permission on the index itself, also when the path names one of its generations. The `admin` role includes it.
       operationId: putSearchSettings
       tags:
       - Search settings
@@ -8049,7 +8049,7 @@ paths:
       security:
       - apiKey: []
       x-required-permission: settings.write
-      x-permission-scope: index
+      x-permission-scope: whole-index
       x-permission-roles:
       - admin
       x-permission-anonymous: false
@@ -8072,7 +8072,7 @@ paths:
 
         Runs on the node that writes the index.
 
-        Requires the `settings.write` permission on the index the path names. The `admin` role includes it.
+        Requires the `settings.write` permission on the index itself, also when the path names one of its generations. The `admin` role includes it.
       operationId: patchSearchSettings
       tags:
       - Search settings
@@ -8353,7 +8353,7 @@ paths:
       security:
       - apiKey: []
       x-required-permission: settings.write
-      x-permission-scope: index
+      x-permission-scope: whole-index
       x-permission-roles:
       - admin
       x-permission-anonymous: false
@@ -8366,7 +8366,7 @@ paths:
 
         Served by whichever node receives the request.
 
-        Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
+        Requires the `indexes.read` permission on the index itself, also when the path names one of its generations. The `reader`, `writer` and `admin` roles include it.
       operationId: getSearchSettings
       tags:
       - Search settings
@@ -8469,7 +8469,7 @@ paths:
       security:
       - apiKey: []
       x-required-permission: indexes.read
-      x-permission-scope: index
+      x-permission-scope: whole-index
       x-permission-roles:
       - reader
       - writer
@@ -8484,7 +8484,7 @@ paths:
 
         Runs on the node that writes the index.
 
-        Requires the `settings.write` permission on the index the path names. The `admin` role includes it.
+        Requires the `settings.write` permission on the index itself, also when the path names one of its generations. The `admin` role includes it.
       operationId: deleteSearchSettings
       tags:
       - Search settings
@@ -8576,7 +8576,7 @@ paths:
       security:
       - apiKey: []
       x-required-permission: settings.write
-      x-permission-scope: index
+      x-permission-scope: whole-index
       x-permission-roles:
       - admin
       x-permission-anonymous: false

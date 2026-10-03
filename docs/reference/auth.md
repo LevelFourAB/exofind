@@ -90,6 +90,8 @@ The `@` character cannot be used in index names, so a pattern matching generatio
 
 For example, granting `products` allows an application to query the index across rollouts without permitting access to specific generations. Granting `products@*` allows a rollout process to manage generations of `products` without granting access to other indexes.
 
+Search settings belong to the index, not to a generation. The settings endpoints accept a generation name, but they check the permission against the index. A key granted only `products@*` can therefore not read or change the settings of `products`, and is refused with `auth:forbidden`.
+
 ### Roles
 
 Roles provide shorthand sets of permissions when creating keys:

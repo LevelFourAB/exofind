@@ -177,7 +177,7 @@ public class IndexSettingsResource {
 	 * @return
 	 */
 	@GET
-	@RequiresPermission(Permission.INDEXES_READ)
+	@RequiresPermission(value = Permission.INDEXES_READ, wholeIndex = true)
 	@Operation(
 		operationId = "getSearchSettings",
 		summary = "Get search settings",
@@ -307,7 +307,7 @@ public class IndexSettingsResource {
 	 */
 	@PUT
 	@Consumes(MediaType.APPLICATION_JSON)
-	@RequiresPermission(Permission.SETTINGS_WRITE)
+	@RequiresPermission(value = Permission.SETTINGS_WRITE, wholeIndex = true)
 	@ServedBy(ServedBy.Node.INDEXER)
 	@Operation(
 		operationId = "putSearchSettings",
@@ -670,7 +670,7 @@ public class IndexSettingsResource {
 	 */
 	@PATCH
 	@Consumes(MediaType.APPLICATION_JSON)
-	@RequiresPermission(Permission.SETTINGS_WRITE)
+	@RequiresPermission(value = Permission.SETTINGS_WRITE, wholeIndex = true)
 	@ServedBy(ServedBy.Node.INDEXER)
 	@Operation(
 		operationId = "patchSearchSettings",
@@ -1593,7 +1593,7 @@ public class IndexSettingsResource {
 	 * @return
 	 */
 	@DELETE
-	@RequiresPermission(Permission.SETTINGS_WRITE)
+	@RequiresPermission(value = Permission.SETTINGS_WRITE, wholeIndex = true)
 	@ServedBy(ServedBy.Node.INDEXER)
 	@Operation(
 		operationId = "deleteSearchSettings",

@@ -81,7 +81,7 @@ export const document = parseYaml(source);
 /**
  * @typedef {object} Permission
  * @property {string} id the name as it is written in a key
- * @property {'index' | 'any-index' | 'deployment'} scope what it is checked
+ * @property {'index' | 'whole-index' | 'any-index' | 'deployment'} scope what it is checked
  *   against
  * @property {string[]} roles the roles that include it
  * @property {boolean} anonymous whether a request carrying no credential may

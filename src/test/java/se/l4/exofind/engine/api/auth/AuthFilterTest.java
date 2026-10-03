@@ -41,6 +41,10 @@ public class AuthFilterTest {
 		public void onAnyIndex() {
 		}
 
+		@RequiresPermission(value = Permission.SETTINGS_WRITE, wholeIndex = true)
+		public void onTheWholeIndex() {
+		}
+
 		@RequiresPermission(Permission.KEYS_WRITE)
 		public void onTheDeployment() {
 		}
@@ -138,6 +142,45 @@ public class AuthFilterTest {
 		assertThrows(
 			ForbiddenException.class,
 			() -> run("onAnyIndex", principal("books", Permission.SEARCH), null)
+		);
+	}
+
+	@Test
+	void anEndpointAboutTheWholeIndexRefusesAGrantOnItsGenerations() {
+		/*
+		 * The grant covers `books@2`, so the caller is told it may not rather
+		 * than that the generation does not exist.
+		 */
+		assertThrows(
+			ForbiddenException.class,
+			() -> run("onTheWholeIndex", principal("books@*", Permission.SETTINGS_WRITE), "books@2")
+		);
+	}
+
+	@Test
+	void anEndpointAboutTheWholeIndexAllowsAGrantOnTheIndexAndItsGenerations() {
+		run("onTheWholeIndex", principal("books*", Permission.SETTINGS_WRITE), "books@2");
+
+		assertThat(context.principal().id(), is("0123456789abcdef"));
+	}
+
+	@Test
+	void anEndpointAboutTheWholeIndexHidesAGenerationTheGrantDoesNotCover() {
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> run("onTheWholeIndex", principal("books", Permission.SETTINGS_WRITE), "books@2")
+		);
+	}
+
+	@Test
+	void anEndpointAboutTheWholeIndexChecksANameWithTwoSeparatorsAgainstTheIndex() {
+		/*
+		 * The resource refuses such a name, but the filter must not let it
+		 * through on a generation pattern before that.
+		 */
+		assertThrows(
+			ForbiddenException.class,
+			() -> run("onTheWholeIndex", principal("books@*", Permission.SETTINGS_WRITE), "books@2@3")
 		);
 	}
 

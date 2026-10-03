@@ -40,4 +40,19 @@ public @interface RequiresPermission {
 	 * is what listing the indexes does.
 	 */
 	boolean anyIndex() default false;
+
+	/**
+	 * Whether an index-scoped permission is checked against the index itself
+	 * when the path names one of its generations.
+	 *
+	 * <p>For an endpoint that changes or reads what belongs to the whole index,
+	 * such as its search settings. A grant of {@code products@*} covers the
+	 * generations of {@code products} but not the index, so it must not reach
+	 * the settings of {@code products} through the name {@code products@2}.
+	 *
+	 * <p>Whether the caller sees the named generation at all is still checked
+	 * against the name in the path, so a caller who can see the generation is
+	 * refused rather than told it does not exist.
+	 */
+	boolean wholeIndex() default false;
 }

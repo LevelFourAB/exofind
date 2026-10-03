@@ -74,11 +74,12 @@ const ERROR_CODES = "/reference/errors/#error-codes";
  * What an index-scoped permission is checked against.
  *
  * A key pairs permissions with index patterns, so holding one is only half the
- * answer - the other half is which index it was held on, and these are the three
+ * answer - the other half is which index it was held on, and these are the four
  * answers there are.
  */
 const CHECKED_ON = {
 	index: "The index the path names",
+	"whole-index": "The index, also when the path names one of its generations",
 	"any-index": "At least one index",
 	deployment: "The deployment, not one index",
 };

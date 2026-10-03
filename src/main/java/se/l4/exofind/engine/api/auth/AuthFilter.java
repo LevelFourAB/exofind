@@ -6,6 +6,7 @@ import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.auth.UnauthenticatedException;
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import jakarta.annotation.Priority;
@@ -124,7 +125,17 @@ public class AuthFilter implements ContainerRequestFilter {
 			throw new IndexNotFoundException(index);
 		}
 
-		if(!principal.allows(permission, index)) {
+		/*
+		 * Cut at the first separator rather than parse the name, so that a
+		 * name the resource will refuse is still checked against an index and
+		 * never against a generation pattern.
+		 */
+		var separator = index.indexOf(IndexName.SEPARATOR);
+		var checked = required.wholeIndex() && separator >= 0
+			? index.substring(0, separator)
+			: index;
+
+		if(!principal.allows(permission, checked)) {
 			throw new ForbiddenException(permission);
 		}
 	}

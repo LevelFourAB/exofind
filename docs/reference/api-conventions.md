@@ -98,7 +98,7 @@ Every operation in the OpenAPI document names what a caller has to be granted, i
 | Field | Value |
 | --- | --- |
 | `x-required-permission` | The permission name, as it is stored in a key. |
-| `x-permission-scope` | `index` when the permission is checked against the index the path names, `any-index` when the caller needs it on at least one index, and `deployment` when it is not about one index. |
+| `x-permission-scope` | `index` when the permission is checked against the index the path names, `whole-index` when it is checked against the index also when the path names one of its generations, `any-index` when the caller needs it on at least one index, and `deployment` when it is not about one index. |
 | `x-permission-roles` | The roles that include the permission. |
 | `x-permission-anonymous` | Whether a node that sets an anonymous key answers the endpoint to requests that carry no credential. |
 

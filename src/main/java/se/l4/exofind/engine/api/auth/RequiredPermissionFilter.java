@@ -34,8 +34,8 @@ import se.l4.exofind.engine.auth.Role;
  * <ul>
  *   <li>{@code x-required-permission}, the permission name as it is stored in a
  *     key
- *   <li>{@code x-permission-scope}, one of {@code index}, {@code any-index} and
- *     {@code deployment}
+ *   <li>{@code x-permission-scope}, one of {@code index}, {@code whole-index},
+ *     {@code any-index} and {@code deployment}
  *   <li>{@code x-permission-roles}, the roles that include the permission
  *   <li>{@code x-permission-anonymous}, whether a node may serve the endpoint
  *     to a request that carries no credential
@@ -279,8 +279,12 @@ public class RequiredPermissionFilter implements OASFilter {
 			return ", which is not about one index";
 		}
 
-		return required.anyIndex()
-			? " on at least one index"
+		if(required.anyIndex()) {
+			return " on at least one index";
+		}
+
+		return required.wholeIndex()
+			? " on the index itself, also when the path names one of its generations"
 			: " on the index the path names";
 	}
 
@@ -318,7 +322,11 @@ public class RequiredPermissionFilter implements OASFilter {
 			return "deployment";
 		}
 
-		return required.anyIndex() ? "any-index" : "index";
+		if(required.anyIndex()) {
+			return "any-index";
+		}
+
+		return required.wholeIndex() ? "whole-index" : "index";
 	}
 
 	/**
@@ -356,7 +364,11 @@ public class RequiredPermissionFilter implements OASFilter {
 
 			if(
 				seen != null
-					&& (seen.value() != permission.value() || seen.anyIndex() != permission.anyIndex())
+					&& (
+						seen.value() != permission.value()
+							|| seen.anyIndex() != permission.anyIndex()
+							|| seen.wholeIndex() != permission.wholeIndex()
+					)
 			) {
 				throw new IllegalStateException(
 					key + " is served by resource methods requiring different permissions: "
