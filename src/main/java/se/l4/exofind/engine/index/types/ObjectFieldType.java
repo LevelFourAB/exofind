@@ -77,6 +77,22 @@ public class ObjectFieldType implements FieldType {
 		FieldTypeDef.TypeCase.INT64
 	);
 
+	/**
+	 * How many object fields can sit inside each other, counting an object
+	 * field at the root as one. A stored definition is read back with the
+	 * nesting limit of Protocol Buffers, which every object level uses four
+	 * levels of, so a definition 25 levels deep is written and then cannot be
+	 * read. The limit stays below that, so that every version can read a
+	 * definition this one accepted.
+	 */
+	public static final int MAX_DEPTH = 20;
+
+	private static final ErrorType TOO_DEEP = ErrorType
+		.withCode("index:field:object:objects_too_deep")
+		.withStatus(400)
+		.withArguments("max")
+		.withMessage("Objects can sit at most {{max}} levels deep, and this object is one level deeper");
+
 	private static final ErrorType NO_FIELDS = ErrorType
 		.withCode("index:field:object:fields_required")
 		.withStatus(400)
@@ -185,7 +201,7 @@ public class ObjectFieldType implements FieldType {
 		FieldDef def,
 		ResourcesDef resources
 	) {
-		return validate(location, def, resources, false, false);
+		return validate(location, def, resources, false, false, 1);
 	}
 
 	/**
@@ -202,15 +218,24 @@ public class ObjectFieldType implements FieldType {
 	 *   whether a flattened list sits anywhere on the path above this field
 	 * @param underNested
 	 *   whether a nested list sits anywhere on the path above this field
+	 * @param depth
+	 *   how many object fields this one sits inside, counting itself
 	 */
 	private ListIterable<ErrorMessage> validate(
 		ObjectLocation location,
 		FieldDef def,
 		ResourcesDef resources,
 		boolean underFlattenedList,
-		boolean underNested
+		boolean underNested,
+		int depth
 	) {
 		var errors = Lists.mutable.<ErrorMessage>empty();
+
+		if(depth > MAX_DEPTH) {
+			// Reported once, at the first object past the limit
+			errors.add(TOO_DEEP.toMessage(location, "max", MAX_DEPTH));
+			return errors;
+		}
 
 		if(def.hasFilter()) {
 			errors.add(USAGE_NOT_SUPPORTED.toMessage(location, "usage", "filter"));
@@ -258,6 +283,7 @@ public class ObjectFieldType implements FieldType {
 				entry.getValue(),
 				underFlattenedList || flattenedList,
 				underNested || nestedList,
+				depth,
 				resources,
 				errors
 			);
@@ -339,12 +365,17 @@ public class ObjectFieldType implements FieldType {
 		}
 	}
 
+	/**
+	 * @param depth
+	 *   how many object fields the field sits inside
+	 */
 	private void validateInner(
 		ObjectLocation location,
 		String name,
 		FieldDef def,
 		boolean underFlattenedList,
 		boolean underNested,
+		int depth,
 		ResourcesDef resources,
 		MutableCollection<ErrorMessage> errors
 	) {
@@ -377,7 +408,7 @@ public class ObjectFieldType implements FieldType {
 			var fieldType = Field.validateSettings(location, name, def, resources, errors);
 			if(fieldType instanceof ObjectFieldType objectType) {
 				errors.addAllIterable(objectType.validate(
-					location, def, resources, underFlattenedList, underNested
+					location, def, resources, underFlattenedList, underNested, depth + 1
 				));
 			}
 			return;

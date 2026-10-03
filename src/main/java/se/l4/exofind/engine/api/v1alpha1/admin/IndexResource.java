@@ -823,6 +823,11 @@ public class IndexResource {
 		when = "A nested list of objects sits below another nested list. Keep the inner list `flattened`, or lift it out."
 	)
 	@ReturnsError(
+		value = "index:field:object:objects_too_deep",
+		status = 400,
+		when = "Object fields sit more than 20 levels deep. The `max` argument carries the limit."
+	)
+	@ReturnsError(
 		value = "index:field:object:flattened_sort_unsupported",
 		status = 400,
 		when = "A field inside a flattened list of objects is declared for `sort`."

@@ -175,7 +175,7 @@ Represents an array of floating-point numbers searched by similarity using the `
 
 ## `object`
 
-Represents structured object values containing nested field definitions. Child fields are referenced by dot notation (for example, `variants.price`) and support any type, including `object`: objects nest to any depth.
+Represents structured object values containing nested field definitions. Child fields are referenced by dot notation (for example, `variants.price`) and support any type, including `object`: objects nest up to 20 levels deep, counting an `object` field of the index as level one.
 
 ```json
 {
@@ -228,7 +228,7 @@ For targeting object values by key in update operations, see [Update parts of do
 
 Child fields support the same options as fields of the index. What a child field cannot configure follows from its position, and the two list positions apply at any depth below the list:
 
-- **Objects inside objects:** Single objects and `flattened` lists nest to any depth. A `nested` list can contain single objects and `flattened` lists, but a `nested` list below a `nested` list is rejected with `index:field:object:nested_in_nested`, through any objects between the two.
+- **Objects inside objects:** Single objects and `flattened` lists nest up to 20 levels deep. A deeper `object` field is rejected with `index:field:object:objects_too_deep`. A `nested` list can contain single objects and `flattened` lists, but a `nested` list below a `nested` list is rejected with `index:field:object:nested_in_nested`, through any objects between the two.
 - **Below a `flattened` list:** `sort` is rejected with `index:field:object:flattened_sort_unsupported` and `stored` with `index:field:object:flattened_stored_unsupported`. The values of every object mix in the document, so no single value stands for it and nothing says which value a stored one came from. Sorting works in single objects and in `nested` mode (see [Ordering by a value inside an object](search-api.md#ordering-by-a-value-inside-an-object)).
 - **Below a `nested` list:** `stored` and `highlight` are supported. Each value keeps its own document, storing values and highlight text the same way root documents do. Highlighted fragments return only on value hits (see [What a hit stands for](search-api.md#what-a-hit-stands-for)). A search returning document hits cannot name a field below a `nested` list in `highlight` (`search:nested:field_outside`).
 - **`primaryKey`:** Rejected inside any object with `index:field:object:inner_usage_unsupported`.
@@ -252,6 +252,7 @@ Child fields support the same options as fields of the index. What a child field
 | `index:field:object:flattened_stored_unsupported` | `stored` is configured on a child field below a `flattened` list. |
 | `index:field:object:inner_usage_unsupported` | A child field configures `primaryKey`, which is rejected inside an object. |
 | `index:field:object:nested_in_nested` | A `nested` list is declared below another `nested` list. |
+| `index:field:object:objects_too_deep` | An `object` field sits more than 20 levels deep. The `max` argument carries the limit. |
 | `document:object_key_duplicate` | A document contains multiple object values with the same key value. |
 
 ### Wildcard names on object fields
