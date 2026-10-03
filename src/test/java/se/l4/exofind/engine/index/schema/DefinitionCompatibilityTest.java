@@ -757,6 +757,56 @@ public class DefinitionCompatibilityTest {
 		assertThat(codes(current, incoming), contains("index:definition:setting_changed"));
 	}
 
+	/**
+	 * A field that loses its locales is read from the variant without a
+	 * locale, which the documents already indexed never wrote.
+	 */
+	@Test
+	public void removingTheLocalesOfAFieldIsIncompatible() {
+		var current = base()
+			.putFields(
+				"title",
+				base().getFieldsOrThrow("title").toBuilder()
+					.setLocales(FieldDef.LocaleConfig.newBuilder().setDefaultLocale("en"))
+					.build()
+			)
+			.build();
+
+		assertThat(codes(current, base().build()), contains("index:definition:setting_changed"));
+		assertThat(paths(current, base().build()), contains("title"));
+	}
+
+	/**
+	 * A search in a locale the field no longer holds reads the default
+	 * variant, the same as on an index filled under the new definition.
+	 */
+	@Test
+	public void removingOneLocaleOfAFieldIsCompatible() {
+		var current = base()
+			.putFields(
+				"title",
+				base().getFieldsOrThrow("title").toBuilder()
+					.setLocales(
+						FieldDef.LocaleConfig.newBuilder()
+							.setDefaultLocale("en")
+							.addLocales("sv")
+					)
+					.build()
+			)
+			.build();
+
+		var incoming = base()
+			.putFields(
+				"title",
+				base().getFieldsOrThrow("title").toBuilder()
+					.setLocales(FieldDef.LocaleConfig.newBuilder().setDefaultLocale("en"))
+					.build()
+			)
+			.build();
+
+		assertThat(codes(current, incoming), is(empty()));
+	}
+
 	@Test
 	public void turningOnLocaleFallbackIsIncompatible() {
 		var incoming = base()

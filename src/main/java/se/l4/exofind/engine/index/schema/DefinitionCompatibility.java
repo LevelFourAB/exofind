@@ -566,10 +566,13 @@ public class DefinitionCompatibility {
 
 	/**
 	 * Compare what locales a field holds values in. A field gaining locales
-	 * needs every value written again under the locale it belongs to; one
-	 * losing them keeps variants nothing asks for. Only the first is reported,
-	 * and so is a locale being added to a field that already had some, because
-	 * no document was ever written under it.
+	 * needs every value written again under the locale it belongs to, and so
+	 * does a locale being added to a field that already had some, because no
+	 * document was ever written under it. A field losing all of its locales
+	 * is read from the variant without a locale, which no document already
+	 * indexed wrote, so that is reported too. A field losing some of its
+	 * locales is not: a search in a removed locale reads the default variant,
+	 * the same as on an index filled under the new definition.
 	 */
 	private static void checkLocales(
 		ObjectLocation location,
@@ -579,6 +582,10 @@ public class DefinitionCompatibility {
 		MutableList<ErrorMessage> errors
 	) {
 		if(!after.hasLocales()) {
+			if(before.hasLocales()) {
+				errors.add(setting(location, name, "locales"));
+			}
+
 			return;
 		}
 

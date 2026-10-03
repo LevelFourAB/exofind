@@ -136,6 +136,7 @@ On a generation that holds documents, refused changes include:
 - Changing a vector field's `dimensions`, `similarity`, `hnsw`, or `quantization`.
 - Changing the `mode` of an object field between nested and flattened.
 - Changing `locales.defaultLocale`, adding a locale to a field's `locales` list, or adding one to the `supported` list the index declares.
+- Removing `locales` from a field, directly or by removing the `locales` the index declares.
 - Enabling or changing `localeFallback`.
 - Moving a name to a field that indexes it differently. This occurs when a named field or a narrower pattern takes names that a wildcard pattern accepted, or when a pattern takes over the name of a removed field. The engine compares the two fields as if one field changed.
 
@@ -143,6 +144,7 @@ Accepted changes on a generation that holds documents include:
 
 - Adding or removing a field, when no name moves to a field that indexes it differently.
 - Disabling a usage.
+- Removing some of the locales of a field. A search in a removed locale reads the default locale of the field.
 - Changing `stored`.
 - Changing the index `source` mode.
 - Changing `metadata`.

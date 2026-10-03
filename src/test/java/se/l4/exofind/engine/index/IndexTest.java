@@ -33,7 +33,10 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.NoopSync;
 import se.l4.exofind.engine.index.state.StateSync;
+import se.l4.exofind.engine.query.FieldQuery;
+import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
+import se.l4.exofind.engine.query.matchers.Matchers;
 
 public class IndexTest {
 	@TempDir
@@ -271,6 +274,77 @@ public class IndexTest {
 
 		assertThat(e.getErrors().get(0).getCode(), is("index:definition:setting_changed"));
 		assertThat(index.getField("attr_color").get().getName(), is("attr_color"));
+	}
+
+	/**
+	 * A field that loses its locales is read from the variant without a
+	 * locale. The document was written under {@code en} only, so a search
+	 * would stop finding it.
+	 */
+	@Test
+	public void testRemovingTheLocalesOfAMatchedFieldIsRefused() throws IOException {
+		var matching = StringFieldTypeDef.newBuilder()
+			.setMatching(StringFieldTypeDef.TextUsageConfig.getDefaultInstance());
+		var index = create(
+			oneStringField(false).putFields(
+				"name",
+				stringField(matching).toBuilder()
+					.setLocales(FieldDef.LocaleConfig.newBuilder().setDefaultLocale("en"))
+					.build()
+			)
+		);
+		index.addDocument(
+			new Document(new Document.Value("id", "1"), new Document.Value("name", "red running shoes"))
+		);
+		index.commit();
+
+		var plain = oneStringField(false).putFields("name", stringField(matching)).build();
+
+		var e = assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> index.updateDefinition(plain)
+		);
+
+		assertThat(e.getErrors().get(0).getCode(), is("index:definition:setting_changed"));
+		assertThat(e.getErrors().get(0).getLocation().describe(), is("name"));
+		assertThat(
+			index.search(SearchRequest.create().withQuery(Query.text("shoes")).build())
+				.total().count(),
+			is(1L)
+		);
+	}
+
+	@Test
+	public void testRemovingTheLocalesOfAFilteredFieldIsRefused() throws IOException {
+		var filtered = stringField(StringFieldTypeDef.newBuilder()).toBuilder()
+			.setFilter(FilterConfig.getDefaultInstance());
+		var index = create(
+			oneStringField(false).putFields(
+				"category",
+				filtered.clone()
+					.setLocales(FieldDef.LocaleConfig.newBuilder().setDefaultLocale("en"))
+					.build()
+			)
+		);
+		index.addDocument(
+			new Document(new Document.Value("id", "1"), new Document.Value("category", "shoes"))
+		);
+		index.commit();
+
+		var plain = oneStringField(false).putFields("category", filtered.build()).build();
+
+		assertThrows(
+			IndexDefinitionIncompatibleException.class,
+			() -> index.updateDefinition(plain)
+		);
+		assertThat(
+			index.search(
+				SearchRequest.create()
+					.addFilter(new FieldQuery("category", Matchers.equalTo("shoes")))
+					.build()
+			).total().count(),
+			is(1L)
+		);
 	}
 
 	@Test
