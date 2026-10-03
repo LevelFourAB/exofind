@@ -8858,7 +8858,9 @@ public class Index {
 	 * @param commit
 	 *   whether to commit and push what this instance holds before it goes.
 	 *   Nothing is pushed for an index the node lost rather than handed over,
-	 *   see {@link #revokeWriting()}
+	 *   see {@link #revokeWriting()}. Without a commit, or for a lost index,
+	 *   what was not committed is dropped rather than left on disk as a local
+	 *   commit
 	 * @throws IOException
 	 *   if the commit or the push failed. The index is closed either way, so
 	 *   that the directory and the lock on it are released; what the commit
@@ -8929,7 +8931,23 @@ public class Index {
 				}
 
 				if(this.writer != null) {
-					this.writer.close();
+					if(commit && mayPush) {
+						/*
+						 * Lucene commits on close, which keeps a change that
+						 * arrived after the commit above as a local commit. The
+						 * next instance on this node pushes it.
+						 */
+						this.writer.close();
+					} else {
+						/*
+						 * Nothing here may reach the remote, and a commit left
+						 * on disk would. The next instance opens the newest
+						 * local commit when the remote has not moved, so it
+						 * would serve, and later push, what was given up.
+						 */
+						this.writer.rollback();
+					}
+
 					this.writer = null;
 					this.snapshots = null;
 				}
