@@ -48,9 +48,9 @@ deployment. See [Architecture](../explanation/architecture.md).
 
 ## Epoch
 
-A writer session identifier claimed by an indexer before uploading files. Epoch
-scoping ensures that files are uploaded under `e<epoch>/` so concurrent writer
-sessions never write to the same storage keys. Files the engine rewrites in
+A writer session number claimed by an indexer before uploading files. Each
+session uploads under `e<epoch>-<session>/`, where the session is a random id,
+so concurrent writer sessions never write to the same storage keys. Files the engine rewrites in
 place also carry their checksum in the key, so two pushes of one session never
 write to the same key either. See
 [Synchronization](../explanation/synchronization.md).

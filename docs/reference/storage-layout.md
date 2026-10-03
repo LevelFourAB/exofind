@@ -49,23 +49,24 @@ A generation lives under the prefix `indexes/<index>/<generation>/`:
 | --- | --- |
 | `manifest.ef.bin` | The generation manifest: the latest Lucene segment generation, the list of files (name, size, checksum, key), a version number, the epoch of the writer session that wrote it, and the Lucene versions that created and last wrote the index. Replaced conditionally on its entity tag by the index writer. |
 | `removed.ef.bin` | The removal mark of this generation, holding `removed_at` in milliseconds since the epoch. Written when the generation is deleted. |
-| `e<epoch>/<file>` | A Lucene segment file (`.cfs`, `.si`, and related index files) listed in the manifest, uploaded during the writer session with that epoch. |
-| `e<epoch>/<file>.ef.bin.<checksum>` | A file the engine keeps beside the segments, such as `definition.ef.bin` (the index definition) and `changes.ef.bin` (the change log), uploaded during the writer session with that epoch. The checksum is the CRC-32C of the contents as eight hexadecimal digits. |
-| `<file>` and `e<epoch>/<file>.ef.bin` | A file written under an older layout, before storage keys or the checksum suffix were recorded in the manifest. The manifest references these files by the key it holds. |
+| `e<epoch>-<session>/<file>` | A Lucene segment file (`.cfs`, `.si`, and related index files) listed in the manifest, uploaded during the writer session with that epoch. The session is a random id of 16 hexadecimal digits that the writer session picks. |
+| `e<epoch>-<session>/<file>.ef.bin.<checksum>` | A file the engine keeps beside the segments, such as `definition.ef.bin` (the index definition) and `changes.ef.bin` (the change log), uploaded during the writer session with that epoch. The checksum is the CRC-32C of the contents as eight hexadecimal digits. |
+| `<file>`, `e<epoch>/<file>`, `e<epoch>/<file>.ef.bin`, and `e<epoch>/<file>.ef.bin.<checksum>` | A file written under an older layout, before storage keys, the checksum suffix, or the session id were recorded in the manifest. The manifest references these files by the key it holds. |
 
 The node adheres to the following rules when managing generation files:
 
 - **Key reuse across epochs:** A file whose content has not changed since the
   previous manifest keeps its existing key. A generation updated across
-  multiple writer sessions contains files spread across multiple `e<epoch>/`
-  prefixes.
+  multiple writer sessions contains files spread across multiple
+  `e<epoch>-<session>/` prefixes.
 - **Push order:** A push uploads every new file first, writes the manifest
   conditionally, and then deletes the files referenced by the previous manifest
   that are absent from the new manifest.
-- **Epoch isolation:** The epoch is assigned when a node claims the index
-  writer role. Two writer sessions never write to the same key because each
-  session uploads under its own epoch prefix.
-- **Content isolation:** Lucene never writes to a name twice, so the epoch
+- **Session isolation:** The epoch is assigned when a node claims the index
+  writer role, and the session id is random. Two writer sessions never write
+  to the same key because each session uploads under its own prefix, also when
+  two sessions hold the same epoch.
+- **Content isolation:** Lucene never writes to a name twice, so the session
   prefix alone keeps its uploads apart. A file the engine rewrites in place
   carries its checksum in the key, so two pushes of the same session never
   write to the same key either. A pull verifies the size and checksum of every

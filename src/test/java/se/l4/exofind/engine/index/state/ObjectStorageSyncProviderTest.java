@@ -4,6 +4,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.emptyIterable;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -11,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -104,8 +107,10 @@ public class ObjectStorageSyncProviderTest {
 		assertThat(
 			keys,
 			containsInAnyOrder(
-				storagePrefix + "/indexes/books/1/manifest.ef.bin",
-				storagePrefix + "/indexes/books/1/e1/segments_1"
+				is(storagePrefix + "/indexes/books/1/manifest.ef.bin"),
+				matchesPattern(
+					Pattern.quote(storagePrefix + "/indexes/books/1/") + "e1-[0-9a-f]{16}/segments_1"
+				)
 			)
 		);
 	}

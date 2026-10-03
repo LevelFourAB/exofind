@@ -266,3 +266,5 @@ The keys API returns the following error status codes:
 A stored key can include a `required_features` list. If a node does not recognize a feature named in `required_features`, it rejects the key completely.
 
 The `required_features` field is used for features that narrow key permissions. Because grants are additive, unrecognized permission names are ignored without granting additional access. Dropping an unrecognized restriction would permit unauthorized actions. Current versions do not write any feature names to `required_features`.
+
+A node that changes the stored keys keeps what it does not recognize. A key it rejects, a permission name it ignores, and a field that a newer version added are written back unchanged. A node cannot revoke or rotate a key that it rejects. It returns `404 Not Found` with `auth:key:not_found`.

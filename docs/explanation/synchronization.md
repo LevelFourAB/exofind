@@ -80,7 +80,7 @@ A freshness token cannot make an uncommitted write survive a writer crash. If a 
 
 Lucene names its files by sequential numbering. Two independent writer sessions can both produce a file named `_5.cfs`. If both sessions uploaded files using that name, a writer that fails the manifest race could overwrite a file referenced by the winning writer's manifest.
 
-To prevent collisions, object keys are scoped to epochs. A writer session claims an epoch by conditionally updating the manifest, and then uploads all files under `e<epoch>/`. If storage rejects the epoch claim, the session does not upload any files and does not open its writer. File names remain local, while object keys are remote.
+To prevent collisions, object keys are scoped to writer sessions. A writer session claims an epoch by conditionally updating the manifest, and picks a random session id. It then uploads all files under `e<epoch>-<session>/`. If storage rejects the epoch claim, the session does not upload any files and does not open its writer. File names remain local, while object keys are remote.
 
 A session makes a conditional manifest write twice: once to claim its epoch, and once for every push:
 
@@ -95,7 +95,7 @@ claim: Claim the epoch {
 
 stop: Upload nothing and open no writer
 writer: Open the writer and acknowledge writes
-upload: "Upload the files of the commit under e<epoch>/"
+upload: "Upload the files of the commit under e<epoch>-<session>/"
 
 push: Replace the manifest with If-Match {
   shape: diamond
@@ -116,9 +116,11 @@ accepted -> writer: The session continues
 
 When the remote holds no manifest, because the index is new or because the manifest was removed, the claim writes nothing. The first push then writes the manifest on the condition that there still is none, so of two sessions that both found the remote empty, only the first to push is accepted. A claim written as a manifest that names no files would make every reader remove its copy and answer with nothing until that push lands.
 
+Two sessions that both found the remote empty claim the same epoch, and both upload their files before the first manifest write decides between them. The epoch alone therefore does not keep their uploads apart. The session id does: the session that loses uploads under a prefix of its own, so it cannot replace an object that the manifest of the winner names. An epoch can also come back after a manifest is removed, when a node that holds an older manifest pushes first. The session id keeps those sessions apart too.
+
 The claim happens when the writer opens, before the node acknowledges any write, rather than before the first upload. A node that takes an index over acknowledges writes from the moment its writer opens, but pushes only at the next commit interval. Claiming at the first push would leave that whole span with nothing refusing the node the index was taken from: a stale push accepted in it wins the manifest race, and the successor then abandons and pulls over the documents it has already acknowledged.
 
-Epochs keep the uploads of two sessions apart, but not two uploads of one session. Lucene never writes to a name twice, so that is enough for its files. The files the engine keeps beside the segments, such as the definition and the change log, are rewritten in place under the same name. Their keys also carry the checksum of the contents, so a push whose manifest is refused cannot have replaced an object that the accepted manifest still names. A pull verifies the size and checksum of every file it downloads against the manifest, so an object that does not hold what the manifest describes fails the pull instead of entering the index.
+Session prefixes keep the uploads of two sessions apart, but not two uploads of one session. Lucene never writes to a name twice, so that is enough for its files. The files the engine keeps beside the segments, such as the definition and the change log, are rewritten in place under the same name. Their keys also carry the checksum of the contents, so a push whose manifest is refused cannot have replaced an object that the accepted manifest still names. A pull verifies the size and checksum of every file it downloads against the manifest, so an object that does not hold what the manifest describes fails the pull instead of entering the index.
 
 Unchanged files retain their keys across epochs, and the manifest records each key alongside its corresponding file name. This mapping avoids re-uploading files that a previous indexer already pushed, making failovers efficient. After adopting a pulled manifest, a session claims a new epoch because the adopted manifest can reference keys from the epoch where it originated.
 

@@ -8,10 +8,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -105,6 +107,11 @@ public class ObjectStorageSync implements StateSync {
 	private static final Duration DEFAULT_GRACE = Duration.ofHours(1);
 
 	/**
+	 * Source of the ids that keep the uploads of two writer sessions apart.
+	 */
+	private static final SecureRandom SESSION_IDS = new SecureRandom();
+
+	/**
 	 * Errors that describe a temporary condition in the object storage, such as
 	 * throttling or a node being replaced. The same request may very well
 	 * succeed a moment later.
@@ -166,6 +173,19 @@ public class ObjectStorageSync implements StateSync {
 	private long sessionEpoch;
 
 	/**
+	 * Random part of the key prefix the session of {@link #sessionEpoch}
+	 * uploads under, or the next session uploads under while none is claimed.
+	 *
+	 * <p>The epoch alone does not keep two sessions apart. Two sessions that
+	 * both find the remote without a manifest claim the same epoch without
+	 * writing anything, and both upload before the conditional write of the
+	 * first manifest decides between them. An epoch can also come back after
+	 * the manifest is removed, when a node that holds an older manifest
+	 * pushes first.
+	 */
+	private String sessionId;
+
+	/**
 	 * When the sweep for orphaned remote objects last ran, seeded at a point
 	 * inside the grace period for an instance that has not swept yet.
 	 */
@@ -217,6 +237,7 @@ public class ObjectStorageSync implements StateSync {
 		this.lastSyncedManifest = loadFromDisk();
 		this.lastSyncedManifestETag = null;
 		this.sessionEpoch = -1;
+		this.sessionId = newSessionId();
 		this.lastSweepNanos = System.nanoTime() - startingSweepAge(grace);
 	}
 
@@ -407,7 +428,10 @@ public class ObjectStorageSync implements StateSync {
 	 * push that follows has uploaded the whole index. The push is what
 	 * fences that session instead: its manifest is written on the condition
 	 * that there still is none, so of two sessions that both found the
-	 * remote empty, only the first to push is accepted.
+	 * remote empty, only the first to push is accepted. Both sessions hold
+	 * the same epoch and upload before that write, so only the session id in
+	 * their key prefixes keeps the loser from replacing the objects of the
+	 * winner.
 	 *
 	 * @param baseline
 	 *   what the remote is known to hold, as {@link #ensurePushBaseline}
@@ -612,6 +636,7 @@ public class ObjectStorageSync implements StateSync {
 			 * references, so the next push claims a fresh one.
 			 */
 			this.sessionEpoch = -1;
+			this.sessionId = newSessionId();
 
 			deleteObsoleteLocalFiles(manifest);
 		} finally {
@@ -1350,7 +1375,7 @@ public class ObjectStorageSync implements StateSync {
 					file.setKey(previousFile.getKey());
 				}
 			} else {
-				file.setKey(uploadKeyOf(name, epoch, checksum));
+				file.setKey(uploadKeyOf(name, epoch, sessionId, checksum));
 			}
 
 			builder.addFiles(file.build());
@@ -1441,8 +1466,9 @@ public class ObjectStorageSync implements StateSync {
 
 	/**
 	 * The key a file is uploaded under, relative to the index's prefix. Every
-	 * upload goes below the epoch of the session, so two sessions never write
-	 * the same key even when Lucene names their files the same.
+	 * upload goes below a prefix that names the epoch and the id of the
+	 * session, so two sessions never write the same key even when Lucene
+	 * names their files the same.
 	 *
 	 * <p>A file the engine rewrites in place carries its checksum in the key
 	 * as well. Without it, every push of such a file within one session goes
@@ -1455,14 +1481,24 @@ public class ObjectStorageSync implements StateSync {
 	 *   name Lucene or the engine knows the file by
 	 * @param epoch
 	 *   epoch of the session uploading it
+	 * @param sessionId
+	 *   id of the session uploading it
 	 * @param checksum
 	 *   CRC-32C of the contents being uploaded
 	 */
-	private static String uploadKeyOf(String name, long epoch, int checksum) {
-		var key = "e" + epoch + "/" + name;
+	private static String uploadKeyOf(String name, long epoch, String sessionId, int checksum) {
+		var key = "e" + epoch + "-" + sessionId + "/" + name;
 		return isRewrittenInPlace(name)
 			? key + "." + String.format("%08x", checksum)
 			: key;
+	}
+
+	/**
+	 * Pick the id of a new writer session: 64 random bits as 16 lowercase
+	 * hexadecimal digits.
+	 */
+	private static String newSessionId() {
+		return HexFormat.of().toHexDigits(SESSION_IDS.nextLong());
 	}
 
 	/**

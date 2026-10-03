@@ -37,8 +37,9 @@ message ManifestFile {
 	optional fixed32 checksum = 3;
 	/*
 	 * Key the file is stored under in the remote, relative to the index's
-	 * prefix. Files are written under a prefix named for the epoch of the
-	 * writer that uploaded them, and keep that key for as long as their
+	 * prefix. Files are written under a prefix named for the epoch and the
+	 * random session id of the writer session that uploaded them, in the
+	 * form `e<epoch>-<session>/`, and keep that key for as long as their
 	 * contents stay the same, so a file is never uploaded again just because
 	 * the epoch moved on. A file the engine rewrites in place, which is any
 	 * file named with the `.ef.bin` suffix, also carries its checksum in the
@@ -81,9 +82,11 @@ message Manifest {
 	/*
 	 * Epoch of the writer that produced this manifest. A writer session
 	 * claims an epoch by rewriting the manifest with the next one before it
-	 * uploads anything, and writes its files under a key prefix named for it,
-	 * so the uploads of two sessions can never overwrite each other even when
-	 * Lucene names their files the same.
+	 * uploads anything. It writes its files under a key prefix named for the
+	 * epoch and a random session id, so the uploads of two sessions can never
+	 * overwrite each other even when Lucene names their files the same. Two
+	 * sessions that both found the remote without a manifest hold the same
+	 * epoch, and only the session id keeps their uploads apart.
 	 *
 	 * Unset in a manifest written before epochs were recorded, which reads as
 	 * epoch zero.

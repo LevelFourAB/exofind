@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.state;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -16,7 +17,9 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.lucene.document.Document;
@@ -27,6 +30,7 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.Version;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -277,6 +281,13 @@ public class ObjectStorageSyncTest {
 		} catch(Exception e) {
 			fail("unexpected error: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Match the key a writer session of an epoch uploads a file under.
+	 */
+	private static Matcher<String> uploadedIn(long epoch, String name) {
+		return matchesPattern("e" + epoch + "-[0-9a-f]{16}/" + Pattern.quote(name));
 	}
 
 	/**
@@ -1335,8 +1346,8 @@ public class ObjectStorageSyncTest {
 		push(restarted, segment, next);
 
 		assertThat(remoteManifest().getEpoch(), is(2L));
-		assertThat(remoteKeyOf("segments_1"), is("e1/segments_1"));
-		assertThat(remoteKeyOf("segments_2"), is("e2/segments_2"));
+		assertThat(remoteKeyOf("segments_1"), uploadedIn(1, "segments_1"));
+		assertThat(remoteKeyOf("segments_2"), uploadedIn(2, "segments_2"));
 
 		verifyRemoteFile(segment);
 		verifyRemoteFile(next);
@@ -1355,15 +1366,15 @@ public class ObjectStorageSyncTest {
 		push(segment, definition);
 
 		var firstKey = remoteKeyOf("definition.ef.bin");
-		assertThat(remoteKeyOf("segments_1"), is("e1/segments_1"));
-		assertThat(firstKey.matches("e1/definition\\.ef\\.bin\\.[0-9a-f]{8}"), is(true));
+		assertThat(remoteKeyOf("segments_1"), uploadedIn(1, "segments_1"));
+		assertThat(firstKey, matchesPattern("e1-[0-9a-f]{16}/definition\\.ef\\.bin\\.[0-9a-f]{8}"));
 
 		var replaced = createLocalFile("definition.ef.bin", 100);
 		push(segment, replaced);
 
 		var secondKey = remoteKeyOf("definition.ef.bin");
 		assertThat(secondKey.equals(firstKey), is(false));
-		assertThat(secondKey.matches("e1/definition\\.ef\\.bin\\.[0-9a-f]{8}"), is(true));
+		assertThat(secondKey, matchesPattern("e1-[0-9a-f]{16}/definition\\.ef\\.bin\\.[0-9a-f]{8}"));
 
 		verifyRemoteFile(replaced);
 
@@ -1535,9 +1546,9 @@ public class ObjectStorageSyncTest {
 		push(other, segment, otherSegment);
 
 		assertThat(remoteManifest().getEpoch(), is(2L));
-		assertThat(remoteKeyOf("segments_2"), is("e2/segments_2"));
+		assertThat(remoteKeyOf("segments_2"), uploadedIn(2, "segments_2"));
 		// The first writer's upload is carried forward where it was
-		assertThat(remoteKeyOf("segments_1"), is("e1/segments_1"));
+		assertThat(remoteKeyOf("segments_1"), uploadedIn(1, "segments_1"));
 		verifyRemoteFile(segment);
 
 		// And the first writer's next push is refused
@@ -1572,7 +1583,7 @@ public class ObjectStorageSyncTest {
 		var next = createLocalFile(otherLocalPath, "segments_3", 14);
 		push(successor, segment, next);
 
-		assertThat(remoteKeyOf("segments_3"), is("e2/segments_3"));
+		assertThat(remoteKeyOf("segments_3"), uploadedIn(2, "segments_3"));
 		verifyRemoteFile(next);
 	}
 
@@ -1622,7 +1633,7 @@ public class ObjectStorageSyncTest {
 		push(segment, otherSegment, next);
 
 		assertThat(remoteManifest().getEpoch(), is(3L));
-		assertThat(remoteKeyOf("segments_4"), is("e3/segments_4"));
+		assertThat(remoteKeyOf("segments_4"), uploadedIn(3, "segments_4"));
 		verifyRemoteFile(next);
 	}
 
@@ -1795,7 +1806,7 @@ public class ObjectStorageSyncTest {
 
 		verifyRemoteManifest(2, segment, next);
 		assertThat(remoteManifest().getEpoch(), is(2L));
-		assertThat(remoteKeyOf("segments_2"), is("e2/segments_2"));
+		assertThat(remoteKeyOf("segments_2"), uploadedIn(2, "segments_2"));
 
 		assertThat(reader.pull(), is(true));
 		verifyLocalFile(otherLocalPath, segment);
@@ -1829,6 +1840,62 @@ public class ObjectStorageSyncTest {
 
 		verifyRemoteManifest(2, segment, next);
 		verifyRemoteFileMissing(otherNext);
+	}
+
+	/**
+	 * Two sessions that both found the remote without a manifest hold the
+	 * same epoch, and both upload before the first manifest write decides
+	 * between them. The session that loses must not replace an object that
+	 * the manifest of the winner names, even for a file Lucene names the same
+	 * on both nodes.
+	 */
+	@Test
+	void testWriterThatFoundNoManifestNeverOverwritesTheObjectsOfTheWinner(
+		@TempDir Path readerPath
+	) throws Exception {
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var otherClient = Mockito.spy(s3Client);
+		var other = newSync(otherClient, otherLocalPath);
+		assertThat(other.pull(), is(true));
+
+		removeRemoteManifest();
+
+		sync.claimWriter();
+		other.claimWriter();
+
+		// Both nodes commit files that Lucene names the same
+		var data = createLocalFile("_1.cfs", 64);
+		var next = createLocalFile("segments_2", 12);
+		var otherData = createLocalFile(otherLocalPath, "_1.cfs", 64);
+		var otherNext = createLocalFile(otherLocalPath, "segments_2", 12);
+
+		// This node pushes after the other node checked the remote and before it uploads
+		var pushed = new AtomicBoolean();
+		Mockito.doAnswer(invocation -> {
+			PutObjectRequest request = invocation.getArgument(0);
+			if(!request.key().endsWith("manifest.ef.bin") && pushed.compareAndSet(false, true)) {
+				push(segment, data, next);
+			}
+
+			return invocation.callRealMethod();
+		}).when(otherClient).putObject(
+			ArgumentMatchers.any(PutObjectRequest.class),
+			ArgumentMatchers.any(RequestBody.class)
+		);
+
+		assertThrows(
+			SyncConflictException.class,
+			() -> push(other, segment, otherData, otherNext)
+		);
+		assertThat(pushed.get(), is(true));
+
+		// A new reader pulls the manifest of the winner, and every checksum matches
+		var reader = newSync(s3Client, readerPath);
+		assertThat(reader.pull(), is(true));
+		verifyLocalFile(readerPath, data);
+		verifyLocalFile(readerPath, next);
 	}
 
 	/**
