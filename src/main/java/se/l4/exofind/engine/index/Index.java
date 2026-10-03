@@ -1159,7 +1159,13 @@ public class Index {
 				syncLock.writeLock().unlock();
 			}
 			return;
-		} catch(IOException e) {
+		} catch(IOException | RuntimeException e) {
+			/*
+			 * Unchecked failures too, such as a manifest that names a file
+			 * this file system can not hold. The state is PULLING, which every
+			 * later pull and reopen passes over, so a failure that left it so
+			 * would stop the index from ever being pulled again.
+			 */
 			if(e instanceof SyncConflictException) {
 				metrics.recordConflict("pull");
 			}
@@ -1375,7 +1381,7 @@ public class Index {
 			if(!readerWithoutCommit) {
 				facetWarmer.warm(this);
 			}
-		} catch(IOException e) {
+		} catch(IOException | RuntimeException e) {
 			logger.atError()
 				.addKeyValue("index", id)
 				.setCause(e)
@@ -1384,7 +1390,9 @@ public class Index {
 			/*
 			 * The local files have been updated but could not be opened, which
 			 * pulling them again is the only way out of. Leaving the index in
-			 * PULLING would mean nothing ever tries.
+			 * PULLING would mean nothing ever tries. Unchecked failures count
+			 * the same, as the Lucene writer and reader throw them for files
+			 * they can not open.
 			 */
 			state = IndexState.NEEDS_PULL;
 		} finally {

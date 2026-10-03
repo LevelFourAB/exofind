@@ -90,6 +90,71 @@ public class IndexPullTest {
 	}
 
 	/**
+	 * A pull that fails with an unchecked exception, such as a manifest that
+	 * names a file this file system can not hold, must not leave the index in
+	 * PULLING. Every later pull passes over an index in that state, so the
+	 * index would refuse writes and never be pulled again.
+	 */
+	@Test
+	public void testAnUncheckedFailureWhileDownloadingLeavesTheIndexToBePulledAgain()
+		throws IOException
+	{
+		var sync = new CopyingSync();
+		var index = create("held", sync);
+		needsPull(index, sync);
+
+		sync.failPull = new IllegalStateException("simulated failure while downloading");
+		index.pull();
+
+		assertThat(index.getState(), is(IndexState.NEEDS_PULL));
+
+		// Once the remote answers again, the next pull opens the index
+		index.pull();
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		index.addDocument(document("2"));
+		index.commit();
+		assertThat(index.getDocument("2"), is(notNullValue()));
+	}
+
+	/**
+	 * The same for a failure while the pulled copy is opened, which is where
+	 * Lucene throws unchecked exceptions for files it can not open.
+	 */
+	@Test
+	public void testAnUncheckedFailureWhileOpeningLeavesTheIndexToBePulledAgain()
+		throws IOException
+	{
+		var sync = new CopyingSync();
+		var index = create("held", sync);
+		needsPull(index, sync);
+
+		sync.failClaim = new IllegalStateException("simulated failure while opening");
+		index.pull();
+
+		assertThat(index.getState(), is(IndexState.NEEDS_PULL));
+
+		index.pull();
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		index.addDocument(document("2"));
+		index.commit();
+		assertThat(index.getDocument("2"), is(notNullValue()));
+	}
+
+	/**
+	 * Put a writable index in need of a pull the way a push the remote refuses
+	 * does, and let the pushes after it through.
+	 */
+	private static void needsPull(Index index, CopyingSync sync) throws IOException {
+		sync.refusePush = true;
+		index.addDocument(document("1"));
+		assertThrows(SyncConflictException.class, index::commit);
+		assertThat(index.getState(), is(IndexState.NEEDS_PULL));
+		sync.refusePush = false;
+	}
+
+	/**
 	 * A local copy that has to hold a commit and does not is a copy that lost
 	 * files, and the remote it is already in step with sends nothing to replace
 	 * them. Opening it as a new and empty index would let the next push write
@@ -298,6 +363,18 @@ public class IndexPullTest {
 		boolean hasSyncedCommit;
 
 		/**
+		 * Failure the next pull throws before it copies anything, or
+		 * {@code null} for a pull that runs. Thrown once.
+		 */
+		RuntimeException failPull;
+
+		/**
+		 * Failure the next claim of the writer throws, or {@code null} for a
+		 * claim that goes through. Thrown once.
+		 */
+		RuntimeException failClaim;
+
+		/**
 		 * Directory the index this synchronization belongs to is held in, which
 		 * a pull writes into.
 		 */
@@ -360,6 +437,12 @@ public class IndexPullTest {
 					}
 				}
 
+				var failure = failPull;
+				if(failure != null) {
+					failPull = null;
+					throw failure;
+				}
+
 				if(stopped || download == null || localPath == null) {
 					return false;
 				}
@@ -411,6 +494,11 @@ public class IndexPullTest {
 
 		@Override
 		public void claimWriter() throws IOException {
+			var failure = failClaim;
+			if(failure != null) {
+				failClaim = null;
+				throw failure;
+			}
 		}
 
 		@Override
