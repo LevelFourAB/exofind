@@ -83,7 +83,7 @@ Scope every key with index patterns. A pattern is a name or a prefix followed by
 { "grants": [{ "role": "writer", "indexes": ["tenant-42-*"] }] }
 ```
 
-Name indexes exactly where possible. A key granted `products` accesses the index and no generations of it, following the index across rollouts without being able to address or list the generations it moves between. Add `products@*` only to keys that perform rollouts. For more details, see [patterns and generations](../reference/auth.md#patterns-and-generations).
+Name indexes exactly where possible. A key granted `products` accesses the index and no generations of it, following the index across rollouts without being able to address the generations it moves between. The key still sees which generations the index has, in the index listing and in the index details. Add `products@*` only to keys that perform rollouts. For more details, see [patterns and generations](../reference/auth.md#patterns-and-generations).
 
 ## Confirming the configuration
 
