@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
@@ -723,5 +725,93 @@ public class KeysTest {
 		// Then the first key still carries the field
 		var kept = stored("dddddddddddddddd");
 		assertThat(kept.getUnknownFields().hasField(FUTURE_FIELD), is(true));
+	}
+
+	/**
+	 * A refresh that read the store before a revocation and finishes after it
+	 * must not put the revoked key back into this node's copy. The key stops
+	 * working on the node that revoked it at once.
+	 */
+	@Test
+	void aRefreshThatFinishesAfterARevocationDoesNotBringTheKeyBack() throws Exception {
+		// Given a store that can hold a read on one thread after it has read
+		var pausing = new PausingKeyStorage("stale-reader");
+		var revoked = KeySecret.generate();
+		var admin = KeySecret.generate();
+		var adminKey = new Key(admin.id(), admin.secretHash(), "", Lists.immutable.of(
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		), Instant.now(), null);
+		var revokedKey = new Key(revoked.id(), revoked.secretHash(), "", Lists.immutable.of(
+			grant("books", Permission.SEARCH)
+		), Instant.now(), null);
+
+		pausing.set(KeyStoreCodec.toStored(null, Lists.immutable.of(adminKey, revokedKey)));
+
+		var instance = new Keys(
+			pausing,
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofSeconds(30)
+		);
+		started.add(instance);
+		instance.list();
+
+		// And another node has changed the store since this node read it
+		var other = KeySecret.generate();
+		pausing.set(KeyStoreCodec.toStored(null, Lists.immutable.of(
+			adminKey,
+			revokedKey,
+			new Key(other.id(), other.secretHash(), "", Lists.immutable.of(
+				grant("books", Permission.SEARCH)
+			), Instant.now(), null)
+		)));
+
+		// And a refresh has read the store and not yet stored what it read
+		var reader = new Thread(instance::list, "stale-reader");
+		reader.start();
+		assertThat(pausing.paused.await(10, TimeUnit.SECONDS), is(true));
+
+		// When the key is revoked on this node, and the refresh then finishes
+		instance.delete(revoked.id());
+		pausing.release.countDown();
+		reader.join(10_000);
+
+		// Then the revoked credential is refused on this node
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + revoked.credential())
+		);
+	}
+
+	/**
+	 * Holds a read made on one named thread after the read has its result,
+	 * so a test can order it against a change made on another thread.
+	 */
+	static class PausingKeyStorage extends InMemoryKeyStorage {
+		private final String threadName;
+		final CountDownLatch paused = new CountDownLatch(1);
+		final CountDownLatch release = new CountDownLatch(1);
+
+		PausingKeyStorage(String threadName) {
+			this.threadName = threadName;
+		}
+
+		@Override
+		public Read read(String knownVersion) throws IOException {
+			var result = super.read(knownVersion);
+
+			if(Thread.currentThread().getName().equals(threadName)) {
+				paused.countDown();
+
+				try {
+					release.await(10, TimeUnit.SECONDS);
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+
+			return result;
+		}
 	}
 }

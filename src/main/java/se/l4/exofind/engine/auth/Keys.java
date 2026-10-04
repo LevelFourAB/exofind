@@ -88,7 +88,14 @@ public class Keys {
 	 */
 	private final Object forcedReadLock = new Object();
 
-	private volatile Snapshot snapshot = Snapshot.empty();
+	/**
+	 * This node's copy of the keys. A change made here replaces it at once. A
+	 * read of the store replaces it only when nothing else did while the read
+	 * ran, because store versions have no order: a read that started before a
+	 * change and finished after it would put back the keys the change
+	 * replaced, such as a key that was just revoked.
+	 */
+	private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
 	private long lastForcedReadNanos;
 	private boolean forcedReadEver;
 
@@ -233,7 +240,7 @@ public class Keys {
 			return;
 		}
 
-		if(!canAdminister(snapshot.keys())) {
+		if(!canAdminister(snapshot.get().keys())) {
 			throw new IllegalStateException(
 				"No stored key is granted `keys.write` and this node has no root key, so"
 					+ " no credential could ever create one. Set EXOFIND_AUTH_ROOT_KEY"
@@ -265,7 +272,7 @@ public class Keys {
 			return;
 		}
 
-		var key = snapshot.byId().get(anonymousKeyId);
+		var key = snapshot.get().byId().get(anonymousKeyId);
 		if(key == null) {
 			throw new IllegalStateException(
 				"EXOFIND_AUTH_ANONYMOUS_KEY names `" + anonymousKeyId + "`, which is not"
@@ -392,7 +399,7 @@ public class Keys {
 	 * it is not one this node has seen.
 	 */
 	private Key find(String id) {
-		var key = snapshot.byId().get(id);
+		var key = snapshot.get().byId().get(id);
 		if(key != null) {
 			return key;
 		}
@@ -402,7 +409,7 @@ public class Keys {
 		}
 
 		read();
-		return snapshot.byId().get(id);
+		return snapshot.get().byId().get(id);
 	}
 
 	private boolean forcedReadAllowed() {
@@ -427,7 +434,7 @@ public class Keys {
 	 *   was
 	 */
 	private boolean read() {
-		var current = snapshot;
+		var current = snapshot.get();
 
 		try {
 			switch(storage.read(current.version())) {
@@ -436,12 +443,12 @@ public class Keys {
 				}
 				case KeyStorage.Read.Absent absent -> {
 					if(current.version() != null) {
-						snapshot = Snapshot.empty();
+						snapshot.compareAndSet(current, Snapshot.empty());
 					}
 				}
-				case KeyStorage.Read.Loaded loaded -> snapshot = Snapshot.of(
-					loaded.keys(),
-					loaded.version()
+				case KeyStorage.Read.Loaded loaded -> snapshot.compareAndSet(
+					current,
+					Snapshot.of(loaded.keys(), loaded.version())
 				);
 			}
 
@@ -479,7 +486,7 @@ public class Keys {
 			throw KeyStorageException.ioError(null);
 		}
 
-		return snapshot.keys().toSortedListBy(Key::id);
+		return snapshot.get().keys().toSortedListBy(Key::id);
 	}
 
 	/**
@@ -633,7 +640,7 @@ public class Keys {
 				throw KeyStorageException.ioError(null);
 			}
 
-			var current = snapshot;
+			var current = snapshot.get();
 			var updated = change.apply(current.keys());
 			var stored = KeyStoreCodec.toStored(current.stored(), updated);
 
@@ -645,7 +652,13 @@ public class Keys {
 			}
 
 			if(version != null) {
-				snapshot = Snapshot.of(updated, stored, version);
+				/*
+				 * Replaces whatever a read put here meanwhile. Such a read can
+				 * hold the keys from before this change, and must not outlive
+				 * it. A read that saw a later change by another node is caught
+				 * up with by the next refresh.
+				 */
+				snapshot.set(Snapshot.of(updated, stored, version));
 				return;
 			}
 		}
