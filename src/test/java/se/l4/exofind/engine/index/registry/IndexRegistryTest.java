@@ -294,6 +294,38 @@ public class IndexRegistryTest {
 	}
 
 	/**
+	 * The codec passes over a generation whose name this build can not read,
+	 * but keeps the live value that names it. The index is refused as one
+	 * this build can not use, not as a request that named an invalid
+	 * generation.
+	 */
+	@Test
+	public void testIndexWhoseLiveGenerationThisBuildCannotReadIsRefused() {
+		storage.set(
+			IndexRegistryStore.newBuilder()
+				.addIndexes(
+					IndexEntry.newBuilder()
+						.setName("books")
+						.addGenerations(GenerationEntry.newBuilder().setName("1"))
+						.addGenerations(GenerationEntry.newBuilder().setName("2.0"))
+						.setLive("2.0")
+				)
+				.build()
+		);
+
+		registry.refresh();
+
+		assertThrows(
+			IndexUnsupportedException.class,
+			() -> registry.resolve(IndexName.parse("books"))
+		);
+		assertThat(
+			registry.resolve(IndexName.parse("books@1")).toString(),
+			is("books@1")
+		);
+	}
+
+	/**
 	 * A feature a node does not know is carried through a change that node
 	 * makes, so an entry never comes back looking like one every node can
 	 * resolve.

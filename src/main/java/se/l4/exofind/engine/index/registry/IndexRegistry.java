@@ -321,7 +321,8 @@ public class IndexRegistry {
 	 * @throws IndexNotFoundException
 	 *   if there is no such index, or it has no such generation
 	 * @throws IndexUnsupportedException
-	 *   if the index needs something this build does not have
+	 *   if the index needs something this build does not have, or answers
+	 *   for a generation this build can not read
 	 * @throws IndexNoLiveGenerationException
 	 *   if the index answers for none of its generations
 	 */
@@ -349,6 +350,18 @@ public class IndexRegistry {
 		var live = index.live();
 		if(live == null) {
 			throw new IndexNoLiveGenerationException(name.index());
+		}
+
+		/*
+		 * A newer version can name a generation this build can not read. The
+		 * codec passes such a generation over but keeps the live value, which
+		 * still names it.
+		 */
+		if(!index.hasGeneration(live)) {
+			throw new IndexUnsupportedException(
+				name.toString(),
+				"the live generation `" + live + "`"
+			);
 		}
 
 		return name.withGeneration(live);
