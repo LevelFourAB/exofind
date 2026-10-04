@@ -883,6 +883,71 @@ public class DocumentResourceTest {
 	}
 
 	/**
+	 * A line that is valid JSON but not an object is a document the index
+	 * refuses, which skipping covers, and not a body that stopped being
+	 * readable.
+	 */
+	@Test
+	public void testASkippedLineThatIsANumberIsReportedAsNotAnObject() throws IOException {
+		var index = foods();
+
+		var body = """
+			{"id": "1"}
+			42
+			{"id": "3"}
+			""";
+
+		var response = resource.addStream(
+			"foods",
+			"skip",
+			new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed().size(), is(1));
+		assertThat(response.failed().get(0).line(), is(2));
+		assertThat(
+			response.failed().get(0).errors().get(0).code(),
+			is("document:not_an_object")
+		);
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/**
+	 * A line that is an array is skipped whole. The object inside it is not
+	 * read as a document of its own.
+	 */
+	@Test
+	public void testASkippedLineThatIsAnArrayIsReportedAsNotAnObject() throws IOException {
+		var index = foods();
+
+		var body = """
+			{"id": "1"}
+			[{"id": "2"}]
+			{"id": "3"}
+			""";
+
+		var response = resource.addStream(
+			"foods",
+			"skip",
+			new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed().size(), is(1));
+		assertThat(
+			response.failed().get(0).errors().get(0).code(),
+			is("document:not_an_object")
+		);
+		assertThat(index.getDocument("2"), is(nullValue()));
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/**
 	 * The response reaches a client as JSON, so the fields a caller reads have
 	 * to survive being written. A failure of a body with a wrapper carries no
 	 * line and leaves the field out.

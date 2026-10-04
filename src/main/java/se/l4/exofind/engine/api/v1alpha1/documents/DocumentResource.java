@@ -816,7 +816,7 @@ public class DocumentResource {
 			var read = 0;
 			var written = 0;
 
-			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
+			try(var documents = mapper.readerFor(Object.class).readValues(body)) {
 				while(hasNext(documents, read, written)) {
 					var entry = BatchEntry.onLine(read, lineOf(documents));
 
@@ -825,7 +825,7 @@ public class DocumentResource {
 					 * turning a document that is not JSON into an exception
 					 * neither catch below sees and answering with no position.
 					 */
-					var json = documents.nextValue();
+					var json = asDocument(documents.nextValue());
 					var processed = written;
 
 					read++;
@@ -1348,11 +1348,11 @@ public class DocumentResource {
 			var read = 0;
 			var changed = 0;
 
-			try(var documents = mapper.readerFor(Map.class).<Map<String, Object>>readValues(body)) {
+			try(var documents = mapper.readerFor(Object.class).readValues(body)) {
 				while(hasNext(documents, read, changed)) {
 					var entry = BatchEntry.onLine(read, lineOf(documents));
 					// nextValue rather than next, see addStream
-					var json = documents.nextValue();
+					var json = asDocument(documents.nextValue());
 					var processed = changed;
 
 					read++;
@@ -3294,11 +3294,28 @@ public class DocumentResource {
 	}
 
 	/**
+	 * The document one line of a newline delimited body holds.
+	 *
+	 * <p>A line is read as any JSON value rather than as an object. A line
+	 * that is valid JSON but not an object, such as {@code 42}, is then a
+	 * document the index refuses, which {@code onError=skip} covers. Read as
+	 * an object, it fails in the reader and stops the batch as JSON that
+	 * could not be read.
+	 *
+	 * @return
+	 *   the document, or {@code null} when the line is not an object
+	 */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> asDocument(Object value) {
+		return value instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
+	}
+
+	/**
 	 * Read whether there is another document to index, saying where the batch
 	 * had got to when the answer itself fails.
 	 */
 	private static boolean hasNext(
-		MappingIterator<Map<String, Object>> documents,
+		MappingIterator<?> documents,
 		int position,
 		int processed
 	) {
@@ -3379,7 +3396,7 @@ public class DocumentResource {
 	 * {@link MappingIterator#hasNextValue()} leaves the reader on the first
 	 * token of the value, so where that token sits is where the value begins.
 	 */
-	private static int lineOf(MappingIterator<Map<String, Object>> documents) {
+	private static int lineOf(MappingIterator<?> documents) {
 		return documents.getParser().currentTokenLocation().getLineNr();
 	}
 

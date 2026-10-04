@@ -720,13 +720,13 @@ The `onError` parameter accepts `fail` (the default) and `skip`. Any other value
 
 When `onError` is set to `skip`, the endpoint skips and reports the following entry errors in `failed`:
 
-- An entry that is not an object (`document:not_an_object`).
+- An entry that is not an object, such as an `application/x-ndjson` line that holds a number or an array (`document:not_an_object`).
 - An entry that breaks the index definition (such as `document:field_unknown` or `document:field_required`).
 - On the batch update endpoint, a key that does not exist in the index when `missing` is `fail`.
 
 The following errors are not skipped and halt request processing:
 
-- Request body parsing failures (`document:malformed`).
+- Request body parsing failures, including an object that gives the same property more than once (`document:malformed`).
 - Index or node failures, including `storage:io_error`, `index:readonly`, and `indexer:unavailable`.
 
 ### Error response format
