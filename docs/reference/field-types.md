@@ -155,7 +155,7 @@ A signal field behaves as follows:
 
 Represents an instant in time formatted as an ISO 8601 date-time string with a timezone offset (for example, `Z` or `+02:00`).
 
-Timestamps are stored and compared at millisecond precision. Values representing the same instant (such as `2024-05-01T12:00:00+02:00` and `2024-05-01T10:00:00Z`) are identical for filtering and sorting. Search results return the original string format provided during ingestion. Documents containing timestamps without timezone offsets are rejected.
+Timestamps are stored and compared at millisecond precision. The engine drops the digits after the millisecond from document values and from query bounds, so `2024-05-01T10:00:00.500600Z` and `2024-05-01T10:00:00.500Z` are the same value. A bound in a filter or a range facet is equal to a document value written with the same string. Values representing the same instant (such as `2024-05-01T12:00:00+02:00` and `2024-05-01T10:00:00Z`) are identical for filtering and sorting. Search results return the original string format provided during ingestion. Documents containing timestamps without timezone offsets are rejected.
 
 ## `geo_point`
 

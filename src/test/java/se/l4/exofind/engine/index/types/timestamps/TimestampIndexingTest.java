@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index.types.timestamps;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -16,6 +17,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.AbstractIndexTest;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.schema.FacetConfig;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
@@ -23,6 +25,7 @@ import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.schema.TimestampFieldTypeDef;
+import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
@@ -215,6 +218,116 @@ public class TimestampIndexingTest extends AbstractIndexTest {
 	}
 
 	/**
+	 * A bound is cut to the millisecond like a stored value, so
+	 * {@code < .500600} is {@code < .500} and leaves out a value at
+	 * {@code .500}.
+	 */
+	@Test
+	public void testExclusiveUpperBoundIsCutToTheMillisecond() throws IOException {
+		var index = readings();
+
+		var result = search(
+			index,
+			Query.field("at", new RangeMatcher(null, false, "2024-05-01T10:00:00.500600Z", false))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("before"));
+	}
+
+	@Test
+	public void testInclusiveLowerBoundIsCutToTheMillisecond() throws IOException {
+		var index = readings();
+
+		var result = search(
+			index,
+			Query.field("at", Matchers.atLeast("2024-05-01T10:00:00.500600Z"))
+		);
+
+		assertThat(ids(result), containsInAnyOrder("at-500", "after"));
+	}
+
+	@Test
+	public void testBoundsInsideOneMillisecondMatchThatMillisecond() throws IOException {
+		var index = readings();
+
+		var result = search(
+			index,
+			Query.field(
+				"at",
+				Matchers.between("2024-05-01T10:00:00.500600Z", "2024-05-01T10:00:00.500900Z")
+			)
+		);
+
+		assertThat(ids(result), contains("at-500"));
+	}
+
+	/**
+	 * A client that writes a value with sub-millisecond digits and then
+	 * filters with the same string gets the value back as equal to the bound.
+	 */
+	@Test
+	public void testValueWithMicrosecondsComparesEqualToTheSameString() throws IOException {
+		var index = readings();
+		var value = "2024-05-01T10:00:00.700300Z";
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "micros"),
+				new Document.Value("at", value)
+			)
+		);
+		index.commit();
+
+		assertThat(
+			ids(search(index, Query.field("at", Matchers.equalTo(value)))),
+			contains("micros")
+		);
+		assertThat(
+			ids(search(index, Query.field("at", Matchers.atLeast(value)))),
+			contains("micros")
+		);
+		assertThat(
+			ids(search(index, Query.field("at", Matchers.atMost(value)))),
+			containsInAnyOrder("before", "at-500", "after", "micros")
+		);
+		assertThat(
+			ids(search(index, Query.field("at", new RangeMatcher(value, false, null, false)))),
+			is(empty())
+		);
+		assertThat(
+			ids(search(index, Query.field("at", new RangeMatcher(null, false, value, false)))),
+			containsInAnyOrder("before", "at-500", "after")
+		);
+	}
+
+	/**
+	 * Range buckets cut their bounds like filters do, so a bucket and the
+	 * filter with the same bounds hold the same documents.
+	 */
+	@Test
+	public void testRangeBucketBoundsAreCutToTheMillisecond() throws IOException {
+		var index = readings();
+
+		var result = index.search(
+			SearchRequest.create()
+				.addFacet(
+					Facet.of("at").withRanges(
+						new Facet.Range(null, "2024-05-01T10:00:00.500600Z"),
+						new Facet.Range("2024-05-01T10:00:00.500600Z", null)
+					)
+				)
+				.build()
+		);
+
+		assertThat(
+			result.facets().get("at").buckets(),
+			contains(
+				new SearchResult.Facet.Bucket(null, "2024-05-01T10:00:00.500600Z", 1),
+				new SearchResult.Facet.Bucket("2024-05-01T10:00:00.500600Z", null, 2)
+			)
+		);
+	}
+
+	/**
 	 * An index of three documents published a year apart, the middle one
 	 * written with a non-UTC offset so comparisons across offsets are covered.
 	 */
@@ -248,6 +361,39 @@ public class TimestampIndexingTest extends AbstractIndexTest {
 				new Document.Value("published", "2022-11-15T18:45:00-05:00")
 			)
 		);
+
+		index.commit();
+		return index;
+	}
+
+	/**
+	 * An index of three readings one millisecond apart, all written with
+	 * whole milliseconds.
+	 */
+	private Index readings() throws IOException {
+		var index = create(
+			definition()
+				.putFields(
+					"at",
+					timestamp()
+						.setFilter(FilterConfig.getDefaultInstance())
+						.setFacet(FacetConfig.getDefaultInstance())
+						.build()
+				)
+		);
+
+		for(var reading : List.of(
+			List.of("before", "2024-05-01T10:00:00.499Z"),
+			List.of("at-500", "2024-05-01T10:00:00.500Z"),
+			List.of("after", "2024-05-01T10:00:00.501Z")
+		)) {
+			index.addDocument(
+				new Document(
+					new Document.Value("id", reading.get(0)),
+					new Document.Value("at", reading.get(1))
+				)
+			);
+		}
 
 		index.commit();
 		return index;

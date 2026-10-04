@@ -11,8 +11,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * date-time string with a timezone offset (such as {@code Z} or
  * {@code +02:00}).
  *
- * <p>Timestamps are stored and compared at millisecond precision. Values
- * representing the same instant (such as {@code 2024-05-01T12:00:00+02:00} and
+ * <p>Timestamps are stored and compared at millisecond precision. Digits
+ * after the millisecond are dropped from document values and from query
+ * bounds alike, so a bound is equal to a value written with the same string.
+ * Values representing the same instant (such as {@code 2024-05-01T12:00:00+02:00} and
  * {@code 2024-05-01T10:00:00Z}) are identical for filtering and sorting. Search
  * results return the original string format provided during ingestion.
  * Documents containing timestamps without timezone offsets are rejected.
@@ -30,10 +32,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 	description = """
 		Represents an instant in time formatted as an ISO 8601 date-time string \
 		with a timezone offset (for example, `Z` or `+02:00`). Timestamps are \
-		stored and compared at millisecond precision. Values representing the \
-		same instant are identical for filtering and sorting; search results \
-		return the original string format provided during ingestion. Documents \
-		containing timestamps without timezone offsets are rejected.""",
+		stored and compared at millisecond precision. Digits after the \
+		millisecond are dropped from document values and from query bounds \
+		alike, so a bound is equal to a value written with the same string. \
+		Values representing the same instant are identical for filtering and \
+		sorting; search results return the original string format provided \
+		during ingestion. Documents containing timestamps without timezone \
+		offsets are rejected.""",
 	examples = TimestampFieldDefinition.EXAMPLE,
 	properties = @SchemaProperty(
 		name = "type",

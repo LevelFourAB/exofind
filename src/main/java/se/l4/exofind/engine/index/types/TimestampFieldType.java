@@ -56,7 +56,8 @@ import se.l4.exofind.engine.query.matchers.RangesMatcher;
  * The string as it was given is what is kept and returned, so what a caller
  * reads back is what they wrote, offset and all. Anything past the
  * millisecond takes part in nothing - two values within the same millisecond
- * filter and order as the same instant.
+ * filter, count and order as the same instant. A query bound is cut the same
+ * way, so a bound equals a value written with the same string.
  */
 public class TimestampFieldType implements FieldType {
 	private static final ErrorType COLLATION_NOT_SUPPORTED = ErrorType
