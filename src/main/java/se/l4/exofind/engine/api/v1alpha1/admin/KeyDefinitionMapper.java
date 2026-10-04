@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
@@ -20,6 +21,7 @@ import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
+import se.l4.exofind.engine.index.IndexName;
 
 /**
  * Mapping between the key requests and responses of the API and the keys the
@@ -275,16 +277,7 @@ public final class KeyDefinitionMapper {
 		for(int i = 0; i < patterns.size(); i++) {
 			var pattern = patterns.get(i);
 
-			/*
-			 * Only a trailing `*` is a wildcard. Anything else would have to be
-			 * read to know what a key reaches, and what a key reaches has to be
-			 * obvious.
-			 */
-			if(
-				pattern == null
-					|| pattern.isEmpty()
-					|| pattern.substring(0, pattern.length() - 1).contains("*")
-			) {
+			if(!canMatch(pattern)) {
 				errors.add(
 					INVALID_INDEX_PATTERN.toMessage(
 						location.forIndex(i),
@@ -299,6 +292,55 @@ public final class KeyDefinitionMapper {
 		}
 
 		return indexes;
+	}
+
+	/**
+	 * Whether a pattern is one that some index or generation name can match.
+	 *
+	 * <p>Only a trailing {@code *} is a wildcard. Anything else would have to
+	 * be read to know what a key reaches, and what a key reaches has to be
+	 * obvious. A pattern no name can match, such as one in uppercase or with
+	 * a space, would give a key that looks right in a listing and is refused
+	 * on every request.
+	 */
+	static boolean canMatch(String pattern) {
+		if(pattern == null || pattern.isEmpty()) {
+			return false;
+		}
+
+		if(!pattern.endsWith("*")) {
+			return IndexName.tryParse(pattern).isPresent();
+		}
+
+		var prefix = pattern.substring(0, pattern.length() - 1);
+		if(prefix.contains("*")) {
+			return false;
+		}
+
+		var separator = prefix.indexOf(IndexName.SEPARATOR);
+		if(separator < 0) {
+			return isNameStart(prefix, IndexName.VALID_INDEX_PATTERN);
+		}
+
+		/*
+		 * A prefix that reaches past the separator names the whole index, so
+		 * that part has to be a full name. What follows is the start of a
+		 * generation name.
+		 */
+		var index = prefix.substring(0, separator);
+		var generation = prefix.substring(separator + 1);
+
+		return IndexName.VALID_INDEX_PATTERN.matcher(index).matches()
+			&& isNameStart(generation, IndexName.VALID_GENERATION_PATTERN);
+	}
+
+	/**
+	 * Whether a name that the pattern accepts can start with a prefix. The
+	 * empty prefix starts every name, and every other start of a name is a
+	 * name itself.
+	 */
+	private static boolean isNameStart(String prefix, Pattern name) {
+		return prefix.isEmpty() || name.matcher(prefix).matches();
 	}
 
 	private static Instant toInstant(

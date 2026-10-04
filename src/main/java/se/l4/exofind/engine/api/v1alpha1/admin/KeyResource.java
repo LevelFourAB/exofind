@@ -264,7 +264,7 @@ public class KeyResource {
 	@ReturnsError(
 		value = "auth:key:index_pattern_invalid",
 		status = 400,
-		when = "An entry of `indexes` is neither an index name nor a prefix followed by `*`."
+		when = "An entry of `indexes` is neither an index name nor a prefix followed by `*`, or no index or generation name can match it."
 	)
 	@ReturnsError(
 		value = "auth:key:indexes_unsupported",

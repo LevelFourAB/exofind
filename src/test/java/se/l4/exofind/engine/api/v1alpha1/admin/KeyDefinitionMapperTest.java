@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -247,6 +248,61 @@ public class KeyDefinitionMapperTest {
 		);
 
 		assertThat(codesOf(failure).contains("auth:key:index_pattern_invalid"), is(true));
+	}
+
+	/**
+	 * A pattern no index or generation name can match gives a key that looks
+	 * right in a listing and is refused on every request. Index names are
+	 * lowercase, hold no spaces, and only letters, numbers, `_` and `-`.
+	 */
+	@Test
+	void anIndexPatternNoNameCanMatchIsRefused() {
+		var patterns = List.of(
+			"Books",
+			" books",
+			"books ",
+			"books/archive",
+			"Books*",
+			"books@",
+			"@*",
+			"books@@2",
+			"books@Two*",
+			"bo@ks@*"
+		);
+
+		for(var pattern : patterns) {
+			var failure = assertThrows(
+				ValidationException.class,
+				() -> KeyDefinitionMapper.toEngine(
+					definition(new KeyDefinition.GrantDefinition("reader", null, List.of(pattern)))
+				),
+				pattern
+			);
+
+			assertThat(pattern, codesOf(failure), hasItem("auth:key:index_pattern_invalid"));
+		}
+	}
+
+	@Test
+	void anIndexPatternSomeNameCanMatchIsAccepted() {
+		var patterns = List.of(
+			"*",
+			"books",
+			"books@2",
+			"books*",
+			"books@*",
+			"books@2*",
+			"tenant-42-*",
+			"tenant_*"
+		);
+
+		for(var pattern : patterns) {
+			var parsed = KeyDefinitionMapper.toEngine(
+				definition(new KeyDefinition.GrantDefinition("reader", null, List.of(pattern)))
+			);
+
+			assertThat(pattern, parsed.grants().getFirst().indexes(), contains(pattern));
+		}
 	}
 
 	@Test

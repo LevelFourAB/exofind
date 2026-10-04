@@ -59,7 +59,7 @@ Exofind supports the following permissions:
 
 Grants are evaluated as a union: a request is allowed if any grant permits it. There are no deny rules.
 
-An index pattern is either the exact name of an index or a prefix followed by an asterisk (`*`). A single asterisk (`*`) matches all indexes. Deployment-scoped permissions apply regardless of specified index patterns.
+An index pattern is either the exact name of an index or a prefix followed by an asterisk (`*`). A single asterisk (`*`) matches all indexes. A pattern follows the rules for index and generation names: lowercase letters, numbers, underscores (`_`) and dashes (`-`), with `@` between an index and a generation. A pattern that no name can match, such as `Books` or ` books`, is refused with `auth:key:index_pattern_invalid`. Deployment-scoped permissions apply regardless of specified index patterns.
 
 Permission names are stored inside keys and are immutable.
 
