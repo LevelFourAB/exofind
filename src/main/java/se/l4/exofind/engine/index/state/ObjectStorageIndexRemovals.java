@@ -29,7 +29,9 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 /**
  * IndexRemovals over the bucket a deployment in object mode keeps everything
@@ -39,6 +41,15 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * marks. Removing a prefix lists everything under it and deletes in batches;
  * the listing is paged and can miss an object written while it runs, which
  * a later sweep picks up as long as the mark stands.
+ *
+ * <p>A sweep runs next to nodes that can create the name again, and delete
+ * it again, between any two of its requests. A new index writes some keys
+ * the old one used, such as its manifest. So a sweep removes an object only
+ * while its ETag is the one the listing saw, and removes the mark only while
+ * its ETag is the one the sweep started from. A storage that ignores these
+ * conditions removes unconditionally. An object written again with the same
+ * contents keeps its ETag, so a recreate that writes settings identical to
+ * the old ones between a check and a batch can still lose them.
  */
 public class ObjectStorageIndexRemovals implements IndexRemovals {
 	private static final Log logger = Log.of(ObjectStorageIndexRemovals.class);
@@ -47,6 +58,17 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 * Most keys one delete request may name, which is what the S3 API allows.
 	 */
 	private static final int DELETE_BATCH = 1000;
+
+	/**
+	 * Error code of an object a batch delete kept because its condition did
+	 * not hold.
+	 */
+	private static final String PRECONDITION_FAILED = "PreconditionFailed";
+
+	/**
+	 * Error code of an object a batch delete did not find.
+	 */
+	private static final String NO_SUCH_KEY = "NoSuchKey";
 
 	private final S3Client client;
 	private final String bucket;
@@ -208,22 +230,66 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	@Override
 	public boolean remove(IndexName target) throws IOException {
 		var markKey = markKeyOf(target);
-		var keys = listKeys(prefixOf(target) + "/", markKey);
+		var markVersion = versionOf(markKey);
+		if(markVersion.isEmpty()) {
+			return false;
+		}
 
-		for(var batch : batches(keys)) {
-			if(!exists(markKey)) {
+		var objects = listObjects(prefixOf(target) + "/", markKey);
+
+		for(var batch : batches(objects)) {
+			if(!markVersion.equals(versionOf(markKey))) {
 				logger.atInfo()
 					.addKeyValue("index", target.toString())
-					.log("Removal mark is gone, stopping the removal");
+					.log("Removal mark is gone or replaced, stopping the removal");
 
 				return false;
 			}
 
-			deleteObjects(batch);
+			if(!deleteObjects(batch, true)) {
+				logger.atInfo()
+					.addKeyValue("index", target.toString())
+					.log("Objects were written again after the listing, stopping the removal");
+
+				return false;
+			}
 		}
 
-		deleteObject(markKey);
-		return true;
+		return deleteMark(target, markKey, markVersion.get());
+	}
+
+	/**
+	 * Remove the mark a sweep started from. A mark with another ETag was
+	 * written by a later delete, and it is the only thing that says the
+	 * objects of that delete go, so it stays.
+	 *
+	 * @return
+	 *   whether the mark was removed
+	 */
+	private boolean deleteMark(IndexName target, String markKey, String version) throws IOException {
+		try {
+			client.deleteObject(
+				DeleteObjectRequest.builder()
+					.bucket(bucket)
+					.key(markKey)
+					.ifMatch(version)
+					.build()
+			);
+
+			return true;
+		} catch(S3Exception e) {
+			if(e.statusCode() == 404 || e.statusCode() == 412) {
+				logger.atInfo()
+					.addKeyValue("index", target.toString())
+					.log("Removal mark is gone or replaced, leaving it");
+
+				return false;
+			}
+
+			throw new IOException("Unable to remove " + markKey + "; " + e.getMessage(), e);
+		} catch(SdkException e) {
+			throw new IOException("Unable to remove " + markKey + "; " + e.getMessage(), e);
+		}
 	}
 
 	@Override
@@ -254,24 +320,24 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 */
 	private void clear(IndexName target) throws IOException {
 		var markKey = markKeyOf(target);
-		var keys = listKeys(prefixOf(target) + "/", markKey);
+		var objects = listObjects(prefixOf(target) + "/", markKey);
 
-		var served = keys.select(ObjectStorageIndexRemovals::isServed);
-		var rest = keys.reject(ObjectStorageIndexRemovals::isServed);
+		var served = objects.select(ObjectStorageIndexRemovals::isServed);
+		var rest = objects.reject(ObjectStorageIndexRemovals::isServed);
 
 		for(var batch : batches(served)) {
-			deleteObjects(batch);
+			deleteObjects(batch, false);
 		}
 
 		deleteObject(markKey);
 
 		for(var batch : batches(rest)) {
-			deleteObjects(batch);
+			deleteObjects(batch, false);
 		}
 
 		logger.atInfo()
 			.addKeyValue("index", target.toString())
-			.addKeyValue("objects", keys.size())
+			.addKeyValue("objects", objects.size())
 			.log("Removed what a deleted index left in the storage, ahead of creating it again");
 	}
 
@@ -281,16 +347,17 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 * go first, so that an interrupted removal leaves nothing behind that
 	 * reads as an index.
 	 */
-	private static boolean isServed(String key) {
+	private static boolean isServed(S3Object object) {
+		var key = object.key();
 		return key.endsWith("/" + LocalCopy.MANIFEST_FILE)
 			|| key.endsWith("/" + ObjectStorageSearchSettingsStorage.SETTINGS_NAME);
 	}
 
 	/**
-	 * Every key under a prefix except the mark, served objects first.
+	 * Every object under a prefix except the mark, served objects first.
 	 */
-	private MutableList<String> listKeys(String prefix, String markKey) throws IOException {
-		var keys = Lists.mutable.<String>empty();
+	private MutableList<S3Object> listObjects(String prefix, String markKey) throws IOException {
+		var objects = Lists.mutable.<S3Object>empty();
 
 		try {
 			var pages = client.listObjectsV2Paginator(
@@ -303,7 +370,7 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 			for(var page : pages) {
 				for(var object : page.contents()) {
 					if(!object.key().equals(markKey)) {
-						keys.add(object.key());
+						objects.add(object);
 					}
 				}
 			}
@@ -311,8 +378,8 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 			throw new IOException("Unable to list " + prefix + "; " + e.getMessage(), e);
 		}
 
-		return keys.select(ObjectStorageIndexRemovals::isServed)
-			.withAll(keys.reject(ObjectStorageIndexRemovals::isServed));
+		return objects.select(ObjectStorageIndexRemovals::isServed)
+			.withAll(objects.reject(ObjectStorageIndexRemovals::isServed));
 	}
 
 	/**
@@ -339,9 +406,9 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 		return names;
 	}
 
-	private static List<List<String>> batches(ListIterable<String> keys) {
-		var batches = new ArrayList<List<String>>();
-		var all = keys.toList();
+	private static <T> List<List<T>> batches(ListIterable<T> items) {
+		var batches = new ArrayList<List<T>>();
+		var all = items.toList();
 
 		for(int i = 0; i < all.size(); i += DELETE_BATCH) {
 			batches.add(all.subList(i, Math.min(i + DELETE_BATCH, all.size())));
@@ -350,25 +417,33 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 		return batches;
 	}
 
-	private boolean exists(String key) throws IOException {
+	/**
+	 * The version of an object, as a conditional request names it, or empty
+	 * when the object does not exist.
+	 */
+	private Optional<String> versionOf(String key) throws IOException {
 		try {
-			client.headObject(
+			var response = client.headObject(
 				HeadObjectRequest.builder()
 					.bucket(bucket)
 					.key(key)
 					.build()
 			);
 
-			return true;
+			return Optional.ofNullable(ObjectStorageSync.quoteETag(response.eTag()));
 		} catch(S3Exception e) {
 			if(e.statusCode() == 404) {
-				return false;
+				return Optional.empty();
 			}
 
 			throw new IOException("Unable to read " + key + "; " + e.getMessage(), e);
 		} catch(SdkException e) {
 			throw new IOException("Unable to read " + key + "; " + e.getMessage(), e);
 		}
+	}
+
+	private boolean exists(String key) throws IOException {
+		return versionOf(key).isPresent();
 	}
 
 	private void deleteObject(String key) throws IOException {
@@ -384,9 +459,26 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 		}
 	}
 
-	private void deleteObjects(List<String> keys) throws IOException {
-		var identifiers = keys.stream()
-			.map(key -> ObjectIdentifier.builder().key(key).build())
+	/**
+	 * Remove a batch of listed objects.
+	 *
+	 * @param asListed
+	 *   whether to remove each object only while its ETag is the one the
+	 *   listing saw, so that an object written again since stays
+	 * @return
+	 *   whether every object went, {@code false} when the storage kept one
+	 *   because it was written again since the listing
+	 */
+	private boolean deleteObjects(List<S3Object> objects, boolean asListed) throws IOException {
+		var identifiers = objects.stream()
+			.map(object -> {
+				var identifier = ObjectIdentifier.builder().key(object.key());
+				if(asListed) {
+					identifier.eTag(object.eTag());
+				}
+
+				return identifier.build();
+			})
 			.toList();
 
 		try {
@@ -397,13 +489,31 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 					.build()
 			);
 
-			if(response.hasErrors() && !response.errors().isEmpty()) {
-				var first = response.errors().getFirst();
+			if(!response.hasErrors()) {
+				return true;
+			}
+
+			var kept = false;
+			var failed = Lists.mutable.<S3Error>empty();
+			for(var error : response.errors()) {
+				switch(error.code()) {
+					case PRECONDITION_FAILED -> kept = true;
+					case NO_SUCH_KEY -> {
+						// Gone already, which is what was asked for
+					}
+					default -> failed.add(error);
+				}
+			}
+
+			if(!failed.isEmpty()) {
+				var first = failed.getFirst();
 				throw new IOException(
-					"Unable to remove " + response.errors().size() + " objects, first is "
+					"Unable to remove " + failed.size() + " objects, first is "
 						+ first.key() + "; " + first.message()
 				);
 			}
+
+			return !kept;
 		} catch(SdkException e) {
 			throw new IOException("Unable to remove objects; " + e.getMessage(), e);
 		}

@@ -35,7 +35,11 @@ import se.l4.exofind.engine.index.IndexStorageHeldException;
  * the rest last. A sweep keeps its mark until the end instead, and looks for
  * it before every batch: a creation that cleared the mark meanwhile has taken
  * the prefix back, and the sweep stops rather than remove what the new
- * generation is writing.
+ * generation is writing. A creation can also come between the look and the
+ * batch, and a new index writes some of the keys the old one used, so where
+ * the storage allows it a sweep removes only objects that are still the ones
+ * it listed. It removes its mark only while it is still the mark it started
+ * from: a mark written by a later delete is what lets the new objects go.
  *
  * <p>Implementations are safe for concurrent use.
  */
@@ -112,13 +116,15 @@ public interface IndexRemovals {
 	 * Remove everything under a marked prefix, the mark last. The mark is
 	 * looked for before every batch, and the removal stops - leaving what is
 	 * left for a later sweep, or for the creation that took the mark away -
-	 * when it is gone.
+	 * when it is gone or replaced, or when an object was written again after
+	 * the listing.
 	 *
 	 * @param target
 	 *   the index, or one generation of it
 	 * @return
-	 *   whether everything went, {@code false} when the mark disappeared
-	 *   before the removal was done
+	 *   whether everything went, {@code false} when the mark disappeared or
+	 *   was replaced, or an object was written again, before the removal
+	 *   was done
 	 * @throws IOException
 	 *   if the storage could not be listed or objects could not be removed;
 	 *   what was removed so far stays removed, and the mark stays

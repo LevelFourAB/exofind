@@ -68,10 +68,11 @@ Only marked storage is ever removed, because a lost registry looks the same as a
 
 Creating the name again clears the marked prefix first. It also removes the local copies that the node running the creation holds for that name, so a recreated index never opens on old files.
 
-A creation must handle two races:
+A creation must handle three races:
 
 - A node keeps its copy of a deleted index until its next registry read, and a creation can arrive before that read. This is why the creation removes the local copies.
 - A delete on another node can land after the creation registers the name and before it clears the prefix. The delete takes the index away, and the clearing then removes the mark that the delete left. Without the mark, nothing removes the objects, and a later creation of the name finds them held. The creation reads the registry again after clearing. If the registry no longer names the index, the creation puts the removal mark back and returns `409` with `storage:conflict`. The sweep then removes the marked objects. A delete after this read leaves its mark after the clearing, where it stays.
+- A sweep of the old index can still run when the creation clears the prefix. The sweep looks for its mark before each batch, but the creation can come between that look and the batch. A new index writes some keys that the old index used, such as the manifest, so the sweep could remove objects of the new index. The sweep therefore removes an object only while its ETag is the one the listing saw, and removes its mark only while the mark has the ETag the sweep started from. A mark with another ETag comes from a later delete and stays. A storage that ignores these conditions removes without them. An object written again with the same bytes keeps its ETag, so settings identical to the old ones and written inside that gap can still go.
 
 In local storage mode the index directories are the only copy of the data, and a delete writes no removal mark. The node that runs the delete removes the directories at once. A node never removes a directory only because the registry does not name it. Such a directory has two possible causes: a registry put back from a backup that does not name the indexes created after it, or a delete that could not remove the directory. The node cannot tell the two apart, and in the first case the directory holds the only copy of the data. For what an operator does, see [Repairing the index registry](../how-to/repair-the-index-registry.md).
 
