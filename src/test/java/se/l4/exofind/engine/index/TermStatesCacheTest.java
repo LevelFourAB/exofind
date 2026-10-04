@@ -120,8 +120,13 @@ public class TermStatesCacheTest extends AbstractIndexTest {
 		first.search(request);
 		second.search(request);
 
-		assertThat(caches.termStates().stats().evictionCount(), greaterThan(0L));
+		/*
+		 * Caffeine evicts on a background thread and counts an eviction only
+		 * when it does, so the entries are read first: that runs the pending
+		 * eviction before the count is read.
+		 */
 		assertThat(caches.termStates().entries(), lessThan(8L));
+		assertThat(caches.termStates().stats().evictionCount(), greaterThan(0L));
 	}
 
 	@Test
