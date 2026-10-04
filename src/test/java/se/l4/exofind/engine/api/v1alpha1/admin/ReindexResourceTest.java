@@ -191,6 +191,14 @@ public class ReindexResourceTest {
 	 * index, in place of the unchecked principal the setup uses.
 	 */
 	private void answerAs(Permission... permissions) {
+		answerAsGrantedOn("*", permissions);
+	}
+
+	/**
+	 * Answer the rest of the test as a key granted these permissions over the
+	 * names one pattern matches.
+	 */
+	private void answerAsGrantedOn(String pattern, Permission... permissions) {
 		auth.set(
 			Principal.of(
 				new Key(
@@ -198,7 +206,7 @@ public class ReindexResourceTest {
 					"",
 					"",
 					Lists.immutable.of(
-						new Grant(Sets.immutable.of(permissions), Lists.immutable.of("*"))
+						new Grant(Sets.immutable.of(permissions), Lists.immutable.of(pattern))
 					),
 					Instant.now(),
 					null
@@ -280,6 +288,46 @@ public class ReindexResourceTest {
 		var cancelled = resource.cancel("books");
 		assertThat(cancelled.phase(), is("cancelled"));
 		assertThat(cancelled.finishedAt(), is(notNullValue()));
+	}
+
+	/**
+	 * Starting a job needs the reindex permission on the generation it fills.
+	 * A key granted another generation of the index reaches the endpoints
+	 * through that name, and must neither stop the job nor read it.
+	 */
+	@Test
+	public void aKeyGrantedOneGenerationCannotCancelTheJobFillingAnother() throws Exception {
+		create("books");
+		create("books@2");
+
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
+		awaitPhase("books", "ready");
+
+		answerAsGrantedOn("books@1", Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
+
+		assertThrows(ReindexNotFoundException.class, () -> resource.cancel("books@1"));
+		assertThrows(ReindexNotFoundException.class, () -> resource.status("books@1"));
+
+		auth.set(Principal.unchecked());
+		assertThat(resource.status("books").phase(), is("ready"));
+	}
+
+	/**
+	 * A key granted the generation a job fills is the kind of key that started
+	 * the job, and reaches it through that name.
+	 */
+	@Test
+	public void aKeyGrantedTheGenerationAJobFillsCanCancelIt() throws Exception {
+		create("books");
+		create("books@2");
+
+		indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
+		awaitPhase("books", "ready");
+
+		answerAsGrantedOn("books@2", Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
+
+		assertThat(resource.status("books@2").target(), is("books@2"));
+		assertThat(resource.cancel("books@2").phase(), is("cancelled"));
 	}
 
 	@Test

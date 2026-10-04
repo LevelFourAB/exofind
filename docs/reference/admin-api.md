@@ -640,6 +640,8 @@ A job progresses through the following phases:
 
 To check the status of a job on an index, send a `GET` request to `/v1alpha1/admin/reindexes/{name}`, where `{name}` is the index or one generation of it. The job belongs to the index in either case. If no job exists for the index, the server returns `404 Not Found` with the error code `reindex:not_found`.
 
+A key reaches the job only when its grant covers the index or the generation the job fills. A key granted another generation of the index, such as the live one, gets `reindex:not_found`. This applies to cancelling as well.
+
 To list every reindex job across the deployment, send a `GET` request to `/v1alpha1/admin/reindexes`. The listing takes the `prefix`, `limit` and `after` parameters every [listing](#listings) takes, and two of its own:
 
 - `index` keeps the job of one index. An index without a job answers an empty listing rather than `404`, so a poll for a job needs no error handling.

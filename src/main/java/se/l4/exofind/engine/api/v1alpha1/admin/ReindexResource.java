@@ -32,6 +32,7 @@ import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
+import se.l4.exofind.engine.reindex.ReindexJob;
 import se.l4.exofind.engine.reindex.ReindexJobs;
 import se.l4.exofind.engine.reindex.ReindexNotFoundException;
 import se.l4.exofind.engine.reindex.ReindexPhase;
@@ -279,7 +280,9 @@ public class ReindexResource {
 
 			The name is the index the job belongs to, or one generation of \
 			that index. If no job exists for the index, the server returns \
-			`404` with the error code `reindex:not_found`."""
+			`404` with the error code `reindex:not_found`. A key whose grants \
+			cover neither the index nor the generation the job fills gets the \
+			same answer."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -304,7 +307,7 @@ public class ReindexResource {
 	@ReturnsError(
 		value = "reindex:not_found",
 		status = 404,
-		when = "The index has no reindex job."
+		when = "The index has no reindex job, or the key holds no grant covering the index or the generation the job fills."
 	)
 	@ReturnsError(
 		value = "index:not_found",
@@ -328,6 +331,7 @@ public class ReindexResource {
 		var index = requireIndex(name);
 
 		return reindexes.get(index)
+			.filter(job -> isVisible(job, Permission.INDEXES_READ))
 			.map(ReindexInfo::of)
 			.orElseThrow(() -> new ReindexNotFoundException(index));
 	}
@@ -357,6 +361,9 @@ public class ReindexResource {
 			record stays readable and reports the `cancelled` phase. \
 			Cancelling a finished job changes nothing.
 
+			A key whose grants cover neither the index nor the generation the \
+			job fills gets `404` with the error code `reindex:not_found`.
+
 			Runs on the node holding the index."""
 	)
 	@APIResponse(
@@ -382,7 +389,7 @@ public class ReindexResource {
 	@ReturnsError(
 		value = "reindex:not_found",
 		status = 404,
-		when = "The index has no reindex job."
+		when = "The index has no reindex job, or the key holds no grant covering the index or the generation the job fills."
 	)
 	@ReturnsError(
 		value = "index:not_found",
@@ -423,7 +430,30 @@ public class ReindexResource {
 		)
 		@PathParam("name") String name
 	) {
-		return ReindexInfo.of(reindexes.cancel(requireIndex(name)));
+		var index = requireIndex(name);
+
+		reindexes.get(index)
+			.filter(job -> isVisible(job, Permission.INDEXES_REINDEX))
+			.orElseThrow(() -> new ReindexNotFoundException(index));
+
+		return ReindexInfo.of(reindexes.cancel(index));
+	}
+
+	/**
+	 * Whether the caller holds a permission over a job, rather than over the
+	 * name it addressed the job through.
+	 *
+	 * <p>A job is addressed through its index or any generation of it, and the
+	 * request is let in by a grant on that name. A grant on one generation is
+	 * not a grant on the job that fills another: starting the job asked for
+	 * the permission on the generation it fills, and the same is asked here.
+	 * A job the caller holds no such grant over is answered as missing, the
+	 * way the listing leaves it out.
+	 */
+	private boolean isVisible(ReindexJob job, Permission permission) {
+		var principal = auth.principal();
+		return principal.allows(permission, job.index())
+			|| principal.allows(permission, job.targetName());
 	}
 
 	/**

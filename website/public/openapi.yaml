@@ -9376,7 +9376,7 @@ paths:
       description: |-
         Returns the status of a reindex job on an index, including finished jobs. Served from the durable job record, so any node can serve the request and returns the same response.
 
-        The name is the index the job belongs to, or one generation of that index. If no job exists for the index, the server returns `404` with the error code `reindex:not_found`.
+        The name is the index the job belongs to, or one generation of that index. If no job exists for the index, the server returns `404` with the error code `reindex:not_found`. A key whose grants cover neither the index nor the generation the job fills gets the same answer.
 
         Requires the `indexes.read` permission on the index the path names. The `reader`, `writer` and `admin` roles include it.
       operationId: getReindex
@@ -9445,14 +9445,15 @@ paths:
           description: |-
             No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
 
-            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `reindex:not_found` - The index has no reindex job, or the key holds no grant covering the index or the generation the job fills. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
           - code: reindex:not_found
-            when: The index has no reindex job.
+            when: "The index has no reindex job, or the key holds no grant covering\
+              \ the index or the generation the job fills."
           - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
@@ -9483,6 +9484,8 @@ paths:
       summary: Cancel a reindex job
       description: |-
         Stops an in-progress job. Tracking on the source ends and the partially populated target generation is left in place, to be removed with `DELETE /v1alpha1/admin/indexes/{target}`. The job record stays readable and reports the `cancelled` phase. Cancelling a finished job changes nothing.
+
+        A key whose grants cover neither the index nor the generation the job fills gets `404` with the error code `reindex:not_found`.
 
         Runs on the node holding the index.
 
@@ -9552,14 +9555,15 @@ paths:
           description: |-
             No job exists for this index, the index does not exist, or the caller key lacks permissions on the index.
 
-            Error codes: `reindex:not_found` - The index has no reindex job. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `reindex:not_found` - The index has no reindex job, or the key holds no grant covering the index or the generation the job fills. `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           x-error-codes:
           - code: reindex:not_found
-            when: The index has no reindex job.
+            when: "The index has no reindex job, or the key holds no grant covering\
+              \ the index or the generation the job fills."
           - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
               \ covering it."
