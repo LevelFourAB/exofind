@@ -982,7 +982,10 @@ public class IndexTest {
 		state.updateOwnership(false);
 		assertThat(index.reopen(true), is(true));
 
-		assertThat(index.getState(), is(IndexState.USABLE));
+		// The writer is still here, with the write it answered during the flush
+		assertThat(index.getState(), is(IndexState.MODIFIED));
+
+		index.commit();
 		assertThat(index.search(SearchRequest.create().build()).total().count(), is(2L));
 	}
 

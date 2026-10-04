@@ -1591,6 +1591,16 @@ public class Index {
 				return true;
 			}
 
+			if(state != IndexState.NEEDS_PULL && !isReadOnly() == (writer != null)) {
+				/*
+				 * Asked again because the lock was let go above. The node can
+				 * take the index back in that gap, and a second reopen can open
+				 * a writer for it. The pull below releases that writer and
+				 * drops every write it answered since.
+				 */
+				return true;
+			}
+
 			state = IndexState.NEEDS_PULL;
 		} finally {
 			syncLock.writeLock().unlock();
