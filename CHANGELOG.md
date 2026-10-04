@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.6.0](https://github.com/LevelFourAB/exofind/compare/v0.5.0...v0.6.0) (2026-10-04)
+
+
+### Features
+
+* Allow fallback fields when sorting ([2a8fcd8](https://github.com/LevelFourAB/exofind/commit/2a8fcd8d80a7b55db41033943ef6eba0f7fc0f3e))
+
+
+### Bug fixes
+
+* Answer 400 instead of 500 for a distance-sort cursor that holds no distance ([e9138a9](https://github.com/LevelFourAB/exofind/commit/e9138a90a5699d92bad7171fd6c901a3c5b7c19d))
+* Answer 400 instead of 500 for a key expiry later than a key can store ([31afff2](https://github.com/LevelFourAB/exofind/commit/31afff217e3abbfa1d4552f68423ad2f093c0adb))
+* Answer 400 instead of 500 when a string value is too long to index ([7035e66](https://github.com/LevelFourAB/exofind/commit/7035e6696dcdc52147025f77d7c66a4c5d088834))
+* Answer 400 instead of 500 when a text or boolean field gets the wrong JSON type ([a08deca](https://github.com/LevelFourAB/exofind/commit/a08deca172278cb5c0c46462c4c98ce4ab699b2e))
+* Answer 404 instead of restoring search settings deleted during a PUT with If-Match: * ([b086567](https://github.com/LevelFourAB/exofind/commit/b086567908c98edc70876e84a2c0ac634678bb7d))
+* Answer index:unsupported instead of a 400 when the live generation needs a newer engine ([bc80dca](https://github.com/LevelFourAB/exofind/commit/bc80dca5df51f3bf185d746d761223916577616e))
+* Close an index that was still opening when it was deleted ([9a8d4e0](https://github.com/LevelFourAB/exofind/commit/9a8d4e0204391514a57a326972240755b8ba9a53))
+* Continue paging when a cursor comes from a larger index instead of answering 500 ([b436821](https://github.com/LevelFourAB/exofind/commit/b436821f7081145d0d2d120384044b3319409606))
+* Count requests that match no route as UNKNOWN instead of by their path ([209933a](https://github.com/LevelFourAB/exofind/commit/209933ab826a1e53fb88a6be16e8d767a790f514))
+* Delete an index created on another node without a false 404 ([fb5e3e0](https://github.com/LevelFourAB/exofind/commit/fb5e3e0f502827192e4c4d08b2a396971557c425))
+* Keep a recreated index's objects when an old removal sweep runs at the same time ([3499ef1](https://github.com/LevelFourAB/exofind/commit/3499ef1d3652ffc6b33ac92b9dfb4b6456f7c918))
+* Keep acknowledged writes when an index is handed over after a failed push ([1497bc9](https://github.com/LevelFourAB/exofind/commit/1497bc90b6110b70bd94c6b7204db3dc8d641ca5))
+* Keep indexes readable when two nodes push after the manifest was removed ([2fcd6ef](https://github.com/LevelFourAB/exofind/commit/2fcd6ef109602df18d08c976cf936746c35a0bcc))
+* Keep keys and permissions from newer versions when an older node changes the keys ([54b92fd](https://github.com/LevelFourAB/exofind/commit/54b92fdb62fce6b6e54f7e3de90906ddd68f2b04))
+* Keep pulling an index after a pull fails with an unexpected error ([c6130a5](https://github.com/LevelFourAB/exofind/commit/c6130a5055cc23bdcb303342db133cec42920e5a))
+* Keep ranking from using a signal that an update removed ([8c8f7ff](https://github.com/LevelFourAB/exofind/commit/8c8f7ff1c2ca2a217c784e7527cffce7632fdac4))
+* Keep the index tie breaker when a fallback sort starts on the same field ([25e681b](https://github.com/LevelFourAB/exofind/commit/25e681b98f6fd8881dc51100c6105eee228b035b))
+* Keep the removal mark of an index deleted while another node creates it ([8301b59](https://github.com/LevelFourAB/exofind/commit/8301b59e1b804810ee70be83f846635436a2fe07))
+* Keep writes a node takes during a quick lose-and-regain of an index ([d27cca6](https://github.com/LevelFourAB/exofind/commit/d27cca61b10470c832849a47355b3abd990e64c8))
+* Refuse a cursor sent with another locale instead of skipping or repeating hits ([8866fe9](https://github.com/LevelFourAB/exofind/commit/8866fe9a9e26ac8254b2aeade4325a5e4c0811c8))
+* Refuse a JSON body that holds more than one value ([3f17008](https://github.com/LevelFourAB/exofind/commit/3f17008001b1c9de1077e846765b5ce95da33e29))
+* Refuse a primary key of the wrong JSON type ([36eab99](https://github.com/LevelFourAB/exofind/commit/36eab99e55d0c52ae841ca6e428d72d44a1259b3))
+* Refuse a request that gives the same JSON property twice instead of keeping the last value ([84e8283](https://github.com/LevelFourAB/exofind/commit/84e82832a9aa54faf7d11c896282380d9a417d3e))
+* Refuse a zero knn vector on a cosine field instead of scoring every hit NaN ([e5004c0](https://github.com/LevelFourAB/exofind/commit/e5004c084768c9b198ea018e3c75877ea5c93da5))
+* Refuse an unencoded ; in request paths ([4d3f85b](https://github.com/LevelFourAB/exofind/commit/4d3f85b3de933b37b4ec5b53b01edf69294046d8))
+* Refuse definition changes that move a field name onto a wildcard field that indexes it differently ([a315000](https://github.com/LevelFourAB/exofind/commit/a31500085ed85bf1cb34e64888f79dcae4dfe7be))
+* Refuse definition changes that would block every later write of an indexed field ([9bb85a2](https://github.com/LevelFourAB/exofind/commit/9bb85a27057ff514a49337ddcd7ac9c5a8a3d961))
+* Refuse key index patterns that no index name can match ([f033ee6](https://github.com/LevelFourAB/exofind/commit/f033ee6bea9607a4537aa14025825c4f4f597376))
+* Refuse to promote or delete a generation of an index that needs a newer engine ([5dc8b99](https://github.com/LevelFourAB/exofind/commit/5dc8b99e83072a22fca768b5719ecbcb6bba2291))
+* Report removed field locales as an incompatible definition change ([0c02be8](https://github.com/LevelFourAB/exofind/commit/0c02be8b9b7cdce1c0f8f6d8334587bcf272539a))
+* Restore the remote definition and change log when a pull follows a refused push ([c3c666f](https://github.com/LevelFourAB/exofind/commit/c3c666f95d75b66fd8f2b5d917b49ab5a0e7af4a))
+* Skip an NDJSON line that is valid JSON but not an object instead of failing the batch ([895ab1e](https://github.com/LevelFourAB/exofind/commit/895ab1e7bb3e1fa5018717dd5ff2572eeb2ecb97))
+* Stop a concurrent partial update from bringing back documents a delete by query removed ([a9f4cc7](https://github.com/LevelFourAB/exofind/commit/a9f4cc7d0b3a8cf29915f3d387c6949ee9391793))
+* Stop a freshness wait from timing out when the index is promoted mid-wait ([13d90c2](https://github.com/LevelFourAB/exofind/commit/13d90c236f438d377c6f59c40870f7b200fb3a90))
+* Stop a key granted one generation from cancelling the reindex of another ([e91a293](https://github.com/LevelFourAB/exofind/commit/e91a293fb6abc036459b9c596b98096aeab3d959))
+* Stop a late key refresh from bringing a revoked key back ([5bcf276](https://github.com/LevelFourAB/exofind/commit/5bcf276557b0dfb4dffcb86a9d26ee679a356bc8))
+* Stop a node that lost an index from keeping the documents it gave up ([d7e8e8a](https://github.com/LevelFourAB/exofind/commit/d7e8e8a7271ff04edd29b10616c98631776e9fc4))
+* Stop a promoted reindex from keeping signals the source index removed ([b1017c7](https://github.com/LevelFourAB/exofind/commit/b1017c7cf1a9e367de9b6406a75f397d34a7b5bf))
+* Stop answering with old search settings after a revert or a second removal ([3375425](https://github.com/LevelFourAB/exofind/commit/337542582719a04f60da9d7a476658aab7cb99ae))
+* Stop deeply nested definitions from turning empty after the index reopens ([c6582b6](https://github.com/LevelFourAB/exofind/commit/c6582b6afaa51f83b29a0f3ebdce490639ad42f8))
+* Stop deleting newer indexes after you restore an older registry in local mode ([f39a138](https://github.com/LevelFourAB/exofind/commit/f39a138b79ca9df10cc5e205bf69be44e547218d))
+* Stop keys granted only an index's generations from changing its search settings ([c238a88](https://github.com/LevelFourAB/exofind/commit/c238a885c0495c0fb0f6e11bd0124ac9d5faf0fb))
+* Stop locale patches from leaving stale values in the default locale ([ff0d713](https://github.com/LevelFourAB/exofind/commit/ff0d713d0ddc93a2192284886750195f6596e346))
+* Stop pushing a handed-over index when its claim is taken during the handover ([de40f93](https://github.com/LevelFourAB/exofind/commit/de40f93f6971bc49a7363814d016642c1af166fb))
+* Stop readers from serving a deleted index after it is created again under the same name ([4face53](https://github.com/LevelFourAB/exofind/commit/4face536bb1a9734860fa5a256e48b33fddd284b))
+* Stop reads from answering from a demoted generation after a roll back ([a15fdf5](https://github.com/LevelFourAB/exofind/commit/a15fdf5d6883897c0e33b6f203f2446339cc218d))
+* Stop the refresh pass from removing an index created while it ran ([0179b1d](https://github.com/LevelFourAB/exofind/commit/0179b1d4255f875b2a1a47bd33206e21be850c17))
+* Treat -0.0 as 0.0 in float and double fields so filters and facets agree at zero ([702d783](https://github.com/LevelFourAB/exofind/commit/702d7837d9a3b7c458e2e9aa51bd31271d737652))
+* Warn when EXOFIND_NODE_ADDRESS has no scheme or an invalid host name ([30ecc6e](https://github.com/LevelFourAB/exofind/commit/30ecc6e5511d7596ed0ce1c7305c2d1d94929a16))
+
 ## [0.5.0](https://github.com/LevelFourAB/exofind/compare/v0.4.1...v0.5.0) (2026-09-15)
 
 
