@@ -77,7 +77,23 @@ public class ReindexJobsTest {
 			Duration.ofMinutes(5)
 		);
 
-		indexes = new Indexes(
+		indexes = newIndexes();
+
+		storage = new LocalReindexJobStorage(
+			storageDirectory.resolve("jobs").resolve("reindex").resolve("records")
+		);
+
+		jobs = newJobs();
+	}
+
+	@AfterEach
+	void cleanup() {
+		jobs.stop();
+		indexes.close();
+	}
+
+	private Indexes newIndexes() throws IOException {
+		return new Indexes(
 			nodeState,
 			new NoopSyncProvider(),
 			registry,
@@ -96,18 +112,6 @@ public class ReindexJobsTest {
 			Duration.ofHours(168),
 			Duration.ofHours(1)
 		);
-
-		storage = new LocalReindexJobStorage(
-			storageDirectory.resolve("jobs").resolve("reindex").resolve("records")
-		);
-
-		jobs = newJobs();
-	}
-
-	@AfterEach
-	void cleanup() {
-		jobs.stop();
-		indexes.close();
 	}
 
 	private ReindexJobs newJobs() {
@@ -480,18 +484,22 @@ public class ReindexJobsTest {
 	 */
 	@Test
 	public void writesASuccessorTakesBeforeTheJobResumesAreCarriedOver() throws Exception {
-		var source = catalogue();
+		catalogue();
 		indexes.createGeneration("catalogue@2", definition().build());
 
 		jobs.start("catalogue@2", null, "manual", "tester");
 		awaitPhase("catalogue", ReindexPhase.READY);
 
-		// The node dies and the index is taken over, with the job left ready
+		/*
+		 * The node dies with the job left ready, and a successor opens the
+		 * index over the same storage. A change of ownership on one node is
+		 * not used here: Indexes reopens on its own for it, on another
+		 * thread, and a write that meets that reopen is refused.
+		 */
 		jobs.stop();
-		nodeState.updateOwnership(false);
-		source.reopen(false);
-		nodeState.updateOwnership(true);
-		source.reopen(false);
+		indexes.close();
+		indexes = newIndexes();
+		var source = indexes.getOrThrow("catalogue");
 
 		// Served before anything picked the record up again
 		source.addDocument(doc("4", "Rosehip soup", "soup"));
