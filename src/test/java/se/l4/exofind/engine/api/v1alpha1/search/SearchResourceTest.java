@@ -1529,6 +1529,70 @@ public class SearchResourceTest {
 	}
 
 	@Test
+	public void testACursorPastTheEndOfTheReaderContinuesFromItsValues() throws IOException {
+		many(5);
+
+		/*
+		 * Cursors are not signed, and one from a larger reader names a doc id
+		 * this reader does not have. The values still give the position.
+		 */
+		var sort = List.<Sort>of(byCode());
+		var first = resource.search(
+			"many",
+			new SearchRequest(
+				null, null, null, sort, null, null, null, null, null, 1, null, null, null,
+				null, null, null
+			)
+		);
+		var taken = (SearchCursor.Keyset) SearchCursor.decode(first.page().next());
+		var past = new SearchCursor.Keyset(
+			taken.fingerprint(),
+			new SortKey(taken.key().values(), 1_000_000)
+		).encode();
+
+		var next = resource.search(
+			"many",
+			new SearchRequest(
+				null, null, null, sort, null, null, null, null, null, 10, null, past, null,
+				null, null, null
+			)
+		);
+
+		assertThat(ids(next), is(idsInRange(1, 5)));
+	}
+
+	@Test
+	public void testARelevanceCursorPastTheEndOfTheReaderContinuesFromItsScore()
+		throws IOException
+	{
+		many(5);
+
+		var first = resource.search(
+			"many",
+			new SearchRequest(
+				null, null, null, null, null, null, null, null, null, 1, null, null, null,
+				null, null, null
+			)
+		);
+		var taken = (SearchCursor.Keyset) SearchCursor.decode(first.page().next());
+		var past = new SearchCursor.Keyset(
+			taken.fingerprint(),
+			new SortKey(taken.key().values(), 1_000_000)
+		).encode();
+
+		// Every document has the same score, so all of them come before
+		var next = resource.search(
+			"many",
+			new SearchRequest(
+				null, null, null, null, null, null, null, null, null, 10, null, past, null,
+				null, null, null
+			)
+		);
+
+		assertThat(next.hits(), is(empty()));
+	}
+
+	@Test
 	public void testCursorsGoPastTheOffsetCap() throws IOException {
 		many(25);
 

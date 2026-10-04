@@ -6366,16 +6366,17 @@ public class Index {
 				: searcher.search(ranked, wanted, sort, scores);
 		}
 
+		var maxDoc = searcher.getIndexReader().maxDoc();
 		if(sort == null && !backwards) {
 			return searcher.searchAfter(
-				SortKeys.toAfter(position, null, false),
+				SortKeys.toAfter(position, null, false, maxDoc),
 				ranked,
 				wanted
 			);
 		}
 
 		return searcher.searchAfter(
-			SortKeys.toAfter(position, sort, backwards),
+			SortKeys.toAfter(position, sort, backwards, maxDoc),
 			ranked,
 			wanted,
 			backwards ? SortKeys.reverse(sort) : sort,

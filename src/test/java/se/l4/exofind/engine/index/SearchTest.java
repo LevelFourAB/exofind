@@ -28,6 +28,7 @@ import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortBy;
+import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.matchers.Matchers;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
@@ -1690,6 +1691,135 @@ public class SearchTest extends AbstractIndexTest {
 					.build()
 			);
 		});
+	}
+
+	@Test
+	public void testKeyPastTheEndOfTheReaderKeepsItsPosition() throws IOException {
+		/*
+		 * A key from a larger reader can name a doc id this reader does not
+		 * have. Every document here has a lower doc id, so the ones with the
+		 * same value all sort before the key.
+		 */
+		var index = ties();
+
+		var sort = SortBy.field("name");
+		var taken = index.search(
+			SearchRequest.create().withSort(sort).withLimit(1).build()
+		).hits().get(0).key();
+		var past = new SortKey(taken.values(), 100_000);
+
+		var after = index.search(
+			SearchRequest.create().withSort(sort).withAfter(past).build()
+		);
+		assertThat(ids(after), is(empty()));
+
+		var before = index.search(
+			SearchRequest.create().withSort(sort).withBefore(past).build()
+		);
+		assertThat(ids(before), contains("a", "b", "c"));
+	}
+
+	@Test
+	public void testRelevanceKeyPastTheEndOfTheReaderKeepsItsPosition() throws IOException {
+		var index = ties();
+
+		var taken = index.search(
+			SearchRequest.create().withLimit(1).build()
+		).hits().get(0).key();
+		var past = new SortKey(taken.values(), 100_000);
+
+		var after = index.search(
+			SearchRequest.create().withAfter(past).build()
+		);
+		assertThat(ids(after), is(empty()));
+
+		var before = index.search(
+			SearchRequest.create().withBefore(past).build()
+		);
+		assertThat(ids(before), contains("a", "b", "c"));
+	}
+
+	@Test
+	public void testKeyTakenBeforeAnEarlierSegmentWasDroppedContinues() throws IOException {
+		/*
+		 * The hit of the key is in the second segment. Deleting every
+		 * document of the first segment drops it at commit, and the reader
+		 * then has fewer doc ids than the key names.
+		 */
+		var index = create(
+			"dropped-segment",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string().setSort(SortConfig.getDefaultInstance()).build()
+				)
+		);
+
+		for(var i = 0; i < 10; i++) {
+			index.addDocument(
+				new Document(
+					new Document.Value("id", "old" + i),
+					new Document.Value("name", "old " + i)
+				)
+			);
+		}
+		index.commit();
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "new"),
+				new Document.Value("name", "new")
+			)
+		);
+		index.commit();
+
+		var sort = SortBy.field("name");
+		var first = index.search(
+			SearchRequest.create().withSort(sort).withLimit(1).build()
+		);
+		assertThat(ids(first), contains("new"));
+
+		for(var i = 0; i < 10; i++) {
+			index.deleteDocument("old" + i);
+		}
+		index.commit();
+
+		var next = index.search(
+			SearchRequest.create()
+				.withSort(sort)
+				.withAfter(first.hits().get(0).key())
+				.build()
+		);
+		assertThat(ids(next), is(empty()));
+	}
+
+	/**
+	 * An index of three documents that all have the same name, so that only
+	 * the doc id puts them in order.
+	 */
+	private Index ties() throws IOException {
+		var index = create(
+			"ties",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					string().setSort(SortConfig.getDefaultInstance()).build()
+				)
+		);
+
+		for(var id : List.of("a", "b", "c")) {
+			index.addDocument(
+				new Document(
+					new Document.Value("id", id),
+					new Document.Value("name", "same")
+				)
+			);
+		}
+
+		index.commit();
+		return index;
 	}
 
 	@Test

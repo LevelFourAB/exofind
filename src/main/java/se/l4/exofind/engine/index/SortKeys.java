@@ -103,22 +103,34 @@ final class SortKeys {
 	 * @param backwards
 	 *   whether the search runs the mirrored sort, which takes the doc tie
 	 *   break as an explicit last value
+	 * @param maxDoc
+	 *   the number of doc ids in the reader the search runs on
 	 * @return
 	 * @throws IndexInvalidCursorException
 	 *   when the key does not fit the sort - the wrong number of values, or a
 	 *   value of the wrong kind for the field it would be compared against
 	 */
-	public static ScoreDoc toAfter(SortKey key, Sort sort, boolean backwards) {
+	public static ScoreDoc toAfter(SortKey key, Sort sort, boolean backwards, int maxDoc) {
+		/*
+		 * A key from a larger reader, or a forged one, can name a doc id past
+		 * the end of this reader, and Lucene refuses such a position. Every
+		 * document here has a lower doc id, so each one with the same values
+		 * sorts before the key. The last doc id of the reader gives the same
+		 * position. The explicit doc value of a backwards search keeps the
+		 * value of the key, so that the last doc id stays in front of it.
+		 */
+		var doc = Math.min(key.doc(), maxDoc - 1);
+
 		if(sort == null) {
 			if(key.values().size() != 1 || !(key.values().get(0) instanceof Float score)) {
 				throw new IndexInvalidCursorException();
 			}
 
 			if(!backwards) {
-				return new ScoreDoc(key.doc(), score);
+				return new ScoreDoc(doc, score);
 			}
 
-			return new FieldDoc(key.doc(), Float.NaN, new Object[] { score, key.doc() });
+			return new FieldDoc(doc, Float.NaN, new Object[] { score, key.doc() });
 		}
 
 		var sortFields = sort.getSort();
@@ -135,7 +147,7 @@ final class SortKeys {
 			fields[sortFields.length] = key.doc();
 		}
 
-		return new FieldDoc(key.doc(), Float.NaN, fields);
+		return new FieldDoc(doc, Float.NaN, fields);
 	}
 
 	/**
