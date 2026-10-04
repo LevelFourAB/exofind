@@ -18,6 +18,8 @@ import java.util.OptionalInt;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
+import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.factory.Sets;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ import se.l4.exofind.engine.NodeIdentity;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Document;
+import se.l4.exofind.engine.index.DocumentPatch;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
@@ -40,6 +43,7 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.Int64FieldTypeDef;
+import se.l4.exofind.engine.index.schema.SignalConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.LocalIndexerOwnership;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
@@ -607,6 +611,65 @@ public class ReindexJobsTest {
 		assertThat(registry.get("catalogue").orElseThrow().live(), is("1"));
 	}
 
+	/**
+	 * The drain writes each changed document to the target in full. A
+	 * document indexed again without a signal value holds none in the
+	 * source, so the target must hold none either.
+	 */
+	@Test
+	public void aSignalGoneFromADocumentIndexedAgainIsGoneFromTheTarget() throws Exception {
+		var source = signalCatalogue();
+		indexes.createGeneration("catalogue@2", signalDefinition().build());
+		jobs.start("catalogue@2", null, "manual", "tester");
+		awaitPhase("catalogue", ReindexPhase.READY);
+		assertThat(indexes.getOrThrow("catalogue@2").getDocument("1").get("popularity"), is(0.9));
+
+		source.deleteDocument("1");
+		source.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Blueberry jam")
+			)
+		);
+
+		assertTrue(jobs.promoteThroughJob("catalogue@2"));
+		awaitPhase("catalogue", ReindexPhase.DONE);
+
+		var target = indexes.getOrThrow("catalogue@2");
+		assertThat(target.getDocument("1").get("popularity"), is(nullValue()));
+		assertThat(target.getDocument("2").get("popularity"), is(0.2));
+	}
+
+	@Test
+	public void aSignalEmptiedOnTheSourceIsEmptiedInTheTarget() throws Exception {
+		var source = signalCatalogue();
+		indexes.createGeneration("catalogue@2", signalDefinition().build());
+		jobs.start("catalogue@2", null, "manual", "tester");
+		awaitPhase("catalogue", ReindexPhase.READY);
+
+		assertTrue(source.updateDocument(signalPatch("1", null)));
+
+		assertTrue(jobs.promoteThroughJob("catalogue@2"));
+		awaitPhase("catalogue", ReindexPhase.DONE);
+
+		assertThat(indexes.getOrThrow("catalogue@2").getDocument("1").get("popularity"), is(nullValue()));
+	}
+
+	@Test
+	public void aSignalChangedOnTheSourceReachesTheTarget() throws Exception {
+		var source = signalCatalogue();
+		indexes.createGeneration("catalogue@2", signalDefinition().build());
+		jobs.start("catalogue@2", null, "manual", "tester");
+		awaitPhase("catalogue", ReindexPhase.READY);
+
+		assertTrue(source.updateDocument(signalPatch("1", 0.1)));
+
+		assertTrue(jobs.promoteThroughJob("catalogue@2"));
+		awaitPhase("catalogue", ReindexPhase.DONE);
+
+		assertThat(indexes.getOrThrow("catalogue@2").getDocument("1").get("popularity"), is(0.1));
+	}
+
 	private static Document doc(String id, String name, String category) {
 		return new Document(
 			new Document.Value("id", id),
@@ -631,6 +694,53 @@ public class ReindexJobsTest {
 			.putFields("id", string().setPrimaryKey(true).build())
 			.putFields("name", string().build())
 			.putFields("category", string().build());
+	}
+
+	private static DocumentPatch signalPatch(String id, Double popularity) {
+		var values = Lists.mutable.of(new Document.Value("id", id));
+		if(popularity != null) {
+			values.add(new Document.Value("popularity", popularity));
+		}
+
+		return DocumentPatch.replacing(Sets.immutable.of("id", "popularity"), values.toImmutable());
+	}
+
+	private Index signalCatalogue() throws IOException {
+		var index = indexes.create("catalogue", signalDefinition().build());
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "1"),
+				new Document.Value("name", "Blueberry jam"),
+				new Document.Value("popularity", 0.9)
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "2"),
+				new Document.Value("name", "Rye bread"),
+				new Document.Value("popularity", 0.2)
+			)
+		);
+		index.commit();
+
+		return index;
+	}
+
+	private static IndexDef.Builder signalDefinition() {
+		return IndexDef.newBuilder()
+			.putFields("id", string().setPrimaryKey(true).build())
+			.putFields("name", string().build())
+			.putFields(
+				"popularity",
+				FieldDef.newBuilder()
+					.setType(
+						FieldTypeDef.newBuilder()
+							.setDouble(DoubleFieldTypeDef.getDefaultInstance())
+					)
+					.setSignal(SignalConfig.getDefaultInstance())
+					.build()
+			);
 	}
 
 	private static FieldDef.Builder string() {

@@ -1055,7 +1055,7 @@ public class ReindexJobs {
 			var lastKey = new String[1];
 			var read = source.scanDocuments(after, COPY_BATCH, document -> {
 				try {
-					target.addDocument(document);
+					target.replaceDocument(document);
 				} catch(ValidationException e) {
 					throw new DocumentRefused(
 						String.valueOf(document.get(keyField)),
@@ -1141,7 +1141,11 @@ public class ReindexJobs {
 				target.deleteDocumentByKeyTerm(key);
 			} else {
 				try {
-					target.addDocument(document);
+					/*
+					 * Replaced in full, so a signal field the source no
+					 * longer holds is emptied in the target too.
+					 */
+					target.replaceDocument(document);
 				} catch(ValidationException e) {
 					throw new DocumentRefused(
 						String.valueOf(document.get(keyField)),

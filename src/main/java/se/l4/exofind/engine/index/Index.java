@@ -2462,6 +2462,26 @@ public class Index {
 	}
 
 	/**
+	 * Add a document that replaces in full what the index holds under its
+	 * key, signal fields included.
+	 *
+	 * <p>{@link #addDocument(Document)} keeps the value the index holds for a
+	 * signal field the document does not give. This method empties it. Use it
+	 * when the document is a copy of what another index holds, such as a copy
+	 * into the target of a reindex, so that a signal emptied in the other
+	 * index is empty here too.
+	 *
+	 * @param doc
+	 * @throws IOException
+	 */
+	public void replaceDocument(Document doc) throws IOException {
+		addDocument(
+			doc,
+			schema.getSignalFields().collect(Field::getName).toSet()
+		);
+	}
+
+	/**
 	 * Add a document to the index, with the signal fields it states exactly.
 	 *
 	 * @param doc

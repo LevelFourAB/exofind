@@ -327,6 +327,25 @@ public class SignalFieldTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void aReplacedDocumentWithoutTheFieldEmptiesIt() throws IOException {
+		var index = catalogue();
+		index.updateDocument(patch(set("id", "popular"), set("views", 40)));
+
+		index.replaceDocument(
+			new Document(
+				new Document.Value("id", "popular"),
+				new Document.Value("name", "Road runner"),
+				new Document.Value("views", 50)
+			)
+		);
+		index.commit();
+
+		var doc = index.getDocument("popular");
+		assertThat(doc.get("popularity"), is(nullValue()));
+		assertThat(doc.get("views"), is(50));
+	}
+
+	@Test
 	public void aValueTheFieldDoesNotAcceptIsRefused() throws IOException {
 		var index = catalogue();
 
