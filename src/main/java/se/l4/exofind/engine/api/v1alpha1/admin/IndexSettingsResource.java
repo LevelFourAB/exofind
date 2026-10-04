@@ -101,10 +101,10 @@ import jakarta.ws.rs.core.Response;
 @Produces(MediaType.APPLICATION_JSON)
 public class IndexSettingsResource {
 	/**
-	 * How many times a change to part of the settings is built again on top of
-	 * a concurrent one before giving up, matching what a whole one is given.
+	 * How many times a change is built again on top of a concurrent one before
+	 * giving up.
 	 */
-	private static final int PATCH_ATTEMPTS = 3;
+	private static final int WRITE_ATTEMPTS = 3;
 
 	private static final ErrorType MISSING_BODY = ErrorType.withCode("request:body_required")
 		.withStatus(400)
@@ -610,37 +610,58 @@ public class IndexSettingsResource {
 		var stored = IndexName.parse(name).index();
 		var expected = IfMatch.of(ifMatch);
 
-		/*
-		 * Read before writing, so the answer can say whether the settings were
-		 * created and a precondition is held against what is stored rather than
-		 * against what the write happens to meet.
-		 */
-		var current = searchSettings.read(stored).orElse(null);
+		for(var attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+			/*
+			 * Read before writing, so the answer can say whether the settings
+			 * were created and a precondition is held against what is stored
+			 * rather than against what the write happens to meet.
+			 */
+			var current = searchSettings.read(stored).orElse(null);
 
-		if(current == null && expected.isConditional()) {
-			throw new SearchSettingsNotFoundException(stored);
-		}
+			if(current == null && expected.isConditional()) {
+				throw new SearchSettingsNotFoundException(stored);
+			}
 
-		if(current != null && !expected.matches(unquote(current.version()))) {
-			throw new SearchSettingsVersionMismatchException(stored);
-		}
+			if(current != null && !expected.matches(unquote(current.version()))) {
+				throw new SearchSettingsVersionMismatchException(stored);
+			}
 
-		var settings = toStored(index, definition);
-		var expectedVersion = expected.namesVersions() ? current.version() : null;
+			var settings = toStored(index, definition);
 
-		if(current == null) {
 			try {
-				return answer(stored, searchSettings.create(stored, settings), true);
-			} catch(SearchSettingsVersionMismatchException e) {
+				if(current == null) {
+					return answer(stored, searchSettings.create(stored, settings), true);
+				}
+
 				/*
-				 * Settings were stored between the read and the write, so this
-				 * request replaces them instead of creating them - what a whole
-				 * one says the settings are to be does not depend on which.
+				 * A precondition holds the write to the version that was read:
+				 * `*` asks that the settings still exist when they are written,
+				 * so a delete in between is reported and not undone.
+				 */
+				return answer(
+					stored,
+					searchSettings.put(
+						stored,
+						settings,
+						expected.isConditional() ? current.version() : null
+					),
+					false
+				);
+			} catch(SearchSettingsVersionMismatchException e) {
+				if(expected.namesVersions()) {
+					throw e;
+				}
+
+				/*
+				 * Without a header, settings stored in between are replaced:
+				 * what a whole one says the settings are to be does not depend
+				 * on what was there. With `*`, the next read tells a change,
+				 * which `*` accepts, from a delete, which it does not.
 				 */
 			}
 		}
 
-		return answer(stored, searchSettings.put(stored, settings, expectedVersion), false);
+		throw SearchSettingsException.conflict();
 	}
 
 	/**
@@ -1067,7 +1088,7 @@ public class IndexSettingsResource {
 		var stored = IndexName.parse(name).index();
 		var expected = IfMatch.of(ifMatch);
 
-		for(var attempt = 0; attempt < PATCH_ATTEMPTS; attempt++) {
+		for(var attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
 			var snapshot = searchSettings.read(stored).orElse(null);
 
 			if(snapshot == null && expected.isConditional()) {

@@ -33,6 +33,13 @@ public class InMemorySearchSettingsStorage implements SearchSettingsStorage {
 	 */
 	public boolean unreachable;
 
+	/**
+	 * When set, runs once just before the next write, and the field clears
+	 * itself. Stands in for another node changing the settings between a read
+	 * and the write built on it.
+	 */
+	public Runnable beforeNextWrite;
+
 	@Override
 	public boolean isAvailable() {
 		return true;
@@ -68,6 +75,12 @@ public class InMemorySearchSettingsStorage implements SearchSettingsStorage {
 	{
 		if(unreachable) {
 			throw new IOException("Storage is unreachable");
+		}
+
+		if(beforeNextWrite != null) {
+			var hook = beforeNextWrite;
+			beforeNextWrite = null;
+			hook.run();
 		}
 
 		if(refuseNextWrite) {

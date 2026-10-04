@@ -12,6 +12,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -536,6 +537,73 @@ public class IndexSettingsResourceTest {
 		);
 
 		assertThat(response.getStatus(), is(200));
+	}
+
+	/**
+	 * {@code *} asks that the settings exist when they are written, not only
+	 * when they are read, so a delete that lands in between is reported and
+	 * not undone.
+	 */
+	@Test
+	public void testPutWithAnyVersionDoesNotBringBackSettingsDeletedBeforeTheWrite() {
+		products();
+
+		resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		);
+
+		storage.beforeNextWrite = () -> {
+			try {
+				storage.delete("products");
+			} catch(IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		};
+
+		assertThrows(
+			SearchSettingsNotFoundException.class,
+			() -> resource.put(
+				"products",
+				"*",
+				rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+			)
+		);
+
+		assertThat(storage.get("products"), is(nullValue()));
+	}
+
+	/**
+	 * {@code *} accepts any version, so a change that lands between the read
+	 * and the write is replaced, the same as one that landed before the read.
+	 */
+	@Test
+	public void testPutWithAnyVersionReplacesSettingsChangedBeforeTheWrite() {
+		products();
+
+		resource.put(
+			"products",
+			null,
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.DESCENDING)
+		);
+		var other = storage.get("products");
+
+		storage.beforeNextWrite = () -> storage.set("products", other);
+
+		var response = resource.put(
+			"products",
+			"*",
+			rankBySales(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		);
+
+		assertThat(response.getStatus(), is(200));
+
+		var info = (SearchSettingsInfo) resource.get("products", null).getEntity();
+		assertThat(
+			info.ranking().tieBreakers().get(0).direction(),
+			is(IndexDefinition.Ranking.TieBreaker.Direction.ASCENDING)
+		);
 	}
 
 	/**
