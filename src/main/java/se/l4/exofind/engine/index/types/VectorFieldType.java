@@ -264,6 +264,7 @@ public class VectorFieldType implements FieldType {
 			);
 		}
 
+		var zero = true;
 		for(var component : vector) {
 			if(!Float.isFinite(component)) {
 				throw new IndexInvalidQueryValueException(
@@ -271,6 +272,22 @@ public class VectorFieldType implements FieldType {
 					"vector of finite numbers"
 				);
 			}
+
+			if(component != 0) {
+				zero = false;
+			}
+		}
+
+		/*
+		 * Cosine divides by the length of the vector, so a vector of only
+		 * zeros scores every document as NaN and leaves the order undefined.
+		 * A document holding one is refused for the same reason.
+		 */
+		if(zero && similarity(vectorType) == VectorSimilarityFunction.COSINE) {
+			throw new IndexInvalidQueryValueException(
+				encounter.getFieldName(),
+				"vector with a component other than zero"
+			);
 		}
 
 		var name = encounter.name(FieldNames.VECTOR);

@@ -18,6 +18,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.AbstractIndexTest;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
@@ -61,6 +62,22 @@ public class VectorIndexingTest extends AbstractIndexTest {
 		var result = search(index, Query.knn("embedding", NEAR_X, 3));
 
 		assertThat(ids(result).get(0), is("x"));
+	}
+
+	/**
+	 * A query vector of only zeros has no direction to compare by cosine. It
+	 * is refused as a client error, and never answers with scores of NaN.
+	 */
+	@Test
+	public void testZeroQueryVectorIsRefusedForCosine() throws IOException {
+		var index = books(VectorFieldTypeDef.newBuilder().setDimensions(4));
+
+		var e = assertThrows(
+			IndexInvalidQueryValueException.class,
+			() -> search(index, Query.knn("embedding", new float[] { 0f, 0f, 0f, 0f }, 2))
+		);
+
+		assertThat(e.getStatus(), is(400));
 	}
 
 	/**

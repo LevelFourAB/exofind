@@ -371,7 +371,7 @@ Matches the `k` nearest documents by vector distance in a specified field:
 ```
 
 - `field`: The vector field to search.
-- `vector`: The query vector array. The array length must match the dimensions declared in the field definition.
+- `vector`: The query vector array. The array length must match the dimensions declared in the field definition, and every component must be a finite number. A field that uses `cosine` similarity refuses a vector of only zeros, because cosine is undefined for it. A vector that breaks one of these rules returns `search:value_invalid`.
 - `k`: Number of nearest documents to return, at most `EXOFIND_SEARCH_MAX_KNN_K` (default `1000`).
 - `filter`: Array of filter clauses that documents must satisfy before nearest-neighbor evaluation.
 

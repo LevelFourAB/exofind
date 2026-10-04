@@ -357,6 +357,38 @@ public class VectorFieldTypeTest {
 	}
 
 	/**
+	 * Cosine is undefined for a vector of only zeros, so a query vector of
+	 * zeros is refused the same way a document holding one is.
+	 */
+	@Test
+	public void testKnnQueryRefusesAZeroVectorForCosine() {
+		assertThrows(
+			IndexInvalidQueryValueException.class,
+			() -> type.createKnnQuery(encounter(vector(3)), new float[] { 0f, 0f, 0f }, 5, null)
+		);
+	}
+
+	@Test
+	public void testKnnQueryAllowsAZeroVectorForEuclidean() {
+		var query = type.createKnnQuery(
+			encounter(
+				vector(
+					VectorFieldTypeDef.newBuilder()
+						.setDimensions(3)
+						.setSimilarity(
+							VectorFieldTypeDef.SimilarityMetric.SIMILARITY_METRIC_EUCLIDEAN
+						)
+				)
+			),
+			new float[] { 0f, 0f, 0f },
+			5,
+			null
+		);
+
+		assertThat(query, is(notNullValue()));
+	}
+
+	/**
 	 * Every other type refuses knn the same way a matcher that means nothing
 	 * for it is refused.
 	 */
