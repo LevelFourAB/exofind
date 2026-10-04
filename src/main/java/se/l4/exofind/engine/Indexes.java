@@ -2791,10 +2791,13 @@ public class Indexes implements RegistryPoller.Listener {
 				return;
 			}
 
-			var index = registry.get(parsed.index())
-				.orElseThrow(() -> new IndexNotFoundException(name));
-
-			registry.remove(parsed.index());
+			/*
+			 * The generations are taken from what the removal read from the
+			 * storage. The copy this node holds can be a refresh behind a
+			 * create on another node, and would answer that the index does
+			 * not exist.
+			 */
+			var index = registry.remove(parsed.index());
 
 			// Every copy is tried, and the mark left, before the first failure
 			// is thrown - the registry no longer names the index, so nothing

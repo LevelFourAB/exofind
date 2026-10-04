@@ -567,22 +567,33 @@ public class IndexRegistry {
 	/**
 	 * Take an index and every generation of it out of the registry.
 	 *
+	 * <p>Read from the stored registry, not from the copy this node holds, so
+	 * an index another node created since the last refresh is found.
+	 *
 	 * @param index
+	 * @return
+	 *   the index as the stored registry held it when it was removed
 	 * @throws IndexNotFoundException
 	 *   if there is no such index
 	 */
-	public void remove(String index) {
+	public RegisteredIndex remove(String index) {
+		var removed = new RegisteredIndex[1];
+
 		change(indexes -> {
-			if(indexes.noneSatisfy(entry -> entry.name().equals(index))) {
+			var entry = indexes.detect(existing -> existing.name().equals(index));
+			if(entry == null) {
 				throw new IndexNotFoundException(index);
 			}
 
-			return indexes.reject(entry -> entry.name().equals(index));
+			removed[0] = entry;
+			return indexes.reject(existing -> existing.name().equals(index));
 		});
 
 		logger.atInfo()
 			.addKeyValue("index", index)
 			.log("Removed index");
+
+		return removed[0];
 	}
 
 	/**
