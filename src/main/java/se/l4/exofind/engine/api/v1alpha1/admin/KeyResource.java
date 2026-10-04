@@ -274,7 +274,7 @@ public class KeyResource {
 	@ReturnsError(
 		value = "auth:key:expiry_invalid",
 		status = 400,
-		when = "`expiresAt` is not an ISO 8601 timestamp."
+		when = "`expiresAt` is not an ISO 8601 timestamp, or is later than the latest expiry a key can have."
 	)
 	@ReturnsError(
 		value = "auth:key:expiry_in_past",

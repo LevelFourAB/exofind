@@ -7,12 +7,17 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyDefinition;
+import se.l4.exofind.engine.auth.AuthMode;
+import se.l4.exofind.engine.auth.InMemoryKeyStorage;
+import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ValidationException;
 
@@ -271,6 +276,59 @@ public class KeyDefinitionMapperTest {
 		);
 
 		assertThat(codesOf(failure), contains("auth:key:expiry_invalid"));
+	}
+
+	/**
+	 * The store holds an expiry as milliseconds since the epoch in a signed
+	 * 64-bit integer. A later expiry is a mistake in the request, not a fault
+	 * of the node.
+	 */
+	@Test
+	void anExpiryLaterThanTheStoreCanHoldIsRefused() {
+		var failure = assertThrows(
+			ValidationException.class,
+			() -> KeyDefinitionMapper.toEngine(
+				new KeyDefinition(
+					"a key",
+					List.of(new KeyDefinition.GrantDefinition("reader", null, List.of("books"))),
+					"+300000000-01-01T00:00:00Z"
+				)
+			)
+		);
+
+		assertThat(codesOf(failure), contains("auth:key:expiry_invalid"));
+		assertThat(
+			failure.getErrors().getFirst().getMessage(),
+			containsString("+292278994-08-17T07:12:55.807Z")
+		);
+	}
+
+	/**
+	 * The latest expiry the store can hold is accepted, and a key with it is
+	 * created.
+	 */
+	@Test
+	void theLatestExpiryIsAcceptedAndStored() {
+		var parsed = KeyDefinitionMapper.toEngine(
+			new KeyDefinition(
+				"a key",
+				List.of(new KeyDefinition.GrantDefinition("reader", null, List.of("books"))),
+				KeyDefinitionMapper.LATEST_EXPIRY.toString()
+			)
+		);
+
+		assertThat(parsed.expiresAt(), is(KeyDefinitionMapper.LATEST_EXPIRY));
+
+		// Not started, so it schedules no refresh and needs no stop
+		var keys = new Keys(
+			new InMemoryKeyStorage(),
+			AuthMode.KEYS,
+			Optional.of("root-credential-for-the-test"),
+			Optional.empty(),
+			Duration.ofSeconds(30)
+		);
+		var created = keys.create(parsed.description(), parsed.grants(), parsed.expiresAt());
+		assertThat(created.key().expiresAt(), is(KeyDefinitionMapper.LATEST_EXPIRY));
 	}
 
 	@Test

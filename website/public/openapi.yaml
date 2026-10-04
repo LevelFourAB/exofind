@@ -8756,7 +8756,7 @@ paths:
           description: |-
             The request body is missing, or the key definition failed validation. All validation errors are reported.
 
-            Error codes: `request:body_required` - The request carries no body. `auth:key:role_unknown` - The definition names a role this version does not have. `auth:key:permission_unknown` - The definition names a permission this version does not have. `auth:key:grants_required` - The definition holds no grant, so the key could do nothing. `auth:key:permissions_required` - A grant names neither a role nor a list of permissions. `auth:key:indexes_required` - A grant holds a permission that is about one index and does not say which indexes it covers. `auth:key:index_pattern_invalid` - An entry of `indexes` is neither an index name nor a prefix followed by `*`. `auth:key:indexes_unsupported` - A grant names `indexes` and holds no permission that is about one index, so the patterns would narrow nothing. `auth:key:expiry_invalid` - `expiresAt` is not an ISO 8601 timestamp. `auth:key:expiry_in_past` - `expiresAt` has already passed, so the key would be lapsed from the moment it was created.
+            Error codes: `request:body_required` - The request carries no body. `auth:key:role_unknown` - The definition names a role this version does not have. `auth:key:permission_unknown` - The definition names a permission this version does not have. `auth:key:grants_required` - The definition holds no grant, so the key could do nothing. `auth:key:permissions_required` - A grant names neither a role nor a list of permissions. `auth:key:indexes_required` - A grant holds a permission that is about one index and does not say which indexes it covers. `auth:key:index_pattern_invalid` - An entry of `indexes` is neither an index name nor a prefix followed by `*`. `auth:key:indexes_unsupported` - A grant names `indexes` and holds no permission that is about one index, so the patterns would narrow nothing. `auth:key:expiry_invalid` - `expiresAt` is not an ISO 8601 timestamp, or is later than the latest expiry a key can have. `auth:key:expiry_in_past` - `expiresAt` has already passed, so the key would be lapsed from the moment it was created.
           content:
             application/json:
               schema:
@@ -8782,7 +8782,8 @@ paths:
             when: "A grant names `indexes` and holds no permission that is about one\
               \ index, so the patterns would narrow nothing."
           - code: auth:key:expiry_invalid
-            when: '`expiresAt` is not an ISO 8601 timestamp.'
+            when: "`expiresAt` is not an ISO 8601 timestamp, or is later than the\
+              \ latest expiry a key can have."
           - code: auth:key:expiry_in_past
             when: "`expiresAt` has already passed, so the key would be lapsed from\
               \ the moment it was created."

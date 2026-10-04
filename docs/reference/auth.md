@@ -179,7 +179,7 @@ The request body supports the following fields:
 
 - `description` (optional): A string describing the key.
 - `grants` (required): An array of grant objects. Each grant specifies `role`, `permissions`, or both (evaluated as a union). An empty `permissions` array is refused, the same as a grant that specifies neither field. The `indexes` array is required for grants containing index-scoped permissions, and is refused on a grant that holds only deployment-scoped permissions, because those apply whatever the patterns say.
-- `expiresAt` (optional): An ISO 8601 timestamp string defining when the key expires. If omitted, the key does not expire. A timestamp that has already passed is refused, because the credential returned would be refused as lapsed by the next request that presented it.
+- `expiresAt` (optional): An ISO 8601 timestamp string defining when the key expires. If omitted, the key does not expire. A timestamp that has already passed is refused, because the credential returned would be refused as lapsed by the next request that presented it. A timestamp later than `+292278994-08-17T07:12:55.807Z` is refused with `auth:key:expiry_invalid`, because the expiry is stored as milliseconds since the epoch in a 64-bit integer.
 
 A successful request returns `201 Created` with the generated credential string and key metadata. The full secret credential is returned only once in this response:
 

@@ -82,6 +82,18 @@ public final class KeyDefinitionMapper {
 		.withArguments("value")
 		.withMessage("`{{value}}` is not an ISO-8601 timestamp");
 
+	/**
+	 * The latest expiry a key can have. The store holds an expiry as
+	 * milliseconds since the epoch in a signed 64-bit integer.
+	 */
+	static final Instant LATEST_EXPIRY = Instant.ofEpochMilli(Long.MAX_VALUE);
+
+	/** The same code as a timestamp that cannot be read, for one the store cannot hold. */
+	private static final ErrorType EXPIRY_TOO_LATE = ErrorType.withCode("auth:key:expiry_invalid")
+		.withStatus(400)
+		.withArguments("value", "latest")
+		.withMessage("`{{value}}` is later than the latest expiry a key can have, `{{latest}}`");
+
 	private static final ErrorType EXPIRY_IN_PAST = ErrorType.withCode("auth:key:expiry_in_past")
 		.withStatus(400)
 		.withArguments("value")
@@ -303,6 +315,13 @@ public final class KeyDefinitionMapper {
 			expiresAt = OffsetDateTime.parse(value).toInstant();
 		} catch(DateTimeParseException e) {
 			errors.add(INVALID_EXPIRY.toMessage(location, "value", value));
+			return null;
+		}
+
+		if(expiresAt.isAfter(LATEST_EXPIRY)) {
+			errors.add(
+				EXPIRY_TOO_LATE.toMessage(location, "value", value, "latest", LATEST_EXPIRY)
+			);
 			return null;
 		}
 
