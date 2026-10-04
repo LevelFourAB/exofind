@@ -760,6 +760,10 @@ public class QueryCompiler {
 	 * A field the search sorts by leaves no ties for the same field to break,
 	 * so repeating it would only cost the comparison.
 	 *
+	 * <p>A field sort given {@code when} or {@code fallback} does not count.
+	 * It reads values the field does not hold, or leaves out values it does,
+	 * so two documents can tie in it while their values on the field differ.
+	 *
 	 * @param sort
 	 * @return
 	 */
@@ -774,7 +778,9 @@ public class QueryCompiler {
 		var named = Sets.mutable.<String>empty();
 		for(var entry : sort) {
 			if(entry instanceof FieldSort field) {
-				named.add(field.field());
+				if(!field.target().selects()) {
+					named.add(field.field());
+				}
 			} else if(entry instanceof GeoDistanceSort geo) {
 				named.add(geo.field());
 			}
