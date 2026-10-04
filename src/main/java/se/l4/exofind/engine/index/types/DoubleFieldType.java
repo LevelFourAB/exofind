@@ -62,6 +62,16 @@ public class DoubleFieldType extends NumberFieldType {
 			return null;
 		}
 
+		/*
+		 * -0.0 and 0.0 are the same number, but the point and the sortable
+		 * encodings keep them apart. Without this a filter on zero misses one
+		 * of them, a filter below zero finds negative zero, and a facet
+		 * counts zero as two values.
+		 */
+		if(coerced == 0) {
+			coerced = 0;
+		}
+
 		return Double.isFinite(coerced) ? coerced : null;
 	}
 

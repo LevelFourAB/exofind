@@ -18,6 +18,7 @@ import se.l4.exofind.engine.index.AbstractIndexTest;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
+import se.l4.exofind.engine.index.schema.FacetConfig;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
@@ -27,6 +28,7 @@ import se.l4.exofind.engine.index.schema.Int32FieldTypeDef;
 import se.l4.exofind.engine.index.schema.Int64FieldTypeDef;
 import se.l4.exofind.engine.index.schema.SortConfig;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.query.Facet;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
@@ -228,6 +230,87 @@ public class NumberIndexingTest extends AbstractIndexTest {
 
 		var doubles = search(index, Query.field("price", Matchers.atLeast(20.0)));
 		assertThat(ids(doubles), containsInAnyOrder("a", "c"));
+	}
+
+	/**
+	 * A double and a float field, each with one document at negative zero and
+	 * one at zero. A JSON reader reads {@code -0.0} as negative zero.
+	 */
+	private Index zeros() throws IOException {
+		var index = create(
+			definition()
+				.putFields(
+					"price",
+					doubleField()
+						.setFilter(FilterConfig.getDefaultInstance())
+						.setFacet(FacetConfig.getDefaultInstance())
+						.build()
+				)
+				.putFields(
+					"weight",
+					floatField()
+						.setFilter(FilterConfig.getDefaultInstance())
+						.setFacet(FacetConfig.getDefaultInstance())
+						.build()
+				)
+		);
+
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "negative"),
+				new Document.Value("price", -0.0d),
+				new Document.Value("weight", -0.0f)
+			)
+		);
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "positive"),
+				new Document.Value("price", 0.0d),
+				new Document.Value("weight", 0.0f)
+			)
+		);
+		index.commit();
+		return index;
+	}
+
+	@Test
+	public void testNegativeZeroMatchesAFilterOnZero() throws IOException {
+		var index = zeros();
+
+		var doubles = search(index, Query.field("price", Matchers.equalTo(0)));
+		assertThat(ids(doubles), containsInAnyOrder("negative", "positive"));
+
+		var floats = search(index, Query.field("weight", Matchers.equalTo(0)));
+		assertThat(ids(floats), containsInAnyOrder("negative", "positive"));
+
+		var negative = search(index, Query.field("price", Matchers.equalTo(-0.0d)));
+		assertThat(ids(negative), containsInAnyOrder("negative", "positive"));
+	}
+
+	@Test
+	public void testNegativeZeroIsNotBelowZero() throws IOException {
+		var index = zeros();
+
+		var doubles = search(index, Query.field("price", new RangeMatcher(null, false, 0, false)));
+		assertThat(ids(doubles), is(empty()));
+
+		var floats = search(index, Query.field("weight", new RangeMatcher(null, false, 0, false)));
+		assertThat(ids(floats), is(empty()));
+	}
+
+	@Test
+	public void testZeroIsOneFacetValue() throws IOException {
+		var index = zeros();
+
+		var facets = index.search(
+			SearchRequest.create()
+				.addFacet(Facet.of("price"))
+				.addFacet(Facet.of("weight"))
+				.build()
+		).facets();
+
+		assertThat(facets.get("price").totalValues(), is(1));
+		assertThat(facets.get("weight").totalValues(), is(1));
 	}
 
 	@Test

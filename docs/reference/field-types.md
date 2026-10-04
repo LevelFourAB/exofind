@@ -112,6 +112,8 @@ Represents boolean values (`true` or `false`). Boolean fields support `filter`.
 
 Represents numeric values of the specified width. Enabling `filter` supports both exact matches and range queries with the `range` matcher.
 
+A `float` or `double` field indexes `-0.0` as `0.0`, so filters, facets and sorts treat the two as one value. Documents indexed before this rule existed keep `-0.0` until they are indexed again.
+
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `validation` | object | None | Sets allowed numeric bounds. Sub-properties: `min` and `max`. Documents containing values outside these bounds are rejected. |
