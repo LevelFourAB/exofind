@@ -62,7 +62,16 @@ A generation is a complete index with its own Lucene files, manifest, and epochs
 - Listing items under `indexes/` with a delimiter returns one entry per index, regardless of how many generations exist under that index.
 - Deleting an index requires removing only a single prefix.
 
-A delete removes the name from the registry and leaves a removal mark (`removed.ef.bin`) under the index prefix, or under the generation prefix for a single generation. A background sweep on nodes that can index removes the marked prefix once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`, which gives an operator a window to take the delete back through a [registry repair](../how-to/repair-the-index-registry.md). Only marked storage is ever removed, because a registry that was lost looks the same as one that never held the index, and the registry repair rebuilds it from exactly that storage. Creating the name again clears the marked prefix first, and also removes the local copies the node running the creation holds of that name, so a recreated index never opens on the old files. A node keeps its copy of a deleted index until its next registry read, and a creation can arrive before that read.
+A delete removes the name from the registry and leaves a removal mark (`removed.ef.bin`) under the index prefix, or under the generation prefix for a single generation. A background sweep on nodes that can index removes the marked prefix once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`, which gives an operator a window to take the delete back through a [registry repair](../how-to/repair-the-index-registry.md).
+
+Only marked storage is ever removed, because a lost registry looks the same as a registry that never held the index, and a registry repair rebuilds the registry from exactly that storage.
+
+Creating the name again clears the marked prefix first. It also removes the local copies that the node running the creation holds for that name, so a recreated index never opens on old files.
+
+A creation must handle two races:
+
+- A node keeps its copy of a deleted index until its next registry read, and a creation can arrive before that read. This is why the creation removes the local copies.
+- A delete on another node can land after the creation registers the name and before it clears the prefix. The delete takes the index away, and the clearing then removes the mark that the delete left. Without the mark, nothing removes the objects, and a later creation of the name finds them held. The creation reads the registry again after clearing. If the registry no longer names the index, the creation puts the removal mark back and returns `409` with `storage:conflict`. The sweep then removes the marked objects. A delete after this read leaves its mark after the clearing, where it stays.
 
 In local storage mode the index directories are the only copy of the data, and a delete writes no removal mark. The node that runs the delete removes the directories at once. A node never removes a directory only because the registry does not name it. Such a directory has two possible causes: a registry put back from a backup that does not name the indexes created after it, or a delete that could not remove the directory. The node cannot tell the two apart, and in the first case the directory holds the only copy of the data. For what an operator does, see [Repairing the index registry](../how-to/repair-the-index-registry.md).
 

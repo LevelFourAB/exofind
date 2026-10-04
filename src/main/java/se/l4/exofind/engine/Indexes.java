@@ -55,6 +55,7 @@ import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
+import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.registry.RegistryPoller;
 import se.l4.exofind.engine.index.schema.IndexDef;
@@ -2562,6 +2563,7 @@ public class Indexes implements RegistryPoller.Listener {
 			 */
 			registry.create(index.index(), generation);
 
+			var removedMeanwhile = false;
 			try {
 				/*
 				 * Cleared after winning the registration, so that only the
@@ -2573,9 +2575,28 @@ public class Indexes implements RegistryPoller.Listener {
 				 */
 				prepareForCreation(index.withGeneration(generation), true);
 
+				/*
+				 * A delete on another node can land between the registration
+				 * and the clearing, and the clearing then takes the mark that
+				 * delete left. Without the mark nothing removes the objects,
+				 * and a later create of the name finds them held. So the
+				 * stored registry is read again: when it no longer names the
+				 * index, the mark is put back and the create is answered as
+				 * the conflict it is. A delete after this read leaves its
+				 * mark after the clearing, where it stays.
+				 */
+				if(registry.refresh() && registry.get(index.index()).isEmpty()) {
+					removedMeanwhile = true;
+					markRemoved(index);
+					throw RegistryException.conflict();
+				}
+
 				return openWithDefinition(index.withGeneration(generation), def);
 			} catch(RuntimeException e) {
-				registry.remove(index.index());
+				if(!removedMeanwhile) {
+					registry.remove(index.index());
+				}
+
 				throw e;
 			}
 		} finally {
