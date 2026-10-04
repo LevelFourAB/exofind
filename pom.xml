@@ -20,7 +20,7 @@
 		<quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
 		<quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
 		<quarkus.platform.version>3.38.2</quarkus.platform.version>
-		<surefire-plugin.version>3.5.0</surefire-plugin.version>
+		<surefire-plugin.version>3.5.4</surefire-plugin.version>
 		<!--
 			The OTLP registry carries opentelemetry-proto, whose generated code
 			refuses a protobuf runtime older than 4.34.0. protoc follows this
