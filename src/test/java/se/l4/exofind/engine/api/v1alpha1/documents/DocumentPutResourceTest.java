@@ -224,6 +224,23 @@ public class DocumentPutResourceTest {
 		);
 	}
 
+	/** Lucene can write a key of at most 32766 bytes in UTF-8. */
+	@Test
+	public void aKeyTooLongToIndexIsRefused() throws IOException {
+		var index = catalogue();
+		var key = "k".repeat(32767);
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.put("catalogue", key, document("name", "Crispbread"))
+		);
+
+		assertThat(e.getErrors().getFirst().getCode(), is("document:string:value_too_long"));
+
+		index.commit();
+		assertThat(index.getDocumentCount(), is(3L));
+	}
+
 	@Test
 	public void anIndexWithoutAPrimaryKeyIsRefused() throws IOException {
 		indexes.create(

@@ -634,6 +634,11 @@ public class DocumentResource {
 		when = "A string field is given a value that is not a JSON string."
 	)
 	@ReturnsError(
+		value = "document:string:value_too_long",
+		status = 400,
+		when = "A string field is given a value over 32766 bytes in UTF-8 where it is written as one term, such as a key, a filter or a sort value."
+	)
+	@ReturnsError(
 		value = "document:boolean:value_invalid",
 		status = 400,
 		when = "A boolean field is given a value that is not `true` or `false`."
@@ -1145,6 +1150,11 @@ public class DocumentResource {
 		value = "document:string:value_invalid",
 		status = 400,
 		when = "A string field is given a value that is not a JSON string."
+	)
+	@ReturnsError(
+		value = "document:string:value_too_long",
+		status = 400,
+		when = "A string field is given a value over 32766 bytes in UTF-8 where it is written as one term, such as a key, a filter or a sort value."
 	)
 	@ReturnsError(
 		value = "document:boolean:value_invalid",
@@ -1996,6 +2006,11 @@ public class DocumentResource {
 		value = "document:string:value_invalid",
 		status = 400,
 		when = "A string field is given a value that is not a JSON string."
+	)
+	@ReturnsError(
+		value = "document:string:value_too_long",
+		status = 400,
+		when = "A string field is given a value over 32766 bytes in UTF-8 where it is written as one term, such as a key, a filter or a sort value."
 	)
 	@ReturnsError(
 		value = "document:boolean:value_invalid",

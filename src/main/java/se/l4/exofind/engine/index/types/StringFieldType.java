@@ -10,7 +10,10 @@ import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
+import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.FilteredTermsEnum;
+import org.apache.lucene.index.IndexOptions;
+import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
@@ -39,6 +42,7 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.UnicodeUtil;
 import org.apache.lucene.util.automaton.ByteRunAutomaton;
 import org.apache.lucene.util.automaton.CompiledAutomaton;
 import org.eclipse.collections.api.collection.MutableCollection;
@@ -93,6 +97,14 @@ public class StringFieldType implements FieldType {
 		.withStatus(400)
 		.withArguments("name")
 		.withMessage("Field `{{name}}` holds text, which has to be a JSON string");
+
+	private static final ErrorType VALUE_TOO_LONG = ErrorType
+		.withCode("document:string:value_too_long")
+		.withStatus(400)
+		.withArguments("name", "max")
+		.withMessage(
+			"Field `{{name}}` holds a value too long to index as one term, which can be at most {{max}} bytes in UTF-8"
+		);
 
 	/**
 	 * How long a word has to be before one typo is allowed in it, unless the
@@ -817,7 +829,52 @@ public class StringFieldType implements FieldType {
 			results.add(field);
 		}
 
+		/*
+		 * Lucene refuses a whole document that holds a term or a sorted doc
+		 * value past its limit, and only after the rest of the document was
+		 * accepted. Checked here, so the value is refused as a mistake in the
+		 * document instead.
+		 */
+		for(var field : results) {
+			if(writtenLength(field) > IndexWriter.MAX_TERM_LENGTH) {
+				throw new ValidationException(
+					VALUE_TOO_LONG.toMessage(
+						ObjectLocation.root().forField(encounter.getFieldName()),
+						"name", encounter.getFieldName(),
+						"max", IndexWriter.MAX_TERM_LENGTH
+					)
+				);
+			}
+		}
+
 		return results;
+	}
+
+	/**
+	 * Get how many bytes a field writes as one term or one sorted doc value,
+	 * which are the parts of a document that Lucene limits in length.
+	 *
+	 * @param field
+	 * @return
+	 *   the length in bytes, or {@code 0} for a field that writes neither,
+	 *   such as a stored value or analyzed text
+	 */
+	private static int writtenLength(IndexableField field) {
+		var type = field.fieldType();
+
+		var docValues = type.docValuesType();
+		if(docValues == DocValuesType.SORTED || docValues == DocValuesType.SORTED_SET) {
+			return field.binaryValue().length;
+		}
+
+		if(type.indexOptions() != IndexOptions.NONE && !type.tokenized()) {
+			var text = field.stringValue();
+			return text == null
+				? field.binaryValue().length
+				: UnicodeUtil.calcUTF16toUTF8Length(text, 0, text.length());
+		}
+
+		return 0;
 	}
 
 	/**

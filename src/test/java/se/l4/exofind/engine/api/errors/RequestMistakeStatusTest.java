@@ -249,4 +249,24 @@ public class RequestMistakeStatusTest {
 			.body("errors[0].code", is("document:string:value_invalid"))
 			.body("errors[0].path", is("documents[0].name"));
 	}
+
+	/**
+	 * A key longer than Lucene can write. The node could write a shorter one,
+	 * so the mistake is in the document.
+	 */
+	@Test
+	@Order(9)
+	void testAKeyTooLongToIndexIsABadRequest() {
+		given()
+			.contentType("application/x-ndjson")
+			.body(
+				("{\"id\": \"" + "k".repeat(32767) + "\"}\n")
+					.getBytes(StandardCharsets.UTF_8)
+			)
+			.when().post("/v1alpha1/indexes/products/documents")
+			.then()
+			.statusCode(400)
+			.body("code", is("validation"))
+			.body("errors[0].code", is("document:string:value_too_long"));
+	}
 }

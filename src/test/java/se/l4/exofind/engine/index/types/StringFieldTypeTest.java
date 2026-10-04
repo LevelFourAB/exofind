@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,6 +14,7 @@ import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.util.BytesRef;
 import org.junit.jupiter.api.Test;
 
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexEncounterImpl;
 import se.l4.exofind.engine.index.locales.Locales;
 import se.l4.exofind.engine.index.schema.FacetConfig;
@@ -27,6 +29,12 @@ import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
  * Tests for which Lucene fields a string turns into, and what they hold.
  */
 public class StringFieldTypeTest {
+	/**
+	 * The longest term or sorted doc value Lucene writes, in UTF-8 bytes.
+	 * Lucene refuses a whole document past it.
+	 */
+	private static final int MAX_TERM_BYTES = 32766;
+
 	private final StringFieldType type = new StringFieldType();
 
 	private Map<String, IndexableField> index(FieldDef.Builder def, String value) {
@@ -290,5 +298,98 @@ public class StringFieldTypeTest {
 
 		// Which is the order the collation above exists to correct
 		assertThat(sortValue(sort, "Zebra"), is(lessThan(sortValue(sort, "Äpple"))));
+	}
+
+	private String refusedCode(FieldDef.Builder def, String value) {
+		var e = assertThrows(ValidationException.class, () -> index(def, value));
+		return e.getErrors().getOnly().getCode();
+	}
+
+	@Test
+	public void testAFilterValueAtTheTermLimitIsWritten() {
+		var fields = index(
+			string().setFilter(FilterConfig.getDefaultInstance()),
+			"a".repeat(MAX_TERM_BYTES)
+		);
+
+		assertThat(fields, hasKey("title:_:filter"));
+	}
+
+	@Test
+	public void testAFilterValuePastTheTermLimitIsRefused() {
+		assertThat(
+			refusedCode(
+				string().setFilter(FilterConfig.getDefaultInstance()),
+				"a".repeat(MAX_TERM_BYTES + 1)
+			),
+			is("document:string:value_too_long")
+		);
+	}
+
+	/** The limit is in bytes, so a value of fewer characters can pass it. */
+	@Test
+	public void testTheTermLimitCountsBytesInUtf8() {
+		assertThat(
+			refusedCode(
+				string().setFilter(FilterConfig.getDefaultInstance()),
+				"å".repeat(MAX_TERM_BYTES / 2 + 1)
+			),
+			is("document:string:value_too_long")
+		);
+	}
+
+	@Test
+	public void testAKeyPastTheTermLimitIsRefused() {
+		assertThat(
+			refusedCode(string().setPrimaryKey(true), "k".repeat(MAX_TERM_BYTES + 1)),
+			is("document:string:value_too_long")
+		);
+	}
+
+	@Test
+	public void testAFacetValuePastTheTermLimitIsRefused() {
+		assertThat(
+			refusedCode(
+				string().setFacet(FacetConfig.getDefaultInstance()),
+				"f".repeat(MAX_TERM_BYTES + 1)
+			),
+			is("document:string:value_too_long")
+		);
+	}
+
+	@Test
+	public void testASortValuePastTheTermLimitIsRefused() {
+		assertThat(
+			refusedCode(
+				string().setSort(
+					SortConfig.newBuilder().setCollation(SortConfig.Collation.COLLATION_BINARY)
+				),
+				"b".repeat(MAX_TERM_BYTES + 1)
+			),
+			is("document:string:value_too_long")
+		);
+	}
+
+	/**
+	 * Matched text is split into words before it is written, and a copy that
+	 * is only stored is not a term, so neither is held to the limit.
+	 */
+	@Test
+	public void testLongTextThatIsMatchedAndStoredIsWritten() {
+		var fields = index(
+			string()
+				.setStored(true)
+				.setType(
+					FieldTypeDef.newBuilder()
+						.setString(
+							StringFieldTypeDef.newBuilder()
+								.setMatching(StringFieldTypeDef.TextUsageConfig.getDefaultInstance())
+						)
+				),
+			"word ".repeat(MAX_TERM_BYTES)
+		);
+
+		assertThat(fields, hasKey("title:_:matching"));
+		assertThat(fields, hasKey("title:_:stored"));
 	}
 }

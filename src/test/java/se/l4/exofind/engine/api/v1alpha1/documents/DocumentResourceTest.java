@@ -755,6 +755,47 @@ public class DocumentResourceTest {
 		assertThat(index.getDocument("3").get("organic"), is(true));
 	}
 
+	/**
+	 * Lucene can write a key or a filter value of at most 32766 bytes in UTF-8.
+	 * A longer one is a mistake in its document, so skipping steps past it.
+	 */
+	@Test
+	public void testASkippedValueTooLongToIndexIsReportedAndTheRestAreIndexed()
+		throws IOException {
+		var index = foods();
+
+		var response = resource.add(
+			"foods",
+			"skip",
+			new DocumentsRequest(
+				List.of(
+					document("id", "1"),
+					document("id", "k".repeat(32767)),
+					document("id", "3", "tags", List.of("t".repeat(32767))),
+					document("id", "4")
+				)
+			)
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(
+			response.failed().stream().map(failure -> failure.position()).toList(),
+			contains(1, 2)
+		);
+		assertThat(
+			response.failed().stream()
+				.map(failure -> failure.errors().get(0).code())
+				.toList(),
+			contains("document:string:value_too_long", "document:string:value_too_long")
+		);
+
+		assertThat(index.getDocument("1"), is(notNullValue()));
+		assertThat(index.getDocument("3"), is(nullValue()));
+		assertThat(index.getDocument("4"), is(notNullValue()));
+	}
+
 	/** A skipped document of a newline delimited body also names its line. */
 	@Test
 	public void testASkippedDocumentSentOnePerLineNamesItsLine() throws IOException {
