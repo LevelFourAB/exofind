@@ -1,5 +1,6 @@
 package se.l4.exofind.engine;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -20,11 +21,16 @@ public class CustomProviders {
 	 * two batches back to back as one body gets {@code 200} for the first and
 	 * loses the second without a word. Newline delimited JSON is read value by
 	 * value, which this does not change.
+	 *
+	 * <p>An object that gives one property twice is refused as well. A body
+	 * read as a map, such as a document, would otherwise keep the last value
+	 * and drop the first without a word.
 	 */
 	@Produces
 	public ObjectMapper objectMapper() {
 		return new ObjectMapper()
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+			.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
 			.registerModule(new EclipseCollectionsModule())
 			.registerModule(documents());
 	}

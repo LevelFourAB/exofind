@@ -1,10 +1,12 @@
 package se.l4.exofind.engine.api.errors;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.collections.api.map.MapIterable;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
@@ -51,6 +53,12 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 	 * of a body. Jackson gives this failure no type of its own.
 	 */
 	private static final String TRAILING_CONTENT = "Trailing token";
+
+	/**
+	 * The start of what Jackson writes when an object gives one property
+	 * twice. Jackson gives this failure no type of its own.
+	 */
+	private static final String DUPLICATE_PROPERTY = "Duplicate field";
 
 	private static final ErrorType UNKNOWN_PROPERTY = ErrorType
 		.withCode("request:property_unknown")
@@ -130,6 +138,19 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 			 * as malformed at the place the second value starts.
 			 */
 			return malformed(e, "the body holds content after the first JSON value");
+		} else if(duplicatePropertyIn(e) instanceof JsonParseException parse) {
+			/*
+			 * One property given twice in the same object. Which value was
+			 * meant is not known, so the body is answered as malformed at
+			 * the place the second one starts.
+			 */
+			var property = duplicatePropertyOf(parse);
+			return malformed(
+				parse,
+				property == null
+					? "an object gives the same property more than once"
+					: "the property `" + property + "` is given more than once in the same object"
+			);
 		} else if(e instanceof JsonMappingException mapping) {
 			/*
 			 * A value that does not fit where it sits: the wrong type, or a
@@ -175,6 +196,47 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 	private static boolean isTrailingContent(MismatchedInputException e) {
 		var message = e.getOriginalMessage();
 		return e.getPath().isEmpty() && message != null && message.startsWith(TRAILING_CONTENT);
+	}
+
+	/**
+	 * Find the failure Jackson reports when an object gives one property
+	 * twice, see {@link com.fasterxml.jackson.core.JsonParser.Feature#STRICT_DUPLICATE_DETECTION}.
+	 * Inside a nested value it arrives wrapped in a mapping failure.
+	 *
+	 * @return
+	 *   the failure, or {@code null} when the body was refused for another
+	 *   reason
+	 */
+	private static JsonParseException duplicatePropertyIn(Throwable e) {
+		for(var current = e; current != null; current = current.getCause()) {
+			if(current instanceof JsonParseException parse) {
+				var message = parse.getOriginalMessage();
+				return message != null && message.startsWith(DUPLICATE_PROPERTY)
+					? parse
+					: null;
+			}
+
+			if(current.getCause() == current) {
+				break;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * The name of the property given twice, which the parser holds as the
+	 * name it read last.
+	 *
+	 * @return
+	 *   the name, or {@code null} when the parser is not known
+	 */
+	private static String duplicatePropertyOf(JsonParseException e) {
+		try {
+			return e.getProcessor() == null ? null : e.getProcessor().currentName();
+		} catch(IOException ignored) {
+			return null;
+		}
 	}
 
 	private static ErrorResponse body(

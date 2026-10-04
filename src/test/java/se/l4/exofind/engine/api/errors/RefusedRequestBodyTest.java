@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.api.errors;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.startsWith;
@@ -172,6 +173,45 @@ public class RefusedRequestBodyTest {
 			.then()
 			.statusCode(200)
 			.body("total.count", is(0));
+	}
+
+	/**
+	 * A document that gives one field twice. A document is read as a map,
+	 * which would keep the last value and drop the first without a word.
+	 */
+	@Test
+	@Order(4)
+	void testADocumentFieldGivenTwiceIsRefused() {
+		request()
+			.body("""
+				{
+					"documents": [
+						{ "id": "10", "name": "Dropped", "name": "Kept" }
+					]
+				}
+				""")
+			.when().post("/v1alpha1/indexes/books/documents")
+			.then()
+			.statusCode(400)
+			.body("code", is("request:body_malformed"))
+			.body("errors[0].arguments.reason", containsString("`name`"))
+			.body("errors[0].arguments.line", is("3"));
+	}
+
+	/**
+	 * A request property given twice is refused the same way, with a reason
+	 * that names the property rather than how the request is read.
+	 */
+	@Test
+	@Order(4)
+	void testARequestPropertyGivenTwiceIsRefused() {
+		request()
+			.body("{ \"limit\": 1, \"limit\": 2 }")
+			.when().post("/v1alpha1/indexes/books/search")
+			.then()
+			.statusCode(400)
+			.body("code", is("request:body_malformed"))
+			.body("errors[0].arguments.reason", containsString("`limit`"));
 	}
 
 	/**
