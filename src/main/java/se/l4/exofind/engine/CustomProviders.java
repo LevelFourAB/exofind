@@ -1,5 +1,6 @@
 package se.l4.exofind.engine;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.datatype.eclipsecollections.EclipseCollectionsModule;
@@ -11,9 +12,19 @@ import jakarta.enterprise.inject.Produces;
 
 @ApplicationScoped
 public class CustomProviders {
+	/**
+	 * The mapper that reads every request body and writes every answer.
+	 *
+	 * <p>A body that holds more than one JSON value is refused rather than
+	 * read up to the end of the first one. Without that, a client that sends
+	 * two batches back to back as one body gets {@code 200} for the first and
+	 * loses the second without a word. Newline delimited JSON is read value by
+	 * value, which this does not change.
+	 */
 	@Produces
 	public ObjectMapper objectMapper() {
 		return new ObjectMapper()
+			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
 			.registerModule(new EclipseCollectionsModule())
 			.registerModule(documents());
 	}

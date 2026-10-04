@@ -145,6 +145,36 @@ public class RefusedRequestBodyTest {
 	}
 
 	/**
+	 * Two batches sent back to back as one JSON body rather than as newline
+	 * delimited JSON. Reading up to the end of the first would index it and
+	 * drop the second with a success answer, so the body is refused whole.
+	 */
+	@Test
+	@Order(4)
+	void testASecondJsonValueAfterTheBodyIsRefused() {
+		request()
+			.body("""
+				{ "documents": [ { "id": "1", "name": "First" } ] }
+				{ "documents": [ { "id": "2", "name": "Second" } ] }
+				""")
+			.when().post("/v1alpha1/indexes/books/documents")
+			.then()
+			.statusCode(400)
+			.body("code", is("request:body_malformed"))
+			.body("errors[0].arguments.line", is("2"));
+
+		request().when().post("/v1alpha1/admin/indexes/books/actions/commit")
+			.then().statusCode(200);
+
+		request()
+			.body("{}")
+			.when().post("/v1alpha1/indexes/books/search")
+			.then()
+			.statusCode(200)
+			.body("total.count", is(0));
+	}
+
+	/**
 	 * A value of the wrong type. The path names the property it is written at.
 	 */
 	@Test

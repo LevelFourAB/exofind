@@ -7,6 +7,7 @@ import org.eclipse.collections.api.map.MapIterable;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 
 import se.l4.exofind.engine.errors.ErrorType;
@@ -44,6 +45,12 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 		.withStatus(400)
 		.withArguments("reason", "line", "column")
 		.withMessage("The request body could not be read as JSON: {{reason}}");
+
+	/**
+	 * The start of what Jackson writes when content follows the first value
+	 * of a body. Jackson gives this failure no type of its own.
+	 */
+	private static final String TRAILING_CONTENT = "Trailing token";
 
 	private static final ErrorType UNKNOWN_PROPERTY = ErrorType
 		.withCode("request:property_unknown")
@@ -116,6 +123,13 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 					"property", unknown.getPropertyName()
 				)
 			);
+		} else if(e instanceof MismatchedInputException mismatched && isTrailingContent(mismatched)) {
+			/*
+			 * Content after the first value. The body is not one JSON value,
+			 * so it is not JSON as a request body has to be, and is answered
+			 * as malformed at the place the second value starts.
+			 */
+			return malformed(e, "the body holds content after the first JSON value");
 		} else if(e instanceof JsonMappingException mapping) {
 			/*
 			 * A value that does not fit where it sits: the wrong type, or a
@@ -137,17 +151,30 @@ public class JsonExceptionMapper implements ExceptionMapper<JsonProcessingExcept
 		 * Not JSON at all, so there is no property to point at. The line and
 		 * the column where the parse stopped say where to look.
 		 */
+		return malformed(e, e.getOriginalMessage());
+	}
+
+	private static ErrorResponse malformed(JsonProcessingException e, String reason) {
 		var location = e.getLocation();
 
 		return body(
 			MALFORMED,
 			null,
 			ErrorType.toArguments(
-				"reason", e.getOriginalMessage(),
+				"reason", reason,
 				"line", location == null ? null : location.getLineNr(),
 				"column", location == null ? null : location.getColumnNr()
 			)
 		);
+	}
+
+	/**
+	 * Whether Jackson refused a body because content follows its first value,
+	 * see {@link com.fasterxml.jackson.databind.DeserializationFeature#FAIL_ON_TRAILING_TOKENS}.
+	 */
+	private static boolean isTrailingContent(MismatchedInputException e) {
+		var message = e.getOriginalMessage();
+		return e.getPath().isEmpty() && message != null && message.startsWith(TRAILING_CONTENT);
 	}
 
 	private static ErrorResponse body(
