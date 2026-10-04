@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.metrics;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
@@ -15,21 +16,18 @@ import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
- * A request that matches a path but not a method is reported under the path as
- * it arrived, which holds whatever the client put in the template. These cover
- * that the path stops being a tag value, and that nothing else about the meter
- * changes while it does.
+ * A request that no route matched is marked by {@link UnroutedRequests}. These
+ * cover that the mark is collapsed into one series, and that nothing else
+ * about the meter changes while it is. {@link HttpUriCardinalityNodeTest}
+ * covers which requests are marked.
  */
 public class HttpUriCardinalityTest {
-	private static final String LEAKED =
-		"/v1alpha1/indexes/books/documents/a-client-chosen-key";
-
 	@Test
-	void testKeyInAnUnmatchedPathIsNotATagValue() {
-		var tags = record("405", LEAKED);
+	void testAnUnroutedRequestIsUnknown() {
+		var tags = record("405", HttpUriCardinality.UNROUTED);
 
 		assertThat(values(tags, "uri"), hasItem(HttpUriCardinality.UNKNOWN));
-		assertThat(values(tags, "uri"), not(hasItem(LEAKED)));
+		assertThat(values(tags, "uri"), not(hasItem(HttpUriCardinality.UNROUTED)));
 	}
 
 	/**
@@ -40,7 +38,7 @@ public class HttpUriCardinalityTest {
 	 */
 	@Test
 	void testCollapsingThePathKeepsEveryOtherTag() {
-		var tags = record("405", LEAKED);
+		var tags = record("405", HttpUriCardinality.UNROUTED);
 
 		assertThat(values(tags, "method"), hasItem("GET"));
 		assertThat(values(tags, "status"), hasItem("405"));
@@ -56,14 +54,14 @@ public class HttpUriCardinalityTest {
 	}
 
 	/**
-	 * Every path a client can invent collapses onto one series rather than one
-	 * each.
+	 * Unrouted requests of every status share one series per status rather
+	 * than one per path.
 	 */
 	@Test
-	void testManyUnmatchedPathsShareOneSeries() {
+	void testUnroutedRequestsOfEveryStatusAreUnknown() {
 		var registry = registryWithFilter();
-		for(var i = 0; i < 50; i++) {
-			timer(registry, "405", LEAKED + i);
+		for(var status : List.of("405", "406", "413", "415", "500")) {
+			timer(registry, status, HttpUriCardinality.UNROUTED);
 		}
 
 		var uris = new ArrayList<String>();
@@ -71,7 +69,7 @@ public class HttpUriCardinalityTest {
 			uris.add(meter.getId().getTag("uri"));
 		}
 
-		assertThat(List.copyOf(uris), is(List.of(HttpUriCardinality.UNKNOWN)));
+		assertThat(List.copyOf(uris), everyItem(is(HttpUriCardinality.UNKNOWN)));
 	}
 
 	private static List<Tag> record(String status, String uri) {

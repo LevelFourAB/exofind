@@ -12,10 +12,12 @@ import jakarta.inject.Singleton;
 /**
  * Bounds the number of {@code uri} values the HTTP server meter can take.
  *
- * <p>Requests that reach a route are already counted under the route's
- * template, so the bound only ever reaches a request that did not. Those are
- * collapsed into a single {@code UNKNOWN} series, which keeps the count and
- * the latency of such requests while spending one series on all of them.
+ * <p>Requests that reach a route are counted under the route's template.
+ * Requests that reach none are marked by {@link UnroutedRequests} and
+ * collapsed here into a single {@code UNKNOWN} series, which keeps the count
+ * and the latency of such requests while spending one series on all of them.
+ * The bound of {@code exofind.metrics.http.max-uri-tags} catches anything
+ * that gets past both.
  */
 @Dependent
 public class HttpUriCardinality {
@@ -25,10 +27,15 @@ public class HttpUriCardinality {
 	 */
 	static final String UNKNOWN = "UNKNOWN";
 
+	/**
+	 * The template {@link UnroutedRequests} gives a request that no route
+	 * matched. No route has it. A client that sends it as a path is
+	 * collapsed with the rest.
+	 */
+	static final String UNROUTED = "/{unrouted}";
+
 	private static final String HTTP_SERVER_REQUESTS = "http.server.requests";
 	private static final String URI = "uri";
-	private static final String STATUS = "status";
-	private static final String METHOD_NOT_ALLOWED = "405";
 
 	/**
 	 * Replaces the value of {@code uri} and leaves every other tag alone.
@@ -42,8 +49,7 @@ public class HttpUriCardinality {
 		MeterFilter.replaceTagValues(URI, uri -> UNKNOWN);
 
 	/**
-	 * Collapse the {@code uri} of a request that matched a path but not a
-	 * method.
+	 * Collapse the {@code uri} of a request that no route matched.
 	 */
 	@Produces
 	@Singleton
@@ -55,15 +61,7 @@ public class HttpUriCardinality {
 					return id;
 				}
 
-				/*
-				 * A request whose path matches a resource but whose method does
-				 * not is answered 405 before the route is resolved, and Quarkus
-				 * reports the path as it arrived. That path holds whatever the
-				 * client put in the template - a document key is unbounded and
-				 * client-chosen - so leaving it alone lets any client mint
-				 * series without limit.
-				 */
-				if(!METHOD_NOT_ALLOWED.equals(id.getTag(STATUS))) {
+				if(!UNROUTED.equals(id.getTag(URI))) {
 					return id;
 				}
 

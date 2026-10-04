@@ -104,6 +104,8 @@ The `state` tag carries the uppercase name of the state. The admin API answers w
 | `exofind.api.error` | Counter | Requests | `code` | API requests that resulted in an error response, tagged with the API error code. |
 | `exofind.auth.failure` | Counter | Requests | `reason` (`unauthenticated`, `forbidden`, `not_covered`) | API requests refused during authentication or authorization. |
 
+The HTTP server meter `http.server.requests` names a request in its `uri` tag by the route that answered it, such as `/v1alpha1/indexes/{name}/documents/{key}`. A request that no route matched has the value `UNKNOWN`, whatever its status. Examples are a method the path does not have (`405`), a media type the endpoint does not read (`415`) or write (`406`), and a body past the limit (`413`). A path that no route has is `NOT_FOUND`. So a value that a client puts in a path never becomes a tag value.
+
 ### Reindexing metrics
 
 | Name | Type | Unit | Tags | Description |
