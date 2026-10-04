@@ -197,6 +197,20 @@ final class SortKeys {
 				yield new BytesRef(bytes);
 			}
 
+			case CUSTOM -> {
+				/*
+				 * A distance is the only custom ordering, and its comparator
+				 * takes a double. A document without a point sorts at
+				 * infinity, so no position is ever NaN.
+				 */
+				if(!(field instanceof DistanceSortField)
+					|| !(value instanceof Double distance)
+					|| distance.isNaN()) {
+					throw new IndexInvalidCursorException();
+				}
+				yield value;
+			}
+
 			default -> value;
 		};
 	}

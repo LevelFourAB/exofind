@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.IOException;
 import java.util.List;
 
+import org.eclipse.collections.api.factory.Lists;
 import org.junit.jupiter.api.Test;
 
 import se.l4.exofind.engine.errors.ValidationException;
@@ -18,6 +19,7 @@ import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.GeoPoint;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexException;
+import se.l4.exofind.engine.index.IndexInvalidCursorException;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
@@ -29,6 +31,7 @@ import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SearchResult;
 import se.l4.exofind.engine.query.SortBy;
+import se.l4.exofind.engine.query.SortKey;
 import se.l4.exofind.engine.query.matchers.Matchers;
 
 /**
@@ -98,6 +101,43 @@ public class GeoPointIndexingTest extends AbstractIndexTest {
 		);
 
 		assertThat(ids(result).get(0), is("gothenburg"));
+	}
+
+	/**
+	 * A cursor is not signed, so a client can send any value in the place of
+	 * the distance. A value that is not a distance names no position in the
+	 * order and is refused as a cursor that does not fit the search.
+	 */
+	@Test
+	public void testDistanceKeyHoldingALongIsRefused() throws IOException {
+		assertForgedDistanceKeyIsRefused(42L);
+	}
+
+	@Test
+	public void testDistanceKeyHoldingNoValueIsRefused() throws IOException {
+		assertForgedDistanceKeyIsRefused(null);
+	}
+
+	@Test
+	public void testDistanceKeyHoldingNaNIsRefused() throws IOException {
+		assertForgedDistanceKeyIsRefused(Double.NaN);
+	}
+
+	private void assertForgedDistanceKeyIsRefused(Object value) throws IOException {
+		var index = places();
+		var sort = SortBy.distance("location", 59.325, 18.070);
+
+		var taken = index.search(
+			SearchRequest.create().withSort(sort).withLimit(1).build()
+		).hits().get(0).key();
+
+		var values = Lists.mutable.withAll(taken.values());
+		values.set(0, value);
+		var forged = new SortKey(values.toImmutable(), taken.doc());
+
+		assertThrows(IndexInvalidCursorException.class, () -> index.search(
+			SearchRequest.create().withSort(sort).withAfter(forged).build()
+		));
 	}
 
 	@Test
