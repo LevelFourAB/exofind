@@ -191,7 +191,7 @@ public class FreshnessWaiter {
 
 		var index = indexes.getOrThrow(name);
 		if(freshness.hasCommit()
-			&& freshness.generation().equals(IndexName.parse(index.getId()).generation())) {
+			&& freshness.generation().equals(generationOf(index))) {
 			index = awaitCommit(name, index, freshness.commit(), memory, startedAt);
 		}
 
@@ -274,16 +274,28 @@ public class FreshnessWaiter {
 			.orElse("");
 	}
 
+	private static String generationOf(Index index) {
+		return IndexName.parse(index.getId()).generation();
+	}
+
 	/**
 	 * Wait until the searches of a generation answer from a commit sequence.
 	 *
+	 * <p>A promotion that lands while the wait runs ends it. The registry
+	 * moved after the read arrived, so the generation the name answers from
+	 * now is a later state than the one the read demands. The commit sequence
+	 * belongs to the generation that was promoted over and says nothing about
+	 * the new one.
+	 *
 	 * @return
 	 *   the generation, which may be another instance than the one given when
-	 *   the node reopened it while the wait ran
+	 *   the node reopened it while the wait ran, or another generation when
+	 *   one was promoted while the wait ran
 	 */
 	private Index awaitCommit(String name, Index index, long commit, Memory memory, long startedAt) {
 		var deadline = startedAt + wait.toNanos();
 		var backoff = FIRST_BACKOFF;
+		var generation = generationOf(index);
 
 		while(true) {
 			if(index.visibleCommit() >= commit) {
@@ -334,6 +346,9 @@ public class FreshnessWaiter {
 
 			// The node may have closed and reopened the generation meanwhile
 			index = indexes.getOrThrow(name);
+			if(!generation.equals(generationOf(index))) {
+				return index;
+			}
 		}
 	}
 

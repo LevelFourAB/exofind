@@ -378,6 +378,39 @@ public class FreshnessWaiterTest {
 		assertThat(answered, is(second));
 	}
 
+	/**
+	 * A promotion that lands while a read waits for a commit of the generation
+	 * it replaces ends the wait. The commit sequence of the old generation
+	 * says nothing about the new one.
+	 */
+	@Test
+	public void testAPromotionDuringAWaitSatisfiesATokenOfTheGenerationItReplaced()
+		throws Exception
+	{
+		indexes.create("books", definition());
+		var second = indexes.createGeneration("books@2", definition());
+
+		var promoter = new Thread(() -> {
+			try {
+				Thread.sleep(300);
+				indexes.promote("books@2");
+			} catch(InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		});
+
+		promoter.start();
+		Index answered;
+		try {
+			// A commit generation 1 never reaches
+			answered = waiter.await("books", Freshness.ofCommit(IndexName.of("books", "1"), 5));
+		} finally {
+			promoter.join();
+		}
+
+		assertThat(answered, is(second));
+	}
+
 	@Test
 	public void testAGenerationTheRegistryNeverHeldIsSatisfied() throws IOException {
 		var first = indexes.create("books", definition());
