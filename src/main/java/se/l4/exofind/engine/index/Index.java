@@ -2737,10 +2737,6 @@ public class Index {
 
 				encounter.updateValue(value.name(), field0.getDef());
 
-				if(field0.getDef().getPrimaryKey()) {
-					primaryKeyTerm = type.createPrimaryKeyTerm(encounter, value.value());
-				}
-
 				try {
 					for(var indexableField : type.createFields(encounter, value.value())) {
 						luceneDoc.add(indexableField);
@@ -2749,9 +2745,19 @@ public class Index {
 					/*
 					 * A value the type refuses joins the other problems of the
 					 * document, so everything wrong with it is reported at once.
+					 * The field was given, so it is not also reported as missing.
 					 */
 					errors.addAllIterable(e.getErrors());
+					fieldsFound.add(value.name());
 					continue;
+				}
+
+				/*
+				 * Built once the type has accepted the value, so a key of the
+				 * wrong type is refused as a mistake in the document.
+				 */
+				if(field0.getDef().getPrimaryKey()) {
+					primaryKeyTerm = type.createPrimaryKeyTerm(encounter, value.value());
 				}
 
 				if(localized != null && tag != null) {
@@ -3522,6 +3528,12 @@ public class Index {
 			encounter.updateLocale(DEFAULT_LOCALE_SUPPORT);
 			encounter.updateValue(field.getName(), field.getDef());
 
+			/*
+			 * The key of a patch is held to what the key of a document is held
+			 * to, so a key of the wrong type is refused as a mistake in the
+			 * patch, with the code the type gives a document.
+			 */
+			field.getType().createFields(encounter, primaryKey);
 			var term = field.getType().createPrimaryKeyTerm(encounter, primaryKey);
 
 			/*

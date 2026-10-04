@@ -35,6 +35,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.freshness.TestFreshnessWaiters;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexDocumentNotFoundException;
+import se.l4.exofind.engine.index.IndexInvalidQueryValueException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
@@ -430,6 +431,37 @@ public class DocumentUpdateResourceTest {
 		assertThat(index.getDocument("2").get("name"), is("Sourdough"));
 	}
 
+	@Test
+	public void askingToSkipAChangeWhoseKeyHasTheWrongTypeAppliesTheRest()
+		throws IOException {
+		var index = catalogue();
+
+		var response = resource.update(
+			"catalogue",
+			null,
+			"skip",
+			new UpdateRequest(
+				List.of(
+					document("id", "1", "price", 5.0),
+					document("id", 2, "price", 6.0),
+					document("id", "2", "price", 7.0)
+				)
+			)
+		);
+
+		assertThat(response.updated(), is(2));
+		assertThat(response.failed().size(), is(1));
+		assertThat(response.failed().get(0).position(), is(1));
+		assertThat(
+			response.failed().get(0).errors().stream().map(ErrorDetail::code).toList(),
+			contains("document:string:value_invalid")
+		);
+
+		index.commit();
+		assertThat(index.getDocument("1").get("price"), is(5.0));
+		assertThat(index.getDocument("2").get("price"), is(7.0));
+	}
+
 	/**
 	 * A key nothing is indexed under is a refused change like any other when
 	 * only {@code onError} says to skip, and moves to {@code missing} as soon as
@@ -624,6 +656,17 @@ public class DocumentUpdateResourceTest {
 
 		index.commit();
 		assertThat(index.getDocument("1").get("price"), is(24.5));
+	}
+
+	/** A key in the path is refused the way every endpoint refuses one. */
+	@Test
+	public void aKeyInThePathTheIndexCannotReadIsRefused() throws IOException {
+		orders();
+
+		assertThrows(
+			IndexInvalidQueryValueException.class,
+			() -> resource.patch("orders", "not-a-number", document("price", 1.0))
+		);
 	}
 
 	private static Map<String, Object> document(Object... keysAndValues) {

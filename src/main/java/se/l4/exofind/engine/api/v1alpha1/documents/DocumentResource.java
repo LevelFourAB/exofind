@@ -2109,6 +2109,8 @@ public class DocumentResource {
 
 		measure("update", () -> write(name, landed, index -> {
 			var primaryKey = index.parsePrimaryKey(key);
+			index.checkPrimaryKey(primaryKey);
+
 			var keyField = index.getPrimaryKey().orElseThrow().getName();
 
 			var patch = withKey(index, DocumentMapper.toPatch(index, body), keyField, primaryKey);

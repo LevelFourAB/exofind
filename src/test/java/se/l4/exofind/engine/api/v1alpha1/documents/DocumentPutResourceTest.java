@@ -235,7 +235,7 @@ public class DocumentPutResourceTest {
 			() -> resource.put("catalogue", key, document("name", "Crispbread"))
 		);
 
-		assertThat(e.getErrors().getFirst().getCode(), is("document:string:value_too_long"));
+		assertThat(e.getErrors().getOnly().getCode(), is("document:string:value_too_long"));
 
 		index.commit();
 		assertThat(index.getDocumentCount(), is(3L));

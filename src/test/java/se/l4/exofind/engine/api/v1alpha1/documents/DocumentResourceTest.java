@@ -536,6 +536,25 @@ public class DocumentResourceTest {
 		);
 	}
 
+	@Test
+	public void testAKeyOfTheWrongTypeSaysWhereTheBatchStopped() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.add(
+				"foods",
+				null,
+				new DocumentsRequest(List.of(document("id", "1"), document("id", 2)))
+			)
+		);
+
+		var error = e.getErrors().getOnly();
+		assertThat(error.getCode(), is("document:string:value_invalid"));
+		assertThat(error.getArguments().get("position"), is(1));
+		assertThat(error.getArguments().get("processed"), is(1));
+	}
+
 	/**
 	 * A newline delimited body carries one document per line and no wrapper, so
 	 * the path of an error has no wrapper to name either.
@@ -794,6 +813,47 @@ public class DocumentResourceTest {
 		assertThat(index.getDocument("1"), is(notNullValue()));
 		assertThat(index.getDocument("3"), is(nullValue()));
 		assertThat(index.getDocument("4"), is(notNullValue()));
+	}
+
+	/**
+	 * A text key given as a JSON number is a mistake in its document, refused
+	 * with the code the key type gives. The key was given, so it is not also
+	 * reported as missing.
+	 */
+	@Test
+	public void testASkippedKeyOfTheWrongTypeIsReportedAndTheRestAreIndexed()
+		throws IOException {
+		var index = foods();
+
+		var response = resource.add(
+			"foods",
+			"skip",
+			new DocumentsRequest(
+				List.of(
+					document("id", "1"),
+					document("id", 2),
+					document("id", "3")
+				)
+			)
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed().size(), is(1));
+
+		var failure = response.failed().get(0);
+		assertThat(failure.position(), is(1));
+		assertThat(
+			failure.errors().stream().map(ErrorDetail::code).toList(),
+			contains("document:string:value_invalid")
+		);
+		assertThat(
+			failure.errors().stream().map(ErrorDetail::path).toList(),
+			contains("documents[1].id")
+		);
+
+		assertThat(index.getDocument("3"), is(notNullValue()));
 	}
 
 	/** A skipped document of a newline delimited body also names its line. */
