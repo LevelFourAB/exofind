@@ -629,6 +629,16 @@ public class DocumentResource {
 		when = "Two values of an object field read the same under the key that tells them apart."
 	)
 	@ReturnsError(
+		value = "document:string:value_invalid",
+		status = 400,
+		when = "A string field is given a value that is not a JSON string."
+	)
+	@ReturnsError(
+		value = "document:boolean:value_invalid",
+		status = 400,
+		when = "A boolean field is given a value that is not `true` or `false`."
+	)
+	@ReturnsError(
 		value = "document:number:value_invalid",
 		status = 400,
 		when = "A number field is given a value that cannot be read as its type."
@@ -1130,6 +1140,16 @@ public class DocumentResource {
 		value = "document:object_key_duplicate",
 		status = 400,
 		when = "Two values of an object field read the same under the key that tells them apart."
+	)
+	@ReturnsError(
+		value = "document:string:value_invalid",
+		status = 400,
+		when = "A string field is given a value that is not a JSON string."
+	)
+	@ReturnsError(
+		value = "document:boolean:value_invalid",
+		status = 400,
+		when = "A boolean field is given a value that is not `true` or `false`."
 	)
 	@ReturnsError(
 		value = "document:number:value_invalid",
@@ -1971,6 +1991,16 @@ public class DocumentResource {
 		value = "document:object_key_duplicate",
 		status = 400,
 		when = "Two values of an object field read the same under the key that tells them apart."
+	)
+	@ReturnsError(
+		value = "document:string:value_invalid",
+		status = 400,
+		when = "A string field is given a value that is not a JSON string."
+	)
+	@ReturnsError(
+		value = "document:boolean:value_invalid",
+		status = 400,
+		when = "A boolean field is given a value that is not `true` or `false`."
 	)
 	@ReturnsError(
 		value = "document:number:value_invalid",

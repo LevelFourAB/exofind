@@ -50,6 +50,7 @@ import org.eclipse.collections.impl.factory.Lists;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.AnalyzedFields;
 import se.l4.exofind.engine.index.AnalyzingTextField;
 import se.l4.exofind.engine.index.AutomatonCache;
@@ -86,6 +87,12 @@ public class StringFieldType implements FieldType {
 		.withStatus(500)
 		.withArguments("name")
 		.withMessage("The text searched for in field `{{name}}` could not be analyzed");
+
+	private static final ErrorType INVALID_VALUE = ErrorType
+		.withCode("document:string:value_invalid")
+		.withStatus(400)
+		.withArguments("name")
+		.withMessage("Field `{{name}}` holds text, which has to be a JSON string");
 
 	/**
 	 * How long a word has to be before one typo is allowed in it, unless the
@@ -682,7 +689,14 @@ public class StringFieldType implements FieldType {
 		var stringType = type.getString();
 		var needsStorage = encounter.isStored();
 
-		var value = (String) value0;
+		if(!(value0 instanceof String value)) {
+			throw new ValidationException(
+				INVALID_VALUE.toMessage(
+					ObjectLocation.root().forField(encounter.getFieldName()),
+					"name", encounter.getFieldName()
+				)
+			);
+		}
 
 		if(encounter.isPrimaryKey()) {
 			var field = new StringField(

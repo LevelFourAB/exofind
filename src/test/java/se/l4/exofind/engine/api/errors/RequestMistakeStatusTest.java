@@ -226,4 +226,27 @@ public class RequestMistakeStatusTest {
 			.statusCode(404)
 			.body("code", is("search:explain:document_not_found"));
 	}
+
+	/**
+	 * A value of another JSON type than its field holds. The mistake is in the
+	 * document, so it is answered with 400 and the place of the value.
+	 */
+	@Test
+	@Order(8)
+	void testANumberInATextFieldIsABadRequest() {
+		request()
+			.body("""
+				{
+					"documents": [
+						{ "id": "4", "name": 12345 }
+					]
+				}
+				""")
+			.when().post("/v1alpha1/indexes/products/documents")
+			.then()
+			.statusCode(400)
+			.body("code", is("validation"))
+			.body("errors[0].code", is("document:string:value_invalid"))
+			.body("errors[0].path", is("documents[0].name"));
+	}
 }

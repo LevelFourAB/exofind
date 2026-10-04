@@ -19,6 +19,7 @@ import org.eclipse.collections.api.list.ListIterable;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.ObjectLocation;
+import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.FacetCounter;
 import se.l4.exofind.engine.index.FieldNames;
 import se.l4.exofind.engine.index.IndexEncounter;
@@ -42,6 +43,12 @@ public class BooleanFieldType implements FieldType {
 		.withCode("index:field:sort:collation_unsupported")
 		.withStatus(400)
 		.withMessage("Collation means nothing when sorting a boolean field");
+
+	private static final ErrorType INVALID_VALUE = ErrorType
+		.withCode("document:boolean:value_invalid")
+		.withStatus(400)
+		.withArguments("name")
+		.withMessage("Field `{{name}}` holds a boolean, which has to be `true` or `false`");
 
 	protected static org.apache.lucene.document.FieldType createFieldType() {
 		var ft = new org.apache.lucene.document.FieldType();
@@ -82,9 +89,18 @@ public class BooleanFieldType implements FieldType {
 		IndexEncounter encounter,
 		Object value0
 	) {
+		if(!(value0 instanceof Boolean b)) {
+			throw new ValidationException(
+				INVALID_VALUE.toMessage(
+					ObjectLocation.root().forField(encounter.getFieldName()),
+					"name", encounter.getFieldName()
+				)
+			);
+		}
+
 		var results = Lists.mutable.<IndexableField>empty();
 
-		var value = ((Boolean) value0) ? TRUE : FALSE;
+		var value = b ? TRUE : FALSE;
 
 		if(encounter.isFiltered()) {
 			var field = new Field(

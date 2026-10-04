@@ -40,6 +40,7 @@ import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
+import se.l4.exofind.engine.index.schema.BooleanFieldTypeDef;
 import se.l4.exofind.engine.index.schema.DoubleFieldTypeDef;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -117,7 +118,7 @@ public class DocumentResourceTest {
 
 	/**
 	 * An index of foods, holding the shapes a document can arrive in: a name
-	 * per locale, several tags, a number and a point.
+	 * per locale, several tags, a number, a point and a boolean.
 	 */
 	private Index foods() throws IOException {
 		return indexes.create(
@@ -160,6 +161,16 @@ public class DocumentResourceTest {
 						.setType(
 							FieldTypeDef.newBuilder()
 								.setGeoPoint(GeoPointFieldTypeDef.getDefaultInstance())
+						)
+						.setStored(true)
+						.build()
+				)
+				.putFields(
+					"organic",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setBoolean(BooleanFieldTypeDef.getDefaultInstance())
 						)
 						.setStored(true)
 						.build()
@@ -476,6 +487,56 @@ public class DocumentResourceTest {
 	}
 
 	/**
+	 * A number sent to a text field is a mistake in the document, refused with
+	 * a code that names the type the field holds.
+	 */
+	@Test
+	public void testANumberInATextFieldIsRefusedAsAValidationError() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.add(
+				"foods",
+				null,
+				new DocumentsRequest(List.of(document("id", "1", "tags", 12345)))
+			)
+		);
+
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("document:string:value_invalid")
+		);
+		assertThat(
+			e.getErrors().collect(error -> error.getLocation().describe()).toList(),
+			contains("documents[0].tags")
+		);
+	}
+
+	@Test
+	public void testTextInABooleanFieldIsRefusedAsAValidationError() throws IOException {
+		foods();
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.add(
+				"foods",
+				null,
+				new DocumentsRequest(List.of(document("id", "1", "organic", "yes")))
+			)
+		);
+
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("document:boolean:value_invalid")
+		);
+		assertThat(
+			e.getErrors().collect(error -> error.getLocation().describe()).toList(),
+			contains("documents[0].organic")
+		);
+	}
+
+	/**
 	 * A newline delimited body carries one document per line and no wrapper, so
 	 * the path of an error has no wrapper to name either.
 	 */
@@ -661,6 +722,37 @@ public class DocumentResourceTest {
 		assertThat(index.getDocument("1"), is(notNullValue()));
 		assertThat(index.getDocument("2"), is(nullValue()));
 		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	@Test
+	public void testASkippedNumberInATextFieldIsReportedAndTheRestAreIndexed()
+		throws IOException {
+		var index = foods();
+
+		var response = resource.add(
+			"foods",
+			"skip",
+			new DocumentsRequest(
+				List.of(
+					document("id", "1", "tags", "jam"),
+					document("id", "2", "tags", 12345),
+					document("id", "3", "organic", true)
+				)
+			)
+		);
+
+		index.commit();
+
+		assertThat(response.indexed(), is(2));
+		assertThat(response.failed().size(), is(1));
+		assertThat(response.failed().get(0).position(), is(1));
+		assertThat(
+			response.failed().get(0).errors().stream().map(ErrorDetail::code).toList(),
+			contains("document:string:value_invalid")
+		);
+
+		assertThat(index.getDocument("2"), is(nullValue()));
+		assertThat(index.getDocument("3").get("organic"), is(true));
 	}
 
 	/** A skipped document of a newline delimited body also names its line. */

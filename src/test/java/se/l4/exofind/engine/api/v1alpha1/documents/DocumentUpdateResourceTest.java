@@ -401,6 +401,35 @@ public class DocumentUpdateResourceTest {
 		assertThat(index.getDocument("2").get("price"), is(6.0));
 	}
 
+	@Test
+	public void askingToSkipAChangeThatSetsATextFieldToANumberAppliesTheRest()
+		throws IOException {
+		var index = catalogue();
+
+		var response = resource.update(
+			"catalogue",
+			null,
+			"skip",
+			new UpdateRequest(
+				List.of(
+					document("id", "1", "name", 7),
+					document("id", "2", "name", "Sourdough")
+				)
+			)
+		);
+
+		assertThat(response.updated(), is(1));
+		assertThat(response.failed().size(), is(1));
+		assertThat(
+			response.failed().get(0).errors().stream().map(ErrorDetail::code).toList(),
+			contains("document:string:value_invalid")
+		);
+
+		index.commit();
+		assertThat(index.getDocument("1").get("name"), is("Blueberry jam"));
+		assertThat(index.getDocument("2").get("name"), is("Sourdough"));
+	}
+
 	/**
 	 * A key nothing is indexed under is a refused change like any other when
 	 * only {@code onError} says to skip, and moves to {@code missing} as soon as
