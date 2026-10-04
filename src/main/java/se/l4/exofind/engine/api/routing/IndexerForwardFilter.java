@@ -421,6 +421,20 @@ public class IndexerForwardFilter implements ContainerRequestFilter {
 		try {
 			var addressUri = URI.create(address);
 			if(addressUri.getHost() == null) {
+				/*
+				 * Parses, but names no host to send to. An address without a
+				 * scheme, such as `exofind-0:8080`, reads as a scheme and an
+				 * opaque part, and a host with an underscore is not a host to
+				 * the URI parser. Every write is refused until the address is
+				 * fixed, so the reason has to reach the log.
+				 */
+				logger.atWarn()
+					.addKeyValue("address", address)
+					.log(
+						"Indexer address cannot be forwarded to; it names no host, give it as"
+							+ " scheme://host:port"
+					);
+
 				return null;
 			}
 
