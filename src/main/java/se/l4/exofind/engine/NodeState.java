@@ -41,6 +41,15 @@ public class NodeState {
 	private volatile ImmutableSet<String> owned;
 
 	/**
+	 * The indexes this node handed over by name and has not held since. A
+	 * handover pushes what the index holds after the node stops owning it, so
+	 * a revocation that lands during that push still has to reach the index.
+	 * A name stays until the index is held again or revoked, which bounds this
+	 * by the names the node ever held. Guarded by {@link #listenerLock}.
+	 */
+	private ImmutableSet<String> handedOver;
+
+	/**
 	 * How heavily each index has recently been written here, fed by the
 	 * indexes as they serve writes and read when the candidates divide the
 	 * indexes up.
@@ -74,6 +83,7 @@ public class NodeState {
 		this.indexerCandidate = indexer;
 		this.everything = false;
 		this.owned = Sets.immutable.empty();
+		this.handedOver = Sets.immutable.empty();
 		this.writeLoad = new IndexWriteLoad();
 
 		this.listeners = new Listener[0];
@@ -210,6 +220,9 @@ public class NodeState {
 			owned = owner
 				? owned.newWith(index)
 				: owned.newWithout(index);
+			handedOver = owner
+				? handedOver.newWithout(index)
+				: handedOver.newWith(index);
 
 			notifyListeners(index, false);
 		} finally {
@@ -223,6 +236,11 @@ public class NodeState {
 	 * Listeners are told through {@link Listener#onOwnershipRevoked}, which is
 	 * what says that nothing the index still holds locally may be pushed.
 	 *
+	 * <p>An index this node is handing over is no longer owned, but its
+	 * handover may still be about to push. Its claim can be taken before the
+	 * push, so listeners are told about it too. An index the node never held
+	 * changes nothing.
+	 *
 	 * @param index
 	 *   name of the index, without a generation
 	 */
@@ -234,11 +252,14 @@ public class NodeState {
 
 		listenerLock.lock();
 		try {
-			if(!owned.contains(index)) {
+			if(owned.contains(index)) {
+				owned = owned.newWithout(index);
+			} else if(handedOver.contains(index)) {
+				handedOver = handedOver.newWithout(index);
+			} else {
 				return;
 			}
 
-			owned = owned.newWithout(index);
 			notifyListeners(index, true);
 		} finally {
 			listenerLock.unlock();

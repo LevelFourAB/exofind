@@ -116,6 +116,68 @@ public class NodeStateTest {
 		assertThat(seen, contains("changed:books", "revoked:books"));
 	}
 
+	/**
+	 * A handover pushes what the index holds after the node stopped owning
+	 * it. A claim taken during that push is told as a revocation, so the push
+	 * is called off.
+	 */
+	@Test
+	void testRevokingAnIndexBeingHandedOverNotifiesTheRevokedPath() {
+		var state = new NodeState(true);
+		List<String> seen = new ArrayList<>();
+		state.addListener(new NodeState.Listener() {
+			@Override
+			public void onOwnershipChanged(NodeState s, String index) {
+				seen.add("changed:" + index);
+			}
+
+			@Override
+			public void onOwnershipRevoked(NodeState s, String index) {
+				seen.add("revoked:" + index);
+			}
+		});
+
+		state.updateOwnership("books", true);
+		state.updateOwnership("books", false);
+		state.revokeOwnership("books");
+		state.revokeOwnership("books");
+
+		assertThat(state.isIndexer("books"), is(false));
+		assertThat(seen, contains("changed:books", "changed:books", "revoked:books"));
+	}
+
+	/**
+	 * An index held again after a handover is no longer being handed over, so
+	 * losing it later is told once.
+	 */
+	@Test
+	void testAnIndexHeldAgainIsRevokedOnce() {
+		var state = new NodeState(true);
+		List<String> seen = new ArrayList<>();
+		state.addListener(new NodeState.Listener() {
+			@Override
+			public void onOwnershipChanged(NodeState s, String index) {
+				seen.add("changed:" + index);
+			}
+
+			@Override
+			public void onOwnershipRevoked(NodeState s, String index) {
+				seen.add("revoked:" + index);
+			}
+		});
+
+		state.updateOwnership("books", true);
+		state.updateOwnership("books", false);
+		state.updateOwnership("books", true);
+		state.revokeOwnership("books");
+		state.revokeOwnership("books");
+
+		assertThat(
+			seen,
+			contains("changed:books", "changed:books", "changed:books", "revoked:books")
+		);
+	}
+
 	@Test
 	void testRevokedFallsBackToChangedForPlainListeners() {
 		var state = new NodeState(true);

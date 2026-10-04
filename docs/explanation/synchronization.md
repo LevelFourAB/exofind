@@ -233,7 +233,7 @@ The flush covers every local copy of the index that can hold acknowledged docume
 
 If one of these pushes fails, or a close does not finish within 30 seconds, the flush fails and the handover is called off. Without this, an evicted generation could hold the only copy of acknowledged documents when the claim moves.
 
-A node tells the two cases apart by how the claim left it. A claim it still holds while the index drains marks a handover it chose, so the index flushes. A claim that ends up naming another node, or that the round dropped along with a deleted index, marks a loss. Every generation of a lost index then stops pushing at once, including a flush that a handover queued moments earlier and the push that closing an index normally makes.
+A node tells the two cases apart by how the claim left it. A claim it still holds while the index drains marks a handover it chose, so the index flushes. A claim that ends up naming another node, or that the round dropped along with a deleted index, marks a loss. This is also true while the index drains: a claim that leaves before the flush is done is a loss, not the end of the handover. Every generation of a lost index then stops pushing at once, including a flush that a handover queued moments earlier and the push that closing an index normally makes.
 
 An unassigned index does not wait for a coordination round. The first candidate node that receives a write claims the index immediately. This ensures newly created indexes acquire writers immediately and routes writes promptly if a holder fails.
 

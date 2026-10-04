@@ -970,7 +970,8 @@ public class ObjectStorageIndexerOwnershipTest {
 		);
 
 		var ownership = newOwnership("a");
-		var owned = start(ownership);
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(ownership, revoked);
 
 		await(() -> owned.contains("games"), "the other index to be kept");
 
@@ -999,6 +1000,64 @@ public class ObjectStorageIndexerOwnershipTest {
 				return false;
 			}
 		}, "the finished flush to hand the claim to the taker");
+
+		// A finished handover is not a loss, whatever the rounds after it see
+		Thread.sleep(LEASE.toMillis());
+		assertThat(revoked.isEmpty(), is(true));
+	}
+
+	/**
+	 * The claim of an index that is draining ends up naming another node
+	 * before the flush is done, which is what a claim that lapsed while the
+	 * node was paused looks like. The successor may already write, so the
+	 * loss is reported as a revocation - the queued flush must push nothing.
+	 */
+	@Test
+	void testADrainingIndexWhoseClaimIsTakenIsRevoked() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		Set<String> flushAsked = ConcurrentHashMap.newKeySet();
+		var pending = new CompletableFuture<Void>();
+		flush = name -> {
+			flushAsked.add(name);
+			return "books".equals(name)
+				? pending
+				: CompletableFuture.completedFuture(null);
+		};
+
+		var alive = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "a", alive, null).toBuilder()
+					.setLoadBucket(7)
+					.setOffered(true)
+					.setTaker("b")
+					.build(),
+				claim("games", "a", alive, null)
+			),
+			List.of(candidate("b", alive, "http://b:8080"))
+		);
+
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(newOwnership("a"), revoked);
+
+		await(
+			() -> owned.contains("games") && flushAsked.contains("books"),
+			"the index to start draining"
+		);
+		assertThat(revoked.isEmpty(), is(true));
+
+		var later = System.currentTimeMillis() + 60_000;
+		writeTable(
+			List.of(
+				claim("books", "successor", later, null),
+				claim("games", "a", later, null)
+			),
+			List.of(candidate("b", later, null), candidate("successor", later, null))
+		);
+
+		await(() -> revoked.contains("books"), "the lost claim on the draining index to be revoked");
+		assertThat(revoked.contains("games"), is(false));
 	}
 
 	/**

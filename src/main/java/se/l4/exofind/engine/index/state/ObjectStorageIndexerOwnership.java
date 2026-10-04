@@ -259,12 +259,17 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 *   their index. Kept apart from the claims that ended up naming another
 	 *   node: both stop this node writing, but only one of them says a
 	 *   successor is about to write instead
+	 * @param released
+	 *   the drains the round finished by moving the claim to the taker or
+	 *   dropping it. A drain that leaves any other way was taken from this
+	 *   node
 	 */
 	private record Rebuilt(
 		IndexerLeadership table,
 		ImmutableSet<String> held,
 		ImmutableSet<String> draining,
-		ImmutableSet<String> dropped
+		ImmutableSet<String> dropped,
+		ImmutableSet<String> released
 	) {
 	}
 
@@ -669,9 +674,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		/*
 		 * Both a storage that cannot be reached and a round that keeps losing
 		 * the conditional write end up here: past the expiry of the claims,
-		 * holding them is no longer certain and they are given up.
+		 * holding them is no longer certain and they are given up. A claim
+		 * kept only while its index drains lapses the same way.
 		 */
-		if(!held.isEmpty() && System.currentTimeMillis() >= heldUntil) {
+		if(
+			(!held.isEmpty() || !draining.isEmpty())
+				&& System.currentTimeMillis() >= heldUntil
+		) {
 			lostAll("the claims lapsed before they could be renewed");
 		}
 
@@ -920,6 +929,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 */
 		var moved = false;
 		var nowDraining = new TreeSet<String>();
+		var released = new TreeSet<String>();
 
 		for(var name : draining) {
 			if(!mine.contains(name) || name.equals(forcedClaim)) {
@@ -983,9 +993,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				loadPerNode.merge(taker.getNode(), claim.getLoadBucket(), Integer::sum);
 
 				mine.remove(name);
+				released.add(name);
 				moved = true;
 			} else if(claim == null || !claim.hasTaker()) {
 				mine.remove(name);
+				released.add(name);
 				moved = true;
 			}
 			// A taker that lapsed mid-drain cancels the handover; the index is served here again
@@ -1163,7 +1175,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			builder.build(),
 			Sets.immutable.ofAll(heldNow),
 			Sets.immutable.ofAll(nowDraining),
-			Sets.immutable.ofAll(dropped)
+			Sets.immutable.ofAll(dropped),
+			Sets.immutable.ofAll(released)
 		);
 	}
 
@@ -1465,10 +1478,41 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			drainFlushes.put(name, flush);
 		}
 
+		/*
+		 * A drain leaves when this round finished it, when its handover was
+		 * called off and the index is held again, or when the claim left this
+		 * node without the round moving it. Only the last one is a loss: the
+		 * claim ended up naming another node, or the index was deleted, while
+		 * the flush may still be queued. It is told as a revocation so the
+		 * flush pushes nothing over what a successor already wrote.
+		 */
 		for(var name : drainingBefore) {
-			if(!rebuilt.draining().contains(name)) {
-				drainFlushes.remove(name);
+			if(rebuilt.draining().contains(name)) {
+				continue;
 			}
+
+			drainFlushes.remove(name);
+
+			if(rebuilt.held().contains(name) || rebuilt.released().contains(name)) {
+				continue;
+			}
+
+			if(rebuilt.dropped().contains(name)) {
+				logger.atInfo()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.log("Stopped handing over the index, the registry no longer holds it");
+			} else {
+				logger.atError()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.log(
+						"Giving up handing over the index, the claim is now another"
+							+ " node's"
+					);
+			}
+
+			listener.onOwnershipRevoked(name);
 		}
 	}
 
@@ -1482,12 +1526,21 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		/*
 		 * The drains lapse with everything else: their claims are no longer
-		 * certain, and what they were flushing was already given up on being
-		 * pushed or has been. A successor treats the stale claims like any
-		 * lapsed ones.
+		 * certain, so a flush still queued for one must push nothing. A
+		 * successor treats the stale claims like any lapsed ones.
 		 */
+		var drainingBefore = draining;
 		this.draining = Sets.immutable.empty();
 		drainFlushes.clear();
+
+		for(var name : drainingBefore) {
+			logger.atError()
+				.addKeyValue("node", node)
+				.addKeyValue("index", name)
+				.log("Giving up handing over the index, " + reason);
+
+			listener.onOwnershipRevoked(name);
+		}
 
 		for(var name : before) {
 			logger.atError()
