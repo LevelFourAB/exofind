@@ -226,7 +226,7 @@ sealed interface SearchCursor {
 	 * @return
 	 */
 	static int fingerprintOf(ListIterable<? extends SortBy> sort) {
-		return fingerprint(sort, null);
+		return fingerprint(sort, null, null);
 	}
 
 	/**
@@ -255,13 +255,46 @@ sealed interface SearchCursor {
 		ListIterable<? extends SortBy> sort,
 		se.l4.exofind.engine.query.SearchRequest.Hits hits
 	) {
+		return fingerprintOf(sort, hits, null);
+	}
+
+	/**
+	 * Fingerprint the effective sort of a search, what its hits stand for,
+	 * and the locale it reads values in.
+	 *
+	 * A sort on a field with locales reads the values of the locale of the
+	 * search, so a position among the names in one locale names nothing among
+	 * the names in another. The locale is part of each field step, and a
+	 * search that names no locale fingerprints exactly as it did before the
+	 * locale was read. A score step leaves it out: a locale changes scores
+	 * the way the query does, and the query is not part of the fingerprint
+	 * either.
+	 *
+	 * The fingerprint does not know which fields have locales, so a locale
+	 * named for a sort on a field without them is part of it as well. A
+	 * cursor sent with another locale is then refused even where the order
+	 * is the same.
+	 *
+	 * @param sort
+	 * @param hits
+	 *   what the hits of the search stand for, or {@code null} for documents
+	 * @param locale
+	 *   the locale the search names, or {@code null} for none
+	 * @return
+	 */
+	static int fingerprintOf(
+		ListIterable<? extends SortBy> sort,
+		se.l4.exofind.engine.query.SearchRequest.Hits hits,
+		String locale
+	) {
 		if(hits == null) {
-			return fingerprint(sort, null);
+			return fingerprint(sort, null, locale);
 		}
 
 		return fingerprint(
 			sort,
-			(hits.isEveryDocument() ? "values:" : "mixed:") + hits.path()
+			(hits.isEveryDocument() ? "values:" : "mixed:") + hits.path(),
+			locale
 		);
 	}
 
@@ -270,7 +303,8 @@ sealed interface SearchCursor {
 	 */
 	private static int fingerprint(
 		ListIterable<? extends SortBy> sort,
-		String prefix
+		String prefix,
+		String locale
 	) {
 		var description = new StringBuilder();
 
@@ -301,6 +335,10 @@ sealed interface SearchCursor {
 				if(field.target().selects()) {
 					description.append(":when=").append(field.when())
 						.append(":fallback=").append(field.fallback());
+				}
+
+				if(locale != null) {
+					description.append(":locale=").append(locale);
 				}
 			}
 			if(step instanceof GeoDistanceSort geo) {

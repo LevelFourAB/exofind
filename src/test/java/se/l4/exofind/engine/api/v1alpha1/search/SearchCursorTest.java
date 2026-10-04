@@ -146,6 +146,29 @@ public class SearchCursorTest {
 		);
 	}
 
+	@Test
+	public void testTheLocaleOfAFieldSortIsPartOfTheFingerprint() {
+		var byName = Lists.immutable.of(SortBy.field("name"));
+
+		var none = SearchCursor.fingerprintOf(byName, null, null);
+		var english = SearchCursor.fingerprintOf(byName, null, "en");
+		var swedish = SearchCursor.fingerprintOf(byName, null, "sv");
+
+		// A position among the names in one locale names nothing in another
+		assertThat(english, is(not(swedish)));
+		assertThat(english, is(not(none)));
+
+		// A search that names no locale fingerprints exactly as it always has
+		assertThat(none, is(SearchCursor.fingerprintOf(byName)));
+
+		// A score sort reads no field, so the locale is not part of it
+		var score = Lists.immutable.of(SortBy.score());
+		assertThat(
+			SearchCursor.fingerprintOf(score, null, "en"),
+			is(SearchCursor.fingerprintOf(score))
+		);
+	}
+
 	private static Query listIs(String list) {
 		return Query.field("prices.list", new EqualsMatcher(list));
 	}

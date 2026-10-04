@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -939,6 +940,43 @@ public class SearchRequestMapperTest {
 					null, null, null,
 					List.of(new Sort.Field("name", null)),
 					null, null, null, null, null, null, null, token, null, null, null, null
+				),
+				LIMITS
+			)
+		);
+
+		assertThat(codesOf(e), contains("search:cursor:sort_mismatch"));
+		assertThat(pathsOf(e), contains("after"));
+	}
+
+	/**
+	 * A sort on a field with locales reads the values of the locale of the
+	 * search, so a cursor taken in one locale names nothing in another.
+	 */
+	@Test
+	public void testKeysetCursorUnderAnotherLocaleIsRefused() {
+		var sort = List.<Sort>of(new Sort.Field("name", null));
+		var english = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null, null, null, sort, "en", null, null, null, null, null, null, null, null, null, null, null
+			),
+			LIMITS
+		);
+		var token = new SearchCursor.Keyset(english.fingerprint(), key("apple".getBytes())).encode();
+
+		var sameLocale = SearchRequestMapper.toEngine(
+			new SearchRequest(
+				null, null, null, sort, "en", null, null, null, null, null, null, token, null, null, null, null
+			),
+			LIMITS
+		);
+		assertThat(sameLocale.request().after(), is(notNullValue()));
+
+		var e = assertThrows(
+			ValidationException.class,
+			() -> SearchRequestMapper.toEngine(
+				new SearchRequest(
+					null, null, null, sort, "sv", null, null, null, null, null, null, token, null, null, null, null
 				),
 				LIMITS
 			)

@@ -615,9 +615,10 @@ public class SearchRequestMapper {
 		 * What a hit stands for is part of what a cursor names a position in,
 		 * so it fingerprints with the sort - a cursor taken among values never
 		 * resumes among documents, among a mix of the two, or the other way
-		 * around.
+		 * around. The locale decides which values a field sort reads, so it
+		 * fingerprints with the sort as well.
 		 */
-		var fingerprint = SearchCursor.fingerprintOf(sort, hits);
+		var fingerprint = SearchCursor.fingerprintOf(sort, hits, body.locale());
 
 		var position = resolvePosition(body, fingerprint, errors);
 
