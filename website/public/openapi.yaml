@@ -7098,7 +7098,7 @@ paths:
           description: |-
             The index or generation cannot be removed right now.
 
-            Error codes: `index:generation:is_live` - The generation is the live one. Promote another generation first. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `storage:conflict` - The registry kept being written by other nodes. Send the request again.
+            Error codes: `index:generation:is_live` - The generation is the live one. Promote another generation first. `index:unsupported` - The path names a generation of an index that needs engine features this node does not have. Delete it from a node that has them, or delete the whole index. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `storage:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
@@ -7106,6 +7106,10 @@ paths:
           x-error-codes:
           - code: index:generation:is_live
             when: The generation is the live one. Promote another generation first.
+          - code: index:unsupported
+            when: "The path names a generation of an index that needs engine features\
+              \ this node does not have. Delete it from a node that has them, or delete\
+              \ the whole index."
           - code: indexer:unavailable
             when: No node is available to write the index. Send the request again
               once one is.
@@ -7399,7 +7403,7 @@ paths:
           description: |-
             The generation cannot be promoted right now.
 
-            Error codes: `reindex:target_busy` - A reindex job is still filling this generation. Promote it once the job is ready. `index:generation:live_moved` - Another generation was promoted while the reindex job that filled this one was running. The job moves to `failed`; start a new job that reads from the generation the `live` argument names. `index:field:type_unrepresentable` - The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `storage:conflict` - The registry kept being written by other nodes. Send the request again.
+            Error codes: `reindex:target_busy` - A reindex job is still filling this generation. Promote it once the job is ready. `index:unsupported` - The index needs engine features this node does not have. Nothing was changed. `index:generation:live_moved` - Another generation was promoted while the reindex job that filled this one was running. The job moves to `failed`; start a new job that reads from the generation the `live` argument names. `index:field:type_unrepresentable` - The stored definition holds a field of a type this API version cannot describe. The `name` argument names the field. `index:no_live_generation` - The index has no live generation. Promote one and send the request again. `indexer:unavailable` - No node is available to write the index. Send the request again once one is. `storage:conflict` - The registry kept being written by other nodes. Send the request again.
           content:
             application/json:
               schema:
@@ -7408,6 +7412,9 @@ paths:
           - code: reindex:target_busy
             when: A reindex job is still filling this generation. Promote it once
               the job is ready.
+          - code: index:unsupported
+            when: The index needs engine features this node does not have. Nothing
+              was changed.
           - code: index:generation:live_moved
             when: Another generation was promoted while the reindex job that filled
               this one was running. The job moves to `failed`; start a new job that

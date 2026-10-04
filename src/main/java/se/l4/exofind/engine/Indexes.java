@@ -53,6 +53,7 @@ import se.l4.exofind.engine.index.SearchThreads;
 import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.IndexState;
 import se.l4.exofind.engine.index.IndexStorageHeldException;
+import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.registry.RegistryException;
@@ -2753,6 +2754,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 *   the index as it is now registered
 	 * @throws IndexNotFoundException
 	 *   if the deployment holds no such index or generation
+	 * @throws IndexUnsupportedException
+	 *   if the index needs something this build does not have; the registry
+	 *   is not changed
 	 */
 	public RegisteredIndex promote(String name) {
 		var generation = IndexName.parse(name);

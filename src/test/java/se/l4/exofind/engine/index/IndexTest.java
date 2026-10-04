@@ -949,6 +949,44 @@ public class IndexTest {
 	}
 
 	/**
+	 * A node can take an index back while the flush of a handover pushes it.
+	 * A write served after that goes to the writer the index still has, so
+	 * the reopen must keep that writer. Releasing it drops the write, which
+	 * the node already answered for.
+	 */
+	@Test
+	public void testAReopenKeepsAWriterTheNodeTookBackDuringTheFlush() throws IOException {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var takeBack = new AtomicBoolean();
+		var holder = new Index[1];
+		var index = new Index(state, "test", path, new NoopSync() {
+			@Override
+			public void push(Set<String> files) throws IOException {
+				if(takeBack.getAndSet(false)) {
+					state.updateOwnership(true);
+					holder[0].addDocument(new Document(new Document.Value("field1", false)));
+				}
+			}
+		});
+		holder[0] = index;
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+
+		index.addDocument(new Document(new Document.Value("field1", true)));
+
+		takeBack.set(true);
+		state.updateOwnership(false);
+		assertThat(index.reopen(true), is(true));
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(2L));
+	}
+
+	/**
 	 * A close whose push failed leaves its commit on disk. A writer that opens
 	 * over the copy has changed nothing itself and says it is usable. A
 	 * handover the node chose must still push that commit, as the successor

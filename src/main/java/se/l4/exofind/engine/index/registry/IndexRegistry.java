@@ -405,6 +405,8 @@ public class IndexRegistry {
 	 *   if there is no such index
 	 * @throws ValidationException
 	 *   if the index already has a generation of that name
+	 * @throws IndexUnsupportedException
+	 *   if the index needs something this build does not have
 	 */
 	public RegisteredIndex addGeneration(String index, String generation) {
 		var updated = update(index, entry -> {
@@ -447,6 +449,8 @@ public class IndexRegistry {
 	 *   the index as it is now registered
 	 * @throws IndexNotFoundException
 	 *   if there is no such index, or it has no such generation
+	 * @throws IndexUnsupportedException
+	 *   if the index needs something this build does not have
 	 */
 	public RegisteredIndex promote(String index, String generation) {
 		return promote(index, generation, null);
@@ -473,6 +477,8 @@ public class IndexRegistry {
 	 *   if there is no such index, or it has no such generation
 	 * @throws LiveGenerationMovedException
 	 *   if the index answers for another generation than the expected one
+	 * @throws IndexUnsupportedException
+	 *   if the index needs something this build does not have
 	 */
 	public RegisteredIndex promote(String index, String generation, String expectedLive) {
 		var updated = update(index, entry -> {
@@ -527,6 +533,8 @@ public class IndexRegistry {
 	 *   if there is no such index, or it has no such generation
 	 * @throws ValidationException
 	 *   if the generation is the one the index answers for
+	 * @throws IndexUnsupportedException
+	 *   if the index needs something this build does not have
 	 */
 	public RegisteredIndex removeGeneration(String index, String generation) {
 		var updated = update(index, entry -> {
@@ -799,6 +807,14 @@ public class IndexRegistry {
 
 	/**
 	 * Rewrite one index, leaving the rest of the registry as it is.
+	 *
+	 * <p>An index that needs features this build does not have is refused
+	 * here, against the entry the write is conditional on. This build does
+	 * not know what those features change about its generations, so it can
+	 * not tell what a change to them means.
+	 *
+	 * @throws IndexUnsupportedException
+	 *   if the index needs something this build does not have
 	 */
 	private RegisteredIndex update(String index, UnaryOperator<RegisteredIndex> change) {
 		var updated = new RegisteredIndex[1];
@@ -807,6 +823,14 @@ public class IndexRegistry {
 			var entry = indexes.detect(existing -> existing.name().equals(index));
 			if(entry == null) {
 				throw new IndexNotFoundException(index);
+			}
+
+			var unsupported = entry.unsupportedFeatures();
+			if(unsupported.notEmpty()) {
+				throw new IndexUnsupportedException(
+					index,
+					unsupported.toSortedList().makeString(", ")
+				);
 			}
 
 			updated[0] = change.apply(entry);

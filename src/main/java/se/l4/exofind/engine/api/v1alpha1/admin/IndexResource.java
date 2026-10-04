@@ -1325,6 +1325,11 @@ public class IndexResource {
 		when = "The generation is the live one. Promote another generation first."
 	)
 	@ReturnsError(
+		value = "index:unsupported",
+		status = 409,
+		when = "The path names a generation of an index that needs engine features this node does not have. Delete it from a node that has them, or delete the whole index."
+	)
+	@ReturnsError(
 		value = "indexer:unavailable",
 		status = 409,
 		when = "No node is available to write the index. Send the request again once one is."
@@ -1431,6 +1436,11 @@ public class IndexResource {
 		value = "reindex:target_busy",
 		status = 409,
 		when = "A reindex job is still filling this generation. Promote it once the job is ready."
+	)
+	@ReturnsError(
+		value = "index:unsupported",
+		status = 409,
+		when = "The index needs engine features this node does not have. Nothing was changed."
 	)
 	@ReturnsError(
 		value = "index:generation:live_moved",
