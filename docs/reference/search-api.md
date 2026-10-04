@@ -1316,7 +1316,7 @@ Passing a freshness token requires no permissions beyond the read request itself
 
 When a request includes a freshness token, the receiving node verifies each state component before answering:
 
-- **Generation**: If the node does not serve the generation named in the token, it reads the registry using one conditional request. A token naming a generation created before the live generation is satisfied immediately by the live generation. A request that explicitly targets a generation (such as `products@2`) answers from that generation regardless of the token's generation.
+- **Generation**: The node reads the registry with one conditional request made after the request arrived, unless it already answers from the generation in the token. Requests that arrive during that read share it. After the read, the node answers from the generation the registry names as live, which can differ from the token when the token's generation was promoted over or removed. A roll back promotes an older generation again, so creation order does not decide which generation answers. A request that targets a generation explicitly (such as `products@2`) answers from that generation whatever the token names.
 - **Settings version**: If the node holds a different settings version, it reads the settings object using one conditional request.
 - **Commit sequence**: If the node's open reader is behind the sequence number, the node waits. The writer node is asked to commit pending changes at most once per second. Non-writer nodes poll the manifest using exponential backoff from 20 ms to 500 ms. Commits are only waited for when the token matches the generation answering the request.
 

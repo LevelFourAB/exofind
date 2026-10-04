@@ -9,7 +9,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
-import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.logging.Log;
 import jakarta.inject.Inject;
@@ -26,9 +25,12 @@ import jakarta.inject.Singleton;
  * freshness rather than to the number of indexes:
  *
  * <ul>
- *   <li>A generation the node does not answer from yet is looked for with one
- *     conditional read of the registry. A generation created before the one
- *     the node answers from was promoted over, so it is satisfied at once.
+ *   <li>A generation the node does not answer from is looked for with one
+ *     conditional read of the registry, made after the request arrived. The
+ *     order in which generations were created does not say which one is
+ *     live, because a roll back promotes an older generation again. So only
+ *     a read of the registry tells a generation that was promoted over from
+ *     one that is live again.
  *   <li>A settings version the node does not hold is looked for with one
  *     conditional read of the settings object. The storage holds the version
  *     any state carries, or a later one, so a read made after the request
@@ -39,9 +41,10 @@ import jakarta.inject.Singleton;
  *     runs out. Every wait on one generation shares one pull at a time.
  * </ul>
  *
- * <p>What was found satisfied is remembered per index, so a state that an
- * older answer named - a generation promoted over, a settings version replaced
- * - costs a request once rather than on every read that hands it back.
+ * <p>Settings versions found satisfied are remembered per index, so a
+ * version that an older answer named costs a request once rather than on
+ * every read that hands it back. Generations are not remembered, for the
+ * reason above. Reads that arrive while the registry is read share that read.
  *
  * <p>Safe for concurrent use.
  */
@@ -59,9 +62,9 @@ public class FreshnessWaiter {
 	private static final Duration MAX_BACKOFF = Duration.ofMillis(500);
 
 	/**
-	 * How many generations and settings versions are remembered per index as
-	 * satisfied. An index has few generations and its settings change rarely,
-	 * so this holds every generation and version an answer in flight can carry.
+	 * How many settings versions are remembered per index as satisfied. The
+	 * settings of an index change rarely, so this holds every version an
+	 * answer in flight can carry.
 	 */
 	private static final int REMEMBERED = 16;
 
@@ -99,13 +102,6 @@ public class FreshnessWaiter {
 	 */
 	private static final class Memory {
 		volatile long lastAccessNanos;
-
-		/**
-		 * Generations the index was found not to answer from after a read of
-		 * the registry, or created before the one it answers from: promoted
-		 * over, or removed. Guarded by itself.
-		 */
-		final LinkedHashSet<String> settledGenerations = new LinkedHashSet<>();
 
 		/**
 		 * Settings versions the node has held, or read past. Guarded by
@@ -198,7 +194,7 @@ public class FreshnessWaiter {
 		var memory = memoryOf(freshness.index());
 
 		if(freshness.hasGeneration() && !requested.isPinned()) {
-			awaitGeneration(requested, freshness.generation(), memory, startedAt);
+			awaitGeneration(requested, freshness.generation(), startedAt);
 		}
 
 		if(freshness.hasSettingsVersion()) {
@@ -217,63 +213,25 @@ public class FreshnessWaiter {
 	/**
 	 * See to it that the registry this node holds says which generation the
 	 * index answers from, as of after the read arrived, unless it already
-	 * answers from the one demanded or from one created after it.
+	 * answers from the one demanded.
 	 */
-	private void awaitGeneration(IndexName requested, String generation, Memory memory, long startedAt) {
+	private void awaitGeneration(IndexName requested, String generation, long startedAt) {
 		var registered = indexes.getRegistered(requested.index()).orElse(null);
-		if(registered != null) {
-			if(generation.equals(registered.live())) {
-				return;
-			}
-
-			synchronized(memory.settledGenerations) {
-				if(memory.settledGenerations.contains(generation)) {
-					return;
-				}
-			}
-
-			if(createdBefore(registered, generation, registered.live())) {
-				remember(memory.settledGenerations, generation);
-				return;
-			}
+		if(registered != null && generation.equals(registered.live())) {
+			return;
 		}
 
 		var read = refreshRegistry(startedAt);
 
 		/*
 		 * Read since the request arrived, so what the registry says now is
-		 * the state demanded or a later one. A generation it still does not
-		 * answer from was promoted over or removed, and is not asked about
-		 * again.
+		 * the state demanded or a later one. A generation it does not answer
+		 * from was promoted over or removed.
 		 */
 		registered = indexes.getRegistered(requested.index()).orElse(null);
-		if(registered != null && !generation.equals(registered.live())) {
-			if(!read) {
-				throw new FreshnessUnavailableException(requested.toString(), Duration.ZERO);
-			}
-
-			remember(memory.settledGenerations, generation);
+		if(registered != null && !generation.equals(registered.live()) && !read) {
+			throw new FreshnessUnavailableException(requested.toString(), Duration.ZERO);
 		}
-	}
-
-	/**
-	 * Whether one generation of an index was created before another, as the
-	 * registry records it. Generations named by hand are not ordered by their
-	 * names, so what was created first is the only order there is.
-	 */
-	private static boolean createdBefore(RegisteredIndex index, String generation, String other) {
-		if(other == null) {
-			return false;
-		}
-
-		var first = index.generation(generation).orElse(null);
-		var second = index.generation(other).orElse(null);
-
-		return first != null
-			&& second != null
-			&& first.createdAt() != null
-			&& second.createdAt() != null
-			&& first.createdAt().isBefore(second.createdAt());
 	}
 
 	/**

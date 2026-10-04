@@ -300,6 +300,61 @@ public class FreshnessWaiterTest {
 		assertThat(answered, is(first));
 	}
 
+	/**
+	 * A roll back promotes an older generation again. Another node made it,
+	 * so the registry this node holds still names the newer generation.
+	 */
+	@Test
+	public void testARollBackByAnotherNodeIsAnsweredFrom() throws Exception {
+		indexes.create("books", definition());
+
+		// Created later than generation 1, so the two are ordered by creation
+		Thread.sleep(20);
+		indexes.createGeneration("books@2", definition());
+		indexes.promote("books@2");
+
+		otherNode().promote("books", "1");
+
+		var answered = waiter.await("books", Freshness.ofGeneration(IndexName.of("books", "1")));
+
+		assertThat(answered.getId(), is("books@1"));
+	}
+
+	/**
+	 * A read that names generation 1 after generation 2 was promoted is
+	 * answered from generation 2. A roll back to generation 1 later must not
+	 * be taken as already seen.
+	 */
+	@Test
+	public void testARollBackAfterAReadOfThePromotedOverGenerationIsAnsweredFrom()
+		throws Exception
+	{
+		indexes.create("books", definition());
+		Thread.sleep(20);
+		indexes.createGeneration("books@2", definition());
+		indexes.promote("books@2");
+
+		var oneToken = Freshness.ofGeneration(IndexName.of("books", "1"));
+		assertThat(waiter.await("books", oneToken).getId(), is("books@2"));
+
+		otherNode().promote("books", "1");
+
+		assertThat(waiter.await("books", oneToken).getId(), is("books@1"));
+	}
+
+	/**
+	 * A second node over the registry of this one, which changes it without
+	 * this node knowing.
+	 */
+	private IndexRegistry otherNode() throws IOException {
+		var registry = new IndexRegistry(
+			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		);
+		registry.refresh();
+		return registry;
+	}
+
 	@Test
 	public void testTheStateOfAnAnswerNamesEverything() throws IOException {
 		var index = indexes.create("books", definition());

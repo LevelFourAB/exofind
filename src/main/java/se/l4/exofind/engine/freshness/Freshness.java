@@ -20,9 +20,10 @@ import se.l4.exofind.engine.index.IndexName;
  * </ul>
  *
  * <p>The commit sequence is ordered only inside one generation. Generations
- * are ordered by when they were created, and settings versions are not ordered
- * at all: a read satisfies a settings version by having read the storage since
- * the version was written, which {@link FreshnessWaiter} arranges.
+ * and settings versions are not ordered at all, because a roll back promotes
+ * an older generation again and a revert puts back older settings. A read
+ * satisfies a generation or a settings version by having read the storage
+ * since the state was written, which {@link FreshnessWaiter} arranges.
  *
  * @param index
  *   name of the index, without a generation
