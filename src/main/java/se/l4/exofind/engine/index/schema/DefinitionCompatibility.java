@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index.schema;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 import org.apache.lucene.util.automaton.Automata;
 import org.apache.lucene.util.automaton.Automaton;
@@ -10,9 +11,12 @@ import org.apache.lucene.util.automaton.Operations;
 import org.apache.lucene.util.automaton.TooComplexToDeterminizeException;
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Maps;
+import org.eclipse.collections.api.factory.Sets;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.api.map.MapIterable;
+import org.eclipse.collections.api.set.ImmutableSet;
+import org.eclipse.collections.api.set.SetIterable;
 
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -39,7 +43,9 @@ import se.l4.exofind.engine.errors.ObjectLocation;
  * one can be refused rather than stored. A generation holding no documents has
  * nothing to be stale, so the comparison is only worth making against one that
  * does; {@link se.l4.exofind.engine.index.Index#updateDefinition} is where that
- * is decided.
+ * is decided. Some differences are refused there even so, because Lucene
+ * itself cannot take them for a field it has written - see
+ * {@link #reshapingWritten}.
  *
  * <p>Three asymmetries are deliberate:
  *
@@ -128,7 +134,62 @@ public class DefinitionCompatibility {
 					+ " already indexed were stored without." + ROLLOUT
 			);
 
+	/**
+	 * Settings whose change gives a field another shape in Lucene: the width
+	 * of its points, or the dimensions or similarity of its vectors. A type
+	 * change is one of them, as no two types write a field the same way.
+	 */
+	private static final ImmutableSet<String> RESHAPING_SETTINGS =
+		Sets.immutable.of("type", "dimensions", "similarity");
+
 	private DefinitionCompatibility() {
+	}
+
+	/**
+	 * Get the differences that Lucene refuses for a field it has written.
+	 *
+	 * <p>Lucene keeps the shape of every field it has written - the width of
+	 * its points, what it indexes with each term, the dimensions and
+	 * similarity of its vectors - for as long as its writer is open, also when
+	 * every document holding the field has been removed. It refuses a document
+	 * that writes the field with another shape. So these differences cannot be
+	 * left stale the way the others can: every later write of the field would
+	 * fail. Turning on highlight is one of them, as it indexes offsets with
+	 * every term.
+	 *
+	 * @param differences
+	 *   the differences {@link #check} reported
+	 * @param written
+	 *   the fields the index has written, by the name a document gives them
+	 * @return
+	 *   the differences that change the shape of a field in {@code written}
+	 */
+	public static ListIterable<ErrorMessage> reshapingWritten(
+		ListIterable<ErrorMessage> differences,
+		SetIterable<String> written
+	) {
+		return differences.select(difference -> {
+			var arguments = difference.getArguments();
+			var reshapes = SETTING_CHANGED.getCode().equals(difference.getCode())
+				&& RESHAPING_SETTINGS.contains(arguments.get("setting"))
+				|| USAGE_ADDED.getCode().equals(difference.getCode())
+				&& String.valueOf(arguments.get("usage")).endsWith(".highlight");
+
+			if(!reshapes) {
+				return false;
+			}
+
+			/*
+			 * A difference of a pattern reaches every written field the
+			 * pattern accepts. A star is taken to match across dots, which
+			 * refuses more rather than less.
+			 */
+			var field = String.valueOf(arguments.get("field"));
+			var accepts = Pattern.compile(
+				Pattern.quote(field).replace("*", "\\E.*\\Q")
+			);
+			return written.anySatisfy(name -> accepts.matcher(name).matches());
+		});
 	}
 
 	/**

@@ -15,11 +15,13 @@ Because in-place modifications are unsafe, the engine does not support them. To 
 
 ## Enforcing definition changes
 
-The engine enforces this requirement directly rather than relying on convention. A `PUT` request that changes how documents are indexed is refused while the target generation holds documents, with errors located at the fields that caused the refusal. An empty generation accepts any definition because nothing can be stale.
+The engine enforces this requirement directly rather than relying on convention. A `PUT` request that changes how documents are indexed is refused while the target generation holds documents, with errors located at the fields that caused the refusal. A generation that has never held documents accepts any definition because nothing can be stale.
 
 Refusing an incompatible change is safer than accepting it. A false refusal is answerable through an explicit error that you can inspect and address. A false acceptance creates the silent failure described above, where queries miss results without reporting an error.
 
 For cases where you plan to send the entire catalogue again anyway, the `allowStaleDocuments` query parameter provides an escape hatch. Setting `allowStaleDocuments=true` stores the definition even when indexed documents were not indexed under it. Existing documents continue to answer queries as they were indexed until you index them again.
+
+The escape hatch does not cover changes to the form Lucene stores a field in: changing a field's `type`, changing a vector field's `dimensions` or `similarity`, or enabling `highlight`. Lucene keeps that form for every field it has written, even after every document that holds the field is deleted. Lucene then refuses each document that writes the field in the new form. If the engine accepted such a change, the generation could not take a document with that field again. The refusal applies only to fields Lucene has written—that is, fields a document gave a value. The engine refuses these changes even with `allowStaleDocuments=true`, and even on a generation whose documents were all deleted. To make these changes, roll out a new generation.
 
 ## Why the name is what callers hold
 

@@ -6352,9 +6352,12 @@ paths:
         required: true
         schema:
           type: string
-      - description: Forces the update without reindexing existing documents. Existing
-          documents continue to serve queries as indexed until they are reindexed.
-          Has no effect on an empty generation.
+      - description: "Forces the update without reindexing existing documents. Existing\
+          \ documents continue to serve queries as indexed until they are reindexed.\
+          \ Has no effect on an empty generation. A change of a field's `type`, a\
+          \ vector field's `dimensions` or `similarity`, or one that enables `highlight`\
+          \ is still refused for a field that a document gave a value. See [Index\
+          \ resource](https://exofind.dev/reference/admin-api/#index-resource)."
         schema:
           type: boolean
           default: false

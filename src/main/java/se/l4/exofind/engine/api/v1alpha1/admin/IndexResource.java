@@ -1109,7 +1109,11 @@ public class IndexResource {
 			description = """
 				Forces the update without reindexing existing documents. \
 				Existing documents continue to serve queries as indexed until \
-				they are reindexed. Has no effect on an empty generation.""",
+				they are reindexed. Has no effect on an empty generation. A \
+				change of a field's `type`, a vector field's `dimensions` or \
+				`similarity`, or one that enables `highlight` is still refused \
+				for a field that a document gave a value. See [Index \
+				resource](https://exofind.dev/reference/admin-api/#index-resource).""",
 			schema = @Schema(type = SchemaType.BOOLEAN, defaultValue = "false")
 		)
 		@QueryParam("allowStaleDocuments") @DefaultValue("false") boolean allowStaleDocuments,

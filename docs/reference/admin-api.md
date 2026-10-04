@@ -155,6 +155,14 @@ Accepted changes on a generation that holds documents include:
 
 To force the update without reindexing, set the `allowStaleDocuments` query parameter to `true` (boolean, default `false`). Existing documents continue to serve queries as indexed until they are reindexed. The parameter has no effect on empty generations.
 
+The engine refuses the following changes even with `allowStaleDocuments=true`, because Lucene retains the shape of every field it has written:
+
+- Changing the `type` of a field.
+- Changing a vector field's `dimensions` or `similarity`.
+- Enabling `highlight` on a text usage.
+
+These changes are also refused on a generation whose documents were all deleted. A generation that has never held documents accepts them because no fields were written. The refusal applies only to a field that a document gave a value.
+
 To apply an incompatible definition change to existing documents, reindex them into a new generation. See [Reindex into a new generation](../how-to/reindex-into-a-new-generation.md).
 
 If an index definition contains settings from a newer API version that the current node does not recognize, reading the index returns `409 Conflict`. Updating such an index is rejected with `409 Conflict` and the error code `index:definition:unrepresentable`. To resolve these errors, send the request to a node running a version that supports the definition.

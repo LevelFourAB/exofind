@@ -2213,7 +2213,9 @@ public class Index {
 	 *   until they are indexed again
 	 * @throws IndexDefinitionIncompatibleException
 	 *   if the index holds documents that were not indexed under {@code def}
-	 *   and {@code allowStaleDocuments} is {@code false}
+	 *   and {@code allowStaleDocuments} is {@code false}, or if {@code def}
+	 *   gives a field Lucene has written another shape - see
+	 *   {@link DefinitionCompatibility#reshapingWritten}
 	 * @throws IndexOutOfDateException
 	 *   if the index cannot be written right now, see {@link #checkModifiable()}
 	 * @throws IOException
@@ -2239,11 +2241,18 @@ public class Index {
 				throw new IndexVersionMismatchException(id, expectedVersion, definitionVersion);
 			}
 
-			if(!allowStaleDocuments && holdsDocuments()) {
-				var incompatibilities = DefinitionCompatibility.check(this.definition, def);
-				if(!incompatibilities.isEmpty()) {
-					throw new IndexDefinitionIncompatibleException(incompatibilities);
-				}
+			/*
+			 * Without documents, or when the caller accepts stale ones, only
+			 * what Lucene itself refuses is left to refuse: a field it has
+			 * written keeps its shape, also after every document holding it
+			 * was removed.
+			 */
+			var differences = DefinitionCompatibility.check(this.definition, def);
+			var refused = !allowStaleDocuments && holdsDocuments()
+				? differences
+				: DefinitionCompatibility.reshapingWritten(differences, writtenFields());
+			if(!refused.isEmpty()) {
+				throw new IndexDefinitionIncompatibleException(refused);
 			}
 
 			/*
@@ -2298,6 +2307,29 @@ public class Index {
 		 * one here is an index nothing has been written to.
 		 */
 		return writer != null && writer.getDocStats().numDocs > 0;
+	}
+
+	/**
+	 * Get the fields the writer has written, by the name a document gives
+	 * them. The writer keeps a field after every document holding it was
+	 * removed, so this is what Lucene holds the shape of.
+	 *
+	 * Only called with the write lock held.
+	 */
+	private SetIterable<String> writtenFields() {
+		if(writer == null) {
+			return Sets.immutable.empty();
+		}
+
+		var result = Sets.mutable.<String>empty();
+		for(var name : writer.getFieldNames()) {
+			var parsed = FieldNames.parse(name);
+			if(parsed != null) {
+				result.add(parsed.field());
+			}
+		}
+
+		return result;
 	}
 
 	/**

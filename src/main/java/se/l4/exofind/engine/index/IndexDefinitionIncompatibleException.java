@@ -14,11 +14,13 @@ import se.l4.exofind.engine.errors.ValidationException;
  * {@link se.l4.exofind.engine.index.schema.DefinitionCompatibility}, so a
  * caller is told which fields refused rather than only that something did.
  *
- * <p>Nothing about the definition is wrong - the same one is accepted by a
- * generation holding no documents - so this says the request and the state of
- * the index disagree. It is answered by filling a new generation and promoting
- * it, or, where the documents are about to be sent again anyway, by saying
- * outright that they may go stale.
+ * <p>Nothing about the definition is wrong - the same one is accepted by a new
+ * generation - so this says the request and the state of the index disagree.
+ * It is answered by filling a new generation and promoting it, or, where the
+ * documents are about to be sent again anyway, by saying outright that they
+ * may go stale. A change that gives a written field another shape in Lucene
+ * has only the first way through, see
+ * {@link se.l4.exofind.engine.index.schema.DefinitionCompatibility#reshapingWritten}.
  */
 public class IndexDefinitionIncompatibleException extends ValidationException {
 	private static final long serialVersionUID = 1L;
