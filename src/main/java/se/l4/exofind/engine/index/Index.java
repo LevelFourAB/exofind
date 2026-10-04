@@ -2458,6 +2458,20 @@ public class Index {
 	 * @throws IOException
 	 */
 	public void addDocument(Document doc) throws IOException {
+		addDocument(doc, Sets.immutable.empty());
+	}
+
+	/**
+	 * Add a document to the index, with the signal fields it states exactly.
+	 *
+	 * @param doc
+	 * @param statedSignals
+	 *   the signal fields the document states exactly. One of them that the
+	 *   document gives no value is emptied, instead of keeping the value the
+	 *   index holds for it
+	 * @throws IOException
+	 */
+	private void addDocument(Document doc, SetIterable<String> statedSignals) throws IOException {
 		writeGate.readLock().lock();
 		syncLock.readLock().lock();
 		try {
@@ -2800,12 +2814,13 @@ public class Index {
 				 * A signal field the document did not give keeps the value the
 				 * index holds for it: the value belongs to whatever refreshes
 				 * it, and a catalogue reload that never mentions it must not
-				 * wipe what the last refresh wrote. Read under the lock, so a
+				 * wipe what the last refresh wrote. A field the caller states
+				 * exactly is not carried over. Read under the lock, so a
 				 * refresh cannot slip in between the read and the write.
 				 */
 				MutableMap<String, Object> signalValues = null;
 				if(schema.hasSignalFields()) {
-					signalValues = carrySignalsOver(doc, luceneDoc, encounter, primaryKeyTerm);
+					signalValues = carrySignalsOver(luceneDoc, encounter, primaryKeyTerm, statedSignals);
 				}
 
 				if(childDocs.isEmpty()) {
@@ -2883,8 +2898,6 @@ public class Index {
 	 * not give, from what the index holds for its key, and say what every
 	 * signal field of it holds once written.
 	 *
-	 * @param doc
-	 *   the document as given
 	 * @param luceneDoc
 	 *   the Lucene document built from it, which the carried values are added
 	 *   to
@@ -2894,16 +2907,19 @@ public class Index {
 	 *   the key of the document, or {@code null} when the index declares no
 	 *   primary key - then nothing can be carried over, as nothing names what
 	 *   the document replaces
+	 * @param statedSignals
+	 *   the signal fields the document states exactly, which are never carried
+	 *   over. One the document gives no value holds nothing once written
 	 * @return
 	 *   what each signal field holds, by name, {@code null} for one holding
 	 *   nothing
 	 * @throws IOException
 	 */
 	private MutableMap<String, Object> carrySignalsOver(
-		Document doc,
 		org.apache.lucene.document.Document luceneDoc,
 		IndexEncounterImpl encounter,
-		Term primaryKeyTerm
+		Term primaryKeyTerm,
+		SetIterable<String> statedSignals
 	) throws IOException {
 		var values = Maps.mutable.<String, Object>empty();
 		MutableList<Field> missing = null;
@@ -2913,6 +2929,11 @@ public class Index {
 			var written = luceneDoc.getField(FieldNames.name(name, null, FieldNames.SORT));
 			if(written != null) {
 				values.put(name, field.getType().readSignalValue(written.numericValue().longValue()));
+				continue;
+			}
+
+			if(statedSignals.contains(name)) {
+				values.put(name, null);
 				continue;
 			}
 
@@ -3513,7 +3534,18 @@ public class Index {
 					return false;
 				}
 
-				addDocument(patch.applyTo(current));
+				/*
+				 * The copy holds no signal fields, so a signal field the patch
+				 * empties is missing from the merge the same way one it never
+				 * named is. It is stated exactly, so the value the index holds
+				 * for it is not carried over.
+				 */
+				var statedSignals = patch.changes()
+					.collect(DocumentPatch.Change::field)
+					.select(name -> SignalValues.isSignal(schema, name))
+					.toSet();
+
+				addDocument(patch.applyTo(current), statedSignals);
 				return true;
 			} finally {
 				documentLock.unlock();

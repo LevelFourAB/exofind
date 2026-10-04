@@ -275,6 +275,58 @@ public class SignalFieldTest extends AbstractIndexTest {
 	}
 
 	@Test
+	public void aFieldNamedAndGivenNothingBesideOthersIsEmptied() throws IOException {
+		var index = catalogue();
+		index.commit();
+
+		assertTrue(index.updateDocument(
+			DocumentPatch.replacing(
+				Sets.immutable.of("id", "name", "popularity"),
+				Lists.immutable.of(set("id", "popular"), set("name", "Road runner"))
+			)
+		));
+		index.commit();
+
+		var doc = index.getDocument("popular");
+		assertThat(doc.get("name"), is("Road runner"));
+		assertThat(doc.get("popularity"), is(nullValue()));
+	}
+
+	@Test
+	public void aRefreshedFieldNamedAndGivenNothingBesideOthersIsEmptied() throws IOException {
+		var index = catalogue();
+		index.updateDocument(patch(set("id", "popular"), set("popularity", 0.9)));
+
+		assertTrue(index.updateDocument(
+			DocumentPatch.replacing(
+				Sets.immutable.of("id", "name", "popularity"),
+				Lists.immutable.of(set("id", "popular"), set("name", "Road runner"))
+			)
+		));
+		index.commit();
+
+		assertThat(index.getDocument("popular").get("popularity"), is(nullValue()));
+	}
+
+	@Test
+	public void aFieldEmptiedBesideOthersKeepsTheSignalsItDoesNotName() throws IOException {
+		var index = catalogue();
+		index.updateDocument(patch(set("id", "popular"), set("views", 40)));
+
+		index.updateDocument(
+			DocumentPatch.replacing(
+				Sets.immutable.of("id", "name", "popularity"),
+				Lists.immutable.of(set("id", "popular"), set("name", "Road runner"))
+			)
+		);
+		index.commit();
+
+		var doc = index.getDocument("popular");
+		assertThat(doc.get("popularity"), is(nullValue()));
+		assertThat(doc.get("views"), is(40));
+	}
+
+	@Test
 	public void aValueTheFieldDoesNotAcceptIsRefused() throws IOException {
 		var index = catalogue();
 
