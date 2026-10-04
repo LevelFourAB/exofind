@@ -1,7 +1,6 @@
 package se.l4.exofind.engine.freshness;
 
 import java.time.Duration;
-import java.util.LinkedHashSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -32,19 +31,22 @@ import jakarta.inject.Singleton;
  *     a read of the registry tells a generation that was promoted over from
  *     one that is live again.
  *   <li>A settings version the node does not hold is looked for with one
- *     conditional read of the settings object. The storage holds the version
- *     any state carries, or a later one, so a read made after the request
- *     arrived satisfies whatever version the state carries.
+ *     conditional read of the settings object, made after the request
+ *     arrived. The storage holds the version any state carries, or a later
+ *     one, so such a read satisfies whatever version the state carries. A
+ *     version is a hash of the contents, and removed settings always have the
+ *     same version, so a revert or a second removal names a version again.
+ *     So only a read of the storage tells a version that was replaced from
+ *     one that is back.
  *   <li>A commit sequence the node has not reached is waited for: the writer
  *     is asked to commit what it holds, and a copy that does not write pulls,
  *     until the sequence is reached or {@code exofind.search.freshness.wait}
  *     runs out. Every wait on one generation shares one pull at a time.
  * </ul>
  *
- * <p>Settings versions found satisfied are remembered per index, so a
- * version that an older answer named costs a request once rather than on
- * every read that hands it back. Generations are not remembered, for the
- * reason above. Reads that arrive while the registry is read share that read.
+ * <p>Neither generations nor settings versions are remembered as satisfied,
+ * for the reasons above. Reads that arrive while the registry or the settings
+ * of an index are read share that read.
  *
  * <p>Safe for concurrent use.
  */
@@ -60,13 +62,6 @@ public class FreshnessWaiter {
 	private static final Duration FIRST_BACKOFF = Duration.ofMillis(20);
 
 	private static final Duration MAX_BACKOFF = Duration.ofMillis(500);
-
-	/**
-	 * How many settings versions are remembered per index as satisfied. The
-	 * settings of an index change rarely, so this holds every version an
-	 * answer in flight can carry.
-	 */
-	private static final int REMEMBERED = 16;
 
 	/**
 	 * How long the memory of an index is kept after the last read that named
@@ -97,17 +92,10 @@ public class FreshnessWaiter {
 	private boolean registryReadEver;
 
 	/**
-	 * What this node found satisfied for one index, and the locks the reads
-	 * that demand something of it share.
+	 * The locks the reads that demand something of one index share.
 	 */
 	private static final class Memory {
 		volatile long lastAccessNanos;
-
-		/**
-		 * Settings versions the node has held, or read past. Guarded by
-		 * itself.
-		 */
-		final LinkedHashSet<String> settledSettings = new LinkedHashSet<>();
 
 		/**
 		 * Held while the settings are read for a read that demands a version,
@@ -258,19 +246,13 @@ public class FreshnessWaiter {
 	}
 
 	/**
-	 * See to it that this node has held a settings version, or read the
-	 * storage since the read arrived.
+	 * See to it that this node holds a settings version, or has read the
+	 * storage since the read arrived and so holds that version or a later
+	 * one.
 	 */
 	private void awaitSettings(String index, String version, Memory memory, long startedAt) {
-		var current = currentSettingsVersion(index);
-		if(version.equals(current)) {
+		if(version.equals(currentSettingsVersion(index))) {
 			return;
-		}
-
-		synchronized(memory.settledSettings) {
-			if(memory.settledSettings.contains(version)) {
-				return;
-			}
 		}
 
 		synchronized(memory.settingsLock) {
@@ -280,15 +262,6 @@ public class FreshnessWaiter {
 				memory.settingsReadEver = true;
 			}
 		}
-
-		/*
-		 * Read since the request arrived, so the copy holds the version
-		 * demanded or a later one. Both are remembered: the one held, so a
-		 * read naming it after the next change costs nothing, and the one
-		 * demanded, which nothing will hold again.
-		 */
-		remember(memory.settledSettings, currentSettingsVersion(index));
-		remember(memory.settledSettings, version);
 	}
 
 	/**
@@ -361,18 +334,6 @@ public class FreshnessWaiter {
 
 			// The node may have closed and reopened the generation meanwhile
 			index = indexes.getOrThrow(name);
-		}
-	}
-
-	private static void remember(LinkedHashSet<String> set, String value) {
-		synchronized(set) {
-			set.add(value);
-
-			while(set.size() > REMEMBERED) {
-				var oldest = set.iterator();
-				oldest.next();
-				oldest.remove();
-			}
 		}
 	}
 

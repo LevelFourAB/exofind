@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -30,6 +31,8 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.settings.InMemorySearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.LocalSearchSettingsStorage;
+import se.l4.exofind.engine.index.settings.QueryTypoExclusions;
 import se.l4.exofind.engine.index.settings.SearchSettings;
 import se.l4.exofind.engine.index.settings.SearchSettingsStore;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
@@ -44,6 +47,10 @@ public class FreshnessWaiterTest {
 	@TempDir
 	Path storageDirectory;
 
+	@TempDir
+	Path settingsDirectory;
+
+	IndexRegistry registry;
 	Indexes indexes;
 	SearchSettings searchSettings;
 	FreshnessWaiter waiter;
@@ -53,7 +60,7 @@ public class FreshnessWaiterTest {
 		var nodeState = new NodeState(true);
 		nodeState.updateOwnership(true);
 
-		var registry = new IndexRegistry(
+		registry = new IndexRegistry(
 			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
 			Duration.ofMinutes(5)
 		);
@@ -256,6 +263,86 @@ public class FreshnessWaiterTest {
 		waiter.await("books", Freshness.ofSettings("books", null));
 
 		assertThat(waiter.stateOf(index).settingsVersion(), is(""));
+	}
+
+	/**
+	 * Removed settings always have the version "", so a second removal names
+	 * a version this node held before. It must not be taken as already seen.
+	 */
+	@Test
+	public void testSettingsRemovedASecondTimeAreNotInForceWhenTheTokenDemandsTheRemoval()
+		throws IOException
+	{
+		indexes.create("books", definition());
+		var writer = settingsOver(settingsDirectory);
+		var reader = settingsOver(settingsDirectory);
+		var readerWaiter = new FreshnessWaiter(indexes, reader, Duration.ofSeconds(10));
+
+		var first = writer.put("books", excluding("acme"), null);
+		readerWaiter.await("books", Freshness.ofSettings("books", first.version()));
+		writer.delete("books");
+		readerWaiter.await("books", Freshness.ofSettings("books", null));
+		var second = writer.put("books", excluding("globex"), null);
+		readerWaiter.await("books", Freshness.ofSettings("books", second.version()));
+		assertThat(settingsVersionOf(readerWaiter), is(second.version()));
+
+		writer.delete("books");
+		readerWaiter.await("books", Freshness.ofSettings("books", null));
+
+		assertThat(settingsVersionOf(readerWaiter), is(""));
+	}
+
+	/**
+	 * A settings version is a hash of the contents, so a revert names the
+	 * version of the settings it puts back. It must not be taken as already
+	 * seen.
+	 */
+	@Test
+	public void testRevertedSettingsAreInForceWhenTheTokenDemandsTheRevert() throws IOException {
+		indexes.create("books", definition());
+		var writer = settingsOver(settingsDirectory);
+		var reader = settingsOver(settingsDirectory);
+		var readerWaiter = new FreshnessWaiter(indexes, reader, Duration.ofSeconds(10));
+
+		var x = writer.put("books", excluding("acme"), null);
+		readerWaiter.await("books", Freshness.ofSettings("books", x.version()));
+		var y = writer.put("books", excluding("globex"), null);
+		assertThat(y.version(), is(not(x.version())));
+		readerWaiter.await("books", Freshness.ofSettings("books", y.version()));
+		assertThat(settingsVersionOf(readerWaiter), is(y.version()));
+
+		var reverted = writer.put("books", excluding("acme"), null);
+		readerWaiter.await("books", Freshness.ofSettings("books", reverted.version()));
+
+		assertThat(reverted.version(), is(x.version()));
+		assertThat(settingsVersionOf(readerWaiter), is(x.version()));
+	}
+
+	/**
+	 * Settings of one node over a directory that other nodes share, which
+	 * names a version by the contents the way object storage does.
+	 */
+	private SearchSettings settingsOver(Path directory) {
+		return new SearchSettings(
+			new LocalSearchSettingsStorage(directory),
+			registry,
+			new RegistryHints(registry, StorageMode.LOCAL),
+			Duration.ofMinutes(5),
+			Duration.ofMinutes(10)
+		);
+	}
+
+	private String settingsVersionOf(FreshnessWaiter waiter) {
+		return waiter.stateOf(indexes.getOrThrow("books")).settingsVersion();
+	}
+
+	private static SearchSettingsStore excluding(String word) {
+		return SearchSettingsStore.newBuilder()
+			.putTypoExclusions(
+				"brands",
+				QueryTypoExclusions.newBuilder().addWords(word).build()
+			)
+			.build();
 	}
 
 	@Test
