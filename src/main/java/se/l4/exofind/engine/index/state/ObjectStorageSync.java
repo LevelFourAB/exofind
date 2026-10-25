@@ -166,6 +166,17 @@ public class ObjectStorageSync implements StateSync {
 	private String lastSyncedManifestETag;
 
 	/**
+	 * Manifest this node sent a conditional write for without learning the
+	 * outcome, or {@code null} when every write was answered. A write can
+	 * land while every answer to it and to its retries is lost. The remote
+	 * then holds this manifest under a tag this node does not know, and the
+	 * next push would take the changed tag for a write of another node. The
+	 * next push or claim reads the remote first and adopts this manifest
+	 * when the remote holds it, see {@link #resolveUnconfirmedManifest()}.
+	 */
+	private Manifest unconfirmedManifest;
+
+	/**
 	 * Epoch this instance has claimed for its writes, or {@code -1} while it
 	 * has not claimed one. Claimed when a writer opens on this copy, and
 	 * before the first upload where no writer opened here.
@@ -283,6 +294,13 @@ public class ObjectStorageSync implements StateSync {
 	public void push(Set<String> files) throws IOException {
 		lock.lock();
 		try {
+			/*
+			 * Resolved before the manifest is built, so that the files a
+			 * landed write uploaded keep their keys and the version moves on
+			 * from the version that write took.
+			 */
+			resolveUnconfirmedManifest();
+
 			var previousManifest = lastSyncedManifest;
 			var manifest = createManifest(files, previousManifest);
 
@@ -403,6 +421,8 @@ public class ObjectStorageSync implements StateSync {
 	public void claimWriter() throws IOException {
 		lock.lock();
 		try {
+			resolveUnconfirmedManifest();
+
 			/*
 			 * The manifest the claim is written on top of is the one the remote
 			 * holds right now, checked here the way a push checks it. Writing
@@ -637,6 +657,9 @@ public class ObjectStorageSync implements StateSync {
 			this.lastSyncedManifest = manifest;
 			this.lastSyncedManifestETag = quoteETag(pulled.eTag());
 
+			// The pulled manifest replaces whatever an unanswered write left
+			this.unconfirmedManifest = null;
+
 			/*
 			 * The pulled state was written by someone else, who may have
 			 * carried files of this session's epoch forward into it. Writing
@@ -847,30 +870,93 @@ public class ObjectStorageSync implements StateSync {
 
 		var request = requestBuilder.build();
 
-		var etag = withRetries("upload", MANIFEST_NAME, () -> {
-			try {
-				var response = client.putObject(request, RequestBody.fromBytes(bytes));
+		String etag;
+		try {
+			etag = withRetries("upload", MANIFEST_NAME, () -> {
+				try {
+					var response = client.putObject(request, RequestBody.fromBytes(bytes));
 
-				return quoteETag(response.eTag());
-			} catch(S3Exception e) {
-				if(e.statusCode() == 412) {
-					return resolveRefusedManifest(manifest);
+					return quoteETag(response.eTag());
+				} catch(S3Exception e) {
+					if(e.statusCode() == 412) {
+						return resolveRefusedManifest(manifest);
+					}
+
+					/*
+					 * A storage that could not decide the condition - the
+					 * conflict it reports rather than the refusal, see
+					 * ObjectStorage.isConditionalWriteLost - is left to the
+					 * retries. Concluding a conflict here is what costs this node
+					 * the documents it has not pushed, and a write that did not
+					 * happen is no reason to give them up: the attempt that
+					 * follows is refused outright if another writer really did
+					 * take over.
+					 */
+					throw e;
 				}
+			});
+		} catch(SyncConflictException e) {
+			// The remote answered, and the write did not land
+			throw e;
+		} catch(IOException e) {
+			/*
+			 * Any attempt may have landed with its answer lost, and the
+			 * attempts after it may have failed before they reached the
+			 * storage. Only the remote can tell.
+			 */
+			this.unconfirmedManifest = manifest;
+			throw e;
+		}
 
-				/*
-				 * A storage that could not decide the condition - the conflict
-				 * it reports rather than the refusal, see
-				 * ObjectStorage.isConditionalWriteLost - is left to the retries.
-				 * Concluding a conflict here is what costs this node the
-				 * documents it has not pushed, and a write that did not happen
-				 * is no reason to give them up: the attempt that follows is
-				 * refused outright if another writer really did take over.
-				 */
-				throw e;
-			}
-		});
-
+		this.unconfirmedManifest = null;
 		this.lastSyncedManifestETag = etag;
+	}
+
+	/**
+	 * Find out if the remote holds the manifest of a write that was never
+	 * answered, and adopt that manifest when it does. Adopting it does what
+	 * an answered write does: the manifest is written to the local disk and
+	 * becomes the last synchronized one, under the tag the remote serves it
+	 * with.
+	 *
+	 * <p>A remote that holds anything else is left to
+	 * {@link #ensurePushBaseline}. The manifest carries the epoch and the
+	 * session keys of this node, so no other node writes one equal to it.
+	 * When another node has written since, the remote holds a different
+	 * manifest and the push is refused as before.
+	 *
+	 * @throws IOException
+	 *   if the remote could not be read or the local manifest could not be
+	 *   written. The write stays unconfirmed, and the next push or claim
+	 *   tries again
+	 */
+	private void resolveUnconfirmedManifest() throws IOException {
+		var unconfirmed = unconfirmedManifest;
+		if(unconfirmed == null) {
+			return;
+		}
+
+		var pulled = fetchRemoteManifest();
+		if(pulled == null || !pulled.manifest().equals(unconfirmed)) {
+			// The write did not land, or another node has written since
+			this.unconfirmedManifest = null;
+			return;
+		}
+
+		logger.atInfo()
+			.addKeyValue("index", index)
+			.addKeyValue("version", unconfirmed.getVersion())
+			.log("Remote holds the manifest of a write that was not answered, adopting it");
+
+		writeManifest(unconfirmed);
+
+		var previous = lastSyncedManifest;
+		this.lastSyncedManifest = unconfirmed;
+		this.lastSyncedManifestETag = quoteETag(pulled.eTag());
+		this.sessionEpoch = unconfirmed.getEpoch();
+		this.unconfirmedManifest = null;
+
+		deleteObsoleteRemoteObjects(previous, unconfirmed);
 	}
 
 	/**

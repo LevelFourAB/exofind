@@ -1384,6 +1384,193 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * Make the next manifest write on the client reach the storage once and
+	 * then lose its answer, and make the retries fail before they reach the
+	 * storage. This is a network failure that starts while the first attempt
+	 * is in flight and lasts through the retry back-off.
+	 */
+	private static void loseNextManifestWrite(S3Client spy) {
+		Mockito.doAnswer(invocation -> {
+			invocation.callRealMethod();
+			throw SdkClientException.create("simulated lost response");
+		})
+			.doThrow(SdkClientException.create("simulated connection refused"))
+			.doThrow(SdkClientException.create("simulated connection refused"))
+			.doCallRealMethod()
+			.when(spy)
+			.putObject(
+				ArgumentMatchers.<PutObjectRequest>argThat(
+					request -> request != null && request.key().endsWith("manifest.ef.bin")
+				),
+				ArgumentMatchers.any(RequestBody.class)
+			);
+	}
+
+	/**
+	 * A manifest write that landed while every answer to it was lost is a
+	 * write of this node. The next push must not take it for a conflict: a
+	 * conflict makes the index drop the documents it acknowledged since and
+	 * pull the remote over them.
+	 */
+	@Test
+	void testPushAfterALandedManifestWriteWithLostAnswersIsNotAConflict() throws Exception {
+		var failingClient = Mockito.spy(s3Client);
+		var failingSync = newSync(failingClient);
+		var segment = createLocalFile("segments_1", 10);
+		push(failingSync, segment);
+
+		// The write of segments_2 lands, but the push fails
+		loseNextManifestWrite(failingClient);
+		var next = createLocalFile("segments_2", 12);
+		assertThrows(IOException.class, () -> push(failingSync, segment, next));
+		verifyRemoteManifest(2, segment, next);
+
+		// The next commit is pushed on top of the landed write
+		var third = createLocalFile("segments_3", 14);
+		push(failingSync, segment, next, third);
+
+		verifyRemoteManifest(3, segment, next, third);
+		assertThat(remoteManifest().getVersion(), is(3L));
+
+		// A reader can follow the manifest
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+		verifyLocalFile(otherLocalPath, next);
+		verifyLocalFile(otherLocalPath, third);
+	}
+
+	/**
+	 * The same for the first push of a new index, which writes the manifest
+	 * with {@code If-None-Match: *} instead of {@code If-Match}.
+	 */
+	@Test
+	void testPushAfterALandedFirstManifestWriteWithLostAnswersIsNotAConflict() throws Exception {
+		var failingClient = Mockito.spy(s3Client);
+		var failingSync = newSync(failingClient);
+		failingSync.claimWriter();
+
+		loseNextManifestWrite(failingClient);
+		var segment = createLocalFile("segments_1", 10);
+		assertThrows(IOException.class, () -> push(failingSync, segment));
+		verifyRemoteManifest(1, segment);
+
+		var next = createLocalFile("segments_2", 12);
+		push(failingSync, segment, next);
+
+		verifyRemoteManifest(2, segment, next);
+	}
+
+	/**
+	 * A retry of the commit whose write landed without an answer has nothing
+	 * left to push, and the manifest is not written again.
+	 */
+	@Test
+	void testRetryOfALandedManifestWriteWithLostAnswersPushesNothing() throws Exception {
+		var failingClient = Mockito.spy(s3Client);
+		var failingSync = newSync(failingClient);
+		var segment = createLocalFile("segments_1", 10);
+		push(failingSync, segment);
+
+		loseNextManifestWrite(failingClient);
+		var next = createLocalFile("segments_2", 12);
+		assertThrows(IOException.class, () -> push(failingSync, segment, next));
+
+		push(failingSync, segment, next);
+
+		verifyRemoteManifest(2, segment, next);
+		assertThat(remoteManifest().getVersion(), is(2L));
+	}
+
+	/**
+	 * A manifest write with an unknown outcome must not hide a real
+	 * successor. When another node claims the writer after that write, the
+	 * next push of this node is refused.
+	 */
+	@Test
+	void testPushAfterALandedManifestWriteWithLostAnswersStillSeesASuccessor()
+		throws Exception {
+		var failingClient = Mockito.spy(s3Client);
+		var failingSync = newSync(failingClient);
+		var segment = createLocalFile("segments_1", 10);
+		push(failingSync, segment);
+
+		loseNextManifestWrite(failingClient);
+		var next = createLocalFile("segments_2", 12);
+		assertThrows(IOException.class, () -> push(failingSync, segment, next));
+
+		// Another node pulls the landed manifest and claims the writer
+		var successor = newSync(s3Client, otherLocalPath);
+		assertThat(successor.pull(), is(true));
+		successor.claimWriter();
+		var claimed = remoteManifest();
+
+		var third = createLocalFile("segments_3", 14);
+		assertThrows(
+			SyncConflictException.class,
+			() -> push(failingSync, segment, next, third)
+		);
+
+		assertThat(remoteManifest(), is(claimed));
+		verifyRemoteFileMissing(third);
+	}
+
+	/**
+	 * A writer claim that landed while every answer to it was lost must not
+	 * lock the node out. The claim fails, and a pull followed by a new claim
+	 * lets the node write again.
+	 */
+	@Test
+	void testClaimAfterALandedClaimWithLostAnswersRecoversThroughAPull() throws Exception {
+		var origin = newSync(s3Client, otherLocalPath);
+		var segment = createLocalFile(otherLocalPath, "segments_1", 10);
+		push(origin, segment);
+
+		var failingClient = Mockito.spy(s3Client);
+		var failingSync = newSync(failingClient);
+		assertThat(failingSync.pull(), is(true));
+
+		loseNextManifestWrite(failingClient);
+		assertThrows(IOException.class, failingSync::claimWriter);
+
+		// The index pulls and claims again after a failed reopen
+		failingSync.pull();
+		failingSync.claimWriter();
+
+		var next = createLocalFile("segments_2", 12);
+		push(failingSync, segment, next);
+
+		verifyRemoteManifest(2, segment, next);
+	}
+
+	/**
+	 * A writer claim that landed while every answer to it was lost is adopted
+	 * by the next claim, which then claims on top of it.
+	 */
+	@Test
+	void testClaimAfterALandedClaimWithLostAnswersClaimsOnTopOfIt() throws Exception {
+		var origin = newSync(s3Client, otherLocalPath);
+		var segment = createLocalFile(otherLocalPath, "segments_1", 10);
+		push(origin, segment);
+
+		var failingClient = Mockito.spy(s3Client);
+		var failingSync = newSync(failingClient);
+		assertThat(failingSync.pull(), is(true));
+
+		loseNextManifestWrite(failingClient);
+		assertThrows(IOException.class, failingSync::claimWriter);
+		assertThat(remoteManifest().getEpoch(), is(2L));
+
+		failingSync.claimWriter();
+		assertThat(remoteManifest().getEpoch(), is(3L));
+
+		var next = createLocalFile("segments_2", 12);
+		push(failingSync, segment, next);
+
+		verifyRemoteManifest(2, segment, next);
+		assertThat(remoteKeyOf("segments_2"), uploadedIn(3, "segments_2"));
+	}
+
+	/**
 	 * Each writer session writes its files under a prefix of its own, and a
 	 * file that does not change keeps the key it already has - a later
 	 * session never uploads it again, and never writes where an earlier one
