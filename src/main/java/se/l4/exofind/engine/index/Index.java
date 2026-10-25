@@ -22,7 +22,9 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -8977,6 +8979,10 @@ public class Index {
 	 * index itself is opened again by asking {@link se.l4.exofind.engine.Indexes}
 	 * for it anew.
 	 *
+	 * <p>An interrupt of the calling thread does not stop the commit, the push
+	 * or the teardown. The close finishes them and returns with the interrupt
+	 * still set.
+	 *
 	 * @param commit
 	 *   whether to commit and push what this instance holds before it goes.
 	 *   Nothing is pushed for an index the node lost rather than handed over,
@@ -9006,6 +9012,40 @@ public class Index {
 		 */
 		this.commitManager.close();
 
+		/*
+		 * Lucene writes through channels that an interrupt closes, and a write
+		 * that fails that way is a tragic event: the writer rolls back and
+		 * drops every change it did not commit. Closes run on threads that are
+		 * interrupted, as Indexes.close shuts down the executors that run the
+		 * closes of a load and a handover. The commit, the push and the
+		 * teardown thus run on a thread of their own that nothing interrupts.
+		 */
+		var failed = runUninterrupted(() -> flushAndTearDown(commit));
+
+		/*
+		 * Nothing is left for the background work to do, and the thread running
+		 * it would otherwise keep this index alive.
+		 */
+		this.maintenanceExecutor.shutdownNow();
+
+		if(failed != null) {
+			throw failed;
+		}
+	}
+
+	/**
+	 * Commit and push what this instance holds when {@code commit} asks for
+	 * it, and then release the readers, the writer and the directory. Part of
+	 * {@link #close(boolean)}, after the pull and the commit manager have
+	 * stopped.
+	 *
+	 * @return
+	 *   the failure of the commit or the push, or {@code null}. The teardown
+	 *   runs either way, so the failure is returned for the close to report
+	 * @throws IOException
+	 *   if the teardown failed
+	 */
+	private IOException flushAndTearDown(boolean commit) throws IOException {
 		/*
 		 * An index the node lost without handing it over pushes nothing on the
 		 * way out either: a successor may already be writing it, and what is
@@ -9084,15 +9124,47 @@ public class Index {
 			this.syncLock.writeLock().unlock();
 		}
 
-		/*
-		 * Nothing is left for the background work to do, and the thread running
-		 * it would otherwise keep this index alive.
-		 */
-		this.maintenanceExecutor.shutdownNow();
-
-		if(failed != null) {
-			throw failed;
-		}
+		return failed;
 	}
 
+	/**
+	 * Run a task on a new thread and wait for it to end. An interrupt of the
+	 * calling thread does not end the wait and does not reach the task. It
+	 * stays set on the calling thread when this returns.
+	 *
+	 * @param task
+	 *   the task, which takes no lock the calling thread holds
+	 * @return
+	 *   what the task returned
+	 * @throws IOException
+	 *   if the task threw it
+	 */
+	private <T> T runUninterrupted(Callable<T> task) throws IOException {
+		var future = new FutureTask<>(task);
+		var thread = new Thread(future, "index-close-" + id);
+		thread.setDaemon(true);
+		thread.start();
+
+		var interrupted = false;
+		try {
+			while(true) {
+				try {
+					return future.get();
+				} catch(InterruptedException e) {
+					interrupted = true;
+				} catch(ExecutionException e) {
+					switch(e.getCause()) {
+						case IOException io -> throw io;
+						case RuntimeException re -> throw re;
+						case Error error -> throw error;
+						default -> throw new IOException(e.getCause());
+					}
+				}
+			}
+		} finally {
+			if(interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
 }

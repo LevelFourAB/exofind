@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -18,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -41,7 +43,8 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 /**
  * That a close of the instance that writes an index pushes every change it
  * acknowledged. A close commits and pushes once, so a change it cannot carry
- * is refused rather than acknowledged. Runs against SeaweedFS through
+ * is refused rather than acknowledged, and an interrupt of the thread that
+ * closes does not stop the commit or the push. Runs against SeaweedFS through
  * {@link TestObjectStorage}.
  */
 public class IndexCloseTest {
@@ -122,6 +125,87 @@ public class IndexCloseTest {
 		closing.get(30, TimeUnit.SECONDS);
 		opened.remove(a);
 
+		var reader = open("b", new NodeState(false), objectSync("b"), CommitPolicy.disabled());
+		reader.pull();
+		assertThat(reader.getDocument("2"), is(notNullValue()));
+	}
+
+	@Test
+	@Timeout(60)
+	void aCloseOnAnInterruptedThreadPushesWhatItHolds() throws Exception {
+		// Given node A writes the index and pushed document 1
+		var a = open("a", holder(), objectSync("a"), CommitPolicy.disabled());
+		a.pull();
+		a.updateDefinition(definition());
+		a.addDocument(doc("1"));
+		a.commit();
+
+		// And node A acknowledged document 2 and did not commit it yet
+		a.addDocument(doc("2"));
+
+		// When the index is closed on a thread that was interrupted
+		var failure = new AtomicReference<Throwable>();
+		var stillInterrupted = new AtomicBoolean();
+		var thread = new Thread(() -> {
+			Thread.currentThread().interrupt();
+			try {
+				a.close();
+			} catch(Throwable t) {
+				failure.set(t);
+			}
+			stillInterrupted.set(Thread.currentThread().isInterrupted());
+		});
+		thread.start();
+		thread.join(30_000);
+		opened.remove(a);
+
+		// Then the close reports no failure and keeps the interrupt
+		assertThat("the close failed with " + failure.get(), failure.get(), is(nullValue()));
+		assertThat(stillInterrupted.get(), is(true));
+
+		// And a reader on another node finds document 2
+		var reader = open("b", new NodeState(false), objectSync("b"), CommitPolicy.disabled());
+		reader.pull();
+		assertThat(reader.getDocument("2"), is(notNullValue()));
+	}
+
+	@Test
+	@Timeout(60)
+	void anInterruptDuringTheClosePushDoesNotStopIt() throws Exception {
+		// Given node A writes the index and pushed document 1
+		var sync = new HeldSync(objectSync("a"));
+		var a = open("a", holder(), sync, CommitPolicy.disabled());
+		a.pull();
+		a.updateDefinition(definition());
+		a.addDocument(doc("1"));
+		a.commit();
+
+		// And node A acknowledged document 2 and did not commit it yet
+		a.addDocument(doc("2"));
+
+		// When the index closes and its push is held
+		sync.holdNextPush();
+		var failure = new AtomicReference<Throwable>();
+		var thread = new Thread(() -> {
+			try {
+				a.close();
+			} catch(Throwable t) {
+				failure.set(t);
+			}
+		});
+		thread.start();
+		assertThat("the close started its push", sync.awaitHeldPush(), is(true));
+
+		// And the closing thread is interrupted, as a shutdown of its executor does
+		thread.interrupt();
+		sync.releaseHeldPush();
+		thread.join(30_000);
+		opened.remove(a);
+
+		// Then the close reports no failure
+		assertThat("the close failed with " + failure.get(), failure.get(), is(nullValue()));
+
+		// And a reader on another node finds document 2
 		var reader = open("b", new NodeState(false), objectSync("b"), CommitPolicy.disabled());
 		reader.pull();
 		assertThat(reader.getDocument("2"), is(notNullValue()));
