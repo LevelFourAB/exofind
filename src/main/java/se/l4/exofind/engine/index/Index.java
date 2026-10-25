@@ -2429,7 +2429,7 @@ public class Index {
 	 * answer only holds for as long as it is held.
 	 *
 	 * @throws IndexClosedException
-	 *   if this instance has been closed
+	 *   if this instance is closed or being closed
 	 * @throws IndexReadonlyException
 	 *   if this node is not the indexer
 	 * @throws IndexOutOfDateException
@@ -2437,7 +2437,14 @@ public class Index {
 	 *   copy and the remote disagreeing about what the index holds
 	 */
 	private void checkModifiable() {
-		if(state == IndexState.CLOSED) {
+		if(isClosing()) {
+			/*
+			 * Refused from the start of a close, not only from its end. The
+			 * close commits and pushes once, and a write accepted after that
+			 * commit is only in the commit Lucene makes as the writer closes.
+			 * That local commit is never pushed: the next instance opens it as
+			 * its baseline and counts no change in it.
+			 */
 			throw new IndexClosedException(id);
 		}
 
@@ -9048,9 +9055,10 @@ public class Index {
 				if(this.writer != null) {
 					if(commit && mayPush) {
 						/*
-						 * Lucene commits on close, which keeps a change that
-						 * arrived after the commit above as a local commit. The
-						 * next instance on this node pushes it.
+						 * Writes are refused from the start of the close, so
+						 * the commit above holds every acknowledged change.
+						 * Lucene commits on close, which keeps only the merges
+						 * that finished after it.
 						 */
 						this.writer.close();
 					} else {
