@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
@@ -946,6 +947,59 @@ public class IndexTest {
 
 		assertThat(index.getState(), is(IndexState.USABLE));
 		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+	}
+
+	/**
+	 * A handover whose flush committed and failed to push is called off, and
+	 * the commit interval passes while the node does not hold the index. The
+	 * commit manager gives up its count then, as a commit is refused. When
+	 * the node writes the index again, the commit of the flush is pushed
+	 * without a new write.
+	 */
+	@Test
+	public void testACalledOffHandoverPushesTheCommitOfItsFailedFlush() throws Exception {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var pushFails = new AtomicBoolean();
+		var pushes = new AtomicInteger();
+		var index = new Index(state, "test", path, new NoopSync() {
+			@Override
+			public void push(Set<String> files) throws IOException {
+				if(pushFails.get()) {
+					throw new IOException("The storage refused the push");
+				}
+
+				pushes.incrementAndGet();
+			}
+		}, new CommitPolicy(0, Duration.ofMillis(200)));
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+		index.commit();
+
+		index.addDocument(new Document(new Document.Value("field1", true)));
+
+		pushFails.set(true);
+		state.updateOwnership(false);
+		assertThat(index.reopen(true), is(false));
+
+		// The commit interval passes while the node does not hold the index
+		Thread.sleep(800);
+
+		pushFails.set(false);
+		state.updateOwnership(true);
+		var before = pushes.get();
+		assertThat(index.reopen(true), is(true));
+
+		var deadline = System.currentTimeMillis() + 5_000;
+		while(index.getState() != IndexState.USABLE && System.currentTimeMillis() < deadline) {
+			Thread.sleep(25);
+		}
+
+		assertThat(index.getState(), is(IndexState.USABLE));
+		assertThat(pushes.get(), is(before + 1));
 	}
 
 	/**

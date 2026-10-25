@@ -37,7 +37,9 @@ import se.l4.exofind.engine.metrics.RequestMetrics;
  * neither gets better by trying again: a {@link SyncConflictException} means
  * another node has written the remote and this copy is about to be replaced by
  * a pull, and an index that has become read-only or closed is no longer this
- * node's to commit. Both give up the changes they were counting.
+ * node's to commit. Both give up the changes they were counting. When the
+ * node writes the index again, {@link #recordUnpushed()} counts what the index
+ * still holds.
  *
  * <p>Safe for concurrent use. {@link #recordChange(long)} never blocks on a
  * commit, so it can be called while the index is being written.
@@ -186,6 +188,35 @@ public class IndexCommitManager {
 			} else {
 				armTimer();
 			}
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	/**
+	 * Record that the index holds changes the remote does not have, where no
+	 * change counted here covers them anymore. Happens to a handover that is
+	 * called off: its flush committed and failed to push, and the commits
+	 * refused while the node did not hold the index gave up the count. Starts
+	 * a commit, which pushes them and is retried like any other.
+	 *
+	 * <p>Does nothing while changes are counted, as the next commit pushes
+	 * these with them.
+	 */
+	public void recordUnpushed() {
+		if(!policy.isEnabled()) {
+			return;
+		}
+
+		lock.lock();
+		try {
+			if(closed || pendingChanges > 0) {
+				return;
+			}
+
+			oldestPendingAt = System.nanoTime();
+			pendingChanges = 1;
+			startCommit(Duration.ZERO);
 		} finally {
 			lock.unlock();
 		}

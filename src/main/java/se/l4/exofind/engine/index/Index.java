@@ -1523,7 +1523,17 @@ public class Index {
 				 * Already open the way the node holds it. Skipped rather than
 				 * reopened so that an ownership change about other indexes -
 				 * or one already applied - does not roll a writer back.
+				 *
+				 * A handover that was called off leaves a writer that holds
+				 * changes the remote does not have. Its flush may have
+				 * committed them and failed to push, and the commit manager
+				 * gives up its count while the node does not hold the index.
+				 * Nothing would push that commit until the next write.
 				 */
+				if(shouldWrite && state == IndexState.MODIFIED) {
+					commitManager.recordUnpushed();
+				}
+
 				return true;
 			}
 
