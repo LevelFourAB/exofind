@@ -177,6 +177,14 @@ public class ObjectStorageSync implements StateSync {
 	private Manifest unconfirmedManifest;
 
 	/**
+	 * Whether the manifest on disk is older than {@link #lastSyncedManifest}.
+	 * Set when the remote accepted a manifest whose local write then failed,
+	 * for example on a full disk. The next push or claim writes it first, see
+	 * {@link #catchUpLocalManifest()}.
+	 */
+	private boolean localManifestBehind;
+
+	/**
 	 * Epoch this instance has claimed for its writes, or {@code -1} while it
 	 * has not claimed one. Claimed when a writer opens on this copy, and
 	 * before the first upload where no writer opened here.
@@ -300,6 +308,7 @@ public class ObjectStorageSync implements StateSync {
 			 * from the version that write took.
 			 */
 			resolveUnconfirmedManifest();
+			catchUpLocalManifest();
 
 			var previousManifest = lastSyncedManifest;
 			var manifest = createManifest(files, previousManifest);
@@ -406,9 +415,7 @@ public class ObjectStorageSync implements StateSync {
 			 * behind.
 			 */
 			putManifest(manifest);
-
-			writeManifest(manifest);
-			this.lastSyncedManifest = manifest;
+			recordAccepted(manifest);
 
 			deleteObsoleteRemoteObjects(baseline, manifest);
 			maybeSweepRemote(manifest);
@@ -422,6 +429,7 @@ public class ObjectStorageSync implements StateSync {
 		lock.lock();
 		try {
 			resolveUnconfirmedManifest();
+			catchUpLocalManifest();
 
 			/*
 			 * The manifest the claim is written on top of is the one the remote
@@ -488,10 +496,48 @@ public class ObjectStorageSync implements StateSync {
 			.log("Claiming writer epoch");
 
 		putManifest(claimed);
-
-		writeManifest(claimed);
-		this.lastSyncedManifest = claimed;
 		this.sessionEpoch = claimed.getEpoch();
+		recordAccepted(claimed);
+	}
+
+	/**
+	 * Record a manifest the remote accepted from this node as the one it is
+	 * synchronized at, and write it to disk.
+	 *
+	 * <p>The memory is updated before the disk. The remote holds the manifest
+	 * under the tag {@link #putManifest} stored, and the next version and a
+	 * sweep must both start from the manifest that tag belongs to. A manifest
+	 * from before the write would give the next push a version the remote
+	 * already accepted, and would let a sweep remove objects the remote names.
+	 *
+	 * @throws IOException
+	 *   if the local write failed. The remote write stands, and the next push
+	 *   or claim writes the manifest to disk again
+	 */
+	private void recordAccepted(Manifest manifest) throws IOException {
+		this.lastSyncedManifest = manifest;
+		this.localManifestBehind = true;
+
+		writeManifest(manifest);
+		this.localManifestBehind = false;
+	}
+
+	/**
+	 * Write the manifest this node is synchronized at to disk, when an
+	 * earlier local write of it failed. A node that restarts reads the
+	 * manifest on disk. An older one there makes it pull the remote over the
+	 * local commits that the remote does not hold yet.
+	 *
+	 * @throws IOException
+	 *   if the local write failed again
+	 */
+	private void catchUpLocalManifest() throws IOException {
+		if(!localManifestBehind) {
+			return;
+		}
+
+		writeManifest(lastSyncedManifest);
+		this.localManifestBehind = false;
 	}
 
 	@Override
@@ -656,6 +702,7 @@ public class ObjectStorageSync implements StateSync {
 			writeManifest(manifest);
 			this.lastSyncedManifest = manifest;
 			this.lastSyncedManifestETag = quoteETag(pulled.eTag());
+			this.localManifestBehind = false;
 
 			// The pulled manifest replaces whatever an unanswered write left
 			this.unconfirmedManifest = null;
@@ -953,6 +1000,7 @@ public class ObjectStorageSync implements StateSync {
 		var previous = lastSyncedManifest;
 		this.lastSyncedManifest = unconfirmed;
 		this.lastSyncedManifestETag = quoteETag(pulled.eTag());
+		this.localManifestBehind = false;
 		this.sessionEpoch = unconfirmed.getEpoch();
 		this.unconfirmedManifest = null;
 

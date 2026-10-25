@@ -43,6 +43,8 @@ import org.mockito.Mockito;
 
 import com.google.common.hash.Hashing;
 
+import se.l4.exofind.engine.storage.DurableFiles;
+
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -1568,6 +1570,88 @@ public class ObjectStorageSyncTest {
 
 		verifyRemoteManifest(2, segment, next);
 		assertThat(remoteKeyOf("segments_2"), uploadedIn(3, "segments_2"));
+	}
+
+	/**
+	 * Make every local write of the manifest fail, as a full disk does, by
+	 * putting a directory where the write puts its temporary file. Deleting
+	 * the returned directory lets the writes through again.
+	 */
+	private static Path blockLocalManifestWrites(Path root) throws IOException {
+		return Files.createDirectory(root.resolve("manifest.ef.bin" + DurableFiles.TEMP_SUFFIX));
+	}
+
+	/**
+	 * A push that the remote accepts but whose local manifest write fails
+	 * moves the version on all the same. The next push takes the version
+	 * after it, as registry hints order manifests by version.
+	 */
+	@Test
+	void testPushAfterAFailedLocalManifestWriteAdvancesTheVersion() throws Exception {
+		var first = createLocalFile("segments_1", 10);
+		push(first);
+
+		var blocker = blockLocalManifestWrites(localPath);
+		var second = createLocalFile("segments_2", 12);
+		assertThrows(IOException.class, () -> push(first, second));
+		assertThat(remoteManifest().getVersion(), is(2L));
+		Files.delete(blocker);
+
+		var third = createLocalFile("segments_3", 14);
+		push(first, second, third);
+
+		verifyRemoteManifest(3, first, second, third);
+		assertThat(remoteManifest().getVersion(), is(3L));
+	}
+
+	/**
+	 * After a push that the remote accepts but whose local manifest write
+	 * fails, a timer sweep keeps every object the remote manifest names.
+	 */
+	@Test
+	void testSweepAfterAFailedLocalManifestWriteKeepsWhatTheRemoteNames() throws Exception {
+		var grace = Duration.ofSeconds(2);
+		var sync = newSync(s3Client, localPath, grace);
+		var first = createLocalFile("segments_1", 10);
+		push(sync, first);
+
+		var blocker = blockLocalManifestWrites(localPath);
+		var second = createLocalFile("segments_2", 12);
+		assertThrows(IOException.class, () -> push(sync, first, second));
+		Files.delete(blocker);
+
+		Thread.sleep(grace.toMillis() + 1500);
+		sync.sweep();
+
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+		verifyLocalFile(otherLocalPath, first);
+		verifyLocalFile(otherLocalPath, second);
+	}
+
+	/**
+	 * A push that the remote accepted is written to disk by the next push,
+	 * also when that push has nothing new to send. A node that restarts reads
+	 * the manifest on disk, and one older than the remote makes it pull over
+	 * its own commits.
+	 */
+	@Test
+	void testRetryAfterAFailedLocalManifestWriteWritesItToDisk() throws Exception {
+		var first = createLocalFile("segments_1", 10);
+		push(first);
+
+		var blocker = blockLocalManifestWrites(localPath);
+		var second = createLocalFile("segments_2", 12);
+		assertThrows(IOException.class, () -> push(first, second));
+
+		// While the disk still refuses, the retry fails too
+		assertThrows(IOException.class, () -> push(first, second));
+		Files.delete(blocker);
+
+		push(first, second);
+
+		assertThat(remoteManifest().getVersion(), is(2L));
+		assertThat(newSync(s3Client).syncedVersion(), is(OptionalLong.of(2L)));
 	}
 
 	/**
