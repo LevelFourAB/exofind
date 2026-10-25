@@ -468,6 +468,50 @@ public class IndexRegistryTest {
 	}
 
 	/**
+	 * A create that takes its registration back removes the index while the
+	 * registry still holds that registration.
+	 */
+	@Test
+	public void testRemovingARegistrationTakesTheIndexOut() {
+		var created = registry.create("books", "1");
+
+		assertThat(registry.removeCreated("books", created.createdAt()), is(true));
+		assertThat(storedNames(storage.stored()), emptyIterable());
+	}
+
+	/**
+	 * Another node can delete the name and create it again before a create
+	 * takes its registration back. The later registration stays.
+	 */
+	@Test
+	public void testRemovingARegistrationLeavesALaterOneOfTheSameName() throws Exception {
+		var created = registry.create("books", "1");
+
+		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+		other.remove("books");
+		Thread.sleep(2);
+		other.create("books", "1");
+
+		assertThat(registry.removeCreated("books", created.createdAt()), is(false));
+		assertThat(storedNames(storage.stored()), contains("books"));
+	}
+
+	/**
+	 * A registration another node already removed is not there to take back,
+	 * which is not a failure of the create that asks.
+	 */
+	@Test
+	public void testRemovingARegistrationThatIsGoneDoesNothing() {
+		var created = registry.create("books", "1");
+
+		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+		other.remove("books");
+
+		assertThat(registry.removeCreated("books", created.createdAt()), is(false));
+		assertThat(storedNames(storage.stored()), emptyIterable());
+	}
+
+	/**
 	 * A name this node has not seen is looked up right away, so an index
 	 * created a moment ago somewhere else can be used without waiting for the
 	 * next refresh - but a run of names that are not there costs one read

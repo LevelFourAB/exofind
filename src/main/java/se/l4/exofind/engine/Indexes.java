@@ -2562,7 +2562,7 @@ public class Indexes implements RegistryPoller.Listener {
 			 * refused is an index with no definition yet, which the same request
 			 * sent again fills in.
 			 */
-			registry.create(index.index(), generation);
+			var registered = registry.create(index.index(), generation);
 
 			var removedMeanwhile = false;
 			try {
@@ -2595,7 +2595,16 @@ public class Indexes implements RegistryPoller.Listener {
 				return openWithDefinition(index.withGeneration(generation), def);
 			} catch(RuntimeException e) {
 				if(!removedMeanwhile) {
-					registry.remove(index.index());
+					/*
+					 * Only this registration. Another node can delete the
+					 * name and create it again before the failure, and its
+					 * index is registered under the same name.
+					 */
+					try {
+						registry.removeCreated(index.index(), registered.createdAt());
+					} catch(RuntimeException removeFailed) {
+						e.addSuppressed(removeFailed);
+					}
 				}
 
 				throw e;

@@ -618,6 +618,63 @@ public class IndexRegistry {
 	}
 
 	/**
+	 * Take an index out of the registry while the stored registry still holds
+	 * the registration made at {@code createdAt}, for a create that takes its
+	 * own registration back. An index of the same name that another node
+	 * deleted and created again since carries another time, and is left in
+	 * the registry.
+	 *
+	 * <p>Times are compared to the millisecond, the precision the registry
+	 * stores them in.
+	 *
+	 * @param index
+	 * @param createdAt
+	 *   when the registration to remove was made, as {@link #create} answered
+	 *   it
+	 * @return
+	 *   whether the registration was removed. {@code false} when the registry
+	 *   no longer holds the index, or holds a later registration of it
+	 * @throws RegistryException
+	 *   if the registry could not be read or written
+	 */
+	public boolean removeCreated(String index, Instant createdAt) {
+		if(!refresh() || !isRegistration(snapshot.get().indexes(), index, createdAt)) {
+			return false;
+		}
+
+		var removed = new boolean[1];
+		change(indexes -> {
+			removed[0] = isRegistration(indexes, index, createdAt);
+			return removed[0]
+				? indexes.reject(existing -> existing.name().equals(index))
+				: indexes;
+		});
+
+		if(removed[0]) {
+			logger.atInfo()
+				.addKeyValue("index", index)
+				.log("Removed index");
+		}
+
+		return removed[0];
+	}
+
+	/**
+	 * Whether the indexes hold the registration of {@code index} made at
+	 * {@code createdAt}, compared to the millisecond.
+	 */
+	private static boolean isRegistration(
+		ListIterable<RegisteredIndex> indexes,
+		String index,
+		Instant createdAt
+	) {
+		var entry = indexes.detect(existing -> existing.name().equals(index));
+		return entry != null
+			&& entry.createdAt() != null
+			&& entry.createdAt().toEpochMilli() == createdAt.toEpochMilli();
+	}
+
+	/**
 	 * Fold version hints into the registry, so that every node can tell from
 	 * its next read of the registry that a settings object or a manifest
 	 * changed - or that it did not, which is what spares the read of it.
