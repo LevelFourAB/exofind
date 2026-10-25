@@ -54,9 +54,11 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * fair share of the count, and handing its most write-idle one over per
  * round while it holds more and another candidate holds less, so a busy
  * index stays with the writer that is warm for it. A candidate that cannot renew
- * before its claims lapse gives every index up on its own rather than assume
- * it still holds them, and the manifest CAS covers the moment where it has
- * lost an index but not yet noticed.
+ * its claims gives every index up on its own a tenth of a lease before the
+ * claims lapse. A timer apart from the rounds checks this, so a round stuck
+ * on the storage cannot keep the claims, and each request for the table is
+ * limited to a third of a lease. The manifest CAS covers the moment where
+ * the node has lost an index but not yet noticed.
  *
  * Even counts can still carry uneven load, so every claim also carries a
  * coarse figure of how heavily its index is written. A node whose total sits
@@ -208,29 +210,58 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 	private final ScheduledExecutorService executor;
 
+	/**
+	 * Runs {@link #checkLease()} apart from the rounds, so that a round
+	 * stuck on the storage cannot keep claims past their expiry.
+	 */
+	private final ScheduledExecutorService leaseWatch;
+
+	/**
+	 * How long before the claims lapse a node that has not renewed them
+	 * gives them up. Other nodes may take a claim from the moment it lapses,
+	 * so the node stops writing ahead of that moment.
+	 */
+	private final long revokeMarginMillis;
+
+	/**
+	 * The longest a single request for the table may take. A request with
+	 * no limit can hold the round thread for as long as the socket timeout
+	 * of the client.
+	 */
+	private final Duration tableCallTimeout;
+
+	/**
+	 * Guards {@link #held}, {@link #draining}, {@link #drainFlushes} and
+	 * {@link #heldUntil}, and every call to the listener. The rounds and
+	 * {@link #checkLease()} both change them. A round holds the lock while it
+	 * builds and while it applies a table, never while it waits on the
+	 * storage.
+	 */
+	private final Object stateLock = new Object();
+
 	private Listener listener;
 
 	private volatile boolean started;
 
 	/**
-	 * The indexes this node believes it holds. Only replaced on the executor
-	 * thread, volatile so {@link #tryClaim} can answer for an already held
-	 * index without coordinating.
+	 * The indexes this node believes it holds. Only replaced while
+	 * {@link #stateLock} is held, volatile so {@link #tryClaim} can answer
+	 * for an already held index without coordinating.
 	 */
 	private volatile ImmutableSet<String> held = Sets.immutable.empty();
 
 	/**
 	 * The indexes on their way out of this node: their claims are still in
 	 * the table so nothing else takes them, but writes are no longer served
-	 * and what they hold is being flushed. Only replaced on the executor
-	 * thread, volatile so {@link #tryClaim} can refuse one without
-	 * coordinating.
+	 * and what they hold is being flushed. Only replaced while
+	 * {@link #stateLock} is held, volatile so {@link #tryClaim} can refuse one
+	 * without coordinating.
 	 */
 	private volatile ImmutableSet<String> draining = Sets.immutable.empty();
 
 	/**
 	 * The flush each draining index is waiting on before its claim may be
-	 * released. Only touched on the executor thread.
+	 * released. Only touched while {@link #stateLock} is held.
 	 */
 	private final HashMap<String, CompletableFuture<?>> drainFlushes = new HashMap<>();
 
@@ -243,8 +274,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 	/**
 	 * When the claims this node holds lapse, according to its own clock.
-	 * Failing to renew past this point means holding them is no longer
-	 * certain and they are given up. Only touched on the executor thread.
+	 * Failing to renew before {@link #revokeMarginMillis} ahead of this point
+	 * means holding them is no longer certain, and they are given up. Only
+	 * touched while {@link #stateLock} is held.
 	 */
 	private long heldUntil;
 
@@ -314,8 +346,17 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		this.writeLoadSeed = writeLoadSeed;
 		this.handoverFlush = handoverFlush;
 
+		this.revokeMarginMillis = Math.max(1, leaseDuration.toMillis() / 10);
+		this.tableCallTimeout = leaseDuration.dividedBy(3);
+
 		this.executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
 			var thread = new Thread(runnable, "indexer-ownership");
+			thread.setDaemon(true);
+			return thread;
+		});
+
+		this.leaseWatch = Executors.newSingleThreadScheduledExecutor(runnable -> {
+			var thread = new Thread(runnable, "indexer-ownership-lease");
 			thread.setDaemon(true);
 			return thread;
 		});
@@ -341,6 +382,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		line.log("Competing for the indexer role");
 
 		executor.execute(this::tick);
+
+		/*
+		 * Checked often enough that the claims are given up at least half a
+		 * margin before they lapse.
+		 */
+		var period = Math.max(1, revokeMarginMillis / 3);
+		leaseWatch.scheduleWithFixedDelay(this::checkLease, period, period, TimeUnit.MILLISECONDS);
 	}
 
 	@Override
@@ -366,6 +414,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			Thread.currentThread().interrupt();
 			executor.shutdownNow();
 		}
+
+		// The shutdown flush emptied what the watch guards
+		leaseWatch.shutdownNow();
 
 		/*
 		 * The rounds stopped with the executor, so nothing else renews the
@@ -445,48 +496,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		try {
 			executor.execute(() -> {
-				var pending = new ArrayList<CompletableFuture<?>>(drainFlushes.values());
-
-				// Set before the listener hears of the loss, so no flush starts unrenewed
-				flushingOnShutdown = held.union(draining);
-
-				for(var name : held) {
-					logger.atInfo()
-						.addKeyValue("node", node)
-						.addKeyValue("index", name)
-						.log("Handing over writing the index");
-
-					try {
-						listener.onOwnershipChanged(name, false);
-						pending.add(handoverFlush.apply(name));
-					} catch(RuntimeException e) {
-						logger.atWarn()
-							.addKeyValue("node", node)
-							.addKeyValue("index", name)
-							.setCause(e)
-							.log("Could not flush before handing the index over; " + e.getMessage());
-
-						/*
-						 * A flush that could not even be asked for pushed
-						 * nothing, so the claims have to lapse rather than be
-						 * released.
-						 */
-						pending.add(CompletableFuture.failedFuture(e));
-					}
+				synchronized(stateLock) {
+					startShutdownFlush(flushed);
 				}
-
-				held = Sets.immutable.empty();
-				draining = Sets.immutable.empty();
-				drainFlushes.clear();
-
-				CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
-					.whenComplete((result, e) -> {
-						if(e == null) {
-							flushed.complete(null);
-						} else {
-							flushed.completeExceptionally(e);
-						}
-					});
 			});
 		} catch(RejectedExecutionException e) {
 			// Never started, so nothing is held and there is nothing to flush
@@ -494,6 +506,59 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 
 		return flushed;
+	}
+
+	/**
+	 * Tell the listener about the loss of every index this node holds, and
+	 * ask for their flushes, for {@link #flushOnShutdown()}. Called with
+	 * {@link #stateLock} held.
+	 *
+	 * @param flushed
+	 *   completed when every flush is done
+	 */
+	private void startShutdownFlush(CompletableFuture<Void> flushed) {
+		var pending = new ArrayList<CompletableFuture<?>>(drainFlushes.values());
+
+		// Set before the listener hears of the loss, so no flush starts unrenewed
+		flushingOnShutdown = held.union(draining);
+
+		for(var name : held) {
+			logger.atInfo()
+				.addKeyValue("node", node)
+				.addKeyValue("index", name)
+				.log("Handing over writing the index");
+
+			try {
+				listener.onOwnershipChanged(name, false);
+				pending.add(handoverFlush.apply(name));
+			} catch(RuntimeException e) {
+				logger.atWarn()
+					.addKeyValue("node", node)
+					.addKeyValue("index", name)
+					.setCause(e)
+					.log("Could not flush before handing the index over; " + e.getMessage());
+
+				/*
+				 * A flush that could not even be asked for pushed
+				 * nothing, so the claims have to lapse rather than be
+				 * released.
+				 */
+				pending.add(CompletableFuture.failedFuture(e));
+			}
+		}
+
+		held = Sets.immutable.empty();
+		draining = Sets.immutable.empty();
+		drainFlushes.clear();
+
+		CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
+			.whenComplete((result, e) -> {
+				if(e == null) {
+					flushed.complete(null);
+				} else {
+					flushed.completeExceptionally(e);
+				}
+			});
 	}
 
 	@Override
@@ -707,16 +772,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		/*
 		 * Both a storage that cannot be reached and a round that keeps losing
-		 * the conditional write end up here: past the expiry of the claims,
-		 * holding them is no longer certain and they are given up. A claim
-		 * kept only while its index drains lapses the same way.
+		 * the conditional write end up here. checkLease gives the claims up
+		 * on its own too, for a round that does not return.
 		 */
-		if(
-			(!held.isEmpty() || !draining.isEmpty())
-				&& System.currentTimeMillis() >= heldUntil
-		) {
-			lostAll("the claims lapsed before they could be renewed");
-		}
+		checkLease();
 
 		/*
 		 * Jittered so two candidates that collided once do not stay in phase
@@ -758,10 +817,17 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				: fetched.table();
 			var now = System.currentTimeMillis();
 
-			var rebuilt = rebuild(current, now, null);
+			Rebuilt rebuilt;
+			synchronized(stateLock) {
+				rebuilt = rebuild(current, now, null);
+			}
+
 			var etag = putTable(rebuilt.table(), fetched == null ? null : fetched.eTag());
 			if(etag != null) {
-				apply(now, rebuilt);
+				synchronized(stateLock) {
+					apply(now, rebuilt);
+				}
+
 				return;
 			}
 		}
@@ -811,7 +877,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				return false;
 			}
 
-			var rebuilt = rebuild(current, now, index);
+			Rebuilt rebuilt;
+			synchronized(stateLock) {
+				rebuilt = rebuild(current, now, index);
+			}
 
 			String etag;
 			try {
@@ -835,8 +904,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				 */
 				claimedAhead.put(index, now + CLAIM_AHEAD_GRACE.toMillis());
 
-				apply(now, rebuilt);
-				return true;
+				synchronized(stateLock) {
+					apply(now, rebuilt);
+					return held.contains(index);
+				}
 			}
 		}
 
@@ -1403,6 +1474,16 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * listener told about every index that changed hands.
 	 */
 	private void apply(long now, Rebuilt rebuilt) {
+		if(System.currentTimeMillis() >= now + leaseDuration.toMillis() - revokeMarginMillis) {
+			/*
+			 * The table write took so long that the claims it renewed are
+			 * about to lapse. checkLease would give them up at once, so they
+			 * are not taken up at all.
+			 */
+			lostAll("the leadership write took too long to rely on the renewed claims");
+			return;
+		}
+
 		this.heldUntil = now + leaseDuration.toMillis();
 		this.tableCache = new CachedTable(rebuilt.table(), System.nanoTime());
 
@@ -1551,8 +1632,34 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	}
 
 	/**
+	 * Give every index up when the claims are about to lapse without a
+	 * renewal. Called after every round, and by {@link #leaseWatch} on a
+	 * timer of its own, so a round that does not return cannot keep the
+	 * claims past their expiry.
+	 */
+	private void checkLease() {
+		try {
+			synchronized(stateLock) {
+				if(
+					(!held.isEmpty() || !draining.isEmpty())
+						&& System.currentTimeMillis() >= heldUntil - revokeMarginMillis
+				) {
+					lostAll("the claims could not be renewed before they lapse");
+				}
+			}
+		} catch(RuntimeException e) {
+			// Thrown out of the timer, it would end every later check
+			logger.atWarn()
+				.addKeyValue("node", node)
+				.setCause(e)
+				.log("Could not check the claims for their expiry; " + e.getMessage());
+		}
+	}
+
+	/**
 	 * Give every index up because holding them is no longer certain, telling
-	 * the listener so the indexes stop taking writes here.
+	 * the listener so the indexes stop taking writes here. Called with
+	 * {@link #stateLock} held.
 	 */
 	private void lostAll(String reason) {
 		var before = held;
@@ -1755,6 +1862,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				GetObjectRequest.builder()
 					.bucket(bucket)
 					.key(tableKey)
+					.overrideConfiguration(o -> o.apiCallTimeout(tableCallTimeout))
 					.build()
 			)
 		) {
@@ -1793,7 +1901,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		var requestBuilder = PutObjectRequest.builder()
 			.bucket(bucket)
 			.key(tableKey)
-			.contentType("application/octet-stream");
+			.contentType("application/octet-stream")
+			.overrideConfiguration(o -> o.apiCallTimeout(tableCallTimeout));
 
 		if(expectedETag != null) {
 			requestBuilder.ifMatch(expectedETag);

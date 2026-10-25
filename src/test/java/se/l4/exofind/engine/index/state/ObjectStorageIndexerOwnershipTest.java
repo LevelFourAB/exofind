@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -30,6 +32,10 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import se.l4.exofind.engine.storage.ObjectStorage;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -129,6 +135,71 @@ public class ObjectStorageIndexerOwnershipTest {
 			(name, count) -> nodeLoads.merge(name, (double) count, Double::sum),
 			name -> flush.apply(name)
 		);
+	}
+
+	/**
+	 * A candidate that reads and writes the table through an interceptor,
+	 * which can fail or stall the requests of this one node.
+	 */
+	private ObjectStorageIndexerOwnership newFaultyOwnership(
+		String node,
+		ExecutionInterceptor faults
+	) throws IOException {
+		var faulty = new ObjectStorage(
+			Optional.of(TestObjectStorage.url()),
+			TestObjectStorage.auth(),
+			Optional.empty(),
+			TestObjectStorage.BUCKET,
+			Optional.of(storagePrefix),
+			false,
+			faults
+		);
+
+		return new ObjectStorageIndexerOwnership(
+			faulty,
+			node,
+			Optional.empty(),
+			LEASE,
+			names::get,
+			name -> 0d,
+			(name, count) -> {},
+			name -> flush.apply(name)
+		);
+	}
+
+	/**
+	 * Fails reads of the leadership table while {@link #fail} is on, and
+	 * stalls them while {@link #stallMillis} is above zero. This stands in
+	 * for a storage that one node cannot reach, or that answers slowly.
+	 */
+	static final class TableReadFaults implements ExecutionInterceptor {
+		final AtomicBoolean fail = new AtomicBoolean();
+		final AtomicLong stallMillis = new AtomicLong();
+
+		@Override
+		public void beforeExecution(Context.BeforeExecution context, ExecutionAttributes attributes) {
+			if(
+				!(context.request() instanceof GetObjectRequest get)
+					|| !get.key().endsWith("indexer-leadership.ef.bin")
+			) {
+				return;
+			}
+
+			var stall = stallMillis.get();
+			if(stall > 0) {
+				try {
+					Thread.sleep(stall);
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+
+				throw SdkClientException.create("simulated read timeout of the leadership table");
+			}
+
+			if(fail.get()) {
+				throw SdkClientException.create("simulated unreachable leadership table");
+			}
+		}
 	}
 
 	/**
@@ -512,6 +583,79 @@ public class ObjectStorageIndexerOwnershipTest {
 
 		stopping.join(15_000);
 		assertThat(stopping.isAlive(), is(false));
+	}
+
+	/**
+	 * Wait until a round renews the claim on the index.
+	 */
+	private void awaitRenewal(String index) throws Exception {
+		var before = expiryOf(index);
+		await(
+			() -> {
+				try {
+					return expiryOf(index) != before;
+				} catch(Exception e) {
+					return false;
+				}
+			},
+			"the claim on " + index + " to be renewed"
+		);
+	}
+
+	/**
+	 * Other nodes may take a claim from the moment it lapses. A node that
+	 * cannot renew its claims must give them up before that moment, or it
+	 * serves writes for an index another node already writes.
+	 */
+	@Test
+	void testUnrenewableClaimsAreGivenUpBeforeTheyLapse() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var faults = new TableReadFaults();
+		var holder = newFaultyOwnership("a", faults);
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(holder, revoked);
+		await(() -> owned.contains("books"), "the candidate to take the index");
+
+		awaitRenewal("books");
+		faults.fail.set(true);
+
+		// Every later write of the holder reads first, so this expiry is the last one
+		Thread.sleep(200);
+		var lapsesAt = expiryOf("books");
+
+		await(() -> revoked.contains("books"), "the candidate to give the index up");
+		assertThat(
+			"milliseconds the index was kept after its claim lapsed",
+			System.currentTimeMillis() - lapsesAt,
+			lessThan(0L)
+		);
+	}
+
+	/**
+	 * A round that never returns, for example on a request that the client
+	 * timeout cannot end, must not keep the claims either.
+	 */
+	@Test
+	void testAStalledRoundDoesNotKeepALapsedIndex() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var faults = new TableReadFaults();
+		var holder = newFaultyOwnership("a", faults);
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(holder, revoked);
+		await(() -> owned.contains("books"), "the first candidate to take the index");
+
+		var successor = newOwnership("b");
+		start(successor);
+
+		awaitRenewal("books");
+		faults.stallMillis.set(LEASE.toMillis() * 5);
+
+		await(() -> successor.tryClaim("books"), "the second candidate to take the index");
+
+		assertThat(revoked.contains("books"), is(true));
+		assertThat(owned.contains("books"), is(false));
 	}
 
 	/**

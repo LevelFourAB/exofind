@@ -183,6 +183,8 @@ Every candidate runs a coordination round at an interval equal to one-third of t
 
 The candidate selects the most idle index for handover based on a write count that halves every few minutes. This keeps active indexes on writers with warm Lucene state, while quiet indexes absorb the cost of pulling and reopening data. The time required for a claim to lapse determines approximate failover duration.
 
+A candidate that cannot renew its claims gives them up on its own one-tenth of the claim duration before they lapse. Other candidates may take a claim from the moment it lapses, so the holder stops writing first. A timer separate from the rounds makes this check, because a round can wait on a storage request that does not return. Each request for the table also has a limit of one-third of the claim duration.
+
 Equal index counts can still result in uneven load, such as when one node holds all active indexes and another holds only idle ones. To balance load, each claim includes a write load metric equal to the bit length of the decaying write count, which increments when write traffic approximately doubles.
 
 When a node's load total substantially exceeds that of the least-loaded candidate, the node marks an index claim as offered. An underloaded candidate responds by recording itself as the taker in the claim, and the holder transfers the claim. Only the holder transfers a claim, ensuring an index changes hands only when its writer initiates the transfer. The count-balancing process completes the exchange by moving an idle index back in the opposite direction.
