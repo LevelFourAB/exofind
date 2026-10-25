@@ -114,35 +114,68 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 				return null;
 			}
 
-			throw new IOException("Unable to write the index registry; " + e.getMessage(), e);
+			/*
+			 * A server error does not say that the write was refused. A proxy
+			 * in front of the storage answers 504 when it stops waiting, and
+			 * the storage can finish the write after that.
+			 */
+			return resolveUnanswered(indexes, expectedVersion, e);
 		} catch(Exception e) {
 			/*
 			 * The storage may drop the connection after it has taken the
 			 * write, which arrives as a connection failure rather than as the
-			 * answer to it. Read the registry back to tell what happened:
-			 * exactly what was written means the write went through, a version
-			 * other than the one it was conditioned on means another node got
-			 * there first, and the version it was conditioned on means the
-			 * write never arrived and may be made again.
-			 *
-			 * Without this a change that landed is reported as a failure, and
-			 * whoever asked for it sends it again - where a create is answered
-			 * with the name already existing, and a removal with the
-			 * generation being gone.
+			 * answer to it.
 			 */
-			var current = tryRead();
-			if(current != null) {
-				if(current.indexes().equals(indexes)) {
-					return current.version();
-				}
+			return resolveUnanswered(indexes, expectedVersion, e);
+		}
+	}
 
-				if(!Objects.equals(current.version(), expectedVersion)) {
-					return null;
-				}
+	/**
+	 * Read the registry back to find out what became of a write whose
+	 * answer does not tell. Exactly what was written means the write went
+	 * through, a version other than the one it was conditioned on means
+	 * another node got there first, and the version it was conditioned on
+	 * means the write never arrived and may be made again.
+	 *
+	 * <p>Without this a change that landed is reported as a failure. The
+	 * caller then skips the step that follows the change: a create does not
+	 * clear what a delete of the name left, and a delete leaves no removal
+	 * mark. A retry is answered with the name already existing, or with the
+	 * index being gone.
+	 *
+	 * @param indexes
+	 *   what the write tried to store
+	 * @param expectedVersion
+	 *   version the write was conditioned on, or {@code null} for a write
+	 *   conditioned on there being no registry
+	 * @param failure
+	 *   what the write was answered with
+	 * @return
+	 *   the version the registry is stored under when the write went
+	 *   through, or {@code null} when another node wrote first
+	 * @throws IOException
+	 *   if the write did not arrive, or the registry could not be read back
+	 */
+	private String resolveUnanswered(
+		IndexRegistryStore indexes,
+		String expectedVersion,
+		Exception failure
+	) throws IOException {
+		var current = tryRead();
+		if(current != null) {
+			if(current.indexes().equals(indexes)) {
+				return current.version();
 			}
 
-			throw new IOException("Unable to write the index registry; " + e.getMessage(), e);
+			if(!Objects.equals(current.version(), expectedVersion)) {
+				return null;
+			}
 		}
+
+		throw new IOException(
+			"Unable to write the index registry; " + failure.getMessage(),
+			failure
+		);
 	}
 
 	/**

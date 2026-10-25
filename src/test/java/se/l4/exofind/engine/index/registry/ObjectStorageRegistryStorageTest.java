@@ -27,6 +27,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * Tests for what the registry object makes of a write whose answer never came
@@ -69,6 +70,25 @@ public class ObjectStorageRegistryStorageTest {
 	 *   whether the write reaches the storage before the connection is dropped
 	 */
 	private ObjectStorageRegistryStorage droppingAnswers(boolean landing) {
+		return failingWrites(landing, SdkClientException.create("simulated connection reset"));
+	}
+
+	/**
+	 * A registry storage over a client that answers every write with a
+	 * gateway timeout, the way a proxy in front of the storage answers when
+	 * it stops waiting, optionally after letting the write itself through.
+	 *
+	 * @param landing
+	 *   whether the write reaches the storage before the answer is lost
+	 */
+	private ObjectStorageRegistryStorage timingOut(boolean landing) {
+		return failingWrites(
+			landing,
+			S3Exception.builder().statusCode(504).message("simulated gateway timeout").build()
+		);
+	}
+
+	private ObjectStorageRegistryStorage failingWrites(boolean landing, RuntimeException answer) {
 		var client = Mockito.spy(storage.client());
 
 		var failure = Mockito.doAnswer(invocation -> {
@@ -76,7 +96,7 @@ public class ObjectStorageRegistryStorageTest {
 				invocation.callRealMethod();
 			}
 
-			throw SdkClientException.create("simulated connection reset");
+			throw answer;
 		});
 
 		failure.when(client)
@@ -120,6 +140,40 @@ public class ObjectStorageRegistryStorageTest {
 		assertThrows(
 			IOException.class,
 			() -> droppingAnswers(false).write(registryOf("books", "films"), currentVersion())
+		);
+
+		assertThat(currentIndexes(), is(registryOf("books")));
+	}
+
+	/**
+	 * The same for a write the storage finished after a proxy in front of it
+	 * answered with a server error. The status does not say that the write
+	 * was refused, so the registry is read back the same way.
+	 */
+	@Test
+	void testWriteThatLandedBeforeAServerErrorCountsAsWritten() throws IOException {
+		registryStorage.write(registryOf("books"), null);
+		var wanted = registryOf("books", "films");
+
+		var version = timingOut(true).write(wanted, currentVersion());
+
+		assertThat(version, is(notNullValue()));
+		assertThat(currentIndexes(), is(wanted));
+		assertThat(currentVersion(), is(version));
+	}
+
+	/**
+	 * A server error for a write that never arrived is still a failure.
+	 */
+	@Test
+	void testWriteAnsweredWithAServerErrorThatNeverArrivedIsReportedAsAFailure()
+		throws IOException
+	{
+		registryStorage.write(registryOf("books"), null);
+
+		assertThrows(
+			IOException.class,
+			() -> timingOut(false).write(registryOf("books", "films"), currentVersion())
 		);
 
 		assertThat(currentIndexes(), is(registryOf("books")));

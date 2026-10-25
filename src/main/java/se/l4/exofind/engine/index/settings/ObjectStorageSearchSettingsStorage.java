@@ -123,30 +123,56 @@ public class ObjectStorageSearchSettingsStorage implements SearchSettingsStorage
 				return null;
 			}
 
-			throw new IOException("Unable to write the search settings; " + e.getMessage(), e);
+			/*
+			 * A server error does not say that the write was refused. A proxy
+			 * in front of the storage answers 504 when it stops waiting, and
+			 * the storage can finish the write after that.
+			 */
+			return resolveUnanswered(index, settings, expectedVersion, e);
 		} catch(Exception e) {
 			/*
 			 * The storage may drop the connection after it has taken the
 			 * write, which arrives as a connection failure rather than as the
-			 * answer to it. Read the settings back to tell what happened:
-			 * exactly what was written means the write went through, a version
-			 * other than the one it was conditioned on means another node got
-			 * there first, and the version it was conditioned on means the
-			 * write never arrived and may be made again.
+			 * answer to it.
 			 */
-			var current = tryRead(index);
-			if(current != null) {
-				if(current.settings().equals(settings)) {
-					return current.version();
-				}
+			return resolveUnanswered(index, settings, expectedVersion, e);
+		}
+	}
 
-				if(!Objects.equals(current.version(), expectedVersion)) {
-					return null;
-				}
+	/**
+	 * Read the settings back to find out what became of a write whose answer
+	 * does not tell. Exactly what was written means the write went through, a
+	 * version other than the one it was conditioned on means another node got
+	 * there first, and the version it was conditioned on means the write
+	 * never arrived and may be made again.
+	 *
+	 * @return
+	 *   the version the settings are stored under when the write went
+	 *   through, or {@code null} when another node wrote first
+	 * @throws IOException
+	 *   if the write did not arrive, or the settings could not be read back
+	 */
+	private String resolveUnanswered(
+		String index,
+		SearchSettingsStore settings,
+		String expectedVersion,
+		Exception failure
+	) throws IOException {
+		var current = tryRead(index);
+		if(current != null) {
+			if(current.settings().equals(settings)) {
+				return current.version();
 			}
 
-			throw new IOException("Unable to write the search settings; " + e.getMessage(), e);
+			if(!Objects.equals(current.version(), expectedVersion)) {
+				return null;
+			}
 		}
+
+		throw new IOException(
+			"Unable to write the search settings; " + failure.getMessage(),
+			failure
+		);
 	}
 
 	/**
