@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.1](https://github.com/LevelFourAB/exofind/compare/v0.6.0...v0.6.1) (2026-10-25)
+
+
+### Bug fixes
+
+* Finish creating or deleting an index when storage answers the registry write with a server error ([99aaeae](https://github.com/LevelFourAB/exofind/commit/99aaeaec98c6c26c0f22d17875381177c74804cf))
+* Give up index claims before they lapse when the leadership table cannot be renewed ([73cf782](https://github.com/LevelFourAB/exofind/commit/73cf782f44d1e6116fd868a9e94a7738902e9af9))
+* Keep acknowledged documents when an index closes on an interrupted thread ([8dc9509](https://github.com/LevelFourAB/exofind/commit/8dc950913fe5e511c2044d9834b6c0f9c2240beb))
+* Keep manifest and leadership fields from newer versions during a rolling upgrade ([ad8c8d3](https://github.com/LevelFourAB/exofind/commit/ad8c8d33f4fcdce43e1fde4087e391164aab67cf))
+* Keep pulls working when a push lands in storage but its local manifest write fails ([8938a53](https://github.com/LevelFourAB/exofind/commit/8938a53ef8fc1644fbb2e6c67d307af752da735d))
+* Retry the push of a handover flush that failed and was called off ([a8faa4c](https://github.com/LevelFourAB/exofind/commit/a8faa4ceff337b31aecb87317aea208158e37752))
+* Stop a failed index create from removing an index another node created under the same name ([1d16164](https://github.com/LevelFourAB/exofind/commit/1d16164a10be441c28d8f8adadd8a13037150fc7))
+* Stop a failed ownership notice from handing an index over without pushing it ([ddfcecb](https://github.com/LevelFourAB/exofind/commit/ddfcecb7628caeeae20efcdfd4ce3941a23323c1))
+* Stop another node taking an index while the shutdown flush is still pushing it ([3c971ae](https://github.com/LevelFourAB/exofind/commit/3c971ae6f2562b080c81aafc904d3ee206564b1f))
+* Stop losing writes that arrive while an evicted index pushes its last commit ([ec2232b](https://github.com/LevelFourAB/exofind/commit/ec2232b9633486c91868d27a270225225bcafbe4))
+* Stop reporting a conflict after a push whose manifest write landed without an answer ([9e29488](https://github.com/LevelFourAB/exofind/commit/9e29488dd1033fc56631720eb44fcca61df2ca53))
+* Stop two processes with the same node ID from writing the same index ([d03c054](https://github.com/LevelFourAB/exofind/commit/d03c054f1c54301c902ff26dc138ac258bf72cb2))
+
 ## [0.6.0](https://github.com/LevelFourAB/exofind/compare/v0.5.0...v0.6.0) (2026-10-04)
 
 
