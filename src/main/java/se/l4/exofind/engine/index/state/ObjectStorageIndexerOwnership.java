@@ -79,10 +79,11 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * the taker, or dropped so a candidate below its share picks the index up.
  * A successor that sees the claim naming it can therefore never pull a
  * manifest the flush had not written yet, which is what makes documents
- * acknowledged here survive the handover. A flush that could not push calls
- * the handover off: the claim stays, the index is written here again, and a
- * later round starts the handover anew - moving the claim then would leave
- * the successor without documents this node answered for. Shutting down
+ * acknowledged here survive the handover. A flush that could not push, or
+ * that was never asked for, calls the handover off: the claim stays, the
+ * index is written here again, and a later round starts the handover anew -
+ * moving the claim then would leave the successor without documents this
+ * node answered for. Shutting down
  * hands everything held over in the same order - flushed first, stepped out
  * of the table after. While the flush runs, the node renews the claims of
  * the indexes it flushes, for up to one lease. A flush that fails or runs
@@ -1102,7 +1103,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				continue;
 			}
 
-			if(flush != null && flush.isCompletedExceptionally()) {
+			if(flush == null || flush.isCompletedExceptionally()) {
 				/*
 				 * Left out of the drains this round, and still in `mine`, so
 				 * the index is written here again and its claim keeps the
@@ -1110,6 +1111,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				 * handover anew, which asks for the flush again. Counted as a
 				 * move so nothing else is handed over, shed or offered while
 				 * this index is going nowhere.
+				 *
+				 * A drain without a flush is one whose round failed before it
+				 * asked for the flush. Nothing was pushed for it, so it is
+				 * called off the same way.
 				 */
 				logger.atWarn()
 					.addKeyValue("node", node)
@@ -1596,8 +1601,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.log("Took over writing the index");
 			}
 
-			listener.onOwnershipChanged(name, true);
+			tell(name, () -> listener.onOwnershipChanged(name, true));
 		}
+
+		/*
+		 * The drains whose loss the listener failed to take. The node state
+		 * may still say this node writes them, and a flush pushes per what
+		 * it says, so it would push nothing and report success.
+		 */
+		var untold = new HashMap<String, RuntimeException>();
 
 		for(var name : before) {
 			if(rebuilt.held().contains(name)) {
@@ -1616,7 +1628,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.addKeyValue("index", name)
 					.log("Handing over writing the index");
 
-				listener.onOwnershipChanged(name, false);
+				var failure = tell(name, () -> listener.onOwnershipChanged(name, false));
+				if(failure != null) {
+					untold.put(name, failure);
+				}
 			} else if(rebuilt.dropped().contains(name)) {
 				/*
 				 * The index itself is gone rather than moved. Nothing is left
@@ -1628,7 +1643,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.addKeyValue("index", name)
 					.log("Stopped writing the index, the registry no longer holds it");
 
-				listener.onOwnershipRevoked(name);
+				tell(name, () -> listener.onOwnershipRevoked(name));
 			} else {
 				/*
 				 * The claim ended up naming another node without this one
@@ -1641,7 +1656,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.addKeyValue("index", name)
 					.log("Giving up writing the index, the claim is now another node's");
 
-				listener.onOwnershipRevoked(name);
+				tell(name, () -> listener.onOwnershipRevoked(name));
 			}
 		}
 
@@ -1654,6 +1669,12 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 */
 		for(var name : rebuilt.draining()) {
 			if(drainingBefore.contains(name)) {
+				continue;
+			}
+
+			var failure = untold.get(name);
+			if(failure != null) {
+				drainFlushes.put(name, CompletableFuture.failedFuture(failure));
 				continue;
 			}
 
@@ -1707,7 +1728,33 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					);
 			}
 
-			listener.onOwnershipRevoked(name);
+			tell(name, () -> listener.onOwnershipRevoked(name));
+		}
+	}
+
+	/**
+	 * Tell the listener about a change for one index. A listener that fails
+	 * on one index must not keep the others from hearing about theirs, so the
+	 * failure is logged and returned. Called with {@link #stateLock} held.
+	 *
+	 * @return
+	 *   the failure of the listener, or {@code null} when it took the notice
+	 */
+	private RuntimeException tell(String index, Runnable notice) {
+		try {
+			notice.run();
+			return null;
+		} catch(RuntimeException e) {
+			logger.atError()
+				.addKeyValue("node", node)
+				.addKeyValue("index", index)
+				.setCause(e)
+				.log(
+					"Could not tell the node about a change in who writes the index; "
+						+ e.getMessage()
+				);
+
+			return e;
 		}
 	}
 
@@ -1760,7 +1807,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				.addKeyValue("index", name)
 				.log("Giving up handing over the index, " + reason);
 
-			listener.onOwnershipRevoked(name);
+			tell(name, () -> listener.onOwnershipRevoked(name));
 		}
 
 		for(var name : before) {
@@ -1769,7 +1816,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				.addKeyValue("index", name)
 				.log("Giving up writing the index, " + reason);
 
-			listener.onOwnershipRevoked(name);
+			tell(name, () -> listener.onOwnershipRevoked(name));
 		}
 	}
 

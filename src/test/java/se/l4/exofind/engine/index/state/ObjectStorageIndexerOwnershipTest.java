@@ -1576,4 +1576,116 @@ public class ObjectStorageIndexerOwnershipTest {
 		assertThat(claim.get().getNode(), is("a"));
 		assertThat(first.contains("books"), is(true));
 	}
+
+	/**
+	 * A claim moves to the taker only after the flush of the holder. That
+	 * holds when the listener fails on the notice that the index is handed
+	 * over: the handover is called off, as no flush was asked for, and the
+	 * round after it starts the handover anew.
+	 */
+	@Test
+	void testAListenerThatFailsOnAHandoverKeepsTheClaimUntilAFlush() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		Set<String> flushAsked = ConcurrentHashMap.newKeySet();
+		flush = name -> {
+			flushAsked.add(name);
+			return CompletableFuture.completedFuture(null);
+		};
+
+		var thrown = new AtomicBoolean();
+		Set<String> owned = ConcurrentHashMap.newKeySet();
+		var ownership = newOwnership("a");
+		ownership.start(new IndexerOwnership.Listener() {
+			@Override
+			public void onOwnershipChanged(String index, boolean owner) {
+				if(!owner && "books".equals(index) && thrown.compareAndSet(false, true)) {
+					throw new IllegalStateException("simulated listener failure");
+				}
+
+				if(owner) {
+					owned.add(index);
+				} else {
+					owned.remove(index);
+				}
+			}
+
+			@Override
+			public void onOwnershipRevoked(String index) {
+				owned.remove(index);
+			}
+		});
+		running.add(ownership);
+		await(() -> owned.containsAll(Set.of("books", "games")), "a to take both indexes");
+
+		// A live candidate b answers an offer of books
+		var alive = System.currentTimeMillis() + 60_000;
+		var claims = new ArrayList<IndexerLeadership.Claim>();
+		for(var claim : readTable().getClaimsList()) {
+			var renewed = claim.toBuilder().setExpiresAt(alive);
+			if(claim.getIndex().equals("books")) {
+				renewed.setLoadBucket(7).setOffered(true).setTaker("b");
+			}
+
+			claims.add(renewed.build());
+		}
+		writeTable(claims, List.of(candidate("a", alive, null), candidate("b", alive, null)));
+
+		await(() -> {
+			try {
+				return readTable().getClaimsList().stream()
+					.anyMatch(c -> c.getIndex().equals("books") && c.getNode().equals("b"));
+			} catch(Exception e) {
+				return false;
+			}
+		}, "the handover to finish");
+
+		assertThat("the listener failed on the first handover", thrown.get(), is(true));
+		assertThat("the flush was asked for before the claim moved", flushAsked.contains("books"), is(true));
+	}
+
+	/**
+	 * A listener that fails on one index must not keep the others from
+	 * hearing about theirs. A node that gives its claims up tells the
+	 * listener about every index, so none of them goes on taking writes.
+	 */
+	@Test
+	void testAListenerThatFailsOnOneIndexIsStillToldAboutTheOthers() throws Exception {
+		names.set(Sets.immutable.of("books", "games"));
+
+		var faults = new TableReadFaults();
+		var holder = newFaultyOwnership("a", faults);
+
+		var thrown = new AtomicBoolean();
+		Set<String> owned = ConcurrentHashMap.newKeySet();
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		holder.start(new IndexerOwnership.Listener() {
+			@Override
+			public void onOwnershipChanged(String index, boolean owner) {
+				if(owner) {
+					owned.add(index);
+				} else {
+					owned.remove(index);
+				}
+			}
+
+			@Override
+			public void onOwnershipRevoked(String index) {
+				if(thrown.compareAndSet(false, true)) {
+					throw new IllegalStateException("simulated listener failure");
+				}
+
+				owned.remove(index);
+				revoked.add(index);
+			}
+		});
+		running.add(holder);
+		await(() -> owned.containsAll(Set.of("books", "games")), "a to take both indexes");
+
+		// When the claims cannot be renewed, the node gives both indexes up
+		faults.fail.set(true);
+		await(thrown::get, "the listener to fail on the first index");
+
+		await(() -> revoked.size() == 1, "the listener to hear about the other index");
+	}
 }
