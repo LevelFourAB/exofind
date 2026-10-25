@@ -1142,8 +1142,8 @@ public class ObjectStorageIndexerOwnershipTest {
 
 	/**
 	 * A claim whose offer was answered is handed to the taker: rewritten to
-	 * name it, address and all, keeping the load figure it was offered
-	 * under, while the holder gives the index up.
+	 * name it, address and session and all, keeping the load figure it was
+	 * offered under, while the holder gives the index up.
 	 */
 	@Test
 	void testAnsweredOfferIsHandedToTheTaker() throws Exception {
@@ -1159,7 +1159,7 @@ public class ObjectStorageIndexerOwnershipTest {
 					.build(),
 				claim("games", "a", alive, null)
 			),
-			List.of(candidate("b", alive, "http://b:8080"))
+			List.of(candidate("b", alive, "http://b:8080").toBuilder().setSession("b-session").build())
 		);
 
 		var owned = start(newOwnership("a"));
@@ -1182,6 +1182,7 @@ public class ObjectStorageIndexerOwnershipTest {
 			.orElseThrow();
 		assertThat(handed.getNode(), is("b"));
 		assertThat(handed.getAddress(), is("http://b:8080"));
+		assertThat(handed.getSession(), is("b-session"));
 		assertThat(handed.getLoadBucket(), is(7));
 	}
 
@@ -1495,5 +1496,84 @@ public class ObjectStorageIndexerOwnershipTest {
 		assertThat(ObjectStorageIndexerOwnership.loadBucket(3), is(2));
 		assertThat(ObjectStorageIndexerOwnership.loadBucket(4), is(3));
 		assertThat(ObjectStorageIndexerOwnership.loadBucket(1024), is(11));
+	}
+
+	/**
+	 * Two processes that compete under one node name - a misconfigured
+	 * {@code EXOFIND_NODE_ID}, or a restarted node whose paused earlier
+	 * process wakes up - never both believe they hold an index.
+	 */
+	@Test
+	void testTwoProcessesUnderOneNameDoNotBothHoldAnIndex() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var first = start(newOwnership("a"));
+		await(() -> first.contains("books"), "the first process to take the index");
+
+		var second = start(newOwnership("a"));
+		Thread.sleep(LEASE.toMillis() * 2);
+
+		assertThat(first.contains("books") && second.contains("books"), is(false));
+		assertThat(first.contains("books"), is(true));
+	}
+
+	/**
+	 * A claim that names this node under another session belongs to an
+	 * earlier process that did not release it. It may still write, so the
+	 * new process waits for the claim to lapse and then takes it under its
+	 * own session.
+	 */
+	@Test
+	void testAClaimOfAnEarlierProcessIsWaitedOut() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var expiresAt = System.currentTimeMillis() + LEASE.toMillis();
+		writeTable(
+			List.of(claim("books", "a", expiresAt, null).toBuilder().setSession("earlier").build()),
+			List.of()
+		);
+
+		var owned = start(newOwnership("a"));
+
+		Thread.sleep(LEASE.toMillis() / 2);
+		assertThat("the claim of the earlier process is still live", owned.contains("books"), is(false));
+
+		await(() -> owned.contains("books"), "the lapsed claim to be taken");
+		assertThat(System.currentTimeMillis(), greaterThanOrEqualTo(expiresAt));
+
+		var claim = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(claim.getNode(), is("a"));
+		assertThat(claim.hasSession(), is(true));
+		assertThat(claim.getSession().equals("earlier"), is(false));
+	}
+
+	/**
+	 * A process that stops steps only its own entries out of the table. The
+	 * claims of another process under the same node name stay, as that
+	 * process still writes the indexes.
+	 */
+	@Test
+	void testAStoppingProcessLeavesTheClaimsOfAnotherUnderTheSameName() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var first = start(newOwnership("a"));
+		await(() -> first.contains("books"), "the first process to take the index");
+
+		var second = newOwnership("a");
+		start(second);
+		Thread.sleep(LEASE.toMillis() / 2);
+
+		second.stop();
+		running.remove(second);
+
+		var claim = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst();
+		assertThat("the claim of the first process is still in the table", claim.isPresent(), is(true));
+		assertThat(claim.get().getNode(), is("a"));
+		assertThat(first.contains("books"), is(true));
 	}
 }

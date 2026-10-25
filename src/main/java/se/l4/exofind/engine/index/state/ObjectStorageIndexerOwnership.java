@@ -1,12 +1,14 @@
 package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,6 +92,15 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * by whichever candidate is asked to write it, through {@link #tryClaim},
  * without waiting for a round. Fair shares guide the rounds; a write is
  * served first and balanced later.
+ *
+ * Every process competes under a random session next to its node name, and
+ * writes it into its claims and its candidate entry. A claim that names this
+ * node under another session belongs to another process: an earlier one that
+ * did not release its claims, or a second one started with the same node
+ * name. It is treated like the claim of another node and waited out, so two
+ * processes under one name never both write an index. A process that
+ * restarts after a crash therefore waits up to one lease for its indexes,
+ * the same as any other candidate.
  */
 public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private static final Log logger =
@@ -156,6 +167,14 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private final String tableKey;
 
 	private final String node;
+
+	/**
+	 * Random id of this process, written into its claims and its candidate
+	 * entry. Tells the claims of this process apart from the claims of
+	 * another process under the same node name.
+	 */
+	private final String session;
+
 	private final Optional<String> address;
 	private final Duration leaseDuration;
 
@@ -281,6 +300,14 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private long heldUntil;
 
 	/**
+	 * How many claims the last applied round found that name this node under
+	 * another session, so the warning about them is logged when the count
+	 * changes and not every round. Only touched while {@link #stateLock} is
+	 * held.
+	 */
+	private int otherSessionClaims;
+
+	/**
 	 * The last read of the table, reused until it is older than
 	 * {@link #TABLE_CACHE_TTL}. A {@code null} table means the last read
 	 * failed and nothing is known.
@@ -339,6 +366,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		this.tableKey = storage.rootObject(TABLE_NAME);
 
 		this.node = node;
+		this.session = HexFormat.of().toHexDigits(new SecureRandom().nextLong());
 		this.address = address;
 		this.leaseDuration = leaseDuration;
 		this.indexNames = indexNames;
@@ -915,14 +943,14 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	}
 
 	/**
-	 * Whether another node holds a live claim on the index, which is what
-	 * makes it not free.
+	 * Whether another node, or another process under this node name, holds a
+	 * live claim on the index, which is what makes it not free.
 	 */
 	private boolean hasLiveClaimByOther(IndexerLeadership table, String index, long now) {
 		for(var claim : table.getClaimsList()) {
 			if(
 				index.equals(claim.getIndex())
-					&& !node.equals(claim.getNode())
+					&& !isOwn(claim)
 					&& claim.getExpiresAt() > now
 			) {
 				return true;
@@ -930,6 +958,26 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Whether a claim is held by this process: it names this node, and this
+	 * session or none. A claim without a session was written by a version
+	 * that recorded none, and is taken as this node's the way that version
+	 * took it.
+	 */
+	private boolean isOwn(IndexerLeadership.Claim claim) {
+		return node.equals(claim.getNode())
+			&& (!claim.hasSession() || session.equals(claim.getSession()));
+	}
+
+	/**
+	 * Whether a candidate entry was written by this process, read the same
+	 * way as {@link #isOwn(IndexerLeadership.Claim)}.
+	 */
+	private boolean isOwn(IndexerLeadership.Candidate candidate) {
+		return node.equals(candidate.getNode())
+			&& (!candidate.hasSession() || session.equals(candidate.getSession()));
 	}
 
 	/**
@@ -958,6 +1006,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		var self = IndexerLeadership.Candidate.newBuilder()
 			.setNode(node)
+			.setSession(session)
 			.setExpiresAt(expiresAt);
 		address.ifPresent(self::setAddress);
 
@@ -966,9 +1015,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		builder.addCandidates(self);
 
 		/*
-		 * Sort the claims: this node's own are re-adopted whatever their
+		 * Sort the claims: this process's own are re-adopted whatever their
 		 * expiry - nothing took them, so they are still its - while a lapsed
-		 * claim of another node is dropped, which is what frees the index.
+		 * claim of another node is dropped, which is what frees the index. A
+		 * claim that names this node under another session is another
+		 * process's, and is sorted like the claim of another node.
 		 */
 		var mine = new TreeSet<String>();
 		var myClaims = new HashMap<String, IndexerLeadership.Claim>();
@@ -978,7 +1029,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		var loadPerNode = new HashMap<String, Integer>();
 
 		for(var claim : current.getClaimsList()) {
-			if(node.equals(claim.getNode())) {
+			if(isOwn(claim)) {
 				mine.add(claim.getIndex());
 				myClaims.put(claim.getIndex(), claim);
 			} else if(claim.getExpiresAt() > now && claimedByOthers.add(claim.getIndex())) {
@@ -1090,6 +1141,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.setLoadBucket(claim.getLoadBucket());
 				if(taker.hasAddress()) {
 					handed.setAddress(taker.getAddress());
+				}
+				if(taker.hasSession()) {
+					// Only the process that answered takes the claim up
+					handed.setSession(taker.getSession());
 				}
 
 				othersClaims.add(handed.build());
@@ -1233,6 +1288,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			var claim = IndexerLeadership.Claim.newBuilder()
 				.setIndex(name)
 				.setNode(node)
+				.setSession(session)
 				.setExpiresAt(expiresAt);
 			address.ifPresent(claim::setAddress);
 
@@ -1396,6 +1452,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		for(var i = 0; i < othersClaims.size(); i++) {
 			var claim = othersClaims.get(i);
+			if(node.equals(claim.getNode())) {
+				// Held by another process under this name, which never hands it here
+				continue;
+			}
+
 			if(claim.hasTaker() && node.equals(claim.getTaker())) {
 				// A handover is already on its way here; one at a time
 				return;
@@ -1486,6 +1547,25 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		this.heldUntil = now + leaseDuration.toMillis();
 		this.tableCache = new CachedTable(rebuilt.table(), System.nanoTime());
+
+		var otherSession = 0;
+		for(var claim : rebuilt.table().getClaimsList()) {
+			if(node.equals(claim.getNode()) && !isOwn(claim)) {
+				otherSession++;
+			}
+		}
+
+		if(otherSession > 0 && otherSession != otherSessionClaims) {
+			logger.atWarn()
+				.addKeyValue("node", node)
+				.addKeyValue("claims", otherSession)
+				.log(
+					"Waiting for claims that name this node but another process to"
+						+ " lapse. An earlier process did not release them, or a second"
+						+ " process runs with the same node ID"
+				);
+		}
+		this.otherSessionClaims = otherSession;
 
 		var before = held;
 		this.held = rebuilt.held();
@@ -1697,7 +1777,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * Renew the claims of the indexes the shutdown flush pushes, so that no
 	 * other node takes one of them while its flush still runs.
 	 *
-	 * <p>Only a claim that names this node and has not lapsed is renewed. A
+	 * <p>Only a claim of this process that has not lapsed is renewed. A
 	 * lapsed claim is free for other nodes to take, and renewing it could
 	 * take an index back from a successor that already writes it. The
 	 * candidate entry of this node is not renewed, so other nodes stop
@@ -1728,7 +1808,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 				for(var claim : fetched.table().getClaimsList()) {
 					if(
-						node.equals(claim.getNode())
+						isOwn(claim)
 							&& claim.getExpiresAt() > now
 							&& indexes.contains(claim.getIndex())
 					) {
@@ -1785,15 +1865,20 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					return;
 				}
 
+				/*
+				 * Only the entries of this process. Entries that name this
+				 * node under another session belong to a process that may
+				 * still write, such as the one that replaced this one.
+				 */
 				var builder = IndexerLeadership.newBuilder();
 				for(var candidate : fetched.table().getCandidatesList()) {
-					if(!node.equals(candidate.getNode())) {
+					if(!isOwn(candidate)) {
 						builder.addCandidates(candidate);
 					}
 				}
 
 				for(var claim : fetched.table().getClaimsList()) {
-					if(!includeClaims || !node.equals(claim.getNode())) {
+					if(!includeClaims || !isOwn(claim)) {
 						builder.addClaims(claim);
 					}
 				}

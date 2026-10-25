@@ -17,7 +17,7 @@ prefix in `object` mode:
 | Key | Written by | Description |
 | --- | --- | --- |
 | `registry/indexes.ef.bin` | Any node that creates, promotes, or deletes an index or generation | The index registry: every index, its generations, which generation serves the bare name, and version hints. Single object, replaced conditionally on its entity tag. Nodes poll it on an interval with conditional (`If-None-Match`) reads. |
-| `indexer-leadership.ef.bin` | Indexer candidates | The leadership table: one claim per index (node, address, expiry, load bucket, offered flag, taker) and one entry per candidate (node, address, expiry). Single object, replaced conditionally on its entity tag. |
+| `indexer-leadership.ef.bin` | Indexer candidates | The leadership table: one claim per index (node, session, address, expiry, load bucket, offered flag, taker) and one entry per candidate (node, session, address, expiry). The session is a random id that each process picks when it starts. Single object, replaced conditionally on its entity tag. |
 | `auth/keys.ef.bin` | Nodes serving the keys API | Every API key of the deployment. Single object, replaced conditionally on its entity tag. The root key (`EXOFIND_AUTH_ROOT_KEY`) is never stored. |
 | `jobs/reindex/records/<index>` | The node writing the index | One durable reindex job record per index name, retained after the job ends. |
 | `jobs/reindex/active/<index>` | The node writing the index | One empty marker per reindex job that has not finished, named like its record. A candidate looking for jobs to resume lists this prefix and removes markers for finished records. |
