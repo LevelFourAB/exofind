@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.state;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -14,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
@@ -412,6 +414,104 @@ public class ObjectStorageIndexerOwnershipTest {
 		var table = readTable();
 		assertThat(table.getClaimsList(), is(List.of()));
 		assertThat(table.getCandidatesList(), is(List.of()));
+	}
+
+	private long expiryOf(String index) throws Exception {
+		return readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals(index))
+			.findFirst()
+			.orElseThrow()
+			.getExpiresAt();
+	}
+
+	/**
+	 * The rounds end when a stop begins, and the claims would lapse one lease
+	 * after the last round. The stop renews them while it waits for the
+	 * flush, so no other node takes an index for at least one lease from the
+	 * start of the stop.
+	 */
+	@Test
+	void testStopKeepsTheClaimsLiveForTheLeaseWhileTheFlushRuns() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var pending = new CompletableFuture<Void>();
+		flush = name -> pending;
+
+		var holder = newOwnership("a");
+		var owned = start(holder);
+		await(() -> owned.contains("books"), "the first candidate to take the index");
+
+		var successor = newOwnership("b");
+		start(successor);
+
+		// Stop 250 ms after a round renewed the claim, before the next round starts
+		long stopAt;
+		while(true) {
+			stopAt = expiryOf("books") - LEASE.toMillis() + 250;
+			if(System.currentTimeMillis() < stopAt - 20) {
+				break;
+			}
+
+			Thread.sleep(5);
+		}
+		Thread.sleep(Math.max(0, stopAt - System.currentTimeMillis()));
+
+		var stopStarted = System.currentTimeMillis();
+		var stopping = new Thread(holder::stop);
+		stopping.start();
+		running.remove(holder);
+
+		var takenAt = new AtomicLong();
+		await(
+			() -> {
+				if(successor.tryClaim("books")) {
+					takenAt.set(System.currentTimeMillis());
+					return true;
+				}
+
+				return false;
+			},
+			"the second candidate to take the index"
+		);
+
+		assertThat(pending.isDone(), is(false));
+		assertThat(
+			"milliseconds from the start of the stop until the index was taken",
+			takenAt.get() - stopStarted,
+			greaterThanOrEqualTo(LEASE.toMillis())
+		);
+
+		pending.complete(null);
+		stopping.join(15_000);
+		assertThat(stopping.isAlive(), is(false));
+	}
+
+	/**
+	 * The renewals end with the wait. A flush that never ends leaves the
+	 * claims to lapse, and the stop returns.
+	 */
+	@Test
+	void testStopRenewsTheClaimsForOneLeaseAtMost() throws Exception {
+		names.set(Sets.immutable.of("books"));
+		flush = name -> new CompletableFuture<>();
+
+		var holder = newOwnership("a");
+		var owned = start(holder);
+		await(() -> owned.contains("books"), "the first candidate to take the index");
+
+		var successorOwned = start(newOwnership("b"));
+
+		var stopping = new Thread(holder::stop);
+		stopping.start();
+		running.remove(holder);
+
+		await(
+			() -> successorOwned.contains("books"),
+			"the second candidate to take the index after the claim lapsed"
+		);
+
+		stopping.join(15_000);
+		assertThat(stopping.isAlive(), is(false));
 	}
 
 	/**

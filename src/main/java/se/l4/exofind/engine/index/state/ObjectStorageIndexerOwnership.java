@@ -80,8 +80,9 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * later round starts the handover anew - moving the claim then would leave
  * the successor without documents this node answered for. Shutting down
  * hands everything held over in the same order - flushed first, stepped out
- * of the table after - and a flush that fails or outlives the lease leaves
- * the claims to lapse the way a crashed node's would.
+ * of the table after. While the flush runs, the node renews the claims of
+ * the indexes it flushes, for up to one lease. A flush that fails or runs
+ * longer leaves the claims to lapse the way a crashed node's would.
  *
  * An index nothing holds - just created, or its holder just died - is taken
  * by whichever candidate is asked to write it, through {@link #tryClaim},
@@ -234,6 +235,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private final HashMap<String, CompletableFuture<?>> drainFlushes = new HashMap<>();
 
 	/**
+	 * The indexes the shutdown flush pushes, whose claims {@link #stop()}
+	 * keeps renewed while it waits for the flush. Set once on the executor
+	 * thread by {@link #flushOnShutdown()}.
+	 */
+	private volatile ImmutableSet<String> flushingOnShutdown = Sets.immutable.empty();
+
+	/**
 	 * When the claims this node holds lapse, according to its own clock.
 	 * Failing to renew past this point means holding them is no longer
 	 * certain and they are given up. Only touched on the executor thread.
@@ -360,17 +368,40 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 
 		/*
-		 * Waiting is bounded by the lease: past it the claims have lapsed on
-		 * their own, and there is nothing left to step out of but the
-		 * candidacy. A flush still running then, or one that could not push,
-		 * is left behind the way a crashed node's would be - successors wait
-		 * the claims out, and the conditional manifest writes keep a push
-		 * that loses that race from doing damage.
+		 * The rounds stopped with the executor, so nothing else renews the
+		 * claims. The claims were last renewed by the last round, and they
+		 * lapse one lease after it, not one lease after the stop. Without the
+		 * renewals below, a successor can take an index while its flush
+		 * still runs, and pull a manifest without the documents of the flush.
+		 *
+		 * The wait is limited to one lease from here. A flush still running
+		 * then, or one that could not push, is left behind the way the flush
+		 * of a crashed node is: the claims lapse one lease after the last
+		 * renewal, and the conditional manifest writes stop a push that
+		 * loses that race from doing damage.
 		 */
 		var flushDone = false;
+		var deadline = System.nanoTime() + leaseDuration.toNanos();
+		var renewEvery = Math.max(1, leaseDuration.toMillis() / 3);
 		try {
-			flushed.get(leaseDuration.toMillis(), TimeUnit.MILLISECONDS);
-			flushDone = true;
+			while(true) {
+				if(!flushed.isDone()) {
+					renewForShutdown(flushingOnShutdown);
+				}
+
+				var left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+				if(left <= 0) {
+					throw new TimeoutException("Flush still running after " + leaseDuration);
+				}
+
+				try {
+					flushed.get(Math.min(renewEvery, left), TimeUnit.MILLISECONDS);
+					flushDone = true;
+					break;
+				} catch(TimeoutException e) {
+					// Not done yet; renew and wait again until the deadline
+				}
+			}
 		} catch(InterruptedException e) {
 			Thread.currentThread().interrupt();
 		} catch(ExecutionException | TimeoutException e) {
@@ -415,6 +446,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		try {
 			executor.execute(() -> {
 				var pending = new ArrayList<CompletableFuture<?>>(drainFlushes.values());
+
+				// Set before the listener hears of the loss, so no flush starts unrenewed
+				flushingOnShutdown = held.union(draining);
 
 				for(var name : held) {
 					logger.atInfo()
@@ -1549,6 +1583,77 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				.log("Giving up writing the index, " + reason);
 
 			listener.onOwnershipRevoked(name);
+		}
+	}
+
+	/**
+	 * Renew the claims of the indexes the shutdown flush pushes, so that no
+	 * other node takes one of them while its flush still runs.
+	 *
+	 * <p>Only a claim that names this node and has not lapsed is renewed. A
+	 * lapsed claim is free for other nodes to take, and renewing it could
+	 * take an index back from a successor that already writes it. The
+	 * candidate entry of this node is not renewed, so other nodes stop
+	 * sending writes for free indexes here. The other entries of the table
+	 * are kept as they are.
+	 *
+	 * <p>Retried over a lost conditional write. Best effort: a renewal that
+	 * fails leaves the claims to lapse at their current expiry.
+	 *
+	 * @param indexes
+	 *   the indexes whose claims to renew
+	 */
+	private void renewForShutdown(ImmutableSet<String> indexes) {
+		if(indexes.isEmpty()) {
+			return;
+		}
+
+		try {
+			for(var attempt = 0; attempt < 3; attempt++) {
+				var fetched = fetchTable();
+				if(fetched == null) {
+					return;
+				}
+
+				var now = System.currentTimeMillis();
+				var builder = fetched.table().toBuilder().clearClaims();
+				var renewed = false;
+
+				for(var claim : fetched.table().getClaimsList()) {
+					if(
+						node.equals(claim.getNode())
+							&& claim.getExpiresAt() > now
+							&& indexes.contains(claim.getIndex())
+					) {
+						builder.addClaims(
+							claim.toBuilder().setExpiresAt(now + leaseDuration.toMillis())
+						);
+						renewed = true;
+					} else {
+						builder.addClaims(claim);
+					}
+				}
+
+				if(!renewed) {
+					return;
+				}
+
+				if(putTable(builder.build(), fetched.eTag()) != null) {
+					return;
+				}
+			}
+
+			logger.atWarn()
+				.addKeyValue("node", node)
+				.log(
+					"Could not renew the claims during the shutdown flush, another"
+						+ " node kept changing the leadership"
+				);
+		} catch(Exception e) {
+			logger.atWarn()
+				.addKeyValue("node", node)
+				.setCause(e)
+				.log("Could not renew the claims during the shutdown flush; " + e.getMessage());
 		}
 	}
 
