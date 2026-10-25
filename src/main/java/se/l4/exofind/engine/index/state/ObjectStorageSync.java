@@ -1486,7 +1486,13 @@ public class ObjectStorageSync implements StateSync {
 
 		var generation = SegmentInfos.getLastCommitGeneration(files.toArray(String[]::new));
 
+		/*
+		 * Fields a newer version added are carried on, so that a node of this
+		 * build does not drop them when it writes the manifest during a
+		 * rolling upgrade. See the header of storage.proto.
+		 */
 		var builder = Manifest.newBuilder()
+			.setUnknownFields(previous.getUnknownFields())
 			.setLatestSegment(generation)
 			.setEpoch(epoch);
 
@@ -1516,6 +1522,12 @@ public class ObjectStorageSync implements StateSync {
 				if(previousFile.hasKey()) {
 					file.setKey(previousFile.getKey());
 				}
+
+				/*
+				 * Only for unchanged contents: a field a newer version wrote
+				 * about a file can describe the contents it had then.
+				 */
+				file.setUnknownFields(previousFile.getUnknownFields());
 			} else {
 				file.setKey(uploadKeyOf(name, epoch, sessionId, checksum));
 			}

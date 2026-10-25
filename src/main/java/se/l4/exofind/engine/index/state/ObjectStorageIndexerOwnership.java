@@ -993,13 +993,23 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private Rebuilt rebuild(IndexerLeadership current, long now, String forcedClaim) {
 		var names = indexNames.get();
 		var expiresAt = now + leaseDuration.toMillis();
-		var builder = IndexerLeadership.newBuilder();
+
+		/*
+		 * Fields a newer version added are carried on, at the top level and
+		 * on the entries this node renews, so that the rounds of this build
+		 * do not drop them. See the header of storage.proto.
+		 */
+		var builder = IndexerLeadership.newBuilder()
+			.setUnknownFields(current.getUnknownFields());
 
 		// The candidates that are alive, with this node's entry renewed
 		var otherCandidates = new ArrayList<IndexerLeadership.Candidate>();
 		var candidatesByNode = new HashMap<String, IndexerLeadership.Candidate>();
+		IndexerLeadership.Candidate previousSelf = null;
 		for(var candidate : current.getCandidatesList()) {
-			if(!node.equals(candidate.getNode()) && candidate.getExpiresAt() > now) {
+			if(node.equals(candidate.getNode())) {
+				previousSelf = candidate;
+			} else if(candidate.getExpiresAt() > now) {
 				otherCandidates.add(candidate);
 				candidatesByNode.put(candidate.getNode(), candidate);
 			}
@@ -1010,6 +1020,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			.setSession(session)
 			.setExpiresAt(expiresAt);
 		address.ifPresent(self::setAddress);
+		if(previousSelf != null) {
+			self.setUnknownFields(previousSelf.getUnknownFields());
+		}
 
 		otherCandidates.sort(Comparator.comparing(IndexerLeadership.Candidate::getNode));
 		builder.addAllCandidates(otherCandidates);
@@ -1298,6 +1311,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			address.ifPresent(claim::setAddress);
 
 			var previous = myClaims.get(name);
+			if(previous != null) {
+				claim.setUnknownFields(previous.getUnknownFields());
+			}
 
 			/*
 			 * A draining index stopped taking writes, so its local figure only
@@ -1917,7 +1933,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				 * node under another session belong to a process that may
 				 * still write, such as the one that replaced this one.
 				 */
-				var builder = IndexerLeadership.newBuilder();
+				var builder = IndexerLeadership.newBuilder()
+					.setUnknownFields(fetched.table().getUnknownFields());
 				for(var candidate : fetched.table().getCandidatesList()) {
 					if(!isOwn(candidate)) {
 						builder.addCandidates(candidate);

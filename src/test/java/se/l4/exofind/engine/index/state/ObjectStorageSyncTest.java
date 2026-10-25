@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -42,6 +43,7 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
 import com.google.common.hash.Hashing;
+import com.google.protobuf.UnknownFieldSet;
 
 import se.l4.exofind.engine.storage.DurableFiles;
 
@@ -1570,6 +1572,97 @@ public class ObjectStorageSyncTest {
 
 		verifyRemoteManifest(2, segment, next);
 		assertThat(remoteKeyOf("segments_2"), uploadedIn(3, "segments_2"));
+	}
+
+	/**
+	 * A field a newer version wrote, standing in for one this build does not
+	 * know.
+	 */
+	private static UnknownFieldSet unknownField(int number) {
+		return UnknownFieldSet.newBuilder()
+			.addField(number, UnknownFieldSet.Field.newBuilder().addVarint(7).build())
+			.build();
+	}
+
+	private void writeRemoteManifest(Manifest manifest) {
+		s3Client.putObject(
+			PutObjectRequest.builder()
+				.bucket(TestObjectStorage.BUCKET)
+				.key(bucketPrefix + "/manifest.ef.bin")
+				.build(),
+			RequestBody.fromBytes(manifest.toByteArray())
+		);
+	}
+
+	/**
+	 * A node of this build that takes over a manifest a newer version wrote
+	 * keeps the fields it cannot read, through the claim and the push.
+	 */
+	@Test
+	void testPushKeepsManifestFieldsANewerVersionWrote() throws Exception {
+		var first = createLocalFile("segments_1", 10);
+		push(first);
+
+		var current = remoteManifest();
+		writeRemoteManifest(
+			current.toBuilder()
+				.setVersion(current.getVersion() + 1)
+				.setUnknownFields(unknownField(99))
+				.build()
+		);
+
+		var other = newSync(s3Client, otherLocalPath);
+		assertThat(other.pull(), is(true));
+		other.claimWriter();
+
+		var second = createLocalFile(otherLocalPath, "segments_2", 12);
+		push(other, first, second);
+
+		assertThat(remoteManifest().getUnknownFields().hasField(99), is(true));
+	}
+
+	/**
+	 * A field a newer version wrote about a file is kept while the file is
+	 * unchanged, and dropped once its contents change, as it can describe
+	 * the contents it had.
+	 */
+	@Test
+	void testPushKeepsFileFieldsANewerVersionWroteOnlyForUnchangedFiles() throws Exception {
+		var definition = createLocalFile("definition.ef.bin", 10);
+		var segments = createLocalFile("segments_1", 10);
+		push(definition, segments);
+
+		var current = remoteManifest();
+		var files = current.getFilesList().stream()
+			.map(f -> f.toBuilder().setUnknownFields(unknownField(98)).build())
+			.toList();
+		writeRemoteManifest(
+			current.toBuilder()
+				.setVersion(current.getVersion() + 1)
+				.clearFiles()
+				.addAllFiles(files)
+				.build()
+		);
+
+		var other = newSync(s3Client, otherLocalPath);
+		assertThat(other.pull(), is(true));
+		other.claimWriter();
+
+		// The definition is rewritten with new contents, the commit is not
+		var rewritten = createLocalFile(otherLocalPath, "definition.ef.bin", 14);
+		var next = createLocalFile(otherLocalPath, "segments_2", 12);
+		push(other, rewritten, segments, next);
+
+		var pushed = remoteManifest().getFilesList();
+		assertThat(fileNamed(pushed, "segments_1").getUnknownFields().hasField(98), is(true));
+		assertThat(fileNamed(pushed, "definition.ef.bin").getUnknownFields().hasField(98), is(false));
+	}
+
+	private static ManifestFile fileNamed(List<ManifestFile> files, String name) {
+		return files.stream()
+			.filter(f -> f.getName().equals(name))
+			.findFirst()
+			.orElseThrow();
 	}
 
 	/**

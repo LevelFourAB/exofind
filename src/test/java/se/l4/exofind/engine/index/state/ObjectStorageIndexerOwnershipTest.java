@@ -31,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 
+import com.google.protobuf.UnknownFieldSet;
+
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.interceptor.Context;
@@ -1687,5 +1689,53 @@ public class ObjectStorageIndexerOwnershipTest {
 		await(thrown::get, "the listener to fail on the first index");
 
 		await(() -> revoked.size() == 1, "the listener to hear about the other index");
+	}
+
+	/**
+	 * Every candidate rewrites the whole table each round. A field a newer
+	 * version added survives a round of this build, at the top level of the
+	 * table and on the claims and the candidate entry the round renews.
+	 */
+	@Test
+	void testARoundKeepsFieldsItCannotRead() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		var newer = UnknownFieldSet.newBuilder()
+			.addField(15, UnknownFieldSet.Field.newBuilder().addVarint(1).build())
+			.build();
+		var alive = System.currentTimeMillis() + 60_000;
+		var table = IndexerLeadership.newBuilder()
+			.addClaims(claim("books", "a", alive, null).toBuilder().setUnknownFields(newer))
+			.addCandidates(candidate("a", alive, null).toBuilder().setUnknownFields(newer))
+			.addCandidates(candidate("newer", alive, null))
+			.setUnknownFields(newer)
+			.build();
+		s3Client.putObject(
+			PutObjectRequest.builder()
+				.bucket(TestObjectStorage.BUCKET)
+				.key(storagePrefix + "/indexer-leadership.ef.bin")
+				.build(),
+			RequestBody.fromBytes(table.toByteArray())
+		);
+
+		var owned = start(newOwnership("a"));
+		await(() -> owned.contains("books"), "a to keep its claim");
+		awaitRenewal("books");
+
+		var renewed = readTable();
+		assertThat("the top level", renewed.getUnknownFields().hasField(15), is(true));
+
+		var claim = renewed.getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(claim.getExpiresAt() < alive, is(true));
+		assertThat("the renewed claim", claim.getUnknownFields().hasField(15), is(true));
+
+		var self = renewed.getCandidatesList().stream()
+			.filter(c -> c.getNode().equals("a"))
+			.findFirst()
+			.orElseThrow();
+		assertThat("the renewed candidate entry", self.getUnknownFields().hasField(15), is(true));
 	}
 }

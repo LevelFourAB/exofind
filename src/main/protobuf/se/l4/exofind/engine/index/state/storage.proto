@@ -10,6 +10,14 @@ package se.l4.exofind.engine.index.state;
  * readable for as long as an index exists. The same rules as for an index
  * definition apply: scalars are `optional` so unset can be told apart from
  * the zero value, and a field number is never reused.
+ *
+ * During a rolling upgrade, nodes of an older build rewrite a Manifest and
+ * the IndexerLeadership table with fields they cannot read. They carry those
+ * fields on unchanged: at the top level of both, on a ManifestFile whose
+ * contents did not change, and on a Claim or Candidate that the same node
+ * renews. A ManifestFile with new contents, and a Claim that moves to another
+ * node, start without them. A field added to these messages must therefore
+ * stay true when an older node carries it over such a rewrite.
  */
 
 /*
