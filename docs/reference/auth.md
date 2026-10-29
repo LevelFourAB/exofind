@@ -25,12 +25,12 @@ A node configured in `keys` mode refuses to start if it cannot read stored keys 
 Keys are stored alongside indexes: as an object in the storage bucket in `object` mode, or as a file beside the indexes in `local` mode. Every node reads this storage and updates keys conditionally based on the version read. Key synchronization behaves as follows:
 
 - A key created on one node works on all nodes. Revoking a key takes effect across all nodes without redeployment.
-- Revocation takes effect within the duration configured by `EXOFIND_AUTH_REFRESH_INTERVAL`. A node accepts a cached key until its next storage read. A node looks up an unseen key immediately, so newly created keys work without delay.
+- Revocation takes effect within one refresh interval (`EXOFIND_AUTH_REFRESH_INTERVAL`, 10s by default) on a node that can read storage, and within three refresh intervals on a node that cannot read storage, because that node then refuses every stored key. A node accepts a cached key until its next storage read. A node looks up an unseen key immediately, so newly created keys work without delay.
 - Key management does not depend on a specific node. Requests to `/v1alpha1/admin/keys` are handled directly by the node that receives them and are not forwarded to the indexer.
 
 In `local` mode, the single node creates the key file readable only by the user running the node, regardless of the process umask.
 
-If a node configured in `object` mode cannot access object storage for keys, it acts as though no keys exist. In this state, only the root key can authenticate requests.
+If a node configured in `object` mode cannot access object storage for keys, it keeps using the keys it holds for at most three refresh intervals after the start of its last successful read (30s with the default interval). One failed read does not lock callers out. After that, the node stops accepting stored keys, including the anonymous key. Only the root key authenticates. Callers with stored keys get `401 Unauthorized`. The node logs one `WARN` when it stops, and one `INFO` when a read succeeds again and it accepts stored keys again. A node with no root key configured cannot be reached with any credential while it refuses stored keys.
 
 ## Permissions
 

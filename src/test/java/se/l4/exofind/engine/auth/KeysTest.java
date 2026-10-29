@@ -785,6 +785,143 @@ public class KeysTest {
 	}
 
 	/**
+	 * Revoking a key reaches every node within its refresh interval. A node
+	 * that cannot read the store learns of no revocation, so it must stop
+	 * answering as the keys it holds rather than go on accepting them for as
+	 * long as the storage stays out of reach.
+	 */
+	@Test
+	void aKeyRevokedWhileTheStoreIsOutOfReachIsNotAcceptedForever() throws Exception {
+		// Given a node that refreshes every 50 milliseconds and holds a key
+		var revoked = KeySecret.generate();
+		var admin = KeySecret.generate();
+		var adminKey = new Key(admin.id(), admin.secretHash(), "", Lists.immutable.of(
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		), Instant.now(), null);
+		var revokedKey = new Key(revoked.id(), revoked.secretHash(), "", Lists.immutable.of(
+			grant("books", Permission.SEARCH)
+		), Instant.now(), null);
+
+		storage.set(KeyStoreCodec.toStored(null, Lists.immutable.of(adminKey, revokedKey)));
+
+		var instance = new Keys(
+			storage,
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofMillis(50)
+		);
+		started.add(instance);
+		instance.onStart(null);
+		instance.resolve("Bearer " + revoked.credential());
+
+		// And the node loses the store, and another node then revokes the key
+		storage.unreachable = true;
+		storage.set(KeyStoreCodec.toStored(null, Lists.immutable.of(adminKey)));
+
+		// When forty refresh intervals pass
+		Thread.sleep(2_000);
+
+		// Then the revoked credential is refused
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + revoked.credential())
+		);
+
+		// And the root key still gets in
+		assertThat(instance.resolve("Bearer " + ROOT_KEY).unrestricted(), is(true));
+	}
+
+	/**
+	 * One read that fails is not a reason to lock every caller out. The node
+	 * goes on accepting the keys it holds until they are stale.
+	 */
+	@Test
+	void aKeyIsStillAcceptedAfterOneReadOfTheStoreFails() {
+		// Given a node that holds a key
+		var credential = storeKey(null, grant("books", Permission.SEARCH));
+		var instance = keys();
+		instance.resolve("Bearer " + credential);
+
+		// When one read of the store fails
+		storage.unreachable = true;
+		assertThrows(KeyStorageException.class, instance::list);
+
+		// Then the key is still accepted
+		assertThat(instance.resolve("Bearer " + credential).unrestricted(), is(false));
+	}
+
+	/**
+	 * A node that stopped accepting the keys it holds starts again as soon as
+	 * it can read the store.
+	 */
+	@Test
+	void aKeyIsAcceptedAgainWhenTheStoreCanBeReadAgain() throws Exception {
+		// Given a node that refreshes every 50 milliseconds and holds a key
+		var credential = storeKey(null, grant("books", Permission.SEARCH));
+		var instance = new Keys(
+			storage,
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofMillis(50)
+		);
+		started.add(instance);
+		instance.onStart(null);
+
+		// And the node could not read the store for long enough to stop accepting it
+		storage.unreachable = true;
+		Thread.sleep(500);
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + credential)
+		);
+		assertThat(
+			instance.getTimeSinceRead().compareTo(Duration.ofMillis(50 * Keys.STALE_AFTER_INTERVALS)) > 0,
+			is(true)
+		);
+
+		// When the store can be read again
+		storage.unreachable = false;
+		Thread.sleep(500);
+
+		// Then the key is accepted again
+		assertThat(instance.resolve("Bearer " + credential).unrestricted(), is(false));
+		assertThat(instance.getTimeSinceRead().compareTo(Duration.ofMillis(500)) < 0, is(true));
+	}
+
+	/**
+	 * Holds a write made on one named thread after the write has landed, so a
+	 * test can order it against a change made on another thread.
+	 */
+	static class PausingWriteKeyStorage extends InMemoryKeyStorage {
+		private final String threadName;
+		final CountDownLatch paused = new CountDownLatch(1);
+		final CountDownLatch release = new CountDownLatch(1);
+
+		PausingWriteKeyStorage(String threadName) {
+			this.threadName = threadName;
+		}
+
+		@Override
+		public String write(KeyStore keys, String expectedVersion) throws IOException {
+			var result = super.write(keys, expectedVersion);
+
+			if(Thread.currentThread().getName().equals(threadName)) {
+				paused.countDown();
+
+				try {
+					release.await(10, TimeUnit.SECONDS);
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+
+			return result;
+		}
+	}
+
+	/**
 	 * Holds a read made on one named thread after the read has its result,
 	 * so a test can order it against a change made on another thread.
 	 */

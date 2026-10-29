@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 
@@ -34,6 +35,11 @@ import jakarta.inject.Singleton;
  * can take to reach a node that is already holding it. A credential naming a
  * key this node has not seen is looked up once per interval, so a key created
  * a moment ago works without waiting for the next read.
+ *
+ * <p>A node that cannot read the store learns of no revocation. After three
+ * refresh intervals without a read it stops
+ * accepting the keys it holds, and only the root key works until a read
+ * succeeds again.
  *
  * <p>Managing keys does not need the indexer role. The store is a single object
  * replaced conditionally on the version it was read at, so a node that raced
@@ -63,6 +69,14 @@ public class Keys {
 	 * keys continuously, which is not a state waiting longer improves.
 	 */
 	private static final int WRITE_ATTEMPTS = 3;
+
+	/**
+	 * How many refresh intervals this node accepts the keys it holds after the
+	 * start of the last read of the store that succeeded. More than one, so
+	 * that one failed read does not lock every caller out. The bound is what
+	 * revoking a key can take to reach a node that cannot read the store.
+	 */
+	static final int STALE_AFTER_INTERVALS = 3;
 
 	private final KeyStorage storage;
 	private final AuthMode mode;
@@ -98,6 +112,20 @@ public class Keys {
 	private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
 	private long lastForcedReadNanos;
 	private boolean forcedReadEver;
+
+	/**
+	 * When the last read of the store that succeeded started, as
+	 * {@link System#nanoTime()} gives it, or when this node was created until
+	 * {@link #readEver} is set.
+	 */
+	private volatile long lastReadNanos = System.nanoTime();
+	private volatile boolean readEver;
+
+	/**
+	 * Whether this node has logged that it stopped accepting the keys it
+	 * holds, so that it logs once when it stops and once when it starts again.
+	 */
+	private final AtomicBoolean staleReported = new AtomicBoolean();
 
 	/**
 	 * The keys as of one read of the store, together with the contents and the
@@ -396,10 +424,10 @@ public class Keys {
 
 	/**
 	 * Find a key by id, going back to the store once per refresh interval when
-	 * it is not one this node has seen.
+	 * it is not one this node has seen or the copy it holds is stale.
 	 */
 	private Key find(String id) {
-		var key = snapshot.get().byId().get(id);
+		var key = findHeld(id);
 		if(key != null) {
 			return key;
 		}
@@ -409,7 +437,51 @@ public class Keys {
 		}
 
 		read();
+		return findHeld(id);
+	}
+
+	/**
+	 * Find a key in this node's copy, answering as though there were none when
+	 * the copy is too old to know of a revocation.
+	 */
+	private Key findHeld(String id) {
+		if(isStale()) {
+			reportStale();
+			return null;
+		}
+
 		return snapshot.get().byId().get(id);
+	}
+
+	/**
+	 * Whether no read of the store has started and succeeded within the last
+	 * {@link #STALE_AFTER_INTERVALS} refresh intervals.
+	 */
+	private boolean isStale() {
+		return !readEver
+			|| System.nanoTime() - lastReadNanos
+				> refreshInterval.toNanos() * STALE_AFTER_INTERVALS;
+	}
+
+	private void reportStale() {
+		if(snapshot.get().keys().notEmpty() && staleReported.compareAndSet(false, true)) {
+			logger.atWarn().log(
+				"Could not read the keys for " + STALE_AFTER_INTERVALS + " refresh intervals,"
+					+ " stopped accepting stored keys so that a revoked key is not accepted."
+					+ " Only the root key works until the keys can be read again"
+			);
+		}
+	}
+
+	/**
+	 * How long ago the last read of the store that succeeded started, or how
+	 * long this node has run when no read has succeeded.
+	 *
+	 * <p>This node stops accepting the keys it holds when this passes
+	 * {@link #STALE_AFTER_INTERVALS} refresh intervals.
+	 */
+	public Duration getTimeSinceRead() {
+		return Duration.ofNanos(System.nanoTime() - lastReadNanos);
 	}
 
 	private boolean forcedReadAllowed() {
@@ -435,6 +507,7 @@ public class Keys {
 	 */
 	private boolean read() {
 		var current = snapshot.get();
+		var started = System.nanoTime();
 
 		try {
 			switch(storage.read(current.version())) {
@@ -452,13 +525,35 @@ public class Keys {
 				);
 			}
 
+			markRead(started);
 			return true;
 		} catch(IOException e) {
 			logger.atLevel(Interruptions.levelOf(e))
 				.setCause(e)
-				.log("Could not read the keys, using the copy this node holds; " + e.getMessage());
+				.log("Could not read the keys, keeping the copy this node holds; " + e.getMessage());
+
+			if(isStale()) {
+				reportStale();
+			}
 
 			return false;
+		}
+	}
+
+	/**
+	 * Record a read that succeeded. Reads run on more than one thread, so an
+	 * earlier read that finishes last does not move the time back.
+	 */
+	private synchronized void markRead(long started) {
+		if(readEver && started - lastReadNanos <= 0) {
+			return;
+		}
+
+		lastReadNanos = started;
+		readEver = true;
+
+		if(staleReported.compareAndSet(true, false)) {
+			logger.atInfo().log("Read the keys again, accepting stored keys");
 		}
 	}
 

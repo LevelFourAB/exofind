@@ -120,7 +120,7 @@ What a key allows cannot be changed. To grant a service something else:
 
 This order ensures that both keys work momentarily during the transition, preventing downtime.
 
-Revocation takes effect immediately on the node that served the request, and on every other node within its `EXOFIND_AUTH_REFRESH_INTERVAL`. A key leaked into a public repository stops working in seconds.
+Revocation takes effect immediately on the node that served the request, within `EXOFIND_AUTH_REFRESH_INTERVAL` on a node that can read storage, and within three refresh intervals on a node that cannot read storage. A key leaked into a public repository stops working in seconds. Alert when `exofind.auth.refresh.age` is above three refresh intervals, because the node then accepts only the root key.
 
 A node refuses to revoke two keys: the last key granted `keys.write` when the node has no root key, and the key named by `EXOFIND_AUTH_ANONYMOUS_KEY`. Create a replacement, or point the configuration elsewhere, and send the request again. For both, see [keys that cannot be revoked](../reference/auth.md#keys-that-cannot-be-revoked).
 

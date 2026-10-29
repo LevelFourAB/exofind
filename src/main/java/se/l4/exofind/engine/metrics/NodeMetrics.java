@@ -11,6 +11,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.index.FacetWarmer;
 import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.IndexName;
@@ -52,6 +53,7 @@ public class NodeMetrics {
 	private final NodeState nodeState;
 	private final ReindexJobs reindexJobs;
 	private final FacetWarmer facetWarmer;
+	private final Keys keys;
 	private final boolean perIndex;
 	private final Duration interval;
 
@@ -75,6 +77,7 @@ public class NodeMetrics {
 		NodeState nodeState,
 		ReindexJobs reindexJobs,
 		FacetWarmer facetWarmer,
+		Keys keys,
 		@ConfigProperty(
 			name = "exofind.metrics.index.enabled",
 			defaultValue = "true"
@@ -89,6 +92,7 @@ public class NodeMetrics {
 		this.nodeState = nodeState;
 		this.reindexJobs = reindexJobs;
 		this.facetWarmer = facetWarmer;
+		this.keys = keys;
 		this.perIndex = perIndex;
 		this.interval = interval;
 
@@ -137,6 +141,18 @@ public class NodeMetrics {
 			.description("Seconds since the refresh loop finished a pass")
 			.baseUnit("seconds")
 			.register(registry);
+
+		// A node that checks no credentials never reads the keys
+		if(keys.isEnabled()) {
+			Gauge.builder(
+					Meters.AUTH_REFRESH_AGE,
+					keys,
+					self -> self.getTimeSinceRead().toMillis() / 1000d
+				)
+				.description("Seconds since the last read of the stored keys that succeeded started")
+				.baseUnit("seconds")
+				.register(registry);
+		}
 
 		/*
 		 * One series per state rather than one per index and state. Which

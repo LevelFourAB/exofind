@@ -148,6 +148,12 @@ public final class Meters {
 	public static final String AUTH_FAILURE = "exofind.auth.failure";
 
 	/**
+	 * Seconds since the last read of the stored keys that succeeded started.
+	 * Above three refresh intervals the node accepts only the root key.
+	 */
+	public static final String AUTH_REFRESH_AGE = "exofind.auth.refresh.age";
+
+	/**
 	 * Generations open on this node.
 	 */
 	public static final String INDEXES_OPEN = "exofind.indexes.open";

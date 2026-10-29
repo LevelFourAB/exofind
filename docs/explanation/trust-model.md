@@ -31,7 +31,7 @@ This shared storage design provides several properties:
 - **Consistent access:** A key created on any node is written to the shared store and immediately works across all nodes in the deployment.
 - **Independent key administration:** Managing keys does not require reaching a designated indexer or writer node. Any node can handle key creation and revocation.
 - **Fast adoption:** When a node receives a credential it has not seen yet, it reads the store immediately to validate the key without waiting for a background polling cycle.
-- **Interval-based revocation:** Nodes periodically re-read key storage based on the configured refresh interval. When you revoke a key, the revocation takes effect immediately on the node that handled the deletion, and on all other nodes within their refresh interval.
+- **Interval-based revocation:** Nodes periodically re-read key storage based on the configured refresh interval. When you revoke a key, the revocation takes effect immediately on the node that handled the deletion, and on all other nodes within their refresh interval. A node that cannot read storage refuses stored keys after three refresh intervals, trading availability for a bounded revocation delay.
 
 ## Immutability and expiration
 

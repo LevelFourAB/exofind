@@ -103,6 +103,7 @@ The `state` tag carries the uppercase name of the state. The admin API answers w
 | --- | --- | --- | --- | --- |
 | `exofind.api.error` | Counter | Requests | `code` | API requests that resulted in an error response, tagged with the API error code. |
 | `exofind.auth.failure` | Counter | Requests | `reason` (`unauthenticated`, `forbidden`, `not_covered`) | API requests refused during authentication or authorization. |
+| `exofind.auth.refresh.age` | Gauge | Seconds | None | Seconds since the last successful read of the stored keys started, or since the node started if no read has succeeded. Registered only when `EXOFIND_AUTH_MODE` is `keys`. Above three refresh intervals the node accepts only the root key. Alert on it. |
 
 The HTTP server meter `http.server.requests` names a request in its `uri` tag by the route that answered it, such as `/v1alpha1/indexes/{name}/documents/{key}`. A request that no route matched has the value `UNKNOWN`, whatever its status. Examples are a method the path does not have (`405`), a media type the endpoint does not read (`415`) or write (`406`), and a body past the limit (`413`). A path that no route has is `NOT_FOUND`. So a value that a client puts in a path never becomes a tag value.
 
