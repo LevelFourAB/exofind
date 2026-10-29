@@ -49,6 +49,8 @@ To create the first administrative key, provide a root key to one node:
 
    The response returns the credential once. Store it in your continuous integration (CI) secrets store; you cannot retrieve it again.
 
+   The administrative key manages only keys that hold no more than it does. A key that must manage every other key needs the `admin` role on `*`. See [keys a caller can manage](../reference/auth.md#keys-a-caller-can-manage).
+
 ## Creating scoped keys for services
 
 Three identities cover almost every deployment. Because they have different lifecycles, create separate keys for each component instead of sharing one key:

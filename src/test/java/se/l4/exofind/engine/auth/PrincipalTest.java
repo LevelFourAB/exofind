@@ -4,6 +4,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 import java.time.Instant;
+import java.util.Optional;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
@@ -116,5 +117,64 @@ public class PrincipalTest {
 
 		assertThat(principal.grants().isEmpty(), is(true));
 		assertThat(principal.covers("books"), is(false));
+	}
+
+	@Test
+	void aCallerHoldsTheGrantsItCarries() {
+		var principal = Principal.of(
+			key(
+				grant("books*", Permission.SEARCH, Permission.INDEXES_READ),
+				new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+			)
+		);
+
+		var held = Lists.immutable.of(
+			grant("books@*", Permission.SEARCH),
+			new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty())
+		);
+
+		assertThat(principal.firstNotHeld(held), is(Optional.empty()));
+	}
+
+	@Test
+	void aWiderPatternIsNotHeld() {
+		var principal = Principal.of(key(grant("books*", Permission.SEARCH)));
+
+		assertThat(
+			principal.firstNotHeld(Lists.immutable.of(grant("*", Permission.SEARCH))),
+			is(Optional.of(Permission.SEARCH))
+		);
+	}
+
+	/**
+	 * Each pattern is held on its own terms, so a grant over two indexes is held
+	 * by two grants that each cover one.
+	 */
+	@Test
+	void patternsOfOneGrantMayBeHeldByDifferentGrants() {
+		var principal = Principal.of(
+			key(grant("books", Permission.SEARCH), grant("movies", Permission.SEARCH))
+		);
+
+		var grant = new Grant(Sets.immutable.of(Permission.SEARCH), Lists.immutable.of("books", "movies"));
+		assertThat(principal.firstNotHeld(Lists.immutable.of(grant)), is(Optional.empty()));
+	}
+
+	@Test
+	void aDeploymentPermissionTheCallerLacksIsNamed() {
+		var principal = Principal.of(key(grant("*", Permission.SEARCH)));
+
+		var grant = new Grant(Sets.immutable.of(Permission.KEYS_READ), Lists.immutable.empty());
+		assertThat(
+			principal.firstNotHeld(Lists.immutable.of(grant)),
+			is(Optional.of(Permission.KEYS_READ))
+		);
+	}
+
+	@Test
+	void theRootPrincipalHoldsEverything() {
+		var grant = new Grant(Sets.immutable.of(Permission.values()), Lists.immutable.of("*"));
+
+		assertThat(Principal.root().firstNotHeld(Lists.immutable.of(grant)), is(Optional.empty()));
 	}
 }

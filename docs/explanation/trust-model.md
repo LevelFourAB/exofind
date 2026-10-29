@@ -41,6 +41,14 @@ Immutability eliminates subtle authorization bugs and race conditions. When requ
 
 Keys also support an optional expiration timestamp (`expiresAt`). Setting an expiration date provides automatic cleanup for short-lived access, such as temporary access for contractors, staging environments, or one-off data migrations.
 
+## Why a key cannot hand out more than it holds
+
+A caller creates, rotates, and revokes only keys that hold no more than it does. Without the rule, `keys.write` would equal full administration. A key with only `keys.write` could create an `admin` key on `*`. It could also rotate an existing `admin` key and receive a working credential for it.
+
+The rule lets you give key management to a narrow service. For example, a service with the `admin` role on `tenant-42-*` can manage keys for that tenant. It cannot reach the indexes of another tenant.
+
+Revocation follows the same rule. A narrow key cannot revoke the wider keys that manage it, so a leaked narrow key cannot lock out the administrators. The trade-off is that only the root key can revoke a key that is wider than every other key you hold.
+
 ## Disabling credential checking
 
 Setting `EXOFIND_AUTH_MODE=none` turns off all credential checking. In this mode, the engine treats every incoming request as fully authorized, regardless of whether a credential is provided.

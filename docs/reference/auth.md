@@ -53,7 +53,7 @@ Exofind supports the following permissions:
 | `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. A job that promotes the generation it fills also needs `indexes.promote`. |
 | `settings.write` | index | Replaces or removes the search settings of an index. Kept apart from `indexes.write` so relevance tuning can be granted without the power to change what an index contains. Reading settings needs `indexes.read`. |
 | `keys.read` | deployment | Lists API keys. |
-| `keys.write` | deployment | Creates and revokes API keys. |
+| `keys.write` | deployment | Creates, rotates, and revokes API keys that hold no more than the caller holds. See [Keys a caller can manage](#keys-a-caller-can-manage). |
 | `registry.audit` | deployment | Compares the index registry with what the storage holds. |
 | `registry.repair` | deployment | Rebuilds the index registry from what the storage holds. |
 
@@ -100,7 +100,7 @@ Roles provide shorthand sets of permissions when creating keys:
 |------|-------------|
 | `reader` | `search`, `indexes.read` |
 | `writer` | `search`, `indexes.read`, `documents.read`, `documents.write`, `documents.delete`, `indexes.commit` |
-| `admin` | All permissions, including key management (`keys.read`, `keys.write`) |
+| `admin` | All permissions, including key management (`keys.read`, `keys.write`). A caller can manage only keys that hold no more than the caller holds. See [Keys a caller can manage](#keys-a-caller-can-manage). |
 
 When a key is created, roles are expanded into their constituent permissions. Only the resulting permissions are stored in the key. Existing keys do not change permissions if role definitions change in later software versions. The `writer` role does not include `indexes.write` and cannot modify index definitions.
 
@@ -240,6 +240,27 @@ The ID, description, grants, `createdAt`, and `expiresAt` are all kept, so anyth
 
 The previous credential stops working on the answering node immediately and on every other node within `EXOFIND_AUTH_REFRESH_INTERVAL`. That interval is the window in which clients can move to the new credential.
 
+### Keys a caller can manage
+
+A caller can create, rotate, or revoke only a key that holds no more than the caller holds. The node checks that both of these are true:
+
+- The caller holds every deployment-scoped permission of the key.
+- For each index-scoped permission and each pattern of the key, one grant of the caller holds that permission on a pattern that matches every name the key's pattern matches.
+
+The node does not combine the patterns of the caller. For example, `books` and `books@*` together do not cover `books*`, because `books*` also matches `books2`. The root key can manage every key.
+
+The following examples show what a caller can do:
+
+| Caller | Request | Result |
+| --- | --- | --- |
+| Holds only `keys.write` | Creates a key that holds only `keys.write` | `201 Created` |
+| Holds only `keys.write` | Creates a key with the `admin` role on `*` | `403 Forbidden` with `auth:forbidden` |
+| Holds only `keys.write` | Rotates or revokes a key with the `reader` role on `books` | `403 Forbidden` with `auth:forbidden` |
+| `admin` role on `tenant-42-*` | Creates a key with the `reader` role on `tenant-42-books` | `201 Created` |
+| `admin` role on `tenant-42-*` | Creates a key with the `reader` role on `tenant-43-books` | `403 Forbidden` with `auth:forbidden` |
+
+A refusal is `403 Forbidden` with `auth:forbidden`. The error names the first permission that the caller does not hold.
+
 ### Keys that cannot be revoked
 
 A node answers `409 Conflict` for two keys, because it would not start again without them:
@@ -256,6 +277,7 @@ The keys API returns the following error status codes:
 | Status | Code | Description |
 |--------|------|-------------|
 | `400 Bad Request` | `auth:key:*` | The request specifies an unknown role, permission, or index pattern, a grant that grants nothing, `indexes` on a grant that reaches no index, or a timestamp in `expiresAt` that is invalid or has passed. All validation errors are reported. |
+| `403 Forbidden` | `auth:forbidden` | The key to create, rotate, or revoke holds a permission that the caller does not hold. The error names the first permission not held. |
 | `404 Not Found` | `auth:key:not_found` | The specified key ID does not exist for revocation or rotation. |
 | `409 Conflict` | `auth:key:last_administrator` | The key is the last one granted `keys.write` and the node has no root key. |
 | `409 Conflict` | `auth:key:in_use_as_anonymous` | `EXOFIND_AUTH_ANONYMOUS_KEY` names this key on the answering node. |

@@ -112,4 +112,50 @@ public class GrantTest {
 		assertThat(grant.covers("books"), is(true));
 		assertThat(grant.allows(Permission.DOCUMENTS_WRITE, "books"), is(false));
 	}
+
+	@Test
+	void aPrefixAllowsEveryNameAndNarrowerPrefixUnderIt() {
+		var grant = grant(Permission.SEARCH, "tenant-42-*");
+
+		assertThat(grant.allowsEvery(Permission.SEARCH, "tenant-42-books"), is(true));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "tenant-42-books@*"), is(true));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "tenant-42-*"), is(true));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "tenant-4*"), is(false));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "tenant-43-books"), is(false));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "*"), is(false));
+	}
+
+	@Test
+	void anExactPatternAllowsEveryNameOfOnlyItself() {
+		var grant = grant(Permission.SEARCH, "books");
+
+		assertThat(grant.allowsEvery(Permission.SEARCH, "books"), is(true));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "books*"), is(false));
+		assertThat(grant.allowsEvery(Permission.SEARCH, "books@*"), is(false));
+	}
+
+	/**
+	 * Each pattern is held by one pattern of the grant alone: {@code books*}
+	 * also matches {@code books2}, which neither pattern matches.
+	 */
+	@Test
+	void patternsAreNotCombined() {
+		var grant = grant(Permission.SEARCH, "books", "books@*");
+
+		assertThat(grant.allowsEvery(Permission.SEARCH, "books*"), is(false));
+	}
+
+	@Test
+	void aPermissionTheGrantDoesNotCarryIsNotAllowedAnywhere() {
+		var grant = grant(Permission.SEARCH, "*");
+
+		assertThat(grant.allowsEvery(Permission.INDEXES_DELETE, "books"), is(false));
+	}
+
+	@Test
+	void aDeploymentPermissionIsAllowedWhateverThePattern() {
+		var grant = new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty());
+
+		assertThat(grant.allowsEvery(Permission.KEYS_WRITE, "books"), is(true));
+	}
 }

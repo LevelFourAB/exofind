@@ -87,6 +87,55 @@ public record Grant(SetIterable<Permission> permissions, ListIterable<String> in
 		return false;
 	}
 
+	/**
+	 * Whether this grant allows a permission on every index a pattern matches.
+	 *
+	 * <p>What tells whether a key holds what another grant hands out. One of
+	 * the patterns of this grant must match every name the other pattern
+	 * matches on its own. Patterns are not combined, so {@code books} and
+	 * {@code books@*} together do not hold {@code books*}, which also matches
+	 * {@code books2}.
+	 *
+	 * @param permission
+	 * @param pattern
+	 *   index pattern of the other grant, ignored for a permission that names
+	 *   no index
+	 * @return
+	 */
+	public boolean allowsEvery(Permission permission, String pattern) {
+		if(!permissions.contains(permission)) {
+			return false;
+		}
+
+		if(permission.scope() == Permission.Scope.DEPLOYMENT) {
+			return true;
+		}
+
+		for(var own : indexes) {
+			if(includes(own, pattern)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether every name the inner pattern matches is matched by the outer one.
+	 */
+	private static boolean includes(String outer, String inner) {
+		if(!outer.endsWith("*")) {
+			return !outer.contains("*") && outer.equals(inner);
+		}
+
+		/*
+		 * An inner pattern that starts with the prefix matches only names that
+		 * start with it, whether it is a name or a prefix of its own.
+		 */
+		var prefix = outer.substring(0, outer.length() - 1);
+		return !prefix.contains("*") && inner.startsWith(prefix);
+	}
+
 	private static boolean matches(String pattern, String index) {
 		if(!pattern.endsWith("*")) {
 			return !pattern.contains("*") && pattern.equals(index);

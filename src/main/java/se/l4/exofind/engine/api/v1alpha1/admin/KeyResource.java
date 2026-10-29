@@ -1,5 +1,6 @@
 package se.l4.exofind.engine.api.v1alpha1.admin;
 
+import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.microprofile.openapi.annotations.ExternalDocumentation;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
@@ -13,6 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import se.l4.exofind.engine.api.ExofindApi;
+import se.l4.exofind.engine.api.auth.AuthContext;
 import se.l4.exofind.engine.api.auth.RequiresPermission;
 import se.l4.exofind.engine.api.errors.ErrorResponse;
 import se.l4.exofind.engine.api.errors.ReturnsError;
@@ -21,6 +23,9 @@ import se.l4.exofind.engine.api.v1alpha1.admin.model.CreatedKey;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyListResponse;
+import se.l4.exofind.engine.auth.ForbiddenException;
+import se.l4.exofind.engine.auth.Grant;
+import se.l4.exofind.engine.auth.KeyNotFoundException;
 import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -52,6 +57,10 @@ import jakarta.ws.rs.core.Response;
  * replacement key, migrate clients to the new key, and revoke the old key. The
  * credential itself is replaceable on its own through {@code actions/rotate},
  * which keeps the ID and the grants.
+ *
+ * <p>A caller creates, rotates and revokes only keys that hold no more than it
+ * does. Without that, {@code keys.write} alone could create an {@code admin}
+ * key over every index, or take over the credential of one.
  */
 @Tag(
 	name = "API keys",
@@ -70,9 +79,11 @@ public class KeyResource {
 		.withMessage("A key definition is required");
 
 	private final Keys keys;
+	private final AuthContext auth;
 
-	public KeyResource(Keys keys) {
+	public KeyResource(Keys keys, AuthContext auth) {
 		this.keys = keys;
+		this.auth = auth;
 	}
 
 	/**
@@ -204,6 +215,13 @@ public class KeyResource {
 			Existing keys do not change permissions if role definitions change \
 			in later software versions.
 
+			The caller can only create a key that holds no more than the \
+			caller holds. Every permission of the new key must be held by the \
+			caller on every index the patterns of the new key match. A key \
+			that holds more is refused with `auth:forbidden`, which names the \
+			first permission the caller does not hold. The root key can \
+			create any key.
+
 			A key created on one node works on all nodes immediately because \
 			nodes look up unseen keys without delay. Served by whichever node \
 			receives the request."""
@@ -312,6 +330,8 @@ public class KeyResource {
 		}
 
 		var parsed = KeyDefinitionMapper.toEngine(definition);
+		requireHeld(parsed.grants());
+
 		var created = keys.create(parsed.description(), parsed.grants(), parsed.expiresAt());
 
 		return Response.status(Response.Status.CREATED)
@@ -334,6 +354,9 @@ public class KeyResource {
 	 * not start again without them: the last key granted {@code keys.write} when
 	 * the node has no root key, and the key named by
 	 * {@code EXOFIND_AUTH_ANONYMOUS_KEY}.
+	 *
+	 * <p>A key that holds more than the caller is refused with {@code 403}, so
+	 * a narrow key cannot revoke the keys that manage it.
 	 *
 	 * @param id
 	 * @return
@@ -362,6 +385,10 @@ public class KeyResource {
 			when the node has no root key, and the key named by \
 			`EXOFIND_AUTH_ANONYMOUS_KEY`. Create a replacement, or point the \
 			configuration elsewhere, and send the request again.
+
+			The caller can only revoke a key that holds no more than the \
+			caller holds, the same rule as for creating a key. A key that \
+			holds more is refused with `auth:forbidden`.
 
 			Served by whichever node receives the request."""
 	)
@@ -414,6 +441,7 @@ public class KeyResource {
 		)
 		@PathParam("id") String id
 	) {
+		requireHeld(id);
 		keys.delete(id);
 		return Response.noContent().build();
 	}
@@ -424,6 +452,9 @@ public class KeyResource {
 	 * <p>The ID, description, grants, creation time and expiry are all kept, so
 	 * nothing that names the key has to be updated. Only the secret changes,
 	 * which is what stops the previous credential from working.
+	 *
+	 * <p>A key that holds more than the caller is refused with {@code 403}.
+	 * Otherwise a caller would get a working credential for a wider key.
 	 *
 	 * @param id
 	 * @return
@@ -453,6 +484,11 @@ public class KeyResource {
 			hashes. A lost credential cannot be recovered; rotate the key \
 			again. Server logs record the key `id`, never the credential \
 			value.
+
+			The caller can only rotate a key that holds no more than the \
+			caller holds, the same rule as for creating a key. Otherwise the \
+			caller would get a working credential for a wider key. A key that \
+			holds more is refused with `auth:forbidden`.
 
 			Served by whichever node receives the request."""
 	)
@@ -505,11 +541,39 @@ public class KeyResource {
 		)
 		@PathParam("id") String id
 	) {
+		requireHeld(id);
 		var rotated = keys.rotate(id);
 
 		return new CreatedKey(
 			rotated.credential(),
 			KeyDefinitionMapper.toApi(rotated.key())
 		);
+	}
+
+	/**
+	 * Refuse the request if a stored key holds more than the caller.
+	 *
+	 * <p>The grants of a key never change and an ID is never used again, so
+	 * the grants read here are the grants of the key the change acts on.
+	 *
+	 * @throws KeyNotFoundException
+	 *   if no key is stored under the ID
+	 */
+	private void requireHeld(String id) {
+		var key = keys.list().detect(candidate -> candidate.id().equals(id));
+		if(key == null) {
+			throw new KeyNotFoundException(id);
+		}
+
+		requireHeld(key.grants());
+	}
+
+	/**
+	 * Refuse the request if the grants hold more than the caller.
+	 */
+	private void requireHeld(ListIterable<Grant> grants) {
+		auth.principal().firstNotHeld(grants).ifPresent(permission -> {
+			throw new ForbiddenException(permission);
+		});
 	}
 }

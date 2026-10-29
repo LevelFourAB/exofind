@@ -8723,6 +8723,8 @@ paths:
 
         When a key is created, roles are expanded into their constituent permissions. Only the resulting permissions are stored in the key. Existing keys do not change permissions if role definitions change in later software versions.
 
+        The caller can only create a key that holds no more than the caller holds. Every permission of the new key must be held by the caller on every index the patterns of the new key match. A key that holds more is refused with `auth:forbidden`, which names the first permission the caller does not hold. The root key can create any key.
+
         A key created on one node works on all nodes immediately because nodes look up unseen keys without delay. Served by whichever node receives the request.
 
         Requires the `keys.write` permission, which is not about one index. The `admin` role includes it.
@@ -8861,6 +8863,8 @@ paths:
 
         The answering node refuses to revoke two keys, because it would not start again without them: the last key granted `keys.write` when the node has no root key, and the key named by `EXOFIND_AUTH_ANONYMOUS_KEY`. Create a replacement, or point the configuration elsewhere, and send the request again.
 
+        The caller can only revoke a key that holds no more than the caller holds, the same rule as for creating a key. A key that holds more is refused with `auth:forbidden`.
+
         Served by whichever node receives the request.
 
         Requires the `keys.write` permission, which is not about one index. The `admin` role includes it.
@@ -8953,6 +8957,8 @@ paths:
         The previous credential stops working on the answering node immediately and across all other nodes within `EXOFIND_AUTH_REFRESH_INTERVAL`, as nodes accept cached keys until their next storage read. That interval is the window in which clients can move to the new credential.
 
         As when a key is created, the full secret credential is returned only in this response because credentials are stored only as hashes. A lost credential cannot be recovered; rotate the key again. Server logs record the key `id`, never the credential value.
+
+        The caller can only rotate a key that holds no more than the caller holds, the same rule as for creating a key. Otherwise the caller would get a working credential for a wider key. A key that holds more is refused with `auth:forbidden`.
 
         Served by whichever node receives the request.
 

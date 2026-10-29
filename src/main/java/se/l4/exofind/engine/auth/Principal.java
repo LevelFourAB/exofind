@@ -1,5 +1,7 @@
 package se.l4.exofind.engine.auth;
 
+import java.util.Optional;
+
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.list.ListIterable;
 
@@ -123,6 +125,50 @@ public record Principal(String id, ListIterable<Grant> grants, boolean unrestric
 			|| grants.anySatisfy(
 				grant -> grant.permissions().contains(permission) && grant.indexes().notEmpty()
 			);
+	}
+
+	/**
+	 * Get a permission that a set of grants allows and this caller does not.
+	 *
+	 * <p>What a key is checked against before it creates, rotates or revokes
+	 * another key. A caller that could create a key wider than itself, or take
+	 * over the credential of one, could give itself anything, so a key acts
+	 * only on keys that hold no more than it does.
+	 *
+	 * <p>A permission on a pattern is held when one grant of this caller allows
+	 * it on every index the pattern matches. See
+	 * {@link Grant#allowsEvery(Permission, String)}.
+	 *
+	 * @param grants
+	 *   the grants of the key that is acted on
+	 * @return
+	 *   the first permission that is not held, in the order the grants and
+	 *   {@link Permission} give, or empty when this caller holds all of them
+	 */
+	public Optional<Permission> firstNotHeld(ListIterable<Grant> grants) {
+		if(unrestricted) {
+			return Optional.empty();
+		}
+
+		for(var grant : grants) {
+			for(var permission : grant.permissions().toSortedList()) {
+				if(!holds(permission, grant.indexes())) {
+					return Optional.of(permission);
+				}
+			}
+		}
+
+		return Optional.empty();
+	}
+
+	private boolean holds(Permission permission, ListIterable<String> patterns) {
+		if(permission.scope() == Permission.Scope.DEPLOYMENT) {
+			return allows(permission);
+		}
+
+		return patterns.allSatisfy(
+			pattern -> grants.anySatisfy(grant -> grant.allowsEvery(permission, pattern))
+		);
 	}
 
 	/**

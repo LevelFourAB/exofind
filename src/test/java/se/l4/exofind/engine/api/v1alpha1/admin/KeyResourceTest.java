@@ -16,21 +16,29 @@ import org.eclipse.collections.api.factory.Sets;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import se.l4.exofind.engine.api.auth.AuthContext;
+import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyDefinition;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyInfo;
 import se.l4.exofind.engine.api.v1alpha1.admin.model.KeyListResponse;
 import se.l4.exofind.engine.auth.AuthMode;
+import se.l4.exofind.engine.auth.ForbiddenException;
 import se.l4.exofind.engine.auth.Grant;
 import se.l4.exofind.engine.auth.InMemoryKeyStorage;
+import se.l4.exofind.engine.auth.Key;
+import se.l4.exofind.engine.auth.KeyNotFoundException;
 import se.l4.exofind.engine.auth.Keys;
 import se.l4.exofind.engine.auth.Permission;
+import se.l4.exofind.engine.auth.Principal;
 import se.l4.exofind.engine.errors.ValidationException;
 
 /**
- * The key listing, read through the resource. What a key allows and how it
- * is stored is {@code KeysTest}; this holds the shape of the listing.
+ * The keys API, called through the resource. What a key allows and how it is
+ * stored is {@code KeysTest}; this holds the shape of the listing and which
+ * keys a caller may create, rotate and revoke.
  */
 public class KeyResourceTest {
 	Keys keys;
+	AuthContext auth;
 	KeyResource resource;
 
 	@BeforeEach
@@ -42,7 +50,9 @@ public class KeyResourceTest {
 			Optional.empty(),
 			Duration.ofSeconds(30)
 		);
-		resource = new KeyResource(keys);
+		auth = new AuthContext();
+		auth.set(Principal.root());
+		resource = new KeyResource(keys, auth);
 	}
 
 	/**
@@ -103,6 +113,124 @@ public class KeyResourceTest {
 	public void testListWithAnInvalidLimitIsRefused() {
 		var e = assertThrows(ValidationException.class, () -> resource.list(null, null, "0"));
 		assertThat(e.getMessage(), containsString("request:limit_out_of_range"));
+	}
+
+	@Test
+	public void testAKeyManagerCannotCreateAKeyThatHoldsMoreThanItDoes() {
+		// Given a caller that holds only keys.write
+		auth.set(Principal.of(keyManager()));
+
+		// When it creates an admin key over every index
+		var e = assertThrows(
+			ForbiddenException.class,
+			() -> resource.create(
+				definition(new KeyDefinition.GrantDefinition("admin", null, List.of("*")))
+			)
+		);
+
+		// Then the first permission it does not hold is named, and no key is stored
+		assertThat(e.getMessage(), containsString("search"));
+		assertThat(keys.list().size(), is(1));
+	}
+
+	@Test
+	public void testAKeyManagerCanCreateAKeyThatHoldsNoMoreThanItDoes() {
+		auth.set(Principal.of(keyManager()));
+
+		var response = resource.create(
+			definition(new KeyDefinition.GrantDefinition(null, List.of("keys.write"), null))
+		);
+
+		assertThat(response.getStatus(), is(201));
+	}
+
+	/**
+	 * An admin key scoped to one tenant holds keys.write, and must not be able
+	 * to use it to reach the indexes of another tenant.
+	 */
+	@Test
+	public void testAScopedAdminCannotCreateAKeyOutsideItsScope() {
+		auth.set(Principal.of(stored(new Grant(
+			Sets.immutable.of(Permission.values()),
+			Lists.immutable.of("tenant-42-*")
+		))));
+
+		assertThrows(
+			ForbiddenException.class,
+			() -> resource.create(
+				definition(new KeyDefinition.GrantDefinition("reader", null, List.of("tenant-43-books")))
+			)
+		);
+
+		var response = resource.create(
+			definition(new KeyDefinition.GrantDefinition("reader", null, List.of("tenant-42-books")))
+		);
+		assertThat(response.getStatus(), is(201));
+	}
+
+	@Test
+	public void testAKeyManagerCannotTakeOverAKeyThatHoldsMoreThanItDoes() {
+		// Given an admin key over every index
+		var admin = keys.create(
+			"ci",
+			Lists.immutable.of(new Grant(Sets.immutable.of(Permission.values()), Lists.immutable.of("*"))),
+			null
+		).key();
+
+		// And a caller that holds only keys.write
+		auth.set(Principal.of(keyManager()));
+
+		// When it replaces the credential of the admin key, then it is refused
+		assertThrows(ForbiddenException.class, () -> resource.rotate(admin.id()));
+
+		// And the credential stored for the admin key is unchanged
+		var stored = keys.list().detect(key -> key.id().equals(admin.id()));
+		assertThat(stored.secretHash(), is(admin.secretHash()));
+	}
+
+	@Test
+	public void testAKeyManagerCannotRevokeAKeyThatHoldsMoreThanItDoes() {
+		var reader = keys.create("reader", Lists.immutable.of(grant()), null).key();
+		auth.set(Principal.of(keyManager()));
+
+		assertThrows(ForbiddenException.class, () -> resource.delete(reader.id()));
+		assertThat(keys.list().anySatisfy(key -> key.id().equals(reader.id())), is(true));
+	}
+
+	@Test
+	public void testAKeyCanRotateAndRevokeAKeyThatHoldsNoMoreThanItDoes() {
+		var reader = keys.create("reader", Lists.immutable.of(grant()), null).key();
+		auth.set(Principal.of(stored(new Grant(
+			Sets.immutable.of(Permission.SEARCH, Permission.KEYS_WRITE),
+			Lists.immutable.of("books")
+		))));
+
+		var rotated = resource.rotate(reader.id());
+		assertThat(rotated.key().id(), is(reader.id()));
+
+		assertThat(resource.delete(reader.id()).getStatus(), is(204));
+	}
+
+	@Test
+	public void testRotatingAnUnknownKeyIsNotFound() {
+		auth.set(Principal.of(keyManager()));
+
+		assertThrows(KeyNotFoundException.class, () -> resource.rotate("0123456789abcdef"));
+	}
+
+	/**
+	 * Store a key that holds only keys.write and get it.
+	 */
+	private Key keyManager() {
+		return stored(new Grant(Sets.immutable.of(Permission.KEYS_WRITE), Lists.immutable.empty()));
+	}
+
+	private Key stored(Grant grant) {
+		return keys.create("caller", Lists.immutable.of(grant), null).key();
+	}
+
+	private static KeyDefinition definition(KeyDefinition.GrantDefinition grant) {
+		return new KeyDefinition("a key", List.of(grant), null);
 	}
 
 	private static Grant grant() {
