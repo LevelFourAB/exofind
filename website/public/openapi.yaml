@@ -6374,8 +6374,10 @@ paths:
       - description: "Starts a reindex job filling the generation being created from\
           \ the live one, the way the reindex action would. One-shot: it is not stored\
           \ in the definition, and it is refused on a request that creates no generation.\
-          \ `auto` also needs `indexes.promote`, because the job it starts promotes\
-          \ the generation it filled; `manual` needs only `indexes.write`."
+          \ Both values also need `documents.read` on the index or on its live generation,\
+          \ because the job reads every document of the live generation. `auto` also\
+          \ needs `indexes.promote`, because the job it starts promotes the generation\
+          \ it filled."
         schema:
           type: string
           enum:
@@ -6777,7 +6779,7 @@ paths:
           description: |-
             `If-Match` was sent for an index that does not exist, `books@2` named an index that does not exist, or the key has no grant covering the name.
 
-            Error codes: `index:not_found` - The name belongs to no index, or the key holds no grant covering it.
+            Error codes: `index:not_found` - The name belongs to no index, or the key holds no grant covering it. With `reindex`, also when the key holds no grant covering the index the job reads from.
           content:
             application/json:
               schema:
@@ -6785,7 +6787,8 @@ paths:
           x-error-codes:
           - code: index:not_found
             when: "The name belongs to no index, or the key holds no grant covering\
-              \ it."
+              \ it. With `reindex`, also when the key holds no grant covering the\
+              \ index the job reads from."
         "409":
           description: |-
             The definition conflicts with documents stored in the generation (`index:definition:incompatible`), the stored definition contains settings this API version cannot represent (`index:definition:unrepresentable`), the index requires engine features this node does not have (`index:unsupported`), a reindex job is already running (`reindex:in_progress`), storage holds a generation under the new name that nothing deleted or the registry is gone and storage holds generations (`index:generation:storage_held`), no node is available to write the index (`indexer:unavailable`), or the registry write failed.
@@ -7604,7 +7607,9 @@ paths:
 
         The job automatically promotes the target generation once it catches up with changes, unless the request specifies `"promote": "manual"`. With manual promotion, the job pauses in the `ready` phase and keeps the target caught up until `actions/promote` on the target finishes the job.
 
-        Because promoting changes what the index answers for, a request that leaves promotion automatic also needs `indexes.promote` on the target and is refused with `403` without it. A request specifying `"promote": "manual"` needs only `indexes.reindex`.
+        Because the job reads every document of the source, the request also needs `documents.read` on the source: on the generation that `from` names, or, when `from` is left out or names no generation, on the index or on its live generation. A key whose grants do not cover the source gets `404`, and a key that covers it without `documents.read` gets `403`.
+
+        Because promoting changes what the index answers for, a request that leaves promotion automatic also needs `indexes.promote` on the target and is refused with `403` without it. A request specifying `"promote": "manual"` does not need `indexes.promote`.
 
         An index can run at most one reindex job at a time. A finished job's record remains readable until a new job replaces it. Read the record with `GET /v1alpha1/admin/reindexes/{name}`, which the `Location` header of the response names.
 
@@ -7719,9 +7724,9 @@ paths:
             when: The key is accepted but does not hold the `indexes.reindex` permission.
         "404":
           description: |-
-            The specified index or generation does not exist, or the caller key lacks permissions on the index.
+            The specified index or generation does not exist, or the caller key has no grant that covers the target or the source.
 
-            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering it.
+            Error codes: `index:not_found` - No index or generation has this name, or the key holds no grant covering the target or the source the job reads from.
           content:
             application/json:
               schema:
@@ -7729,7 +7734,7 @@ paths:
           x-error-codes:
           - code: index:not_found
             when: "No index or generation has this name, or the key holds no grant\
-              \ covering it."
+              \ covering the target or the source the job reads from."
         "409":
           description: |-
             The job could not be started.

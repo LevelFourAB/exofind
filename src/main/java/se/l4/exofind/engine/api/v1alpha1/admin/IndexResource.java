@@ -920,7 +920,7 @@ public class IndexResource {
 	@ReturnsError(
 		value = "index:not_found",
 		status = 404,
-		when = "The name belongs to no index, or the key holds no grant covering it."
+		when = "The name belongs to no index, or the key holds no grant covering it. With `reindex`, also when the key holds no grant covering the index the job reads from."
 	)
 	@ReturnsError(
 		value = "index:field:type_unrepresentable",
@@ -1100,9 +1100,12 @@ public class IndexResource {
 				Starts a reindex job filling the generation being created from \
 				the live one, the way the reindex action would. One-shot: it \
 				is not stored in the definition, and it is refused on a \
-				request that creates no generation. `auto` also needs \
+				request that creates no generation. Both values also need \
+				`documents.read` on the index or on its live generation, \
+				because the job reads every document of the live generation. \
+				`auto` also needs \
 				`indexes.promote`, because the job it starts promotes the \
-				generation it filled; `manual` needs only `indexes.write`.""",
+				generation it filled.""",
 			schema = @Schema(enumeration = {"auto", "manual"})
 		)
 		@QueryParam("reindex") String reindex,
@@ -1176,12 +1179,14 @@ public class IndexResource {
 				);
 			}
 
+			String source = null;
 			if(reindex != null) {
 				/*
 				 * Asked before the generation exists: a generation left behind
 				 * by a refused job is refused the flag on every repeat of the
 				 * same request, so the caller could not send it again.
 				 */
+				source = readableSource(name, null);
 				reindexJobs.checkStartable(name, stored);
 			}
 
@@ -1197,7 +1202,7 @@ public class IndexResource {
 				 * loses the flag, and the client calls the action instead.
 				 */
 				try {
-					reindexJobs.start(name, null, reindex, auth.principal().id());
+					reindexJobs.start(name, source, reindex, auth.principal().id());
 				} catch(RuntimeException e) {
 					rollBack(name);
 					throw e;
@@ -1719,11 +1724,14 @@ public class IndexResource {
 	 * in the ready phase until {@code actions/promote} on the target completes
 	 * it.
 	 *
-	 * <p>A job that promotes changes what the index answers for, so it needs
-	 * {@code indexes.promote} on the target as well as {@code indexes.reindex}.
-	 * A request asking for manual promotion needs only {@code indexes.reindex},
-	 * and the caller presents a key holding {@code indexes.promote} to
-	 * {@code actions/promote} when the job is ready.
+	 * <p>A job reads every document of its source, so it needs
+	 * {@code documents.read} on the source as well as {@code indexes.reindex}
+	 * on the target.
+	 *
+	 * <p>A job that promotes changes what the index answers for, so it also
+	 * needs {@code indexes.promote} on the target. A request asking for manual
+	 * promotion does not, and the caller presents a key holding
+	 * {@code indexes.promote} to {@code actions/promote} when the job is ready.
 	 *
 	 * @param name
 	 *   the generation to fill, as {@code index@generation}
@@ -1760,10 +1768,17 @@ public class IndexResource {
 			phase and keeps the target caught up until `actions/promote` on \
 			the target finishes the job.
 
+			Because the job reads every document of the source, the request \
+			also needs `documents.read` on the source: on the generation that \
+			`from` names, or, when `from` is left out or names no \
+			generation, on the index or on its live generation. A key \
+			whose grants do not cover the source gets `404`, and a key that \
+			covers it without `documents.read` gets `403`.
+
 			Because promoting changes what the index answers for, a request \
 			that leaves promotion automatic also needs `indexes.promote` on \
 			the target and is refused with `403` without it. A request \
-			specifying `"promote": "manual"` needs only `indexes.reindex`.
+			specifying `"promote": "manual"` does not need `indexes.promote`.
 
 			An index can run at most one reindex job at a time. A finished \
 			job's record remains readable until a new job replaces it. Read \
@@ -1792,7 +1807,7 @@ public class IndexResource {
 		responseCode = "404",
 		description = """
 			The specified index or generation does not exist, or the caller \
-			key lacks permissions on the index.""",
+			key has no grant that covers the target or the source.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))
 	)
 	@APIResponse(
@@ -1853,7 +1868,7 @@ public class IndexResource {
 	@ReturnsError(
 		value = "index:not_found",
 		status = 404,
-		when = "No index or generation has this name, or the key holds no grant covering it."
+		when = "No index or generation has this name, or the key holds no grant covering the target or the source the job reads from."
 	)
 	@ReturnsError(
 		value = "index:no_live_generation",
@@ -1927,12 +1942,8 @@ public class IndexResource {
 			throw new ForbiddenException(Permission.INDEXES_PROMOTE);
 		}
 
-		var job = reindexJobs.start(
-			name,
-			body == null ? null : body.from(),
-			promote,
-			auth.principal().id()
-		);
+		var from = readableSource(name, body == null ? null : body.from());
+		var job = reindexJobs.start(name, from, promote, auth.principal().id());
 
 		/*
 		 * The record is read under the index the job belongs to rather than
@@ -1943,6 +1954,74 @@ public class IndexResource {
 			.location(ReindexResource.statusOf(uriInfo, job.index()))
 			.entity(ReindexInfo.of(job))
 			.build();
+	}
+
+	/**
+	 * Check that the caller may read the generation a reindex job copies from,
+	 * and get the source to start the job with.
+	 *
+	 * <p>A job reads every document of its source into the target, and the
+	 * filter checked only the target. Without this check, a key that can read
+	 * the target reads a generation it holds no grant on, so the source needs
+	 * {@code documents.read} of its own.
+	 *
+	 * <p>The permission is checked on the name the request gives: {@code from},
+	 * or the index when {@code from} is left out, which is the name the live
+	 * generation is read through. A source that names no generation is also
+	 * read when the caller holds the permission on the live generation by its
+	 * own name, as a key granted {@code books@*} does. The job is then started
+	 * on that generation by name, so a promotion between this check and the
+	 * start cannot move the job onto a generation that was not checked.
+	 *
+	 * <p>A source in another index is left to the job, which refuses it as a
+	 * mistake in the request.
+	 *
+	 * @param target
+	 *   the generation the job fills
+	 * @param from
+	 *   the source the request names, or {@code null} for the live generation
+	 * @return
+	 *   the source to give the job: {@code from} as it was, or the live
+	 *   generation by name when only that name allowed the read
+	 * @throws IndexNotFoundException
+	 *   if the caller holds no grant that covers the source
+	 * @throws ForbiddenException
+	 *   if the caller holds no {@code documents.read} on the source
+	 */
+	private String readableSource(String target, String from) {
+		var index = IndexName.parse(target).index();
+		var named = from == null ? index : from;
+		var parsed = IndexName.parse(named);
+		if(!parsed.index().equals(index)) {
+			return from;
+		}
+
+		var principal = auth.principal();
+		if(principal.allows(Permission.DOCUMENTS_READ, named)) {
+			return from;
+		}
+
+		var covered = principal.covers(named);
+		if(!parsed.isPinned()) {
+			var live = indexes.getRegistered(index)
+				.map(RegisteredIndex::live)
+				.orElse(null);
+
+			if(live != null) {
+				var generation = IndexName.of(index, live).toString();
+				if(principal.allows(Permission.DOCUMENTS_READ, generation)) {
+					return generation;
+				}
+
+				covered = covered || principal.covers(generation);
+			}
+		}
+
+		if(!covered) {
+			throw new IndexNotFoundException(named);
+		}
+
+		throw new ForbiddenException(Permission.DOCUMENTS_READ);
 	}
 
 	/**

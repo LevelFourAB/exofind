@@ -544,6 +544,8 @@ A reindex job populates a new generation by copying documents from an existing g
 
 To start a reindex job, send a `POST` request to `/v1alpha1/admin/indexes/{name}/actions/reindex`, where `{name}` is the target generation the job fills. This request requires the `indexes.reindex` permission on the target, and `indexes.promote` as well unless the body specifies `"promote": "manual"`, because a job left on automatic promotion promotes the generation it fills. A request missing `indexes.promote` returns `403 Forbidden`.
 
+Starting a job also requires the `documents.read` permission on the source. The engine checks this permission on `from`, or on the index or its live generation when `from` is left out. If the grants of the key do not cover the source at all, the server returns `404 Not Found` with the error code `index:not_found`. If the grants cover the source but do not include `documents.read`, the server returns `403 Forbidden` with the error code `auth:forbidden`.
+
 The target must meet the following requirements:
 
 - It must specify a generation by name (for example, `products@2`).
@@ -575,7 +577,7 @@ This creates the target generation with the definition in the request body and s
 
 The `reindex` query parameter is one-shot and is not stored in the index definition. The server returns `400 Bad Request` if the request does not create a generation, such as on an initial index creation or on a `PUT` request that updates an existing generation's definition.
 
-`?reindex=auto` requires the `indexes.promote` permission in addition to the `indexes.write` permission the `PUT` request requires, because the job it starts promotes the generation it fills. A request missing `indexes.promote` returns `403 Forbidden` and creates no generation. `?reindex=manual` requires only `indexes.write`.
+`?reindex=auto` requires the `indexes.promote` permission in addition to the `indexes.write` permission the `PUT` request requires, because the job it starts promotes the generation it fills. A request missing `indexes.promote` returns `403 Forbidden` and creates no generation. `?reindex=manual` requires `indexes.write` and also needs `documents.read` on the index or its live generation, and a refused request creates no generation.
 
 ### Job record and phases
 

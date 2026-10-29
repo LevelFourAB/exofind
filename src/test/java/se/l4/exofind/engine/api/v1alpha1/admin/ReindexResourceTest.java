@@ -571,11 +571,11 @@ public class ReindexResourceTest {
 	 * for `indexes.promote` of its own.
 	 */
 	@Test
-	public void startingAJobThatPromotesNothingNeedsOnlyTheReindexPermission() throws Exception {
+	public void startingAJobThatPromotesNothingNeedsNoPromotePermission() throws Exception {
 		create("books");
 		create("books@2");
 
-		answerAs(Permission.INDEXES_REINDEX, Permission.INDEXES_READ);
+		answerAs(Permission.INDEXES_REINDEX, Permission.INDEXES_READ, Permission.DOCUMENTS_READ);
 
 		var response = indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"));
 		assertThat(response.getStatus(), is(202));
@@ -622,5 +622,145 @@ public class ReindexResourceTest {
 
 			Thread.sleep(20);
 		}
+	}
+
+	/**
+	 * A reindex reads every document of its source generation into the
+	 * target. A key granted only the target generation holds nothing on the
+	 * source, so it must not be able to copy the source into a generation it
+	 * can read. The source is answered as missing, the way every name outside
+	 * the grants of a key is.
+	 */
+	@Test
+	public void aKeyGrantedOnlyTheTargetCannotCopyAGenerationItHoldsNothingOn() {
+		create("books");
+		create("books@2");
+
+		answerAsGrantedOn(
+			"books@2",
+			Permission.INDEXES_REINDEX,
+			Permission.INDEXES_READ,
+			Permission.DOCUMENTS_READ
+		);
+
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> indexResource.reindex("books@2", uriInfo, new ReindexRequest("books@1", "manual"))
+		);
+
+		// Leaving the source out reads the live generation, through the index
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> indexResource.reindex("books@2", uriInfo, new ReindexRequest(null, "manual"))
+		);
+
+		auth.set(Principal.unchecked());
+		assertThrows(ReindexNotFoundException.class, () -> resource.status("books"));
+	}
+
+	/**
+	 * A key that covers the source but cannot read its documents is told which
+	 * permission it lacks, rather than having the documents copied somewhere
+	 * it can search.
+	 */
+	@Test
+	public void aKeyThatCannotReadTheSourceCannotCopyIt() {
+		create("books");
+		create("books@2");
+
+		answerAsGrantedOn(
+			"books*",
+			Permission.INDEXES_REINDEX,
+			Permission.INDEXES_READ,
+			Permission.SEARCH
+		);
+
+		var refused = assertThrows(
+			ForbiddenException.class,
+			() -> indexResource.reindex("books@2", uriInfo, new ReindexRequest("books@1", "manual"))
+		);
+		assertThat(
+			refused.getArguments().get("permission"),
+			is(Permission.DOCUMENTS_READ.id())
+		);
+
+		assertThrows(ReindexNotFoundException.class, () -> resource.status("books"));
+	}
+
+	/**
+	 * A key granted generations by pattern reads the source it names, so the
+	 * job it starts is accepted.
+	 */
+	@Test
+	public void aKeyThatReadsTheSourceItNamesCanCopyIt() throws Exception {
+		create("books");
+		create("books@2");
+
+		answerAsGrantedOn(
+			"books@*",
+			Permission.INDEXES_REINDEX,
+			Permission.INDEXES_READ,
+			Permission.DOCUMENTS_READ
+		);
+
+		var response = indexResource.reindex(
+			"books@2",
+			uriInfo,
+			new ReindexRequest("books@1", "manual")
+		);
+		assertThat(response.getStatus(), is(202));
+
+		awaitPhase("books", "ready");
+	}
+
+	/**
+	 * A key granted every generation but not the index itself cannot read
+	 * through the index name, but it can read the live generation by its own
+	 * name. Leaving the source out is then answered from that generation.
+	 */
+	@Test
+	public void aKeyGrantedTheGenerationsCopiesTheLiveOneWithoutNamingIt() throws Exception {
+		create("books");
+
+		answerAsGrantedOn(
+			"books@*",
+			Permission.INDEXES_WRITE,
+			Permission.INDEXES_REINDEX,
+			Permission.INDEXES_READ,
+			Permission.DOCUMENTS_READ
+		);
+
+		var response = indexResource.put("books@2", null, "manual", false, uriInfo, definition());
+		assertThat(response.getStatus(), is(201));
+
+		var job = resource.status("books@2");
+		assertThat(job.source(), is("books@1"));
+		awaitPhase("books@2", "ready");
+	}
+
+	/**
+	 * Creating a generation with the flag reads the live generation the same
+	 * way the action does, so it asks for the same permission on it and
+	 * creates nothing when the key lacks it.
+	 */
+	@Test
+	public void creatingAGenerationWithTheFlagNeedsToReadTheLiveGeneration() {
+		create("books");
+
+		answerAsGrantedOn(
+			"books@2",
+			Permission.INDEXES_WRITE,
+			Permission.INDEXES_READ,
+			Permission.DOCUMENTS_READ
+		);
+
+		assertThrows(
+			IndexNotFoundException.class,
+			() -> indexResource.put("books@2", null, "manual", false, uriInfo, definition())
+		);
+
+		auth.set(Principal.unchecked());
+		var info = (IndexInfo) indexResource.get("books", null).getEntity();
+		assertThat(info.generations().size(), is(1));
 	}
 }

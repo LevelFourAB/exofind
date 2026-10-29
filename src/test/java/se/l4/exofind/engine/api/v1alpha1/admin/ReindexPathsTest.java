@@ -68,6 +68,7 @@ public class ReindexPathsTest {
 
 	private static String readingBooks;
 	private static String reindexingBooks;
+	private static String reindexingBooksBlind;
 
 	private static RequestSpecification asRoot() {
 		return given()
@@ -137,7 +138,27 @@ public class ReindexPathsTest {
 			.then().statusCode(201);
 
 		readingBooks = keyGranting("\"indexes.read\"");
-		reindexingBooks = keyGranting("\"indexes.read\", \"indexes.reindex\"");
+		reindexingBooksBlind = keyGranting("\"indexes.read\", \"indexes.reindex\"");
+		reindexingBooks = keyGranting(
+			"\"indexes.read\", \"indexes.reindex\", \"documents.read\""
+		);
+	}
+
+	/**
+	 * A job reads every document of its source, so a key that cannot read
+	 * those documents cannot start one. The refusal names the permission the
+	 * key lacks.
+	 */
+	@Test
+	@Order(2)
+	void aJobNeedsToReadTheDocumentsOfItsSource() {
+		as(reindexingBooksBlind)
+			.body("{ \"promote\": \"manual\" }")
+			.when().post("/v1alpha1/admin/indexes/books@2/actions/reindex")
+			.then()
+			.statusCode(403)
+			.body("code", is("auth:forbidden"))
+			.body("errors[0].arguments.permission", is("documents.read"));
 	}
 
 	/**
@@ -145,7 +166,7 @@ public class ReindexPathsTest {
 	 * stayed an action on the index rather than moving to the job.
 	 */
 	@Test
-	@Order(2)
+	@Order(3)
 	void aJobStartsOnTheGenerationItFills() {
 		as(reindexingBooks)
 			.body("{ \"promote\": \"manual\" }")
@@ -157,7 +178,7 @@ public class ReindexPathsTest {
 	}
 
 	@Test
-	@Order(3)
+	@Order(4)
 	void theRecordAnswersUnderTheIndexItBelongsTo() {
 		as(readingBooks)
 			.when().get("/v1alpha1/admin/reindexes/books")
@@ -172,7 +193,7 @@ public class ReindexPathsTest {
 	 * generation of the index answers with the same record.
 	 */
 	@Test
-	@Order(4)
+	@Order(5)
 	void aGenerationOfTheIndexAnswersTheSameRecord() {
 		as(readingBooks)
 			.when().get("/v1alpha1/admin/reindexes/books@2")
@@ -182,7 +203,7 @@ public class ReindexPathsTest {
 	}
 
 	@Test
-	@Order(5)
+	@Order(6)
 	void theListingNamesTheJob() {
 		asRoot()
 			.when().get("/v1alpha1/admin/reindexes")
@@ -197,7 +218,7 @@ public class ReindexPathsTest {
 	 * there, rather than being told the index has no job.
 	 */
 	@Test
-	@Order(6)
+	@Order(7)
 	void aRecordOutsideTheGrantIsNotFound() {
 		as(readingBooks)
 			.when().get("/v1alpha1/admin/reindexes/shops")
@@ -207,7 +228,7 @@ public class ReindexPathsTest {
 	}
 
 	@Test
-	@Order(7)
+	@Order(8)
 	void cancellingNeedsTheReindexPermission() {
 		as(readingBooks)
 			.when().post("/v1alpha1/admin/reindexes/books/actions/cancel")
@@ -215,7 +236,7 @@ public class ReindexPathsTest {
 	}
 
 	@Test
-	@Order(8)
+	@Order(9)
 	void cancellingAnswersTheClosedRecord() {
 		as(reindexingBooks)
 			.when().post("/v1alpha1/admin/reindexes/books/actions/cancel")
@@ -229,7 +250,7 @@ public class ReindexPathsTest {
 	 * action rather than a removal of the job.
 	 */
 	@Test
-	@Order(9)
+	@Order(10)
 	void theCancelledRecordIsStillRead() {
 		as(readingBooks)
 			.when().get("/v1alpha1/admin/reindexes/books")
@@ -243,7 +264,7 @@ public class ReindexPathsTest {
 	 * own are gone rather than kept alongside.
 	 */
 	@Test
-	@Order(10)
+	@Order(11)
 	void theOldPathsAnswerNothing() {
 		asRoot()
 			.when().get("/v1alpha1/admin/indexes/books/actions/reindex")

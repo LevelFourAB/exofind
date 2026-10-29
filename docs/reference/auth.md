@@ -50,7 +50,7 @@ Exofind supports the following permissions:
 | `indexes.promote` | index | Promotes an index to serve from a generation. |
 | `indexes.commit` | index | Commits and pushes pending changes. |
 | `indexes.pull` | index | Pulls the latest index state. |
-| `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. A job that promotes the generation it fills also needs `indexes.promote`. |
+| `indexes.reindex` | index | Starts and cancels reindex jobs that fill a generation from another one. A job also needs `documents.read` on the source generation it reads. A job that promotes the generation it fills also needs `indexes.promote`. |
 | `settings.write` | index | Replaces or removes the search settings of an index. Kept apart from `indexes.write` so relevance tuning can be granted without the power to change what an index contains. Reading settings needs `indexes.read`. |
 | `keys.read` | deployment | Lists API keys. |
 | `keys.write` | deployment | Creates, rotates, and revokes API keys that hold no more than the caller holds. See [Keys a caller can manage](#keys-a-caller-can-manage). |
@@ -74,7 +74,11 @@ Two requests do more than the permission on their path suggests. Both promote a 
 | `POST /v1alpha1/admin/indexes/{name}/actions/reindex` with `"promote": "auto"`, which is the default | `indexes.reindex` and `indexes.promote` |
 | `PUT /v1alpha1/admin/indexes/{name}?reindex=auto` | `indexes.write` and `indexes.promote` |
 
-Passing `"promote": "manual"` or `reindex=manual` starts a job that stops in the `ready` phase without promoting anything, and needs only the permission the endpoint requires. Finishing such a job with `POST /v1alpha1/admin/indexes/{name}/actions/promote` needs `indexes.promote`.
+Passing `"promote": "manual"` or `reindex=manual` starts a job that stops in the `ready` phase without promoting anything. It does not need `indexes.promote`, but still needs `documents.read` on the source. Finishing such a job with `POST /v1alpha1/admin/indexes/{name}/actions/promote` needs `indexes.promote`.
+
+Both reindex requests also need `documents.read` on the source. When `from` names a generation, such as `products@1`, the key needs `documents.read` on that generation name. When `from` is left out, or names the index without a generation (such as `products`), the key needs `documents.read` on the index name (`products`) or on the live generation by its own name (for example `products@1`). A key with a grant on `products@*` therefore works.
+
+An uncovered source answers `404 Not Found` with the code `index:not_found`. A covered source without `documents.read` answers `403 Forbidden` with the code `auth:forbidden`.
 
 ### Patterns and generations
 
