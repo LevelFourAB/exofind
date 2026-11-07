@@ -10,6 +10,11 @@ import se.l4.exofind.engine.index.IndexException;
  * node changed the registry at the same time often enough that this change
  * never got a version to build on. Each has its own code, and both leave the
  * registry exactly as it was - so no index was created, promoted or removed.
+ *
+ * <p>One case is not sure: a write that the storage did not answer, followed
+ * by a read that does not tell whether it landed. The cause is then a
+ * {@link RegistryWriteUnknownException}, and the change may be in the
+ * registry. A create takes its own registration back in that case.
  */
 public class RegistryException extends IndexException {
 	private static final long serialVersionUID = 1L;

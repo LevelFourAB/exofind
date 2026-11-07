@@ -5,6 +5,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -389,15 +391,33 @@ public class IndexRegistry {
 			null
 		);
 
-		change(indexes -> {
-			if(indexes.anySatisfy(existing -> existing.name().equals(index))) {
-				throw new ValidationException(
-					ALREADY_EXISTS.toMessage(ObjectLocation.root(), "name", index)
-				);
+		try {
+			change(indexes -> {
+				if(indexes.anySatisfy(existing -> existing.name().equals(index))) {
+					throw new ValidationException(
+						ALREADY_EXISTS.toMessage(ObjectLocation.root(), "name", index)
+					);
+				}
+
+				return indexes.toList().with(created);
+			}, indexes -> isRegistration(indexes, index, now));
+		} catch(RegistryException e) {
+			if(e.getCause() instanceof RegistryWriteUnknownException) {
+				/*
+				 * The registration may have landed, and the caller is told
+				 * that it failed. A registration that landed without the
+				 * create clearing what a delete of the name left serves the
+				 * documents of the deleted index, so it is taken back.
+				 */
+				try {
+					removeCreated(index, now);
+				} catch(RuntimeException removeFailed) {
+					e.addSuppressed(removeFailed);
+				}
 			}
 
-			return indexes.toList().with(created);
-		});
+			throw e;
+		}
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -442,7 +462,7 @@ public class IndexRegistry {
 				entry.requiredFeatures(),
 				entry.settingsVersion()
 			);
-		});
+		}, (written, stored) -> sameGeneration(written, stored, generation));
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -523,7 +543,7 @@ public class IndexRegistry {
 				entry.requiredFeatures(),
 				entry.settingsVersion()
 			);
-		});
+		}, (written, stored) -> generation.equals(stored.live()));
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -550,7 +570,9 @@ public class IndexRegistry {
 	 *   if the index needs something this build does not have
 	 */
 	public RegisteredIndex removeGeneration(String index, String generation) {
+		var removed = new RegisteredIndex.Generation[1];
 		var updated = update(index, entry -> {
+			removed[0] = entry.generation(generation).orElse(null);
 			if(!entry.hasGeneration(generation)) {
 				throw new IndexNotFoundException(
 					IndexName.of(index, generation).toString()
@@ -575,7 +597,9 @@ public class IndexRegistry {
 				entry.requiredFeatures(),
 				entry.settingsVersion()
 			);
-		});
+		}, (written, stored) -> stored.generation(generation)
+			.filter(g -> sameTime(g.createdAt(), removed[0].createdAt()))
+			.isEmpty());
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -608,7 +632,7 @@ public class IndexRegistry {
 
 			removed[0] = entry;
 			return indexes.reject(existing -> existing.name().equals(index));
-		});
+		}, indexes -> !isRegistration(indexes, index, removed[0].createdAt()));
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -672,6 +696,32 @@ public class IndexRegistry {
 		return entry != null
 			&& entry.createdAt() != null
 			&& entry.createdAt().toEpochMilli() == createdAt.toEpochMilli();
+	}
+
+	/**
+	 * Whether two times are the same to the millisecond, the precision the
+	 * registry stores them in. Two unknown times are the same.
+	 */
+	private static boolean sameTime(Instant a, Instant b) {
+		if(a == null || b == null) {
+			return a == b;
+		}
+
+		return a.toEpochMilli() == b.toEpochMilli();
+	}
+
+	/**
+	 * Whether the stored entry holds the generation as the written entry
+	 * added it, and not a generation of the same name made by another write.
+	 */
+	private static boolean sameGeneration(
+		RegisteredIndex written,
+		RegisteredIndex stored,
+		String generation
+	) {
+		var added = written.generation(generation).orElse(null);
+		var found = stored.generation(generation).orElse(null);
+		return added != null && found != null && sameTime(added.createdAt(), found.createdAt());
 	}
 
 	/**
@@ -886,7 +936,11 @@ public class IndexRegistry {
 	 * @throws IndexUnsupportedException
 	 *   if the index needs something this build does not have
 	 */
-	private RegisteredIndex update(String index, UnaryOperator<RegisteredIndex> change) {
+	private RegisteredIndex update(
+		String index,
+		UnaryOperator<RegisteredIndex> change,
+		BiPredicate<RegisteredIndex, RegisteredIndex> landed
+	) {
 		var updated = new RegisteredIndex[1];
 
 		change(indexes -> {
@@ -907,6 +961,16 @@ public class IndexRegistry {
 			return indexes.reject(existing -> existing.name().equals(index))
 				.toList()
 				.with(updated[0]);
+		}, indexes -> {
+			var written = updated[0];
+			var entry = indexes.detect(existing -> existing.name().equals(index));
+			if(entry == null || !sameTime(entry.createdAt(), written.createdAt())
+				|| !landed.test(written, entry)) {
+				return false;
+			}
+
+			updated[0] = entry;
+			return true;
 		});
 
 		return updated[0];
@@ -914,25 +978,63 @@ public class IndexRegistry {
 
 	/**
 	 * Rewrite the registry, rebuilding the change on top of whatever else was
-	 * written in the meantime rather than overwriting it.
+	 * written in the meantime rather than overwriting it. A write whose
+	 * outcome is unknown is made again.
 	 */
 	private void change(UnaryOperator<ListIterable<RegisteredIndex>> change) {
+		change(change, null);
+	}
+
+	/**
+	 * Rewrite the registry, rebuilding the change on top of whatever else was
+	 * written in the meantime rather than overwriting it.
+	 *
+	 * <p>A write that the storage did not answer can have landed also when
+	 * another node wrote the registry after it, see
+	 * {@link RegistryWriteUnknownException}. Made again on top of the newer
+	 * registry, a change that already landed finds its own result: a create
+	 * finds the name taken, and a remove finds the name gone. So the newer
+	 * registry is asked first whether it holds the change.
+	 *
+	 * @param change
+	 *   makes the indexes to store from the indexes stored now
+	 * @param landed
+	 *   tells from the indexes stored now whether they hold the change, or
+	 *   {@code null} to make the change again
+	 * @throws RegistryException
+	 *   if the registry could not be read or written, or kept changing. When
+	 *   the cause is a {@link RegistryWriteUnknownException}, the change may
+	 *   be in the registry
+	 */
+	private void change(
+		UnaryOperator<ListIterable<RegisteredIndex>> change,
+		Predicate<ListIterable<RegisteredIndex>> landed
+	) {
+		RegistryWriteUnknownException unknown = null;
 		for(int attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
 			if(!refresh()) {
-				throw RegistryException.ioError(null);
+				throw RegistryException.ioError(unknown);
 			}
 
 			var current = snapshot.get();
+			if(unknown != null && landed != null && landed.test(current.indexes())) {
+				return;
+			}
+
 			var updated = change.apply(current.indexes());
 			var store = RegistryCodec.toStored(current.store(), updated);
 
 			String version;
 			try {
 				version = storage.write(store, current.version());
+			} catch(RegistryWriteUnknownException e) {
+				unknown = e;
+				continue;
 			} catch(IOException e) {
 				throw RegistryException.ioError(e);
 			}
 
+			unknown = null;
 			if(version != null) {
 				install(
 					current,
@@ -947,6 +1049,6 @@ public class IndexRegistry {
 			}
 		}
 
-		throw RegistryException.conflict();
+		throw unknown != null ? RegistryException.ioError(unknown) : RegistryException.conflict();
 	}
 }

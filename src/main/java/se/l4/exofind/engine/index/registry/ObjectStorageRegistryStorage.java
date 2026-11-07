@@ -133,9 +133,14 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 	/**
 	 * Read the registry back to find out what became of a write whose
 	 * answer does not tell. Exactly what was written means the write went
-	 * through, a version other than the one it was conditioned on means
-	 * another node got there first, and the version it was conditioned on
-	 * means the write never arrived and may be made again.
+	 * through, and the version it was conditioned on means the write never
+	 * arrived and may be made again.
+	 *
+	 * <p>Anything else does not tell. Another node may have written the
+	 * registry after this write landed, or instead of it, and a registry that
+	 * cannot be read back says nothing. Such a write is reported as
+	 * {@link RegistryWriteUnknownException}, so that the caller looks for its
+	 * own change in the registry instead of taking the write as refused.
 	 *
 	 * <p>Without this a change that landed is reported as a failure. The
 	 * caller then skips the step that follows the change: a create does not
@@ -152,46 +157,57 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 	 *   what the write was answered with
 	 * @return
 	 *   the version the registry is stored under when the write went
-	 *   through, or {@code null} when another node wrote first
+	 *   through
+	 * @throws RegistryWriteUnknownException
+	 *   if the registry read back does not tell whether the write landed
 	 * @throws IOException
-	 *   if the write did not arrive, or the registry could not be read back
+	 *   if the write did not arrive
 	 */
 	private String resolveUnanswered(
 		IndexRegistryStore indexes,
 		String expectedVersion,
 		Exception failure
 	) throws IOException {
-		var current = tryRead();
-		if(current != null) {
-			if(current.indexes().equals(indexes)) {
-				return current.version();
-			}
-
-			if(!Objects.equals(current.version(), expectedVersion)) {
-				return null;
-			}
+		Read current;
+		try {
+			current = read(null);
+		} catch(IOException e) {
+			failure.addSuppressed(e);
+			throw unknown(failure);
 		}
 
-		throw new IOException(
-			"Unable to write the index registry; " + failure.getMessage(),
-			failure
-		);
+		if(current instanceof Read.Loaded loaded && loaded.indexes().equals(indexes)) {
+			return loaded.version();
+		}
+
+		if(neverArrived(current, expectedVersion)) {
+			throw new IOException(
+				"Unable to write the index registry; " + failure.getMessage(),
+				failure
+			);
+		}
+
+		throw unknown(failure);
 	}
 
 	/**
-	 * Read the registry back for telling a dropped answer apart from a write
-	 * that never landed, where failing a second time only means the first
-	 * failure stands.
-	 *
-	 * @return
-	 *   what the storage holds, or {@code null} when it holds nothing, holds
-	 *   something that cannot be read, or could not be reached
+	 * Whether the registry read back is still what the write was conditioned
+	 * on, so that the write did not land.
 	 */
-	private Read.Loaded tryRead() {
-		try {
-			return read(null) instanceof Read.Loaded loaded ? loaded : null;
-		} catch(IOException e) {
-			return null;
-		}
+	private static boolean neverArrived(Read current, String expectedVersion) {
+		return switch(current) {
+			case Read.Loaded loaded -> Objects.equals(loaded.version(), expectedVersion);
+			case Read.Corrupt corrupt -> Objects.equals(corrupt.version(), expectedVersion);
+			case Read.Absent absent -> expectedVersion == null;
+			case Read.Unchanged unchanged -> false;
+		};
+	}
+
+	private static RegistryWriteUnknownException unknown(Exception failure) {
+		return new RegistryWriteUnknownException(
+			"The index registry was written without an answer, and reading it back does not tell"
+				+ " whether the write landed; " + failure.getMessage(),
+			failure
+		);
 	}
 }

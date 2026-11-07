@@ -4,7 +4,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -180,23 +179,24 @@ public class ObjectStorageRegistryStorageTest {
 	}
 
 	/**
-	 * Another node wrote the registry first, which the version the write was
-	 * conditioned on no longer standing is what says. That is a lost race
-	 * rather than a failure, so the caller rereads and builds its change on
-	 * what is there now.
+	 * The registry moved off the version the write was conditioned on. That
+	 * does not tell a lost race from a write that landed and was then written
+	 * over by another node, so the write is reported as unknown. The caller
+	 * rereads and looks for its own change in what is there now.
 	 */
 	@Test
-	void testWriteLostToAnotherNodeIsReportedAsRefused() throws IOException {
+	void testWriteWhoseAnswerIsLostAfterAnotherNodeWroteIsUnknown() throws IOException {
 		registryStorage.write(registryOf("books"), null);
 		var staleVersion = currentVersion();
 
 		// Another node gets there first, moving the registry off that version
 		registryStorage.write(registryOf("books", "records"), staleVersion);
 
-		var version = droppingAnswers(false)
-			.write(registryOf("books", "films"), staleVersion);
+		assertThrows(
+			RegistryWriteUnknownException.class,
+			() -> droppingAnswers(false).write(registryOf("books", "films"), staleVersion)
+		);
 
-		assertThat(version, is(nullValue()));
 		assertThat(currentIndexes(), is(registryOf("books", "records")));
 	}
 

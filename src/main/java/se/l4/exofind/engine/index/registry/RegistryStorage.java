@@ -36,6 +36,9 @@ public interface RegistryStorage {
 	 * @return
 	 *   the version the written registry is now at, or {@code null} when the
 	 *   write was refused because someone else changed it first
+	 * @throws RegistryWriteUnknownException
+	 *   if the storage did not answer and it cannot be told whether the write
+	 *   landed
 	 * @throws IOException
 	 *   if the storage could not be reached
 	 */

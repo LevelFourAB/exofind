@@ -20,6 +20,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import se.l4.exofind.engine.index.Index;
+
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNotFoundException;
@@ -39,6 +41,7 @@ import se.l4.exofind.engine.storage.StorageMode;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -70,6 +73,18 @@ public class IndexesRegistryWriteWithServerErrorTest {
 	 */
 	final AtomicBoolean dropConnectionInstead = new AtomicBoolean();
 
+	/**
+	 * What happens between the storage taking the registry write and the
+	 * node getting the lost answer, such as another node writing the
+	 * registry.
+	 */
+	volatile Runnable beforeLostAnswer = () -> {};
+
+	/**
+	 * Whether the next read of the registry fails with a dropped connection.
+	 */
+	final AtomicBoolean failNextRegistryRead = new AtomicBoolean();
+
 	ObjectStorage storage;
 	ObjectStorage faultyStorage;
 
@@ -83,6 +98,16 @@ public class IndexesRegistryWriteWithServerErrorTest {
 			S3Client.class.getClassLoader(),
 			new Class<?>[] { S3Client.class },
 			(proxy, method, args) -> {
+				if(
+					method.getName().equals("getObject")
+						&& args != null
+						&& args[0] instanceof GetObjectRequest request
+						&& request.key().endsWith("registry/indexes.ef.bin")
+						&& failNextRegistryRead.compareAndSet(true, false)
+				) {
+					throw SdkClientException.create("Connection reset");
+				}
+
 				Object result;
 				try {
 					result = method.invoke(real, args);
@@ -97,6 +122,8 @@ public class IndexesRegistryWriteWithServerErrorTest {
 						&& failNextRegistryWrite.compareAndSet(true, false)
 				) {
 					// The storage took the write; only the answer is lost
+					beforeLostAnswer.run();
+
 					if(dropConnectionInstead.get()) {
 						throw SdkClientException.create("Connection reset");
 					}
@@ -343,5 +370,185 @@ public class IndexesRegistryWriteWithServerErrorTest {
 		} finally {
 			second.close();
 		}
+	}
+
+	/**
+	 * A registry of another node, which reads and writes the registry through
+	 * the plain client.
+	 */
+	private IndexRegistry otherNodeRegistry() {
+		return new IndexRegistry(
+			new ObjectStorageRegistryStorage(storage),
+			Duration.ofMinutes(5)
+		);
+	}
+
+	/**
+	 * Make another node register an index after the storage took the next
+	 * registry write and before the node that sent it reads the registry
+	 * back.
+	 */
+	private void otherNodeWritesBeforeTheReadBack() {
+		var other = otherNodeRegistry();
+		beforeLostAnswer = () -> {
+			beforeLostAnswer = () -> {};
+			other.refresh();
+			other.create("films", "1");
+		};
+	}
+
+	@Test
+	public void createAnsweredWithGatewayErrorWhileAnotherNodeWritesStartsEmpty()
+		throws IOException
+	{
+		// Given an index holding one document that was deleted a moment ago
+		createWithOneDocument("books");
+
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.refresh();
+			second.delete("books");
+
+			// And another node writes the registry while the answer to the next write is lost
+			otherNodeWritesBeforeTheReadBack();
+			failNextRegistryWrite.set(true);
+
+			// When the index is created again
+			RuntimeException failure = null;
+			try {
+				second.create("books", definition());
+			} catch(RuntimeException e) {
+				failure = e;
+			}
+
+			// Then the name is registered and starts empty
+			registry.refresh();
+			second.refresh();
+			assertThat(registry.get("books").isPresent(), is(true));
+			assertThat(
+				"documents of the deleted index served under the created name, create answered " + failure,
+				second.getOrThrow("books").getDocumentCount(),
+				is(0L)
+			);
+			assertThat("create of the name failed: " + failure, failure == null, is(true));
+		} finally {
+			second.close();
+		}
+	}
+
+	@Test
+	public void createWhoseReadBackFailsDoesNotServeTheDocumentsOfADeletedIndex()
+		throws IOException
+	{
+		// Given an index holding one document that was deleted a moment ago
+		createWithOneDocument("books");
+
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.refresh();
+			second.delete("books");
+
+			// And the answer to the next registry write is lost and the read-back fails
+			beforeLostAnswer = () -> {
+				beforeLostAnswer = () -> {};
+				failNextRegistryRead.set(true);
+			};
+			failNextRegistryWrite.set(true);
+
+			// When the index is created, and the client sends the create again
+			RuntimeException failure = null;
+			try {
+				second.create("books", definition());
+			} catch(RuntimeException e) {
+				failure = e;
+			}
+
+			try {
+				second.create("books", definition());
+			} catch(RuntimeException e) {
+				// The name is taken, so the client uses the index it finds
+			}
+
+			// Then the index under the name does not hold the deleted document
+			registry.refresh();
+			second.refresh();
+			Index index = second.getOrThrow("books");
+			assertThat(
+				"documents of the deleted index served under the created name, first create answered " + failure,
+				index.getDocumentCount(),
+				is(0L)
+			);
+		} finally {
+			second.close();
+		}
+	}
+
+	@Test
+	public void deleteAnsweredWithGatewayErrorWhileAnotherNodeWritesLeavesARemovalMark()
+		throws IOException
+	{
+		// Given an index holding one document
+		createWithOneDocument("books");
+
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.refresh();
+
+			// And another node writes the registry while the answer to the next write is lost
+			otherNodeWritesBeforeTheReadBack();
+			failNextRegistryWrite.set(true);
+
+			// When the index is deleted
+			RuntimeException failure = null;
+			try {
+				second.delete("books");
+			} catch(RuntimeException e) {
+				failure = e;
+			}
+
+			// Then the name is gone and carries a removal mark
+			registry.refresh();
+			assertThat(registry.get("books").isEmpty(), is(true));
+			assertThat(
+				"deleted index left without a removal mark, delete answered " + failure,
+				new ObjectStorageIndexRemovals(storage).markedAt(IndexName.of("books")).isPresent(),
+				is(true)
+			);
+
+			// And the name can be created again and starts empty
+			second.refresh();
+			var created = second.create("books", definition());
+			assertThat(created.getDocumentCount(), is(0L));
+		} finally {
+			second.close();
+		}
+	}
+
+	@Test
+	public void promoteAnsweredWithGatewayErrorWhileAnotherNodeWritesIsTakenAsDone() {
+		// Given an index with a second generation that is not live
+		var registry = registry();
+		registry.create("books", "1");
+		registry.addGeneration("books", "2");
+
+		// And another node writes the registry while the answer to the next write is lost
+		otherNodeWritesBeforeTheReadBack();
+		failNextRegistryWrite.set(true);
+
+		// When the second generation is promoted over the first
+		RuntimeException failure = null;
+		try {
+			registry.promote("books", "2", "1");
+		} catch(RuntimeException e) {
+			failure = e;
+		}
+
+		// Then the promote is reported as done and the second generation is live
+		registry.refresh();
+		assertThat(registry.get("books").orElseThrow().live(), is("2"));
+		assertThat("promote that landed was reported as failed: " + failure, failure == null, is(true));
 	}
 }
