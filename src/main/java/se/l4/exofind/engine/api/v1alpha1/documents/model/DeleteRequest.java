@@ -57,7 +57,9 @@ public record DeleteRequest(
 		uncommitted documents indexed since the last commit. The array requires \
 		at least one clause (`document:delete:query_empty`), and so does each \
 		`and`, `or`, `not` and `boost` clause in it \
-		(`document:delete:clause_empty`). To empty the index, send `all` \
+		(`document:delete:clause_empty`). A query that matches every document \
+		whatever the index holds is refused \
+		(`document:delete:query_matches_all`). To empty the index, send `all` \
 		instead.""")
 	List<Clause> query,
 

@@ -1285,6 +1285,178 @@ public class DocumentResourceTest {
 		assertThat(refused, is(true));
 	}
 
+	/**
+	 * Keeping only the documents whose tag is one of no ticked values names
+	 * nothing to remove by. Emptying the index is asked for with {@code all},
+	 * so the delete removes nothing.
+	 */
+	@Test
+	public void testANotAroundAnEmptyInRemovesNothing() throws IOException {
+		// Given
+		var index = pantryWithThreeDocuments();
+
+		// When
+		var refused = refusesDelete("pantry", clauses("""
+			[{"type":"not","clauses":[
+				{"type":"field","field":"tags","match":{"type":"in","values":[]}}
+			]}]"""));
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	@Test
+	public void testANotAroundTextWithNoSearchableWordRemovesNothing() throws IOException {
+		// Given
+		var index = pantryWithThreeDocuments();
+
+		// When
+		var refused = refusesDelete(
+			"pantry",
+			clauses("[{\"type\":\"not\",\"clauses\":[{\"type\":\"text\",\"text\":\"!!\"}]}]")
+		);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	/**
+	 * Typed text that holds only an exclusion with no searchable word names
+	 * no document to remove.
+	 */
+	@Test
+	public void testTypedTextOfOnlyAnEmptyExclusionRemovesNothing() throws IOException {
+		// Given
+		var index = pantryWithThreeDocuments();
+
+		// When
+		var refused = refusesDelete(
+			"pantry",
+			clauses("[{\"type\":\"text\",\"text\":\"-!!\",\"match\":\"user\"}]")
+		);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	@Test
+	public void testTypedFieldTextOfOnlyAnEmptyExclusionRemovesNothing() throws IOException {
+		// Given
+		var index = pantryWithThreeDocuments();
+
+		// When
+		var refused = refusesDelete("pantry", clauses("""
+			[{"type":"field","field":"name","match":{"type":"text","text":"-!!","match":"user"}}]"""));
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	/**
+	 * A {@code not} around a clause that some documents match removes the
+	 * other documents. Only a query that matches every document whatever the
+	 * index holds is refused.
+	 */
+	@Test
+	public void testANotAroundATickedTagRemovesTheOtherDocuments() throws IOException {
+		// Given
+		var index = pantryWithThreeDocuments();
+
+		// When
+		var response = resource.delete("pantry", new DeleteRequest(null, clauses("""
+			[{"type":"not","clauses":[
+				{"type":"field","field":"tags","match":{"type":"in","values":["sylt"]}}
+			]}]"""), null, null));
+		index.commit();
+
+		// Then
+		assertThat(response.deleted(), is(1));
+		assertThat(index.getDocument("1"), is(notNullValue()));
+		assertThat(index.getDocument("2"), is(nullValue()));
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/**
+	 * Typed text that excludes a word some documents hold removes the other
+	 * documents.
+	 */
+	@Test
+	public void testTypedTextOfOnlyAnExclusionRemovesTheOtherDocuments() throws IOException {
+		// Given
+		var index = pantryWithThreeDocuments();
+
+		// When
+		var response = resource.delete(
+			"pantry",
+			new DeleteRequest(
+				null,
+				clauses("[{\"type\":\"text\",\"text\":\"-jam\",\"match\":\"user\"}]"),
+				null,
+				null
+			)
+		);
+		index.commit();
+
+		// Then
+		assertThat(response.deleted(), is(1));
+		assertThat(index.getDocument("1"), is(notNullValue()));
+		assertThat(index.getDocument("2"), is(nullValue()));
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/**
+	 * An index whose names are searched as text and whose tags are filtered
+	 * on, holding three documents.
+	 */
+	private Index pantryWithThreeDocuments() throws IOException {
+		var index = indexes.create(
+			"pantry",
+			IndexDef.newBuilder()
+				.putFields("id", string().setPrimaryKey(true).build())
+				.putFields(
+					"name",
+					FieldDef.newBuilder()
+						.setType(
+							FieldTypeDef.newBuilder()
+								.setString(
+									StringFieldTypeDef.newBuilder()
+										.setMatching(
+											StringFieldTypeDef.TextUsageConfig.getDefaultInstance()
+										)
+								)
+						)
+						.setStored(true)
+						.build()
+				)
+				.putFields(
+					"tags",
+					string()
+						.setStored(true)
+						.setMultiple(true)
+						.setFilter(FilterConfig.getDefaultInstance())
+						.build()
+				)
+				.build()
+		);
+		resource.add(
+			"pantry",
+			null,
+			new DocumentsRequest(
+				List.of(
+					document("id", "1", "name", "Blueberry jam", "tags", List.of("sylt")),
+					document("id", "2", "name", "Rye bread", "tags", List.of("bröd")),
+					document("id", "3", "name", "Lingonberry jam", "tags", List.of("sylt"))
+				)
+			)
+		);
+		index.commit();
+		return index;
+	}
+
 	private static List<Clause> clauses(String json) throws IOException {
 		return new ObjectMapper().readValue(json, new TypeReference<List<Clause>>() {
 		});
@@ -1304,8 +1476,12 @@ public class DocumentResourceTest {
 	}
 
 	private boolean refusesDelete(List<Clause> query) {
+		return refusesDelete("foods", query);
+	}
+
+	private boolean refusesDelete(String name, List<Clause> query) {
 		try {
-			resource.delete("foods", new DeleteRequest(null, query, null, null));
+			resource.delete(name, new DeleteRequest(null, query, null, null));
 			return false;
 		} catch(ValidationException e) {
 			return true;

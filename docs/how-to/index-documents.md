@@ -106,7 +106,7 @@ Before you index documents, ensure you have:
    { "query": [ { "field": "category", "match": { "value": "Hats" } } ] }
    ```
 
-   Query clauses use the same syntax as the [Search API](../reference/search-api.md). A `query` requires at least one clause, and so does each `and`, `or`, `not` and `boost` clause in it. To remove all documents and empty the index, send `all` instead:
+   Query clauses use the same syntax as the [Search API](../reference/search-api.md). A `query` requires at least one clause, and so does each `and`, `or`, `not` and `boost` clause in it. A `query` that matches every document whatever the index holds, such as a `not` around an `in` with no values, is refused. To remove all documents and empty the index, send `all` instead:
 
    ```http
    POST /v1alpha1/indexes/products/documents/actions/delete

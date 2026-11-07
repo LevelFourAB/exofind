@@ -609,7 +609,7 @@ The request body supports the following fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `keys` | array of strings | List of primary keys to delete. An empty array deletes nothing. |
-| `query` | array of objects | Query clauses matching documents to delete. For clause syntax, see the [Search API](search-api.md). The array requires at least one clause, and so does each `and`, `or`, `not` and `boost` clause in it. |
+| `query` | array of objects | Query clauses matching documents to delete. For clause syntax, see the [Search API](search-api.md). The array requires at least one clause, and so does each `and`, `or`, `not` and `boost` clause in it. A query that matches every document whatever the index holds is refused. |
 | `all` | boolean | Set to `true` to delete every document and empty the index. |
 | `locale` | string | Optional. Specifies the locale variant to match for locale-specific fields. Valid only when `query` is provided. |
 
@@ -640,6 +640,7 @@ The following example deletes every document in the index:
 - `document:delete:target_conflicting`: The body names more than one of `keys`, `query`, and `all`.
 - `document:delete:query_empty`: The body names a `query` without clauses. Send `all` to empty the index.
 - `document:delete:clause_empty`: An `and`, `or`, `not` or `boost` clause at any depth of the `query` holds no clauses. A search reads an empty `and` as every document, and a `not` around an empty `or` as every document too, so a delete refuses them. Send `all` to empty the index.
+- `document:delete:query_matches_all`: The `query` matches every document whatever the index holds. For example, a `not` around an `in` with no values, or around text that analysis leaves no word of. Typed text (`match: user`) that holds only exclusions of such text is the same. Send `all` to empty the index.
 - `document:delete:locale_without_query`: The body states a `locale` without a `query`.
 
 #### Execution behavior

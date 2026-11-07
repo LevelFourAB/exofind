@@ -112,6 +112,7 @@ import com.google.protobuf.CodedOutputStream;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
+import se.l4.exofind.engine.errors.Location;
 import se.l4.exofind.engine.errors.ObjectLocation;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.analysis.SynonymOverlay;
@@ -259,6 +260,14 @@ public class Index {
 			.withArguments("locale")
 			.withMessage(
 				"The search asks for locale `{{locale}}` which this version of the engine does not support"
+			);
+
+	private static final ErrorType ERROR_DELETE_MATCHES_ALL =
+		ErrorType.withCode("document:delete:query_matches_all")
+			.withStatus(400)
+			.withMessage(
+				"The `query` matches every document whatever the index holds; use `all` "
+					+ "to remove every document"
 			);
 
 	private static final ErrorType ERROR_HITS_FACET_UNSUPPORTED =
@@ -4515,7 +4524,9 @@ public class Index {
 	 *
 	 * @param clauses
 	 *   what a document has to satisfy to be removed, all of them. An empty
-	 *   list matches every document and empties the index
+	 *   list matches every document and empties the index. Only an empty list
+	 *   does that: clauses that match every document whatever the index holds
+	 *   are refused
 	 * @param locale
 	 *   the locale locale specific fields are matched in (BCP 47), or
 	 *   {@code null} to leave every field to its own default locale
@@ -4524,6 +4535,10 @@ public class Index {
 	 *   matched
 	 * @throws IndexReadonlyException
 	 *   if this node is not the indexer
+	 * @throws ValidationException
+	 *   with the code {@code document:delete:query_matches_all} if the clauses
+	 *   are not empty but match every document whatever the index holds, such
+	 *   as a {@code not} around a clause that cannot match. Nothing is removed
 	 * @throws IOException
 	 */
 	public int deleteByQuery(ListIterable<Query> clauses, String locale) throws IOException {
@@ -4537,7 +4552,21 @@ public class Index {
 			}
 
 			var compiler = new QueryCompiler(schema, locale, nestedParents, caches.automata());
-			var documents = parentsOnly(compiler.compile(clauses), compiler, clauses);
+			var compiled = compiler.compile(clauses);
+
+			/*
+			 * A client that builds the clauses from a list of conditions can
+			 * send a not around a list that held no values. A search reads
+			 * that as every document, and a delete of it would empty the
+			 * index. Only an empty list of clauses asks for that.
+			 */
+			if(!clauses.isEmpty() && QueryCompiler.matchesEveryDocument(compiled)) {
+				throw new ValidationException(
+					ERROR_DELETE_MATCHES_ALL.toMessage(Location.create("query"))
+				);
+			}
+
+			var documents = parentsOnly(compiled, compiler, clauses);
 
 			int matched;
 			try(var handle = searcherManager.acquire()) {

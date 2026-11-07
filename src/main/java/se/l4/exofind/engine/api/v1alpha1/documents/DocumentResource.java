@@ -2426,7 +2426,9 @@ public class DocumentResource {
 			committed searchable documents along with any uncommitted \
 			documents indexed since the last commit. A `query` requires at \
 			least one clause, and so does each `and`, `or`, `not` and `boost` \
-			clause in it. To empty the index, set `all` to `true`."""
+			clause in it. A `query` that matches every document whatever the \
+			index holds, such as a `not` around an `in` with no values, is \
+			refused. To empty the index, set `all` to `true`."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -2464,6 +2466,14 @@ public class DocumentResource {
 		when = """
 			An `and`, `or`, `not` or `boost` clause at any depth of the `query` \
 			holds no clauses. Send `all` to empty the index."""
+	)
+	@ReturnsError(
+		value = "document:delete:query_matches_all",
+		status = 400,
+		when = """
+			The `query` matches every document whatever the index holds, such \
+			as a `not` around an `in` with no values or around text that \
+			analysis leaves no word of. Send `all` to empty the index."""
 	)
 	@ReturnsError(
 		value = "document:delete:locale_without_query",

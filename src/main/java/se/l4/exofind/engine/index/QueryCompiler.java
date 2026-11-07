@@ -6,6 +6,7 @@ import java.util.function.Function;
 
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.DisjunctionMaxQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
@@ -55,6 +56,7 @@ import se.l4.exofind.engine.query.SearchRequest;
 import se.l4.exofind.engine.query.SortBy;
 import se.l4.exofind.engine.query.TextQuery;
 import se.l4.exofind.engine.query.ValueTarget;
+import se.l4.exofind.engine.query.matchers.InMatcher;
 import se.l4.exofind.engine.query.matchers.TextMatcher;
 import se.l4.exofind.engine.query.matchers.UserText;
 
@@ -1657,7 +1659,129 @@ public class QueryCompiler {
 			return compileUserField(clause.field(), field, matcher);
 		}
 
-		return field.getType().createQuery(encounter, clause.matcher());
+		var query = field.getType().createQuery(encounter, clause.matcher());
+		if(clause.matcher() instanceof InMatcher m && m.values().isEmpty()) {
+			/*
+			 * Each type builds its own set query, and some of those do not show
+			 * that they hold no value. A query that shows it matches nothing
+			 * lets matchesEveryDocument see a not around it. The type builds
+			 * its query first, so that it still refuses a matcher it cannot
+			 * answer.
+			 */
+			return new MatchNoDocsQuery("no value to match was given");
+		}
+
+		return query;
+	}
+
+	/**
+	 * Whether a compiled query matches every document, whatever documents the
+	 * index holds.
+	 *
+	 * <p>A {@code not} around a clause that cannot match is such a query. For
+	 * example, a {@code not} around an {@code in} with no values, or around a
+	 * text that analysis removes every word from. Typed text that holds only
+	 * exclusions of such text is one too.
+	 *
+	 * @param query
+	 *   a query from {@link #compile(ListIterable)}
+	 * @return
+	 *   {@code false} when the structure of the query does not tell. A query
+	 *   that matches every document only because of what the index holds now
+	 *   also gives {@code false}
+	 */
+	static boolean matchesEveryDocument(org.apache.lucene.search.Query query) {
+		return reach(query) == Reach.ALL;
+	}
+
+	/**
+	 * Which documents a query matches, as far as its structure tells.
+	 */
+	private enum Reach {
+		/** No document, whatever the index holds. */
+		NONE,
+		/** Some documents, or the structure does not tell. */
+		SOME,
+		/** Every document, whatever the index holds. */
+		ALL
+	}
+
+	private static Reach reach(org.apache.lucene.search.Query query) {
+		return switch(query) {
+			case MatchAllDocsQuery q -> Reach.ALL;
+			case MatchNoDocsQuery q -> Reach.NONE;
+			case org.apache.lucene.search.BoostQuery q -> reach(q.getQuery());
+			case ConstantScoreQuery q -> reach(q.getQuery());
+			case DisjunctionMaxQuery q -> reachOfAlternatives(
+				Lists.mutable.withAll(q.getDisjuncts()).collect(QueryCompiler::reach),
+				1
+			);
+			case BooleanQuery q -> reachOf(q);
+			default -> Reach.SOME;
+		};
+	}
+
+	private static Reach reachOf(BooleanQuery query) {
+		var everything = true;
+		var hasRequired = false;
+		var optional = Lists.mutable.<Reach>empty();
+
+		for(var clause : query.clauses()) {
+			var reach = reach(clause.query());
+			switch(clause.occur()) {
+				case MUST, FILTER -> {
+					hasRequired = true;
+					if(reach == Reach.NONE) {
+						return Reach.NONE;
+					}
+
+					everything &= reach == Reach.ALL;
+				}
+				case MUST_NOT -> {
+					if(reach == Reach.ALL) {
+						return Reach.NONE;
+					}
+
+					everything &= reach == Reach.NONE;
+				}
+				case SHOULD -> optional.add(reach);
+			}
+		}
+
+		/*
+		 * Lucene requires one optional clause to match when nothing else is
+		 * required, also when there are no optional clauses.
+		 */
+		var minimum = query.getMinimumNumberShouldMatch();
+		if(minimum == 0 && !hasRequired) {
+			minimum = 1;
+		}
+
+		if(minimum == 0) {
+			return everything ? Reach.ALL : Reach.SOME;
+		}
+
+		var alternatives = reachOfAlternatives(optional, minimum);
+		if(alternatives == Reach.NONE) {
+			return Reach.NONE;
+		}
+
+		return everything && alternatives == Reach.ALL ? Reach.ALL : Reach.SOME;
+	}
+
+	/**
+	 * Get which documents match at least a number of alternatives.
+	 */
+	private static Reach reachOfAlternatives(ListIterable<Reach> alternatives, int minimum) {
+		if(alternatives.count(reach -> reach == Reach.ALL) >= minimum) {
+			return Reach.ALL;
+		}
+
+		if(alternatives.count(reach -> reach != Reach.NONE) < minimum) {
+			return Reach.NONE;
+		}
+
+		return Reach.SOME;
 	}
 
 	/**
