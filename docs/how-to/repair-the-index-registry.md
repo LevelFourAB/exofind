@@ -49,8 +49,11 @@ The node cannot tell apart two causes of this error:
   returned `storage:io_error`, and the registry no longer names the index.
   Delete the directory by hand.
 
-**Note:** Do not create an index with one of those names. Creating an index
-removes every directory of that name.
+A request that creates an index or a generation with one of those names
+returns HTTP `409` with `index:generation:storage_held` and removes nothing. The
+`generation` argument names a directory that holds data. A directory that holds
+no definition, change log, or Lucene commit does not refuse the request, and
+the request removes it.
 
 Identify registry problems by checking node logs, readiness checks, and index
 listings:

@@ -11,9 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.CountDownLatch;
@@ -1053,6 +1055,19 @@ public class ReindexJobsTest {
 		// And the target generation deleted on another node and created again
 		Thread.sleep(2);
 		registry.removeGeneration("catalogue", "2");
+
+		/*
+		 * This node stores locally, where a directory that the registry does
+		 * not name refuses a creation of the name. The directory goes as it
+		 * would with the delete, while the node is stopped so that no open
+		 * instance writes into it.
+		 */
+		jobs.stop();
+		indexes.close();
+		deleteRecursively(storageDirectory.resolve("indexes").resolve("catalogue@2"));
+		indexes = newIndexes();
+		jobs = newJobs();
+
 		indexes.createGeneration("catalogue@2", definition().build());
 
 		// When the generation is reindexed
@@ -1133,6 +1148,22 @@ public class ReindexJobsTest {
 		}
 		index.commit();
 		return index;
+	}
+
+	/**
+	 * Remove a directory and everything in it, the way an operator removes
+	 * one by hand.
+	 */
+	private static void deleteRecursively(Path path) throws IOException {
+		if(!Files.exists(path)) {
+			return;
+		}
+
+		try(var paths = Files.walk(path)) {
+			for(var p : paths.sorted(Comparator.reverseOrder()).toList()) {
+				Files.deleteIfExists(p);
+			}
+		}
 	}
 
 	/**

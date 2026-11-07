@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.store.FSDirectory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -312,6 +314,127 @@ public class IndexesLostRegistryTest {
 
 		// Then the local index still holds its document
 		assertThat(documentsInLocalBooks(), is(1L));
+	}
+
+	/**
+	 * The number of documents in the last commit of a directory, read
+	 * without a node, or 0 when it holds no commit.
+	 */
+	private static int committedDocuments(Path directory) throws IOException {
+		if(!Files.isDirectory(directory)) {
+			return 0;
+		}
+
+		try(var fs = FSDirectory.open(directory)) {
+			if(!DirectoryReader.indexExists(fs)) {
+				return 0;
+			}
+
+			try(var reader = DirectoryReader.open(fs)) {
+				return reader.numDocs();
+			}
+		}
+	}
+
+	/**
+	 * After the registry was put back from a backup that does not name an
+	 * index, a client that creates the index because it is missing must not
+	 * remove the directory that is the only copy of its documents.
+	 */
+	@Test
+	public void testLocalModeCreateKeepsADirectoryThatARestoredBackupDoesNotName() throws Exception {
+		// Given local mode with a registry backup taken before movies existed
+		createIndexes("books");
+
+		var backup = storageDirectory.resolve("registry-backup.ef.bin");
+		Files.copy(registryFile(), backup);
+
+		// And movies holding one committed document
+		var seeder = node();
+		try {
+			seeder.create("movies", keyed());
+			seeder.write("movies", index -> {
+				try {
+					index.addDocument(new Document(new Document.Value("id", "1")));
+					index.commit();
+					return null;
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			});
+		} finally {
+			seeder.close();
+		}
+
+		// And the registry put back from the backup
+		Files.copy(backup, registryFile(), StandardCopyOption.REPLACE_EXISTING);
+
+		// When a client creates movies because it is missing
+		var node = node();
+		node.refresh();
+		try {
+			node.create("movies", keyed());
+		} catch(RuntimeException e) {
+			// Refusing the create is correct
+		}
+		node.close();
+
+		// Then the directory of movies still holds its document
+		assertThat(
+			"only copy of movies removed by the create",
+			committedDocuments(dir("movies")),
+			is(1)
+		);
+	}
+
+	/**
+	 * The same for a generation: a registry backup that names only the
+	 * first generation, and an operator who creates the second generation
+	 * because the API does not list it.
+	 */
+	@Test
+	public void testLocalModeCreateGenerationKeepsADirectoryThatARestoredBackupDoesNotName()
+		throws Exception
+	{
+		// Given local mode with books@1 and a registry backup that names only it
+		createIndexes("books");
+
+		var backup = storageDirectory.resolve("registry-backup.ef.bin");
+		Files.copy(registryFile(), backup);
+
+		// And books@2 holding one committed document
+		var seeder = node();
+		try {
+			seeder.refresh();
+			var second = seeder.createGeneration("books@2", keyed());
+			second.addDocument(new Document(new Document.Value("id", "1")));
+			second.commit();
+		} finally {
+			seeder.close();
+		}
+
+		var secondDirectory = indexRoot().resolve("books@2");
+		assertThat(committedDocuments(secondDirectory), is(1));
+
+		// And the registry put back from the backup
+		Files.copy(backup, registryFile(), StandardCopyOption.REPLACE_EXISTING);
+
+		// When the operator creates books@2 because the API lists only books@1
+		var node = node();
+		node.refresh();
+		try {
+			node.createGeneration("books@2", keyed());
+		} catch(RuntimeException e) {
+			// Refusing the create is correct
+		}
+		node.close();
+
+		// Then the directory of books@2 still holds its document
+		assertThat(
+			"only copy of books@2 removed by the create",
+			committedDocuments(secondDirectory),
+			is(1)
+		);
 	}
 
 	/**

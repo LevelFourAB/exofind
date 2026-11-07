@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.lucene.index.SegmentInfos;
 import org.eclipse.collections.api.list.ListIterable;
 import org.eclipse.collections.api.set.ImmutableSet;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -2882,6 +2883,10 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @throws ValidationException
 	 *   if the name cannot be used, or the deployment already holds an index by
 	 *   that name
+	 * @throws IndexStorageHeldException
+	 *   if the storage of the first generation, or in local storage mode a
+	 *   directory of any generation of the name, holds data that nothing said
+	 *   was deleted
 	 */
 	public Index create(String name, IndexDef def) {
 		var index = IndexName.parse(name);
@@ -2976,13 +2981,22 @@ public class Indexes implements RegistryPoller.Listener {
 	 * it belonged to is no longer registered, so there is nothing left to push
 	 * them to.
 	 *
+	 * <p>In local storage mode a directory is not a copy, it is the data. A
+	 * delete there removes its directories at once and writes no mark, so a
+	 * directory that is still there is not known to be deleted: it can be
+	 * one that a registry put back from an older backup does not name. A
+	 * directory of the name that holds a definition, a change log or a Lucene
+	 * commit refuses the creation, and nothing is removed. A directory that
+	 * holds none of these has no data to lose, and goes.
+	 *
 	 * @param generation
 	 * @param wholeIndex
 	 *   whether the index itself is being created, in which case a mark over
 	 *   the index clears everything under it, settings and all, and every
 	 *   local copy of the name goes rather than only the one being opened
 	 * @throws IndexStorageHeldException
-	 *   if the prefix holds a manifest nothing said was deleted
+	 *   if the prefix holds a manifest nothing said was deleted, or in local
+	 *   storage mode if a directory of the name holds data
 	 * @throws UncheckedIOException
 	 *   if the storage could not be asked or cleared
 	 */
@@ -3001,12 +3015,44 @@ public class Indexes implements RegistryPoller.Listener {
 				copies.addAll(localCopiesOf(generation.index()));
 			}
 
+			if(!syncProvider.hasRemote()) {
+				// Every directory is looked at before the first one goes
+				for(var copy : copies) {
+					if(holdsData(indexRoot.resolve(copy))) {
+						throw IndexStorageHeldException.inLocalDirectory(IndexName.parse(copy));
+					}
+				}
+			}
+
 			for(var copy : copies) {
 				removeLocalCopy(copy);
 			}
 		} catch(IOException e) {
 			throw new UncheckedIOException(e);
 		}
+	}
+
+	/**
+	 * Whether the directory of a generation holds something that a removal
+	 * would lose: the definition, the change log, or a Lucene commit.
+	 */
+	private static boolean holdsData(Path directory) throws IOException {
+		if(!Files.isDirectory(directory)) {
+			return false;
+		}
+
+		String[] files;
+		try(var paths = Files.list(directory)) {
+			files = paths.map(path -> path.getFileName().toString()).toArray(String[]::new);
+		}
+
+		for(var file : files) {
+			if(file.equals(Index.DEFINITION_FILE) || file.equals(Index.CHANGES_FILE)) {
+				return true;
+			}
+		}
+
+		return SegmentInfos.getLastCommitGeneration(files) >= 0;
 	}
 
 	/**
@@ -3043,6 +3089,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @throws ValidationException
 	 *   if the name cannot be used, or the index already has a generation by
 	 *   that name
+	 * @throws IndexStorageHeldException
+	 *   if the storage, or in local storage mode the directory, of the
+	 *   generation holds data that nothing said was deleted
 	 */
 	public Index createGeneration(String name, IndexDef def) {
 		var generation = IndexName.parse(name);
@@ -3072,7 +3121,7 @@ public class Indexes implements RegistryPoller.Listener {
 
 	/**
 	 * Open a generation and give it its definition, taking the local copy away
-	 * again if the definition is refused.
+	 * again if the definition is refused or could not be written.
 	 */
 	private Index openWithDefinition(IndexName generation, IndexDef def) {
 		var name = generation.toString();
@@ -3081,9 +3130,13 @@ public class Indexes implements RegistryPoller.Listener {
 		try {
 			index.updateDefinition(def);
 			return index;
-		} catch(IOException e) {
-			throw new UncheckedIOException(e);
-		} catch(RuntimeException e) {
+		} catch(IOException | RuntimeException e) {
+			/*
+			 * The caller takes the registration back, so the directory is
+			 * one that nothing names. In local storage mode a directory that
+			 * holds a definition refuses the next creation of the name, so
+			 * it goes here, where it is known to hold no data of its own.
+			 */
 			try {
 				index.close(false);
 				indexes.invalidate(name);
@@ -3092,7 +3145,11 @@ public class Indexes implements RegistryPoller.Listener {
 				e.addSuppressed(e2);
 			}
 
-			throw e;
+			if(e instanceof IOException io) {
+				throw new UncheckedIOException(io);
+			}
+
+			throw (RuntimeException) e;
 		}
 	}
 
