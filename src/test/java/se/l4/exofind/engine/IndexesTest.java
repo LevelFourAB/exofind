@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.emptyIterable;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -297,6 +298,99 @@ public class IndexesTest {
 		second.commit();
 		assertThat(second.getDocumentCount(), is(1L));
 		assertThat(first.getDocumentCount(), is(0L));
+	}
+
+	/**
+	 * A promote holds the writes of the generation it replaces. An instance
+	 * of that generation that is evicted and opened again during the hold
+	 * must not let a write through to the replaced generation, or the write
+	 * is acknowledged where nothing answers from it.
+	 */
+	@Test
+	public void testWriteDuringAHoldGoesToThePromotedGenerationWhenTheHeldInstanceIsEvicted()
+		throws Exception {
+		var capped = newNode(
+			storageDirectory.resolve("capped"),
+			registry(),
+			OptionalInt.of(1)
+		);
+
+		try {
+			// Given
+			capped.create("books", keyed());
+			capped.createGeneration("books@2", keyed());
+			var first = capped.getOrThrow("books@1");
+
+			var wroteTo = new CompletableFuture<String>();
+			var writer = new Thread(() -> wroteTo.complete(
+				capped.write("books", index -> {
+					try {
+						index.addDocument(new Document(new Document.Value("id", "1")));
+						return index.getId();
+					} catch(IOException e) {
+						throw new UncheckedIOException(e);
+					}
+				})
+			));
+
+			try(var hold = first.holdWrites()) {
+				// The held instance is evicted by opening other indexes
+				evict(capped, "books@1");
+
+				// When
+				writer.start();
+				awaitWaitingOrDone(writer, wroteTo);
+
+				capped.promote("books@2");
+			}
+
+			// Then
+			assertThat(wroteTo.get(10, TimeUnit.SECONDS), is("books@2"));
+
+			var live = capped.getOrThrow("books");
+			live.commit();
+			assertThat(live.getDocument("1"), is(not(nullValue())));
+		} finally {
+			capped.close();
+		}
+	}
+
+	/**
+	 * Open other indexes until the cache has retired the named instance.
+	 */
+	private static void evict(Indexes capped, String name) throws InterruptedException {
+		for(var i = 0; i < 50; i++) {
+			var other = "other" + i;
+			capped.create(other, IndexDef.getDefaultInstance());
+			for(var touch = 0; touch < 5; touch++) {
+				capped.getOrThrow(other);
+			}
+
+			var deadline = System.currentTimeMillis() + 200;
+			while(System.currentTimeMillis() < deadline) {
+				if(!capped.getOpen().containsKey(name)) {
+					return;
+				}
+
+				Thread.sleep(10);
+			}
+		}
+
+		throw new AssertionError("The cache did not retire " + name);
+	}
+
+	private static void awaitWaitingOrDone(Thread thread, CompletableFuture<?> done)
+		throws InterruptedException {
+		var deadline = System.currentTimeMillis() + 5000;
+		while(System.currentTimeMillis() < deadline) {
+			if(done.isDone() || thread.getState() == Thread.State.WAITING) {
+				return;
+			}
+
+			Thread.sleep(10);
+		}
+
+		throw new AssertionError("The write neither finished nor waited within the wait");
 	}
 
 	/**

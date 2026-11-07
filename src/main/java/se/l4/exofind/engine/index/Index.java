@@ -365,9 +365,10 @@ public class Index {
 	 * Writes take the read side before the sync lock and a
 	 * {@link #holdWrites() hold} takes the write side alone - a holder is free
 	 * to commit or push while it holds the gate, which the other order would
-	 * deadlock on.
+	 * deadlock on. A close passes the write side once, so that it does not
+	 * start while a hold is up.
 	 */
-	private final ReadWriteLock writeGate;
+	private final ReentrantReadWriteLock writeGate;
 
 	/**
 	 * Which documents have changed since tracking began, or {@code null} while
@@ -8975,6 +8976,43 @@ public class Index {
 	}
 
 	/**
+	 * Wait until no {@link #holdWrites() hold} is up, and refuse every write
+	 * from then on.
+	 *
+	 * <p>A hold is how a promote makes sure that no write lands in the
+	 * generation it replaces. The hold is on this instance, and the open
+	 * cache can evict the instance while the hold is up. The next write to
+	 * the generation then opens a new instance, and the open closes this one
+	 * first. Without this wait the new instance opens at once and takes the
+	 * write through a gate that nothing holds, so the write lands in the
+	 * replaced generation after the promote.
+	 *
+	 * <p>Writes already underway finish first. A writer waiting at the gate
+	 * then finds the instance closing and is refused.
+	 *
+	 * <p>A thread that is inside the gate of this instance itself does not
+	 * wait, as it would wait for itself.
+	 */
+	private void awaitHold() {
+		if(writeGate.getReadHoldCount() > 0) {
+			return;
+		}
+
+		var gate = writeGate.writeLock();
+		gate.lock();
+		try {
+			syncLock.writeLock().lock();
+			try {
+				closing = true;
+			} finally {
+				syncLock.writeLock().unlock();
+			}
+		} finally {
+			gate.unlock();
+		}
+	}
+
+	/**
 	 * Stop pulling and wait for the pull that is running. A pull downloads
 	 * into the local directory, records the synchronization there and removes
 	 * the files the pulled manifest does not name. The next instance of the
@@ -9055,6 +9093,8 @@ public class Index {
 		if(getState() == IndexState.CLOSED) {
 			return;
 		}
+
+		awaitHold();
 
 		/*
 		 * Before the commit and the teardown: a pull writes into the local
