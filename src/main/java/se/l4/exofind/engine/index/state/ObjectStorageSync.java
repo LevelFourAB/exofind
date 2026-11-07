@@ -414,7 +414,7 @@ public class ObjectStorageSync implements StateSync {
 			 * look complete after a restart, leaving the remote permanently
 			 * behind.
 			 */
-			putManifest(manifest);
+			manifest = putManifest(manifest);
 			recordAccepted(manifest);
 
 			deleteObsoleteRemoteObjects(baseline, manifest);
@@ -495,7 +495,7 @@ public class ObjectStorageSync implements StateSync {
 			.addKeyValue("version", claimed.getVersion())
 			.log("Claiming writer epoch");
 
-		putManifest(claimed);
+		claimed = putManifest(claimed);
 		this.sessionEpoch = claimed.getEpoch();
 		recordAccepted(claimed);
 	}
@@ -895,13 +895,27 @@ public class ObjectStorageSync implements StateSync {
 	 * knows of none demands there be none - either way the storage decides in
 	 * the write itself, which no check beforehand can.
 	 *
-	 * @param manifest
+	 * @param unstamped
+	 *   the manifest to write, which is written with a new nonce
+	 * @return
+	 *   the manifest as it was written, nonce and all. The caller records this
+	 *   one as the manifest the remote holds
 	 * @throws SyncConflictException
 	 *   if the remote manifest changed since this node last saw it
 	 * @throws IOException
 	 *   if the manifest could not be written
 	 */
-	private void putManifest(Manifest manifest) throws IOException {
+	private Manifest putManifest(Manifest unstamped) throws IOException {
+		/*
+		 * A fresh nonce makes this write differ from every other write, also
+		 * from a claim another node makes from the same baseline. Only then
+		 * does a remote that holds exactly this manifest prove that the write
+		 * landed, which is what resolveRefusedManifest and
+		 * resolveUnconfirmedManifest conclude from it.
+		 */
+		var manifest = unstamped.toBuilder()
+			.setNonce(newSessionId())
+			.build();
 		var bytes = manifest.toByteArray();
 
 		var requestBuilder = PutObjectRequest.builder()
@@ -957,6 +971,7 @@ public class ObjectStorageSync implements StateSync {
 
 		this.unconfirmedManifest = null;
 		this.lastSyncedManifestETag = etag;
+		return manifest;
 	}
 
 	/**
@@ -967,8 +982,9 @@ public class ObjectStorageSync implements StateSync {
 	 * with.
 	 *
 	 * <p>A remote that holds anything else is left to
-	 * {@link #ensurePushBaseline}. The manifest carries the epoch and the
-	 * session keys of this node, so no other node writes one equal to it.
+	 * {@link #ensurePushBaseline}. The manifest carries a nonce that
+	 * {@link #putManifest} picked for this write, so no other node writes
+	 * one equal to it, not even a claim made from the same baseline.
 	 * When another node has written since, the remote holds a different
 	 * manifest and the push is refused as before.
 	 *

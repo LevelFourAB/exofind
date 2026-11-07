@@ -120,6 +120,18 @@ message Manifest {
 	 * index that has no commit yet.
 	 */
 	optional string lucene_written_version = 6;
+	/*
+	 * Random value that the node writing the manifest sets anew on every
+	 * write. It means nothing on its own. It makes two manifests written
+	 * from the same baseline differ, such as two claims of the same epoch, so
+	 * that a node whose write was not answered can tell its own manifest from
+	 * the one of another node by comparing them.
+	 *
+	 * Unset in a manifest written before the value was recorded. An older
+	 * node carries it over unchanged, which keeps it what it is: a value that
+	 * tells nothing about who wrote the manifest.
+	 */
+	optional string nonce = 7;
 }
 
 /*

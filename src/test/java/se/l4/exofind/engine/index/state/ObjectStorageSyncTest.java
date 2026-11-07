@@ -2027,6 +2027,95 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * Two nodes claim the writer from the same manifest. The second one has
+	 * checked the remote tag, and the claim of the first lands before the
+	 * conditional write of the second. That write is refused, and the
+	 * second node must take the refusal as a lost claim, not as its own
+	 * write that landed.
+	 */
+	@Test
+	void aClaimThatLosesToAnotherClaimFromTheSameManifestIsAConflict(@TempDir Path thirdPath) throws Exception {
+		// Given: the remote manifest, and two nodes that pulled it
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var first = newSync(s3Client, otherLocalPath);
+		first.pull();
+
+		var racingClient = claimBeforeNextManifestWrite(first);
+		var second = newSync(racingClient, thirdPath);
+		second.pull();
+
+		// When: the claim of the first node lands while the second one claims
+		// Then: the second claim is refused
+		assertThrows(SyncConflictException.class, second::claimWriter);
+		assertThat(remoteManifest().getEpoch(), is(2L));
+	}
+
+	/**
+	 * The node whose claim landed first is the writer. A node whose claim
+	 * lost the race must not push over it, and the writer must keep pushing
+	 * the documents it acknowledged.
+	 */
+	@Test
+	void theWriterWhoseClaimLandedFirstKeepsPushing(@TempDir Path thirdPath) throws Exception {
+		// Given: the remote manifest, and two nodes that pulled it
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		var first = newSync(s3Client, otherLocalPath);
+		first.pull();
+
+		var racingClient = claimBeforeNextManifestWrite(first);
+		var second = newSync(racingClient, thirdPath);
+		second.pull();
+
+		// And: both claimed the writer at the same time, and the claim of the first landed
+		try {
+			second.claimWriter();
+		} catch(SyncConflictException e) {
+			// The refusal the claim race must end in
+		}
+
+		// When: the node whose claim lost pushes first
+		var lost = createLocalFile(thirdPath, "segments_2", 12);
+		assertThrows(SyncConflictException.class, () -> push(second, segment, lost));
+
+		// Then: the writer whose claim landed pushes its own commit
+		var kept = createLocalFile(otherLocalPath, "segments_2", 14);
+		push(first, segment, kept);
+		assertThat(remoteManifest().getLatestSegment(), is(2L));
+		assertThat(remoteKeyOf("segments_2"), uploadedIn(2, "segments_2"));
+	}
+
+	/**
+	 * A client whose next manifest write first makes the given sync claim
+	 * the writer, so that its claim lands after the caller checked the
+	 * remote tag and before the caller's conditional write reaches the
+	 * storage.
+	 */
+	private S3Client claimBeforeNextManifestWrite(ObjectStorageSync other) {
+		var armed = new AtomicBoolean(true);
+		var client = Mockito.spy(s3Client);
+		Mockito.doAnswer(invocation -> {
+			if(armed.getAndSet(false)) {
+				other.claimWriter();
+			}
+
+			return invocation.callRealMethod();
+		})
+			.when(client)
+			.putObject(
+				ArgumentMatchers.<PutObjectRequest>argThat(
+					request -> request != null && request.key().endsWith("manifest.ef.bin")
+				),
+				ArgumentMatchers.any(RequestBody.class)
+			);
+
+		return client;
+	}
+
+	/**
 	 * A writer that pulled someone else's state may find files of its own
 	 * epoch carried forward in it, so it claims a fresh epoch rather than
 	 * write where the adopted manifest is pointing.
