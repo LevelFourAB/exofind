@@ -42,6 +42,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.DocumentPatch;
 import se.l4.exofind.engine.index.Index;
+import se.l4.exofind.engine.index.IndexClosedException;
 import se.l4.exofind.engine.index.IndexSourceNotKeptException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LiveGenerationMovedException;
@@ -1113,7 +1114,28 @@ public class ReindexJobsTest {
 		// Then
 		var job = jobs.get("catalogue").orElseThrow();
 		assertThat("job ended as " + job.phase() + ": " + job.error(), job.phase(), is(ReindexPhase.DONE));
-		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+		assertThat(documentCountAfterEviction("catalogue"), is(1500L));
+	}
+
+	/**
+	 * Count the documents of an index on a node that closes what it evicts at
+	 * once. The job records that it is done before it releases its hold, so
+	 * the release can close the instance between the lookup and the count.
+	 * The count then asks for the index again, as a client does.
+	 */
+	private long documentCountAfterEviction(String name) throws Exception {
+		var deadline = System.nanoTime() + WAIT.toNanos();
+		while(true) {
+			try {
+				return indexes.getOrThrow(name).getDocumentCount();
+			} catch(IndexClosedException e) {
+				if(System.nanoTime() > deadline) {
+					throw e;
+				}
+
+				Thread.sleep(20);
+			}
+		}
 	}
 
 	/**
