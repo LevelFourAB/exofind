@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import se.l4.exofind.engine.Indexes;
@@ -1247,6 +1248,46 @@ public class DocumentResourceTest {
 		// Then
 		assertAllThreeDocumentsRemain(index);
 		assertThat(refused, is(true));
+	}
+
+	/**
+	 * Keeping only the documents that match one of no alternatives names
+	 * nothing to remove by, and is refused rather than taken for every
+	 * document.
+	 */
+	@Test
+	public void testANotAroundAnEmptyOrRemovesNothing() throws IOException {
+		// Given
+		var index = foodsWithThreeDocuments();
+
+		// When
+		var refused = refusesDelete(
+			clauses("[{\"type\":\"not\",\"clauses\":[{\"type\":\"or\",\"clauses\":[]}]}]")
+		);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	@Test
+	public void testANotAroundAnOrWithoutClausesRemovesNothing() throws IOException {
+		// Given
+		var index = foodsWithThreeDocuments();
+
+		// When
+		var refused = refusesDelete(
+			clauses("[{\"type\":\"not\",\"clauses\":[{\"type\":\"or\"}]}]")
+		);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	private static List<Clause> clauses(String json) throws IOException {
+		return new ObjectMapper().readValue(json, new TypeReference<List<Clause>>() {
+		});
 	}
 
 	private Index foodsWithThreeDocuments() throws IOException {
