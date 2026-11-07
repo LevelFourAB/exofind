@@ -234,6 +234,155 @@ public class IndexesHandoverTest {
 	}
 
 	/**
+	 * The container can destroy the indexes before it stops the ownership,
+	 * as nothing orders the two. The close then could not push an index, and
+	 * the shutdown flush that the ownership asks for afterwards must say so.
+	 * When it answers success, the ownership releases the claim and a
+	 * successor pulls a manifest without the documents only this node holds.
+	 */
+	@Test
+	@Timeout(60)
+	void aHandoverFlushAfterTheIndexesClosedReportsWhatTheCloseCouldNotPush() throws Exception {
+		var failPushes = new AtomicBoolean();
+		var failedPushes = new AtomicInteger();
+
+		var provider = new StateSyncProvider() {
+			@Override
+			public StateSync createSync(IndexName generation, Path dataPath) {
+				return new NoopSync() {
+					@Override
+					public void push(Set<String> files) throws IOException {
+						if(failPushes.get()) {
+							failedPushes.incrementAndGet();
+							throw new IOException("Simulated storage failure for " + generation);
+						}
+					}
+				};
+			}
+
+			@Override
+			public OptionalLong remoteVersion(IndexName generation) {
+				return OptionalLong.empty();
+			}
+
+			@Override
+			public boolean hasRemote() {
+				return true;
+			}
+		};
+
+		var state = new NodeState(true);
+		state.updateOwnership("a", true);
+
+		var indexes = newNode(state, provider, OptionalInt.empty(), Duration.ofMinutes(5));
+
+		// Given: an index that holds a document that was acknowledged and not pushed
+		var a = indexes.create("a", definition());
+		a.addDocument(new Document(new Document.Value("id", "1")));
+
+		// And: the storage refuses every push
+		failPushes.set(true);
+
+		// And: the indexes were closed first, and the close could not push
+		indexes.close();
+		assertThat("failed pushes of the close", failedPushes.get() > 0, is(true));
+
+		// When: the ownership stops and asks for the shutdown flush
+		state.updateOwnership("a", false);
+		var flushed = indexes.flushForHandover("a");
+
+		Throwable failure = null;
+		try {
+			flushed.get(30, TimeUnit.SECONDS);
+		} catch(ExecutionException e) {
+			failure = e.getCause();
+		}
+
+		// Then: the flush says that the handover must not go ahead
+		assertThat("the shutdown flush reports the failed push", failure != null, is(true));
+	}
+
+	/**
+	 * A handover can be chosen while the indexes are closing. The flush
+	 * for it can not run then, and the close pushes the index instead. The
+	 * flush must not answer before the close has pushed, or the claim
+	 * moves to a successor that pulls a manifest without the documents.
+	 */
+	@Test
+	@Timeout(60)
+	void aHandoverFlushDuringTheCloseWaitsForThePushOfTheClose() throws Exception {
+		var holdFilms = new AtomicBoolean();
+		var filmsPushing = new CountDownLatch(1);
+		var releaseFilms = new CountDownLatch(1);
+
+		var provider = new StateSyncProvider() {
+			@Override
+			public StateSync createSync(IndexName generation, Path dataPath) {
+				return new NoopSync() {
+					@Override
+					public void push(Set<String> files) throws IOException {
+						if(generation.index().equals("films") && holdFilms.get()) {
+							filmsPushing.countDown();
+							try {
+								releaseFilms.await();
+							} catch(InterruptedException e) {
+								Thread.currentThread().interrupt();
+							}
+						}
+
+						describePushed(dataPath, files);
+					}
+				};
+			}
+
+			@Override
+			public OptionalLong remoteVersion(IndexName generation) {
+				return OptionalLong.empty();
+			}
+
+			@Override
+			public boolean hasRemote() {
+				return true;
+			}
+		};
+
+		var state = new NodeState(true);
+		state.updateOwnership("books", true);
+		state.updateOwnership("films", true);
+
+		var indexes = newNode(state, provider, OptionalInt.empty(), Duration.ofMinutes(5));
+
+		// Given: two indexes that hold documents that were acknowledged and not pushed
+		var books = indexes.create("books", definition());
+		books.addDocument(new Document(new Document.Value("id", "1")));
+		var films = indexes.create("films", definition());
+		films.addDocument(new Document(new Document.Value("id", "1")));
+
+		// And: the indexes are closing, and the close is pushing films
+		holdFilms.set(true);
+		var closer = new Thread(indexes::close);
+		closer.start();
+		try {
+			assertThat("the close pushes films", filmsPushing.await(30, TimeUnit.SECONDS), is(true));
+
+			// When: a handover of books is chosen
+			state.updateOwnership("books", false);
+			var flushed = indexes.flushForHandover("books");
+
+			// Then: the flush does not answer while the close still pushes
+			Thread.sleep(200);
+			assertThat("the flush answered before the close pushed", flushed.isDone(), is(false));
+
+			// And: it answers with success when the close has pushed everything
+			releaseFilms.countDown();
+			flushed.get(30, TimeUnit.SECONDS);
+		} finally {
+			releaseFilms.countDown();
+			closer.join();
+		}
+	}
+
+	/**
 	 * A refresh pass queues a pull of every index that is not in step with
 	 * the remote, which includes an index that holds documents that were
 	 * acknowledged and not committed. When the node then starts to hand that

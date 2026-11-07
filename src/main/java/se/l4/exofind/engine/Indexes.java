@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -242,6 +243,21 @@ public class Indexes implements RegistryPoller.Listener {
 	 * losing every index at once.
 	 */
 	private final ConcurrentHashMap<String, CompletableFuture<Void>> ownershipQueues;
+
+	/**
+	 * Completed when {@link #close()} has closed every instance. A handover
+	 * flush that can not be queued because the node is shutting down waits
+	 * for it, and then answers with what the close pushed.
+	 */
+	private final CompletableFuture<Void> closeFinished;
+
+	/**
+	 * Names of the indexes, without a generation, that {@link #close()} could
+	 * not push: a close that failed, or an evicted instance that did not
+	 * finish closing in time. A handover flush asked for after the close
+	 * fails for these, so that the claim on the index is left to lapse.
+	 */
+	private final Set<String> unpushedOnClose;
 
 	/**
 	 * The threads a search on this node spreads over, handed to every index
@@ -602,6 +618,8 @@ public class Indexes implements RegistryPoller.Listener {
 		this.nameLocks = new ConcurrentHashMap<>();
 		this.closeGracePeriod = closeGracePeriod;
 		this.retiring = new ConcurrentHashMap<>();
+		this.closeFinished = new CompletableFuture<>();
+		this.unpushedOnClose = ConcurrentHashMap.newKeySet();
 		this.maxOpen = maxOpen;
 		this.preloadIdleLimit = preloadIdleLimit;
 		this.preloadMaxIndexes = preloadMaxIndexes;
@@ -735,7 +753,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 *   the work to run, which must handle its own failures
 	 * @return
 	 *   completes when the work has run, and completes exceptionally only
-	 *   when it could not be queued
+	 *   when the work did not run because the node is shutting down. Work
+	 *   that was queued when {@link #close()} stopped the executor can also
+	 *   never complete
 	 */
 	private CompletableFuture<Void> queueOwnership(String index, Runnable task) {
 		var key = index == null ? "" : index;
@@ -763,7 +783,7 @@ public class Indexes implements RegistryPoller.Listener {
 			);
 		} catch(RejectedExecutionException e) {
 			// Shutting down; the close path flushes everything that is still open
-			return CompletableFuture.completedFuture(null);
+			return CompletableFuture.failedFuture(e);
 		}
 
 		/*
@@ -954,6 +974,10 @@ public class Indexes implements RegistryPoller.Listener {
 	 * from this node has reached {@link NodeState} - reopening reads it, and
 	 * flushes nothing for an index the node still writes.
 	 *
+	 * <p>When the node is shutting down, {@link #close()} pushes instead. A
+	 * flush asked for then waits for the close to finish, and answers with
+	 * what the close could push.
+	 *
 	 * @param index
 	 *   name of the index, without a generation
 	 * @return
@@ -999,11 +1023,87 @@ public class Indexes implements RegistryPoller.Listener {
 				flushed.completeExceptionally(t);
 			}
 		}).whenComplete((result, e) -> {
-			// Never queued, so nothing will complete it; the close path flushes instead
-			flushed.complete(null);
+			if(e != null) {
+				/*
+				 * Never run, as the node is shutting down. The close path
+				 * pushes what is still open, and the container can run it
+				 * before the ownership asks for this flush, or while it does.
+				 * The answer is thus what the close pushed.
+				 */
+				answerAfterClose(index, flushed);
+			}
 		});
 
 		return flushed;
+	}
+
+	/**
+	 * Answer a handover flush that could not run because the node is
+	 * shutting down, when {@link #close()} has finished. Nothing is pushed
+	 * from here: the answer only says whether the close left anything of the
+	 * index that the remote never got.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 * @param flushed
+	 *   completed normally when the close pushed everything the index held,
+	 *   and exceptionally when the close could not push a generation of the
+	 *   index, or when a local copy of the index still holds changes the
+	 *   remote never got
+	 */
+	private void answerAfterClose(String index, CompletableFuture<Void> flushed) {
+		closeFinished.whenComplete((result, e) -> {
+			try {
+				if(unpushedOnClose.contains(index) || holdsUnpushedCopies(index)) {
+					flushed.completeExceptionally(new IOException(
+						"Could not push everything the index `" + index
+							+ "` holds before shutting down"
+					));
+				} else {
+					flushed.complete(null);
+				}
+			} catch(Throwable t) {
+				flushed.completeExceptionally(t);
+			}
+		});
+	}
+
+	/**
+	 * Whether a local copy of an index holds changes the remote never got,
+	 * judged from the files alone. A copy that can not be read is reported as
+	 * holding changes.
+	 *
+	 * @param index
+	 *   name of the index, without a generation
+	 */
+	private boolean holdsUnpushedCopies(String index) {
+		List<Path> paths;
+		try(var listing = Files.list(indexRoot)) {
+			paths = listing.filter(Files::isDirectory).toList();
+		} catch(NoSuchFileException e) {
+			return false;
+		} catch(IOException e) {
+			logger.atWarn()
+				.addKeyValue("index", index)
+				.setCause(e)
+				.log("Could not list the local copies of the index; " + e.getMessage());
+
+			return true;
+		}
+
+		for(var path : paths) {
+			var name = path.getFileName().toString();
+			var parsed = IndexName.tryParse(name).orElse(null);
+			if(parsed != null && parsed.index().equals(index) && LocalCopy.hasUnpushedChanges(path)) {
+				logger.atWarn()
+					.addKeyValue("index", name)
+					.log("A local copy holds changes the remote never got after the close");
+
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -1253,6 +1353,12 @@ public class Indexes implements RegistryPoller.Listener {
 		}
 	}
 
+	/**
+	 * Close every instance, which commits and pushes what this node holds.
+	 * What could not be pushed is kept for {@link #flushForHandover(String)},
+	 * which the ownership can ask for after this or while this runs, as
+	 * nothing orders the two when the container shuts down.
+	 */
 	@PreDestroy
 	public void close() {
 		/*
@@ -1265,42 +1371,61 @@ public class Indexes implements RegistryPoller.Listener {
 			.addKeyValue("open", indexes.asMap().size())
 			.log("Closing the open indexes");
 
-		nodeState.removeListener(nodeStateListener);
-		refreshExecutor.shutdownNow();
-		pullExecutor.shutdownNow();
+		try {
+			nodeState.removeListener(nodeStateListener);
+			refreshExecutor.shutdownNow();
+			pullExecutor.shutdownNow();
 
-		/*
-		 * Shut down before the retired instances are closed by hand, so that a
-		 * grace period that has not run out yet can not schedule a second
-		 * attempt. A close that is already running finishes on its own.
-		 */
-		closeExecutor.shutdown();
+			/*
+			 * Shut down before the retired instances are closed by hand, so that a
+			 * grace period that has not run out yet can not schedule a second
+			 * attempt. A close that is already running finishes on its own.
+			 */
+			closeExecutor.shutdown();
 
-		for(var retired : retiring.values()) {
-			retired.closeNow(true);
-			retired.await(RETIRING_WAIT);
-		}
-
-		/*
-		 * Indexes are closed here rather than left to the cache, which only
-		 * reports the entries it evicts of its own accord. One that will not
-		 * close is reported and stepped over, as the rest still have changes
-		 * of their own to commit and push before this node goes.
-		 */
-		for(var index : indexes.asMap().values()) {
-			try {
-				index.close();
-			} catch(IOException | RuntimeException e) {
-				logger.atWarn()
-					.addKeyValue("index", index.getId())
-					.setCause(e)
-					.log("Could not close index; " + e.getMessage());
+			for(var retired : retiring.values()) {
+				retired.closeNow(true);
+				if(!retired.await(RETIRING_WAIT) || !retired.pushed()) {
+					markUnpushedOnClose(retired.name);
+				}
 			}
 
-			recordUsed(index.getId());
-		}
+			/*
+			 * Indexes are closed here rather than left to the cache, which only
+			 * reports the entries it evicts of its own accord. One that will not
+			 * close is reported and stepped over, as the rest still have changes
+			 * of their own to commit and push before this node goes.
+			 */
+			for(var index : indexes.asMap().values()) {
+				try {
+					index.close();
+				} catch(IOException | RuntimeException e) {
+					markUnpushedOnClose(index.getId());
 
-		indexes.invalidateAll();
+					logger.atWarn()
+						.addKeyValue("index", index.getId())
+						.setCause(e)
+						.log("Could not close index; " + e.getMessage());
+				}
+
+				recordUsed(index.getId());
+			}
+
+			indexes.invalidateAll();
+		} finally {
+			closeFinished.complete(null);
+		}
+	}
+
+	/**
+	 * Keep the index of a generation that {@link #close()} could not push,
+	 * for the handover flushes asked for after it.
+	 *
+	 * @param name
+	 *   name of the generation
+	 */
+	private void markUnpushedOnClose(String name) {
+		unpushedOnClose.add(IndexName.tryParse(name).map(IndexName::index).orElse(name));
 	}
 
 	@Override
