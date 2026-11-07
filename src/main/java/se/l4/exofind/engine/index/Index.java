@@ -1059,6 +1059,19 @@ public class Index {
 				return;
 			}
 
+			if(writer != null && mayPush && state != IndexState.NEEDS_PULL) {
+				/*
+				 * The node handed the index over by choice, and the flush of
+				 * the handover has not run yet. The node state already says
+				 * that the node does not hold the index, but this writer holds
+				 * acknowledged documents that only the flush puts on the
+				 * remote. A pull here rolls them back, and the flush then finds
+				 * nothing to push. Only reopen lets this writer go: it marks
+				 * the index as needing a pull after the flush.
+				 */
+				return;
+			}
+
 			startState = state;
 			state = IndexState.PULLING;
 

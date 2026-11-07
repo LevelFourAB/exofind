@@ -909,6 +909,47 @@ public class IndexTest {
 	}
 
 	/**
+	 * A chosen handover makes the node state say that the node no longer
+	 * holds the index before the flush runs. A pull that runs in that gap -
+	 * a refresh pass, a read that waits for a freshness token or the admin
+	 * pull - must not roll back the writer that holds the documents the flush
+	 * is about to push.
+	 */
+	@Test
+	public void aPullDuringAHandoverKeepsTheUncommittedDocuments() throws IOException {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		var pushes = new AtomicInteger();
+		var index = new Index(state, "test", path, new NoopSync() {
+			@Override
+			public void push(Set<String> files) throws IOException {
+				pushes.incrementAndGet();
+			}
+		});
+		indexes.add(index);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+
+		// Given: a document that was acknowledged and not committed
+		index.addDocument(new Document(new Document.Value("field1", true)));
+		var pushesBefore = pushes.get();
+
+		// And: the node has started to hand the index over
+		state.updateOwnership(false);
+
+		// When: a pull runs before the flush of the handover
+		index.pull();
+		var flushed = index.reopen(true);
+
+		// Then: the flush pushed the document before it let the handover go ahead
+		assertThat("handover may go ahead", flushed, is(true));
+		assertThat("pushed by the handover flush", pushes.get() > pushesBefore, is(true));
+		assertThat(index.search(SearchRequest.create().build()).total().count(), is(1L));
+	}
+
+	/**
 	 * A handover whose push fails hands nothing over: the reopen says so and
 	 * leaves the index with its writer, so the documents that were answered
 	 * are still here for the flush that is made when the handover is tried
