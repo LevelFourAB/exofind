@@ -29,6 +29,8 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.github.benmanes.caffeine.cache.LoadingCache;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermissions;
 
 import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.Index;
@@ -443,6 +445,68 @@ public class IndexesHandoverTest {
 		}
 
 		throw new AssertionError("No generation was evicted, retiring holds " + retiring.keySet());
+	}
+
+	/**
+	 * A writer that Lucene closed after a failed commit holds nothing more
+	 * that a push could save. A handover must not be called off on it, or no
+	 * other node can take the index over while this node runs.
+	 */
+	@Test
+	@Timeout(60)
+	void aWriterClosedByAFailedCommitDoesNotHoldTheHandoverBack() throws Exception {
+		var provider = new StateSyncProvider() {
+			@Override
+			public StateSync createSync(IndexName generation, Path dataPath) {
+				return new NoopSync() {
+					@Override
+					public void push(Set<String> files) throws IOException {
+						describePushed(dataPath, files);
+					}
+				};
+			}
+
+			@Override
+			public OptionalLong remoteVersion(IndexName generation) {
+				return OptionalLong.empty();
+			}
+		};
+
+		var state = new NodeState(true);
+		state.updateOwnership("books", true);
+
+		var indexes = newNode(state, provider, OptionalInt.empty(), Duration.ofSeconds(1));
+		try {
+			// Given: the commit of the index failed inside Lucene on a full disk
+			var books = indexes.create("books", definition());
+			books.addDocument(new Document(new Document.Value("id", "1")));
+			books.commit();
+			books.addDocument(new Document(new Document.Value("id", "2")));
+
+			var path = storageDirectory.resolve("indexes").resolve("books@1");
+			Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("r-xr-xr-x"));
+			try {
+				books.commit();
+			} catch(IOException | RuntimeException e) {
+				// The disk refused the files of the commit
+			} finally {
+				Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwxr-xr-x"));
+			}
+
+			// When: the node hands the index over
+			state.updateOwnership("books", false);
+			Throwable failure = null;
+			try {
+				indexes.flushForHandover("books").get(30, TimeUnit.SECONDS);
+			} catch(ExecutionException e) {
+				failure = e.getCause();
+			}
+
+			// Then: the handover may go ahead
+			assertThat(failure, is(nullValue()));
+		} finally {
+			indexes.close();
+		}
 	}
 
 	private Indexes newNode(

@@ -171,6 +171,12 @@ To prevent this corruption, the engine rolls the writer back before the pull sta
 
 Two checks protect a local copy that loses files for another reason. When the local manifest names a commit, the node opens the writer in Lucene append mode, so Lucene reports a missing commit as an error instead of creating an empty index. Local storage mode keeps no manifest and does not use append mode. In addition, a push fails if its files contain no Lucene commit while the last synchronized manifest names one, preventing a manifest with no segments from deleting remote segment objects and making the index unrecoverable.
 
+## A writer that Lucene closes is replaced
+
+Lucene closes an `IndexWriter` on its own when one of its own writes fails, such as a commit, a flush, or a merge on a full disk. It rolls the writer back to its last commit, and the writer then refuses every write and every commit. If the engine kept that writer, the index would refuse writes until the process restarts, also after the disk has free space again. In object storage mode the node would also call off every handover, because the flush of the handover fails on the closed writer, so no other node could take the index over.
+
+When a commit or a write finds the writer closed, the engine lets the writer go and marks the index `needs_pull`. It logs an error with the number of acknowledged changes that Lucene dropped, because the clients that sent those changes keep no list of them. Writes answer `index:out_of_date` until the refresh loop pulls the index and opens a new writer over the last commit. A handover goes ahead, because the closed writer holds nothing that a push could save.
+
 ## A close waits for the pull that is running
 
 A node closes an open generation when the cache evicts it, when the node hands the index over, and when it shuts down. The next request opens a new instance over the same local directory, and that instance pulls into it. A close therefore stops further pulls of the instance it closes and waits for the pull that is running. Two pulls of one directory download into the same paths, write their own manifest over each other, and delete the files the other one brought.

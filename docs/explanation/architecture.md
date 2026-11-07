@@ -273,6 +273,7 @@ modified -> pushing: Commit starts
 pushing -> usable: Push accepted
 pushing -> modified: More writes arrived
 pushing -> needs_pull: Push refused
+modified -> needs_pull: Lucene closes the writer
 ```
 
 For more details on index version differences, see

@@ -25,7 +25,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -481,6 +483,12 @@ public class Index {
 
 	private FSDirectory directory;
 	private IndexWriter writer;
+
+	/**
+	 * Whether a drop of a writer that Lucene closed is queued on the
+	 * maintenance thread, so that a burst of refused writes queues one drop.
+	 */
+	private final AtomicBoolean lostWriterDropQueued = new AtomicBoolean();
 
 	/**
 	 * Keeps a commit that is being pushed from being deleted by a merge
@@ -1458,6 +1466,94 @@ public class Index {
 	}
 
 	/**
+	 * Get whether Lucene closed a writer on its own. Lucene does this when one
+	 * of its own writes fails, such as a flush or a merge on a full disk. It
+	 * rolls the writer back to its last commit, and the writer then refuses
+	 * every write and every commit.
+	 */
+	private static boolean isLost(IndexWriter writer) {
+		return writer.getTragicException() != null || !writer.isOpen();
+	}
+
+	/**
+	 * Let go of a writer that Lucene closed on its own, and mark the index as
+	 * needing a pull. The pull opens a new writer over the last commit, so the
+	 * index takes writes again when the disk accepts files again. Without
+	 * this, the closed writer stays in place and refuses writes until the
+	 * process restarts.
+	 *
+	 * <p>Called with the write lock held, so no write is between its check and
+	 * the Lucene writer.
+	 *
+	 * @param failure
+	 *   the failure that found the writer closed, or {@code null}. Logged when
+	 *   Lucene kept no failure of its own
+	 */
+	private void dropLostWriter(Throwable failure) {
+		long dropped;
+		synchronized(stateLock) {
+			dropped = modifications - committedModifications;
+		}
+
+		var tragedy = writer.getTragicException();
+		var cause = tragedy != null ? tragedy : failure;
+
+		/*
+		 * Lucene already dropped these changes in its rollback. The error is
+		 * the only record of them: the clients that sent them got an answer
+		 * and keep no list of what to send again.
+		 */
+		var event = logger.atError()
+			.addKeyValue("index", id)
+			.addKeyValue("droppedChanges", dropped);
+		if(cause != null) {
+			event = event.setCause(cause);
+		}
+
+		event.log(
+			"Lucene closed the writer of index `" + id + "` after a write failed, "
+				+ dropped + " acknowledged changes that were not committed are lost;"
+				+ " the index opens again from its last commit when it is pulled"
+				+ (cause != null ? "; " + cause.getMessage() : "")
+		);
+
+		releaseWriter();
+
+		synchronized(stateLock) {
+			state = IndexState.NEEDS_PULL;
+		}
+	}
+
+	/**
+	 * Queue {@link #dropLostWriter(Throwable)} on the maintenance thread, for
+	 * a write that found the writer closed. Writes hold the read lock and
+	 * cannot take the write lock that the drop needs.
+	 */
+	private void queueLostWriterDrop() {
+		if(!lostWriterDropQueued.compareAndSet(false, true)) {
+			return;
+		}
+
+		try {
+			maintenanceExecutor.execute(() -> {
+				lostWriterDropQueued.set(false);
+
+				syncLock.writeLock().lock();
+				try {
+					if(!isClosing() && writer != null && isLost(writer)) {
+						dropLostWriter(null);
+					}
+				} finally {
+					syncLock.writeLock().unlock();
+				}
+			});
+		} catch(RejectedExecutionException e) {
+			// The index closed, and the close lets the writer go
+			lostWriterDropQueued.set(false);
+		}
+	}
+
+	/**
 	 * Open a searcher over a reader: it scores with the similarity of this
 	 * index, it ranks its slices on the search threads of the node, it keeps
 	 * what a cacheable clause matches in the query cache of the node under
@@ -1575,7 +1671,30 @@ public class Index {
 			try {
 				commitChanges(PushReason.HANDOVER);
 			} catch(IOException | RuntimeException e) {
-				if(mayPush) {
+				boolean writerLost;
+				syncLock.readLock().lock();
+				try {
+					writerLost = writer == null;
+				} finally {
+					syncLock.readLock().unlock();
+				}
+
+				if(writerLost) {
+					/*
+					 * Lucene closed the writer and the flush let it go. The
+					 * writer held nothing more that a push could save, so the
+					 * handover goes ahead. Calling it off would keep the index
+					 * on this node, which can not write it, on every round.
+					 */
+					logger.atWarn()
+						.addKeyValue("index", id)
+						.setCause(e)
+						.log(
+							"The index writer was closed by Lucene when the index was"
+								+ " pushed for a handover, handing the index over with"
+								+ " what the remote holds; " + e.getMessage()
+						);
+				} else if(mayPush) {
 					/*
 					 * The successor pulls what the remote holds, so pulling
 					 * here would drop the documents this instance answered for
@@ -1593,21 +1712,21 @@ public class Index {
 						);
 
 					return false;
+				} else {
+					/*
+					 * The index was taken away while the flush ran, so a
+					 * successor may already write it and nothing here may reach
+					 * the remote anymore. What only this instance holds is
+					 * given up, which is what the pull below does.
+					 */
+					logger.atWarn()
+						.addKeyValue("index", id)
+						.setCause(e)
+						.log(
+							"The index was taken away while it was being pushed for a"
+								+ " handover, giving up its unpushed changes; " + e.getMessage()
+						);
 				}
-
-				/*
-				 * The index was taken away while the flush ran, so a successor
-				 * may already write it and nothing here may reach the remote
-				 * anymore. What only this instance holds is given up, which is
-				 * what the pull below does.
-				 */
-				logger.atWarn()
-					.addKeyValue("index", id)
-					.setCause(e)
-					.log(
-						"The index was taken away while it was being pushed for a"
-							+ " handover, giving up its unpushed changes; " + e.getMessage()
-					);
 			}
 		}
 
@@ -2484,7 +2603,8 @@ public class Index {
 	 *   if this node is not the indexer
 	 * @throws IndexOutOfDateException
 	 *   if the index is being synchronized, where writing would leave the local
-	 *   copy and the remote disagreeing about what the index holds
+	 *   copy and the remote disagreeing about what the index holds, or if
+	 *   Lucene closed the writer and the next pull has not opened a new one
 	 */
 	private void checkModifiable() {
 		if(isClosing()) {
@@ -2513,6 +2633,16 @@ public class Index {
 			 * reopen has not finished. Refused as out of date so the caller
 			 * retries, rather than reaching the writer that is not there.
 			 */
+			throw new IndexOutOfDateException(id, state);
+		}
+
+		if(isLost(writer)) {
+			/*
+			 * Lucene closed the writer after a failed flush or merge. Refused
+			 * as out of date so the caller retries on the writer that the next
+			 * pull opens.
+			 */
+			queueLostWriterDrop();
 			throw new IndexOutOfDateException(id, state);
 		}
 
@@ -8896,6 +9026,16 @@ public class Index {
 				return;
 			}
 
+			if(isLost(this.writer)) {
+				/*
+				 * Closed by a merge or a write that failed since the last
+				 * commit. A commit through it throws AlreadyClosedException on
+				 * every attempt.
+				 */
+				dropLostWriter(null);
+				throw new IndexOutOfDateException(id, state);
+			}
+
 			logger.atDebug().addKeyValue("index", id).log("Committing index");
 
 			/*
@@ -8918,13 +9058,21 @@ public class Index {
 			 * that changed something, so it moves nothing.
 			 */
 			var advancing = this.modifications != this.committedModifications;
-			if(advancing) {
-				writer.setLiveCommitData(
-					Map.of(COMMIT_SEQUENCE_KEY, Long.toString(commitSequence + 1)).entrySet()
-				);
-			}
+			try {
+				if(advancing) {
+					writer.setLiveCommitData(
+						Map.of(COMMIT_SEQUENCE_KEY, Long.toString(commitSequence + 1)).entrySet()
+					);
+				}
 
-			writer.commit();
+				writer.commit();
+			} catch(IOException | RuntimeException e) {
+				if(isLost(writer)) {
+					dropLostWriter(e);
+				}
+
+				throw e;
+			}
 
 			/*
 			 * Read while the write lock is held, so nothing can be recording a
