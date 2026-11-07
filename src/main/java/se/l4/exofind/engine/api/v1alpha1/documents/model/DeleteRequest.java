@@ -55,8 +55,10 @@ public record DeleteRequest(
 		Query clauses matching documents to delete, using search query clause \
 		syntax. Removes matching committed searchable documents and any \
 		uncommitted documents indexed since the last commit. The array requires \
-		at least one clause (`document:delete:query_empty`). To empty the index, \
-		send `all` instead.""")
+		at least one clause (`document:delete:query_empty`), and so does each \
+		`and`, `or`, `not` and `boost` clause in it \
+		(`document:delete:clause_empty`). To empty the index, send `all` \
+		instead.""")
 	List<Clause> query,
 
 	@Schema(description = """

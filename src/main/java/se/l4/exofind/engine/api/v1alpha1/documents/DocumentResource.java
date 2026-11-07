@@ -51,6 +51,7 @@ import se.l4.exofind.engine.api.v1alpha1.documents.model.ScanResponse;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchRequestMapper;
+import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.auth.Permission;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
@@ -259,6 +260,14 @@ public class DocumentResource {
 			.withStatus(400)
 			.withMessage(
 				"A `query` requires at least one clause; use `all` to remove every document"
+			);
+
+	private static final ErrorType DELETE_CLAUSE_EMPTY =
+		ErrorType.withCode("document:delete:clause_empty")
+			.withStatus(400)
+			.withMessage(
+				"An `and`, `or`, `not` or `boost` clause of a `query` requires at least one "
+					+ "clause; use `all` to remove every document"
 			);
 
 	private static final ErrorType DELETE_LOCALE_WITHOUT_QUERY =
@@ -2416,7 +2425,8 @@ public class DocumentResource {
 			removed. When deleting by `query`, the operation removes matching \
 			committed searchable documents along with any uncommitted \
 			documents indexed since the last commit. A `query` requires at \
-			least one clause. To empty the index, set `all` to `true`."""
+			least one clause, and so does each `and`, `or`, `not` and `boost` \
+			clause in it. To empty the index, set `all` to `true`."""
 	)
 	@APIResponse(
 		responseCode = "200",
@@ -2447,6 +2457,13 @@ public class DocumentResource {
 		value = "document:delete:query_empty",
 		status = 400,
 		when = "The body holds a `query` without clauses. Send `all` to empty the index."
+	)
+	@ReturnsError(
+		value = "document:delete:clause_empty",
+		status = 400,
+		when = """
+			An `and`, `or`, `not` or `boost` clause at any depth of the `query` \
+			holds no clauses. Send `all` to empty the index."""
 	)
 	@ReturnsError(
 		value = "document:delete:locale_without_query",
@@ -2757,6 +2774,14 @@ public class DocumentResource {
 			throw new ValidationException(DELETE_QUERY_EMPTY.toMessage(Location.create("query")));
 		}
 
+		if(body.query() != null) {
+			var errors = Lists.mutable.<ErrorMessage>empty();
+			refuseEmptyGroups(body.query(), "query", errors);
+			if(errors.notEmpty()) {
+				throw new ValidationException(errors);
+			}
+		}
+
 		if(body.locale() != null && body.query() == null) {
 			throw new ValidationException(
 				DELETE_LOCALE_WITHOUT_QUERY.toMessage(Location.create("locale"))
@@ -2796,6 +2821,76 @@ public class DocumentResource {
 				throw new IndexException(IO_ERROR, e, "index", name);
 			}
 		})), landed.token(name));
+	}
+
+	/**
+	 * Refuse every {@code and}, {@code or}, {@code not} and {@code boost}
+	 * clause that holds no clauses, at any depth of a delete query.
+	 *
+	 * <p>A search reads an empty {@code and} as every document, and a
+	 * {@code not} around a clause that matches nothing, such as an empty
+	 * {@code or}, as every document too. A delete that a client built from an
+	 * empty list of conditions would then empty the index. Only {@code all}
+	 * empties the index, so a delete refuses these clauses.
+	 *
+	 * @param clauses
+	 *   the clauses to check, or {@code null}
+	 * @param path
+	 *   where the clauses are in the request body
+	 * @param errors
+	 *   receives one error for each empty clause
+	 */
+	private static void refuseEmptyGroups(
+		List<Clause> clauses,
+		String path,
+		MutableList<ErrorMessage> errors
+	) {
+		if(clauses == null) {
+			return;
+		}
+
+		for(var i = 0; i < clauses.size(); i++) {
+			var at = path + "[" + i + "]";
+			switch(clauses.get(i)) {
+				case Clause.And and -> refuseEmptyGroup(and.clauses(), at, errors);
+				case Clause.Or or -> refuseEmptyGroup(or.clauses(), at, errors);
+				case Clause.Not not -> refuseEmptyGroup(not.clauses(), at, errors);
+				case Clause.Boost boost -> refuseEmptyGroup(boost.clauses(), at, errors);
+				case Clause.Nested nested -> refuseEmptyGroups(nested.clauses(), at + ".clauses", errors);
+				case Clause.Knn knn -> refuseEmptyGroups(knn.filter(), at + ".filter", errors);
+				case Clause.Fuse fuse -> {
+					if(fuse.rankings() != null) {
+						for(var ranking = 0; ranking < fuse.rankings().size(); ranking++) {
+							var entry = fuse.rankings().get(ranking);
+							if(entry != null) {
+								refuseEmptyGroups(
+									entry.clauses(),
+									at + ".rankings[" + ranking + "].clauses",
+									errors
+								);
+							}
+						}
+					}
+
+					refuseEmptyGroups(fuse.filter(), at + ".filter", errors);
+				}
+				case null, default -> {
+				}
+			}
+		}
+	}
+
+	private static void refuseEmptyGroup(
+		List<Clause> clauses,
+		String at,
+		MutableList<ErrorMessage> errors
+	) {
+		if(clauses == null || clauses.isEmpty()) {
+			errors.add(DELETE_CLAUSE_EMPTY.toMessage(Location.create(at + ".clauses")));
+			return;
+		}
+
+		refuseEmptyGroups(clauses, at + ".clauses", errors);
 	}
 
 	/**

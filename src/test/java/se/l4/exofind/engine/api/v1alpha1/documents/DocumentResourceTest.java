@@ -1182,6 +1182,103 @@ public class DocumentResourceTest {
 	}
 
 	/**
+	 * An {@code and} clause that leaves out its clauses names nothing to
+	 * remove, and is refused rather than taken for every document.
+	 */
+	@Test
+	public void testAnAndClauseWithoutClausesRemovesNothing() throws IOException {
+		// Given
+		var index = foodsWithThreeDocuments();
+
+		// When
+		var query = List.<Clause>of(new Clause.And(null));
+
+		var refused = refusesDelete(query);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	/**
+	 * An {@code and} clause built from an empty list of filters names nothing
+	 * to remove, and is refused rather than taken for every document.
+	 */
+	@Test
+	public void testAnAndClauseWithAnEmptyListRemovesNothing() throws IOException {
+		// Given
+		var index = foodsWithThreeDocuments();
+
+		// When
+		var query = List.<Clause>of(new Clause.And(List.of()));
+
+		var refused = refusesDelete(query);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	@Test
+	public void testANotClauseWithAnEmptyListRemovesNothing() throws IOException {
+		// Given
+		var index = foodsWithThreeDocuments();
+
+		// When
+		var query = List.<Clause>of(new Clause.Not(List.of()));
+
+		var refused = refusesDelete(query);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	@Test
+	public void testABoostClauseWithoutClausesRemovesNothing() throws IOException {
+		// Given
+		var index = foodsWithThreeDocuments();
+
+		// When
+		var query = List.<Clause>of(new Clause.Boost(2f, null));
+
+		var refused = refusesDelete(query);
+
+		// Then
+		assertAllThreeDocumentsRemain(index);
+		assertThat(refused, is(true));
+	}
+
+	private Index foodsWithThreeDocuments() throws IOException {
+		var index = foods();
+		resource.add(
+			"foods",
+			null,
+			new DocumentsRequest(
+				List.of(document("id", "1"), document("id", "2"), document("id", "3"))
+			)
+		);
+		index.commit();
+		return index;
+	}
+
+	private boolean refusesDelete(List<Clause> query) {
+		try {
+			resource.delete("foods", new DeleteRequest(null, query, null, null));
+			return false;
+		} catch(ValidationException e) {
+			return true;
+		}
+	}
+
+	private static void assertAllThreeDocumentsRemain(Index index) throws IOException {
+		index.commit();
+		assertThat(index.getDocument("1"), is(notNullValue()));
+		assertThat(index.getDocument("2"), is(notNullValue()));
+		assertThat(index.getDocument("3"), is(notNullValue()));
+	}
+
+	/**
 	 * Saying not to remove everything names nothing to remove, and is answered
 	 * the same way as leaving it out.
 	 */
