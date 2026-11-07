@@ -405,49 +405,14 @@ public class ReindexJobs {
 		var sourceGen = resolveSource(registered, from, target);
 		var sourceName = IndexName.of(index, sourceGen).toString();
 
-		var sourceIndex = indexes.getOrThrow(sourceName);
-		var targetIndex = indexes.getOrThrow(targetName);
-
-		var sourceKey = sourceIndex.getPrimaryKey()
-			.orElseThrow(() -> new IndexNoPrimaryKeyException(sourceName));
-		if(!sourceIndex.isSourceStored()) {
-			throw new IndexSourceNotKeptException(sourceName);
-		}
-
-		var targetKey = targetIndex.getPrimaryKey()
-			.orElseThrow(() -> new IndexNoPrimaryKeyException(targetName));
-
 		/*
-		 * The change log carries keys as encoded terms and the replay removes
-		 * documents in the target by them, so the two encodings have to be
-		 * comparable - which they are exactly when the fields share a name
-		 * and a type.
+		 * Held while the pair is checked. A node that caps how many indexes it
+		 * keeps open can otherwise close one generation to open the other, and
+		 * the start then fails on a closed instance.
 		 */
-		if(
-			!sourceKey.getName().equals(targetKey.getName())
-				|| sourceKey.getDef().getType().getTypeCase()
-					!= targetKey.getDef().getType().getTypeCase()
-		) {
-			throw new ValidationException(
-				PRIMARY_KEY_MISMATCH.toMessage(
-					ObjectLocation.root(),
-					"source", sourceName,
-					"target", targetName
-				)
-			);
-		}
-
 		long sourceCount;
-		try {
-			if(targetIndex.getDocumentCount() > 0 || targetIndex.getState() == IndexState.MODIFIED) {
-				throw new ValidationException(
-					TARGET_NOT_EMPTY.toMessage(ObjectLocation.root(), "name", targetName)
-				);
-			}
-
-			sourceCount = sourceIndex.getDocumentCount();
-		} catch(IOException e) {
-			throw new ReindexStorageException(e);
+		try(var hold = indexes.hold(sourceName, targetName)) {
+			sourceCount = checkPair(sourceName, targetName);
 		}
 
 		startLock.lock();
@@ -516,6 +481,59 @@ public class ReindexJobs {
 			throw new ReindexStorageException(e);
 		} finally {
 			startLock.unlock();
+		}
+	}
+
+	/**
+	 * Check that a source and a target can be a reindex pair. Call it with
+	 * both generations held, see {@link Indexes#hold(String...)}.
+	 *
+	 * @return
+	 *   the number of documents in the source
+	 */
+	private long checkPair(String sourceName, String targetName) {
+		var sourceIndex = indexes.getOrThrow(sourceName);
+		var targetIndex = indexes.getOrThrow(targetName);
+
+		var sourceKey = sourceIndex.getPrimaryKey()
+			.orElseThrow(() -> new IndexNoPrimaryKeyException(sourceName));
+		if(!sourceIndex.isSourceStored()) {
+			throw new IndexSourceNotKeptException(sourceName);
+		}
+
+		var targetKey = targetIndex.getPrimaryKey()
+			.orElseThrow(() -> new IndexNoPrimaryKeyException(targetName));
+
+		/*
+		 * The change log carries keys as encoded terms and the replay removes
+		 * documents in the target by them, so the two encodings have to be
+		 * comparable - which they are exactly when the fields share a name
+		 * and a type.
+		 */
+		if(
+			!sourceKey.getName().equals(targetKey.getName())
+				|| sourceKey.getDef().getType().getTypeCase()
+					!= targetKey.getDef().getType().getTypeCase()
+		) {
+			throw new ValidationException(
+				PRIMARY_KEY_MISMATCH.toMessage(
+					ObjectLocation.root(),
+					"source", sourceName,
+					"target", targetName
+				)
+			);
+		}
+
+		try {
+			if(targetIndex.getDocumentCount() > 0 || targetIndex.getState() == IndexState.MODIFIED) {
+				throw new ValidationException(
+					TARGET_NOT_EMPTY.toMessage(ObjectLocation.root(), "name", targetName)
+				);
+			}
+
+			return sourceIndex.getDocumentCount();
+		} catch(IOException e) {
+			throw new ReindexStorageException(e);
 		}
 	}
 
@@ -953,7 +971,7 @@ public class ReindexJobs {
 			return false;
 		}
 
-		if(job.phase() != ReindexPhase.READY) {
+		if(job.phase() != ReindexPhase.READY && !isRecordedReady(parsed.index(), job)) {
 			throw new ReindexTargetBusyException(name);
 		}
 
@@ -967,6 +985,16 @@ public class ReindexJobs {
 			if(running.get(parsed.index()) != current
 				|| current.job.phase() != ReindexPhase.READY) {
 				return false;
+			}
+
+			/*
+			 * Read again under the lock. A promote that the record let through
+			 * before the job thread was done reads no schedule above, and the
+			 * job thread starts one before it lets go of the lock.
+			 */
+			var scheduled = current.catchUp;
+			if(scheduled != null) {
+				scheduled.cancel(false);
 			}
 
 			try(var hold = indexes.hold(current.job.sourceName(), current.job.targetName())) {
@@ -1011,7 +1039,21 @@ public class ReindexJobs {
 	}
 
 	/**
-	 * Read who promotes: {@code auto} or {@code null} means the job does,
+	 * Whether the stored record says that a job is ready.
+	 *
+	 * <p>A checkpoint writes the record first and changes the job in memory
+	 * after. In between, a client that read the record sees a ready job while
+	 * the job in memory is still at the phase before. A promote that read
+	 * only the memory refuses that client for a job that it can promote.
+	 */
+	private boolean isRecordedReady(String index, ReindexJob job) {
+		return get(index)
+			.map(recorded -> recorded.id().equals(job.id()) && recorded.phase() == ReindexPhase.READY)
+			.orElse(false);
+	}
+
+	/**
+	 * Read who promotes:{@code auto} or {@code null} means the job does,
 	 * {@code manual} the caller. Public so a request carrying the value next
 	 * to other work can refuse it before doing any.
 	 *
