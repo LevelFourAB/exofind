@@ -356,6 +356,47 @@ public class IndexesTest {
 	}
 
 	/**
+	 * A node that caps how many indexes it keeps open closes the least used
+	 * one, except one that is held. Let go, it can be closed again.
+	 */
+	@Test
+	public void testAHeldGenerationIsNotClosedForTheCap() throws Exception {
+		var capped = newNode(
+			storageDirectory.resolve("capped"),
+			registry(),
+			OptionalInt.of(1)
+		);
+
+		try {
+			// Given
+			capped.create("books", keyed());
+
+			try(var hold = capped.hold("books@1")) {
+				var first = capped.getOrThrow("books@1");
+
+				// When other indexes are opened
+				for(var i = 0; i < 5; i++) {
+					var other = "held-other" + i;
+					capped.create(other, IndexDef.getDefaultInstance());
+					for(var touch = 0; touch < 5; touch++) {
+						capped.getOrThrow(other);
+					}
+				}
+
+				Thread.sleep(200);
+
+				// Then the held instance is still open
+				assertThat(capped.getOpen().get("books@1"), is(sameInstance(first)));
+			}
+
+			// And let go, it is closed for the cap again
+			evict(capped, "books@1");
+		} finally {
+			capped.close();
+		}
+	}
+
+	/**
 	 * Open other indexes until the cache has retired the named instance.
 	 */
 	private static void evict(Indexes capped, String name) throws InterruptedException {

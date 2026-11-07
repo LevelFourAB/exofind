@@ -969,10 +969,13 @@ public class ReindexJobs {
 				return false;
 			}
 
-			var source = indexes.getOrThrow(current.job.sourceName());
-			var target = indexes.getOrThrow(current.job.targetName());
+			try(var hold = indexes.hold(current.job.sourceName(), current.job.targetName())) {
+				var source = indexes.getOrThrow(current.job.sourceName());
+				var target = indexes.getOrThrow(current.job.targetName());
 
-			promoteAndFinish(current, source, target);
+				promoteAndFinish(current, source, target);
+			}
+
 			return true;
 		} catch(JobCancelled e) {
 			try {
@@ -1087,6 +1090,7 @@ public class ReindexJobs {
 	private void run(Running current) {
 		current.started = true;
 		current.lock.lock();
+		Indexes.Hold hold = null;
 		try {
 			/*
 			 * Checked before anything is touched: a job cancelled while it
@@ -1100,6 +1104,14 @@ public class ReindexJobs {
 			ensureRunnable(current);
 
 			var job = current.job;
+
+			/*
+			 * Held for the whole run. The job uses the instances it looks up
+			 * here until it ends, so the cache sees no use of them, and a node
+			 * that caps how many indexes it keeps open would otherwise close
+			 * them in the middle of a copy and fail the job.
+			 */
+			hold = indexes.hold(job.sourceName(), job.targetName());
 			var source = indexes.getOrThrow(job.sourceName());
 			var target = indexes.getOrThrow(job.targetName());
 
@@ -1180,6 +1192,10 @@ public class ReindexJobs {
 
 			fail(current, e.getMessage());
 		} finally {
+			if(hold != null) {
+				hold.close();
+			}
+
 			current.stopped.complete(null);
 			current.lock.unlock();
 		}
@@ -1412,10 +1428,12 @@ public class ReindexJobs {
 
 			ensureRunnable(current);
 
-			var source = indexes.getOrThrow(current.job.sourceName());
-			var target = indexes.getOrThrow(current.job.targetName());
+			try(var hold = indexes.hold(current.job.sourceName(), current.job.targetName())) {
+				var source = indexes.getOrThrow(current.job.sourceName());
+				var target = indexes.getOrThrow(current.job.targetName());
 
-			replayRound(current, source, target);
+				replayRound(current, source, target);
+			}
 		} catch(JobCancelled e) {
 			// The cancel writes the record; the schedule is already cancelled
 		} catch(JobLost e) {

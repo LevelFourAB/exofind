@@ -100,17 +100,21 @@ public class ReindexJobsTest {
 	}
 
 	private Indexes newIndexes() throws IOException {
+		return newIndexes(OptionalInt.empty(), Duration.ofSeconds(10));
+	}
+
+	private Indexes newIndexes(OptionalInt maxOpen, Duration closeGracePeriod) throws IOException {
 		return new Indexes(
 			nodeState,
 			new NoopSyncProvider(),
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,
-			OptionalInt.empty(),
+			maxOpen,
 			Duration.ofMinutes(5),
 			Duration.ofMinutes(10),
 			4,
-			Duration.ofSeconds(10),
+			closeGracePeriod,
 			0,
 			Duration.ZERO,
 			Optional.empty(),
@@ -1017,6 +1021,68 @@ public class ReindexJobsTest {
 
 		// Then the promoted generation holds every document
 		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+	}
+
+	/**
+	 * A node that caps how many indexes it holds open closes the least used
+	 * ones. A job uses its generations through instances of its own, so the
+	 * cache sees no use of them during a long copy. The job holds them in the
+	 * cache, so the cap does not close them under it.
+	 */
+	@Test
+	public void aJobFinishesWhenOtherIndexesFillTheCacheDuringTheCopy() throws Exception {
+		// Given a node that holds one index open and closes what it evicts at once
+		jobs.stop();
+		indexes.close();
+		indexes = newIndexes(OptionalInt.of(1), Duration.ZERO);
+		var faulty = new FaultyRecordStorage(storage);
+		jobs = newJobs(faulty, "node-a");
+
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		// And other indexes opened after the first batch of the copy
+		var filled = new AtomicBoolean();
+		faulty.afterWrite = job -> {
+			if(job.phase() == ReindexPhase.COPYING
+				&& job.cursor() != null
+				&& !filled.getAndSet(true)) {
+				fillCache();
+			}
+		};
+
+		// When
+		jobs.start("catalogue@2", null, null, "tester");
+		awaitFinished("catalogue");
+
+		// Then
+		var job = jobs.get("catalogue").orElseThrow();
+		assertThat("job ended as " + job.phase() + ": " + job.error(), job.phase(), is(ReindexPhase.DONE));
+		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+	}
+
+	/**
+	 * Open other indexes, and wait until the cache closes the source of the
+	 * job or a time has passed.
+	 */
+	private void fillCache() {
+		try {
+			for(var i = 0; i < 5; i++) {
+				var other = "other" + i;
+				indexes.create(other, definition().build());
+				for(var touch = 0; touch < 5; touch++) {
+					indexes.getOrThrow(other);
+				}
+			}
+
+			var deadline = System.currentTimeMillis() + 2000;
+			while(System.currentTimeMillis() < deadline
+				&& indexes.getOpen().containsKey("catalogue@1")) {
+				Thread.sleep(10);
+			}
+		} catch(InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	private Index largeCatalogue() throws IOException {

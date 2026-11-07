@@ -175,7 +175,7 @@ The following table lists index management configuration variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXOFIND_INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. | Unbounded |
+| `EXOFIND_INDEXES_MAX_OPEN` | Maximum number of indexes kept open simultaneously. A running reindex job keeps its source and target generations open and does not count them, so a node can hold up to two more open indexes for each running job. | Unbounded |
 | `EXOFIND_INDEXES_REFRESH_INTERVAL` | Longest a node waits before it considers pulling an open index, and the shortest it leaves between two storage requests for the same generation. Also the longest that promoting a generation takes to reach other nodes. Unseen indexes are looked up immediately, at most once per interval. | `30s` |
 | `EXOFIND_INDEXES_REFRESH_CONCURRENCY` | Number of indexes refreshed concurrently. | `4` |
 | `EXOFIND_INDEXES_VERIFY_INTERVAL` | Maximum time an index's manifest or search settings go unchecked against storage when the registry reports no change for them. The registry's change hints let a refresh skip per-index requests; this interval bounds the staleness if a hint is lost. Keep it above both refresh intervals, which are otherwise held down to it. | `10m` |

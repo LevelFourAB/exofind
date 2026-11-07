@@ -201,6 +201,12 @@ public class Indexes implements RegistryPoller.Listener {
 	private final List<RemovalListener> removalListeners;
 
 	/**
+	 * The generations held in the cache, by full name, with how many holds
+	 * each has. See {@link #hold(String...)}.
+	 */
+	private final ConcurrentHashMap<String, Integer> held;
+
+	/**
 	 * One lock per index name, held while the directory of the index is being
 	 * loaded into and while the disk sweep removes it. The cache serializes
 	 * loads of the same name but says nothing while a load is in flight, so
@@ -636,6 +642,7 @@ public class Indexes implements RegistryPoller.Listener {
 		Files.createDirectories(indexRoot);
 		this.pendingRemovals = PendingRemovalsFile.open(storageDirectory);
 		this.removalListeners = new CopyOnWriteArrayList<>();
+		this.held = new ConcurrentHashMap<>();
 
 		/*
 		 * Eviction only retires an instance. The closing - which may flush
@@ -646,7 +653,12 @@ public class Indexes implements RegistryPoller.Listener {
 			.<String, Index>evictionListener((key, value, cause) -> retire(key, value));
 
 		if(maxOpen.isPresent()) {
-			builder.maximumSize(maxOpen.getAsInt());
+			/*
+			 * Counted by weight rather than by size, so that a held generation
+			 * weighs nothing and is never the one evicted, see hold.
+			 */
+			builder.maximumWeight(maxOpen.getAsInt())
+				.weigher((String key, Index value) -> held.containsKey(key) ? 0 : 1);
 		}
 
 		this.indexes = builder.build(key -> loadIndex(key, Meters.SOURCE_BACKGROUND));
@@ -2493,6 +2505,73 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	public Map<String, Index> getOpen() {
 		return Map.copyOf(indexes.asMap());
+	}
+
+	/**
+	 * Keep generations open in the cache until the returned hold is closed.
+	 *
+	 * <p>A node that caps how many indexes it keeps open, see
+	 * {@link #maxOpen}, closes the least used one when it opens another. Use
+	 * is counted by the lookups through this class. Work that looks a
+	 * generation up once and then uses the instance for a long time, such as
+	 * a reindex job, looks unused, and the instance is closed under it. A
+	 * held generation is never the one closed for the cap. It still closes
+	 * when it is deleted, when the node loses it, and when the node stops.
+	 *
+	 * <p>Take the hold before the lookup, so that the instance the lookup
+	 * answers with is held from the start. Held generations are not counted
+	 * against the cap, so a node with holds can keep more than the cap open.
+	 *
+	 * @param names
+	 *   full names of the generations, as {@code index@generation}
+	 * @return
+	 *   the hold, which lets the generations go when closed. Each hold
+	 *   counts, so two holds of one generation keep it until both are closed
+	 */
+	public Hold hold(String... names) {
+		var list = List.of(names);
+		for(var name : list) {
+			held.merge(name, 1, Integer::sum);
+			reweigh(name);
+		}
+
+		return new Hold(list);
+	}
+
+	/**
+	 * Weigh an open generation again, after it was held or let go.
+	 */
+	private void reweigh(String name) {
+		indexes.asMap().computeIfPresent(name, (key, index) -> index);
+	}
+
+	/**
+	 * Generations held open in the cache, see {@link Indexes#hold(String...)}.
+	 */
+	public final class Hold implements AutoCloseable {
+		private final List<String> names;
+		private final AtomicBoolean closed;
+
+		private Hold(List<String> names) {
+			this.names = names;
+			this.closed = new AtomicBoolean();
+		}
+
+		/**
+		 * Let the generations go. The cache can then close them for the cap
+		 * again. Closing a hold twice changes nothing.
+		 */
+		@Override
+		public void close() {
+			if(!closed.compareAndSet(false, true)) {
+				return;
+			}
+
+			for(var name : names) {
+				held.computeIfPresent(name, (key, count) -> count > 1 ? count - 1 : null);
+				reweigh(name);
+			}
+		}
 	}
 
 	/**
