@@ -211,6 +211,60 @@ public class IndexCloseTest {
 		assertThat(reader.getDocument("2"), is(notNullValue()));
 	}
 
+	/**
+	 * A shutdown interrupts the threads of the executor that runs the flush
+	 * of a handover. An interrupt that reaches the flush while it commits
+	 * must not drop the documents it carries: the flush pushes them, or it
+	 * keeps them so that the close that follows pushes them.
+	 */
+	@Test
+	@Timeout(60)
+	void aHandoverFlushOnAnInterruptedThreadKeepsWhatItHolds() throws Exception {
+		// Given node A writes the index and pushed document 1
+		var stateA = holder();
+		var a = open("a", stateA, objectSync("a"), CommitPolicy.disabled());
+		a.pull();
+		a.updateDefinition(definition());
+		a.addDocument(doc("1"));
+		a.commit();
+
+		// And node A acknowledged document 2 and did not commit it yet
+		a.addDocument(doc("2"));
+
+		// And node A started to hand the index over
+		stateA.updateOwnership(false);
+
+		// When the flush of the handover runs on a thread that was interrupted
+		var failure = new AtomicReference<Throwable>();
+		var thread = new Thread(() -> {
+			Thread.currentThread().interrupt();
+			try {
+				a.reopen(true);
+			} catch(Throwable t) {
+				failure.set(t);
+			}
+		});
+		thread.start();
+		thread.join(30_000);
+
+		// And the index is closed after that, as the shutdown does
+		Throwable closeFailure = null;
+		try {
+			a.close();
+		} catch(IOException e) {
+			closeFailure = e;
+		}
+		opened.remove(a);
+
+		// Then the close reports no failure
+		assertThat("the close failed with " + closeFailure, closeFailure, is(nullValue()));
+
+		// And a reader on another node finds document 2
+		var reader = open("b", new NodeState(false), objectSync("b"), CommitPolicy.disabled());
+		reader.pull();
+		assertThat("the flush failed with " + failure.get(), reader.getDocument("2"), is(notNullValue()));
+	}
+
 	private ObjectStorageSync objectSync(String node) throws IOException {
 		var path = root.resolve(node);
 		Files.createDirectories(path);

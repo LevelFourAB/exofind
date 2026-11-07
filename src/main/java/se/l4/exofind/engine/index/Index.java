@@ -1607,6 +1607,10 @@ public class Index {
 	 * the remote state as what to continue from. An index already open in the
 	 * mode the node holds it in is left as it is.
 	 *
+	 * <p>An interrupt of the calling thread does not stop the commit and the
+	 * push of a handover. The reopen finishes them and continues with the
+	 * interrupt still set.
+	 *
 	 * @param flushFirst
 	 *   whether an index being reopened out of writing commits and pushes
 	 *   what it holds before the reopen, instead of it being dropped - for a
@@ -1676,9 +1680,17 @@ public class Index {
 			 * Documents answered but not yet committed would otherwise be
 			 * dropped by the pull below - a handover is deliberate, so they
 			 * are put where the successor will pull them from.
+			 *
+			 * An interrupt that reaches a Lucene write is a tragic event, which
+			 * closes the writer and drops every change it did not commit. The
+			 * flush runs on the executors that Indexes.close shuts down, so the
+			 * commit and the push run on a thread that nothing interrupts.
 			 */
 			try {
-				commitChanges(PushReason.HANDOVER);
+				runUninterrupted("index-flush-", () -> {
+					commitChanges(PushReason.HANDOVER);
+					return null;
+				});
 			} catch(IOException | RuntimeException e) {
 				boolean writerLost;
 				syncLock.readLock().lock();
@@ -9391,7 +9403,7 @@ public class Index {
 		 * closes of a load and a handover. The commit, the push and the
 		 * teardown thus run on a thread of their own that nothing interrupts.
 		 */
-		var failed = runUninterrupted(() -> flushAndTearDown(commit));
+		var failed = runUninterrupted("index-close-", () -> flushAndTearDown(commit));
 
 		/*
 		 * Nothing is left for the background work to do, and the thread running
@@ -9503,6 +9515,8 @@ public class Index {
 	 * calling thread does not end the wait and does not reach the task. It
 	 * stays set on the calling thread when this returns.
 	 *
+	 * @param threadPrefix
+	 *   the start of the name of the thread, which the id of this index ends
 	 * @param task
 	 *   the task, which takes no lock the calling thread holds
 	 * @return
@@ -9510,9 +9524,9 @@ public class Index {
 	 * @throws IOException
 	 *   if the task threw it
 	 */
-	private <T> T runUninterrupted(Callable<T> task) throws IOException {
+	private <T> T runUninterrupted(String threadPrefix, Callable<T> task) throws IOException {
 		var future = new FutureTask<>(task);
-		var thread = new Thread(future, "index-close-" + id);
+		var thread = new Thread(future, threadPrefix + id);
 		thread.setDaemon(true);
 		thread.start();
 
