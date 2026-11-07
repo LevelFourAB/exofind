@@ -955,7 +955,7 @@ public class IndexResource {
 	@ReturnsError(
 		value = "index:generation:storage_held",
 		status = 409,
-		when = "Storage holds a generation under the new name that nothing deleted. Repair the registry, or remove its objects."
+		when = "Storage holds a generation under the new name that nothing deleted, or the registry is gone from object storage and storage holds generations of any index. Repair the registry, or remove the objects of the generation."
 	)
 	@ReturnsError(
 		value = "indexer:unavailable",
@@ -999,7 +999,8 @@ public class IndexResource {
 			(`index:definition:unrepresentable`), the index requires engine \
 			features this node does not have (`index:unsupported`), a reindex \
 			job is already running (`reindex:in_progress`), storage holds a \
-			generation under the new name that nothing deleted \
+			generation under the new name that nothing deleted or the \
+			registry is gone and storage holds generations \
 			(`index:generation:storage_held`), no node is available to write \
 			the index (`indexer:unavailable`), or the registry write failed.""",
 		content = @Content(schema = @Schema(implementation = ErrorResponse.class))

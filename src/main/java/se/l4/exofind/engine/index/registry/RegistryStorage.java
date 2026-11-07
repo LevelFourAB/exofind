@@ -1,6 +1,9 @@
 package se.l4.exofind.engine.index.registry;
 
 import java.io.IOException;
+import java.util.Optional;
+
+import se.l4.exofind.engine.index.IndexName;
 
 /**
  * Where the registry of a deployment's indexes is kept.
@@ -43,6 +46,28 @@ public interface RegistryStorage {
 	 *   if the storage could not be reached
 	 */
 	String write(IndexRegistryStore indexes, String expectedVersion) throws IOException;
+
+	/**
+	 * Find a generation that the storage holds and that a registry repair
+	 * would register: a generation with a manifest, under an index, where no
+	 * delete marked the index or the generation.
+	 *
+	 * <p>{@link IndexRegistry} asks this before it writes a registry where
+	 * none exists. A storage that holds such a generation and no registry
+	 * lost its registry, and the first write must not replace it with a
+	 * registry that names only one index.
+	 *
+	 * <p>The default finds nothing, for a storage that keeps no indexes that a
+	 * repair can register.
+	 *
+	 * @return
+	 *   one such generation, or empty when the storage holds none
+	 * @throws IOException
+	 *   if the storage could not be reached
+	 */
+	default Optional<IndexName> findRegistrableGeneration() throws IOException {
+		return Optional.empty();
+	}
 
 	/**
 	 * What a read found.

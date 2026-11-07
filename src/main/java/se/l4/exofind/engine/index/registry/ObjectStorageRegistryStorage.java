@@ -2,14 +2,25 @@ package se.l4.exofind.engine.index.registry;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Optional;
+
+import org.eclipse.collections.api.factory.Lists;
+import org.eclipse.collections.api.list.MutableList;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 
+import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.state.IndexRemovals;
+import se.l4.exofind.engine.index.state.LocalCopy;
+import se.l4.exofind.engine.index.state.ObjectStorageIndexRemovals;
 import se.l4.exofind.engine.index.state.ObjectStorageSync;
 import se.l4.exofind.engine.storage.ObjectStorage;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -40,11 +51,15 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 	private final S3Client client;
 	private final String bucket;
 	private final String key;
+	private final ObjectStorage storage;
+	private final IndexRemovals removals;
 
 	public ObjectStorageRegistryStorage(ObjectStorage storage) {
 		this.client = storage.client();
 		this.bucket = storage.bucket();
 		this.key = storage.rootObject(REGISTRY_NAME);
+		this.storage = storage;
+		this.removals = new ObjectStorageIndexRemovals(storage);
 	}
 
 	@Override
@@ -127,6 +142,91 @@ public class ObjectStorageRegistryStorage implements RegistryStorage {
 			 * answer to it.
 			 */
 			return resolveUnanswered(indexes, expectedVersion, e);
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>Uses the same rules as {@link ObjectStorageRegistryAudit#repair}, so
+	 * that storage that this finds is storage that a repair registers. A
+	 * bucket that holds no index costs one listing. The search stops at the
+	 * first generation it finds.
+	 */
+	@Override
+	public Optional<IndexName> findRegistrableGeneration() throws IOException {
+		var indexesPrefix = storage.indexesPath() + "/";
+
+		try {
+			for(var index : listPrefixes(indexesPrefix)) {
+				if(!IndexName.VALID_INDEX_PATTERN.matcher(index).matches()) {
+					continue;
+				}
+
+				var generations = listPrefixes(indexesPrefix + index + "/")
+					.select(name -> IndexName.VALID_GENERATION_PATTERN.matcher(name).matches());
+
+				if(generations.isEmpty() || removals.markedAt(IndexName.of(index)).isPresent()) {
+					continue;
+				}
+
+				for(var generation : generations) {
+					var name = IndexName.of(index, generation);
+					if(hasManifest(name) && removals.markedAt(name).isEmpty()) {
+						return Optional.of(name);
+					}
+				}
+			}
+		} catch(SdkException e) {
+			throw new IOException(
+				"Unable to list the indexes in the storage; " + e.getMessage(),
+				e
+			);
+		}
+
+		return Optional.empty();
+	}
+
+	/**
+	 * The names directly under a prefix, read from a delimited listing.
+	 */
+	private MutableList<String> listPrefixes(String prefix) {
+		var names = Lists.mutable.<String>empty();
+
+		var pages = client.listObjectsV2Paginator(
+			ListObjectsV2Request.builder()
+				.bucket(bucket)
+				.prefix(prefix)
+				.delimiter("/")
+				.build()
+		);
+
+		for(var page : pages) {
+			for(var common : page.commonPrefixes()) {
+				var name = common.prefix();
+				names.add(name.substring(prefix.length(), name.length() - 1));
+			}
+		}
+
+		return names;
+	}
+
+	private boolean hasManifest(IndexName generation) {
+		try {
+			client.headObject(
+				HeadObjectRequest.builder()
+					.bucket(bucket)
+					.key(storage.indexPath(generation) + "/" + LocalCopy.MANIFEST_FILE)
+					.build()
+			);
+
+			return true;
+		} catch(S3Exception e) {
+			if(e.statusCode() == 404) {
+				return false;
+			}
+
+			throw e;
 		}
 	}
 

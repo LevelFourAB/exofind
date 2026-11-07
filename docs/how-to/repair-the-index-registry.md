@@ -71,7 +71,17 @@ listings:
   ```
   Requests for unlisted indexes return `index:not_found`, and
   `GET /v1alpha1/admin/indexes` does not list them until the registry lists them
-  again.
+  again. In object storage mode, a request that creates an index on a node that
+  never read the registry returns HTTP `409` with
+  `index:generation:storage_held` while the bucket holds index data. The
+  `generation` argument names one generation in the bucket, and the node logs
+  an error:
+  ```text
+  The index registry is gone from the storage, but the storage holds indexes. Refusing to write a new registry that does not name them. Rebuild the registry with the registry repair endpoint
+  ```
+  The node refuses the request because a new registry would name only the new
+  index, and every other node would then drop the indexes it does not name.
+  Repair the registry, then send the request again.
 - **Corrupt registry (`corrupt`):** A node that starts after the corruption
   stays running but never becomes ready: `GET /q/health/ready` returns HTTP
   `503` with the `index-registry` check marked `DOWN`. A node that read the

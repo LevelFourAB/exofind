@@ -4,11 +4,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.CRC32C;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 
+import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.storage.DurableFiles;
 
 /**
@@ -80,6 +82,19 @@ public class LocalRegistryStorage implements RegistryStorage {
 		} finally {
 			lock.unlock();
 		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>Finds nothing. Local storage mode has no registry repair, so a
+	 * refused create has no way back. A node keeps every index directory that
+	 * the registry does not name, and a create of such a name is refused with
+	 * the directory as it is.
+	 */
+	@Override
+	public Optional<IndexName> findRegistrableGeneration() {
+		return Optional.empty();
 	}
 
 	/**

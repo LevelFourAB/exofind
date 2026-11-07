@@ -2886,7 +2886,8 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @throws IndexStorageHeldException
 	 *   if the storage of the first generation, or in local storage mode a
 	 *   directory of any generation of the name, holds data that nothing said
-	 *   was deleted
+	 *   was deleted, or if the registry is gone from the object storage and
+	 *   the storage holds generations that a registry repair registers
 	 */
 	public Index create(String name, IndexDef def) {
 		var index = IndexName.parse(name);

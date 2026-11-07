@@ -20,6 +20,10 @@ import se.l4.exofind.engine.errors.ErrorType;
  * Lucene commit. A delete in local mode writes no mark, so nothing says that
  * such a directory was deleted, and it can be the only copy of its data. See
  * {@link #inLocalDirectory(IndexName)}.
+ *
+ * <p>In object storage mode, a creation is also refused when the registry is
+ * gone and the bucket holds generations of any index. See
+ * {@link #withoutRegistry(IndexName)}.
  */
 public class IndexStorageHeldException extends IndexException {
 	private static final long serialVersionUID = 1L;
@@ -46,6 +50,20 @@ public class IndexStorageHeldException extends IndexException {
 				+ " that names it, or delete its directory by hand if its index was deleted"
 		);
 
+	/**
+	 * The same condition when the registry itself is gone, and the storage
+	 * holds generations of other indexes than the one being created.
+	 */
+	private static final ErrorType WITHOUT_REGISTRY_TYPE =
+		ErrorType.withCode("index:generation:storage_held")
+			.withStatus(409)
+			.withArguments("generation")
+			.withMessage(
+				"The registry is gone from the storage, but the storage holds the generation"
+					+ " `{{generation}}`. Rebuild the registry with a registry repair before"
+					+ " you create an index"
+			);
+
 	public IndexStorageHeldException(IndexName generation) {
 		this(TYPE, generation);
 	}
@@ -65,5 +83,20 @@ public class IndexStorageHeldException extends IndexException {
 	 */
 	public static IndexStorageHeldException inLocalDirectory(IndexName generation) {
 		return new IndexStorageHeldException(LOCAL_TYPE, generation);
+	}
+
+	/**
+	 * Refuse a creation that would write the first registry, when the
+	 * registry is gone and the storage holds a generation that a registry
+	 * repair registers. A registry written from nothing names only the new
+	 * index, and every node that reads it drops all other indexes.
+	 *
+	 * @param generation
+	 *   a generation the storage holds
+	 * @return
+	 *   the exception to throw
+	 */
+	public static IndexStorageHeldException withoutRegistry(IndexName generation) {
+		return new IndexStorageHeldException(WITHOUT_REGISTRY_TYPE, generation);
 	}
 }

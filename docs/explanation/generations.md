@@ -53,7 +53,7 @@ This architecture provides two key properties:
 
 A single registry object also makes index deletion definitive. Paginated listings can be incomplete without indicating missing entries, which requires nodes to observe an absence multiple times before deleting local copies. Because a node reads the entire registry at a specific version, it deletes its local copy the first time an index is absent from the registry. A node that fails to read the registry deletes nothing.
 
-The trade-off is that the registry is load-bearing. If a deployment loses its registry object, it loses track of its indexes, even though the underlying index data remains in storage under `indexes/<index>/<generation>/`. The registry audit endpoint exists for exactly this case: it rebuilds a lost or corrupt registry from that data, as described in [Repair the index registry](../how-to/repair-the-index-registry.md). The key store uses the same single-object pattern for the same reasons, without an equivalent repair.
+The trade-off is that the registry is load-bearing. If a deployment loses its registry object, it loses track of its indexes, even though the underlying index data remains in storage under `indexes/<index>/<generation>/`. The registry audit endpoint exists for exactly this case: it rebuilds a lost or corrupt registry from that data, as described in [Repair the index registry](../how-to/repair-the-index-registry.md). Until the repair runs, a node refuses to create an index while the bucket holds index data. A new registry would name only the new index, and every node that reads it would drop its copies of all other indexes. The key store uses the same single-object pattern for the same reasons, without an equivalent repair.
 
 ## What a generation is in storage
 

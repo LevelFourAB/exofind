@@ -23,6 +23,7 @@ import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.IndexNoLiveGenerationException;
 import se.l4.exofind.engine.index.IndexNotFoundException;
+import se.l4.exofind.engine.index.IndexStorageHeldException;
 import se.l4.exofind.engine.index.IndexUnsupportedException;
 import se.l4.exofind.engine.logging.Log;
 import jakarta.inject.Singleton;
@@ -379,6 +380,9 @@ public class IndexRegistry {
 	 *   the index as it is now registered
 	 * @throws ValidationException
 	 *   if an index of that name already exists
+	 * @throws IndexStorageHeldException
+	 *   if the registry is gone from the storage and the storage holds
+	 *   generations that a registry repair registers
 	 */
 	public RegisteredIndex create(String index, String generation) {
 		var now = Instant.now();
@@ -1067,6 +1071,10 @@ public class IndexRegistry {
 			}
 
 			var updated = change.apply(current.indexes());
+			if(current.version() == null && registryAppeared()) {
+				continue;
+			}
+
 			var store = RegistryCodec.toStored(current.store(), updated);
 
 			String version;
@@ -1095,5 +1103,60 @@ public class IndexRegistry {
 		}
 
 		throw unknown != null ? RegistryException.ioError(unknown) : RegistryException.conflict();
+	}
+
+	/**
+	 * Check the storage before the first registry is written, where the read
+	 * found no registry.
+	 *
+	 * <p>No registry is what a new deployment has, and also what a deployment
+	 * has after its registry object was lost. A registry written from nothing
+	 * names only the change. Every node that read the lost registry takes the
+	 * new one as the truth, drops the indexes it does not name, and removes
+	 * its copies of them. So when the storage holds a generation that a
+	 * registry repair registers, the write is refused, and the repair brings
+	 * the registry back first.
+	 *
+	 * <p>The registry is read again after the storage was found to hold a
+	 * generation. A create writes the registry before it writes anything for
+	 * its generation, so a node that creates the first index of a new
+	 * deployment at the same time as this one is not taken for a lost
+	 * registry.
+	 *
+	 * @return
+	 *   whether a registry was written after the first read, so that the
+	 *   change is built again on top of it
+	 * @throws IndexStorageHeldException
+	 *   if the registry is gone and the storage holds a generation
+	 * @throws RegistryException
+	 *   if the storage could not be reached
+	 */
+	private boolean registryAppeared() {
+		Optional<IndexName> held;
+		RegistryStorage.Read read;
+		try {
+			held = storage.findRegistrableGeneration();
+			if(held.isEmpty()) {
+				return false;
+			}
+
+			read = storage.read(null);
+		} catch(IOException e) {
+			throw RegistryException.ioError(e);
+		}
+
+		if(!(read instanceof RegistryStorage.Read.Absent)) {
+			return true;
+		}
+
+		logger.atError()
+			.addKeyValue("generation", held.get().toString())
+			.log(
+				"The index registry is gone from the storage, but the storage holds"
+					+ " indexes. Refusing to write a new registry that does not name them."
+					+ " Rebuild the registry with the registry repair endpoint"
+			);
+
+		throw IndexStorageHeldException.withoutRegistry(held.get());
 	}
 }
