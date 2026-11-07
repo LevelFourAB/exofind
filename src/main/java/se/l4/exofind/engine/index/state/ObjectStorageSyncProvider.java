@@ -2,9 +2,13 @@ package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.OptionalLong;
 
 import se.l4.exofind.engine.index.IndexName;
+import se.l4.exofind.engine.index.registry.ObjectStorageRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryCodec;
+import se.l4.exofind.engine.index.registry.RegistryStorage;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -22,13 +26,43 @@ public class ObjectStorageSyncProvider implements StateSyncProvider {
 
 	@Override
 	public StateSync createSync(IndexName generation, Path dataPath) {
+		return createSync(generation, dataPath, null);
+	}
+
+	@Override
+	public StateSync createSync(IndexName generation, Path dataPath, Instant createdAt) {
 		return new ObjectStorageSync(
 			storage.client(),
 			generation.toString(),
 			dataPath,
 			storage.bucket(),
-			storage.indexPath(generation)
+			storage.indexPath(generation),
+			ObjectStorageSync.DEFAULT_GRACE,
+			createdAt,
+			copyCreatedAt -> isRegistered(generation, copyCreatedAt)
 		);
+	}
+
+	/**
+	 * Read the registry the bucket holds, and tell whether it names the
+	 * generation as created at the given time. Read from the bucket rather
+	 * than from the copy a node holds, as the question is asked when a
+	 * manifest is gone: that is when a node's copy can be a refresh behind a
+	 * delete.
+	 */
+	private boolean isRegistered(IndexName generation, Instant createdAt) throws IOException {
+		var read = new ObjectStorageRegistryStorage(storage).read(null);
+		if(!(read instanceof RegistryStorage.Read.Loaded loaded)) {
+			return false;
+		}
+
+		return RegistryCodec.fromStored(loaded.indexes())
+			.detectOptional(entry -> entry.name().equals(generation.index()))
+			.flatMap(entry -> entry.generation(generation.generation()))
+			.map(found -> createdAt == null
+				|| found.createdAt() == null
+				|| found.createdAt().toEpochMilli() == createdAt.toEpochMilli())
+			.orElse(false);
 	}
 
 	@Override

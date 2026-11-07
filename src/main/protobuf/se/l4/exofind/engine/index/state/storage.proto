@@ -132,6 +132,22 @@ message Manifest {
 	 * tells nothing about who wrote the manifest.
 	 */
 	optional string nonce = 7;
+	/*
+	 * When the generation whose contents this manifest describes was created,
+	 * as the registry states it, in milliseconds since the Unix epoch. The
+	 * first generation of every index has the same name, so a generation that
+	 * was deleted and created again shares one prefix with the deleted one.
+	 * This time tells a copy of the deleted generation from a copy of the new
+	 * one. A node that holds a local copy with another time than the
+	 * registry states drops the copy, and a push from such a copy does not
+	 * write a manifest where the remote holds none.
+	 *
+	 * Unset in a manifest written before the time was recorded, or for a
+	 * generation the registry states no time for. Then nothing is compared.
+	 * An older node carries it over when it writes a manifest from its own
+	 * copy, and the copy is still the one of that generation.
+	 */
+	optional int64 generation_created_at = 8;
 }
 
 /*

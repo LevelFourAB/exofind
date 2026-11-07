@@ -3,6 +3,8 @@ package se.l4.exofind.engine.index.state;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.zip.CRC32C;
 
 import org.apache.lucene.index.SegmentInfos;
@@ -20,6 +22,32 @@ public final class LocalCopy {
 	public static final String MANIFEST_FILE = "manifest.ef.bin";
 
 	private LocalCopy() {
+	}
+
+	/**
+	 * When the generation that the copy in the directory belongs to was
+	 * created, as the manifest of the copy states it.
+	 *
+	 * @return
+	 *   the time, or empty when the directory holds no manifest, or one that
+	 *   does not state the time
+	 * @throws IOException
+	 *   if the manifest could not be read
+	 */
+	public static Optional<Instant> generationCreatedAt(Path directory) throws IOException {
+		var manifestPath = directory.resolve(MANIFEST_FILE);
+		if(!Files.exists(manifestPath)) {
+			return Optional.empty();
+		}
+
+		Manifest manifest;
+		try(var in = Files.newInputStream(manifestPath)) {
+			manifest = Manifest.parseFrom(in);
+		}
+
+		return manifest.hasGenerationCreatedAt()
+			? Optional.of(Instant.ofEpochMilli(manifest.getGenerationCreatedAt()))
+			: Optional.empty();
 	}
 
 	/**

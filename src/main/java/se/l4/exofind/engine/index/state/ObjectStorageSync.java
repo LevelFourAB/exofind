@@ -104,7 +104,7 @@ public class ObjectStorageSync implements StateSync {
 	 * a push may still be about to name it. The period doubles as how often
 	 * the sweep is worth running.
 	 */
-	private static final Duration DEFAULT_GRACE = Duration.ofHours(1);
+	static final Duration DEFAULT_GRACE = Duration.ofHours(1);
 
 	/**
 	 * Source of the ids that keep the uploads of two writer sessions apart.
@@ -148,6 +148,19 @@ public class ObjectStorageSync implements StateSync {
 	private final Map<String, Long> pendingRemoteDeletes;
 
 	private final Duration grace;
+
+	/**
+	 * When the generation this sync was made for was created, as the
+	 * registry stated it when the sync was made, or {@code null} when not
+	 * known. Written into every manifest this node pushes.
+	 */
+	private final Instant createdAt;
+
+	/**
+	 * Asked before a manifest that is gone from the remote is written again
+	 * from the local copy, see {@link GenerationCheck}.
+	 */
+	private final GenerationCheck registered;
 
 	/*
 	 * Replaced only while the lock is held, but read without it by
@@ -243,12 +256,47 @@ public class ObjectStorageSync implements StateSync {
 		String remotePrefix,
 		Duration grace
 	) {
+		this(
+			client,
+			index,
+			localPath,
+			remoteBucket,
+			remotePrefix,
+			grace,
+			null,
+			GenerationCheck.ALWAYS
+		);
+	}
+
+	/**
+	 * Create a sync for one generation as the registry names it.
+	 *
+	 * @param createdAt
+	 *   when the generation was created, as the registry states it, or
+	 *   {@code null} when not known
+	 * @param registered
+	 *   asked before a manifest that is gone from the remote is written again
+	 *   from the local copy. A sync made with {@link GenerationCheck#ALWAYS}
+	 *   writes it again whenever it finds it gone
+	 */
+	public ObjectStorageSync(
+		S3Client client,
+		String index,
+		Path localPath,
+		String remoteBucket,
+		String remotePrefix,
+		Duration grace,
+		Instant createdAt,
+		GenerationCheck registered
+	) {
 		this.client = client;
 		this.index = index;
 		this.localPath = localPath;
 		this.remoteBucket = remoteBucket;
 		this.remotePrefix = remotePrefix;
 		this.grace = grace;
+		this.createdAt = createdAt;
+		this.registered = registered;
 
 		this.lock = new ReentrantLock();
 		this.pendingRemoteDeletes = new LinkedHashMap<>();
@@ -832,7 +880,15 @@ public class ObjectStorageSync implements StateSync {
 			var pulled = fetchRemoteManifest();
 
 			if(pulled == null) {
-				// The remote holds no manifest, the push is the first write
+				/*
+				 * The remote holds no manifest. A copy that names no files has
+				 * never been pushed, and its push is the first write. A copy
+				 * that names files was in step with a manifest that is gone.
+				 */
+				if(baseline.getFilesCount() > 0) {
+					ensureStillRegistered(baseline);
+				}
+
 				return emptyBaseline(baseline);
 			}
 
@@ -853,8 +909,11 @@ public class ObjectStorageSync implements StateSync {
 			/*
 			 * The manifest this node synchronized against is gone from the
 			 * remote. There is nothing left to overwrite, so the push goes on
-			 * as a first write and recreates it.
+			 * as a first write and recreates it - but only for the generation
+			 * the registry still names.
 			 */
+			ensureStillRegistered(baseline);
+
 			this.lastSyncedManifestETag = null;
 			return emptyBaseline(baseline);
 		}
@@ -867,6 +926,40 @@ public class ObjectStorageSync implements StateSync {
 		}
 
 		return baseline;
+	}
+
+	/**
+	 * Refuse to write a manifest that is gone from the remote again, unless
+	 * the registry still names the generation the local copy belongs to.
+	 *
+	 * <p>A manifest is gone when the generation was deleted, and when the
+	 * prefix was emptied by hand or by a lifecycle rule. In the first case
+	 * the local copy is the data of a deleted index, and the name may already
+	 * belong to a new index whose first generation has the same prefix. A
+	 * push from the copy would make the deleted documents the contents of the
+	 * new index. In the second case the copy is the only data there is, and
+	 * the push recovers the generation.
+	 *
+	 * @param baseline
+	 *   the manifest of the local copy
+	 * @throws SyncConflictException
+	 *   if the registry does not name the generation of the copy
+	 * @throws IOException
+	 *   if the registry could not be read
+	 */
+	private void ensureStillRegistered(Manifest baseline) throws IOException {
+		var copyCreatedAt = baseline.hasGenerationCreatedAt()
+			? Instant.ofEpochMilli(baseline.getGenerationCreatedAt())
+			: createdAt;
+
+		if(registered.isRegistered(copyCreatedAt)) {
+			return;
+		}
+
+		throw new SyncConflictException(
+			"Remote manifest for " + index + " is gone and the registry does not name the"
+				+ " generation this copy belongs to; it was deleted, so the copy is not pushed"
+		);
 	}
 
 	/**
@@ -1511,6 +1604,17 @@ public class ObjectStorageSync implements StateSync {
 			.setUnknownFields(previous.getUnknownFields())
 			.setLatestSegment(generation)
 			.setEpoch(epoch);
+
+		/*
+		 * The generation the contents belong to. A copy states it from the
+		 * first push this build made of it, and the time a sync was made
+		 * with is the one the registry stated for the generation it opened.
+		 */
+		if(previous.hasGenerationCreatedAt()) {
+			builder.setGenerationCreatedAt(previous.getGenerationCreatedAt());
+		} else if(createdAt != null) {
+			builder.setGenerationCreatedAt(createdAt.toEpochMilli());
+		}
 
 		recordLuceneVersion(builder, generation, previous);
 

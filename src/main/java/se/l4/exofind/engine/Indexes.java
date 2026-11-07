@@ -1052,10 +1052,10 @@ public class Indexes implements RegistryPoller.Listener {
 					continue;
 				}
 
-				var sync = syncProvider.createSync(parsed, path);
+				var createdAt = createdAtOf(parsed);
+				var sync = syncProvider.createSync(parsed, path, createdAt);
 				Index.pushLocalCopy(path, sync);
 
-				var createdAt = createdAtOf(parsed);
 				sync.syncedVersion().ifPresent(version -> registryHints.reportManifest(
 					parsed.index(),
 					parsed.generation(),
@@ -2096,8 +2096,10 @@ public class Indexes implements RegistryPoller.Listener {
 			drainRetiring(index, true);
 
 			var dataPath = indexRoot.resolve(index);
+			var createdAt = createdAtOf(parsed);
 
 			try {
+				dropCopyOfAnotherGeneration(index, dataPath, createdAt);
 				Files.createDirectories(dataPath);
 			} catch(IOException e) {
 				throw new UncheckedIOException(e);
@@ -2111,7 +2113,7 @@ public class Indexes implements RegistryPoller.Listener {
 				nodeState,
 				index,
 				dataPath,
-				syncProvider.createSync(parsed, dataPath),
+				syncProvider.createSync(parsed, dataPath, createdAt),
 				commitPolicy,
 				documentCache,
 				metrics,
@@ -2129,7 +2131,6 @@ public class Indexes implements RegistryPoller.Listener {
 			 * instance opened was created, so that it is dropped rather than
 			 * raise the hint of a generation created again under the name.
 			 */
-			var createdAt = createdAtOf(parsed);
 			loaded.onPushed(version -> registryHints.reportManifest(
 				parsed.index(),
 				parsed.generation(),
@@ -2160,6 +2161,50 @@ public class Indexes implements RegistryPoller.Listener {
 	 * When the registry says a generation was created, or {@code null} when it
 	 * does not say or does not name the generation.
 	 */
+	/**
+	 * Remove a local copy that belongs to another generation than the one the
+	 * registry names under the same name.
+	 *
+	 * <p>The first generation of every index has the same name. A node that
+	 * was away while the index was deleted and created again still holds its
+	 * copy of the deleted generation, under the name the new generation has.
+	 * Opened as it is, the copy would answer with the deleted documents, and
+	 * a writer opened on it would push them as the new index. The manifest of
+	 * the copy states when its generation was created, and a time that is not
+	 * the one the registry states means the copy is of a deleted generation.
+	 * Its changes belong to no generation the registry names, so nothing is
+	 * left to push them to.
+	 *
+	 * <p>A copy or a registry entry that states no time is kept: nothing tells
+	 * that it is of another generation.
+	 *
+	 * @param name
+	 *   full name of the generation
+	 * @param dataPath
+	 *   the directory of the copy
+	 * @param createdAt
+	 *   when the registered generation was created, or {@code null}
+	 */
+	private void dropCopyOfAnotherGeneration(String name, Path dataPath, Instant createdAt)
+		throws IOException {
+		if(createdAt == null) {
+			return;
+		}
+
+		var copyCreatedAt = LocalCopy.generationCreatedAt(dataPath);
+		if(copyCreatedAt.isEmpty() || copyCreatedAt.get().toEpochMilli() == createdAt.toEpochMilli()) {
+			return;
+		}
+
+		logger.atWarn()
+			.addKeyValue("index", name)
+			.addKeyValue("copyCreatedAt", copyCreatedAt.get().toString())
+			.addKeyValue("createdAt", createdAt.toString())
+			.log("Removing the local copy of a deleted generation that had the same name");
+
+		deleteRecursively(dataPath);
+	}
+
 	private Instant createdAtOf(IndexName generation) {
 		return registry.get(generation.index())
 			.flatMap(entry -> entry.generation(generation.generation()))

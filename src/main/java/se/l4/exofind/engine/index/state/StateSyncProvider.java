@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.OptionalLong;
 
 import se.l4.exofind.engine.index.IndexName;
@@ -21,6 +22,27 @@ public interface StateSyncProvider {
 	 * @return
 	 */
 	StateSync createSync(IndexName generation, Path dataPath);
+
+	/**
+	 * Create a new {@link StateSync} for one generation of an index as the
+	 * registry names it.
+	 *
+	 * @param generation
+	 *        the generation, which is what decides where in the remote its
+	 *        files live
+	 * @param dataPath
+	 *        the path that stores index data
+	 * @param createdAt
+	 *        when the generation was created, as the registry states it, or
+	 *        {@code null} when not known. A sync that keeps a remote copy
+	 *        records it with what it pushes, so that a copy of a deleted
+	 *        generation is told from a generation created again under the
+	 *        same name
+	 * @return
+	 */
+	default StateSync createSync(IndexName generation, Path dataPath, Instant createdAt) {
+		return createSync(generation, dataPath);
+	}
 
 	/**
 	 * Read the version of the manifest a generation holds in the remote,
