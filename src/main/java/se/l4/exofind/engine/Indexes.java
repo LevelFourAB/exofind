@@ -59,10 +59,12 @@ import se.l4.exofind.engine.index.registry.RegisteredIndex;
 import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.registry.RegistryPoller;
+import se.l4.exofind.engine.index.registry.RegistryRemovalUnknownException;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.IndexUsageFile;
 import se.l4.exofind.engine.index.state.NoopIndexRemovals;
+import se.l4.exofind.engine.index.state.PendingRemovalsFile;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.logging.Log;
@@ -183,6 +185,13 @@ public class Indexes implements RegistryPoller.Listener {
 	 * not create or delete the same index at the same time.
 	 */
 	private final ReentrantLock lifecycleLock;
+
+	/**
+	 * Removals whose registry write may have landed without this node
+	 * finding out. Each is settled when the registry can be read again, see
+	 * {@link #settlePendingRemovals()}.
+	 */
+	private final PendingRemovalsFile pendingRemovals;
 
 	/**
 	 * One lock per index name, held while the directory of the index is being
@@ -618,6 +627,7 @@ public class Indexes implements RegistryPoller.Listener {
 		 */
 		this.indexRoot = storageDirectory.resolve("indexes");
 		Files.createDirectories(indexRoot);
+		this.pendingRemovals = PendingRemovalsFile.open(storageDirectory);
 
 		/*
 		 * Eviction only retires an instance. The closing - which may flush
@@ -1315,6 +1325,8 @@ public class Indexes implements RegistryPoller.Listener {
 	void refresh(boolean registryChanged) {
 		refreshing = true;
 		try {
+			settlePendingRemovals();
+
 			if(registryChanged || !sweptUnregistered) {
 				sweptUnregistered = true;
 				removeUnregisteredCopies();
@@ -2843,12 +2855,24 @@ public class Indexes implements RegistryPoller.Listener {
 	 * logged and leaves the objects where they are; the registry audit
 	 * reports them as held but not registered.
 	 *
+	 * <p>A registry write whose answer is lost, and whose outcome a read of
+	 * the registry cannot tell either, fails the delete with
+	 * {@link RegistryRemovalUnknownException}. The delete may have landed all
+	 * the same, and then its mark is still needed, so the removal is kept on
+	 * this node until a later read of the registry tells. A delete sent again
+	 * in the meantime finds the name gone and is answered as done when the
+	 * first one landed.
+	 *
 	 * @param name
 	 *   the index, or one generation of it as {@code index@generation}
 	 * @throws IndexNotFoundException
 	 *   if the deployment holds no such index or generation
 	 * @throws ValidationException
 	 *   if the generation named is the one its index answers from
+	 * @throws RegistryException
+	 *   if the registry could not be read or written; a
+	 *   {@link RegistryRemovalUnknownException} when the delete may have
+	 *   landed
 	 * @throws IOException
 	 *   if a local copy could not be removed; the delete itself went through
 	 *   and the storage is marked, the files of the copy stay on this node
@@ -2858,50 +2882,227 @@ public class Indexes implements RegistryPoller.Listener {
 
 		lifecycleLock.lock();
 		try {
-			if(parsed.isPinned()) {
-				registry.removeGeneration(parsed.index(), parsed.generation());
-
-				try {
-					removeLocalCopy(parsed.toString());
-				} finally {
-					markRemoved(parsed);
-				}
-
+			deleteLocked(parsed);
+		} catch(RegistryRemovalUnknownException e) {
+			keepPendingRemoval(e);
+			throw e;
+		} catch(IndexNotFoundException e) {
+			/*
+			 * A client that was told an earlier delete failed sends it again,
+			 * and finds the name gone when that delete landed after all. The
+			 * removal settles now, from the registry the removal just read.
+			 */
+			if(settlePendingRemovalOf(parsed)) {
 				return;
 			}
 
-			/*
-			 * The generations are taken from what the removal read from the
-			 * storage. The copy this node holds can be a refresh behind a
-			 * create on another node, and would answer that the index does
-			 * not exist.
-			 */
-			var index = registry.remove(parsed.index());
-
-			// Every copy is tried, and the mark left, before the first failure
-			// is thrown - the registry no longer names the index, so nothing
-			// asks for this delete a second time
-			IOException failure = null;
-			for(var generation : index.generations()) {
-				try {
-					removeLocalCopy(parsed.withGeneration(generation.name()).toString());
-				} catch(IOException e) {
-					if(failure == null) {
-						failure = e;
-					} else {
-						failure.addSuppressed(e);
-					}
-				}
-			}
-
-			markRemoved(parsed);
-
-			if(failure != null) {
-				throw failure;
-			}
+			throw e;
 		} finally {
 			lifecycleLock.unlock();
 		}
+	}
+
+	/**
+	 * Delete an index or a generation while {@link #lifecycleLock} is held.
+	 */
+	private void deleteLocked(IndexName parsed) throws IOException {
+		if(parsed.isPinned()) {
+			registry.removeGeneration(parsed.index(), parsed.generation());
+
+			try {
+				removeLocalCopy(parsed.toString());
+			} finally {
+				markRemoved(parsed);
+			}
+
+			return;
+		}
+
+		/*
+		 * The generations are taken from what the removal read from the
+		 * storage. The copy this node holds can be a refresh behind a
+		 * create on another node, and would answer that the index does
+		 * not exist.
+		 */
+		var index = registry.remove(parsed.index());
+
+		// Every copy is tried, and the mark left, before the first failure
+		// is thrown - the registry no longer names the index, so nothing
+		// asks for this delete a second time
+		IOException failure = null;
+		for(var generation : index.generations()) {
+			try {
+				removeLocalCopy(parsed.withGeneration(generation.name()).toString());
+			} catch(IOException e) {
+				if(failure == null) {
+					failure = e;
+				} else {
+					failure.addSuppressed(e);
+				}
+			}
+		}
+
+		markRemoved(parsed);
+
+		if(failure != null) {
+			throw failure;
+		}
+	}
+
+	/**
+	 * Keep a removal whose outcome is not known, so that it is settled when
+	 * the registry can be read again.
+	 */
+	private void keepPendingRemoval(RegistryRemovalUnknownException unknown) {
+		try {
+			pendingRemovals.add(
+				new PendingRemovalsFile.Removal(unknown.target(), unknown.createdAt())
+			);
+		} catch(IOException e) {
+			unknown.addSuppressed(e);
+			logger.atError()
+				.addKeyValue("index", unknown.target().toString())
+				.setCause(e)
+				.log(
+					"Could not record a delete whose outcome is not known; if it landed, its"
+						+ " objects stay without a removal mark and the registry audit reports"
+						+ " them as held but not registered; " + e.getMessage()
+				);
+		}
+	}
+
+	/**
+	 * Settle every removal whose outcome was not known, when the registry can
+	 * be read. Nothing is settled from a registry this node did not just read
+	 * successfully, or from one it never read: an empty or stale copy would
+	 * make every removal look as if it landed.
+	 */
+	private void settlePendingRemovals() {
+		if(pendingRemovals.isEmpty()) {
+			return;
+		}
+
+		lifecycleLock.lock();
+		try {
+			if(!registry.refresh() || registry.version() == null) {
+				return;
+			}
+
+			for(var removal : pendingRemovals.list()) {
+				settle(removal);
+			}
+		} catch(RuntimeException e) {
+			logger.atWarn()
+				.setCause(e)
+				.log("Could not settle the deletes whose outcome is not known; " + e.getMessage());
+		} finally {
+			lifecycleLock.unlock();
+		}
+	}
+
+	/**
+	 * Settle the removal of one target whose outcome was not known, from the
+	 * registry this node read last. Called with {@link #lifecycleLock} held,
+	 * right after a read of the registry.
+	 *
+	 * @return
+	 *   whether a removal of the target was pending and had landed
+	 */
+	private boolean settlePendingRemovalOf(IndexName target) {
+		if(registry.version() == null) {
+			return false;
+		}
+
+		for(var removal : pendingRemovals.list()) {
+			if(removal.target().equals(target)) {
+				return settle(removal);
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Settle one removal whose outcome was not known, from the registry this
+	 * node read last.
+	 *
+	 * <p>A registry that names the index or generation with the time of
+	 * creation the removal recorded still holds it, so the removal did not
+	 * land. One that names it with another time holds an index or generation
+	 * created again under the name. Its creation cleared what the removal
+	 * left, and a mark now would lie over data that was not deleted. Only a
+	 * registry that does not name it at all says the removal landed, and then
+	 * the mark is left and the local copies go, as the delete would have done.
+	 *
+	 * <p>A generation of an index that is no longer registered is left
+	 * without a mark of its own: the removal of the index marked everything
+	 * under it.
+	 *
+	 * @return
+	 *   whether the removal landed
+	 */
+	private boolean settle(PendingRemovalsFile.Removal removal) {
+		var target = removal.target();
+		var entry = registry.get(target.index()).orElse(null);
+
+		boolean landed;
+		boolean mark;
+		if(target.isPinned()) {
+			var generation = entry == null
+				? null
+				: entry.generation(target.generation()).orElse(null);
+			landed = generation == null
+				|| !sameTime(generation.createdAt(), removal.createdAt());
+			mark = entry != null && generation == null;
+		} else {
+			landed = entry == null || !sameTime(entry.createdAt(), removal.createdAt());
+			mark = entry == null;
+		}
+
+		logger.atInfo()
+			.addKeyValue("index", target.toString())
+			.addKeyValue("landed", landed)
+			.log("Settled a delete whose outcome was not known");
+
+		if(mark) {
+			try {
+				for(var copy : target.isPinned()
+					? List.of(target.toString())
+					: localCopiesOf(target.index())) {
+					removeLocalCopy(copy);
+				}
+			} catch(IOException e) {
+				logger.atWarn()
+					.addKeyValue("index", target.toString())
+					.setCause(e)
+					.log("Could not remove a local copy of a deleted index; " + e.getMessage());
+			}
+
+			markRemoved(target);
+		}
+
+		try {
+			pendingRemovals.remove(removal);
+		} catch(IOException e) {
+			logger.atWarn()
+				.addKeyValue("index", target.toString())
+				.setCause(e)
+				.log("Could not forget a settled delete, it is settled again later; " + e.getMessage());
+		}
+
+		return landed;
+	}
+
+	/**
+	 * Whether two times of creation are the same to the millisecond, the
+	 * precision the registry stores them in. Two unknown times are the same.
+	 */
+	private static boolean sameTime(Instant a, Instant b) {
+		if(a == null || b == null) {
+			return a == b;
+		}
+
+		return a.toEpochMilli() == b.toEpochMilli();
 	}
 
 	/**

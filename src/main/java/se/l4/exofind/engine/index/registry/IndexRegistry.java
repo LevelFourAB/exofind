@@ -568,38 +568,49 @@ public class IndexRegistry {
 	 *   if the generation is the one the index answers for
 	 * @throws IndexUnsupportedException
 	 *   if the index needs something this build does not have
+	 * @throws RegistryRemovalUnknownException
+	 *   if the removal may have landed and nothing tells whether it did
+	 * @throws RegistryException
+	 *   if the registry could not be read or written
 	 */
 	public RegisteredIndex removeGeneration(String index, String generation) {
 		var removed = new RegisteredIndex.Generation[1];
-		var updated = update(index, entry -> {
-			removed[0] = entry.generation(generation).orElse(null);
-			if(!entry.hasGeneration(generation)) {
-				throw new IndexNotFoundException(
-					IndexName.of(index, generation).toString()
-				);
-			}
-
-			if(generation.equals(entry.live())) {
-				throw new ValidationException(
-					GENERATION_IS_LIVE.toMessage(
-						ObjectLocation.root(),
-						"name",
+		RegisteredIndex updated;
+		try {
+			updated = update(index, entry -> {
+				removed[0] = entry.generation(generation).orElse(null);
+				if(!entry.hasGeneration(generation)) {
+					throw new IndexNotFoundException(
 						IndexName.of(index, generation).toString()
-					)
-				);
-			}
+					);
+				}
 
-			return new RegisteredIndex(
-				entry.name(),
-				entry.generations().reject(g -> g.name().equals(generation)),
-				entry.live(),
-				entry.createdAt(),
-				entry.requiredFeatures(),
-				entry.settingsVersion()
-			);
-		}, (written, stored) -> stored.generation(generation)
-			.filter(g -> sameTime(g.createdAt(), removed[0].createdAt()))
-			.isEmpty());
+				if(generation.equals(entry.live())) {
+					throw new ValidationException(
+						GENERATION_IS_LIVE.toMessage(
+							ObjectLocation.root(),
+							"name",
+							IndexName.of(index, generation).toString()
+						)
+					);
+				}
+
+				return new RegisteredIndex(
+					entry.name(),
+					entry.generations().reject(g -> g.name().equals(generation)),
+					entry.live(),
+					entry.createdAt(),
+					entry.requiredFeatures(),
+					entry.settingsVersion()
+				);
+			}, (written, stored) -> stored.generation(generation)
+				.filter(g -> sameTime(g.createdAt(), removed[0].createdAt()))
+				.isEmpty());
+		} catch(RegistryException e) {
+			throw removalUnknown(e, IndexName.of(index, generation), removed[0] == null
+				? null
+				: removed[0].createdAt());
+		}
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -620,19 +631,29 @@ public class IndexRegistry {
 	 *   the index as the stored registry held it when it was removed
 	 * @throws IndexNotFoundException
 	 *   if there is no such index
+	 * @throws RegistryRemovalUnknownException
+	 *   if the removal may have landed and nothing tells whether it did
+	 * @throws RegistryException
+	 *   if the registry could not be read or written
 	 */
 	public RegisteredIndex remove(String index) {
 		var removed = new RegisteredIndex[1];
 
-		change(indexes -> {
-			var entry = indexes.detect(existing -> existing.name().equals(index));
-			if(entry == null) {
-				throw new IndexNotFoundException(index);
-			}
+		try {
+			change(indexes -> {
+				var entry = indexes.detect(existing -> existing.name().equals(index));
+				if(entry == null) {
+					throw new IndexNotFoundException(index);
+				}
 
-			removed[0] = entry;
-			return indexes.reject(existing -> existing.name().equals(index));
-		}, indexes -> !isRegistration(indexes, index, removed[0].createdAt()));
+				removed[0] = entry;
+				return indexes.reject(existing -> existing.name().equals(index));
+			}, indexes -> !isRegistration(indexes, index, removed[0].createdAt()));
+		} catch(RegistryException e) {
+			throw removalUnknown(e, IndexName.of(index), removed[0] == null
+				? null
+				: removed[0].createdAt());
+		}
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -696,6 +717,30 @@ public class IndexRegistry {
 		return entry != null
 			&& entry.createdAt() != null
 			&& entry.createdAt().toEpochMilli() == createdAt.toEpochMilli();
+	}
+
+	/**
+	 * Report a failed removal whose write may have landed as a
+	 * {@link RegistryRemovalUnknownException}, so the caller can find out
+	 * later whether to leave its removal mark. Any other failure is reported
+	 * as it is.
+	 */
+	private static RegistryException removalUnknown(
+		RegistryException failure,
+		IndexName target,
+		Instant createdAt
+	) {
+		if(failure instanceof RegistryRemovalUnknownException
+			|| !(failure.getCause() instanceof RegistryWriteUnknownException unknown)) {
+			return failure;
+		}
+
+		var reported = new RegistryRemovalUnknownException(target, createdAt, unknown);
+		for(var suppressed : failure.getSuppressed()) {
+			reported.addSuppressed(suppressed);
+		}
+
+		return reported;
 	}
 
 	/**

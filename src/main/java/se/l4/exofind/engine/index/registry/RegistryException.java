@@ -14,7 +14,8 @@ import se.l4.exofind.engine.index.IndexException;
  * <p>One case is not sure: a write that the storage did not answer, followed
  * by a read that does not tell whether it landed. The cause is then a
  * {@link RegistryWriteUnknownException}, and the change may be in the
- * registry. A create takes its own registration back in that case.
+ * registry. A create takes its own registration back in that case, and a
+ * removal is reported as {@link RegistryRemovalUnknownException}.
  */
 public class RegistryException extends IndexException {
 	private static final long serialVersionUID = 1L;
@@ -31,6 +32,14 @@ public class RegistryException extends IndexException {
 
 	private RegistryException(ErrorType type) {
 		super(type, ErrorType.toArguments());
+	}
+
+	/**
+	 * A failure to reach the storage, for a subclass that tells more about
+	 * it.
+	 */
+	protected RegistryException(Throwable cause) {
+		this(IO_ERROR, cause);
 	}
 
 	private RegistryException(ErrorType type, Throwable cause) {

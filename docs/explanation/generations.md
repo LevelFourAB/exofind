@@ -66,6 +66,8 @@ A delete removes the name from the registry and leaves a removal mark (`removed.
 
 Only marked storage is ever removed, because a lost registry looks the same as a registry that never held the index, and a registry repair rebuilds the registry from exactly that storage.
 
+The mark is written after the registry write, so that every mark stands for a delete that went through. The storage can take the registry write and lose its answer. When the registry also cannot be read afterwards, the node cannot tell whether the delete landed, and the delete fails. The node keeps the delete in `pending-removals.ef.bin` and reads the registry again later. If the registry no longer names the index or generation, the node leaves the mark. If the registry still names it with the same time of creation, the delete did not land, and no mark is written. If it names an index or generation created again under the name, the creation already cleared the prefix, and no mark is written. A client that sends the delete again before then gets a success when the first delete landed.
+
 Creating the name again clears the marked prefix first. It also removes the local copies that the node running the creation holds for that name, so a recreated index never opens on old files.
 
 A creation must handle three races:

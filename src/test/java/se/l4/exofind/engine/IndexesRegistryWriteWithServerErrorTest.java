@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.eclipse.collections.api.factory.Lists;
@@ -28,6 +29,7 @@ import se.l4.exofind.engine.index.IndexNotFoundException;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.ObjectStorageRegistryAudit;
 import se.l4.exofind.engine.index.registry.ObjectStorageRegistryStorage;
+import se.l4.exofind.engine.index.registry.RegistryException;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
@@ -81,9 +83,16 @@ public class IndexesRegistryWriteWithServerErrorTest {
 	volatile Runnable beforeLostAnswer = () -> {};
 
 	/**
-	 * Whether the next read of the registry fails with a dropped connection.
+	 * How many of the next reads of the registry fail with a dropped
+	 * connection.
 	 */
-	final AtomicBoolean failNextRegistryRead = new AtomicBoolean();
+	final AtomicInteger failRegistryReads = new AtomicInteger();
+
+	/**
+	 * Whether the next write of the registry is lost before it reaches the
+	 * storage and answered with a gateway error.
+	 */
+	final AtomicBoolean loseNextRegistryWrite = new AtomicBoolean();
 
 	ObjectStorage storage;
 	ObjectStorage faultyStorage;
@@ -103,9 +112,23 @@ public class IndexesRegistryWriteWithServerErrorTest {
 						&& args != null
 						&& args[0] instanceof GetObjectRequest request
 						&& request.key().endsWith("registry/indexes.ef.bin")
-						&& failNextRegistryRead.compareAndSet(true, false)
+						&& failRegistryReads.getAndUpdate(n -> Math.max(0, n - 1)) > 0
 				) {
 					throw SdkClientException.create("Connection reset");
+				}
+
+				if(
+					method.getName().equals("putObject")
+						&& args[0] instanceof PutObjectRequest request
+						&& request.key().endsWith("registry/indexes.ef.bin")
+						&& loseNextRegistryWrite.compareAndSet(true, false)
+				) {
+					// The write never reaches the storage
+					beforeLostAnswer.run();
+					throw S3Exception.builder()
+						.statusCode(504)
+						.message("Gateway Timeout")
+						.build();
 				}
 
 				Object result;
@@ -453,7 +476,7 @@ public class IndexesRegistryWriteWithServerErrorTest {
 			// And the answer to the next registry write is lost and the read-back fails
 			beforeLostAnswer = () -> {
 				beforeLostAnswer = () -> {};
-				failNextRegistryRead.set(true);
+				failRegistryReads.set(1);
 			};
 			failNextRegistryWrite.set(true);
 
@@ -550,5 +573,170 @@ public class IndexesRegistryWriteWithServerErrorTest {
 		registry.refresh();
 		assertThat(registry.get("books").orElseThrow().live(), is("2"));
 		assertThat("promote that landed was reported as failed: " + failure, failure == null, is(true));
+	}
+
+	/**
+	 * Make the answer to the next registry write lost, and the read-back and
+	 * the next read of the registry fail, so that the node cannot tell
+	 * whether the write landed.
+	 */
+	private void registryUnreadableAfterTheNextWrite(boolean landed) {
+		beforeLostAnswer = () -> {
+			beforeLostAnswer = () -> {};
+			failRegistryReads.set(2);
+		};
+
+		if(landed) {
+			failNextRegistryWrite.set(true);
+		} else {
+			loseNextRegistryWrite.set(true);
+		}
+	}
+
+	private boolean isMarked(IndexName target) throws IOException {
+		return new ObjectStorageIndexRemovals(storage).markedAt(target).isPresent();
+	}
+
+	@Test
+	public void deleteWhoseOutcomeStaysUnknownLeavesItsMarkWhenTheRegistryCanBeRead()
+		throws IOException
+	{
+		// Given an index holding one document
+		createWithOneDocument("books");
+
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.refresh();
+
+			// And a delete whose registry write lands, but neither its answer nor the registry can be read
+			registryUnreadableAfterTheNextWrite(true);
+			assertThrows(RegistryException.class, () -> second.delete("books"));
+			assertThat(isMarked(IndexName.of("books")), is(false));
+
+			// When the registry can be read again
+			second.refresh();
+
+			// Then the name is gone and carries a removal mark
+			assertThat(registry.get("books").isEmpty(), is(true));
+			assertThat(
+				"deleted index left without a removal mark",
+				isMarked(IndexName.of("books")),
+				is(true)
+			);
+
+			// And the name can be created again and starts empty
+			var created = second.create("books", definition());
+			assertThat(created.getDocumentCount(), is(0L));
+		} finally {
+			second.close();
+		}
+	}
+
+	@Test
+	public void deleteSentAgainAfterAnUnknownOutcomeIsAnsweredAsDone() throws IOException {
+		// Given an index holding one document
+		createWithOneDocument("books");
+
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.refresh();
+
+			// And a delete whose registry write lands, but neither its answer nor the registry can be read
+			registryUnreadableAfterTheNextWrite(true);
+			assertThrows(RegistryException.class, () -> second.delete("books"));
+
+			// When the client sends the delete again
+			second.delete("books");
+
+			// Then the name carries a removal mark
+			assertThat(isMarked(IndexName.of("books")), is(true));
+		} finally {
+			second.close();
+		}
+	}
+
+	@Test
+	public void deleteWhoseOutcomeStaysUnknownAndDidNotLandLeavesNoMark() throws IOException {
+		// Given an index holding one document
+		createWithOneDocument("books");
+
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.refresh();
+
+			// And a delete whose registry write never reaches the storage, and the registry cannot be read
+			registryUnreadableAfterTheNextWrite(false);
+			assertThrows(RegistryException.class, () -> second.delete("books"));
+
+			// When the registry can be read again
+			second.refresh();
+
+			// Then the index is still registered, holds its document and carries no mark
+			assertThat(registry.get("books").isPresent(), is(true));
+			assertThat(
+				"a removal mark was left over an index that was not deleted",
+				isMarked(IndexName.of("books")),
+				is(false)
+			);
+			assertThat(second.getOrThrow("books").getDocumentCount(), is(1L));
+		} finally {
+			second.close();
+		}
+	}
+
+	@Test
+	public void deleteWhoseOutcomeStaysUnknownLeavesItsMarkAfterARestart() throws IOException {
+		// Given an index holding one document
+		createWithOneDocument("books");
+
+		var second = node("second", registry());
+		try {
+			second.refresh();
+
+			// And a delete whose registry write lands, but neither its answer nor the registry can be read
+			registryUnreadableAfterTheNextWrite(true);
+			assertThrows(RegistryException.class, () -> second.delete("books"));
+		} finally {
+			// And the node stops before it can read the registry again
+			second.close();
+		}
+
+		// When the node starts again and reads the registry
+		var restarted = node("second", registry());
+		try {
+			restarted.refresh();
+
+			// Then the name carries a removal mark
+			assertThat(isMarked(IndexName.of("books")), is(true));
+		} finally {
+			restarted.close();
+		}
+	}
+
+	@Test
+	public void generationDeleteWhoseOutcomeStaysUnknownLeavesItsMark() throws IOException {
+		// Given an index with a second generation that is not live
+		var registry = registry();
+		var second = node("second", registry);
+		try {
+			second.create("books", definition());
+			second.createGeneration("books@2", definition());
+
+			// And a delete of the generation whose registry write lands, but neither its answer nor the registry can be read
+			registryUnreadableAfterTheNextWrite(true);
+			assertThrows(RegistryException.class, () -> second.delete("books@2"));
+
+			// When the registry can be read again
+			second.refresh();
+
+			// Then the generation is gone and carries a removal mark
+			assertThat(registry.get("books").orElseThrow().hasGeneration("2"), is(false));
+			assertThat(isMarked(IndexName.of("books", "2")), is(true));
+		} finally {
+			second.close();
+		}
 	}
 }

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+
+package se.l4.exofind.engine.index.state;
+
+/*
+ * This file is the format a node records removals in whose outcome it does
+ * not know yet. The record is written to the storage directory of the node
+ * and never uploaded, but it outlives restarts and upgrades of the node that
+ * wrote it, so the same rules as for the other stored formats apply: scalars
+ * are `optional` so unset can be told apart from the zero value, and a field
+ * number is never reused.
+ */
+
+/*
+ * PendingRemovals holds every removal of an index or a generation whose
+ * registry write may have landed, but whose answer was lost and whose
+ * registry could not be read afterwards. A removal that landed must leave a
+ * removal mark, or nothing removes its objects. The node reads the registry
+ * again later, and leaves the mark when the registry no longer names what
+ * was removed.
+ */
+message PendingRemovals {
+	repeated PendingRemoval removals = 1;
+}
+
+/*
+ * PendingRemoval is one removal whose outcome is not known yet.
+ */
+message PendingRemoval {
+	/*
+	 * Name of the index.
+	 */
+	optional string index = 1;
+
+	/*
+	 * Name of the generation that was removed. Unset when the whole index was
+	 * removed.
+	 */
+	optional string generation = 2;
+
+	/*
+	 * When the removed index or generation was created, as milliseconds since
+	 * the Unix epoch, as the registry stated it. A registry that names the
+	 * index or generation with this time still holds it, so the removal did
+	 * not land. Unset when the registry stated no time.
+	 */
+	optional int64 created_at = 3;
+}

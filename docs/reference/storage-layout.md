@@ -107,6 +107,7 @@ The following table lists paths present in the local directory:
 | --- | --- | --- |
 | `node.lock` | `local` and `object` | File lock held while the process runs. A second node pointed at the same directory refuses to start. |
 | `indexes/<index>@<generation>/` | `local` and `object` | Local copy of one generation. Holds Lucene files, `definition.ef.bin`, `manifest.ef.bin` (manifest of the local state), `manifest.ef.bin.tmp` (temporary manifest during writes), `usage.ef.bin` (timestamp of last use, read by the disk sweep), and Lucene `*.lock` files. |
+| `pending-removals.ef.bin` | `object` | Deletes whose registry write may have landed, but whose answer was lost and whose outcome the node could not read back. The node leaves the removal mark of each one that landed when it can read the registry again. Present only while such a delete is not settled. |
 | `registry.ef.bin` | `local` only | The index registry. |
 | `keys.ef.bin` | `local` only | API keys. |
 | `settings/<index>.ef.bin` | `local` only | Search settings, stored as one file per index name. |
