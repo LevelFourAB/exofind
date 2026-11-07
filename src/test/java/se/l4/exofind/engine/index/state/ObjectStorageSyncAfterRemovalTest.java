@@ -9,6 +9,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Random;
@@ -28,6 +29,7 @@ import se.l4.exofind.engine.index.registry.ObjectStorageRegistryStorage;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -295,5 +297,141 @@ public class ObjectStorageSyncAfterRemovalTest {
 			held = e;
 		}
 		assertThat("create of the name refused: " + held, held == null, is(true));
+	}
+
+	/**
+	 * A sync of the generation that was created at the given time, whose
+	 * registry check always answers that the copy is registered. Stands in
+	 * for a writer that read the registry just before the delete landed.
+	 */
+	private ObjectStorageSync staleSync(Path path, Instant createdAt) {
+		return new ObjectStorageSync(
+			storage.client(),
+			GENERATION.toString(),
+			path,
+			storage.bucket(),
+			storage.indexPath(GENERATION),
+			ObjectStorageSync.DEFAULT_GRACE,
+			createdAt,
+			copyCreatedAt -> true
+		);
+	}
+
+	private Manifest remoteManifest() throws IOException {
+		try(var response = storage.client().getObject(
+			GetObjectRequest.builder()
+				.bucket(storage.bucket())
+				.key(storage.indexPath(GENERATION) + "/" + LocalCopy.MANIFEST_FILE)
+				.build()
+		)) {
+			return Manifest.parseFrom(response.readAllBytes());
+		}
+	}
+
+	/**
+	 * Delete books and create it again through the registry, clearing the
+	 * prefix the way the create does.
+	 *
+	 * @return
+	 *   when the new first generation was created
+	 */
+	private Instant deleteAndCreateAgain(IndexRegistry registry) throws Exception {
+		registry.remove("books");
+		removals.mark(IndexName.of("books"));
+
+		// Times are stored to the millisecond
+		Thread.sleep(2);
+
+		var created = registry.create("books", "1").generation("1").orElseThrow().createdAt();
+		removals.prepareForIndex("books");
+		removals.prepareForGeneration(GENERATION);
+		return created;
+	}
+
+	/**
+	 * A writer of the deleted index can read the registry just before the
+	 * delete lands, and then push into the prefix the create cleared. The
+	 * manifest it leaves records the time its generation was created, which
+	 * is not the time of the new generation. The new index does not take it
+	 * over, and its writer replaces it.
+	 */
+	@Test
+	public void theNewIndexReplacesAManifestAStaleWriterPushedAfterTheClear() throws Exception {
+		// Given books@1 registered, and a writer of it that pushed a commit
+		var registry = new IndexRegistry(
+			new ObjectStorageRegistryStorage(storage),
+			Duration.ofMinutes(5)
+		);
+		var oldCreatedAt = registry.create("books", "1").generation("1").orElseThrow().createdAt();
+		var stale = staleSync(writerPath, oldCreatedAt);
+		var segment = createFile(writerPath, "segments_1", 64);
+		push(stale, segment);
+
+		// And books deleted and created again, and the stale writer pushes after the clear
+		var newCreatedAt = deleteAndCreateAgain(registry);
+		var next = createFile(writerPath, "segments_2", 64);
+		push(stale, segment, next);
+
+		// When the creator opens the new generation, claims it and pushes its first commit
+		var creatorPath = Files.createDirectories(readerPath.resolve("creator"));
+		var creator = (ObjectStorageSync) new ObjectStorageSyncProvider(storage)
+			.createSync(GENERATION, creatorPath, newCreatedAt);
+		var adopted = creator.pull();
+		creator.claimWriter();
+		var first = createFile(creatorPath, "segments_3", 64);
+		push(creator, first);
+
+		// Then the creator did not take over the stale manifest
+		assertThat("the new index pulled the manifest of the deleted index", adopted, is(false));
+
+		// And the remote holds the manifest of the new generation, naming only its files
+		var manifest = remoteManifest();
+		assertThat(manifest.getGenerationCreatedAt(), is(newCreatedAt.toEpochMilli()));
+		assertThat(
+			manifest.getFilesList().stream().map(ManifestFile::getName).toList(),
+			is(java.util.List.of("segments_3"))
+		);
+	}
+
+	/**
+	 * A writer of the deleted index that only finds the manifest of the new
+	 * generation, with a registry that names the new one, must not replace
+	 * it.
+	 */
+	@Test
+	public void aStaleWriterDoesNotReplaceTheManifestOfTheNewIndex() throws Exception {
+		// Given books@1 registered, and a writer of it that pushed a commit
+		var registry = new IndexRegistry(
+			new ObjectStorageRegistryStorage(storage),
+			Duration.ofMinutes(5)
+		);
+		var oldCreatedAt = registry.create("books", "1").generation("1").orElseThrow().createdAt();
+		var writer = (ObjectStorageSync) new ObjectStorageSyncProvider(storage)
+			.createSync(GENERATION, writerPath, oldCreatedAt);
+		var segment = createFile(writerPath, "segments_1", 64);
+		push(writer, segment);
+
+		// And books deleted and created again, and the new index pushed its first commit
+		var newCreatedAt = deleteAndCreateAgain(registry);
+		var creatorPath = Files.createDirectories(readerPath.resolve("creator"));
+		var creator = (ObjectStorageSync) new ObjectStorageSyncProvider(storage)
+			.createSync(GENERATION, creatorPath, newCreatedAt);
+		creator.claimWriter();
+		push(creator, createFile(creatorPath, "segments_3", 64));
+
+		// When the writer of the deleted index starts again on its copy and pushes
+		var restarted = (ObjectStorageSync) new ObjectStorageSyncProvider(storage)
+			.createSync(GENERATION, writerPath, oldCreatedAt);
+		var next = createFile(writerPath, "segments_2", 64);
+		Exception failure = null;
+		try {
+			push(restarted, segment, next);
+		} catch(Exception e) {
+			failure = e;
+		}
+
+		// Then the push is refused and the remote holds the manifest of the new generation
+		assertThat("push of the deleted index was accepted", failure != null, is(true));
+		assertThat(remoteManifest().getGenerationCreatedAt(), is(newCreatedAt.toEpochMilli()));
 	}
 }

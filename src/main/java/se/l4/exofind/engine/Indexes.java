@@ -1350,6 +1350,7 @@ public class Indexes implements RegistryPoller.Listener {
 			if(registryChanged || !sweptUnregistered) {
 				sweptUnregistered = true;
 				removeUnregisteredCopies();
+				removeCopiesOfReplacedGenerations();
 			}
 
 			/*
@@ -1646,6 +1647,68 @@ public class Indexes implements RegistryPoller.Listener {
 				.addKeyValue("index", name)
 				.setCause(e)
 				.log("Could not open a held index before it was asked for; " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Close and remove the open generations whose copy belongs to a deleted
+	 * generation of the same name.
+	 *
+	 * <p>The first generation of every index has the same name. When an index
+	 * is deleted and created again on another node between two reads of the
+	 * registry, the registry still names the generation this node holds
+	 * open, and the copy is not removed as unregistered. It holds the deleted
+	 * documents, and a pull does not replace it until the new index pushes
+	 * its first manifest. The manifest of the copy records when its
+	 * generation was created, and a time that is not the one the registry
+	 * states means the copy is of the deleted generation. Its changes belong
+	 * to no generation the registry names, so it closes without a push. The
+	 * next request opens the generation the registry names.
+	 *
+	 * <p>A copy or a registry entry that states no time is kept: nothing tells
+	 * that it is of another generation.
+	 */
+	private void removeCopiesOfReplacedGenerations() {
+		if(!registry.hasBeenRead()) {
+			return;
+		}
+
+		for(var name : List.copyOf(indexes.asMap().keySet())) {
+			var parsed = IndexName.tryParse(name).orElse(null);
+			if(parsed == null || !parsed.isPinned()) {
+				continue;
+			}
+
+			var createdAt = createdAtOf(parsed);
+			if(createdAt == null) {
+				continue;
+			}
+
+			try {
+				var copyCreatedAt = LocalCopy.generationCreatedAt(indexRoot.resolve(name));
+				if(copyCreatedAt.isEmpty()
+					|| copyCreatedAt.get().toEpochMilli() == createdAt.toEpochMilli()) {
+					continue;
+				}
+
+				logger.atWarn()
+					.addKeyValue("index", name)
+					.addKeyValue("copyCreatedAt", copyCreatedAt.get().toString())
+					.addKeyValue("createdAt", createdAt.toString())
+					.log("Closing the open copy of a deleted generation that had the same name");
+
+				lifecycleLock.lock();
+				try {
+					removeLocalCopy(name);
+				} finally {
+					lifecycleLock.unlock();
+				}
+			} catch(IOException e) {
+				logger.atWarn()
+					.addKeyValue("index", name)
+					.setCause(e)
+					.log("Could not check the open copy against the registry; " + e.getMessage());
+			}
 		}
 	}
 

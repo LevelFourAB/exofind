@@ -217,4 +217,37 @@ public class IndexesRecreatedWhileNodeAwayTest {
 			other.close();
 		}
 	}
+
+	/**
+	 * A reader that holds the deleted index open when the name is created
+	 * again must stop answering with the deleted documents once it reads the
+	 * registry, also before the new index pushes its first manifest.
+	 */
+	@Test
+	public void anOpenReaderStopsServingItsCopyOnceTheNameWasCreatedAgain() throws Exception {
+		// Given a reader that holds books@1 open, holding the document old
+		copyWithOneDocument("w");
+
+		var reader = node("r", false);
+		try {
+			reader.refresh();
+			assertThat(reader.getOrThrow("books").getDocumentCount(), is(1L));
+
+			// And books is deleted and created again on another node, which has not pushed yet
+			Thread.sleep(2);
+			deleteAndCreateAgainElsewhere();
+
+			// When the reader reads the registry
+			reader.refresh();
+
+			// Then the reader does not answer with the deleted document
+			assertThat(
+				"open copy of the deleted index served under the new name",
+				reader.getOrThrow("books").getDocumentCount(),
+				is(0L)
+			);
+		} finally {
+			reader.close();
+		}
+	}
 }

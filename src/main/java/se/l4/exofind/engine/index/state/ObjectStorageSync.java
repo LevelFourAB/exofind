@@ -532,10 +532,20 @@ public class ObjectStorageSync implements StateSync {
 			return;
 		}
 
-		var claimed = baseline.toBuilder()
+		var builder = baseline.toBuilder()
 			.setVersion(baseline.getVersion() + 1)
-			.setEpoch(epoch)
-			.build();
+			.setEpoch(epoch);
+
+		/*
+		 * The claim states the generation it was made for, as a push does,
+		 * so that a node can tell it from a manifest of a deleted generation
+		 * of the same name.
+		 */
+		if(!baseline.hasGenerationCreatedAt() && createdAt != null) {
+			builder.setGenerationCreatedAt(createdAt.toEpochMilli());
+		}
+
+		var claimed = builder.build();
 
 		logger.atInfo()
 			.addKeyValue("index", index)
@@ -634,6 +644,21 @@ public class ObjectStorageSync implements StateSync {
 			}
 
 			var manifest = pulled.manifest();
+
+			if(isOfDeletedGeneration(manifest)) {
+				/*
+				 * A writer of a deleted generation pushed into the prefix the
+				 * new generation took over. Its documents are not the ones of
+				 * this generation, so the copy stays as it is until the writer
+				 * of this generation replaces the manifest.
+				 */
+				logger.atWarn()
+					.addKeyValue("index", index)
+					.addKeyValue("remoteVersion", manifest.getVersion())
+					.log("Remote manifest belongs to a deleted generation of the same name, not pulling it");
+
+				return false;
+			}
 
 			if(manifest.equals(lastSyncedManifest)) {
 				logger.atDebug()
@@ -897,6 +922,29 @@ public class ObjectStorageSync implements StateSync {
 				return baseline;
 			}
 
+			if(isOfDeletedGeneration(pulled.manifest())) {
+				/*
+				 * The manifest of a writer of a deleted generation, pushed into
+				 * the prefix after the create cleared it. Nothing of it belongs
+				 * to this generation, so it is replaced as if the remote held
+				 * no manifest - conditionally on its tag, so that a write of
+				 * another node in between still refuses this one. The version
+				 * and the epoch go on from the higher of the two, so neither
+				 * goes back for a node that saw the replaced manifest.
+				 */
+				var replaced = pulled.manifest();
+				logger.atWarn()
+					.addKeyValue("index", index)
+					.addKeyValue("remoteVersion", replaced.getVersion())
+					.log("Replacing a remote manifest that belongs to a deleted generation of the same name");
+
+				this.lastSyncedManifestETag = quoteETag(pulled.eTag());
+				return emptyBaseline(baseline).toBuilder()
+					.setVersion(Math.max(baseline.getVersion(), replaced.getVersion()))
+					.setEpoch(Math.max(baseline.getEpoch(), replaced.getEpoch()))
+					.build();
+			}
+
 			throw new SyncConflictException(
 				"Remote manifest for " + index + " is at version "
 					+ pulled.manifest().getVersion()
@@ -926,6 +974,41 @@ public class ObjectStorageSync implements StateSync {
 		}
 
 		return baseline;
+	}
+
+	/**
+	 * Whether a manifest in the remote was pushed by a writer of a deleted
+	 * generation of the same name, and not by a writer of the generation this
+	 * sync was made for.
+	 *
+	 * <p>The first generation of every index has the same name, so an index
+	 * created again uses the prefix of the deleted one. A writer of the
+	 * deleted index can read the registry just before the delete lands, and
+	 * then push into the prefix after the create cleared it. Its manifest
+	 * records the time its generation was created, which is not the time of
+	 * the new generation. Taken over, it would make the deleted documents the
+	 * contents of the new index.
+	 *
+	 * <p>The time of this sync comes from the registry this node read when it
+	 * opened the generation, and that read can be behind a delete too. So the
+	 * registry in the bucket is asked as well: only when it names the
+	 * generation with the time of this sync is the manifest the stale one.
+	 * Otherwise this sync is the stale one, and the manifest stays.
+	 *
+	 * @return
+	 *   {@code false} when the manifest or this sync states no time, and when
+	 *   both state the same time
+	 * @throws IOException
+	 *   if the registry could not be read
+	 */
+	private boolean isOfDeletedGeneration(Manifest remote) throws IOException {
+		if(createdAt == null
+			|| !remote.hasGenerationCreatedAt()
+			|| remote.getGenerationCreatedAt() == createdAt.toEpochMilli()) {
+			return false;
+		}
+
+		return registered.isRegistered(createdAt);
 	}
 
 	/**
