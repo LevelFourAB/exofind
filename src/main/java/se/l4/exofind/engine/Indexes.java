@@ -72,6 +72,7 @@ import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.metrics.Meters;
 import se.l4.exofind.engine.metrics.RequestMetrics;
+import se.l4.exofind.engine.storage.LocalModeFiles;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -657,6 +658,17 @@ public class Indexes implements RegistryPoller.Listener {
 		 * deployment already holds.
 		 */
 		this.indexRoot = storageDirectory.resolve("indexes");
+
+		/*
+		 * With a remote, a directory the registry does not name is a copy of a
+		 * removed index, and the sweep and a creation remove it. In a
+		 * directory that local mode wrote, such a directory is the only copy
+		 * of a local index, so the node refuses to start there.
+		 */
+		if(syncProvider.hasRemote()) {
+			LocalModeFiles.requireNoneIn(storageDirectory);
+		}
+
 		Files.createDirectories(indexRoot);
 		this.pendingRemovals = PendingRemovalsFile.open(storageDirectory);
 		this.removalListeners = new CopyOnWriteArrayList<>();

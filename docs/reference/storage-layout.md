@@ -118,6 +118,11 @@ In `object` mode, the local directory stores cached copies of remote data.
 closed copies. A local copy is never evicted if remote storage does not contain
 all of its data.
 
+A node in `object` mode refuses to start over a directory that holds
+`registry.ef.bin` or `keys.ef.bin`. In `object` mode, the node removes each
+index directory that the registry does not name. In a directory that `local`
+mode wrote, those directories are the only copy of the indexes.
+
 In `local` mode, the directory holds the only copy of all indexes, settings,
 and keys. No automatic eviction runs, and losing the local directory causes total
 data loss. For maintenance procedures, see

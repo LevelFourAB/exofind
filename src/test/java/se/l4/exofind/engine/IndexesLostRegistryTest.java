@@ -23,6 +23,7 @@ import se.l4.exofind.engine.index.Document;
 import se.l4.exofind.engine.index.FacetWarmer;
 import se.l4.exofind.engine.index.SearchCaches;
 import se.l4.exofind.engine.index.SearchThreads;
+import se.l4.exofind.engine.index.registry.InMemoryRegistryStorage;
 import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
@@ -53,6 +54,13 @@ public class IndexesLostRegistryTest {
 	Path storageDirectory;
 
 	private final List<Indexes> nodes = new ArrayList<>();
+
+	/**
+	 * The registry of the bucket that nodes in object storage mode use. Local
+	 * mode keeps its registry in the shared directory, and a node in object
+	 * mode refuses a directory that holds it.
+	 */
+	private final InMemoryRegistryStorage bucket = new InMemoryRegistryStorage();
 
 	@AfterEach
 	void cleanup() {
@@ -101,7 +109,7 @@ public class IndexesLostRegistryTest {
 	 */
 	@Test
 	public void testACopyIsRemovedWhileTheRegistryNamesAnother() throws Exception {
-		createIndexes("books");
+		createIndexesInBucket("books");
 		Files.createDirectories(dir("ghost"));
 
 		var node = nodeWithRemote();
@@ -118,7 +126,7 @@ public class IndexesLostRegistryTest {
 	 */
 	@Test
 	public void testTheLastIndexIsRemovedAfterTheNodeSawIt() throws Exception {
-		createIndexes("books");
+		createIndexesInBucket("books");
 
 		var node = nodeWithRemote();
 		node.refresh();
@@ -126,7 +134,7 @@ public class IndexesLostRegistryTest {
 		assertThat(Files.isDirectory(dir("books")), is(true));
 
 		// Stands in for another node deleting the last index of the deployment
-		registry().remove("books");
+		bucketRegistry().remove("books");
 
 		node.refresh();
 
@@ -205,11 +213,124 @@ public class IndexesLostRegistryTest {
 	}
 
 	/**
+	 * A local mode node over the shared directory that creates
+	 * {@code books} with one committed document and shuts down.
+	 */
+	private void createLocalIndexWithOneDocument() throws IOException {
+		var seeder = node();
+		try {
+			seeder.create("books", keyed());
+			seeder.write("books", index -> {
+				try {
+					index.addDocument(new Document(new Document.Value("id", "1")));
+					index.commit();
+					return null;
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			});
+		} finally {
+			seeder.close();
+		}
+	}
+
+	/**
+	 * The number of documents {@code books} holds on a local mode node over
+	 * the shared directory.
+	 */
+	private long documentsInLocalBooks() throws IOException {
+		var node = node();
+		try {
+			node.refresh();
+			return node.getOrThrow("books").getDocumentCount();
+		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * A local mode deployment moved to object storage on the same node, the
+	 * way the local mode startup warning suggests. The bucket holds a
+	 * registry of its own, which does not name the local indexes. Restarted
+	 * once the operator created another index there, the node must not take
+	 * the only copy of a local index for a copy of a deleted remote index.
+	 */
+	@Test
+	public void testObjectModeOverALocalModeDirectoryKeepsTheLocalIndexes() throws Exception {
+		// Given a directory where a local mode node created books and committed one document
+		createLocalIndexWithOneDocument();
+
+		// And the node runs in object mode over the same directory with an empty bucket
+		var bucketRegistry = new IndexRegistry(new InMemoryRegistryStorage(), Duration.ofMinutes(5));
+		try {
+			var object = node(new NoopRemoteSyncProvider(), bucketRegistry);
+			object.refresh();
+
+			// And the operator creates another index there
+			object.create("films", keyed());
+			object.close();
+
+			// When the node restarts and runs its first refresh
+			var restarted = node(new NoopRemoteSyncProvider(), bucketRegistry);
+			restarted.refresh();
+			restarted.close();
+		} catch(RuntimeException e) {
+			// Refusing to run in object mode over a local mode directory is also correct
+		}
+
+		// Then the local index still holds its document
+		assertThat(
+			"directory of the local mode index removed",
+			Files.isDirectory(dir("books")),
+			is(true)
+		);
+		assertThat(documentsInLocalBooks(), is(1L));
+	}
+
+	/**
+	 * Defining the indexes again in the bucket is the next step after
+	 * pointing a node at it. Done over the directory local mode used, it must
+	 * not remove the only copy of the local index of the same name.
+	 */
+	@Test
+	public void testObjectModeCreateOverALocalModeDirectoryKeepsTheLocalIndex() throws Exception {
+		// Given a directory where a local mode node created books and committed one document
+		createLocalIndexWithOneDocument();
+
+		// And the node runs in object mode over the same directory with an empty bucket
+		var bucketRegistry = new IndexRegistry(new InMemoryRegistryStorage(), Duration.ofMinutes(5));
+		try {
+			var object = node(new NoopRemoteSyncProvider(), bucketRegistry);
+			object.refresh();
+
+			// When the operator creates books again there
+			object.create("books", keyed());
+			object.close();
+		} catch(RuntimeException e) {
+			// Refusing to run in object mode over a local mode directory is also correct
+		}
+
+		// Then the local index still holds its document
+		assertThat(documentsInLocalBooks(), is(1L));
+	}
+
+	/**
 	 * Create the given indexes and shut the node down again, leaving the
 	 * directories a restarted node finds.
 	 */
 	private void createIndexes(String... names) throws IOException {
-		var seeder = node();
+		create(node(), names);
+	}
+
+	/**
+	 * Create the given indexes on a node whose directories copy the bucket,
+	 * and shut the node down again.
+	 */
+	private void createIndexesInBucket(String... names) throws IOException {
+		create(nodeWithRemote(), names);
+	}
+
+	private static void create(Indexes seeder, String... names) {
 		try {
 			for(var name : names) {
 				seeder.create(name, IndexDef.getDefaultInstance());
@@ -248,10 +369,11 @@ public class IndexesLostRegistryTest {
 
 	/**
 	 * A node over the shared directory whose directories copy a remote, the
-	 * way they do in object storage mode. Nothing is synchronized.
+	 * way they do in object storage mode. It reads and writes the registry of
+	 * the bucket. Nothing is synchronized.
 	 */
 	private Indexes nodeWithRemote() throws IOException {
-		return node(new NoopRemoteSyncProvider());
+		return node(new NoopRemoteSyncProvider(), bucketRegistry());
 	}
 
 	/**
@@ -259,10 +381,16 @@ public class IndexesLostRegistryTest {
 	 * for one, so only the sweep decides what stays on disk.
 	 */
 	private Indexes node(StateSyncProvider syncProvider) throws IOException {
+		return node(syncProvider, registry());
+	}
+
+	/**
+	 * A node over the shared directory that reads and writes the given
+	 * registry.
+	 */
+	private Indexes node(StateSyncProvider syncProvider, IndexRegistry registry) throws IOException {
 		var state = new NodeState(true);
 		state.updateOwnership(true);
-
-		var registry = registry();
 
 		var node = new Indexes(
 			state,
@@ -296,6 +424,15 @@ public class IndexesLostRegistryTest {
 
 		nodes.add(node);
 		return node;
+	}
+
+	/**
+	 * A registry over the bucket that the nodes in object storage mode share.
+	 * A second one stands for another node reading and writing the same
+	 * registry.
+	 */
+	private IndexRegistry bucketRegistry() {
+		return new IndexRegistry(bucket, Duration.ofMinutes(5));
 	}
 
 	/**

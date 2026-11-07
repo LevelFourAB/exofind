@@ -89,7 +89,7 @@ There is no direct migration path from `local` mode to `object` mode. Indexes ar
 
 To switch to object storage:
 
-1. Point a node at a bucket with `EXOFIND_STORAGE_MODE=object` and the settings in [Configuration](../reference/configuration.md#object-storage).
+1. Point a node at a bucket with `EXOFIND_STORAGE_MODE=object` and the settings in [Configuration](../reference/configuration.md#object-storage). Give it an empty `EXOFIND_STORAGE_LOCAL_DIRECTORY`. A node in `object` mode does not start over the directory that `local` mode wrote, because it removes the index directories that the bucket does not name.
 2. Define the indexes again.
 3. Load the documents again from their original data source.
 

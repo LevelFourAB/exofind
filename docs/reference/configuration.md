@@ -18,7 +18,7 @@ The following table lists storage configuration variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXOFIND_STORAGE_MODE` | Storage mode: `object` to store data in a shared S3-compatible bucket, or `local` to store data on local disk. | `local` |
-| `EXOFIND_STORAGE_LOCAL_DIRECTORY` | Directory where the node writes data. In `object` mode, it holds local copies of indexes. In `local` mode, it holds the only copy of indexes, the registry, and keys. | Required |
+| `EXOFIND_STORAGE_LOCAL_DIRECTORY` | Directory where the node writes data. In `object` mode, it holds local copies of indexes. In `local` mode, it holds the only copy of indexes, the registry, and keys. A node in `object` mode does not start over a directory that holds the registry or the keys of `local` mode. | Required |
 
 `local` mode is for a single node, such as a local test environment or a
 single container. The node does not copy data to remote storage, and additional

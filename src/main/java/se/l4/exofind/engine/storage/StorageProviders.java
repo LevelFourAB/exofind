@@ -61,18 +61,6 @@ public class StorageProviders {
 	private static final Log logger = Log.of(StorageProviders.class);
 
 	/**
-	 * Name the registry of a node storing locally is kept under, next to the
-	 * directory holding the indexes themselves.
-	 */
-	private static final String LOCAL_REGISTRY_FILE = "registry.ef.bin";
-
-	/**
-	 * Name the keys of a node storing locally are kept under, beside the
-	 * registry.
-	 */
-	private static final String LOCAL_KEYS_FILE = "keys.ef.bin";
-
-	/**
 	 * Directory the search settings of a node storing locally are kept in,
 	 * one file per index, beside the registry.
 	 */
@@ -114,7 +102,8 @@ public class StorageProviders {
 						+ " other node can serve or take over from this one, and there"
 						+ " is nothing to add a second node against. Set"
 						+ " EXOFIND_STORAGE_MODE=object with the"
-						+ " EXOFIND_STORAGE_REMOTE_ settings to keep them in an object"
+						+ " EXOFIND_STORAGE_REMOTE_ settings and an empty"
+						+ " EXOFIND_STORAGE_LOCAL_DIRECTORY to keep them in an object"
 						+ " storage instead"
 				);
 
@@ -306,7 +295,7 @@ public class StorageProviders {
 		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		return switch(mode) {
-			case LOCAL -> new LocalRegistryStorage(storageDirectory.resolve(LOCAL_REGISTRY_FILE));
+			case LOCAL -> new LocalRegistryStorage(storageDirectory.resolve(LocalModeFiles.REGISTRY_FILE));
 			case OBJECT -> new ObjectStorageRegistryStorage(storage.get());
 		};
 	}
@@ -372,7 +361,7 @@ public class StorageProviders {
 		@ConfigProperty(name = "exofind.storage.local.directory") Path storageDirectory
 	) {
 		if(mode == StorageMode.LOCAL) {
-			return new LocalKeyStorage(storageDirectory.resolve(LOCAL_KEYS_FILE));
+			return new LocalKeyStorage(storageDirectory.resolve(LocalModeFiles.KEYS_FILE));
 		}
 
 		/*
