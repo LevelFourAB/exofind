@@ -203,7 +203,7 @@ Content-Type: application/json
 
 You can change one document by its key in the URL path, or change several documents in a batch. Both forms describe the change the same way, and both require an index that declares a primary key. A change needs the document source unless it names only [signal fields](field-types.md#signal-fields).
 
-A change that names only the primary key and signal fields refreshes those fields in place. The engine replaces doc values without reading or rewriting the document. This is called a refresh, and it works on an index where `source` is `none`. A change that names any other field, adds a value, or reaches inside a field reads the document from its source, merges it, and indexes it again. Signal fields named in that change take the specified values, while unnamed signal fields keep their existing values.
+A change that names only the primary key and signal fields refreshes those fields in place. The engine replaces doc values without reading or rewriting the document. This is called a refresh, and it works on an index where `source` is `none`. A change that names any other field, adds a value, or reaches inside a field reads the document from its source, merges it, and indexes it again. Before the merge, the engine removes the values of fields that the index definition no longer has. Signal fields named in that change take the specified values, while unnamed signal fields keep their existing values.
 
 ### Change documents in a batch
 

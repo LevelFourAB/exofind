@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +29,7 @@ import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.FilterConfig;
 import se.l4.exofind.engine.index.schema.FloatFieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.schema.ObjectFieldTypeDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.query.Query;
 import se.l4.exofind.engine.query.matchers.Matchers;
@@ -293,6 +295,102 @@ public class DocumentUpdateTest extends AbstractIndexTest {
 		var other = index.getDocument("2");
 		assertThat(other, is(notNullValue()));
 		assertThat(other.get("price"), is(12f));
+	}
+
+	/**
+	 * A field dropped from the definition is no longer part of a document. A
+	 * patch of a document that held it must still apply, rather than be
+	 * refused for a field the caller never sent.
+	 */
+	@Test
+	public void aDocumentThatHeldADroppedFieldCanStillBePatched() throws IOException {
+		// Given
+		var index = create("catalogue", definition().putFields("extra", string().build()));
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "d1"),
+				new Document.Value("name", "Blueberry jam"),
+				new Document.Value("extra", "x")
+			)
+		);
+		index.commit();
+		index.updateDefinition(definition().build());
+
+		// When
+		var updated = index.updateDocument(patch(set("id", "d1"), set("name", "patched")));
+		index.commit();
+
+		// Then
+		assertTrue(updated);
+		assertThat(index.getDocument("d1").get("name"), is("patched"));
+	}
+
+	/**
+	 * A field dropped from inside an object is no longer part of the object.
+	 * A patch of a document whose object values held it must still apply, in
+	 * each mode an object can be kept in.
+	 */
+	@Test
+	public void aDocumentThatHeldAFieldDroppedFromAnObjectCanStillBePatched() throws IOException {
+		for(var mode : List.of(
+			ObjectFieldTypeDef.Mode.MODE_UNSPECIFIED,
+			ObjectFieldTypeDef.Mode.MODE_NESTED,
+			ObjectFieldTypeDef.Mode.MODE_FLATTENED
+		)) {
+			// Given
+			var name = "catalogue-" + mode.getNumber();
+			var index = create(name, definition().putFields("detail", detail(mode, true)));
+			index.addDocument(
+				new Document(
+					new Document.Value("id", "d1"),
+					new Document.Value("name", "Blueberry jam"),
+					new Document.Value(
+						"detail",
+						new Document(
+							new Document.Value("label", "jar"),
+							new Document.Value("extra", "x")
+						)
+					)
+				)
+			);
+			index.commit();
+			index.updateDefinition(definition().putFields("detail", detail(mode, false)).build());
+
+			// When
+			var updated = index.updateDocument(patch(set("id", "d1"), set("name", "patched")));
+			index.commit();
+
+			// Then
+			assertTrue(updated, "mode " + mode);
+			var document = index.getDocument("d1");
+			assertThat("mode " + mode, document.get("name"), is("patched"));
+			var detail = (Document) document.get("detail");
+			assertThat("mode " + mode, detail.get("label"), is("jar"));
+			assertThat("mode " + mode, detail.get("extra"), is(nullValue()));
+		}
+	}
+
+	/**
+	 * Get the object field {@code detail}. {@code MODE_UNSPECIFIED} gives a
+	 * single object, and the other modes give a list of objects in that mode.
+	 */
+	private static FieldDef detail(ObjectFieldTypeDef.Mode mode, boolean withExtra) {
+		var multiple = mode != ObjectFieldTypeDef.Mode.MODE_UNSPECIFIED;
+		var object = ObjectFieldTypeDef.newBuilder()
+			.putFields("label", string().build());
+
+		if(multiple) {
+			object.setMode(mode);
+		}
+
+		if(withExtra) {
+			object.putFields("extra", string().build());
+		}
+
+		return FieldDef.newBuilder()
+			.setType(FieldTypeDef.newBuilder().setObject(object))
+			.setMultiple(multiple)
+			.build();
 	}
 
 	private static DocumentPatch patch(Document.Value... values) {

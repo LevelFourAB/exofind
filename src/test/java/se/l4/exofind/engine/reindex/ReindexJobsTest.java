@@ -690,6 +690,46 @@ public class ReindexJobsTest {
 	}
 
 	/**
+	 * A field dropped from the definition of the source is not part of its
+	 * documents anymore. A reindex into a generation without that field must
+	 * copy those documents rather than fail on them.
+	 */
+	@Test
+	public void aReindexCopiesDocumentsThatHeldAFieldTheSourceDropped() throws Exception {
+		// Given
+		var source = indexes.create(
+			"catalogue",
+			definition().putFields("extra", string().build()).build()
+		);
+		source.addDocument(
+			new Document(
+				new Document.Value("id", "d1"),
+				new Document.Value("name", "Blueberry jam"),
+				new Document.Value("category", "preserves"),
+				new Document.Value("extra", "x")
+			)
+		);
+		source.commit();
+		source.updateDefinition(definition().build());
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		// When
+		jobs.start("catalogue@2", null, null, "tester");
+		await(() -> jobs.get("catalogue")
+			.map(job -> job.phase().isFinished())
+			.orElse(false));
+
+		// Then
+		var job = jobs.get("catalogue").orElseThrow();
+		assertThat(job.error(), is(nullValue()));
+		assertThat(job.phase(), is(ReindexPhase.DONE));
+		assertThat(
+			indexes.getOrThrow("catalogue@2").getDocument("d1").get("name"),
+			is("Blueberry jam")
+		);
+	}
+
+	/**
 	 * A job that fails stops recording the changes of the source. When the
 	 * record cannot say that it failed, the job must not be resumed later from
 	 * its last cursor: the changes since its start are then in neither the

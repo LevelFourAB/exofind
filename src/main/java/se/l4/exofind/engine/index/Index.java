@@ -3816,7 +3816,13 @@ public class Index {
 					.select(name -> SignalValues.isSignal(schema, name))
 					.toSet();
 
-				addDocument(patch.applyTo(current), statedSignals);
+				/*
+				 * The copy can hold values of fields the definition dropped
+				 * after the document was written. Indexing refuses them, so
+				 * they are removed before the patch is applied. A patch that
+				 * names such a field itself is still refused.
+				 */
+				addDocument(patch.applyTo(withoutDroppedFields(current)), statedSignals);
 				return true;
 			} finally {
 				documentLock.unlock();
@@ -4116,6 +4122,97 @@ public class Index {
 				signals
 			);
 		}
+	}
+
+	/**
+	 * Remove from a document the values of fields that the definition of this
+	 * index does not have.
+	 *
+	 * <p>The definition can drop a field while documents hold values for it.
+	 * The stored copy of such a document keeps those values, and a read of
+	 * the document returns them. The index no longer indexes them, and
+	 * {@link #addDocument(Document)} refuses a document that gives them. Use
+	 * this method before you write a stored copy again, for example the copy
+	 * of a document that a reindex reads from this index. Fields inside
+	 * objects are removed by the same rule.
+	 *
+	 * <p>The call does no I/O and does not change the index. It is safe to call
+	 * from any thread.
+	 *
+	 * @param document
+	 *   a document read from the stored copy of this index
+	 * @return
+	 *   the same document when it holds only fields the definition has,
+	 *   otherwise a copy without the values of the other fields
+	 */
+	public Document withoutDroppedFields(Document document) {
+		return withoutDroppedFields(document, null, null);
+	}
+
+	/**
+	 * Remove the values of dropped fields from a document or from one value of
+	 * an object field. The names resolve the way {@link #indexObjectValue}
+	 * resolves them, so a value is kept exactly when indexing does not refuse
+	 * it as unknown.
+	 *
+	 * @param objectName
+	 *   concrete name of the object the document is a value of, or {@code
+	 *   null} at the root
+	 * @param nestedList
+	 *   concrete name of the nested list the value sits below, or {@code
+	 *   null} when the paths resolve in the fields of the index
+	 */
+	private Document withoutDroppedFields(
+		Document document,
+		String objectName,
+		String nestedList
+	) {
+		var kept = new ArrayList<Document.Value>(document.fields().length);
+		var changed = false;
+
+		for(var value : document.fields()) {
+			var path = objectName == null
+				? value.name()
+				: objectName + '.' + value.name();
+
+			Optional<Field> resolved;
+			if(objectName == null) {
+				resolved = schema.getField(path);
+			} else {
+				resolved = (nestedList == null
+					? schema.getField(path)
+					: schema.getNestedField(path).map(IndexSchema.NestedField::field))
+					.filter(field -> schema.getEnclosingObjectOf(field, path)
+						.filter(objectName::equals)
+						.isPresent());
+			}
+
+			if(resolved.isEmpty()) {
+				changed = true;
+				continue;
+			}
+
+			var field = resolved.get();
+			if(field.isObject() && value.value() instanceof Document inner) {
+				var pruned = withoutDroppedFields(
+					inner,
+					path,
+					field.isNestedObject() ? path : nestedList
+				);
+
+				if(pruned != inner) {
+					kept.add(new Document.Value(value.name(), pruned, value.locale()));
+					changed = true;
+					continue;
+				}
+			}
+
+			kept.add(value);
+		}
+
+		return changed
+			? new Document(kept.toArray(Document.Value[]::new))
+			: document;
 	}
 
 	/**

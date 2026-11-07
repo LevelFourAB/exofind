@@ -1218,7 +1218,11 @@ public class ReindexJobs {
 			var lastKey = new String[1];
 			var read = source.scanDocuments(after, COPY_BATCH, document -> {
 				try {
-					target.replaceDocument(document);
+					/*
+					 * A field the source definition dropped is no longer part
+					 * of its documents, though their copies still hold it.
+					 */
+					target.replaceDocument(source.withoutDroppedFields(document));
 				} catch(ValidationException e) {
 					throw new DocumentRefused(
 						String.valueOf(document.get(keyField)),
@@ -1306,9 +1310,10 @@ public class ReindexJobs {
 				try {
 					/*
 					 * Replaced in full, so a signal field the source no
-					 * longer holds is emptied in the target too.
+					 * longer holds is emptied in the target too. A field the
+					 * source definition dropped is left out, as in the copy.
 					 */
-					target.replaceDocument(document);
+					target.replaceDocument(source.withoutDroppedFields(document));
 				} catch(ValidationException e) {
 					throw new DocumentRefused(
 						String.valueOf(document.get(keyField)),

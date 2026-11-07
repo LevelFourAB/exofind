@@ -142,7 +142,7 @@ On a generation that holds documents, refused changes include:
 
 Accepted changes on a generation that holds documents include:
 
-- Adding or removing a field, when no name moves to a field that indexes it differently.
+- Adding or removing a field, when no name moves to a field that indexes it differently. The source of a document keeps the values of a removed field, and a read of the document returns them. A change to some of the fields of the document and a reindex leave those values out.
 - Disabling a usage.
 - Removing some of the locales of a field. A search in a removed locale reads the default locale of the field.
 - Changing `stored`.
