@@ -10,16 +10,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import org.eclipse.collections.api.factory.Lists;
 import org.eclipse.collections.api.factory.Sets;
+import org.eclipse.collections.api.list.ListIterable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -678,6 +685,135 @@ public class ReindexJobsTest {
 		assertThat(indexes.getOrThrow("catalogue@2").getDocument("1").get("popularity"), is(0.1));
 	}
 
+	/**
+	 * A job that fails stops recording the changes of the source. When the
+	 * record cannot say that it failed, the job must not be resumed later from
+	 * its last cursor: the changes since its start are then in neither the
+	 * copy nor the log.
+	 */
+	@Test
+	public void aJobWhoseFailureCannotBeRecordedDoesNotPromoteStaleDocuments()
+		throws Exception {
+		// Given
+		var source = indexes.create("catalogue", definition().build());
+		for(var i = 0; i < 1500; i++) {
+			var key = String.format("k%04d", i);
+			source.addDocument(doc(key, "Jar " + key, "preserves"));
+		}
+		source.commit();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		var faulty = new FaultyRecordStorage(storage);
+		var failuresLeft = new AtomicInteger();
+		var changed = new AtomicBoolean();
+		faulty.refuse = job -> failuresLeft.get() > 0 && failuresLeft.getAndDecrement() > 0;
+		faulty.afterWrite = job -> {
+			if(job.cursor() != null && job.documentsCopied() == 1000 && !changed.getAndSet(true)) {
+				try {
+					// Changed after the first batch was copied, so only the log knows it
+					source.addDocument(doc("k0001", "Updated jar", "preserves"));
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+
+				// The next batch checkpoint and the failed record both fail
+				failuresLeft.set(2);
+			}
+		};
+
+		jobs.stop();
+		jobs = newJobs(faulty, "node-a");
+
+		// When
+		jobs.start("catalogue@2", null, null, "tester");
+		await(() -> faulty.refusedWrites() == 2);
+		jobs.stop();
+
+		// The storage recovers, and the node picks up what the records say
+		jobs = newJobs(faulty, "node-a");
+		jobs.onStart(null);
+		await(() -> jobs.get("catalogue")
+			.map(job -> job.phase().isFinished())
+			.orElse(false));
+
+		// Then
+		var live = indexes.getOrThrow("catalogue");
+		assertThat(live.getDocument("k0001").get("name"), is("Updated jar"));
+	}
+
+	/**
+	 * A cancel whose record cannot be written did not take effect: the record
+	 * still says that the job runs, and a later resume goes on with it. The
+	 * caller is told so, and the source keeps the log that the resumed job
+	 * replays the changes from.
+	 */
+	@Test
+	public void aCancelWhoseRecordCannotBeWrittenKeepsTheChangeLog() throws Exception {
+		// Given
+		var source = catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		var faulty = new FaultyRecordStorage(storage);
+		faulty.refuse = job -> job.phase() == ReindexPhase.CANCELLED;
+
+		var copying = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		faulty.afterWrite = job -> {
+			if(job.phase() == ReindexPhase.COPYING && job.cursor() == null) {
+				copying.countDown();
+				try {
+					release.await();
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		};
+
+		jobs.stop();
+		jobs = newJobs(faulty, "node-a");
+
+		jobs.start("catalogue@2", null, null, "tester");
+		assertTrue(copying.await(WAIT.toMillis(), TimeUnit.MILLISECONDS));
+
+		// When
+		var refused = new AtomicBoolean();
+		var cancelling = new Thread(() -> {
+			try {
+				jobs.cancel("catalogue");
+			} catch(ReindexStorageException e) {
+				refused.set(true);
+			}
+		});
+		cancelling.start();
+
+		// The cancel has raised its flag once it waits for the job to stop
+		await(() -> cancelling.getState() == Thread.State.TIMED_WAITING);
+		release.countDown();
+		cancelling.join(WAIT.toMillis());
+
+		// Then
+		assertThat("the cancel answered an error", refused.get(), is(true));
+		assertThat(registry.get("catalogue").orElseThrow().live(), is("1"));
+		assertThat(
+			jobs.get("catalogue").orElseThrow().phase(),
+			is(not(ReindexPhase.CANCELLED))
+		);
+		assertThat("the source keeps its change log", source.getChangeLog().isPresent(), is(true));
+
+		// And: a document changed now is in the target that the resumed job promotes
+		source.addDocument(doc("1", "Updated jam", "preserves"));
+
+		jobs.stop();
+		jobs = newJobs(faulty, "node-a");
+		jobs.onStart(null);
+		await(() -> jobs.get("catalogue")
+			.map(job -> job.phase().isFinished())
+			.orElse(false));
+
+		var live = indexes.getOrThrow("catalogue");
+		assertThat(live.getDocument("1").get("name"), is("Updated jam"));
+	}
+
 	private static Document doc(String id, String name, String category) {
 		return new Document(
 			new Document.Value("id", id),
@@ -775,6 +911,86 @@ public class ReindexJobsTest {
 			}
 
 			Thread.sleep(20);
+		}
+	}
+
+	private ReindexJobs newJobs(ReindexJobStorage storage, String node) {
+		var ownership = new LocalIndexerOwnership();
+		ownership.start((index, owner) -> {
+		});
+
+		return new ReindexJobs(
+			nodeState,
+			new NodeIdentity(node),
+			indexes,
+			registry,
+			storage,
+			ownership,
+			2,
+			Duration.ofMinutes(5),
+			Duration.ofMinutes(5)
+		);
+	}
+
+	/**
+	 * Record storage that a test can make refuse writes, the way a storage
+	 * outage or a full disk does, and that can run a step after a write
+	 * landed.
+	 */
+	private static final class FaultyRecordStorage implements ReindexJobStorage {
+		private final ReindexJobStorage delegate;
+		private final AtomicInteger refused;
+
+		private volatile Predicate<ReindexJob> refuse;
+		private volatile Consumer<ReindexJob> afterWrite;
+
+		FaultyRecordStorage(ReindexJobStorage delegate) {
+			this.delegate = delegate;
+			this.refused = new AtomicInteger();
+			this.refuse = job -> false;
+			this.afterWrite = job -> {
+			};
+		}
+
+		int refusedWrites() {
+			return refused.get();
+		}
+
+		@Override
+		public Optional<Stored> read(String index) throws IOException {
+			return delegate.read(index);
+		}
+
+		@Override
+		public String write(String index, ReindexJobStore record, String expectedVersion)
+			throws IOException {
+			var job = ReindexJob.fromStore(record).orElse(null);
+			if(job != null && refuse.test(job)) {
+				refused.incrementAndGet();
+				throw new IOException("The record storage is unreachable");
+			}
+
+			var version = delegate.write(index, record, expectedVersion);
+			if(job != null && version != null) {
+				afterWrite.accept(job);
+			}
+
+			return version;
+		}
+
+		@Override
+		public void delete(String index) throws IOException {
+			delegate.delete(index);
+		}
+
+		@Override
+		public ListIterable<Stored> list() throws IOException {
+			return delegate.list();
+		}
+
+		@Override
+		public ListIterable<Stored> listUnfinished() throws IOException {
+			return delegate.listUnfinished();
 		}
 	}
 }

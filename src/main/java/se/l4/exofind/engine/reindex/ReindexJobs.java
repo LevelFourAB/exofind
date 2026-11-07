@@ -664,6 +664,9 @@ public class ReindexJobs {
 	 *   the job as its record stands after the cancel
 	 * @throws ReindexNotFoundException
 	 *   if the index has no job
+	 * @throws ReindexStorageException
+	 *   if the record could not be read or written. The record then still
+	 *   says that the job runs, and the job goes on later
 	 */
 	public ReindexJob cancel(String index) {
 		var current = running.get(index);
@@ -700,6 +703,8 @@ public class ReindexJobs {
 				if(running.get(index) == current && !current.job.phase().isFinished()) {
 					finishCancelled(current);
 				}
+			} catch(IOException e) {
+				throw new ReindexStorageException(e);
 			} finally {
 				current.lock.unlock();
 			}
@@ -833,7 +838,12 @@ public class ReindexJobs {
 			promoteAndFinish(current, source, target);
 			return true;
 		} catch(JobCancelled e) {
-			finishCancelled(current);
+			try {
+				finishCancelled(current);
+			} catch(IOException failure) {
+				throw new ReindexStorageException(failure);
+			}
+
 			throw new ReindexTargetBusyException(name);
 		} catch(JobLost e) {
 			abandon(current);
@@ -1458,22 +1468,40 @@ public class ReindexJobs {
 	}
 
 	/**
-	 * End a job that a cancel stopped: tracking ends, the record says
-	 * cancelled, the partial target stays. Called under the job's lock.
+	 * End a job that a cancel stopped: the record says cancelled, tracking
+	 * ends, the partial target stays. Called under the job's lock.
+	 *
+	 * <p>Tracking ends only after the record says cancelled. A record that
+	 * cannot be written still says the job runs, and the sweep resumes it
+	 * later. The resumed job replays the changes from the log, so the log
+	 * must still hold them.
+	 *
+	 * @throws IOException
+	 *   if the record could not be written. The job is let go here and the
+	 *   record still says that it runs, so the cancel did not take effect
 	 */
-	private void finishCancelled(Running current) {
+	private void finishCancelled(Running current) throws IOException {
 		if(closeIfPromoted(current)) {
 			return;
 		}
 
-		endTrackingQuietly(current.job);
-
 		try {
 			checkpoint(current, j -> j.withPhase(ReindexPhase.CANCELLED));
-		} catch(IOException | JobLost e) {
-			// The record is another node's, or unreachable - either way not ours
+		} catch(JobLost e) {
+			// The record is another node's, and so is the log
+			abandon(current);
+			return;
+		} catch(IOException e) {
+			logger.atWarn()
+				.addKeyValue("index", current.index)
+				.setCause(e)
+				.log("Could not record that the reindex was cancelled, keeping its change log");
+
+			abandon(current);
+			throw e;
 		}
 
+		endTrackingQuietly(current.job);
 		running.remove(current.index, current);
 
 		logger.atInfo()
@@ -1525,27 +1553,38 @@ public class ReindexJobs {
 	}
 
 	/**
-	 * End a job that cannot continue: tracking ends and the record carries the
-	 * reason. The target is never promoted partial or wrong, which is what
-	 * makes every reindex safe to attempt - a job that already promoted is
-	 * closed as done instead, because by then the target is what the index
+	 * End a job that cannot continue: the record carries the reason and
+	 * tracking ends. The target is never promoted partial or wrong, which is
+	 * what makes every reindex safe to attempt - a job that already promoted
+	 * is closed as done instead, because by then the target is what the index
 	 * answers from.
+	 *
+	 * <p>Tracking ends only after the record says failed. A record that
+	 * cannot be written still says the job runs, and the sweep resumes it
+	 * later. The resumed job replays the changes from the log, so the log
+	 * must still hold them.
 	 */
 	private void fail(Running current, String reason) {
 		if(closeIfPromoted(current)) {
 			return;
 		}
 
-		endTrackingQuietly(current.job);
-
 		try {
 			checkpoint(current, j -> j.withError(reason));
 		} catch(IOException | JobLost e) {
 			logger.atWarn()
 				.addKeyValue("index", current.index)
-				.log("Could not record why the reindex failed");
+				.log("Could not record why the reindex failed, keeping its change log");
+
+			abandon(current);
+
+			logger.atError()
+				.addKeyValue("index", current.index)
+				.log("Reindex stopped; " + reason);
+			return;
 		}
 
+		endTrackingQuietly(current.job);
 		running.remove(current.index, current);
 
 		logger.atError()
