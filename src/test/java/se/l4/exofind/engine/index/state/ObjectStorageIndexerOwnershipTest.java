@@ -15,6 +15,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -658,6 +660,103 @@ public class ObjectStorageIndexerOwnershipTest {
 
 		assertThat(revoked.contains("books"), is(true));
 		assertThat(owned.contains("books"), is(false));
+	}
+
+	/**
+	 * A stop can start while a round waits on a slow storage, which is when
+	 * nodes are often restarted. The shutdown flush must still run: the
+	 * listener hears that the node gives up each index it holds, and the
+	 * flush of each is asked for, so that what the indexes hold is pushed
+	 * before the claims are stepped out of.
+	 */
+	@Test
+	void aStopDuringAStalledRoundStillFlushesTheHeldIndexes() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		Set<String> flushAsked = ConcurrentHashMap.newKeySet();
+		flush = name -> {
+			flushAsked.add(name);
+			return CompletableFuture.completedFuture(null);
+		};
+
+		// Given: a node that holds "books" with a lease long enough that it does not lapse during the test
+		var stall = new StalledTableReads();
+		var faulty = new ObjectStorage(
+			Optional.of(TestObjectStorage.url()),
+			TestObjectStorage.auth(),
+			Optional.empty(),
+			TestObjectStorage.BUCKET,
+			Optional.of(storagePrefix),
+			false,
+			stall
+		);
+		var holder = new ObjectStorageIndexerOwnership(
+			faulty,
+			"a",
+			Optional.empty(),
+			Duration.ofSeconds(20),
+			names::get,
+			name -> 0d,
+			(name, count) -> {},
+			name -> flush.apply(name)
+		);
+
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(holder, revoked);
+		await(() -> owned.contains("books"), "the candidate to take the index");
+
+		// And: the next round waits on a read of the table that does not answer
+		stall.armed.set(true);
+		assertThat("a round reached the stalled read", stall.entered.await(15, TimeUnit.SECONDS), is(true));
+
+		// When: the node stops while the round waits
+		running.remove(holder);
+		var stopping = new Thread(holder::stop);
+		stopping.start();
+
+		try {
+			// Then: the flush of "books" is asked for
+			await(() -> flushAsked.contains("books"), "the shutdown flush of books to be asked for");
+
+			// And: the listener heard that the node hands "books" over
+			assertThat(owned.contains("books"), is(false));
+			assertThat(revoked.contains("books"), is(false));
+		} finally {
+			stall.release.countDown();
+			stopping.join(30_000);
+		}
+	}
+
+	/**
+	 * Holds reads of the leadership table once {@link #armed} is set, until
+	 * {@link #release} is counted down or the reading thread is interrupted.
+	 * This stands in for a storage that does not answer a request of one
+	 * node.
+	 */
+	static final class StalledTableReads implements ExecutionInterceptor {
+		final AtomicBoolean armed = new AtomicBoolean();
+		final CountDownLatch entered = new CountDownLatch(1);
+		final CountDownLatch release = new CountDownLatch(1);
+
+		@Override
+		public void beforeExecution(Context.BeforeExecution context, ExecutionAttributes attributes) {
+			if(
+				!armed.get()
+					|| !(context.request() instanceof GetObjectRequest get)
+					|| !get.key().endsWith("indexer-leadership.ef.bin")
+			) {
+				return;
+			}
+
+			entered.countDown();
+			try {
+				release.await(60, TimeUnit.SECONDS);
+			} catch(InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+
+			throw SdkClientException.create("simulated read of the leadership table that did not answer");
+		}
 	}
 
 	/**

@@ -251,9 +251,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private final Duration tableCallTimeout;
 
 	/**
-	 * Guards {@link #held}, {@link #draining}, {@link #drainFlushes} and
-	 * {@link #heldUntil}, and every call to the listener. The rounds and
-	 * {@link #checkLease()} both change them. A round holds the lock while it
+	 * Guards {@link #held}, {@link #draining}, {@link #drainFlushes},
+	 * {@link #heldUntil} and {@link #shutDown}, and every call to the
+	 * listener. The rounds, {@link #checkLease()} and the shutdown flush all
+	 * change them. A round holds the lock while it
 	 * builds and while it applies a table, never while it waits on the
 	 * storage.
 	 */
@@ -287,10 +288,18 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 	/**
 	 * The indexes the shutdown flush pushes, whose claims {@link #stop()}
-	 * keeps renewed while it waits for the flush. Set once on the executor
-	 * thread by {@link #flushOnShutdown()}.
+	 * keeps renewed while it waits for the flush. Set once by
+	 * {@link #flushOnShutdown()} while {@link #stateLock} is held.
 	 */
 	private volatile ImmutableSet<String> flushingOnShutdown = Sets.immutable.empty();
+
+	/**
+	 * Whether the shutdown flush has started. From then on, no round or claim
+	 * builds a new table, and a table built before it changes nothing here
+	 * other than to revoke an index the table shows this node lost. Only
+	 * touched while {@link #stateLock} is held.
+	 */
+	private boolean shutDown;
 
 	/**
 	 * When the claims this node holds lapse, according to its own clock.
@@ -523,15 +532,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private CompletableFuture<Void> flushOnShutdown() {
 		var flushed = new CompletableFuture<Void>();
 
-		try {
-			executor.execute(() -> {
-				synchronized(stateLock) {
-					startShutdownFlush(flushed);
-				}
-			});
-		} catch(RejectedExecutionException e) {
-			// Never started, so nothing is held and there is nothing to flush
-			flushed.complete(null);
+		/*
+		 * Started on the stopping thread, not queued on the executor. A round
+		 * can wait on a slow storage for longer than the stop waits for the
+		 * executor, and the stop then removes queued tasks without running
+		 * them. The state lock is enough to keep the flush apart from the
+		 * rounds: see shutDown for what a round does after it.
+		 */
+		synchronized(stateLock) {
+			startShutdownFlush(flushed);
 		}
 
 		return flushed;
@@ -546,6 +555,14 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 *   completed when every flush is done
 	 */
 	private void startShutdownFlush(CompletableFuture<Void> flushed) {
+		if(shutDown) {
+			// An earlier stop gave everything up already
+			flushed.complete(null);
+			return;
+		}
+
+		shutDown = true;
+
 		var pending = new ArrayList<CompletableFuture<?>>(drainFlushes.values());
 
 		// Set before the listener hears of the loss, so no flush starts unrenewed
@@ -848,6 +865,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 			Rebuilt rebuilt;
 			synchronized(stateLock) {
+				if(shutDown) {
+					/*
+					 * The shutdown flush gave every index up while this round
+					 * read the table. A table built now would not name the
+					 * indexes being flushed, and could free their claims.
+					 */
+					return;
+				}
+
 				rebuilt = rebuild(current, now, null);
 			}
 
@@ -908,6 +934,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 			Rebuilt rebuilt;
 			synchronized(stateLock) {
+				if(shutDown) {
+					// See coordinate
+					return false;
+				}
+
 				rebuilt = rebuild(current, now, index);
 			}
 
@@ -1556,6 +1587,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * listener told about every index that changed hands.
 	 */
 	private void apply(long now, Rebuilt rebuilt) {
+		if(shutDown) {
+			applyAfterShutdown(rebuilt);
+			return;
+		}
+
 		if(System.currentTimeMillis() >= now + leaseDuration.toMillis() - revokeMarginMillis) {
 			/*
 			 * The table write took so long that the claims it renewed are
@@ -1743,6 +1779,39 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 							+ " node's"
 					);
 			}
+
+			tell(name, () -> listener.onOwnershipRevoked(name));
+		}
+	}
+
+	/**
+	 * Take into effect a table that was built before the shutdown flush
+	 * started and written after it. The flush already gave every index up, so
+	 * nothing in the table is taken up here: a claim it adds for this node is
+	 * never written under, and lapses or is stepped out of. The table can
+	 * show that this node lost an index that the flush pushes: the claim
+	 * names another node, or the registry deleted the index. The listener is
+	 * then told of a revocation, so the flush pushes nothing over what a
+	 * successor writes. Called with {@link #stateLock} held.
+	 */
+	private void applyAfterShutdown(Rebuilt rebuilt) {
+		for(var name : flushingOnShutdown) {
+			if(
+				rebuilt.held().contains(name)
+					|| rebuilt.draining().contains(name)
+					|| rebuilt.released().contains(name)
+			) {
+				// Still this node's, or handed over after its flush was done
+				continue;
+			}
+
+			logger.atError()
+				.addKeyValue("node", node)
+				.addKeyValue("index", name)
+				.log(
+					"Giving up the shutdown flush of the index, the claim is no"
+						+ " longer this node's"
+				);
 
 			tell(name, () -> listener.onOwnershipRevoked(name));
 		}
