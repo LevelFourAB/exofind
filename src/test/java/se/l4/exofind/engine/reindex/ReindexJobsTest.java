@@ -814,6 +814,105 @@ public class ReindexJobsTest {
 		assertThat(live.getDocument("1").get("name"), is("Updated jam"));
 	}
 
+	/**
+	 * A cancel that reaches a node which carries no job for the index acts on
+	 * the record. When the claim the request made resumes the job at the same
+	 * moment, the cancel must not take the change log away from the resumed
+	 * job and leave it to promote without it.
+	 */
+	@Test
+	public void aCancelThatMeetsAResumeDoesNotLeaveTheJobWithoutItsLog() throws Exception {
+		// Given
+		var source = largeCatalogue();
+		var target = indexes.createGeneration("catalogue@2", definition().build());
+		for(var i = 0; i < 1000; i++) {
+			var key = String.format("k%04d", i);
+			target.addDocument(doc(key, "Jar " + key, "preserves"));
+		}
+		target.commit();
+		writeCopyingRecord();
+
+		// The node that ran the job tracked the source, and died after this change
+		source.beginChangeTracking();
+		source.addDocument(doc("k0001", "Updated jar", "preserves"));
+		source.commit();
+
+		var faulty = new FaultyRecordStorage(storage);
+		var successor = newJobs(faulty, "node-a");
+		var resumed = new AtomicBoolean();
+		faulty.refuse = job -> {
+			if(job.phase() == ReindexPhase.CANCELLED && !resumed.getAndSet(true)) {
+				// The claim the cancel request made resumes the job meanwhile
+				resumeAndAwaitCheckpoint(successor);
+			}
+			return false;
+		};
+
+		jobs.stop();
+		jobs = successor;
+
+		// When
+		try {
+			jobs.cancel("catalogue");
+		} catch(ReindexStorageException e) {
+			// Saying that the cancel was not recorded is a valid answer
+		}
+		awaitFinished("catalogue");
+
+		// Then
+		var live = indexes.getOrThrow("catalogue");
+		assertThat(live.getDocument("k0001").get("name"), is("Updated jar"));
+	}
+
+	private void resumeAndAwaitCheckpoint(ReindexJobs successor) {
+		try {
+			var before = storage.read("catalogue").orElseThrow().version();
+			successor.onStart(null);
+			await(() -> {
+				try {
+					return !storage.read("catalogue").orElseThrow().version().equals(before);
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			});
+		} catch(Exception e) {
+			throw new AssertionError(e);
+		}
+	}
+
+	private Index largeCatalogue() throws IOException {
+		var index = indexes.create("catalogue", definition().build());
+		for(var i = 0; i < 1500; i++) {
+			var key = String.format("k%04d", i);
+			index.addDocument(doc(key, "Jar " + key, "preserves"));
+		}
+		index.commit();
+		return index;
+	}
+
+	/**
+	 * Write the record a node leaves when it stops after the first batch of
+	 * a copy from generation 1 into generation 2.
+	 */
+	private void writeCopyingRecord() throws IOException {
+		var now = Instant.now();
+		storage.write(
+			"catalogue",
+			new ReindexJob(
+				"job-1", "catalogue", "2", "1",
+				ReindexPhase.COPYING,
+				"k0999", 1000, 1500, 0, null, false, "tester", "node-b", now, now, null
+			).toStore(),
+			null
+		);
+	}
+
+	private void awaitFinished(String index) throws Exception {
+		await(() -> jobs.get(index)
+			.map(job -> job.phase().isFinished())
+			.orElse(false));
+	}
+
 	private static Document doc(String id, String name, String category) {
 		return new Document(
 			new Document.Value("id", id),

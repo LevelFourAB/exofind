@@ -727,15 +727,29 @@ public class ReindexJobs {
 				return job;
 			}
 
-			endTrackingQuietly(job);
-
+			/*
+			 * The record first, and tracking ends only when the record says
+			 * cancelled. The claim that routed this cancel here can resume the
+			 * job at the same moment, and the resumed job replays from the
+			 * log of the source. Ended before a write that then loses, the log
+			 * is gone and the resumed job promotes without the changes it held.
+			 */
 			var cancelled = job.withPhase(ReindexPhase.CANCELLED).written(node, Instant.now());
 			var version = storage.write(index, cancelled.toStore(), stored.version());
 			if(version == null) {
-				// Somebody resumed it in between; they own the record now
+				/*
+				 * Somebody resumed it in between; they own the record now.
+				 * When that is this node, the job is cancelled the way a job
+				 * this node carries is.
+				 */
+				if(running.containsKey(index)) {
+					return cancel(index);
+				}
+
 				return get(index).orElseThrow(() -> new ReindexNotFoundException(index));
 			}
 
+			endTrackingQuietly(job);
 			return cancelled;
 		} catch(IOException e) {
 			throw new ReindexStorageException(e);
