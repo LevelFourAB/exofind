@@ -898,7 +898,7 @@ public class ReindexJobsTest {
 
 		// When
 		jobs.onStart(null);
-		awaitFinished("catalogue");
+		awaitFinishedOrRemoved("catalogue");
 
 		// Then
 		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
@@ -929,6 +929,96 @@ public class ReindexJobsTest {
 		assertThat(indexes.getOrThrow("catalogue").getDocument("k0000"), is(notNullValue()));
 	}
 
+	/**
+	 * A job belongs to its index. Deleting the index takes the record with
+	 * it, so that nothing resumes it and a reindex of an index created again
+	 * under the name is not refused.
+	 */
+	@Test
+	public void aDeleteOfTheIndexRemovesTheRecordOfItsJob() throws Exception {
+		// Given a job that no node carries
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		writeCopyingRecord();
+
+		// When the index is deleted
+		indexes.delete("catalogue");
+
+		// Then the job has no record
+		assertThat(jobs.get("catalogue").isPresent(), is(false));
+	}
+
+	/**
+	 * A job whose target is deleted has nothing left to fill, so its record
+	 * says that it failed.
+	 */
+	@Test
+	public void aDeleteOfTheTargetGenerationFailsItsJob() throws Exception {
+		// Given a job that no node carries
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		writeCopyingRecord();
+
+		// When the target generation is deleted
+		indexes.delete("catalogue@2");
+
+		// Then the job is failed
+		assertThat(jobs.get("catalogue").orElseThrow().phase(), is(ReindexPhase.FAILED));
+	}
+
+	/**
+	 * A record that an earlier version wrote does not say when its
+	 * generations were created, so a resume cannot tell a generation created
+	 * again from the one the job read. The delete of the index takes the
+	 * record, so it is not resumed into the index created again.
+	 */
+	@Test
+	public void aJobOfAnEarlierVersionIsNotResumedIntoTheIndexCreatedAgain() throws Exception {
+		// Given a job of an earlier version that no node carries
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		writeCopyingRecord(null, null);
+
+		// And the index deleted and created again
+		indexes.delete("catalogue");
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		// When the jobs are resumed and the generation is reindexed
+		jobs.onStart(null);
+		jobs.start("catalogue@2", null, null, "tester");
+		awaitFinished("catalogue");
+
+		// Then the promoted generation holds every document
+		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+		assertThat(indexes.getOrThrow("catalogue").getDocument("k0000"), is(notNullValue()));
+	}
+
+	/**
+	 * A generation deleted and created again where this node did not see the
+	 * delete leaves the record of the old job. A new reindex of the generation
+	 * replaces that record rather than being refused for it.
+	 */
+	@Test
+	public void aJobOfATargetGenerationCreatedAgainDoesNotRefuseANewReindex() throws Exception {
+		// Given a job that no node carries
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		writeCopyingRecord();
+
+		// And the target generation deleted on another node and created again
+		Thread.sleep(2);
+		registry.removeGeneration("catalogue", "2");
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		// When the generation is reindexed
+		jobs.start("catalogue@2", null, null, "tester");
+		awaitFinished("catalogue");
+
+		// Then the promoted generation holds every document
+		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+	}
+
 	private Index largeCatalogue() throws IOException {
 		var index = indexes.create("catalogue", definition().build());
 		for(var i = 0; i < 1500; i++) {
@@ -945,16 +1035,36 @@ public class ReindexJobsTest {
 	 * the registry holds them now.
 	 */
 	private void writeCopyingRecord() throws IOException {
-		var now = Instant.now();
 		var registered = registry.get("catalogue").orElseThrow();
+		writeCopyingRecord(
+			registered.generation("1").orElseThrow().createdAt(),
+			registered.generation("2").orElseThrow().createdAt()
+		);
+	}
+
+	/**
+	 * Write the record a node leaves when it stops after the first batch of
+	 * a copy from generation 1 into generation 2.
+	 *
+	 * @param sourceCreatedAt
+	 *   when the source was created, or {@code null} for a record of an
+	 *   earlier version that does not say
+	 * @param targetCreatedAt
+	 *   when the target was created, or {@code null}
+	 */
+	private void writeCopyingRecord(
+		Instant sourceCreatedAt,
+		Instant targetCreatedAt
+	) throws IOException {
+		var now = Instant.now();
 		storage.write(
 			"catalogue",
 			new ReindexJob(
 				"job-1", "catalogue", "2", "1",
 				ReindexPhase.COPYING,
 				"k0999", 1000, 1500, 0, null, false, "tester", "node-b", now, now, null,
-				registered.generation("1").orElseThrow().createdAt(),
-				registered.generation("2").orElseThrow().createdAt()
+				sourceCreatedAt,
+				targetCreatedAt
 			).toStore(),
 			null
 		);
@@ -964,6 +1074,16 @@ public class ReindexJobsTest {
 		await(() -> jobs.get(index)
 			.map(job -> job.phase().isFinished())
 			.orElse(false));
+	}
+
+	/**
+	 * Wait until the job of an index is finished, or its record is gone, as
+	 * it is after a delete of the index.
+	 */
+	private void awaitFinishedOrRemoved(String index) throws Exception {
+		await(() -> jobs.get(index)
+			.map(job -> job.phase().isFinished())
+			.orElse(true));
 	}
 
 	private static Document doc(String id, String name, String category) {

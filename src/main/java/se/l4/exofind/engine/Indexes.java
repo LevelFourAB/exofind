@@ -19,6 +19,7 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -192,6 +193,12 @@ public class Indexes implements RegistryPoller.Listener {
 	 * {@link #settlePendingRemovals()}.
 	 */
 	private final PendingRemovalsFile pendingRemovals;
+
+	/**
+	 * Told about every index and generation this node deleted, see
+	 * {@link RemovalListener}.
+	 */
+	private final List<RemovalListener> removalListeners;
 
 	/**
 	 * One lock per index name, held while the directory of the index is being
@@ -628,6 +635,7 @@ public class Indexes implements RegistryPoller.Listener {
 		this.indexRoot = storageDirectory.resolve("indexes");
 		Files.createDirectories(indexRoot);
 		this.pendingRemovals = PendingRemovalsFile.open(storageDirectory);
+		this.removalListeners = new CopyOnWriteArrayList<>();
 
 		/*
 		 * Eviction only retires an instance. The closing - which may flush
@@ -2880,9 +2888,13 @@ public class Indexes implements RegistryPoller.Listener {
 	public void delete(String name) throws IOException {
 		var parsed = IndexName.parse(name);
 
+		IOException copyFailure = null;
 		lifecycleLock.lock();
 		try {
 			deleteLocked(parsed);
+		} catch(IOException e) {
+			// The delete went through, only a local copy stays
+			copyFailure = e;
 		} catch(RegistryRemovalUnknownException e) {
 			keepPendingRemoval(e);
 			throw e;
@@ -2892,13 +2904,67 @@ public class Indexes implements RegistryPoller.Listener {
 			 * and finds the name gone when that delete landed after all. The
 			 * removal settles now, from the registry the removal just read.
 			 */
-			if(settlePendingRemovalOf(parsed)) {
-				return;
+			if(!settlePendingRemovalOf(parsed)) {
+				throw e;
 			}
-
-			throw e;
 		} finally {
 			lifecycleLock.unlock();
+		}
+
+		notifyRemoved(parsed);
+
+		if(copyFailure != null) {
+			throw copyFailure;
+		}
+	}
+
+	/**
+	 * Something told about every index and generation this node deletes.
+	 *
+	 * <p>Told after the registry no longer names what was deleted and its
+	 * removal mark was left, and outside the lock that orders creates and
+	 * deletes, so a listener may wait for work that creates or deletes. A
+	 * delete on another node is not told: a listener that must know about
+	 * every delete also reads the registry.
+	 */
+	@FunctionalInterface
+	public interface RemovalListener {
+		/**
+		 * The index, or the generation as {@code index@generation}, was
+		 * deleted.
+		 */
+		void onRemoved(IndexName target);
+	}
+
+	/**
+	 * Tell a listener about every index and generation this node deletes
+	 * from now on.
+	 */
+	public void addRemovalListener(RemovalListener listener) {
+		removalListeners.add(listener);
+	}
+
+	/**
+	 * Stop telling a listener about deletes.
+	 */
+	public void removeRemovalListener(RemovalListener listener) {
+		removalListeners.remove(listener);
+	}
+
+	/**
+	 * Tell the listeners that a delete landed. A listener that fails is
+	 * logged: the delete itself went through.
+	 */
+	private void notifyRemoved(IndexName target) {
+		for(var listener : removalListeners) {
+			try {
+				listener.onRemoved(target);
+			} catch(RuntimeException e) {
+				logger.atWarn()
+					.addKeyValue("index", target.toString())
+					.setCause(e)
+					.log("Could not act on a deleted index; " + e.getMessage());
+			}
 		}
 	}
 
@@ -2982,6 +3048,7 @@ public class Indexes implements RegistryPoller.Listener {
 			return;
 		}
 
+		var removed = new ArrayList<IndexName>();
 		lifecycleLock.lock();
 		try {
 			if(!registry.refresh() || registry.version() == null) {
@@ -2989,7 +3056,9 @@ public class Indexes implements RegistryPoller.Listener {
 			}
 
 			for(var removal : pendingRemovals.list()) {
-				settle(removal);
+				if(settle(removal)) {
+					removed.add(removal.target());
+				}
 			}
 		} catch(RuntimeException e) {
 			logger.atWarn()
@@ -2998,6 +3067,8 @@ public class Indexes implements RegistryPoller.Listener {
 		} finally {
 			lifecycleLock.unlock();
 		}
+
+		removed.forEach(this::notifyRemoved);
 	}
 
 	/**
@@ -3006,7 +3077,7 @@ public class Indexes implements RegistryPoller.Listener {
 	 * right after a read of the registry.
 	 *
 	 * @return
-	 *   whether a removal of the target was pending and had landed
+	 *   whether a removal of the target was pending, landed, and left its mark
 	 */
 	private boolean settlePendingRemovalOf(IndexName target) {
 		if(registry.version() == null) {
@@ -3039,7 +3110,8 @@ public class Indexes implements RegistryPoller.Listener {
 	 * under it.
 	 *
 	 * @return
-	 *   whether the removal landed
+	 *   whether the removal landed and nothing was created again under the
+	 *   name since
 	 */
 	private boolean settle(PendingRemovalsFile.Removal removal) {
 		var target = removal.target();
@@ -3090,7 +3162,7 @@ public class Indexes implements RegistryPoller.Listener {
 				.log("Could not forget a settled delete, it is settled again later; " + e.getMessage());
 		}
 
-		return landed;
+		return mark;
 	}
 
 	/**

@@ -181,6 +181,8 @@ failed -> cleanup
 cancelled -> cleanup
 ```
 
+A job belongs to the generations it started on. The record keeps when the source and the target were created, and a resume fails a job whose source or target was deleted, or deleted and created again under the same name. A job that resumed into a new, empty target would continue from its old cursor and promote a generation that lacks every document below that cursor. A delete also ends the job at once. Deleting the index removes the record of its job, so a reindex of an index created again under the name starts with no job. Deleting the source or the target of a job that is not finished marks the job `failed`. A record that a node left when it stopped between the delete and that step does not block a new reindex. The new job replaces it.
+
 Because the copy process reads the source generation while writes continue, it does not capture a single point in time. The change log records any changes made during the copy, and subsequent replay rounds apply those updates to the new generation.
 
 You can also drive a rebuild from outside the engine. Calling `GET /v1alpha1/indexes/{name}/documents` exports stored documents from a generation in primary key order (see the [Documents API reference](../reference/documents-api.md)). The indexing endpoint accepts this newline-delimited output, so you can populate a new generation without querying the upstream source system. Use this approach for an index that does not support change tracking or when documents must be refreshed directly from the system of record.

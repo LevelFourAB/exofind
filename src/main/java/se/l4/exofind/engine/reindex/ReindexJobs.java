@@ -227,6 +227,8 @@ public class ReindexJobs {
 
 	private final NodeState.Listener nodeStateListener;
 
+	private final Indexes.RemovalListener removalListener;
+
 	private volatile boolean stopped;
 
 	@Inject
@@ -288,6 +290,14 @@ public class ReindexJobs {
 				}
 			}
 		});
+
+		/*
+		 * Registered here rather than at startup, as a delete must end the
+		 * job of what it deletes on every node that deletes, also one that
+		 * does not index.
+		 */
+		this.removalListener = this::onRemoved;
+		indexes.addRemovalListener(removalListener);
 	}
 
 	void onStart(@Observes StartupEvent event) {
@@ -314,6 +324,7 @@ public class ReindexJobs {
 	void stop() {
 		stopped = true;
 		nodeState.removeListener(nodeStateListener);
+		indexes.removeRemovalListener(removalListener);
 
 		/*
 		 * Shut down without interrupting what is running. A job reads the flag
@@ -613,11 +624,121 @@ public class ReindexJobs {
 		}
 
 		var previous = ReindexJob.fromStore(existing.get().record());
-		if(previous.isEmpty() || !previous.get().phase().isFinished()) {
+		if(previous.isEmpty()) {
+			throw new ReindexInProgressException(index);
+		}
+
+		/*
+		 * A job whose source or target was deleted, or created again under
+		 * the same name, has nothing left to run in. The node that deleted
+		 * it ends the job, but a node that stopped or failed in between
+		 * leaves the record. Refused for it, the index could never be
+		 * reindexed again.
+		 */
+		if(!previous.get().phase().isFinished() && !isOfDeletedGeneration(previous.get())) {
 			throw new ReindexInProgressException(index);
 		}
 
 		return existing.get().version();
+	}
+
+	/**
+	 * Whether the source or the target of a job is no longer registered as
+	 * the generation the job read.
+	 */
+	private boolean isOfDeletedGeneration(ReindexJob job) {
+		var registered = indexes.getRegistered(job.index()).orElse(null);
+		return registered == null
+			|| !isJobGeneration(registered, job.target(), job.targetCreatedAt())
+			|| !isJobGeneration(registered, job.source(), job.sourceCreatedAt());
+	}
+
+	/**
+	 * End the job of a deleted index or generation.
+	 *
+	 * <p>A job belongs to its index. Deleting the index takes the record of
+	 * its job with it, so that nothing resumes the job and a reindex of an
+	 * index created again under the name starts from nothing. Deleting the
+	 * source or the target of a job that is not finished leaves the job
+	 * nothing to run in, so its record says it failed, and tracking on a
+	 * source that is still there ends.
+	 *
+	 * <p>A job this node carries is cancelled first, the way a cancel request
+	 * does it. A job another node carries finds at its next checkpoint that
+	 * the record is no longer the one it wrote, and lets go.
+	 *
+	 * <p>Without this, a resume can carry the job on into a generation
+	 * created again under the same name. A record an earlier version wrote
+	 * does not say when its generations were created, so the resume cannot
+	 * tell the new generation from the old one, and promotes a generation
+	 * without every document at or below the cursor.
+	 */
+	private void onRemoved(IndexName target) {
+		var index = target.index();
+
+		try {
+			if(running.containsKey(index) && isJobOf(index, target)) {
+				cancel(index);
+			}
+
+			var stored = storage.read(index).orElse(null);
+			if(stored == null) {
+				return;
+			}
+
+			if(!target.isPinned()) {
+				storage.delete(index);
+
+				logger.atInfo()
+					.addKeyValue("index", index)
+					.log("Removed the reindex record of a deleted index");
+				return;
+			}
+
+			var job = ReindexJob.fromStore(stored.record()).orElse(null);
+			if(job == null || job.phase().isFinished() || !isJobOf(job, target)) {
+				return;
+			}
+
+			var failed = job.withError("The generation " + target + " was deleted")
+				.written(node, Instant.now());
+			if(storage.write(index, failed.toStore(), stored.version()) != null) {
+				logger.atInfo()
+					.addKeyValue("index", index)
+					.addKeyValue("generation", target.toString())
+					.log("Failed the reindex of a deleted generation");
+
+				if(!target.generation().equals(job.source())) {
+					endTrackingQuietly(job);
+				}
+			}
+		} catch(IOException | RuntimeException e) {
+			logger.atWarn()
+				.addKeyValue("index", target.toString())
+				.setCause(e)
+				.log(
+					"Could not end the reindex of a deleted index; a resume or a new reindex"
+						+ " finds it gone later; " + e.getMessage()
+				);
+		}
+	}
+
+	/**
+	 * Whether the job this node carries for an index reads or fills the
+	 * deleted index or generation.
+	 */
+	private boolean isJobOf(String index, IndexName target) {
+		var current = running.get(index);
+		return current != null && isJobOf(current.job, target);
+	}
+
+	/**
+	 * Whether a job reads or fills the deleted index or generation.
+	 */
+	private static boolean isJobOf(ReindexJob job, IndexName target) {
+		return !target.isPinned()
+			|| target.generation().equals(job.target())
+			|| target.generation().equals(job.source());
 	}
 
 	/**
