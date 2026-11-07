@@ -165,9 +165,18 @@ message Manifest {
 message RemovalMark {
 	/*
 	 * When the deletion happened, as milliseconds since the Unix epoch. The
-	 * grace period before the objects are removed counts from here.
+	 * grace period before the objects are removed counts from here. A repair
+	 * that holds the mark for a restore sets it to when the restore began.
 	 */
 	optional int64 removed_at = 1;
+
+	/*
+	 * True when a registry repair holds the mark to restore what it stands
+	 * over. The repair takes off only a mark that has this set. Absent or
+	 * false means a delete wrote the mark, and a repair leaves it, because
+	 * that delete came after the repair started.
+	 */
+	optional bool restoring = 2;
 }
 
 /*

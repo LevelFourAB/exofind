@@ -39,11 +39,14 @@ public record RegistryRepairRequest(
 		description = """
 			Names of deleted indexes (`books`) or generations (`books@2`) \
 			whose storage the sweep has not removed yet, to bring back. The \
-			repair registers what each one holds like any other unregistered \
-			storage, then takes the removal mark off it. A name whose storage \
-			holds no `synced` generation keeps its mark, so the sweep still \
-			removes it. A name without a mark changes nothing. Deleted storage \
-			is never registered without being named here.""",
+			repair first starts the grace period of each removal mark again, \
+			which stops a sweep that is removing the storage. A failed repair \
+			also leaves the new grace period. The repair then registers what \
+			each one holds like any other unregistered storage, and takes the \
+			removal mark off it. A name whose storage holds no `synced` \
+			generation keeps its mark, so the sweep still removes it after the \
+			grace period. A name without a mark changes nothing. Deleted \
+			storage is never registered without being named here.""",
 		examples = "[\"books\"]"
 	)
 	List<String> restore

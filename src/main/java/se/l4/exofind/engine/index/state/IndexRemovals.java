@@ -41,6 +41,14 @@ import se.l4.exofind.engine.index.IndexStorageHeldException;
  * it listed. It removes its mark only while it is still the mark it started
  * from: a mark written by a later delete is what lets the new objects go.
  *
+ * <p>A restore holds the mark before it registers the name again. The hold
+ * writes the mark again, so a sweep that is running sees a replaced mark at
+ * its next batch and stops. The hold also gives the mark a new time, so a
+ * sweep does not start on it until a new grace period has passed. When the
+ * restore does not finish, the mark stays and the delete goes ahead after
+ * that grace period. When the restore registers the name, it takes off its
+ * held mark. A mark that a later delete wrote is not held, and it stays.
+ *
  * <p>Implementations are safe for concurrent use.
  */
 public interface IndexRemovals {
@@ -75,12 +83,29 @@ public interface IndexRemovals {
 	void mark(IndexName target) throws IOException;
 
 	/**
-	 * Take a mark back, for an operator restoring what was deleted before the
-	 * sweep got to it.
+	 * Hold a mark for a restore, before the registry names the target again.
+	 * The mark is written again with the time of the hold, which stops a
+	 * sweep that is removing the prefix at its next batch, and keeps a sweep
+	 * from starting on it for a new grace period.
 	 *
 	 * @param target
 	 * @return
-	 *   whether there was a mark to take back
+	 *   whether a mark stands and is now held, {@code false} when there is no
+	 *   mark
+	 * @throws IOException
+	 *   if the storage could not be asked or written, or the mark kept
+	 *   changing while the hold was written
+	 */
+	boolean holdForRestore(IndexName target) throws IOException;
+
+	/**
+	 * Take back a mark that {@link #holdForRestore(IndexName)} holds, once
+	 * the registry names the target again. A mark that is not held was
+	 * written by a delete after the hold, and it stays.
+	 *
+	 * @param target
+	 * @return
+	 *   whether a held mark was taken back
 	 * @throws IOException
 	 */
 	boolean unmark(IndexName target) throws IOException;
@@ -113,7 +138,8 @@ public interface IndexRemovals {
 	ListIterable<Mark> listMarks(Predicate<IndexName> wanted) throws IOException;
 
 	/**
-	 * Remove everything under a marked prefix, the mark last. The mark is
+	 * Remove everything under a marked prefix, the mark last. Nothing is
+	 * removed when the mark is newer than {@code markedBefore}. The mark is
 	 * looked for before every batch, and the removal stops - leaving what is
 	 * left for a later sweep, or for the creation that took the mark away -
 	 * when it is gone or replaced, or when an object was written again after
@@ -121,15 +147,19 @@ public interface IndexRemovals {
 	 *
 	 * @param target
 	 *   the index, or one generation of it
+	 * @param markedBefore
+	 *   the latest time the mark may carry. A mark that a later delete or a
+	 *   hold for a restore wrote after the caller chose the target carries a
+	 *   later time, and its prefix stays
 	 * @return
-	 *   whether everything went, {@code false} when the mark disappeared or
-	 *   was replaced, or an object was written again, before the removal
-	 *   was done
+	 *   whether everything went, {@code false} when the mark was missing or
+	 *   too new at the start, or disappeared or was replaced, or an object
+	 *   was written again, before the removal was done
 	 * @throws IOException
 	 *   if the storage could not be listed or objects could not be removed;
 	 *   what was removed so far stays removed, and the mark stays
 	 */
-	boolean remove(IndexName target) throws IOException;
+	boolean remove(IndexName target, Instant markedBefore) throws IOException;
 
 	/**
 	 * Make room for an index about to be created under a name: when its

@@ -30,7 +30,7 @@ public class RecordingIndexRemovals implements IndexRemovals {
 	public final Map<IndexName, Instant> marks = new LinkedHashMap<>();
 
 	/**
-	 * What {@link #remove(IndexName)} was asked to remove, in order.
+	 * What {@link #remove(IndexName, Instant)} was asked to remove, in order.
 	 */
 	public final List<IndexName> removed = new ArrayList<>();
 
@@ -76,6 +76,11 @@ public class RecordingIndexRemovals implements IndexRemovals {
 	}
 
 	@Override
+	public boolean holdForRestore(IndexName target) {
+		return marks.replace(target, now) != null;
+	}
+
+	@Override
 	public boolean unmark(IndexName target) {
 		return marks.remove(target) != null;
 	}
@@ -98,7 +103,7 @@ public class RecordingIndexRemovals implements IndexRemovals {
 	}
 
 	@Override
-	public boolean remove(IndexName target) {
+	public boolean remove(IndexName target, Instant markedBefore) {
 		removed.add(target);
 
 		if(stopRemoval) {

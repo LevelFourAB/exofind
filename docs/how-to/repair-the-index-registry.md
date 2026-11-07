@@ -240,9 +240,12 @@ background sweep removes its storage from the bucket.
    ```
 
 **Note:** Restoring works only while the mark stands, that is within
-`EXOFIND_INDEXES_REMOVAL_GRACE` after the delete. The registry does not remember
-which generation was live before the delete. The search settings apply again
-once the index is registered.
+`EXOFIND_INDEXES_REMOVAL_GRACE` after the delete. A restore request starts the
+grace period again, also when the request fails, so you can send it again. A
+sweep that is removing the index when the restore starts stops, and the restore
+registers only the generations that still have a manifest. The registry does not
+remember which generation was live before the delete. The search settings apply
+again once the index is registered.
 
 ## Handle errors and unsupported findings
 

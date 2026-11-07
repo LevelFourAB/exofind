@@ -112,9 +112,52 @@ public class ObjectStorageIndexRemovalsTest {
 
 		assertThat(keysUnder("books/"), contains("books/" + IndexRemovals.MARK_FILE));
 
+		assertThat(removals.holdForRestore(IndexName.of("books")), is(true));
 		assertThat(removals.unmark(IndexName.of("books")), is(true));
 		assertThat(removals.markedAt(IndexName.of("books")), is(Optional.empty()));
 		assertThat(removals.unmark(IndexName.of("books")), is(false));
+		assertThat(removals.holdForRestore(IndexName.of("books")), is(false));
+	}
+
+	/**
+	 * Only a mark held for a restore is taken back. A mark that is not held
+	 * was written by a delete, and it stays.
+	 */
+	@Test
+	public void testMarkThatIsNotHeldIsNotTakenBack() throws IOException {
+		removals.mark(IndexName.of("books"));
+
+		assertThat(removals.unmark(IndexName.of("books")), is(false));
+		assertThat(removals.markedAt(IndexName.of("books")).isPresent(), is(true));
+	}
+
+	/**
+	 * A hold for a restore gives the mark the time of the hold, so a removal
+	 * chosen from the older time leaves the prefix alone.
+	 */
+	@Test
+	public void testRemovalLeavesAMarkHeldAfterItWasChosen() throws IOException {
+		putGeneration("books", "1");
+		var chosen = Instant.now().minus(Duration.ofHours(2));
+		storage.client().putObject(
+			PutObjectRequest.builder()
+				.bucket(storage.bucket())
+				.key(storage.indexesPath() + "/books/" + IndexRemovals.MARK_FILE)
+				.build(),
+			RequestBody.fromBytes(
+				RemovalMark.newBuilder().setRemovedAt(chosen.toEpochMilli()).build().toByteArray()
+			)
+		);
+
+		removals.holdForRestore(IndexName.of("books"));
+
+		assertThat(removals.markedAt(IndexName.of("books")).get(), is(greaterThan(chosen)));
+		assertThat(removals.remove(IndexName.of("books"), chosen), is(false));
+		assertThat(keysUnder("books/"), containsInAnyOrder(
+			"books/1/" + LocalCopy.MANIFEST_FILE,
+			"books/1/1/_0.cfs",
+			"books/" + IndexRemovals.MARK_FILE
+		));
 	}
 
 	/**
@@ -175,7 +218,7 @@ public class ObjectStorageIndexRemovalsTest {
 		putGeneration("movies", "1");
 		removals.mark(IndexName.of("books"));
 
-		assertThat(removals.remove(IndexName.of("books")), is(true));
+		assertThat(removals.remove(IndexName.of("books"), Instant.now()), is(true));
 
 		assertThat(keysUnder("books/"), emptyIterable());
 		assertThat(keysUnder("movies/"), containsInAnyOrder(
@@ -191,7 +234,7 @@ public class ObjectStorageIndexRemovalsTest {
 		put("books/settings.ef.bin");
 		removals.mark(IndexName.of("books", "1"));
 
-		assertThat(removals.remove(IndexName.of("books", "1")), is(true));
+		assertThat(removals.remove(IndexName.of("books", "1"), Instant.now()), is(true));
 
 		assertThat(keysUnder("books/"), containsInAnyOrder(
 			"books/2/" + LocalCopy.MANIFEST_FILE,
@@ -208,7 +251,7 @@ public class ObjectStorageIndexRemovalsTest {
 	public void testRemovalWithoutAMarkStops() throws IOException {
 		putGeneration("books", "1");
 
-		assertThat(removals.remove(IndexName.of("books")), is(false));
+		assertThat(removals.remove(IndexName.of("books"), Instant.now()), is(false));
 
 		assertThat(keysUnder("books/"), containsInAnyOrder(
 			"books/1/" + LocalCopy.MANIFEST_FILE,

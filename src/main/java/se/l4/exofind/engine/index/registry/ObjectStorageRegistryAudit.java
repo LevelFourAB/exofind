@@ -42,6 +42,12 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * everything it is about to register once more, right before it writes, and a
  * mark the caller asked to take off comes off only once the registry names
  * what it stood over.
+ *
+ * <p>A sweep can be removing what the caller asks to restore. Before it lists
+ * the storage, the repair holds each such mark, see
+ * {@link IndexRemovals#holdForRestore(IndexName)}. A running sweep then stops
+ * at its next batch, and the listing shows what the sweep left. A batch that
+ * the sweep sent before the hold can still remove objects after the listing.
  */
 public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private static final Log logger = Log.of(ObjectStorageRegistryAudit.class);
@@ -81,6 +87,12 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 
 	@Override
 	public RegistryRepairResult repair(boolean promoteNewest, ListIterable<IndexName> restore) {
+		/*
+		 * Hold before the listing, so that a sweep of what is restored stops
+		 * before the listing reads what it left.
+		 */
+		hold(restore);
+
 		/*
 		 * Listed once rather than per attempt: an attempt is repeated because
 		 * the registry moved, and the registry moving says nothing about the
@@ -141,6 +153,21 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		}
 
 		throw RegistryException.conflict();
+	}
+
+	/**
+	 * Hold the removal mark of everything the caller asked to restore. A mark
+	 * that is held stays when the repair fails, and the delete then goes ahead
+	 * after a new grace period.
+	 */
+	private void hold(ListIterable<IndexName> restore) {
+		for(var target : restore) {
+			try {
+				removals.holdForRestore(target);
+			} catch(IOException e) {
+				throw RegistryException.ioError(e);
+			}
+		}
 	}
 
 	/**
@@ -235,7 +262,8 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	 * Take the removal marks off what the caller asked to restore and a
 	 * registry names. A name the registry does not name keeps its mark: the
 	 * mark is the only thing saying its objects were deleted, and nothing
-	 * removes them once it is gone.
+	 * removes them once it is gone. A mark that a delete wrote after the hold
+	 * also stays, because it stands for that delete.
 	 *
 	 * <p>A mark that could not be taken off is logged and left out of the
 	 * answer. The registry names what it stands over, which makes it void, and

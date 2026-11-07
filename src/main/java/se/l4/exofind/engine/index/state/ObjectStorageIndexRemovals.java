@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
 
@@ -50,6 +51,11 @@ import software.amazon.awssdk.services.s3.model.S3Object;
  * conditions removes unconditionally. An object written again with the same
  * contents keeps its ETag, so a recreate that writes settings identical to
  * the old ones between a check and a batch can still lose them.
+ *
+ * <p>A hold for a restore writes the mark again only while its ETag is the
+ * one the hold read, and a restore takes off only a held mark, only while
+ * its ETag is the one the restore read. A batch that a sweep sent before the
+ * hold still completes.
  */
 public class ObjectStorageIndexRemovals implements IndexRemovals {
 	private static final Log logger = Log.of(ObjectStorageIndexRemovals.class);
@@ -69,6 +75,12 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 * Error code of an object a batch delete did not find.
 	 */
 	private static final String NO_SUCH_KEY = "NoSuchKey";
+
+	/**
+	 * How many times a hold reads the mark and writes it again before it
+	 * gives up on a mark that keeps changing.
+	 */
+	private static final int HOLD_ATTEMPTS = 3;
 
 	private final S3Client client;
 	private final String bucket;
@@ -116,17 +128,88 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	}
 
 	@Override
+	public boolean holdForRestore(IndexName target) throws IOException {
+		var markKey = markKeyOf(target);
+
+		for(int attempt = 0; attempt < HOLD_ATTEMPTS; attempt++) {
+			var current = readMark(target);
+			if(current.isEmpty()) {
+				return false;
+			}
+
+			var held = RemovalMark.newBuilder()
+				.setRemovedAt(Instant.now().toEpochMilli())
+				.setRestoring(true)
+				.build();
+
+			try {
+				client.putObject(
+					PutObjectRequest.builder()
+						.bucket(bucket)
+						.key(markKey)
+						.contentType("application/octet-stream")
+						.ifMatch(current.get().version())
+						.build(),
+					RequestBody.fromBytes(held.toByteArray())
+				);
+
+				return true;
+			} catch(S3Exception e) {
+				if(e.statusCode() != 404 && !ObjectStorage.isConditionalWriteLost(e)) {
+					throw new IOException("Unable to hold " + markKey + "; " + e.getMessage(), e);
+				}
+
+				// A sweep removed the mark or something wrote it again, read it again
+			} catch(SdkException e) {
+				throw new IOException("Unable to hold " + markKey + "; " + e.getMessage(), e);
+			}
+		}
+
+		throw new IOException("Unable to hold " + markKey + "; it changed on every attempt");
+	}
+
+	@Override
 	public boolean unmark(IndexName target) throws IOException {
-		if(markedAt(target).isEmpty()) {
+		var current = readMark(target);
+		if(current.isEmpty()) {
 			return false;
 		}
 
-		deleteObject(markKeyOf(target));
-		return true;
+		if(!current.get().mark().getRestoring()) {
+			logger.atInfo()
+				.addKeyValue("index", target.toString())
+				.log("Removal mark was written by a later delete, leaving it");
+
+			return false;
+		}
+
+		return deleteMark(target, markKeyOf(target), current.get().version());
 	}
 
 	@Override
 	public Optional<Instant> markedAt(IndexName target) throws IOException {
+		return readMark(target).map(StoredMark::removedAt);
+	}
+
+	/**
+	 * A mark as one read found it.
+	 *
+	 * @param mark
+	 * @param removedAt
+	 *   when the delete happened, or when a restore began to hold the mark
+	 * @param version
+	 *   the version of the object, as a conditional request names it
+	 */
+	private record StoredMark(RemovalMark mark, Instant removedAt, String version) {
+	}
+
+	/**
+	 * Read the mark over an index or a generation.
+	 *
+	 * @return
+	 *   the mark, or empty when there is none
+	 */
+	private Optional<StoredMark> readMark(IndexName target) throws IOException {
 		var request = GetObjectRequest.builder()
 			.bucket(bucket)
 			.key(markKeyOf(target))
@@ -140,11 +223,13 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 			 * written, which is the same moment as far as a grace period is
 			 * concerned.
 			 */
-			return Optional.of(
+			return Optional.of(new StoredMark(
+				mark,
 				mark.hasRemovedAt()
 					? Instant.ofEpochMilli(mark.getRemovedAt())
-					: response.response().lastModified()
-			);
+					: response.response().lastModified(),
+				ObjectStorageSync.quoteETag(response.response().eTag())
+			));
 		} catch(S3Exception e) {
 			if(e.statusCode() == 404) {
 				return Optional.empty();
@@ -176,7 +261,7 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 				}
 
 				var whole = IndexName.of(index);
-				if(wanted.test(whole) && readMark(whole, marks)) {
+				if(wanted.test(whole) && addMark(whole, marks)) {
 					// The whole index goes, so its generations need no look
 					continue;
 				}
@@ -188,7 +273,7 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 
 					var target = IndexName.of(index, generation);
 					if(wanted.test(target)) {
-						readMark(target, marks);
+						addMark(target, marks);
 					}
 				}
 			}
@@ -208,7 +293,7 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 * @return
 	 *   whether a mark was found
 	 */
-	private boolean readMark(IndexName target, MutableList<Mark> marks) {
+	private boolean addMark(IndexName target, MutableList<Mark> marks) {
 		try {
 			var removedAt = markedAt(target);
 			if(removedAt.isEmpty()) {
@@ -228,17 +313,27 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	}
 
 	@Override
-	public boolean remove(IndexName target) throws IOException {
+	public boolean remove(IndexName target, Instant markedBefore) throws IOException {
 		var markKey = markKeyOf(target);
-		var markVersion = versionOf(markKey);
-		if(markVersion.isEmpty()) {
+		var start = readMark(target);
+		if(start.isEmpty()) {
 			return false;
 		}
 
+		if(start.get().removedAt().isAfter(markedBefore)) {
+			logger.atInfo()
+				.addKeyValue("index", target.toString())
+				.addKeyValue("removedAt", start.get().removedAt())
+				.log("Removal mark was written again after the sweep chose it, leaving it");
+
+			return false;
+		}
+
+		var markVersion = start.get().version();
 		var objects = listObjects(prefixOf(target) + "/", markKey);
 
 		for(var batch : batches(objects)) {
-			if(!markVersion.equals(versionOf(markKey))) {
+			if(!Objects.equals(markVersion, versionOf(markKey).orElse(null))) {
 				logger.atInfo()
 					.addKeyValue("index", target.toString())
 					.log("Removal mark is gone or replaced, stopping the removal");
@@ -255,7 +350,7 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 			}
 		}
 
-		return deleteMark(target, markKey, markVersion.get());
+		return deleteMark(target, markKey, markVersion);
 	}
 
 	/**

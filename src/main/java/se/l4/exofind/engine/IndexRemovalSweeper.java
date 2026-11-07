@@ -137,7 +137,7 @@ public class IndexRemovalSweeper {
 			}
 
 			try {
-				if(removals.remove(mark.target())) {
+				if(removals.remove(mark.target(), cutoff)) {
 					logger.atInfo()
 						.addKeyValue("index", mark.target().toString())
 						.addKeyValue("removedAt", mark.removedAt())

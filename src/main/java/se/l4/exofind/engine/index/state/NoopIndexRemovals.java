@@ -20,6 +20,11 @@ public class NoopIndexRemovals implements IndexRemovals {
 	}
 
 	@Override
+	public boolean holdForRestore(IndexName target) {
+		return false;
+	}
+
+	@Override
 	public boolean unmark(IndexName target) {
 		return false;
 	}
@@ -35,7 +40,7 @@ public class NoopIndexRemovals implements IndexRemovals {
 	}
 
 	@Override
-	public boolean remove(IndexName target) {
+	public boolean remove(IndexName target, Instant markedBefore) {
 		return true;
 	}
 
