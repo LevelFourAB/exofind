@@ -1518,7 +1518,7 @@ public class Index {
 			}
 
 			var shouldWrite = !isReadOnly();
-			if(state != IndexState.NEEDS_PULL && shouldWrite == (writer != null)) {
+			if(isOpenAsHeld(shouldWrite)) {
 				/*
 				 * Already open the way the node holds it. Skipped rather than
 				 * reopened so that an ownership change about other indexes -
@@ -1603,7 +1603,7 @@ public class Index {
 				return true;
 			}
 
-			if(state != IndexState.NEEDS_PULL && !isReadOnly() == (writer != null)) {
+			if(isOpenAsHeld(!isReadOnly())) {
 				/*
 				 * Asked again because the lock was let go above. The node can
 				 * take the index back in that gap, and a second reopen can open
@@ -1624,6 +1624,28 @@ public class Index {
 	}
 
 	/**
+	 * Whether this instance is open the way the node holds the index, so that
+	 * a reopen has nothing to do. Called with the sync lock held.
+	 *
+	 * <p>A writer whose claim was revoked is not open the way the node holds
+	 * the index, also when the node holds it again. The node can take the
+	 * index back before the reopen that the revoke queued has run, and then
+	 * the node state and the writer agree again. But that writer may not push,
+	 * so each write it acknowledges stays on the local disk only. A reopen
+	 * replaces it with a writer on a fresh claim.
+	 *
+	 * @param shouldWrite
+	 *   whether the node holds the index
+	 */
+	private boolean isOpenAsHeld(boolean shouldWrite) {
+		if(state == IndexState.NEEDS_PULL || shouldWrite != (writer != null)) {
+			return false;
+		}
+
+		return !shouldWrite || mayPush;
+	}
+
+	/**
 	 * Stop this instance from pushing what it holds, because the node lost the
 	 * index without holding it being certain up to now. Another node may
 	 * already write it, so everything that is only here is given up rather
@@ -1631,8 +1653,10 @@ public class Index {
 	 *
 	 * <p>Said to the index rather than read from the node state, which the
 	 * flush of a handover this node chose reads as not holding the index
-	 * either. Taking the index back is what sets it again, by opening a writer
-	 * on a fresh claim.
+	 * either. From here on, a write to this instance is refused as out of
+	 * date. Taking the index back is what sets it again: the next reopen opens
+	 * a writer on a fresh claim, also when the node already holds the index
+	 * again.
 	 */
 	public void revokeWriting() {
 		this.mayPush = false;
@@ -2474,6 +2498,16 @@ public class Index {
 			 * read-only way - the node took the index moments ago and the
 			 * reopen has not finished. Refused as out of date so the caller
 			 * retries, rather than reaching the writer that is not there.
+			 */
+			throw new IndexOutOfDateException(id, state);
+		}
+
+		if(!mayPush) {
+			/*
+			 * The claim of this writer was revoked, and the node took the
+			 * index back before the reopen that replaces the writer has run.
+			 * This writer may never push, so a write it acknowledges is lost.
+			 * Refused as out of date so the caller retries on the new writer.
 			 */
 			throw new IndexOutOfDateException(id, state);
 		}

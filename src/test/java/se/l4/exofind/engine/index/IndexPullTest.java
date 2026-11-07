@@ -254,12 +254,14 @@ public class IndexPullTest {
 		index.addDocument(document("1"));
 		index.commit();
 
+		index.addDocument(document("2"));
 		sync.pushed = null;
 
 		// The claim lapsed, so another node may already be writing the index
 		index.revokeWriting();
 
-		index.addDocument(document("2"));
+		// A write the writer could never push is refused, not acknowledged
+		assertThrows(IndexOutOfDateException.class, () -> index.addDocument(document("3")));
 
 		assertThrows(IndexReadonlyException.class, index::commit);
 		assertThat(sync.pushed, is(nullValue()));
