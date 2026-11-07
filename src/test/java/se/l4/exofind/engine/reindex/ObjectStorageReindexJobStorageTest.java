@@ -136,7 +136,7 @@ public class ObjectStorageReindexJobStorageTest {
 			"node-a",
 			now,
 			now,
-			null
+			null, null, null
 		).toStore();
 	}
 
@@ -159,7 +159,7 @@ public class ObjectStorageReindexJobStorageTest {
 			"node-a",
 			now,
 			now,
-			null
+			null, null, null
 		).toStore();
 	}
 

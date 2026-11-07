@@ -460,7 +460,9 @@ public class ReindexJobs {
 				node,
 				now,
 				now,
-				null
+				null,
+				createdAtOf(registered, sourceGen),
+				createdAtOf(registered, target.generation())
 			);
 
 			/*
@@ -1413,14 +1415,19 @@ public class ReindexJobs {
 			var registered = indexes.getRegistered(index).orElse(null);
 			if(
 				registered == null
-					|| !registered.hasGeneration(job.target())
-					|| !registered.hasGeneration(job.source())
+					|| !isJobGeneration(registered, job.target(), job.targetCreatedAt())
+					|| !isJobGeneration(registered, job.source(), job.sourceCreatedAt())
 			) {
 				/*
 				 * Half of the job is gone - the target or the source was
 				 * deleted while nothing ran it. There is nothing to resume
 				 * into, so the record says the job failed rather than being
 				 * retried forever.
+				 *
+				 * A generation created again under the same name is gone too.
+				 * The copy goes on from the cursor, so resumed into a new and
+				 * empty target it would promote a generation without every
+				 * document at or below the cursor.
 				 */
 				storage.write(
 					index,
@@ -1447,6 +1454,45 @@ public class ReindexJobs {
 				.setCause(e)
 				.log("Could not resume the reindex; " + e.getMessage());
 		}
+	}
+
+	/**
+	 * When a generation of an index was created, as the registry states it.
+	 *
+	 * @return
+	 *   the time, or {@code null} when the registry does not know it
+	 */
+	private static Instant createdAtOf(RegisteredIndex registered, String generation) {
+		return registered.generation(generation)
+			.map(RegisteredIndex.Generation::createdAt)
+			.orElse(null);
+	}
+
+	/**
+	 * Whether the index has the generation a job read, and not a generation
+	 * that was created again under the same name. Times are compared to the
+	 * millisecond, the precision the registry and the record store them in.
+	 * When either time is not known, the name alone decides.
+	 *
+	 * @param createdAt
+	 *   when the generation the job read was created, or {@code null} when the
+	 *   record does not say
+	 */
+	private static boolean isJobGeneration(
+		RegisteredIndex registered,
+		String generation,
+		Instant createdAt
+	) {
+		var found = registered.generation(generation).orElse(null);
+		if(found == null) {
+			return false;
+		}
+
+		if(createdAt == null || found.createdAt() == null) {
+			return true;
+		}
+
+		return found.createdAt().toEpochMilli() == createdAt.toEpochMilli();
 	}
 
 	/**

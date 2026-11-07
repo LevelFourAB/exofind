@@ -441,7 +441,7 @@ public class ReindexJobsTest {
 			new ReindexJob(
 				"job-1", "catalogue", "2", "1",
 				ReindexPhase.COPYING,
-				null, 0, 3, 0, null, false, "tester", "node-b", now, now, null
+				null, 0, 3, 0, null, false, "tester", "node-b", now, now, null, null, null
 			).toStore(),
 			null
 		);
@@ -880,6 +880,55 @@ public class ReindexJobsTest {
 		}
 	}
 
+	/**
+	 * A job record belongs to the generations it was started on. An index
+	 * deleted and created again under the same name holds other generations,
+	 * and a resume must not carry the old job on into them from its old
+	 * cursor.
+	 */
+	@Test
+	public void aJobOfADeletedIndexIsNotResumedIntoTheIndexCreatedAgain() throws Exception {
+		// Given
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		writeCopyingRecord();
+		indexes.delete("catalogue");
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		// When
+		jobs.onStart(null);
+		awaitFinished("catalogue");
+
+		// Then
+		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+		assertThat(indexes.getOrThrow("catalogue").getDocument("k0000"), is(notNullValue()));
+	}
+
+	/**
+	 * A target generation deleted and created again starts empty, so a job
+	 * that copied part of the old one must not go on from its old cursor and
+	 * promote the new one without the keys it copied before.
+	 */
+	@Test
+	public void aJobIsNotResumedIntoATargetGenerationCreatedAgain() throws Exception {
+		// Given
+		largeCatalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		writeCopyingRecord();
+
+		indexes.delete("catalogue@2");
+		indexes.createGeneration("catalogue@2", definition().build());
+
+		// When
+		jobs.onStart(null);
+		awaitFinished("catalogue");
+
+		// Then
+		assertThat(indexes.getOrThrow("catalogue").getDocumentCount(), is(1500L));
+		assertThat(indexes.getOrThrow("catalogue").getDocument("k0000"), is(notNullValue()));
+	}
+
 	private Index largeCatalogue() throws IOException {
 		var index = indexes.create("catalogue", definition().build());
 		for(var i = 0; i < 1500; i++) {
@@ -892,16 +941,20 @@ public class ReindexJobsTest {
 
 	/**
 	 * Write the record a node leaves when it stops after the first batch of
-	 * a copy from generation 1 into generation 2.
+	 * a copy from generation 1 into generation 2, naming the generations as
+	 * the registry holds them now.
 	 */
 	private void writeCopyingRecord() throws IOException {
 		var now = Instant.now();
+		var registered = registry.get("catalogue").orElseThrow();
 		storage.write(
 			"catalogue",
 			new ReindexJob(
 				"job-1", "catalogue", "2", "1",
 				ReindexPhase.COPYING,
-				"k0999", 1000, 1500, 0, null, false, "tester", "node-b", now, now, null
+				"k0999", 1000, 1500, 0, null, false, "tester", "node-b", now, now, null,
+				registered.generation("1").orElseThrow().createdAt(),
+				registered.generation("2").orElseThrow().createdAt()
 			).toStore(),
 			null
 		);

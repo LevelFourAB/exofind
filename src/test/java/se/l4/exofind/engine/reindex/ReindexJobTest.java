@@ -33,7 +33,9 @@ public class ReindexJobTest {
 			"node-a-7f21",
 			started,
 			finished,
-			finished
+			finished,
+			Instant.parse("2026-08-01T08:00:00Z"),
+			Instant.parse("2026-08-28T10:15:00Z")
 		);
 
 		var read = ReindexJob.fromStore(job.toStore()).orElseThrow();
@@ -41,8 +43,9 @@ public class ReindexJobTest {
 	}
 
 	/**
-	 * A record written before ids, principals, nodes and end times were kept
-	 * reads back with those left empty rather than failing to read.
+	 * A record written before ids, principals, nodes, end times and the
+	 * creation times of the generations were kept reads back with those left
+	 * empty rather than failing to read.
 	 */
 	@Test
 	public void aRecordOfAnEarlierVersionReadsBackWithoutTheNewerFields() {
@@ -65,6 +68,8 @@ public class ReindexJobTest {
 		assertThat(read.startedBy(), is(nullValue()));
 		assertThat(read.node(), is(nullValue()));
 		assertThat(read.finishedAt(), is(nullValue()));
+		assertThat(read.sourceCreatedAt(), is(nullValue()));
+		assertThat(read.targetCreatedAt(), is(nullValue()));
 		assertThat(read.phase(), is(ReindexPhase.DONE));
 	}
 
@@ -80,7 +85,7 @@ public class ReindexJobTest {
 			"job-1", "products", "2", "1",
 			ReindexPhase.REPLAYING,
 			null, 10, 10, 0, null, false, "tester", "node-a",
-			started, started, null
+			started, started, null, null, null
 		);
 
 		var replaying = job.withBacklog(3).written("node-a", started.plusSeconds(10));

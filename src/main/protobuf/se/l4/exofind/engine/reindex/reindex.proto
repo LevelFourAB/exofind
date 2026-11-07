@@ -154,4 +154,18 @@ message ReindexJobStore {
 	 * on a record an earlier version wrote.
 	 */
 	optional string id = 16;
+	/*
+	 * When the source generation was created, as the registry states it, in
+	 * milliseconds since the Unix epoch. A generation that was deleted and
+	 * created again under the same name has another time, so a resume tells
+	 * it from the one the job read. Unset on a record an earlier version
+	 * wrote, and then not compared.
+	 */
+	optional int64 source_created_at = 17;
+	/*
+	 * When the target generation was created, as the registry states it, in
+	 * milliseconds since the Unix epoch. Compared the same way as
+	 * `source_created_at`.
+	 */
+	optional int64 target_created_at = 18;
 }

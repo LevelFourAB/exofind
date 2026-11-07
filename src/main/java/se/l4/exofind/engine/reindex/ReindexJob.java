@@ -49,6 +49,12 @@ import se.l4.exofind.engine.index.IndexName;
  *   when the record was last written
  * @param finishedAt
  *   when the job ended, or {@code null} while it runs
+ * @param sourceCreatedAt
+ *   when the source generation was created, as the registry states it, or
+ *   {@code null} when not known
+ * @param targetCreatedAt
+ *   when the target generation was created, as the registry states it, or
+ *   {@code null} when not known
  */
 public record ReindexJob(
 	String id,
@@ -66,7 +72,9 @@ public record ReindexJob(
 	String node,
 	Instant startedAt,
 	Instant updatedAt,
-	Instant finishedAt
+	Instant finishedAt,
+	Instant sourceCreatedAt,
+	Instant targetCreatedAt
 ) {
 	/**
 	 * The full name of the generation being filled, as a caller writes it.
@@ -90,7 +98,7 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied,
 			sourceDocCount, backlog, null, manualPromote, startedBy, node,
-			startedAt, updatedAt, finishedAt
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
 		);
 	}
 
@@ -101,7 +109,7 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied,
 			sourceDocCount, backlog, error, manualPromote, startedBy, node,
-			startedAt, updatedAt, finishedAt
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
 		);
 	}
 
@@ -112,7 +120,7 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied + copied,
 			sourceDocCount, backlog, error, manualPromote, startedBy, node,
-			startedAt, updatedAt, finishedAt
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
 		);
 	}
 
@@ -123,7 +131,7 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, ReindexPhase.FAILED, cursor,
 			documentsCopied, sourceDocCount, backlog, error, manualPromote,
-			startedBy, node, startedAt, updatedAt, finishedAt
+			startedBy, node, startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
 		);
 	}
 
@@ -146,7 +154,7 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied,
 			sourceDocCount, backlog, error, manualPromote, startedBy, node,
-			startedAt, now, finished
+			startedAt, now, finished, sourceCreatedAt, targetCreatedAt
 		);
 	}
 
@@ -187,6 +195,14 @@ public record ReindexJob(
 			builder.setFinishedAt(finishedAt.toEpochMilli());
 		}
 
+		if(sourceCreatedAt != null) {
+			builder.setSourceCreatedAt(sourceCreatedAt.toEpochMilli());
+		}
+
+		if(targetCreatedAt != null) {
+			builder.setTargetCreatedAt(targetCreatedAt.toEpochMilli());
+		}
+
 		return builder.build();
 	}
 
@@ -215,7 +231,9 @@ public record ReindexJob(
 				store.hasNode() ? store.getNode() : null,
 				Instant.ofEpochMilli(store.getStartedAt()),
 				Instant.ofEpochMilli(store.getUpdatedAt()),
-				store.hasFinishedAt() ? Instant.ofEpochMilli(store.getFinishedAt()) : null
+				store.hasFinishedAt() ? Instant.ofEpochMilli(store.getFinishedAt()) : null,
+				store.hasSourceCreatedAt() ? Instant.ofEpochMilli(store.getSourceCreatedAt()) : null,
+				store.hasTargetCreatedAt() ? Instant.ofEpochMilli(store.getTargetCreatedAt()) : null
 			));
 	}
 }
