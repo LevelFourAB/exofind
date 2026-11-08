@@ -221,6 +221,43 @@ public class ObjectStorageIndexRemovalsTest {
 		));
 	}
 
+	/**
+	 * A node whose clock runs behind writes a time into the mark that is
+	 * already past the grace period. The storage wrote the mark just now, so
+	 * a sweep keeps the objects until the grace period has passed on the
+	 * storage clock.
+	 */
+	@Test
+	public void testMarkFromANodeWhoseClockIsBehindIsNotRemovedEarly() throws IOException {
+		// Given
+		putGeneration("books", "1");
+		storage.client().putObject(
+			PutObjectRequest.builder()
+				.bucket(storage.bucket())
+				.key(storage.indexPath("books") + "/" + IndexRemovals.MARK_FILE)
+				.build(),
+			RequestBody.fromBytes(
+				RemovalMark.newBuilder()
+					.setRemovedAt(Instant.now().minus(Duration.ofHours(2)).toEpochMilli())
+					.build()
+					.toByteArray()
+			)
+		);
+
+		// When
+		var marks = removals.listMarks(target -> true);
+		var removed = removals.remove(IndexName.of("books"), Instant.now().minus(Duration.ofHours(1)));
+
+		// Then
+		assertThat(marks.size(), is(1));
+		assertThat(
+			marks.getFirst().removedAt().isAfter(Instant.now().minus(Duration.ofMinutes(5))),
+			is(true)
+		);
+		assertThat(removed, is(false));
+		assertThat(keysUnder("books/1/").size(), is(2));
+	}
+
 	@Test
 	public void testListMarksReportsWhatIsWanted() throws IOException {
 		putGeneration("books", "1");

@@ -1,7 +1,11 @@
 package se.l4.exofind.engine.index.state;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -22,6 +26,7 @@ import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -217,11 +222,20 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 *
 	 * @param mark
 	 * @param removedAt
-	 *   when the delete happened, or when a restore began to hold the mark
+	 *   when the delete happened, or when a restore began to hold the mark, as
+	 *   the node that wrote the mark states it
+	 * @param writtenAt
+	 *   when the mark was written, on the clock of this node, see
+	 *   {@link #writtenAt}
 	 * @param version
 	 *   the version of the object, as a conditional request names it
 	 */
-	private record StoredMark(RemovalMark mark, Instant removedAt, String version) {
+	private record StoredMark(
+		RemovalMark mark,
+		Instant removedAt,
+		Instant writtenAt,
+		String version
+	) {
 	}
 
 	/**
@@ -244,11 +258,15 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 			 * written, which is the same moment as far as a grace period is
 			 * concerned.
 			 */
+			var removedAt = mark.hasRemovedAt()
+				? Instant.ofEpochMilli(mark.getRemovedAt())
+				: response.response().lastModified();
+
 			return Optional.of(new StoredMark(
 				mark,
-				mark.hasRemovedAt()
-					? Instant.ofEpochMilli(mark.getRemovedAt())
-					: response.response().lastModified(),
+				removedAt,
+				writtenAt(response.response().lastModified(), response.response().sdkHttpResponse())
+					.orElse(removedAt),
 				ObjectStorageSync.quoteETag(response.response().eTag())
 			));
 		} catch(S3Exception e) {
@@ -268,6 +286,55 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 				"Unable to read the removal mark of " + target + "; " + e.getMessage(), e
 			);
 		}
+	}
+
+	/**
+	 * Get when an object was written, on the clock of this node.
+	 *
+	 * <p>The time a mark holds comes from the clock of the node that wrote
+	 * it, and a sweep compares it with the clock of the node that sweeps. When
+	 * one of the two clocks is wrong, a sweep removes the objects of a deleted
+	 * index before the grace period has passed. This measures the age of the
+	 * object on the storage clock instead: the time from its
+	 * {@code Last-Modified} to the {@code Date} of the same answer. The
+	 * result is that age subtracted from the time of this node, so it
+	 * compares with a cutoff on this node's clock. Both headers count whole
+	 * seconds, so the true age can be up to one second more than their
+	 * difference, and one second is added to it.
+	 *
+	 * @param lastModified
+	 *   when the storage wrote the object
+	 * @param response
+	 *   the answer that carried the object
+	 * @return
+	 *   the time, or empty when the answer does not carry both headers
+	 */
+	static Optional<Instant> writtenAt(Instant lastModified, SdkHttpResponse response) {
+		if(lastModified == null) {
+			return Optional.empty();
+		}
+
+		var date = response.firstMatchingHeader("Date");
+		if(date.isEmpty()) {
+			return Optional.empty();
+		}
+
+		Instant storageNow;
+		try {
+			storageNow = ZonedDateTime.parse(date.get(), DateTimeFormatter.RFC_1123_DATE_TIME)
+				.toInstant();
+		} catch(DateTimeParseException e) {
+			return Optional.empty();
+		}
+
+		var age = Duration.between(lastModified, storageNow);
+		if(age.isNegative()) {
+			age = Duration.ZERO;
+		}
+
+		age = age.plusSeconds(1);
+
+		return Optional.of(Instant.now().minus(age));
 	}
 
 	@Override
@@ -316,12 +383,12 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 	 */
 	private boolean addMark(IndexName target, MutableList<Mark> marks) {
 		try {
-			var removedAt = markedAt(target);
-			if(removedAt.isEmpty()) {
+			var stored = readMark(target);
+			if(stored.isEmpty()) {
 				return false;
 			}
 
-			marks.add(new Mark(target, removedAt.get()));
+			marks.add(new Mark(target, stored.get().writtenAt()));
 			return true;
 		} catch(IOException e) {
 			logger.atWarn()
@@ -341,10 +408,10 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 			return false;
 		}
 
-		if(start.get().removedAt().isAfter(markedBefore)) {
+		if(start.get().writtenAt().isAfter(markedBefore)) {
 			logger.atInfo()
 				.addKeyValue("index", target.toString())
-				.addKeyValue("removedAt", start.get().removedAt())
+				.addKeyValue("removedAt", start.get().writtenAt())
 				.log("Removal mark was written again after the sweep chose it, leaving it");
 
 			return false;

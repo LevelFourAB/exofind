@@ -62,7 +62,7 @@ A generation is a complete index with its own Lucene files, manifest, and epochs
 - Listing items under `indexes/` with a delimiter returns one entry per index, regardless of how many generations exist under that index.
 - Deleting an index requires removing only a single prefix.
 
-A delete removes the name from the registry and leaves a removal mark (`removed.ef.bin`) under the index prefix, or under the generation prefix for a single generation. A background sweep on nodes that can index removes the marked prefix once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`, which gives an operator a window to take the delete back through a [registry repair](../how-to/repair-the-index-registry.md).
+A delete removes the name from the registry and leaves a removal mark (`removed.ef.bin`) under the index prefix, or under the generation prefix for a single generation. A background sweep on nodes that can index removes the marked prefix once the mark is older than `EXOFIND_INDEXES_REMOVAL_GRACE`, which gives an operator a window to take the delete back through a [registry repair](../how-to/repair-the-index-registry.md). The sweep measures the age of the mark on the storage clock, from the `Last-Modified` time of the mark to the `Date` header of the same answer. A clock that is wrong on the node that deleted, or on the node that sweeps, therefore does not make the window shorter. A storage that sends no `Date` header gives the age from the time in the mark, which the node that deleted wrote with its own clock.
 
 Only marked storage is ever removed, because a lost registry looks the same as a registry that never held the index, and a registry repair rebuilds the registry from exactly that storage.
 

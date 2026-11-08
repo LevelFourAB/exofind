@@ -66,7 +66,9 @@ public interface IndexRemovals {
 	 * @param target
 	 *   the index, or one generation of it
 	 * @param removedAt
-	 *   when the delete happened
+	 *   when the delete happened, on the clock of this node. A storage that
+	 *   can tell the age of the mark states it from that age, so a wrong
+	 *   clock on the node that deleted does not move it
 	 */
 	record Mark(IndexName target, Instant removedAt) {
 	}
