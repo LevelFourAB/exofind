@@ -115,6 +115,10 @@ public class ObjectStorage {
 		this.prefix = prefix;
 
 		var interceptors = new ArrayList<ExecutionInterceptor>();
+
+		// First, so the checksum is of the body as the caller gave it
+		interceptors.add(new ContentMd5Interceptor());
+
 		if(interceptor != null) {
 			interceptors.add(interceptor);
 		}

@@ -74,8 +74,10 @@ The node reaches and signs requests in the following way:
 - **Addressing**: path style when `EXOFIND_STORAGE_REMOTE_URL` is set, so the
   bucket is part of the path and the storage needs no wildcard DNS. Without a
   URL, the node reaches Amazon S3 with the bucket in the host name.
-- **Checksums**: the node adds a checksum only to the operations that require
-  one, such as `DeleteObjects`. It does not send checksums as trailers with the
+- **Checksums**: every `PutObject` carries a `Content-MD5` header, and the
+  storage has to refuse a body that does not match it. Of the other
+  operations, the node adds a checksum only to those that require one, such as
+  `DeleteObjects`. It does not send checksums as trailers with the
   `aws-chunked` content encoding, and it does not require checksums on
   responses.
 - **Retries**: the node makes each request once. The code that made the
