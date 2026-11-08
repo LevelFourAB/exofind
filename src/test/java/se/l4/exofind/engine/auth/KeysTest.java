@@ -385,6 +385,74 @@ public class KeysTest {
 	}
 
 	/**
+	 * Two changes on one node that run at the same time each set the keys
+	 * this node answers from. The change that finished writing first must
+	 * not put back its keys over the ones a later change wrote, or a revoked
+	 * key works again on this node.
+	 */
+	@Test
+	void aRevokeIsNotUndoneByAChangeThatFinishesAfterIt() throws Exception {
+		// Given
+		var written = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var gated = new InMemoryKeyStorage() {
+			private volatile boolean holdNextWrite;
+
+			@Override
+			public String write(KeyStore keys, String expectedVersion) throws IOException {
+				var version = super.write(keys, expectedVersion);
+				if(holdNextWrite && version != null) {
+					holdNextWrite = false;
+					written.countDown();
+					try {
+						release.await(10, TimeUnit.SECONDS);
+					} catch(InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
+
+				return version;
+			}
+		};
+
+		var instance = new Keys(
+			gated,
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofSeconds(30)
+		);
+		started.add(instance);
+
+		var revoked = instance.create("", Lists.immutable.of(grant("books", Permission.SEARCH)), null);
+
+		// When: a create has written and not yet taken up what it wrote
+		gated.holdNextWrite = true;
+		var creating = new Thread(() -> instance.create(
+			"",
+			Lists.immutable.of(grant("books", Permission.SEARCH)),
+			null
+		));
+		creating.start();
+		assertThat(written.await(10, TimeUnit.SECONDS), is(true));
+
+		// And: a revoke on the same node runs from start to end meanwhile
+		var revoking = new Thread(() -> instance.delete(revoked.key().id()));
+		revoking.start();
+		revoking.join(5_000);
+
+		release.countDown();
+		creating.join(10_000);
+		revoking.join(10_000);
+
+		// Then
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + revoked.credential())
+		);
+	}
+
+	/**
 	 * A create whose first write landed but whose answer was lost is made
 	 * again over the keys that already hold it. The store must then hold the
 	 * key once.

@@ -103,6 +103,12 @@ public class Keys {
 	private final Object forcedReadLock = new Object();
 
 	/**
+	 * Lock held for the whole of a change on this node, from the read it
+	 * starts from to the keys it leaves this node answering from.
+	 */
+	private final Object changeLock = new Object();
+
+	/**
 	 * This node's copy of the keys. A change made here replaces it at once. A
 	 * read of the store replaces it only when nothing else did while the read
 	 * ran, because store versions have no order: a read that started before a
@@ -754,12 +760,24 @@ public class Keys {
 	 *
 	 * <p>The change runs again for each attempt. A change that returns the
 	 * same instance of the keys it was given writes nothing.
+	 *
+	 * <p>Changes on one node run one at a time. Two changes that run at the
+	 * same time can each write and then set the keys this node answers from.
+	 * The change that wrote first could then set its keys last, and a key
+	 * that the later change revoked would work again on this node until the
+	 * next read.
 	 */
 	private void change(UnaryOperator<ListIterable<Key>> change) {
 		if(!storage.isAvailable()) {
 			throw KeyStorageException.unavailable();
 		}
 
+		synchronized(changeLock) {
+			changeOnce(change);
+		}
+	}
+
+	private void changeOnce(UnaryOperator<ListIterable<Key>> change) {
 		for(int attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
 			if(!read()) {
 				throw KeyStorageException.ioError(null);
