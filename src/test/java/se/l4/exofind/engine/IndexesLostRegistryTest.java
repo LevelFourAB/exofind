@@ -14,8 +14,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.zip.CRC32C;
 
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,9 @@ import se.l4.exofind.engine.index.schema.FieldDef;
 import se.l4.exofind.engine.index.schema.FieldTypeDef;
 import se.l4.exofind.engine.index.schema.IndexDef;
 import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
+import se.l4.exofind.engine.index.state.LocalCopy;
+import se.l4.exofind.engine.index.state.Manifest;
+import se.l4.exofind.engine.index.state.ManifestFile;
 import se.l4.exofind.engine.index.state.NoopRemoteSyncProvider;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
 import se.l4.exofind.engine.index.state.StateSyncProvider;
@@ -129,6 +134,7 @@ public class IndexesLostRegistryTest {
 	@Test
 	public void testTheLastIndexIsRemovedAfterTheNodeSawIt() throws Exception {
 		createIndexesInBucket("books");
+		describePushed(dir("books"));
 
 		var node = nodeWithRemote();
 		node.refresh();
@@ -641,5 +647,40 @@ public class IndexesLostRegistryTest {
 	 */
 	private Path dir(String name) {
 		return indexRoot().resolve(name + "@1");
+	}
+
+	/**
+	 * Write a manifest that describes the copy as it is, the way a push that
+	 * got everything to the remote does. Without one, the copy reads as
+	 * holding changes that the remote never got, and a node keeps it.
+	 */
+	private static void describePushed(Path directory) throws IOException {
+		List<Path> files;
+		try(var listing = Files.list(directory)) {
+			files = listing.filter(Files::isRegularFile)
+				.filter(path -> !path.getFileName().toString().equals(LocalCopy.MANIFEST_FILE))
+				.toList();
+		}
+
+		var names = files.stream().map(path -> path.getFileName().toString()).toArray(String[]::new);
+		var builder = Manifest.newBuilder()
+			.setLatestSegment(SegmentInfos.getLastCommitGeneration(names))
+			.setVersion(1);
+
+		for(var path : files) {
+			var checksum = new CRC32C();
+			checksum.update(Files.readAllBytes(path));
+			builder.addFiles(
+				ManifestFile.newBuilder()
+					.setName(path.getFileName().toString())
+					.setSize(Files.size(path))
+					.setChecksum((int) checksum.getValue())
+					.build()
+			);
+		}
+
+		try(var out = Files.newOutputStream(directory.resolve(LocalCopy.MANIFEST_FILE))) {
+			builder.build().writeTo(out);
+		}
 	}
 }

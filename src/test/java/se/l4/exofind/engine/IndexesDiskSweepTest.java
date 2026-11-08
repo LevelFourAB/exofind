@@ -32,7 +32,9 @@ import se.l4.exofind.engine.index.state.IndexUsageFile;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.Manifest;
 import se.l4.exofind.engine.index.state.ManifestFile;
+import se.l4.exofind.engine.index.state.NoopRemoteSyncProvider;
 import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.index.state.StateSyncProvider;
 import se.l4.exofind.engine.storage.StorageMode;
 
 /**
@@ -44,6 +46,14 @@ import se.l4.exofind.engine.storage.StorageMode;
 public class IndexesDiskSweepTest {
 	@TempDir
 	Path storageDirectory;
+
+	/**
+	 * Where the registry is kept, apart from the storage directory: a node
+	 * whose copies copy a remote refuses a storage directory that holds the
+	 * registry file of local mode.
+	 */
+	@TempDir
+	Path registryDirectory;
 
 	@Test
 	public void testColdCopyOverBudgetIsRemovedButStaysKnown() throws IOException {
@@ -128,6 +138,38 @@ public class IndexesDiskSweepTest {
 			node.sweepDisk();
 
 			assertThat(Files.exists(dir("books")), is(true));
+		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * A copy whose last commit never reached the remote holds the only copy
+	 * of acknowledged writes. A registry that stops naming the index, such as
+	 * one put back from an older backup, must not remove it.
+	 */
+	@Test
+	public void testCopyWithUnpushedCommitIsKeptWhenTheRegistryStopsNamingIt() throws IOException {
+		// Given object mode, books closed with a local commit newer than its manifest
+		createIndexes("books", "films");
+		writeSyncedManifest("books");
+		doctorManifest("books", m -> m.setLatestSegment(m.getLatestSegment() - 1));
+
+		// And a registry that no longer names books
+		new IndexRegistry(
+			new LocalRegistryStorage(registryDirectory.resolve("registry.ef.bin")),
+			Duration.ofMinutes(5)
+		).remove("books");
+
+		// When the node reads the registry
+		var node = open(null, Duration.ofHours(24), new NoopRemoteSyncProvider());
+		try {
+			// Then the copy with the unpushed commit is kept
+			assertThat(
+				"copy with an unpushed commit removed",
+				Files.exists(dir("books")),
+				is(true)
+			);
 		} finally {
 			node.close();
 		}
@@ -275,17 +317,25 @@ public class IndexesDiskSweepTest {
 	 * but only the read asked for here has happened by the time this returns.
 	 */
 	private Indexes open(String maxSize, Duration minIdle) throws IOException {
+		return open(maxSize, minIdle, new NoopSyncProvider());
+	}
+
+	/**
+	 * A node that has read the registry, with copies kept through the given
+	 * sync provider.
+	 */
+	private Indexes open(String maxSize, Duration minIdle, StateSyncProvider syncProvider) throws IOException {
 		var state = new NodeState(true);
 		state.updateOwnership(true);
 
 		var registry = new IndexRegistry(
-			new LocalRegistryStorage(storageDirectory.resolve("registry.ef.bin")),
+			new LocalRegistryStorage(registryDirectory.resolve("registry.ef.bin")),
 			Duration.ofMinutes(5)
 		);
 
 		var node = new Indexes(
 			state,
-			new NoopSyncProvider(),
+			syncProvider,
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
 			storageDirectory,

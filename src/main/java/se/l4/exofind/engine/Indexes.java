@@ -2056,10 +2056,25 @@ public class Indexes implements RegistryPoller.Listener {
 					return;
 				}
 
+				/*
+				 * A copy that holds a commit the remote never got is what a
+				 * failed push on close leaves. A registry that lost the name,
+				 * for example one put back from an older backup, looks the
+				 * same as a delete, and the copy is then the only one of
+				 * those writes.
+				 */
+				var path = indexRoot.resolve(name);
+				if(LocalCopy.hasUnpushedChanges(path)) {
+					logger.atWarn()
+						.addKeyValue("index", name)
+						.log("Index was removed in the remote but its local copy holds changes that were never pushed, keeping it");
+					return;
+				}
+
 				// A retired instance would write into the files being removed
 				drainRetiring(name, false);
 
-				deleteRecursively(indexRoot.resolve(name));
+				deleteRecursively(path);
 			} catch(IOException e) {
 				logger.atWarn()
 					.addKeyValue("index", name)
