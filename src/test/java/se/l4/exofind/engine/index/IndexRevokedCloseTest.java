@@ -9,12 +9,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.index.schema.FieldDef;
@@ -24,8 +27,11 @@ import se.l4.exofind.engine.index.schema.StringFieldTypeDef;
 import se.l4.exofind.engine.index.state.ObjectStorageSync;
 import se.l4.exofind.engine.index.state.TestObjectStorage;
 
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
  * That an instance whose claim was revoked leaves nothing on disk when it
@@ -140,5 +146,65 @@ public class IndexRevokedCloseTest {
 		);
 		assertThat(reopened.getDocumentCount(), is(1L));
 		assertThat(reopened.visibleCommit(), is(pushedSequence));
+	}
+	/**
+	 * A writer whose push failed keeps its commit on disk. When the node then
+	 * loses the index and reopens it read-only while the remote has not
+	 * moved, the reader must answer from the commit the manifest names, not
+	 * from the newer local commit that no other node has.
+	 */
+	@Test
+	void aLostWriterThatReopensReadOnlyServesWhatTheRemoteHolds() throws Exception {
+		// Given node A writes the index and pushed one document
+		var stateA = holder();
+		var failPushes = new AtomicBoolean();
+		var client = Mockito.spy(s3Client);
+		Mockito.doAnswer(invocation -> {
+			if(failPushes.get()) {
+				throw SdkClientException.create("simulated unreachable storage");
+			}
+
+			return invocation.callRealMethod();
+		})
+			.when(client)
+			.putObject(ArgumentMatchers.any(PutObjectRequest.class), ArgumentMatchers.any(RequestBody.class));
+
+		var path = root.resolve("a");
+		Files.createDirectories(path);
+		var a = new Index(
+			stateA,
+			"books",
+			path,
+			new ObjectStorageSync(client, "books", path, TestObjectStorage.BUCKET, bucketPrefix)
+		);
+		opened.add(a);
+
+		a.pull();
+		a.updateDefinition(firstDefinition());
+		a.addDocument(new Document(new Document.Value("id", "1")));
+		a.commit();
+
+		// And node A committed a second document whose push failed
+		failPushes.set(true);
+		a.addDocument(new Document(new Document.Value("id", "2")));
+		try {
+			a.commit();
+		} catch(IOException e) {
+			// The storage could not be reached
+		}
+
+		// When node A loses the index and reopens it read-only, and the remote has not moved
+		a.revokeWriting();
+		stateA.updateOwnership(false);
+		a.reopen();
+
+		// Then it answers from what the remote holds
+		assertThat(a.getState(), is(IndexState.USABLE));
+		assertThat(
+			"document `2` that never reached the remote",
+			a.getDocument("2"),
+			is(nullValue())
+		);
+		assertThat(a.getDocumentCount(), is(1L));
 	}
 }

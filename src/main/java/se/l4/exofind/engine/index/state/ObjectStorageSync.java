@@ -198,6 +198,14 @@ public class ObjectStorageSync implements StateSync {
 	private boolean localManifestBehind;
 
 	/**
+	 * Whether the next pull repairs the local copy from the remote manifest,
+	 * also when that manifest has not changed. Set by
+	 * {@link #dropUnpushedChanges()}, which removes files the copy needs, and
+	 * cleared by a pull that brought the copy back to a manifest.
+	 */
+	private boolean repairLocalCopy;
+
+	/**
 	 * Epoch this instance has claimed for its writes, or {@code -1} while it
 	 * has not claimed one. Claimed when a writer opens on this copy, and
 	 * before the first upload where no writer opened here.
@@ -632,7 +640,7 @@ public class ObjectStorageSync implements StateSync {
 			 * changed. The tag is then left out, as a 304 brings no manifest
 			 * to repair from.
 			 */
-			var commitLost = lostSyncedCommit();
+			var commitLost = repairLocalCopy || lostSyncedCommit();
 			if(lastSyncedManifestETag != null && !commitLost) {
 				requestBuilder.ifNoneMatch(lastSyncedManifestETag);
 			}
@@ -791,6 +799,7 @@ public class ObjectStorageSync implements StateSync {
 			this.lastSyncedManifest = manifest;
 			this.lastSyncedManifestETag = quoteETag(pulled.eTag());
 			this.localManifestBehind = false;
+			this.repairLocalCopy = false;
 
 			// The pulled manifest replaces whatever an unanswered write left
 			this.unconfirmedManifest = null;
@@ -825,6 +834,23 @@ public class ObjectStorageSync implements StateSync {
 			.log("Pull stopped, the local copy is being handed to another instance");
 
 		return false;
+	}
+
+	@Override
+	public void dropUnpushedChanges() {
+		lock.lock();
+		try {
+			/*
+			 * Lucene removed the files of the commit the manifest names when
+			 * the newer commit was made. The next pull downloads them again,
+			 * and puts back each file that the engine rewrites in place, such
+			 * as a definition update whose push failed.
+			 */
+			deleteObsoleteLocalFiles(lastSyncedManifest);
+			this.repairLocalCopy = true;
+		} finally {
+			lock.unlock();
+		}
 	}
 
 	@Override

@@ -1110,7 +1110,17 @@ public class Index {
 			 */
 			releasedWriter = writer != null;
 			if(releasedWriter) {
+				/*
+				 * A writer without the right to push had its claim taken. A
+				 * commit it made after the last push can never reach the
+				 * remote, and a reader opens the newest local commit. Given
+				 * up here, and the pull below puts back what the remote holds.
+				 */
+				var revoked = !mayPush;
 				releaseWriter();
+				if(revoked) {
+					sync.dropUnpushedChanges();
+				}
 			}
 
 			/*

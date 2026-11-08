@@ -104,6 +104,23 @@ public interface StateSync {
 	}
 
 	/**
+	 * Give up what the local copy holds that the remote never got, for a
+	 * writer whose claim was taken. Removes the files the last synchronized
+	 * manifest does not name, such as a commit whose push failed. The next
+	 * {@link #pull()} downloads what the manifest names and the copy lacks,
+	 * also when the remote has not changed, so a reader then opens the commit
+	 * the remote holds.
+	 *
+	 * <p>Call only while nothing has the local directory open for writing.
+	 * Blocks while a pull or a push runs.
+	 *
+	 * <p>The default does nothing, for an implementation whose local copy is
+	 * the only copy.
+	 */
+	default void dropUnpushedChanges() {
+	}
+
+	/**
 	 * The version of the manifest this node last synchronized, whether it was
 	 * pulled or pushed. What it is compared against is the version another
 	 * writer reported, so a copy already at it need not ask the remote.
