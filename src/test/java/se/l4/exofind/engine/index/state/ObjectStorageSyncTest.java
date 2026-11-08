@@ -1076,6 +1076,32 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * A push that would drop the definition the remote holds leaves every
+	 * reader without a definition, and the index can then not be opened
+	 * anywhere. It is refused, the way a push that would drop the commit is.
+	 */
+	@Test
+	void aPushWithoutTheDefinitionTheRemoteHoldsIsRefused() throws Exception {
+		// Given: the remote manifest names a definition and a commit
+		var definition = createLocalFile("definition.ef.bin", 20);
+		var segment = createLocalFile("segments_1", 10);
+		push(definition, segment);
+
+		// When: the holder pushes a commit without the definition
+		var next = createLocalFile("segments_2", 12);
+		var data = createLocalFile("_1.cfs", 30);
+
+		// Then: the push is refused
+		assertThrows(IOException.class, () -> push(next, data));
+
+		// And: the remote manifest keeps the definition
+		assertThat(
+			remoteManifest().getFilesList().stream().anyMatch(f -> f.getName().equals("definition.ef.bin")),
+			is(true)
+		);
+	}
+
+	/**
 	 * A pull that has moved every file of a newer commit into place and is
 	 * stopped, or fails, before it writes the manifest leaves a commit on disk
 	 * that is newer than the one the local manifest names. That commit came

@@ -33,6 +33,7 @@ import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.IOUtils;
 
+import se.l4.exofind.engine.index.Index;
 import se.l4.exofind.engine.index.LuceneCompatibility;
 import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.DurableFiles;
@@ -414,6 +415,20 @@ public class ObjectStorageSync implements StateSync {
 			if(namesCommit(previousManifest) && !namesCommit(manifest)) {
 				throw new IOException(
 					"Refusing to push, the local copy holds no Lucene commit while"
+						+ " the manifest at version " + previousManifest.getVersion()
+						+ " names one"
+				);
+			}
+
+			/*
+			 * The same holds for the definition. A manifest that names none
+			 * makes every reader remove its copy of the definition, and the
+			 * sweep then removes the object. No node could open the index
+			 * after that.
+			 */
+			if(namesDefinition(previousManifest) && !namesDefinition(manifest)) {
+				throw new IOException(
+					"Refusing to push, the local copy holds no definition while"
 						+ " the manifest at version " + previousManifest.getVersion()
 						+ " names one"
 				);
@@ -946,6 +961,15 @@ public class ObjectStorageSync implements StateSync {
 	 */
 	private static boolean namesCommit(Manifest manifest) {
 		return commitGeneration(manifest) >= 0;
+	}
+
+	/**
+	 * Whether a manifest names the definition of the index.
+	 */
+	private static boolean namesDefinition(Manifest manifest) {
+		return manifest.getFilesList()
+			.stream()
+			.anyMatch(file -> file.getName().equals(Index.DEFINITION_FILE));
 	}
 
 	/**
