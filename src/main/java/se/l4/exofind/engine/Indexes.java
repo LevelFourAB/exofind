@@ -725,7 +725,7 @@ public class Indexes implements RegistryPoller.Listener {
 		 * The sweep shares the refresh thread, so it can never run next to a
 		 * refresh that is opening and pulling indexes.
 		 */
-		if(this.diskMaxSize.isPresent()) {
+		if(this.diskMaxSize.isPresent() && syncProvider.hasRemote()) {
 			this.refreshExecutor.scheduleWithFixedDelay(
 				this::sweepDisk,
 				diskSweepInterval.toMillis(),
@@ -2100,9 +2100,13 @@ public class Indexes implements RegistryPoller.Listener {
 	 * going a bit further than the budget keeps the sweep from removing a
 	 * copy on every run once the disk sits at the edge. A copy used more
 	 * recently than the idle floor is never removed, however cold its count.
+	 *
+	 * <p>Does nothing in local storage mode, where the directories are the
+	 * only copy of the data. Only directories named as a generation count as
+	 * copies. Other directories are not counted and not removed.
 	 */
 	void sweepDisk() {
-		if(diskMaxSize.isEmpty()) {
+		if(diskMaxSize.isEmpty() || !syncProvider.hasRemote()) {
 			return;
 		}
 
@@ -2121,6 +2125,12 @@ public class Indexes implements RegistryPoller.Listener {
 
 			try(var paths = Files.list(indexRoot)) {
 				for(var path : paths.filter(Files::isDirectory).toList()) {
+					var copyName = IndexName.tryParse(path.getFileName().toString());
+					if(copyName.isEmpty() || !copyName.get().isPinned()) {
+						// Not a copy this node made, such as lost+found on a mounted volume
+						continue;
+					}
+
 					var size = sizeOf(path);
 					total += size;
 					copies.add(new Copy(path.getFileName().toString(), path, size));

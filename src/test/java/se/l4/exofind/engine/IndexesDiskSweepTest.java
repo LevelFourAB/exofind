@@ -72,6 +72,75 @@ public class IndexesDiskSweepTest {
 		}
 	}
 
+	/**
+	 * In local mode the directories are the only copy of the indexes, and
+	 * the disk budget does not delete files there. A directory that holds a
+	 * manifest, because it was used in object mode before, is still the only
+	 * copy.
+	 */
+	@Test
+	public void testLocalModeCopyIsNotRemovedOverBudget() throws IOException {
+		// Given local mode and a cold copy that holds a manifest
+		createIndexes("books");
+		writeSyncedManifest("books");
+		ageUsage("books", Duration.ofDays(30), 1);
+
+		// When the disk sweep runs over budget
+		var node = open("1", Duration.ofHours(24), new NoopSyncProvider());
+		try {
+			node.sweepDisk();
+
+			// Then the copy stays
+			assertThat(
+				"only copy of a local mode index removed by the disk sweep",
+				Files.exists(dir("books")),
+				is(true)
+			);
+		} finally {
+			node.close();
+		}
+	}
+
+	/**
+	 * A directory under the index root that is not an index copy, such as
+	 * the lost+found of a volume mounted there, is not the sweep's to remove.
+	 */
+	@Test
+	public void testDirectoryThatIsNotAnIndexCopyIsNotRemovedOverBudget() throws IOException {
+		// Given object mode, a cold copy, and a directory that is not an index copy
+		createIndexes("books");
+		writeSyncedManifest("books");
+		ageUsage("books", Duration.ofDays(30), 1);
+
+		var foreign = storageDirectory.resolve("indexes").resolve("lost+found");
+		Files.createDirectories(foreign);
+		Files.write(foreign.resolve("recovered"), new byte[4096]);
+		var at = Instant.now().minus(Duration.ofDays(30));
+		IndexUsageFile.write(
+			foreign,
+			IndexUsage.newBuilder()
+				.setLastUsedMs(at.toEpochMilli())
+				.setDecayedOpens(0.1)
+				.setDecayedAtMs(at.toEpochMilli())
+				.build()
+		);
+
+		// When the disk sweep runs over budget
+		var node = open("1", Duration.ofHours(24), new NoopRemoteSyncProvider());
+		try {
+			node.sweepDisk();
+
+			// Then the directory that is not an index copy stays
+			assertThat(
+				"directory that is not an index copy removed by the disk sweep",
+				Files.exists(foreign.resolve("recovered")),
+				is(true)
+			);
+		} finally {
+			node.close();
+		}
+	}
+
 	@Test
 	public void testCopiesWithinBudgetAreLeftAlone() throws IOException {
 		createIndexes("books");
@@ -312,12 +381,14 @@ public class IndexesDiskSweepTest {
 	}
 
 	/**
-	 * A node that has read the registry, which is what the sweep needs before
-	 * it may remove anything. A node reads it on a thread of its own as well,
-	 * but only the read asked for here has happened by the time this returns.
+	 * A node whose copies copy a remote, the only mode in which the sweep
+	 * removes anything, and that has read the registry, which is what the
+	 * sweep needs before it may remove anything. A node reads it on a thread
+	 * of its own as well, but only the read asked for here has happened by
+	 * the time this returns.
 	 */
 	private Indexes open(String maxSize, Duration minIdle) throws IOException {
-		return open(maxSize, minIdle, new NoopSyncProvider());
+		return open(maxSize, minIdle, new NoopRemoteSyncProvider());
 	}
 
 	/**
