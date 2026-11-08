@@ -140,6 +140,8 @@ The recorded list lives in memory, so a writer that stops loses it. The next wri
 
 A failed pull keeps the files it verified. The retry compares size and checksum against the manifest and downloads only what is missing or differs. The pull always downloads an entry without a checksum, because a file with the same name and size that a writer on the node left behind would otherwise pass.
 
+A pull moves every file into place before it writes the manifest, so a pull that stops part way leaves files of a newer manifest beside the older one. Before it changes the first file, the pull writes a local record of the manifest it moves to, and it removes the record when it writes the manifest. A node asks whether a closed copy holds commits or a definition that the remote never got before it hands the index over or evicts the copy. A file that the record names came from the remote, so it does not count.
+
 ## How merged files leave the bucket
 
 When Lucene merges small segments into larger ones, a commit includes the merged segment and drops the old segment files from the index. The merge deletes nothing from the bucket directly. The push following the commit records the objects the new manifest no longer names, and the writer deletes them at the first push after a one-hour grace period.

@@ -21,6 +21,16 @@ public final class LocalCopy {
 	 */
 	public static final String MANIFEST_FILE = "manifest.ef.bin";
 
+	/**
+	 * Name of the record a pull writes before it changes the first file in
+	 * the directory. The record holds the manifest the pull is moving the
+	 * directory to, in the format of {@link #MANIFEST_FILE}. The record is
+	 * removed when the manifest is written. While it exists, the directory
+	 * can hold files of that manifest beside an older {@link #MANIFEST_FILE}.
+	 * The record never leaves the node.
+	 */
+	public static final String PULL_FILE = "pull.ef.bin";
+
 	private LocalCopy() {
 	}
 
@@ -57,20 +67,23 @@ public final class LocalCopy {
 	 * lists, or - with no manifest at all - a definition whose first push
 	 * never landed.
 	 *
+	 * <p>A pull that stopped before it wrote its manifest leaves files of a
+	 * newer manifest in the directory, see {@link #PULL_FILE}. Those files
+	 * came from the remote and do not count. A commit or a definition that
+	 * neither manifest describes counts.
+	 *
 	 * <p>Errs on the side of yes: a directory this can not read is reported
 	 * as holding changes. A directory with neither manifest nor definition
 	 * holds nothing another node could miss and is reported as holding none.
 	 */
 	public static boolean hasUnpushedChanges(Path directory) {
 		try {
-			var manifestPath = directory.resolve(MANIFEST_FILE);
-			if(!Files.exists(manifestPath)) {
-				return Files.exists(directory.resolve(Index.DEFINITION_FILE));
-			}
+			var pulling = readManifest(directory.resolve(PULL_FILE));
 
-			Manifest manifest;
-			try(var in = Files.newInputStream(manifestPath)) {
-				manifest = Manifest.parseFrom(in);
+			var manifest = readManifest(directory.resolve(MANIFEST_FILE));
+			if(manifest == null) {
+				return Files.exists(directory.resolve(Index.DEFINITION_FILE))
+					&& (pulling == null || definitionDiffers(directory, pulling));
 			}
 
 			String[] names;
@@ -86,13 +99,36 @@ public final class LocalCopy {
 			 * Files of a commit that was never pushed but also never committed
 			 * are work in progress that no manifest would have listed either.
 			 */
-			if(SegmentInfos.getLastCommitGeneration(names) > manifest.getLatestSegment()) {
+			var latestSegment = pulling == null
+				? manifest.getLatestSegment()
+				: Math.max(manifest.getLatestSegment(), pulling.getLatestSegment());
+
+			if(SegmentInfos.getLastCommitGeneration(names) > latestSegment) {
 				return true;
 			}
 
-			return definitionDiffers(directory, manifest);
+			return definitionDiffers(directory, manifest)
+				&& (pulling == null || definitionDiffers(directory, pulling));
 		} catch(IOException e) {
 			return true;
+		}
+	}
+
+	/**
+	 * Read a manifest from a file.
+	 *
+	 * @return
+	 *   the manifest, or {@code null} when the file does not exist
+	 * @throws IOException
+	 *   if the file could not be read
+	 */
+	private static Manifest readManifest(Path path) throws IOException {
+		if(!Files.exists(path)) {
+			return null;
+		}
+
+		try(var in = Files.newInputStream(path)) {
+			return Manifest.parseFrom(in);
 		}
 	}
 

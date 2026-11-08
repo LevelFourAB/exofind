@@ -1076,6 +1076,119 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * A pull that has moved every file of a newer commit into place and is
+	 * stopped, or fails, before it writes the manifest leaves a commit on disk
+	 * that is newer than the one the local manifest names. That commit came
+	 * from the remote, so the copy holds nothing the remote does not have.
+	 * Reading it as a copy with unpushed changes makes every handover of the
+	 * index try to push it and be called off, and keeps the copy from being
+	 * evicted.
+	 */
+	@Test
+	void aCopyLeftByAPullStoppedBeforeItsManifestHoldsNoUnpushedChanges() throws Exception {
+		// Given: the writer pushed a commit, and a reader pulled it
+		var definition = createLocalFile("definition.ef.bin", 20);
+		var segment1 = createLocalFile("segments_1", 10);
+		push(definition, segment1);
+
+		var stop = new AtomicBoolean();
+		var readerClient = Mockito.spy(s3Client);
+		var reader = newSync(readerClient, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+
+		// And: the writer pushed a newer commit
+		var segment2 = createLocalFile("segments_2", 12);
+		push(definition, segment2);
+		var segment2Object = bucketPrefix + "/" + remoteKeyOf(segment2.name);
+
+		// And: the next pull of the reader is stopped while it downloads the last file of the commit
+		Mockito.doAnswer(invocation -> {
+			if(stop.getAndSet(false)) {
+				reader.stopPulling();
+			}
+
+			return invocation.callRealMethod();
+		})
+			.when(readerClient)
+			.getObject(ArgumentMatchers.argThat(
+				(GetObjectRequest request) -> request != null && segment2Object.equals(request.key())
+			));
+
+		stop.set(true);
+		assertThat(reader.pull(), is(false));
+		verifyLocalFile(otherLocalPath, segment2);
+
+		// When: the copy is asked whether it holds changes the remote never got
+		var unpushed = LocalCopy.hasUnpushedChanges(otherLocalPath);
+
+		// Then: it holds none
+		assertThat("the copy reads as holding unpushed changes", unpushed, is(false));
+	}
+
+	/**
+	 * A pull that fails part way keeps the files it verified, which can
+	 * include a definition that is newer than the one the local manifest
+	 * lists. Such a copy holds nothing the remote does not have. Reading it
+	 * as a copy with unpushed changes makes every handover of the index try
+	 * to push it, fail on the newer remote and be called off.
+	 */
+	@Test
+	void aCopyLeftByAFailedPullHoldsNoUnpushedChanges() throws Exception {
+		// Given: the writer pushed a definition and a commit, and a reader pulled them
+		var firstDefinition = createLocalFile("definition.ef.bin", 20);
+		var segment = createLocalFile("segments_1", 10);
+		push(firstDefinition, segment);
+
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+
+		// And: the writer pushed a new definition and a new file, which comes last in manifest order
+		var secondDefinition = createLocalFile("definition.ef.bin", 24);
+		var data = createLocalFile("terms", 30);
+		push(secondDefinition, segment, data);
+
+		// And: the next pull of the reader fails after it replaced the definition
+		removeRemoteObject(remoteKeyOf(data.name));
+		var restarted = newSync(s3Client, otherLocalPath);
+		assertThrows(IOException.class, restarted::pull);
+		verifyLocalFile(otherLocalPath, secondDefinition);
+
+		// When: the copy is asked whether it holds changes the remote never got
+		var unpushed = LocalCopy.hasUnpushedChanges(otherLocalPath);
+
+		// Then: it holds none
+		assertThat("the copy reads as holding unpushed changes", unpushed, is(false));
+	}
+
+	/**
+	 * The files a failed pull left are no changes of the copy, but a
+	 * definition that a writer wrote after that pull is one.
+	 */
+	@Test
+	void aCopyLeftByAFailedPullStillHoldsADefinitionNoManifestNames() throws Exception {
+		// Given: a reader pulled a definition and a commit
+		var firstDefinition = createLocalFile("definition.ef.bin", 20);
+		var segment = createLocalFile("segments_1", 10);
+		push(firstDefinition, segment);
+
+		var reader = newSync(s3Client, otherLocalPath);
+		assertThat(reader.pull(), is(true));
+
+		// And: the next pull of the reader failed after it replaced the definition
+		var secondDefinition = createLocalFile("definition.ef.bin", 24);
+		var data = createLocalFile("terms", 30);
+		push(secondDefinition, segment, data);
+		removeRemoteObject(remoteKeyOf(data.name));
+		assertThrows(IOException.class, newSync(s3Client, otherLocalPath)::pull);
+
+		// When: a definition that neither manifest names is written to the copy
+		createLocalFile(otherLocalPath, "definition.ef.bin", 28);
+
+		// Then: the copy holds a change the remote never got
+		assertThat(LocalCopy.hasUnpushedChanges(otherLocalPath), is(true));
+	}
+
+	/**
 	 * A stopped sync belongs to a local directory another instance is taking
 	 * over, so it pulls nothing at all.
 	 */

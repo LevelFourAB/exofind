@@ -68,6 +68,12 @@ public class ObjectStorageSync implements StateSync {
 	private static final String MANIFEST_TEMP_NAME = MANIFEST_NAME + DurableFiles.TEMP_SUFFIX;
 
 	/**
+	 * Name of the record of a pull that changes files before it writes the
+	 * manifest, see {@link LocalCopy#PULL_FILE}.
+	 */
+	private static final String PULL_NAME = LocalCopy.PULL_FILE;
+
+	/**
 	 * Suffix used while a file is being downloaded. The suffix is distinct
 	 * enough that it can never collide with a file belonging to the index,
 	 * which lets a leftover from an interrupted download be recognized as
@@ -751,6 +757,7 @@ public class ObjectStorageSync implements StateSync {
 			}
 
 			var renamedInto = new LinkedHashSet<Path>();
+			var pullRecorded = false;
 			for(var file : manifest.getFilesList()) {
 				if(pullsStopped) {
 					// Checked between files, so the caller waits for one download at most
@@ -791,6 +798,19 @@ public class ObjectStorageSync implements StateSync {
 					IOUtils.fsync(localFile, false);
 					renamedInto.add(localFile.getParent());
 					continue;
+				}
+
+				/*
+				 * Recorded before the first file changes. A pull that stops
+				 * before it writes the manifest leaves files of this manifest
+				 * beside the older manifest on disk. Without the record, a
+				 * closed copy reads as holding changes the remote never got,
+				 * and a handover of the index tries to push it again and
+				 * again.
+				 */
+				if(!pullRecorded) {
+					DurableFiles.replace(localPath.resolve(PULL_NAME), manifest.toByteArray());
+					pullRecorded = true;
 				}
 
 				downloadFile(file, localFile);
@@ -2268,10 +2288,13 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	/**
-	 * Write the manifest describing the current local state.
+	 * Write the manifest describing the current local state, and remove the
+	 * record of a pull that did not finish. The manifest describes every
+	 * file in the directory from then on.
 	 */
 	private void writeManifest(Manifest manifest) throws IOException {
 		DurableFiles.replace(localPath.resolve(MANIFEST_NAME), manifest.toByteArray());
+		Files.deleteIfExists(localPath.resolve(PULL_NAME));
 	}
 
 	/**
