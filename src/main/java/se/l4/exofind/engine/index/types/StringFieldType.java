@@ -106,6 +106,14 @@ public class StringFieldType implements FieldType {
 			"Field `{{name}}` holds a value too long to index as one term, which can be at most {{max}} bytes in UTF-8"
 		);
 
+	private static final ErrorType SURROGATE_UNPAIRED = ErrorType
+		.withCode("document:string:surrogate_unpaired")
+		.withStatus(400)
+		.withArguments("name")
+		.withMessage(
+			"Field `{{name}}` holds text with an unpaired UTF-16 surrogate, which is not a Unicode character"
+		);
+
 	/**
 	 * How long a word has to be before one typo is allowed in it, unless the
 	 * definition says otherwise. Short words are mostly typos of each other,
@@ -710,6 +718,22 @@ public class StringFieldType implements FieldType {
 			);
 		}
 
+		/*
+		 * Lucene and Protocol Buffers each write an unpaired surrogate as a
+		 * replacement character of their own. Two keys that differ only there
+		 * then name one document, and the stored copy reads back as a third
+		 * value. Refused here, so a value is stored as it was given or not at
+		 * all.
+		 */
+		if(hasUnpairedSurrogate(value)) {
+			throw new ValidationException(
+				SURROGATE_UNPAIRED.toMessage(
+					ObjectLocation.root().forField(encounter.getFieldName()),
+					"name", encounter.getFieldName()
+				)
+			);
+		}
+
 		if(encounter.isPrimaryKey()) {
 			var field = new StringField(
 				encounter.name(FieldNames.PRIMARY_KEY),
@@ -848,6 +872,26 @@ public class StringFieldType implements FieldType {
 		}
 
 		return results;
+	}
+
+	/**
+	 * Get if text holds a UTF-16 surrogate that is not part of a pair.
+	 */
+	static boolean hasUnpairedSurrogate(String text) {
+		for(int i = 0, n = text.length(); i < n; i++) {
+			var c = text.charAt(i);
+			if(Character.isHighSurrogate(c)) {
+				if(i + 1 < n && Character.isLowSurrogate(text.charAt(i + 1))) {
+					i++;
+				} else {
+					return true;
+				}
+			} else if(Character.isLowSurrogate(c)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

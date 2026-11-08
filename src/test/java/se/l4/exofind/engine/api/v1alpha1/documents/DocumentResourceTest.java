@@ -1183,6 +1183,59 @@ public class DocumentResourceTest {
 	}
 
 	/**
+	 * A key with an unpaired surrogate cannot be stored as it was given, so
+	 * the document is refused rather than stored under a key that does not
+	 * read back.
+	 */
+	@Test
+	public void testAKeyWithAnUnpairedSurrogateIsRefused() throws IOException {
+		// Given
+		var index = foods();
+
+		// When
+		var refused = refusesAdd(document("id", "a\uD800", "tags", List.of("first")));
+		index.commit();
+
+		// Then
+		assertThat(index.getDocumentCount(), is(0L));
+		assertThat(refused, is(true));
+	}
+
+	/**
+	 * Two keys that differ are two documents. A write under one key must not
+	 * replace the document under another.
+	 */
+	@Test
+	public void testKeysThatDifferOnlyInAnUnpairedSurrogateDoNotReplaceEachOther()
+		throws IOException {
+		// Given
+		var index = foods();
+		var firstAccepted = !refusesAdd(document("id", "a\uD800", "tags", List.of("first")));
+
+		// When
+		var secondAccepted = !refusesAdd(document("id", "a\uDBFF", "tags", List.of("second")));
+		index.commit();
+
+		// Then
+		if(firstAccepted && secondAccepted) {
+			assertThat(index.getDocumentCount(), is(2L));
+		}
+
+		if(firstAccepted) {
+			assertThat(index.getDocument("a\uD800").get("tags"), is("first"));
+		}
+	}
+
+	private boolean refusesAdd(Map<String, Object> document) throws IOException {
+		try {
+			resource.add("foods", null, new DocumentsRequest(List.of(document)));
+			return false;
+		} catch(ValidationException e) {
+			return true;
+		}
+	}
+
+	/**
 	 * An {@code and} clause that leaves out its clauses names nothing to
 	 * remove, and is refused rather than taken for every document.
 	 */

@@ -648,6 +648,11 @@ public class DocumentResource {
 		when = "A string field is given a value over 32766 bytes in UTF-8 where it is written as one term, such as a key, a filter or a sort value."
 	)
 	@ReturnsError(
+		value = "document:string:surrogate_unpaired",
+		status = 400,
+		when = "A string field is given text with an unpaired UTF-16 surrogate, such as a lone `\\uD800` escape. It is not a Unicode character, so the text cannot be stored as it was given."
+	)
+	@ReturnsError(
 		value = "document:boolean:value_invalid",
 		status = 400,
 		when = "A boolean field is given a value that is not `true` or `false`."
@@ -1164,6 +1169,11 @@ public class DocumentResource {
 		value = "document:string:value_too_long",
 		status = 400,
 		when = "A string field is given a value over 32766 bytes in UTF-8 where it is written as one term, such as a key, a filter or a sort value."
+	)
+	@ReturnsError(
+		value = "document:string:surrogate_unpaired",
+		status = 400,
+		when = "A string field is given text with an unpaired UTF-16 surrogate, such as a lone `\\uD800` escape. It is not a Unicode character, so the text cannot be stored as it was given."
 	)
 	@ReturnsError(
 		value = "document:boolean:value_invalid",
@@ -2020,6 +2030,11 @@ public class DocumentResource {
 		value = "document:string:value_too_long",
 		status = 400,
 		when = "A string field is given a value over 32766 bytes in UTF-8 where it is written as one term, such as a key, a filter or a sort value."
+	)
+	@ReturnsError(
+		value = "document:string:surrogate_unpaired",
+		status = 400,
+		when = "A string field is given text with an unpaired UTF-16 surrogate, such as a lone `\\uD800` escape. It is not a Unicode character, so the text cannot be stored as it was given."
 	)
 	@ReturnsError(
 		value = "document:boolean:value_invalid",
