@@ -53,6 +53,7 @@ import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateResponse;
 import se.l4.exofind.engine.api.v1alpha1.search.SearchRequestMapper;
 import se.l4.exofind.engine.api.v1alpha1.search.model.Clause;
 import se.l4.exofind.engine.auth.Permission;
+import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ErrorMessage;
 import se.l4.exofind.engine.errors.ErrorType;
 import se.l4.exofind.engine.errors.Location;
@@ -766,6 +767,8 @@ public class DocumentResource {
 
 					failures.add(toFailure(entry, e));
 					continue;
+				} catch(EngineException e) {
+					throw stopped(e, entry, processed);
 				}
 
 				written++;
@@ -856,6 +859,8 @@ public class DocumentResource {
 
 						failures.add(toFailure(entry, e));
 						continue;
+					} catch(EngineException e) {
+						throw stopped(e, entry, processed);
 					}
 
 					written++;
@@ -1303,6 +1308,8 @@ public class DocumentResource {
 
 					failures.add(toFailure(entry, e));
 					continue;
+				} catch(EngineException e) {
+					throw stopped(e, entry, processed);
 				}
 
 				if(applied) {
@@ -1388,6 +1395,8 @@ public class DocumentResource {
 
 						failures.add(toFailure(entry, e));
 						continue;
+					} catch(EngineException e) {
+						throw stopped(e, entry, processed);
 					}
 
 					if(applied) {
@@ -1447,6 +1456,22 @@ public class DocumentResource {
 		throw new ValidationException(
 			ON_ERROR_UNKNOWN.toMessage(Location.create("onError"), "value", onError)
 		);
+	}
+
+	/**
+	 * Get a failure that stopped a batch, with the arguments that say where
+	 * in the batch it stopped and how much of the batch the index took
+	 * before it. A failure that is not a refused entry, such as an index
+	 * that was closed or became read only, carries them too. A client then
+	 * knows which entries to send again, and a change that adds values is
+	 * not applied twice.
+	 */
+	private static EngineException stopped(
+		EngineException e,
+		BatchEntry entry,
+		int processed
+	) {
+		return e.withArguments(entry.reported(processed));
 	}
 
 	/**

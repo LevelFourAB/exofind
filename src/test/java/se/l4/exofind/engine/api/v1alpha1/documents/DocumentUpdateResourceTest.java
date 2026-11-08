@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.emptyIterable;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -25,12 +26,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.UncheckedIOException;
+import java.util.AbstractList;
 
 import se.l4.exofind.engine.Indexes;
 import se.l4.exofind.engine.NodeState;
 import se.l4.exofind.engine.api.errors.ErrorResponse.ErrorDetail;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.DocumentsRequest;
 import se.l4.exofind.engine.api.v1alpha1.documents.model.UpdateRequest;
+import se.l4.exofind.engine.errors.EngineException;
 import se.l4.exofind.engine.errors.ValidationException;
 import se.l4.exofind.engine.freshness.TestFreshnessWaiters;
 import se.l4.exofind.engine.index.Index;
@@ -683,6 +687,53 @@ public class DocumentUpdateResourceTest {
 			.setType(
 				FieldTypeDef.newBuilder().setString(StringFieldTypeDef.getDefaultInstance())
 			);
+	}
+
+	/**
+	 * A batch that stops part way for a reason other than a refused change
+	 * still says how many changes it applied. A client resends from there,
+	 * and a change that adds values must not be applied twice.
+	 */
+	@Test
+	public void aBatchStoppedByAnIndexThatWentAwaySaysHowFarItGot() throws IOException {
+		// Given
+		var index = catalogue();
+		var changes = List.of(
+			document("id", "1", "price", 1.5),
+			document("id", "2", "price", 2.5),
+			document("id", "1", "price", 3.5)
+		);
+
+		// The index goes away once the first change is applied, as an eviction does
+		var stopping = new AbstractList<Map<String, Object>>() {
+			@Override
+			public Map<String, Object> get(int position) {
+				if(position == 1) {
+					try {
+						index.close();
+					} catch(IOException e) {
+						throw new UncheckedIOException(e);
+					}
+				}
+
+				return changes.get(position);
+			}
+
+			@Override
+			public int size() {
+				return changes.size();
+			}
+		};
+
+		// When
+		var e = assertThrows(
+			EngineException.class,
+			() -> resource.update("catalogue", null, null, new UpdateRequest(stopping))
+		);
+
+		// Then
+		assertThat(e.getClass().getSimpleName(), is(not("ValidationException")));
+		assertThat(e.getCode() + " " + e.getArguments(), e.getArguments().get("processed"), is(1));
 	}
 
 	private Index catalogue() throws IOException {

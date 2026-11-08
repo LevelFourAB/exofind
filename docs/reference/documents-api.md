@@ -679,6 +679,7 @@ Arguments are included based on the error type:
 
 - Entry-level errors carry `position`, `processed`, and `line` (for `application/x-ndjson`). These include `document:not_an_object`, errors where an entry breaks the index definition (such as `document:field_unknown` and `document:field_required`), `document:not_found`, `document:malformed`, and `storage:io_error`.
 - `request:body_unreadable` carries `position` and `processed` only.
+- An error that stops a batch part way for a reason other than the entry itself carries `position`, `processed`, and `line` (for `application/x-ndjson`). Examples are `index:closed`, `index:out_of_date`, and `index:readonly`.
 - Request-level errors (such as `request:body_required`) carry none of these arguments.
 
 ### Skipping refused entries
