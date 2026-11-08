@@ -41,8 +41,20 @@ public class ChangeLog {
 	private final Map<BytesRef, Long> keys;
 	private long sequence;
 
+	/**
+	 * The stored log this log was loaded from, without its keys. Holds the
+	 * fields that a newer version wrote and this version cannot read, so
+	 * that {@link #save(Path)} puts them back.
+	 */
+	private final ChangeLogStore stored;
+
 	public ChangeLog() {
+		this(ChangeLogStore.getDefaultInstance());
+	}
+
+	private ChangeLog(ChangeLogStore stored) {
 		this.keys = new HashMap<>();
+		this.stored = stored;
 	}
 
 	/**
@@ -94,7 +106,8 @@ public class ChangeLog {
 
 	/**
 	 * Write the log to a file, replacing what the file held. The same set of
-	 * keys always produces the same bytes.
+	 * keys always produces the same bytes. A log read with
+	 * {@link #load(Path)} also keeps the fields that a newer version wrote.
 	 *
 	 * @throws IOException
 	 *   if the file could not be written
@@ -103,7 +116,7 @@ public class ChangeLog {
 		var sorted = new ArrayList<>(keys.keySet());
 		sorted.sort(null);
 
-		var builder = ChangeLogStore.newBuilder();
+		var builder = stored.toBuilder();
 		for(var key : sorted) {
 			builder.addKeys(ByteString.copyFrom(key.bytes, key.offset, key.length));
 		}
@@ -120,7 +133,7 @@ public class ChangeLog {
 	public static ChangeLog load(Path file) throws IOException {
 		var store = ChangeLogStore.parseFrom(Files.readAllBytes(file));
 
-		var log = new ChangeLog();
+		var log = new ChangeLog(store.toBuilder().clearKeys().build());
 		for(var key : store.getKeysList()) {
 			log.record(new BytesRef(key.toByteArray()));
 		}

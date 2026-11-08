@@ -14,7 +14,17 @@ import org.apache.lucene.util.BytesRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.google.protobuf.ByteString;
+import com.google.protobuf.UnknownFieldSet;
+
+import se.l4.exofind.engine.index.state.ChangeLogStore;
+
 public class ChangeLogTest {
+	/**
+	 * A field number that storage.proto does not use yet in a change log.
+	 */
+	private static final int FUTURE_FIELD = 99;
+
 	@TempDir
 	Path dir;
 
@@ -128,5 +138,43 @@ public class ChangeLogTest {
 		second.save(secondFile);
 
 		assertThat(Files.readAllBytes(firstFile), is(Files.readAllBytes(secondFile)));
+	}
+
+	/**
+	 * A log that a newer version wrote can hold fields this version does not
+	 * know. Saving the log again, which every commit of the holder does, must
+	 * keep them.
+	 */
+	@Test
+	public void savingALogKeepsTheFieldsANewerVersionWrote() throws IOException {
+		// Given
+		var file = dir.resolve("changes.ef.bin");
+		var newer = ChangeLogStore.newBuilder()
+			.addKeys(ByteString.copyFromUtf8("a"))
+			.addKeys(ByteString.copyFromUtf8("b"))
+			.setUnknownFields(
+				UnknownFieldSet.newBuilder()
+					.addField(FUTURE_FIELD, UnknownFieldSet.Field.newBuilder().addVarint(1).build())
+					.build()
+			)
+			.build();
+		Files.write(file, newer.toByteArray());
+
+		// When
+		var log = ChangeLog.load(file);
+		log.record(new BytesRef("c"));
+		log.save(file);
+
+		// Then
+		var saved = ChangeLogStore.parseFrom(Files.readAllBytes(file));
+		assertThat(
+			saved.getKeysList(),
+			contains(
+				ByteString.copyFromUtf8("a"),
+				ByteString.copyFromUtf8("b"),
+				ByteString.copyFromUtf8("c")
+			)
+		);
+		assertThat(saved.getUnknownFields().hasField(FUTURE_FIELD), is(true));
 	}
 }
