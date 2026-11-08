@@ -12,8 +12,15 @@ import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.google.protobuf.UnknownFieldSet;
+
 public class IndexUsageFileTest {
 	private static final Duration HALF_LIFE = Duration.ofDays(7);
+
+	/**
+	 * A field number that usage.proto does not use yet.
+	 */
+	private static final int FUTURE_FIELD = 99;
 
 	@TempDir
 	Path directory;
@@ -107,5 +114,32 @@ public class IndexUsageFileTest {
 		assertThat(used.getLastUsedMs(), is(later.toEpochMilli()));
 		assertThat(used.getDecayedOpens(), is(usage.getDecayedOpens()));
 		assertThat(used.getDecayedAtMs(), is(usage.getDecayedAtMs()));
+	}
+
+	/**
+	 * A usage record that a newer version wrote can hold fields this version
+	 * does not know. Counting an open must keep them, as counting a use does.
+	 */
+	@Test
+	public void testAnOpenKeepsTheFieldsANewerVersionWrote() {
+		// Given
+		var now = Instant.now();
+		var newer = IndexUsage.newBuilder()
+			.setLastUsedMs(now.minusSeconds(60).toEpochMilli())
+			.setDecayedOpens(2)
+			.setDecayedAtMs(now.minusSeconds(60).toEpochMilli())
+			.setUnknownFields(
+				UnknownFieldSet.newBuilder()
+					.addField(FUTURE_FIELD, UnknownFieldSet.Field.newBuilder().addVarint(1).build())
+					.build()
+			)
+			.build();
+
+		// When
+		var opened = IndexUsageFile.recordOpen(newer, now, HALF_LIFE);
+
+		// Then
+		assertThat(opened.getLastUsedMs(), is(now.toEpochMilli()));
+		assertThat(opened.getUnknownFields().hasField(FUTURE_FIELD), is(true));
 	}
 }

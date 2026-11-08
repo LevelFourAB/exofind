@@ -60,10 +60,10 @@ public final class IndexUsageFile {
 	/**
 	 * The record after the index is opened at {@code now}: the open count is
 	 * decayed up to {@code now} and incremented, and {@code now} becomes the
-	 * time of last use.
+	 * time of last use. Fields that a newer version wrote are kept.
 	 */
 	public static IndexUsage recordOpen(IndexUsage usage, Instant now, Duration halfLife) {
-		return IndexUsage.newBuilder()
+		return usage.toBuilder()
 			.setLastUsedMs(now.toEpochMilli())
 			.setDecayedOpens(decayedOpens(usage, now, halfLife) + 1)
 			.setDecayedAtMs(now.toEpochMilli())
