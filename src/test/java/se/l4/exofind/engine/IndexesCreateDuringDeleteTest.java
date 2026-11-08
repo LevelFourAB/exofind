@@ -226,6 +226,78 @@ public class IndexesCreateDuringDeleteTest {
 		}
 	}
 
+	@Test
+	void aCreateWhoseReReadFailsDoesNotTakeTheMarkOfADeleteThatCameAfterIt() throws IOException {
+		// Given two nodes over one registry and one storage, where the next read can be made to fail
+		var failNextRead = new java.util.concurrent.atomic.AtomicBoolean();
+		var storage = new InMemoryRegistryStorage() {
+			@Override
+			public Read read(String knownVersion) throws IOException {
+				if(failNextRead.compareAndSet(true, false)) {
+					throw new IOException("Storage could not be reached");
+				}
+
+				return super.read(knownVersion);
+			}
+		};
+		var registryA = new IndexRegistry(storage, Duration.ofMinutes(5));
+		var registryB = new IndexRegistry(storage, Duration.ofMinutes(5));
+
+		var hook = new AtomicReference<Runnable>();
+		var removals = new RecordingIndexRemovals() {
+			@Override
+			public void prepareForIndex(String index) {
+				var run = hook.getAndSet(null);
+				if(run != null) {
+					run.run();
+				}
+
+				super.prepareForIndex(index);
+			}
+		};
+
+		var nodeA = newNode(storageDirectory.resolve("a"), registryA, removals);
+		var nodeB = newNode(storageDirectory.resolve("b"), registryB, removals);
+		try {
+			// And node B deletes the index right after node A registered it, and the read after that fails
+			hook.set(() -> {
+				try {
+					nodeB.delete("books");
+				} catch(IOException e) {
+					throw new RuntimeException(e);
+				}
+
+				failNextRead.set(true);
+			});
+
+			// When node A goes on with the create
+			RuntimeException failure = null;
+			try {
+				nodeA.create("books", keyed());
+			} catch(RuntimeException e) {
+				failure = e;
+			}
+
+			// Then the registry does not name the index
+			assertThat("the re-read did not fail", failNextRead.get(), is(false));
+			registryB.refresh();
+			assertThat(registryB.get("books").isPresent(), is(false));
+
+			// And a mark of the delete still stands over it
+			assertThat(
+				"mark of the delete taken by the create, create answered " + failure,
+				removals.markedAt(IndexName.of("books")).isPresent(),
+				is(true)
+			);
+
+			// And the create failed
+			assertThat("create answered as done", failure != null, is(true));
+		} finally {
+			nodeA.close();
+			nodeB.close();
+		}
+	}
+
 	/**
 	 * A delete takes the name out of the registry, removes the local copies
 	 * and then leaves its mark. Removing a large copy takes time, and another

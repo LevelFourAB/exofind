@@ -2966,6 +2966,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 *   directory of any generation of the name, holds data that nothing said
 	 *   was deleted, or if the registry is gone from the object storage and
 	 *   the storage holds generations that a registry repair registers
+	 * @throws RegistryException
+	 *   if the registry could not be read or written, or if another node
+	 *   deleted the index while this creation ran
 	 */
 	public Index create(String name, IndexDef def) {
 		var index = IndexName.parse(name);
@@ -2993,6 +2996,7 @@ public class Indexes implements RegistryPoller.Listener {
 			var registered = registry.create(index.index(), generation);
 
 			var removedMeanwhile = false;
+			var reReadFailed = false;
 			try {
 				/*
 				 * Cleared after winning the registration, so that only the
@@ -3013,8 +3017,15 @@ public class Indexes implements RegistryPoller.Listener {
 				 * index, the mark is put back and the create is answered as
 				 * the conflict it is. A delete after this read leaves its
 				 * mark after the clearing, where it stays.
+				 *
+				 * A read that fails can not tell, so the create fails too.
 				 */
-				if(registry.refresh() && registry.get(index.index()).isEmpty()) {
+				if(!registry.refresh()) {
+					reReadFailed = true;
+					throw reReadFailure();
+				}
+
+				if(registry.get(index.index()).isEmpty()) {
 					removedMeanwhile = true;
 					markRemoved(index);
 					throw RegistryException.conflict();
@@ -3033,12 +3044,46 @@ public class Indexes implements RegistryPoller.Listener {
 					} catch(RuntimeException removeFailed) {
 						e.addSuppressed(removeFailed);
 					}
+
+					if(reReadFailed) {
+						restoreMarkAfterFailedReRead(index);
+					}
 				}
 
 				throw e;
 			}
 		} finally {
 			lifecycleLock.unlock();
+		}
+	}
+
+	/**
+	 * The failure of a create whose read of the registry after the
+	 * registration failed.
+	 */
+	private static RegistryException reReadFailure() {
+		return RegistryException.ioError(new IOException(
+			"The registry could not be read after the registration"
+		));
+	}
+
+	/**
+	 * Put back the mark that a create cleared, when the read after the
+	 * registration failed. A delete on another node can have come between the
+	 * registration and the clearing, and its mark is then gone. The mark is
+	 * put back only when a new read finds that the registry does not name the
+	 * index or generation.
+	 */
+	private void restoreMarkAfterFailedReRead(IndexName target) {
+		try {
+			if(registry.refresh() && !registryNames(target)) {
+				markRemoved(target);
+			}
+		} catch(RuntimeException e) {
+			logger.atWarn()
+				.addKeyValue("index", target.toString())
+				.setCause(e)
+				.log("Could not check the registry after a failed create; " + e.getMessage());
 		}
 	}
 
@@ -3191,6 +3236,7 @@ public class Indexes implements RegistryPoller.Listener {
 				.orElseThrow();
 
 			var removedMeanwhile = false;
+			var reReadFailed = false;
 			try {
 				// Only this generation; the rest of the index is in use
 				prepareForCreation(generation, false);
@@ -3202,21 +3248,25 @@ public class Indexes implements RegistryPoller.Listener {
 				 * create of an index does. When the generation is gone, the
 				 * mark is put back. When another node created the generation
 				 * again, that node cleared the prefix for its own generation,
-				 * and this create must not open it.
+				 * and this create must not open it. A read that fails can not
+				 * tell, so the create fails too.
 				 */
-				if(registry.refresh()) {
-					var current = registry.get(generation.index())
-						.flatMap(entry -> entry.generation(generation.generation()));
+				if(!registry.refresh()) {
+					reReadFailed = true;
+					throw reReadFailure();
+				}
 
-					if(current.isEmpty()) {
-						removedMeanwhile = true;
-						markRemoved(generation);
-						throw RegistryException.conflict();
-					}
+				var current = registry.get(generation.index())
+					.flatMap(entry -> entry.generation(generation.generation()));
 
-					if(!current.get().isSameRegistration(registered)) {
-						throw RegistryException.conflict();
-					}
+				if(current.isEmpty()) {
+					removedMeanwhile = true;
+					markRemoved(generation);
+					throw RegistryException.conflict();
+				}
+
+				if(!current.get().isSameRegistration(registered)) {
+					throw RegistryException.conflict();
 				}
 
 				return openWithDefinition(generation, def);
@@ -3231,6 +3281,10 @@ public class Indexes implements RegistryPoller.Listener {
 						registry.removeCreatedGeneration(generation.index(), registered);
 					} catch(RuntimeException removeFailed) {
 						e.addSuppressed(removeFailed);
+					}
+
+					if(reReadFailed) {
+						restoreMarkAfterFailedReRead(generation);
 					}
 				}
 
@@ -3714,7 +3768,7 @@ public class Indexes implements RegistryPoller.Listener {
 		 * keeps the mark.
 		 */
 		try {
-			if(removals.withdraw(target, () -> registry.refresh() && registeredAgain(target))) {
+			if(removals.withdraw(target, () -> registry.refresh() && registryNames(target))) {
 				logger.atInfo()
 					.addKeyValue("index", target.toString())
 					.log("The index was created again before its removal mark was written, took the mark back");
@@ -3728,10 +3782,10 @@ public class Indexes implements RegistryPoller.Listener {
 	}
 
 	/**
-	 * Whether this node's copy of the registry names a deleted index or
-	 * generation.
+	 * Whether this node's copy of the registry names an index, or one
+	 * generation of it.
 	 */
-	private boolean registeredAgain(IndexName target) {
+	private boolean registryNames(IndexName target) {
 		return target.isPinned()
 			? registry.names(target)
 			: registry.get(target.index()).isPresent();
