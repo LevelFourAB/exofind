@@ -107,34 +107,57 @@ public class ObjectStorageKeyStorage implements KeyStorage {
 				return null;
 			}
 
-			throw new IOException("Unable to write the keys; " + e.getMessage(), e);
+			/*
+			 * A server error does not say that the write was refused. A proxy
+			 * in front of the storage answers 504 when it stops waiting, and
+			 * the storage can finish the write after that.
+			 */
+			return resolveUnanswered(keys, expectedVersion, e);
 		} catch(Exception e) {
 			/*
 			 * The storage may drop the connection after it has taken the
-			 * write, which arrives as a connection failure rather than as the
-			 * answer to it. Read the keys back to tell what happened: exactly
-			 * what was written means the write went through, a version other
-			 * than the one it was conditioned on means another node got there
-			 * first, and the version it was conditioned on means the write
-			 * never arrived and may be made again.
-			 *
-			 * Without this a key that was in fact created is reported as a
-			 * failure, leaving a credential that works and that whoever asked
-			 * for it never saw.
+			 * write, which arrives as a connection failure and not as the
+			 * answer to it.
 			 */
-			var current = tryRead();
-			if(current != null) {
-				if(current.keys().equals(keys)) {
-					return current.version();
-				}
+			return resolveUnanswered(keys, expectedVersion, e);
+		}
+	}
 
-				if(!Objects.equals(current.version(), expectedVersion)) {
-					return null;
-				}
+	/**
+	 * Read the keys back to find out what became of a write whose answer
+	 * does not tell. Exactly what was written means the write went through.
+	 * A version other than the one the write was conditioned on means another
+	 * node wrote first. The version the write was conditioned on means the
+	 * write never arrived and may be made again.
+	 *
+	 * <p>Without this a key that was in fact created is reported as a
+	 * failure, and its credential works although the caller never saw it. A
+	 * rotate that landed is also reported as a failure, and the old
+	 * credential stops working.
+	 *
+	 * @return
+	 *   the version the keys are stored under when the write went through,
+	 *   or {@code null} when another node wrote first
+	 * @throws IOException
+	 *   if the write did not arrive, or the keys could not be read back
+	 */
+	private String resolveUnanswered(
+		KeyStore keys,
+		String expectedVersion,
+		Exception failure
+	) throws IOException {
+		var current = tryRead();
+		if(current != null) {
+			if(current.keys().equals(keys)) {
+				return current.version();
 			}
 
-			throw new IOException("Unable to write the keys; " + e.getMessage(), e);
+			if(!Objects.equals(current.version(), expectedVersion)) {
+				return null;
+			}
 		}
+
+		throw new IOException("Unable to write the keys; " + failure.getMessage(), failure);
 	}
 
 	/**
