@@ -201,7 +201,8 @@ public class ObjectStorageSync implements StateSync {
 	 * Whether the next pull repairs the local copy from the remote manifest,
 	 * also when that manifest has not changed. Set by
 	 * {@link #dropUnpushedChanges()}, which removes files the copy needs, and
-	 * cleared by a pull that brought the copy back to a manifest.
+	 * by {@link #repairOnNextPull()}. Cleared by a pull that brought the copy
+	 * back to a manifest.
 	 */
 	private boolean repairLocalCopy;
 
@@ -847,6 +848,16 @@ public class ObjectStorageSync implements StateSync {
 			 * as a definition update whose push failed.
 			 */
 			deleteObsoleteLocalFiles(lastSyncedManifest);
+			this.repairLocalCopy = true;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	@Override
+	public void repairOnNextPull() {
+		lock.lock();
+		try {
 			this.repairLocalCopy = true;
 		} finally {
 			lock.unlock();

@@ -121,6 +121,19 @@ public interface StateSync {
 	}
 
 	/**
+	 * Make the next {@link #pull()} check the local copy against the last
+	 * synchronized manifest, also when the remote has not changed. The pull
+	 * downloads each file that the manifest names and that is missing or
+	 * differs. For a local copy that lost a file the index cannot open
+	 * without, such as the definition.
+	 *
+	 * <p>The default does nothing, for an implementation whose local copy is
+	 * the only copy.
+	 */
+	default void repairOnNextPull() {
+	}
+
+	/**
 	 * The version of the manifest this node last synchronized, whether it was
 	 * pulled or pushed. What it is compared against is the version another
 	 * writer reported, so a copy already at it need not ask the remote.

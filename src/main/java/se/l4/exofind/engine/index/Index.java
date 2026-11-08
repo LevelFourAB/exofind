@@ -1271,6 +1271,28 @@ public class Index {
 				return;
 			}
 
+			if(def.getSerializedSize() == 0 && holdsCommit()) {
+				/*
+				 * Every definition written here sets the source mode, so an
+				 * empty one is a file that is missing or that a crash left
+				 * empty. The documents of the commit were written under a
+				 * definition, and opening them under an empty one serves an
+				 * index with no fields. A writer would also push a manifest
+				 * that names no definition. The next pull downloads the
+				 * definition again.
+				 */
+				logger.atError()
+					.addKeyValue("index", id)
+					.log(
+						"The local copy holds documents but no definition, downloading"
+							+ " the definition again on the next pull"
+					);
+
+				sync.repairOnNextPull();
+				state = IndexState.NEEDS_PULL;
+				return;
+			}
+
 			try {
 				schema.setDefinition(def);
 			} catch(ValidationException e) {
@@ -2360,6 +2382,25 @@ public class Index {
 	 */
 	public OptionalInt getLuceneCreatedMajor() {
 		return luceneCreatedMajor;
+	}
+
+	/**
+	 * Whether the local copy holds a Lucene commit, or the copy that was last
+	 * synchronized held one. Called with the write lock held.
+	 */
+	private boolean holdsCommit() throws IOException {
+		if(sync.hasSyncedCommit()) {
+			return true;
+		}
+
+		String[] names;
+		try(var files = Files.list(localPath)) {
+			names = files
+				.map(path -> path.getFileName().toString())
+				.toArray(String[]::new);
+		}
+
+		return SegmentInfos.getLastCommitGeneration(names) >= 0;
 	}
 
 	private IndexDef readDefinition() {
