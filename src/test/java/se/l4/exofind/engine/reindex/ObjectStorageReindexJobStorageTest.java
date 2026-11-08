@@ -13,12 +13,15 @@ import java.util.Optional;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 import se.l4.exofind.engine.index.state.TestObjectStorage;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * Tests for how the bucket tracks which reindexes are still running. A node
@@ -115,6 +118,49 @@ public class ObjectStorageReindexJobStorageTest {
 
 		assertThat(jobStorage.read("catalogue").isPresent(), is(false));
 		assertThat(markers(), is(empty()));
+	}
+
+	/**
+	 * A checkpoint the storage applied before a proxy in front of it answered
+	 * with a server error was written. The status does not say that the write
+	 * was refused, so the record is read back; reporting a failure would fail
+	 * a job whose record moved on.
+	 */
+	@Test
+	public void aRecordWriteThatLandedBeforeAServerErrorCountsAsWritten() throws Exception {
+		// Given
+		var version = jobStorage.write("catalogue", jobOf("catalogue", ReindexPhase.PENDING), null);
+		var checkpoint = copying("catalogue", 1000);
+
+		// When
+		var written = answeringWithServerErrors().write("catalogue", checkpoint, version);
+
+		// Then
+		assertThat(written, is(notNullValue()));
+		var stored = jobStorage.read("catalogue").orElseThrow();
+		assertThat(stored.record(), is(checkpoint));
+		assertThat(stored.version(), is(written));
+	}
+
+	/**
+	 * Record storage over a client that lets every put through and then
+	 * answers it with a gateway timeout.
+	 */
+	private ObjectStorageReindexJobStorage answeringWithServerErrors() {
+		var client = Mockito.spy(storage.client());
+
+		Mockito.doAnswer(invocation -> {
+			invocation.callRealMethod();
+			throw S3Exception.builder().statusCode(504).message("simulated gateway timeout").build();
+		}).when(client).putObject(
+			ArgumentMatchers.any(PutObjectRequest.class),
+			ArgumentMatchers.any(RequestBody.class)
+		);
+
+		var wrapped = Mockito.spy(storage);
+		Mockito.doReturn(client).when(wrapped).client();
+
+		return new ObjectStorageReindexJobStorage(wrapped);
 	}
 
 	private static ReindexJobStore jobOf(String index, ReindexPhase phase) {

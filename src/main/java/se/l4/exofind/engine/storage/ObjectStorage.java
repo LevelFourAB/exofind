@@ -289,6 +289,11 @@ public class ObjectStorage {
 	 * where a refused manifest costs the node its unpushed documents and the
 	 * conflict is only concluded once a write has actually been refused.
 	 *
+	 * <p>Every other failure of a write, a server error included, does not
+	 * say that the write was refused. A proxy in front of the storage answers
+	 * {@code 504} when it stops waiting, and the storage can finish the write
+	 * after that. Read the object back to find out whether the write landed.
+	 *
 	 * @param e
 	 * @return
 	 */

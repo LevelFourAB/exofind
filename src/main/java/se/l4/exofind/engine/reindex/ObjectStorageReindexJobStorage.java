@@ -146,28 +146,53 @@ public class ObjectStorageReindexJobStorage implements ReindexJobStorage {
 				return null;
 			}
 
-			throw new IOException("Unable to write reindex record; " + e.getMessage(), e);
+			/*
+			 * A server error does not say that the write was refused. A proxy
+			 * in front of the storage answers 504 when it stops waiting, and
+			 * the storage can finish the write after that.
+			 */
+			return resolveUnanswered(index, record, expectedVersion, e);
 		} catch(Exception e) {
 			/*
-			 * The storage may drop the connection while refusing a conditional
-			 * write, which arrives as a connection failure rather than the
-			 * refusal. Read the record back to tell what happened: exactly what
-			 * was written means the write went through, anything else stands
-			 * for a refusal or a write that never arrived.
+			 * The storage may drop the connection after it has taken the
+			 * write, which arrives as a connection failure and not as the
+			 * answer to it.
 			 */
-			var current = tryRead(index);
-			if(current != null) {
-				if(current.record().equals(record)) {
-					return current.version();
-				}
+			return resolveUnanswered(index, record, expectedVersion, e);
+		}
+	}
 
-				if(!current.version().equals(expectedVersion)) {
-					return null;
-				}
+	/**
+	 * Read the record back to find out what became of a write whose answer
+	 * does not tell. Exactly what was written means the write went through.
+	 * A version other than the one the write was conditioned on means another
+	 * node wrote first. The version the write was conditioned on means the
+	 * write never arrived.
+	 *
+	 * @return
+	 *   the version the record is stored under when the write went through,
+	 *   or {@code null} when another node wrote first
+	 * @throws IOException
+	 *   if the write did not arrive, or the record could not be read back
+	 */
+	private String resolveUnanswered(
+		String index,
+		ReindexJobStore record,
+		String expectedVersion,
+		Exception failure
+	) throws IOException {
+		var current = tryRead(index);
+		if(current != null) {
+			if(current.record().equals(record)) {
+				return current.version();
 			}
 
-			throw new IOException("Unable to write reindex record; " + e.getMessage(), e);
+			if(!current.version().equals(expectedVersion)) {
+				return null;
+			}
 		}
+
+		throw new IOException("Unable to write reindex record; " + failure.getMessage(), failure);
 	}
 
 	private Stored tryRead(String index) {
