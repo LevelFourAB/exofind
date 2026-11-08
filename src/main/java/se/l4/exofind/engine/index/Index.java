@@ -28,6 +28,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -528,6 +529,14 @@ public class Index {
 	 * which is what makes the push both allowed and necessary.
 	 */
 	private volatile boolean mayPush;
+
+	/**
+	 * How many times {@link #revokeWriting()} was called. A pull reads it
+	 * before it claims the writer and again after the writer opens. A change
+	 * means that the claim may have been taken while the pull made it, so the
+	 * pull does not let {@link #mayPush} stand on that claim.
+	 */
+	private final AtomicLong revocations = new AtomicLong();
 
 	private final IndexSearcherManager searcherManager;
 
@@ -1400,7 +1409,19 @@ public class Index {
 				 * synchronization decides has been read, as the claim replaces
 				 * that record.
 				 */
-				sync.claimWriter();
+				long revocationsAtClaim;
+				do {
+					/*
+					 * A revoke that arrives while the claim is made can be for
+					 * that claim. The reopen it queues finds the index PULLING
+					 * and does nothing, so the node can take the index back
+					 * before anything replaces this writer. The claim is made
+					 * again for a node that holds the index, as a successor can
+					 * have written in between.
+					 */
+					revocationsAtClaim = revocations.get();
+					sync.claimWriter();
+				} while(revocations.get() != revocationsAtClaim && !isReadOnly());
 
 				this.writer = new IndexWriter(directory, config);
 				this.reader = DirectoryReader.open(writer);
@@ -1409,9 +1430,15 @@ public class Index {
 				/*
 				 * The claim above went through, so nothing else is writing the
 				 * remote and what this writer takes on may be pushed - until the
-				 * node is told the index was taken away again.
+				 * node is told the index was taken away again. The count is read
+				 * after the write: revokeWriting takes the lock of neither side,
+				 * and a revoke that lands between a read and the write would be
+				 * overwritten.
 				 */
 				this.mayPush = true;
+				if(revocations.get() != revocationsAtClaim) {
+					this.mayPush = false;
+				}
 			}
 
 			/*
@@ -1824,6 +1851,8 @@ public class Index {
 	 * again.
 	 */
 	public void revokeWriting() {
+		// Counted first, so that a pull that opens a writer sees the count
+		revocations.incrementAndGet();
 		this.mayPush = false;
 	}
 

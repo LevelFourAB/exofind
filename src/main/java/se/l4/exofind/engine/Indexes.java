@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.lucene.index.SegmentInfos;
@@ -183,6 +184,15 @@ public class Indexes implements RegistryPoller.Listener {
 	 * The open generations, by their full name.
 	 */
 	private final LoadingCache<String, Index> indexes;
+
+	/**
+	 * How many times the node lost an index without handing it over, counted
+	 * over every index. A generation that is being opened is not in
+	 * {@link #indexes} yet, so a revoke does not reach it. The open reads the
+	 * count before it pulls and again after, see
+	 * {@link #loadIndex(String, String)}.
+	 */
+	private final AtomicLong revocations = new AtomicLong();
 
 	/**
 	 * Lock held while the set of indexes is changed, so that two callers do
@@ -817,6 +827,9 @@ public class Indexes implements RegistryPoller.Listener {
 	 *   name of the index, without a generation
 	 */
 	private void revokeWriting(String name) {
+		// Counted first, so that an open that is still pulling sees the count
+		revocations.incrementAndGet();
+
 		for(var entry : indexes.asMap().entrySet()) {
 			if(IndexName.parse(entry.getKey()).index().equals(name)) {
 				entry.getValue().revokeWriting();
@@ -2339,6 +2352,8 @@ public class Indexes implements RegistryPoller.Listener {
 				recordOpened(index, dataPath);
 			}
 
+			var revocationsAtOpen = revocations.get();
+
 			var loaded = new Index(
 				nodeState,
 				index,
@@ -2381,6 +2396,21 @@ public class Indexes implements RegistryPoller.Listener {
 			 * split of the opens that actually happened.
 			 */
 			metrics.recordIndexOpen(source);
+
+			if(revocations.get() != revocationsAtOpen) {
+				/*
+				 * The node lost an index while this generation was pulled. The
+				 * loss may be of this index, and the claim of its writer may
+				 * be the one that was taken. The revoke and the reopen it
+				 * queued did not reach this instance, so both are done here.
+				 * The reopen opens a writer on a fresh claim if the node holds
+				 * the index again. Asked last, as the instance is in no map
+				 * until this method returns.
+				 */
+				loaded.revokeWriting();
+				loaded.reopen(false);
+			}
+
 			return loaded;
 		} finally {
 			lock.unlock();

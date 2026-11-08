@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -863,6 +865,119 @@ public class IndexTest {
 		writer.revokeWriting();
 		writer.sweepRemote();
 		assertThat(writerSync.sweeps, is(1));
+	}
+
+	/**
+	 * The node loses an index while a pull of it is claiming the writer, and
+	 * takes it back before anything replaces that writer. Another node may
+	 * have written the index in between, so the instance must claim the
+	 * writer again before it pushes anything.
+	 */
+	@Test
+	public void anIndexTakenBackAfterALossDuringAClaimClaimsAgainBeforeItPushes() throws Exception {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		// Given: a pull of an index this node holds is claiming the writer
+		var sync = new ClaimHoldingSync();
+		var index = new Index(state, "test", path, sync);
+		indexes.add(index);
+
+		sync.holdNextClaim();
+		var pulling = new Thread(index::pull);
+		pulling.start();
+		assertThat("the pull reached the claim", sync.awaitHeldClaim(), is(true));
+
+		// And: the node loses the index while the pull still claims
+		state.updateOwnership(false);
+		index.revokeWriting();
+		sync.lost.set(true);
+
+		// And: the node takes the index back before the reopen that the loss queued runs
+		state.updateOwnership(true);
+		var reopening = new Thread(() -> {
+			index.reopen(false);
+			index.reopen(true);
+		});
+		reopening.start();
+
+		sync.releaseHeldClaim();
+		pulling.join(10_000);
+		reopening.join(10_000);
+
+		// When: a document is written and committed
+		index.updateDefinition(oneBooleanField());
+		index.addDocument(new Document(new Document.Value("field1", true)));
+		try {
+			index.commit();
+		} catch(IndexReadonlyException e) {
+			// Refusing the commit is one way not to push on the old claim
+		}
+
+		// Then: nothing was pushed on the claim made before the loss
+		assertThat("pushes made without a claim after the loss", sync.pushesOnOldClaim.get(), is(0));
+	}
+
+	/**
+	 * A synchronization that can hold the next claim of the writer until the
+	 * test lets it go, and that records sweeps and pushes.
+	 */
+	private static class ClaimHoldingSync extends NoopSync {
+		final AtomicInteger sweeps = new AtomicInteger();
+		final AtomicInteger pushesOnOldClaim = new AtomicInteger();
+		final AtomicBoolean lost = new AtomicBoolean();
+		final AtomicBoolean claimedSinceLoss = new AtomicBoolean();
+		private final AtomicBoolean holdNext = new AtomicBoolean();
+		private volatile CountDownLatch entered;
+		private volatile CountDownLatch release;
+
+		void holdNextClaim() {
+			entered = new CountDownLatch(1);
+			release = new CountDownLatch(1);
+			holdNext.set(true);
+		}
+
+		boolean awaitHeldClaim() throws InterruptedException {
+			return entered.await(10, TimeUnit.SECONDS);
+		}
+
+		void releaseHeldClaim() {
+			release.countDown();
+		}
+
+		@Override
+		public void claimWriter() throws IOException {
+			if(lost.get()) {
+				claimedSinceLoss.set(true);
+			}
+
+			if(holdNext.compareAndSet(true, false)) {
+				entered.countDown();
+				try {
+					release.await(30, TimeUnit.SECONDS);
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+
+			super.claimWriter();
+		}
+
+		@Override
+		public void push(Set<String> files) throws IOException {
+			if(lost.get() && !claimedSinceLoss.get()) {
+				pushesOnOldClaim.incrementAndGet();
+			}
+
+			super.push(files);
+		}
+
+		@Override
+		public void sweep() throws IOException {
+			sweeps.incrementAndGet();
+			super.sweep();
+		}
 	}
 
 	/**
