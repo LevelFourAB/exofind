@@ -2471,13 +2471,21 @@ public class Index {
 			 */
 			var described = IndexFeatures.describe(withDefaults(def));
 
-			schema.setDefinition(described);
+			/*
+			 * The schema is checked before the file is written, and used only
+			 * after the write succeeds. Searches read the schema without a
+			 * lock. If the schema changed first and the write then failed,
+			 * documents would be indexed under a definition that a restart or
+			 * a pull does not read back.
+			 */
+			var prepared = schema.prepare(described);
 
 			DurableFiles.replace(
 				localPath.resolve(DEFINITION_FILE),
 				described.toByteArray()
 			);
 
+			schema.apply(prepared);
 			this.definition = described;
 			this.definitionVersion = version(described);
 			sync(PushReason.HELD);

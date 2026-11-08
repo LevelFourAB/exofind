@@ -31,7 +31,7 @@ import se.l4.exofind.engine.query.SaturationSignal;
  *
  * <p>Everything the schema answers with is read from one immutable
  * {@link State}, published through a volatile field and replaced whole by
- * {@link #setDefinition}. The getters take no lock: searching asks the schema
+ * {@link #apply}. The getters take no lock: searching asks the schema
  * per clause it compiles and per field of every document it reads back, and a
  * read-write lock on that path costs more in lock bookkeeping - the shared
  * CAS, and the per-thread hold count {@link java.util.concurrent.locks.ReentrantReadWriteLock}
@@ -1176,11 +1176,58 @@ public class IndexSchema {
 	}
 
 	/**
+	 * A definition that {@link #prepare} checked and turned into a schema,
+	 * ready for {@link #apply}. It holds only immutable values and the schema
+	 * does not use it until it is applied.
+	 */
+	public static final class PreparedDefinition {
+		private final State state;
+
+		private PreparedDefinition(State state) {
+			this.state = state;
+		}
+	}
+
+	/**
 	 * Set the definition for the index schema.
 	 *
+	 * <p>The same as {@link #prepare} followed by {@link #apply}.
+	 *
 	 * @param definition
+	 * @throws ValidationException
+	 *   if the definition is not valid, or needs a feature this build does not
+	 *   have. The schema is not changed.
 	 */
-	public synchronized void setDefinition(IndexDef definition) {
+	public void setDefinition(IndexDef definition) {
+		apply(prepare(definition));
+	}
+
+	/**
+	 * Use a definition that {@link #prepare} checked. The schema answers with
+	 * the new definition from this call on.
+	 *
+	 * @param prepared
+	 */
+	public synchronized void apply(PreparedDefinition prepared) {
+		this.state = prepared.state;
+	}
+
+	/**
+	 * Check a definition and build the schema it gives, without using it.
+	 *
+	 * <p>A caller that has to do work that can fail between the check and the
+	 * change, such as writing the definition to disk, prepares first and calls
+	 * {@link #apply} when that work is done. Until then every reader of the
+	 * schema sees the previous definition.
+	 *
+	 * @param definition
+	 * @return
+	 *   the schema of the definition, for {@link #apply}
+	 * @throws ValidationException
+	 *   if the definition is not valid, or needs a feature this build does not
+	 *   have
+	 */
+	public PreparedDefinition prepare(IndexDef definition) {
 		this.validate(definition);
 
 		var registration = new Registration();
@@ -1231,7 +1278,7 @@ public class IndexSchema {
 				.withAll(nestedFields.valuesView().collect(NestedField::field))
 		);
 
-		this.state = new State(
+		return new PreparedDefinition(new State(
 			fields.toImmutable(),
 			wildcardFields.toImmutable(),
 			nestedFields.toImmutable(),
@@ -1263,7 +1310,7 @@ public class IndexSchema {
 				: null,
 			definition.getResources(),
 			analyzedFields
-		);
+		));
 	}
 
 	/**
