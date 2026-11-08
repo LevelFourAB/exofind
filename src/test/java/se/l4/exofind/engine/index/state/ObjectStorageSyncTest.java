@@ -56,6 +56,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -2511,6 +2512,52 @@ public class ObjectStorageSyncTest {
 		push(segment);
 
 		verifyRemoteFile(orphan);
+	}
+
+	/**
+	 * The age of an object comes from the storage's clock, and the cutoff
+	 * from this node's. A node whose clock runs ahead of the storage must
+	 * still leave a young upload of another writer alone, as that writer may
+	 * be about to write the manifest that names it.
+	 */
+	@Test
+	void testSweepOnANodeWhoseClockIsAheadKeepsARecentUpload() throws Exception {
+		// Given a writer whose clock is 2 hours ahead of the storage
+		var listings = new java.util.concurrent.atomic.AtomicInteger();
+		var skewed = Mockito.spy(s3Client);
+		Mockito.doAnswer(invocation -> {
+			listings.incrementAndGet();
+			var response = (ListObjectsV2Response) invocation.callRealMethod();
+			return response.toBuilder()
+				.contents(response.contents().stream()
+					.map(object -> object.lastModified() == null
+						? object
+						: object.toBuilder().lastModified(object.lastModified().minus(Duration.ofHours(2))).build()
+					)
+					.toList()
+				)
+				.build();
+		}).when(skewed).listObjectsV2(ArgumentMatchers.any(ListObjectsV2Request.class));
+
+		var grace = Duration.ofSeconds(5);
+		var sweeping = newSync(skewed, localPath, grace);
+		var segment = createLocalFile("segments_1", 10);
+		push(sweeping, segment);
+
+		// And a grace period has passed since the writer last swept, so its timer sweep is due
+		Thread.sleep(grace.plusMillis(500).toMillis());
+
+		// And another writer uploaded a file just now and has not written its manifest yet
+		var upload = createRemoteFile("e7-s2/_5.cfs", 20);
+
+		// When the first writer runs a timer sweep
+		var listingsBefore = listings.get();
+		sweeping.sweep();
+		assertThat("the timer sweep did not list the remote", listings.get() > listingsBefore, is(true));
+
+		// Then the recent upload stays in the storage
+		verifyRemoteFile(upload);
+		verifyRemoteFile(segment);
 	}
 
 	/**

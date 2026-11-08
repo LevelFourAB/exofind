@@ -11,6 +11,7 @@ import java.nio.file.attribute.FileTime;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -18,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -49,6 +51,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
@@ -1864,8 +1867,6 @@ public class ObjectStorageSync implements StateSync {
 			referenced.add(keyOf(file));
 		}
 
-		var now = System.nanoTime();
-		var cutoff = Instant.now().minus(grace);
 		var prefix = remotePrefix + "/";
 
 		try {
@@ -1873,12 +1874,53 @@ public class ObjectStorageSync implements StateSync {
 				b -> b.bucket(remoteBucket).prefix(prefix)
 			).contents();
 
+			Instant newest = null;
+			var candidates = new ArrayList<S3Object>();
 			for(var item : objects) {
-				var key = item.key().substring(prefix.length());
-
-				if(referenced.contains(key)) {
-					continue;
+				var modified = item.lastModified();
+				if(modified != null && (newest == null || modified.isAfter(newest))) {
+					newest = modified;
 				}
+
+				if(!referenced.contains(item.key().substring(prefix.length()))) {
+					candidates.add(item);
+				}
+			}
+
+			/*
+			 * The storage clock states the age of an object, and the clock
+			 * of this node can run ahead of it. The newest object in the
+			 * listing was written at or before the time of the storage, so
+			 * a cutoff that is not later than that object does not make a
+			 * young upload of another writer look old.
+			 */
+			var reference = Instant.now();
+			if(newest != null && newest.isBefore(reference)) {
+				reference = newest;
+			}
+
+			var cutoff = reference.minus(grace);
+
+			if(candidates.isEmpty()) {
+				return;
+			}
+
+			/*
+			 * Checked again after the listing. A successor that took the
+			 * index over while the listing ran can name again an object that
+			 * the manifest of this node does not name.
+			 */
+			if(!Objects.equals(lastSyncedManifestETag, statManifestETag())) {
+				logger.atDebug()
+					.addKeyValue("index", index)
+					.log("Remote manifest was replaced during the sweep, removing nothing");
+
+				return;
+			}
+
+			var now = System.nanoTime();
+			for(var item : candidates) {
+				var key = item.key().substring(prefix.length());
 
 				if(item.lastModified() != null && item.lastModified().isAfter(cutoff)) {
 					continue;

@@ -134,7 +134,7 @@ Unchanged files retain their keys across epochs, and the manifest records each k
 
 When a push replaces the manifest, the writer records the objects the new manifest no longer names. The writer deletes them at the first push after a one-hour grace period. This delay exists because a reader that pulled the old manifest can still be downloading an object, and a missing object fails its whole pull. A first pull of a large index takes longer than the commit interval, so a writer that deleted at once could fail every attempt while merges run.
 
-A periodic listing sweep removes unreferenced objects that a push did not clean up. The sweep skips objects younger than the grace period. The sweep also skips objects the writer stopped naming less than a grace period ago, regardless of upload age.
+A periodic listing sweep removes unreferenced objects that a push did not clean up. The sweep skips objects younger than the grace period. The sweep also skips objects the writer stopped naming less than a grace period ago, regardless of upload age. The storage clock gives the age of an object, and the clock of the node can run ahead of it. So the sweep measures the grace period back from the newest object in its listing when that object is older than the node clock says.
 
 The recorded list lives in memory, so a writer that stops loses it. The next writer cannot know which objects an earlier writer stopped naming, or when. It knows only that this happened before it read the manifest it starts from. So for one grace period after a writer reads a manifest that it did not write, from its disk at start or from a pull, its sweep removes nothing.
 
