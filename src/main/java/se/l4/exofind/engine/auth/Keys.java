@@ -611,7 +611,22 @@ public class Keys {
 			expiresAt
 		);
 
-		change(keys -> Lists.immutable.ofAll(keys).newWith(key));
+		change(keys -> {
+			var existing = keys.detect(stored -> stored.id().equals(key.id()));
+			if(existing == null) {
+				return Lists.immutable.ofAll(keys).newWith(key);
+			}
+
+			if(existing.secretHash().equals(key.secretHash())) {
+				/*
+				 * An earlier attempt of this create was written and its answer
+				 * was lost. The store already holds the key.
+				 */
+				return keys;
+			}
+
+			throw new IllegalStateException("A key with the id " + key.id() + " already exists");
+		});
 
 		logger.atInfo()
 			.addKeyValue("key", key.id())
@@ -645,8 +660,20 @@ public class Keys {
 			throw KeyInUseException.anonymous(id);
 		}
 
+		var attempted = new AtomicBoolean();
 		change(keys -> {
+			var retry = attempted.getAndSet(true);
 			if(keys.noneSatisfy(key -> key.id().equals(id))) {
+				if(retry) {
+					/*
+					 * An earlier attempt of this revoke can have been written
+					 * with its answer lost. Either that write or a revoke on
+					 * another node removed the key, so the key is gone as
+					 * asked.
+					 */
+					return keys;
+				}
+
 				throw new KeyNotFoundException(id);
 			}
 
@@ -724,6 +751,9 @@ public class Keys {
 	/**
 	 * Rewrite the stored keys, rebuilding the change on top of whatever else
 	 * was written in the meantime rather than overwriting it.
+	 *
+	 * <p>The change runs again for each attempt. A change that returns the
+	 * same instance of the keys it was given writes nothing.
 	 */
 	private void change(UnaryOperator<ListIterable<Key>> change) {
 		if(!storage.isAvailable()) {
@@ -737,6 +767,10 @@ public class Keys {
 
 			var current = snapshot.get();
 			var updated = change.apply(current.keys());
+			if(updated == current.keys()) {
+				return;
+			}
+
 			var stored = KeyStoreCodec.toStored(current.stored(), updated);
 
 			String version;

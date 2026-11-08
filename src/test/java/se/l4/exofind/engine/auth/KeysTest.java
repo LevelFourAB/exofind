@@ -384,6 +384,105 @@ public class KeysTest {
 		);
 	}
 
+	/**
+	 * A create whose first write landed but whose answer was lost is made
+	 * again over the keys that already hold it. The store must then hold the
+	 * key once.
+	 */
+	@Test
+	void aCreateRetriedAfterItsFirstWriteLandedStoresTheKeyOnce() throws IOException {
+		// Given
+		var losingFirstAnswer = new InMemoryKeyStorage() {
+			private boolean answered;
+
+			@Override
+			public String write(KeyStore keys, String expectedVersion) throws IOException {
+				var version = super.write(keys, expectedVersion);
+				if(!answered) {
+					// The write landed, and the retry of the client is refused as stale
+					answered = true;
+					return null;
+				}
+
+				return version;
+			}
+		};
+
+		var instance = new Keys(
+			losingFirstAnswer,
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofSeconds(30)
+		);
+		started.add(instance);
+
+		// When
+		var created = instance.create(
+			"the loader",
+			Lists.immutable.of(grant("books", Permission.SEARCH)),
+			null
+		);
+
+		// Then
+		var loaded = (KeyStorage.Read.Loaded) losingFirstAnswer.read(null);
+		var stored = loaded.keys().getKeysList()
+			.stream()
+			.filter(key -> key.getId().equals(created.key().id()))
+			.count();
+		assertThat(stored, is(1L));
+	}
+
+	/**
+	 * A revoke whose first write landed but whose answer was lost is made
+	 * again over keys that no longer hold the key. The key is gone, so the
+	 * revoke succeeded.
+	 */
+	@Test
+	void aRevokeRetriedAfterItsFirstWriteLandedSucceeds() throws IOException {
+		// Given
+		var losingAnswer = new InMemoryKeyStorage() {
+			volatile boolean loseNext;
+
+			@Override
+			public String write(KeyStore keys, String expectedVersion) throws IOException {
+				var version = super.write(keys, expectedVersion);
+				if(loseNext) {
+					// The write landed, and the retry of the client is refused as stale
+					loseNext = false;
+					return null;
+				}
+
+				return version;
+			}
+		};
+
+		var instance = new Keys(
+			losingAnswer,
+			AuthMode.KEYS,
+			Optional.of(ROOT_KEY),
+			Optional.empty(),
+			Duration.ofSeconds(30)
+		);
+		started.add(instance);
+
+		var created = instance.create(
+			"",
+			Lists.immutable.of(grant("books", Permission.SEARCH)),
+			null
+		);
+
+		// When
+		losingAnswer.loseNext = true;
+		instance.delete(created.key().id());
+
+		// Then
+		assertThrows(
+			UnauthenticatedException.class,
+			() -> instance.resolve("Bearer " + created.credential())
+		);
+	}
+
 	@Test
 	void aNodeWithNowhereToKeepKeysCannotManageThem() {
 		var instance = new Keys(
