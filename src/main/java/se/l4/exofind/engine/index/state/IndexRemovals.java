@@ -3,6 +3,7 @@ package se.l4.exofind.engine.index.state;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.collections.api.list.ListIterable;
@@ -109,6 +110,32 @@ public interface IndexRemovals {
 	 * @throws IOException
 	 */
 	boolean unmark(IndexName target) throws IOException;
+
+	/**
+	 * Take back a mark over a target that the registry names again.
+	 *
+	 * <p>A delete writes its mark after its registry write. A creation of the
+	 * same name on another node can register the name and clear the prefix
+	 * between the two, and the mark then lands over the new index. The
+	 * deleting node calls this after its mark to take it back.
+	 *
+	 * <p>The mark is read first, and {@code registered} is asked after that.
+	 * The mark goes only when {@code registered} answers {@code true} and the
+	 * mark is still the one that was read. A mark that a later delete wrote
+	 * after the read stays. A mark that a restore holds also stays, because
+	 * the restore takes it back itself.
+	 *
+	 * @param target
+	 *   the index, or one generation of it
+	 * @param registered
+	 *   whether the registry names the target, read again from the storage.
+	 *   Answers {@code false} when the registry can not be read
+	 * @return
+	 *   whether a mark was taken back
+	 * @throws IOException
+	 *   if the storage could not be asked or written
+	 */
+	boolean withdraw(IndexName target, BooleanSupplier registered) throws IOException;
 
 	/**
 	 * When an index or generation was marked as deleted.

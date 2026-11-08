@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -180,6 +181,26 @@ public class ObjectStorageIndexRemovals implements IndexRemovals {
 				.addKeyValue("index", target.toString())
 				.log("Removal mark was written by a later delete, leaving it");
 
+			return false;
+		}
+
+		return deleteMark(target, markKeyOf(target), current.get().version());
+	}
+
+	@Override
+	public boolean withdraw(IndexName target, BooleanSupplier registered) throws IOException {
+		var current = readMark(target);
+		if(current.isEmpty() || current.get().mark().getRestoring()) {
+			return false;
+		}
+
+		/*
+		 * Asked after the read. When the registry names the target now, the
+		 * registration came after the delete that wrote the mark that was
+		 * read, and the mark is void. The conditional delete keeps a mark
+		 * that a later delete wrote after the read.
+		 */
+		if(!registered.getAsBoolean()) {
 			return false;
 		}
 

@@ -136,6 +136,48 @@ public class ObjectStorageIndexRemovalsTest {
 	 * chosen from the older time leaves the prefix alone.
 	 */
 	@Test
+	public void testMarkIsWithdrawnOnlyWhenTheTargetIsRegisteredAgain() throws IOException {
+		var books = IndexName.of("books");
+		removals.mark(books);
+
+		assertThat(removals.withdraw(books, () -> false), is(false));
+		assertThat(removals.markedAt(books).isPresent(), is(true));
+
+		assertThat(removals.withdraw(books, () -> true), is(true));
+		assertThat(removals.markedAt(books), is(Optional.empty()));
+		assertThat(removals.withdraw(books, () -> true), is(false));
+	}
+
+	@Test
+	public void testMarkWrittenAfterTheReadIsNotWithdrawn() throws IOException {
+		var books = IndexName.of("books");
+		removals.mark(books);
+
+		// A later delete writes its mark while the registry is read
+		var withdrawn = removals.withdraw(books, () -> {
+			try {
+				removals.mark(books);
+			} catch(IOException e) {
+				throw new AssertionError(e);
+			}
+			return true;
+		});
+
+		assertThat(withdrawn, is(false));
+		assertThat(removals.markedAt(books).isPresent(), is(true));
+	}
+
+	@Test
+	public void testHeldMarkIsNotWithdrawn() throws IOException {
+		var books = IndexName.of("books");
+		removals.mark(books);
+		removals.holdForRestore(books);
+
+		assertThat(removals.withdraw(books, () -> true), is(false));
+		assertThat(removals.markedAt(books).isPresent(), is(true));
+	}
+
+	@Test
 	public void testRemovalLeavesAMarkHeldAfterItWasChosen() throws IOException {
 		putGeneration("books", "1");
 		var chosen = Instant.now().minus(Duration.ofHours(2));

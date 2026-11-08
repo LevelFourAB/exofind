@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -83,6 +84,16 @@ public class RecordingIndexRemovals implements IndexRemovals {
 	@Override
 	public boolean unmark(IndexName target) {
 		return marks.remove(target) != null;
+	}
+
+	@Override
+	public boolean withdraw(IndexName target, BooleanSupplier registered) {
+		var current = marks.get(target);
+		if(current == null || !registered.getAsBoolean()) {
+			return false;
+		}
+
+		return marks.remove(target, current);
 	}
 
 	@Override

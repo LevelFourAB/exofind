@@ -2,6 +2,7 @@ package se.l4.exofind.engine.index.state;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.collections.api.factory.Lists;
@@ -26,6 +27,11 @@ public class NoopIndexRemovals implements IndexRemovals {
 
 	@Override
 	public boolean unmark(IndexName target) {
+		return false;
+	}
+
+	@Override
+	public boolean withdraw(IndexName target, BooleanSupplier registered) {
 		return false;
 	}
 

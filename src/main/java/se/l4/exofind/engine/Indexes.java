@@ -3365,7 +3365,10 @@ public class Indexes implements RegistryPoller.Listener {
 	 * could be removed: the registry no longer names the index, so a caller
 	 * cannot ask for the delete again. A mark that could not be written is
 	 * logged and leaves the objects where they are; the registry audit
-	 * reports them as held but not registered.
+	 * reports them as held but not registered. Another node can create the
+	 * name again before the mark is written. The delete then reads the
+	 * registry again and takes its mark back, so that the mark does not
+	 * stand over the new index.
 	 *
 	 * <p>A registry write whose answer is lost, and whose outcome a read of
 	 * the registry cannot tell either, fails the delete with
@@ -3700,7 +3703,38 @@ public class Indexes implements RegistryPoller.Listener {
 						+ " deleting the index again is not possible, the registry no longer"
 						+ " names it; " + e.getMessage()
 				);
+			return;
 		}
+
+		/*
+		 * A create on another node can register the name and clear the prefix
+		 * after the registry write of this delete and before its mark. The
+		 * mark then stands over the new index, and after a registry loss a
+		 * sweep would remove that index. A registry that can not be read
+		 * keeps the mark.
+		 */
+		try {
+			if(removals.withdraw(target, () -> registry.refresh() && registeredAgain(target))) {
+				logger.atInfo()
+					.addKeyValue("index", target.toString())
+					.log("The index was created again before its removal mark was written, took the mark back");
+			}
+		} catch(IOException e) {
+			logger.atWarn()
+				.addKeyValue("index", target.toString())
+				.setCause(e)
+				.log("Could not check the removal mark against the registry; " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Whether this node's copy of the registry names a deleted index or
+	 * generation.
+	 */
+	private boolean registeredAgain(IndexName target) {
+		return target.isPinned()
+			? registry.names(target)
+			: registry.get(target.index()).isPresent();
 	}
 
 	/**

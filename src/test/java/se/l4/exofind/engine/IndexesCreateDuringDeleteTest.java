@@ -226,6 +226,62 @@ public class IndexesCreateDuringDeleteTest {
 		}
 	}
 
+	/**
+	 * A delete takes the name out of the registry, removes the local copies
+	 * and then leaves its mark. Removing a large copy takes time, and another
+	 * node can create the name again before the mark is written. The mark
+	 * then stands over the new index, which nothing deleted.
+	 */
+	@Test
+	void aDeleteDoesNotLeaveItsMarkOverAnIndexCreatedAgainBeforeTheMarkWasWritten()
+		throws IOException
+	{
+		// Given two nodes over one registry and one storage, and books on node A
+		var storage = new InMemoryRegistryStorage();
+		var registryA = new IndexRegistry(storage, Duration.ofMinutes(5));
+		var registryB = new IndexRegistry(storage, Duration.ofMinutes(5));
+
+		var hook = new AtomicReference<Runnable>();
+		var removals = new RecordingIndexRemovals() {
+			@Override
+			public void mark(IndexName target) throws IOException {
+				var run = hook.getAndSet(null);
+				if(run != null) {
+					run.run();
+				}
+
+				super.mark(target);
+			}
+		};
+
+		var nodeA = newNode(storageDirectory.resolve("a"), registryA, removals);
+		var nodeB = newNode(storageDirectory.resolve("b"), registryB, removals);
+		try {
+			nodeA.create("books", keyed());
+
+			// And node B creates books again after node A's registry write and before its mark
+			hook.set(() -> nodeB.create("books", keyed()));
+
+			// When node A deletes books
+			nodeA.delete("books");
+
+			// Then the registry names the books node B created
+			registryB.refresh();
+			assertThat(registryB.get("books").isPresent(), is(true));
+
+			// And no mark of the delete stands over it
+			assertThat(hook.get() == null, is(true));
+			assertThat(
+				"mark of the delete stands over the index created again",
+				removals.markedAt(IndexName.of("books")).isPresent(),
+				is(false)
+			);
+		} finally {
+			nodeA.close();
+			nodeB.close();
+		}
+	}
+
 	@Test
 	void aGenerationCreateDoesNotTakeTheMarkOfADeleteThatCameAfterIt() throws IOException {
 		// Given two nodes over one registry and one storage, and books live on its first generation
