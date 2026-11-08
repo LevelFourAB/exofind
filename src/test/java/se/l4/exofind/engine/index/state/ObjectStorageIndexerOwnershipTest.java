@@ -1871,6 +1871,13 @@ public class ObjectStorageIndexerOwnershipTest {
 	 * earlier process that did not release it. It may still write, so the
 	 * new process waits for the claim to lapse and then takes it under its
 	 * own session.
+	 *
+	 * <p>The claim is live until its expiry has passed, and until the new
+	 * process has read it for one lease. The new process cannot read it
+	 * before it is created, so the claim is live for at least one lease from
+	 * then. The test checks the claim only inside that period, measured
+	 * after each check. A slow machine makes the period shorter, but it
+	 * cannot make the test fail.
 	 */
 	@Test
 	void testAClaimOfAnEarlierProcessIsWaitedOut() throws Exception {
@@ -1882,10 +1889,20 @@ public class ObjectStorageIndexerOwnershipTest {
 			List.of()
 		);
 
+		var createdNanos = System.nanoTime();
 		var owned = start(newOwnership("a"));
 
-		Thread.sleep(LEASE.toMillis() / 2);
-		assertThat("the claim of the earlier process is still live", owned.contains("books"), is(false));
+		while(true) {
+			var held = owned.contains("books");
+			var live = System.nanoTime() - createdNanos < LEASE.toNanos()
+				|| System.currentTimeMillis() < expiresAt;
+			if(!live) {
+				break;
+			}
+
+			assertThat("the claim of the earlier process is still live", held, is(false));
+			Thread.sleep(25);
+		}
 
 		await(() -> owned.contains("books"), "the lapsed claim to be taken");
 		assertThat(System.currentTimeMillis(), greaterThanOrEqualTo(expiresAt));
